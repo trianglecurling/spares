@@ -11,7 +11,14 @@ SSH into your server and run:
 ```bash
 # Create directories
 sudo mkdir -p /srv/spares/{dist,backend/data}
+
+# Set ownership - www-data will own backend (for the service)
+# Your user will own everything initially for deployment
 sudo chown -R $USER:$USER /srv/spares
+
+# But ensure data directory is writable by www-data
+sudo chown -R www-data:www-data /srv/spares/backend/data
+sudo chmod 755 /srv/spares/backend/data
 ```
 
 ## Step 2: Create Systemd Service
@@ -79,14 +86,14 @@ sudo chown -R www-data:www-data /srv/spares/backend/data
 On your **local machine**:
 
 ```bash
-# Generate SSH key
-ssh-keygen -t ed25519 -C "github-actions@spares.tccnc.club" -f ~/.ssh/github_actions_spares
+# Generate SSH key (use -N "" to create without passphrase)
+ssh-keygen -t ed25519 -C "github-actions@spares.tccnc.club" -f ~/.ssh/github_actions_spares -N ""
 
 # Copy public key to server
 ssh-copy-id -i ~/.ssh/github_actions_spares.pub youruser@your-server-ip
 
-# Display private key (copy this entire output)
-cat ~/.ssh/github_actions_spares
+# Verify the key works
+ssh -i ~/.ssh/github_actions_spares youruser@your-server-ip "echo 'SSH connection successful'"
 ```
 
 ## Step 5: Configure GitHub Secrets
@@ -95,13 +102,38 @@ Go to: `https://github.com/trianglecurling/spares/settings/secrets/actions`
 
 Click "New repository secret" and add:
 
-1. **SSH_PRIVATE_KEY**: Paste the entire output from `cat ~/.ssh/github_actions_spares` (includes `-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`)
+1. **SSH_PRIVATE_KEY**: 
+   - Run: `cat ~/.ssh/github_actions_spares`
+   - Copy the **ENTIRE** output, including:
+     - `-----BEGIN OPENSSH PRIVATE KEY-----`
+     - All the key content (multiple lines)
+     - `-----END OPENSSH PRIVATE KEY-----`
+   - **IMPORTANT**: Make sure to preserve all newlines. The key should look like:
+     ```
+     -----BEGIN OPENSSH PRIVATE KEY-----
+     b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAACFwAAAAdzc2gtcn
+     ... (many more lines) ...
+     -----END OPENSSH PRIVATE KEY-----
+     ```
+   - Paste this entire block (with all newlines) into the secret value
 
 2. **SSH_USER**: Your SSH username (e.g., `ubuntu`, `trevor`, etc.)
 
 3. **PROD_HOST**: Your server's IP address or hostname (e.g., `spares.tccnc.club` or `123.45.67.89`)
 
 4. **STAGING_HOST**: Same as PROD_HOST if using same server (or different for staging)
+
+**Troubleshooting SSH Key Issues:**
+
+If you get "Permission denied (publickey)" errors:
+1. Verify the public key is on the server: `cat ~/.ssh/authorized_keys | grep github-actions`
+2. Check file permissions on server:
+   ```bash
+   chmod 700 ~/.ssh
+   chmod 600 ~/.ssh/authorized_keys
+   ```
+3. Verify the private key format includes BEGIN/END markers and all newlines
+4. Try regenerating the key pair if issues persist
 
 ## Step 6: Test SSH Access from GitHub Actions
 

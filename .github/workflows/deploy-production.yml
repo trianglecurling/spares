@@ -51,6 +51,19 @@ jobs:
             backend/dist/ backend/package.json \
             ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/spares/backend/
 
+      - name: Setup directories and permissions
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << 'EOF'
+            # Create data directory if it doesn't exist
+            sudo mkdir -p /srv/spares/backend/data
+            # Set ownership to www-data (the user running the service)
+            sudo chown -R www-data:www-data /srv/spares/backend/data
+            # Set permissions (755 for directory, files will be 644)
+            sudo chmod 755 /srv/spares/backend/data
+            # Ensure backend directory is owned by www-data
+            sudo chown -R www-data:www-data /srv/spares/backend
+          EOF
+
       - name: Install production dependencies and restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << 'EOF'
