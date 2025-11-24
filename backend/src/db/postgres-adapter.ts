@@ -1,4 +1,4 @@
-import { Pool, Client } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { DatabaseAdapter, PreparedStatement } from './adapter.js';
 
 export class PostgresAdapter implements DatabaseAdapter {
@@ -80,7 +80,7 @@ export class PostgresAdapter implements DatabaseAdapter {
     return true;
   }
 
-  async transactionAsync<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+  async transactionAsync<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');

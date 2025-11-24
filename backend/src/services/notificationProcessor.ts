@@ -4,6 +4,7 @@ import { sendSpareRequestSMS } from './sms.js';
 import { generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTime, getCurrentTimestamp } from '../utils/time.js';
 import { eq, and, or, sql, asc, isNull, isNotNull, lte } from 'drizzle-orm';
+import { Member } from '../types.js';
 
 interface NotificationQueueItem {
   id: number;
@@ -26,13 +27,6 @@ interface SpareRequest {
   next_notification_at: string | null;
 }
 
-interface Member {
-  id: number;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  opted_in_sms: number;
-}
 
 /**
  * Processes the next notification in the queue for staggered notifications.
@@ -163,18 +157,21 @@ export async function processNextNotification(): Promise<void> {
   try {
     if (nextInQueue.email) {
       // Generate token using member object (need to construct it from the query result)
+      // Match the Member interface from types.ts
       const memberForToken = {
         id: nextInQueue.id,
         name: nextInQueue.name,
         email: nextInQueue.email,
         phone: nextInQueue.phone,
-        isAdmin: false,
-        firstLoginCompleted: true,
-        optedInSms: nextInQueue.opted_in_sms === 1,
-        emailSubscribed: true,
-        emailVisible: false,
-        phoneVisible: false,
-      };
+        is_admin: 0, // Not admin for spare requests
+        first_login_completed: 1, // Assuming first login completed
+        opted_in_sms: nextInQueue.opted_in_sms,
+        email_subscribed: 1, // Assuming subscribed if email is present
+        email_visible: 0,
+        phone_visible: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Member;
       const acceptToken = generateEmailLinkToken(memberForToken);
       await sendSpareRequestEmail(
         nextInQueue.email,

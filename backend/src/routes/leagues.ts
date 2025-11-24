@@ -51,7 +51,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: league.format,
         startDate: league.start_date,
         endDate: league.end_date,
-        drawTimes: drawTimes.map((dt) => dt.draw_time),
+        drawTimes: drawTimes.map((dt: any) => dt.draw_time),
       };
     }));
 
@@ -195,7 +195,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: league.format,
       startDate: league.start_date,
       endDate: league.end_date,
-      drawTimes: drawTimes.map((dt) => dt.draw_time),
+      drawTimes: drawTimes.map((dt: any) => dt.draw_time),
     };
   });
 
@@ -274,7 +274,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: league.format,
       startDate: league.start_date,
       endDate: league.end_date,
-      drawTimes: drawTimes.map((dt) => dt.draw_time),
+      drawTimes: drawTimes.map((dt: any) => dt.draw_time),
     };
   });
 

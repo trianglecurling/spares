@@ -127,7 +127,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     const allRequests = [...publicRequests, ...privateRequests];
 
-    return allRequests.map((req) => ({
+    return allRequests.map((req: any) => ({
       id: req.id,
       requesterName: req.requester_name,
       requestedForName: req.requested_for_name,
@@ -190,7 +190,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         asc(schema.spareRequests.game_time)
       );
 
-    return requests.map((req) => {
+    return requests.map((req: any) => {
       return {
         id: req.id,
         requestedForName: req.requested_for_name,
@@ -244,7 +244,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
 
-    return requests.map((req) => ({
+    return requests.map((req: any) => ({
       id: req.id,
       requesterName: req.requester_name,
       requestedForName: req.requested_for_name,
@@ -296,8 +296,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
     
     // Get filled_by names separately
     const filledByIds = requestsRaw
-      .map(r => r.filled_by_member_id)
-      .filter((id): id is number => id !== null);
+      .map((r: any) => r.filled_by_member_id)
+      .filter((id: any): id is number => id !== null);
     
     const filledByMembers = filledByIds.length > 0
       ? await db
@@ -306,14 +306,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .where(inArray(schema.members.id, filledByIds))
       : [];
     
-    const filledByNameMap = new Map(filledByMembers.map(m => [m.id, m.name]));
+    const filledByNameMap = new Map(filledByMembers.map((m: any) => [m.id, m.name]));
     
-    const requests = requestsRaw.map(req => ({
+    const requests = requestsRaw.map((req: any) => ({
       ...req,
       filled_by_name: req.filled_by_member_id ? filledByNameMap.get(req.filled_by_member_id) || null : null,
     }));
 
-    return requests.map((req) => ({
+    return requests.map((req: any) => ({
       id: req.id,
       requesterName: req.requester_name,
       requestedForName: req.requested_for_name,
@@ -928,7 +928,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .from(schema.spareRequestInvitations)
         .where(eq(schema.spareRequestInvitations.spare_request_id, requestId));
       
-      const invitedIds = invitations.map(inv => inv.member_id);
+      const invitedIds = invitations.map((inv: any) => inv.member_id);
       
       if (invitedIds.length > 0) {
         recipientMembers = await db

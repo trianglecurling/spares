@@ -146,7 +146,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
       .where(and(...conditions))
       .orderBy(asc(schema.members.name));
 
-    return availableMembers.map((m) => ({
+    return availableMembers.map((m: any) => ({
       id: m.id,
       name: m.name,
       email: m.email,

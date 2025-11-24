@@ -242,7 +242,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const { db, schema } = getDrizzleDb();
 
     // Use a transaction to ensure atomicity
-    const insertedIds = await db.transaction(async (tx) => {
+    const insertedIds = await db.transaction(async (tx: any) => {
       const ids: number[] = [];
       
       for (const memberData of body) {
@@ -376,15 +376,15 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
     // Filter out admins
     const nonAdminIds = membersToDelete
-      .filter((m) => m.is_admin === 0)
-      .map((m) => m.id);
+      .filter((m: any) => m.is_admin === 0)
+      .map((m: any) => m.id);
 
     if (nonAdminIds.length === 0) {
       return reply.code(400).send({ error: 'No non-admin members to delete' });
     }
 
     // Use a transaction to ensure atomicity
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: any) => {
       // Delete related data first (cascade should handle most, but be explicit)
       await tx
         .delete(schema.memberAvailability)

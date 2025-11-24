@@ -13,7 +13,7 @@ if (dbConfig.type === 'sqlite') {
   config = {
     schema: './src/db/drizzle-schema.ts',
     out: './drizzle',
-    driver: 'better-sqlite',
+    dialect: 'sqlite',
     dbCredentials: {
       url: dbConfig.sqlite?.path || './data/spares.sqlite',
     },

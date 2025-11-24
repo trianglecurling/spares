@@ -159,7 +159,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     return {
       requiresSelection: true,
       tempToken,
-      members: members.map((m) => ({
+      members: members.map((m: Member) => ({
         id: m.id,
         name: m.name,
       })),

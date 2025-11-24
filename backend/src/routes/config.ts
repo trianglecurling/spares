@@ -14,6 +14,7 @@ const updateConfigSchema = z.object({
   twilioCampaignSid: z.string().optional(),
   azureConnectionString: z.string().optional(),
   azureSenderEmail: z.string().email().optional(),
+  azureSenderDisplayName: z.string().optional(),
   testMode: z.boolean().optional(),
   testCurrentTime: z.string().nullable().optional(),
   notificationDelaySeconds: z.number().int().min(1).optional(),

@@ -308,3 +308,32 @@ export const spareRequestNotificationQueuePg = pgTable('spare_request_notificati
   notifiedIdx: indexPg('idx_notification_queue_notified').on(table.spare_request_id, table.notified_at),
   uniqueRequestMember: uniqueIndexPg('spare_request_notification_queue_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
 }));
+
+// Export schema objects for use in database initialization
+export const sqliteSchema = {
+  members: membersSqlite,
+  authCodes: authCodesSqlite,
+  authTokens: authTokensSqlite,
+  leagues: leaguesSqlite,
+  leagueDrawTimes: leagueDrawTimesSqlite,
+  memberAvailability: memberAvailabilitySqlite,
+  spareRequests: spareRequestsSqlite,
+  spareRequestInvitations: spareRequestInvitationsSqlite,
+  spareResponses: spareResponsesSqlite,
+  serverConfig: serverConfigSqlite,
+  spareRequestNotificationQueue: spareRequestNotificationQueueSqlite,
+};
+
+export const pgSchema = {
+  members: membersPg,
+  authCodes: authCodesPg,
+  authTokens: authTokensPg,
+  leagues: leaguesPg,
+  leagueDrawTimes: leagueDrawTimesPg,
+  memberAvailability: memberAvailabilityPg,
+  spareRequests: spareRequestsPg,
+  spareRequestInvitations: spareRequestInvitationsPg,
+  spareResponses: spareResponsesPg,
+  serverConfig: serverConfigPg,
+  spareRequestNotificationQueue: spareRequestNotificationQueuePg,
+};
