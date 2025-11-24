@@ -42,6 +42,15 @@ jobs:
             --exclude='.git' \
             frontend/dist/ ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }}:/srv/spares-preview/dist/
 
+      - name: Prepare backend directory for deployment
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
+            # Create backend directory if it doesn't exist
+            sudo mkdir -p /srv/spares-preview/backend
+            # Temporarily change ownership to deployment user so rsync can write
+            sudo chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} /srv/spares-preview/backend || true
+          EOF
+
       - name: Deploy backend
         run: |
           rsync -avz \
@@ -56,19 +65,17 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
             # Create data directory if it doesn't exist
             sudo mkdir -p /srv/spares-preview/backend/data
-            # Set ownership to www-data (the user running the service)
-            sudo chown -R www-data:www-data /srv/spares-preview/backend/data
-            # Set permissions (755 for directory, files will be 644)
-            sudo chmod 755 /srv/spares-preview/backend/data
-            # Ensure backend directory is owned by www-data
+            # Change ownership of backend directory to www-data (after deployment)
             sudo chown -R www-data:www-data /srv/spares-preview/backend
+            # Ensure data directory has correct permissions
+            sudo chmod 755 /srv/spares-preview/backend/data
           EOF
 
       - name: Install production dependencies and restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
             cd /srv/spares-preview/backend
-            npm install --production
+            sudo -u www-data npm install --production
             sudo systemctl restart spares-staging
           EOF
 
