@@ -21,7 +21,7 @@ export interface DatabaseConfig {
   adminEmails: string[];
 }
 
-const CONFIG_FILE_PATH = path.join(__dirname, '../../data/db-config.json');
+const CONFIG_FILE_PATH = path.join(__dirname, '../data/db-config.json');
 
 export function getDatabaseConfig(): DatabaseConfig | null {
   try {

@@ -47,7 +47,7 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
     // Use Drizzle Kit's push for SQLite - but for now, use the old schema creation
     // since it handles migrations better
     const { SQLiteAdapter } = await import('./sqlite-adapter.js');
-    const dbPath = configToUse.sqlite?.path || path.join(__dirname, '../../data/spares.sqlite');
+    const dbPath = configToUse.sqlite?.path || path.join(__dirname, '../data/spares.sqlite');
     const dbDir = path.dirname(dbPath);
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
@@ -82,7 +82,7 @@ export async function getDatabaseAsync(): Promise<any> {
 
 export async function testDatabaseConnection(config: DatabaseConfig): Promise<void> {
   if (config.type === 'sqlite') {
-    const dbPath = config.sqlite?.path || path.join(__dirname, '../../data/spares.sqlite');
+    const dbPath = config.sqlite?.path || path.join(__dirname, '../data/spares.sqlite');
     const dbDir = path.dirname(dbPath);
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
