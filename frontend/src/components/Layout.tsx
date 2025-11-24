@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Footer from './Footer';
 
@@ -9,7 +9,6 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { member, logout } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
 
   const isActive = (path: string) => location.pathname === path;
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -6,7 +6,6 @@ export default function RespondToSpare() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { isLoading } = useAuth();
-  const [message, setMessage] = useState('');
 
   useEffect(() => {
     if (!isLoading) {
