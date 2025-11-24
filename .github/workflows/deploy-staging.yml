@@ -27,34 +27,35 @@ jobs:
       - name: Build backend
         run: npm run build:backend
 
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.STAGING_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
       - name: Deploy frontend
-        uses: easingthemes/ssh-deploy@v4
-        with:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          REMOTE_HOST: ${{ secrets.STAGING_HOST }}
-          REMOTE_USER: ${{ secrets.SSH_USER }}
-          SOURCE: "frontend/dist/"
-          TARGET: "/srv/spares-preview/dist/"
-          EXCLUDE: "node_modules/, .git/"
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            frontend/dist/ ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }}:/srv/spares-preview/dist/
 
       - name: Deploy backend
-        uses: easingthemes/ssh-deploy@v4
-        with:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          REMOTE_HOST: ${{ secrets.STAGING_HOST }}
-          REMOTE_USER: ${{ secrets.SSH_USER }}
-          SOURCE: "backend/dist/ backend/package.json backend/package-lock.json"
-          TARGET: "/srv/spares-preview/backend/"
-          EXCLUDE: "node_modules/, .git/"
+        run: |
+          rsync -avz \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            backend/dist/ backend/package.json backend/package-lock.json \
+            ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }}:/srv/spares-preview/backend/
 
       - name: Install production dependencies and restart
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
             cd /srv/spares-preview/backend
             npm install --production
             sudo systemctl restart spares-staging
+          EOF
 
