@@ -27,14 +27,24 @@ jobs:
       - name: Build backend
         run: npm run build:backend
 
-      - name: Deploy to staging server
+      - name: Deploy frontend
         uses: easingthemes/ssh-deploy@v4
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           REMOTE_HOST: ${{ secrets.STAGING_HOST }}
           REMOTE_USER: ${{ secrets.SSH_USER }}
-          SOURCE: "frontend/dist/ backend/dist/ backend/package.json backend/package-lock.json"
-          TARGET: "/var/www/spares-preview.tccnc.club/"
+          SOURCE: "frontend/dist/"
+          TARGET: "/srv/spares-preview/dist/"
+          EXCLUDE: "node_modules/, .git/"
+
+      - name: Deploy backend
+        uses: easingthemes/ssh-deploy@v4
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.STAGING_HOST }}
+          REMOTE_USER: ${{ secrets.SSH_USER }}
+          SOURCE: "backend/dist/ backend/package.json backend/package-lock.json"
+          TARGET: "/srv/spares-preview/backend/"
           EXCLUDE: "node_modules/, .git/"
 
       - name: Install production dependencies and restart
@@ -44,7 +54,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /var/www/spares-preview.tccnc.club/backend
+            cd /srv/spares-preview/backend
             npm install --production
             sudo systemctl restart spares-staging
 
