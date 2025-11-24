@@ -48,7 +48,7 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             --exclude='node_modules' \
             --exclude='.git' \
-            backend/dist/ backend/package.json backend/package-lock.json \
+            backend/dist/ backend/package.json \
             ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/spares/backend/
 
       - name: Install production dependencies and restart
