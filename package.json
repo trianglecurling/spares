@@ -1,0 +1,30 @@
+{
+  "name": "triangle-curling-spares",
+  "version": "1.0.0",
+  "description": "Spare management system for Triangle Curling Club",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=frontend & npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "build": "npm run build --workspace=frontend && npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "lint": "npm run lint --workspaces",
+    "format": "npm run format --workspaces"
+  },
+  "keywords": [
+    "curling",
+    "spare",
+    "management"
+  ],
+  "author": "Triangle Curling Club",
+  "license": "MIT",
+  "dependencies": {
+    "date-fns": "^4.1.0"
+  }
+}

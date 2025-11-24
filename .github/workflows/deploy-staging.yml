@@ -1,0 +1,50 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - preview
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Build backend
+        run: npm run build:backend
+
+      - name: Deploy to staging server
+        uses: easingthemes/ssh-deploy@v4
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.STAGING_HOST }}
+          REMOTE_USER: ${{ secrets.SSH_USER }}
+          SOURCE: "frontend/dist/ backend/dist/ backend/package.json backend/package-lock.json"
+          TARGET: "/var/www/spares-preview.tccnc.club/"
+          EXCLUDE: "node_modules/, .git/"
+
+      - name: Install production dependencies and restart
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/spares-preview.tccnc.club/backend
+            npm install --production
+            sudo systemctl restart spares-staging
+

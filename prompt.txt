@@ -1,0 +1,114 @@
+I want to build a web application for my curling club, Triangle Curling. This application will be used by members to find subs (aka "spares") when they are unable to make their game. Here's a high level overview of the functionality:
+
+Any member can: set their sparing availability, including the positions they are willing to spare at
+Any member can: request a spare, either publicly (open to all members) or privately (ask specific members)
+Any member can: view current public sparing requests
+Any member can: respond to a sparing request (i.e. sign up for the spot)
+Any member can: manage their own profile info, including email and phone
+Any member can: see a list of all members (first and last names), and the email and phone of anyone who has opted-in to sharing that info
+Any member can: edit their own profile information: email, phone, privacy settings, SMS settings
+Any administrator can: Set the current league schedule (each league plays weekly at a given day and time)
+Any administrator can: manage the list of members and their contact info, including bulk member adding (pasting rows from a spreadsheet is ideal: first name, last name, phone number, email) and removing.
+Any administrator can: set other members as administrators.
+
+# Authentication
+We will use a very simple form of authentication. Users can log in using an email address or phone number. After entering an email or phone number, we will look up the user, and if found, send them an email or text (SMS) with a 6-digit code. Once the user enters this code, we will authenticate them and provide a long-lasting authorization so they don't have to log in very often.
+
+It is possible that multiple members use the same phone number or email address. This is most common with parents and their children. After providing their 6-digit code, if there are multiple members that match the email or phone, we will allow them to choose which one to log in as.
+
+# Home dashboard
+Once a user logs in, they will be able to see all outstanding public sparing requests. The user can respond to any of those sparing requests right from the dashboard. The user also sees a call-to-action button to set their own sparing availability, and another to request a spare.
+
+# Requesting a spare
+The UI for requesting a spare is a simple form, including:
+1. Date and time of the game (required). The UI should present a league picker followed by a game time picker.
+2. Name of the person who needs a spare (required - usually this will be the current user, but we need to allow for someone to request a spare on behalf of someone else)
+3. Position (optional; choices are lead, second, vice, skip)
+4. Personal message (optional)
+5. Request type: public (open to anyone) or private (invite certain members) - required
+6. (if private) - Select multiple members to receive the request - an autocomplete-style search where selected members are shown as pills (with X's to remove) is a good UI pattern here.
+
+# How the system processes a new spare request
+When a private spare request is generated, it immediately gets sent to all selected members. The request will only appear on the dashboards of those members that were selected.
+
+When a public spare request is generated:
+- All members can see it immediately on their dashboard
+- If it is less than 24 hours before game time, notifications are sent immediately to all matching members. Otherwise...
+- The system will create a list of matching members to receive notifications of the request. These are the members whose availability matches the request parameters.
+- The system then randomly shuffles the list and starts the notification process.
+- The notification process involves notifying members one at a time, very slowly. Start at the top of the shuffled list and notify that member. Then wait 3 minutes and check if the request has been filled. If it has, then there is no need to send more notifications. If it has not, then notify the next member in the shuffled list. Keep sending notifications 3 minutes apart until either: the request is filled, or all members in the list have been notified.
+
+# Setting sparing availability
+The UI for setting sparing availability involves the user setting whether or not they are potentially available during each league. The primary action will be to set a yes or no state for each league. We can get creative with the UI here - maybe something more tasteful than a bunch of checkboxes.
+
+We also want to ask if the user is comfortable sparing as a skip. This will also be a binary choice.
+
+All changes to availability are persisted immediately without the need for a save button, and the UI should communicate this via idiomatic UI elements (for example, toggles instead of checkboxes).
+
+# Responding to a spare request
+A user can respond to a spare request very easily with 2 clicks. First, click a "sign up" button, which opens a modal dialog to confirm the choice. The user can include an optional comment that will be sent to the requester.
+
+# Setting the current league schedule (administrative function)
+An administrator can set the current list of leagues. Each league has:
+1. A name
+2. A day of the week
+3. One or more "draw times" - these are times when games for this league are played
+4. A format ("teams" or "doubles")
+5. A start date and an end date. These dates should be treated as inclusive.
+
+# First run experience
+A user goes to https://spares.tccnc.club and is presented with a simple log in screen asking for email or phone (one single input field). Once logged in, if it is the user's first time logging in, we will confirm their contact info (name - encourage users to use the name that most people know them by, email, and phone number), then we will allow them to opt-in to text messages to receive updates. After that, we take them through the UI that allows them to set their sparing availability.
+
+# Administrators
+The app will read the SPARES_ADMINS value from a .env file. This value is a comma-separated list of email addresses who are always administrators. The app requires at least one administrator. Administrators listed in the .env file cannot be stripped of their admin rights via the UI - only by editing the .env file.
+
+# Email communication
+The application will send several emails on behalf of members:
+1. When someone requests a spare, an email will go out to all relevant potential spares (if the request is public, it goes to everyone who has set their availability and matches the time of the game, or if private, it goes to those individual selected members). This email will have an "Accept" link that opens the application to the aforementioned confirmation modal.
+2. When someone responds to a spare request, the original requester gets an email with details of who has responded along with their comment if given.
+3. Administrators can send members a welcome email. This welcome email will include a link back to the application.
+4. The auth code mentioned above. In this case, the code should be in the subject line and in the body of the email.
+
+All links to the application will include an authorization token so the user does not have to log in.
+
+When sending emails, we should always address users by their full name.
+
+All emails must include a footer that has an unsubscribe link. The unsubscribe link takes the user to the app where an additional click is required to unsubscribe to all emails, with a warning that they will be removed from all spare lists. If the user unsubscribes, they get removed from all spare lists and we will never email them again unless they resubscribe.
+
+# Text message (SMS) communication
+Any user that opts into text messages can receive texts in addition to emails. We will send a text on these occasions:
+1. A new spare request is matched to that person
+2. That person's spare request has been filled
+3. The auth code mentioned above.
+
+# Technical details
+Backend: node.js, any web server of your choice (express, fastify, etc.), SQLite (SQLite for easy development purposes - we will switch to a production DB when ready)
+Frontend: TypeScript, React, TailwindCSS
+Dev: Vite, HMR, Prettier, ESLint
+
+I am using Azure Communication Services as my email DSN and Twilio as my SMS provider. I will eventually add the connection details to my .env file.
+
+# Design
+A minimal tasteful design with a light color scheme. Where appropriate, use these colors as accents:
+#121033
+#fa4c06
+#01B9BC
+
+All UI should be equally usable on desktop and mobile devices
+
+# General layout
+The top of each (authenticated) page will contain a header with the app name, nav bar for links to Dashboard, My Availability, My Requests, Directory, and for admins, Manage Members, Manage Leagues. The right side of the nav bar has a profile link and a logout button.
+The bottom of each authenticated page will have a footer containing:
+- Link to Triangle Curling's home page, https://trianglecurling.com (opens in the same tab)
+- Copyright <year> Triangle Curling Club
+- Link to Privacy Policy, https://links.tccnc.club/privacy (opens in a new tab)
+- To report issues, contact av@trianglecurling.com
+- League info: https://links.tccnc.club/leagues
+
+When not authenticated, the user is always redirected to the login page, which is a simple email or phone number field, centered on the page. The footer on this page only has a link to the Triangle Curling home and the copyright statement.
+
+# Deployment
+We will deploy to a VM running in Azure at https://spares.tccnc.club. We will want to create a staging environment, https://spares-preview.tccnc.club. Set up an action to deploy to production from the main branch and the staging env from the preview branch. Create a text file that contains instructions for configuring the VM, GitHub, etc. The VM is running nginx and has a certificate for *.tccnc.club.
+
+# Questions and Clarifications
+Keep a running list of questions and clarifications you need from me in a text file called QUESTIONS.txt

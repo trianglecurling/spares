@@ -1,0 +1,104 @@
+# Questions and Clarifications for Triangle Curling Spares
+
+## Authentication & User Management
+
+1. **Multiple users with same contact info**: When multiple members share an email or phone (e.g., parents and children), 
+   after entering the 6-digit code, users can select which member profile to log in as. Is this the intended behavior?
+
+2. **First-time user registration**: The spec mentions users can "log in" using email/phone, but what happens if someone 
+   tries to log in who isn't in the system? Should there be a self-registration flow, or must all members be added by 
+   administrators first?
+
+3. **Contact information requirements**: Should members be required to have at least one contact method (email or phone)? 
+   Can a member have both or just one?
+
+## Spare Request Matching
+
+4. **Private request member visibility**: For private spare requests, should regular (non-admin) members be able to see 
+   a list of all members to invite? Currently, only admins can see the full member list. Should we create a separate 
+   "member directory" feature?
+
+5. **Position matching**: When someone requests a spare for "skip" position, should we ONLY notify members who marked 
+   themselves as comfortable skipping? Currently, yes. Or should we notify all available members and just highlight the 
+   position requirement?
+
+6. **Multiple responses to requests**: Currently, the first person to respond gets the spot and the request is marked 
+   as filled. Should requesters be able to see all responses and choose, or is first-come-first-served preferred?
+
+## League & Availability
+
+7. **League overlap**: Can leagues have overlapping schedules? For example, if there are two leagues on the same day 
+   at the same time, how should we handle availability?
+
+8. **Partial availability**: Should members be able to specify they're available for only certain draw times within 
+   a league, or is it all-or-nothing for each league?
+
+9. **League changes mid-season**: If an admin changes league details (e.g., draw times), should existing availability 
+   be preserved or reset? Should members be notified of changes?
+
+## Notifications
+
+10. **Email/SMS delivery failures**: How should the system handle failed email or SMS deliveries? Should there be 
+    admin notifications, retry logic, or logging?
+
+11. **Notification preferences**: Should members be able to set separate preferences for different types of 
+    notifications (e.g., email for spare requests but SMS for filled requests)?
+
+12. **Notification timing**: Should there be any throttling or batching of notifications? For example, if someone 
+    creates 5 spare requests in quick succession, should members get 5 separate emails or one digest?
+
+## Administrative Functions
+
+13. **Member deletion**: When an admin deletes a member, what should happen to their historical spare requests and 
+    responses? Currently using CASCADE delete. Should we keep historical data?
+
+14. **Bulk operations**: Would it be helpful to have bulk import/export features for members and leagues (e.g., CSV import)?
+
+15. **Admin notifications**: Should admins receive notifications when new spare requests are created, when members 
+    join/leave, or other system events?
+
+## User Experience
+
+16. **Past requests**: Should members be able to view a history of past (filled/cancelled) spare requests beyond 
+    their own? For reporting or transparency?
+
+17. **Edit spare requests**: Should requesters be able to edit details of an open spare request, or only cancel 
+    and create a new one?
+
+18. **Request expiration**: Should spare requests automatically expire after the game date/time has passed? 
+    Currently they remain "open" indefinitely if not filled.
+
+## Technical
+
+19. **Database migrations**: Is there a need for a more sophisticated migration system, or is the current simple 
+    schema creation sufficient for this application?
+
+20. **Rate limiting**: Should there be rate limiting on authentication attempts or API requests to prevent abuse?
+
+21. **Analytics/Reporting**: Are there any reporting needs for admins (e.g., most active members, spare request 
+    fill rates, league participation)?
+
+22. **Testing**: Should automated tests be created? If so, what level of coverage is desired (unit, integration, e2e)?
+
+## Azure & Twilio Configuration
+
+23. **Email sender verification**: Has the Azure Communication Services sender email (noreply@tccnc.club) been 
+    verified in Azure?
+
+24. **Twilio phone number**: Has a Twilio phone number been provisioned and configured for SMS sending?
+
+25. **Service quotas**: Are there any sending limits or quotas we need to be aware of for Azure Communication 
+    Services or Twilio?
+
+## Future Enhancements
+
+26. **Mobile app**: Is there interest in a native mobile app in the future, or will the responsive web app suffice?
+
+27. **Calendar integration**: Would members find it useful to have spare requests added to their calendar (iCal/Google Calendar)?
+
+28. **Team management**: Should there be features for managing teams/rosters within leagues?
+
+29. **Payment/Credit system**: Any plans for tracking who spares for whom, or a credit/reciprocity system?
+
+30. **Multi-club support**: Is this intended to be used only by Triangle Curling, or should it support multiple clubs?
+
