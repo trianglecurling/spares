@@ -21,17 +21,24 @@ export interface DatabaseConfig {
   adminEmails: string[];
 }
 
-const CONFIG_FILE_PATH = path.join(__dirname, '../data/db-config.json');
+// Resolve config file path relative to the backend directory (where process.cwd() points)
+// This works both in development (src/) and production (dist/)
+// In production, process.cwd() is /srv/spares/backend, so data/db-config.json resolves correctly
+const CONFIG_FILE_PATH = path.resolve(process.cwd(), 'data/db-config.json');
 
 export function getDatabaseConfig(): DatabaseConfig | null {
   try {
     if (!fs.existsSync(CONFIG_FILE_PATH)) {
+      console.error(`Database config file not found at: ${CONFIG_FILE_PATH}`);
+      console.error(`Current working directory: ${process.cwd()}`);
       return null;
     }
     const configData = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
     return JSON.parse(configData) as DatabaseConfig;
   } catch (error) {
     console.error('Error reading database config:', error);
+    console.error(`Config file path: ${CONFIG_FILE_PATH}`);
+    console.error(`Current working directory: ${process.cwd()}`);
     return null;
   }
 }

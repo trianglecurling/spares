@@ -4,7 +4,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 
 let emailClient: EmailClient | null = null;
-let cachedConfig: { connectionString: string; senderEmail: string; testMode: boolean } | null = null;
+let cachedConfig: { connectionString: string; senderEmail: string; disableEmail: boolean; testMode: boolean } | null = null;
 let configCacheTimestamp = 0;
 const CONFIG_CACHE_TTL = 5000; // Cache for 5 seconds
 
@@ -19,6 +19,7 @@ async function getConfigFromDatabase() {
     .select({
       azure_connection_string: schema.serverConfig.azure_connection_string,
       azure_sender_email: schema.serverConfig.azure_sender_email,
+      disable_email: schema.serverConfig.disable_email,
       test_mode: schema.serverConfig.test_mode,
     })
     .from(schema.serverConfig)
@@ -30,6 +31,7 @@ async function getConfigFromDatabase() {
   cachedConfig = {
     connectionString: serverConfig?.azure_connection_string || config.azure.connectionString,
     senderEmail: serverConfig?.azure_sender_email || config.azure.senderEmail,
+    disableEmail: serverConfig?.disable_email === 1,
     testMode: serverConfig?.test_mode === 1,
   };
   configCacheTimestamp = now;
@@ -74,31 +76,46 @@ function getUnsubscribeFooter(memberToken?: string): string {
   `;
 }
 
+function buildFullHtmlContent(htmlContent: string, memberToken?: string): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+    </head>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      ${htmlContent}
+      ${getUnsubscribeFooter(memberToken)}
+    </body>
+    </html>
+  `;
+}
+
+function logEmail(options: EmailOptions, fullHtmlContent: string, prefix: string): void {
+  console.log('='.repeat(80));
+  console.log(`[${prefix}] Email would be sent:`);
+  console.log('To:', options.to);
+  console.log('Subject:', options.subject);
+  console.log('Recipient Name:', options.recipientName);
+  console.log('HTML Content:');
+  console.log(fullHtmlContent);
+  console.log('='.repeat(80));
+}
+
 export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<void> {
+  const fullHtmlContent = buildFullHtmlContent(options.htmlContent, memberToken);
+
+  // Special case: Never send emails to @example.com addresses (log instead)
+  if (options.to.toLowerCase().endsWith('@example.com')) {
+    logEmail(options, fullHtmlContent, 'EXAMPLE.COM BLOCKED');
+    return;
+  }
+
   const dbConfig = await getConfigFromDatabase();
   
-  // In test mode, print to console instead of sending
-  if (dbConfig.testMode) {
-    const fullHtmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-      </head>
-      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        ${options.htmlContent}
-        ${getUnsubscribeFooter(memberToken)}
-      </body>
-      </html>
-    `;
-    console.log('='.repeat(80));
-    console.log('[TEST MODE] Email would be sent:');
-    console.log('To:', options.to);
-    console.log('Subject:', options.subject);
-    console.log('Recipient Name:', options.recipientName);
-    console.log('HTML Content:');
-    console.log(fullHtmlContent);
-    console.log('='.repeat(80));
+  // If email is disabled or in test mode, print to console instead of sending
+  if (dbConfig.disableEmail || dbConfig.testMode) {
+    logEmail(options, fullHtmlContent, 'TEST MODE');
     return;
   }
   
@@ -109,19 +126,6 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
 
   try {
     const client = await getEmailClient();
-    
-    const fullHtmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-      </head>
-      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        ${options.htmlContent}
-        ${getUnsubscribeFooter(memberToken)}
-      </body>
-      </html>
-    `;
 
     // senderAddress must be just the email address, not formatted with display name
     // Display name is not directly supported in the Azure Email SDK senderAddress field

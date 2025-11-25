@@ -10,7 +10,11 @@
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:add-disable-columns": "node add-columns.js"
   },
   "dependencies": {
     "@azure/communication-email": "^1.0.0",

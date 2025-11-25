@@ -18,6 +18,9 @@ export default function AdminLeagues() {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importJson, setImportJson] = useState('');
+  const [importing, setImporting] = useState(false);
   const [editingLeague, setEditingLeague] = useState<League | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -138,6 +141,51 @@ export default function AdminLeagues() {
     });
   };
 
+  const handleExport = async () => {
+    try {
+      const response = await api.get('/leagues/export');
+      const jsonString = JSON.stringify(response.data, null, 2);
+      
+      // Copy to clipboard
+      await navigator.clipboard.writeText(jsonString);
+      alert('Leagues exported and copied to clipboard!');
+    } catch (error) {
+      console.error('Failed to export leagues:', error);
+      alert('Failed to export leagues');
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importJson.trim()) {
+      alert('Please paste JSON data');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      let data;
+      try {
+        data = JSON.parse(importJson);
+      } catch (e) {
+        alert('Invalid JSON. Please check your data.');
+        setImporting(false);
+        return;
+      }
+
+      const response = await api.post('/leagues/import', data);
+      alert(`Successfully imported ${response.data.imported} league(s)!`);
+      setIsImportModalOpen(false);
+      setImportJson('');
+      await loadLeagues();
+    } catch (error: any) {
+      console.error('Failed to import leagues:', error);
+      const errorMessage = error.response?.data?.error || 'Failed to import leagues';
+      alert(errorMessage);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const getDayName = (dayOfWeek: number) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[dayOfWeek];
@@ -168,7 +216,15 @@ export default function AdminLeagues() {
           <h1 className="text-3xl font-bold" style={{ color: '#121033' }}>
             Manage leagues
           </h1>
-          <Button onClick={() => handleOpenModal()}>Add league</Button>
+          <div className="flex space-x-2">
+            <Button onClick={handleExport} variant="secondary">
+              Export
+            </Button>
+            <Button onClick={() => setIsImportModalOpen(true)} variant="secondary">
+              Import
+            </Button>
+            <Button onClick={() => handleOpenModal()}>Add league</Button>
+          </div>
         </div>
 
         {loading ? (
@@ -357,6 +413,48 @@ export default function AdminLeagues() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setImportJson('');
+        }}
+        title="Import leagues"
+      >
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="importJson" className="block text-sm font-medium text-gray-700 mb-2">
+              Paste JSON data
+            </label>
+            <textarea
+              id="importJson"
+              value={importJson}
+              onChange={(e) => setImportJson(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
+              rows={15}
+              placeholder='{"leagues": [{"name": "Example League", "dayOfWeek": 1, "format": "teams", "startDate": "2024-01-01", "endDate": "2024-12-31", "drawTimes": ["19:00", "21:00"]}]}'
+            />
+          </div>
+          <div className="flex space-x-3">
+            <Button onClick={handleImport} disabled={importing} className="flex-1">
+              {importing ? 'Importing...' : 'Import'}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setIsImportModalOpen(false);
+                setImportJson('');
+              }}
+              disabled={importing}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );

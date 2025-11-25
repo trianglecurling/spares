@@ -6,6 +6,9 @@ import { isAdmin } from '../utils/auth.js';
 import { Member } from '../types.js';
 import { sendEmail } from '../services/email.js';
 import { sendSMS } from '../services/sms.js';
+import { getDatabaseConfig, saveDatabaseConfig } from '../db/config.js';
+import { resetDatabaseState, testDatabaseConnection } from '../db/index.js';
+import type { DatabaseConfig } from '../db/config.js';
 
 const updateConfigSchema = z.object({
   twilioApiKeySid: z.string().optional(),
@@ -13,9 +16,11 @@ const updateConfigSchema = z.object({
   twilioAccountSid: z.string().optional(),
   twilioCampaignSid: z.string().optional(),
   azureConnectionString: z.string().optional(),
-  azureSenderEmail: z.string().email().optional(),
+  azureSenderEmail: z.string().email().optional().nullable(),
   azureSenderDisplayName: z.string().optional(),
   testMode: z.boolean().optional(),
+  disableEmail: z.boolean().optional(),
+  disableSms: z.boolean().optional(),
   testCurrentTime: z.string().nullable().optional(),
   notificationDelaySeconds: z.number().int().min(1).optional(),
 });
@@ -46,6 +51,8 @@ export async function configRoutes(fastify: FastifyInstance) {
         azureConnectionString: null,
         azureSenderEmail: null,
         testMode: false,
+        disableEmail: false,
+        disableSms: false,
         testCurrentTime: null,
         notificationDelaySeconds: 180,
         updatedAt: null,
@@ -60,6 +67,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       azureConnectionString: config.azure_connection_string ? '***' : null, // Mask the connection string
       azureSenderEmail: config.azure_sender_email,
       testMode: config.test_mode === 1,
+      disableEmail: config.disable_email === 1,
+      disableSms: config.disable_sms === 1,
       testCurrentTime: config.test_current_time,
       notificationDelaySeconds: config.notification_delay_seconds ?? 180,
       updatedAt: config.updated_at,
@@ -101,6 +110,12 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
     if (body.testMode !== undefined) {
       updateData.test_mode = body.testMode ? 1 : 0;
+    }
+    if (body.disableEmail !== undefined) {
+      updateData.disable_email = body.disableEmail ? 1 : 0;
+    }
+    if (body.disableSms !== undefined) {
+      updateData.disable_sms = body.disableSms ? 1 : 0;
     }
     if (body.testCurrentTime !== undefined) {
       updateData.test_current_time = body.testCurrentTime || null;
@@ -147,6 +162,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       azureConnectionString: updatedConfig.azure_connection_string ? '***' : null,
       azureSenderEmail: updatedConfig.azure_sender_email,
       testMode: updatedConfig.test_mode === 1,
+      disableEmail: updatedConfig.disable_email === 1,
+      disableSms: updatedConfig.disable_sms === 1,
       testCurrentTime: updatedConfig.test_current_time,
       notificationDelaySeconds: updatedConfig.notification_delay_seconds ?? 180,
       updatedAt: updatedConfig.updated_at,
@@ -208,6 +225,125 @@ export async function configRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ 
         error: 'Failed to send test SMS',
         details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Get database configuration (admin only)
+  fastify.get('/database-config', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member || !isAdmin(member)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+
+    const config = getDatabaseConfig();
+    if (!config) {
+      return reply.code(404).send({ error: 'Database not configured' });
+    }
+
+    // Return config without password for security
+    return {
+      type: config.type,
+      sqlite: config.sqlite,
+      postgres: config.postgres ? {
+        host: config.postgres.host,
+        port: config.postgres.port,
+        database: config.postgres.database,
+        username: config.postgres.username,
+        // Don't return password
+        ssl: config.postgres.ssl,
+      } : undefined,
+      adminEmails: config.adminEmails,
+    };
+  });
+
+  // Update database configuration (admin only)
+  const updateDatabaseConfigSchema = z.object({
+    databaseType: z.enum(['sqlite', 'postgres']),
+    sqlite: z.object({
+      path: z.string().optional(),
+    }).optional(),
+    postgres: z.object({
+      host: z.string(),
+      port: z.number().int().min(1).max(65535),
+      database: z.string(),
+      username: z.string(),
+      password: z.string().optional(), // Optional - if not provided, keep existing
+      ssl: z.boolean().optional(),
+    }).optional(),
+    adminEmails: z.array(z.string().email()).min(1),
+  });
+
+  fastify.post('/database-config', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member || !isAdmin(member)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+
+    const body = updateDatabaseConfigSchema.parse(request.body);
+
+    // Validate that the correct database config is provided
+    if (body.databaseType === 'postgres' && !body.postgres) {
+      return reply.code(400).send({ error: 'PostgreSQL configuration required' });
+    }
+
+    // Get current config to preserve password if not provided
+    const currentConfig = getDatabaseConfig();
+    let passwordToUse: string | undefined;
+
+    if (body.databaseType === 'postgres' && body.postgres) {
+      // If password is not provided, use existing password
+      if (!body.postgres.password && currentConfig?.postgres) {
+        passwordToUse = currentConfig.postgres.password;
+      } else if (body.postgres.password) {
+        passwordToUse = body.postgres.password;
+      } else {
+        return reply.code(400).send({ error: 'Password is required for PostgreSQL' });
+      }
+    }
+
+    // Build test configuration (without saving yet)
+    const testConfig = {
+      type: body.databaseType,
+      sqlite: body.databaseType === 'sqlite' ? {
+        path: body.sqlite?.path || './data/spares.sqlite',
+      } : undefined,
+      postgres: body.databaseType === 'postgres' && body.postgres ? {
+        host: body.postgres.host,
+        port: body.postgres.port,
+        database: body.postgres.database,
+        username: body.postgres.username,
+        password: passwordToUse!,
+        ssl: body.postgres.ssl || false,
+      } : undefined,
+      adminEmails: body.adminEmails,
+    };
+
+    // Test database connection FIRST - before saving anything
+    try {
+      await testDatabaseConnection(testConfig);
+    } catch (error: any) {
+      console.error('Database connection test failed:', error);
+      return reply.code(400).send({ 
+        error: `Database connection failed: ${error.message || 'Unable to connect to database. Please check your credentials and try again.'}` 
+      });
+    }
+
+    // Connection test passed - now save configuration
+    try {
+      saveDatabaseConfig(testConfig);
+      
+      // Reset database state so it reinitializes with new config on next request
+      resetDatabaseState();
+      
+      return { 
+        success: true,
+        message: 'Database configuration updated successfully. Please restart the server for changes to take effect.'
+      };
+    } catch (error: any) {
+      console.error('Failed to save database configuration:', error);
+      return reply.code(500).send({ 
+        error: `Failed to save configuration: ${error.message || 'Unknown error'}` 
       });
     }
   });

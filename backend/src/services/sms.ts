@@ -9,6 +9,7 @@ let cachedConfig: {
   apiKeySecret: string;
   accountSid: string | null;
   campaignSid: string | null;
+  disableSms: boolean;
   testMode: boolean;
 } | null = null;
 let configCacheTimestamp = 0;
@@ -27,6 +28,7 @@ async function getConfigFromDatabase() {
       twilio_api_key_secret: schema.serverConfig.twilio_api_key_secret,
       twilio_account_sid: schema.serverConfig.twilio_account_sid,
       twilio_campaign_sid: schema.serverConfig.twilio_campaign_sid,
+      disable_sms: schema.serverConfig.disable_sms,
       test_mode: schema.serverConfig.test_mode,
     })
     .from(schema.serverConfig)
@@ -40,6 +42,7 @@ async function getConfigFromDatabase() {
     apiKeySecret: serverConfig?.twilio_api_key_secret || config.twilio.authToken,
     accountSid: serverConfig?.twilio_account_sid || null,
     campaignSid: serverConfig?.twilio_campaign_sid || null,
+    disableSms: serverConfig?.disable_sms === 1,
     testMode: serverConfig?.test_mode === 1,
   };
   configCacheTimestamp = now;
@@ -68,8 +71,8 @@ async function getTwilioClient() {
 export async function sendSMS(to: string, message: string): Promise<void> {
   const dbConfig = await getConfigFromDatabase();
   
-  // In test mode, print to console instead of sending
-  if (dbConfig.testMode) {
+  // If SMS is disabled or in test mode, print to console instead of sending
+  if (dbConfig.disableSms || dbConfig.testMode) {
     console.log('='.repeat(80));
     console.log('[TEST MODE] SMS would be sent:');
     console.log('To:', to);

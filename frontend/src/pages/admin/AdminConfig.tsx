@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import Button from '../../components/Button';
@@ -12,6 +13,8 @@ interface ServerConfig {
   azureConnectionString: string | null;
   azureSenderEmail: string | null;
   testMode: boolean;
+  disableEmail: boolean;
+  disableSms: boolean;
   testCurrentTime: string | null;
   notificationDelaySeconds: number;
   updatedAt: string | null;
@@ -34,6 +37,8 @@ export default function AdminConfig() {
     azureConnectionString: '',
     azureSenderEmail: '',
     testMode: false,
+    disableEmail: false,
+    disableSms: false,
     testCurrentTime: '',
     notificationDelaySeconds: 180,
   });
@@ -54,6 +59,8 @@ export default function AdminConfig() {
         azureConnectionString: '', // Never populate the connection string field
         azureSenderEmail: response.data.azureSenderEmail || '',
         testMode: response.data.testMode || false,
+        disableEmail: response.data.disableEmail || false,
+        disableSms: response.data.disableSms || false,
         testCurrentTime: response.data.testCurrentTime || '',
         notificationDelaySeconds: response.data.notificationDelaySeconds || 180,
       });
@@ -94,6 +101,12 @@ export default function AdminConfig() {
       }
       if (formData.testMode !== config?.testMode) {
         payload.testMode = formData.testMode;
+      }
+      if (formData.disableEmail !== config?.disableEmail) {
+        payload.disableEmail = formData.disableEmail;
+      }
+      if (formData.disableSms !== config?.disableSms) {
+        payload.disableSms = formData.disableSms;
       }
       if (formData.testCurrentTime !== (config?.testCurrentTime || '')) {
         payload.testCurrentTime = formData.testCurrentTime || null;
@@ -161,9 +174,17 @@ export default function AdminConfig() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6" style={{ color: '#121033' }}>
-          Server configuration
-        </h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold" style={{ color: '#121033' }}>
+            Server configuration
+          </h1>
+          <Link
+            to="/admin/database-config"
+            className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+          >
+            Configure database →
+          </Link>
+        </div>
 
         {message && (
           <div
@@ -180,7 +201,7 @@ export default function AdminConfig() {
             {/* Test Mode Configuration */}
             <div className="border-b pb-6">
               <h2 className="text-xl font-semibold mb-4" style={{ color: '#121033' }}>
-                Test Mode
+                Test Mode & Message Controls
               </h2>
               <div className="space-y-4">
                 <div className="flex items-center">
@@ -198,6 +219,38 @@ export default function AdminConfig() {
                 <p className="text-sm text-gray-500 ml-7">
                   When enabled, emails and SMS messages will be printed to the console instead of being sent. 
                   This is useful for testing without sending actual messages.
+                </p>
+                
+                <div className="flex items-center mt-4">
+                  <input
+                    type="checkbox"
+                    id="disableEmail"
+                    checked={formData.disableEmail}
+                    onChange={(e) => setFormData({ ...formData, disableEmail: e.target.checked })}
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 rounded"
+                  />
+                  <label htmlFor="disableEmail" className="ml-3 block text-sm font-medium text-gray-700">
+                    Disable email sending
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 ml-7">
+                  When enabled, emails will be printed to the console instead of being sent, regardless of test mode.
+                </p>
+                
+                <div className="flex items-center mt-4">
+                  <input
+                    type="checkbox"
+                    id="disableSms"
+                    checked={formData.disableSms}
+                    onChange={(e) => setFormData({ ...formData, disableSms: e.target.checked })}
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 rounded"
+                  />
+                  <label htmlFor="disableSms" className="ml-3 block text-sm font-medium text-gray-700">
+                    Disable SMS sending
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 ml-7">
+                  When enabled, SMS messages will be printed to the console instead of being sent, regardless of test mode.
                 </p>
               </div>
             </div>
@@ -281,7 +334,7 @@ export default function AdminConfig() {
               <div className="space-y-4">
                 <div>
                   <label htmlFor="twilioApiKeySid" className="block text-sm font-medium text-gray-700 mb-2">
-                    API Key SID <span className="text-red-500">*</span>
+                    API Key SID
                   </label>
                   <input
                     type="text"
@@ -290,7 +343,6 @@ export default function AdminConfig() {
                     onChange={(e) => setFormData({ ...formData, twilioApiKeySid: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
                     placeholder="SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    required
                   />
                   <p className="text-sm text-gray-500 mt-1">
                     Your Twilio API Key SID (starts with "SK")
@@ -318,7 +370,7 @@ export default function AdminConfig() {
 
                 <div>
                   <label htmlFor="twilioAccountSid" className="block text-sm font-medium text-gray-700 mb-2">
-                    Account SID <span className="text-red-500">*</span>
+                    Account SID
                   </label>
                   <input
                     type="text"
@@ -327,7 +379,6 @@ export default function AdminConfig() {
                     onChange={(e) => setFormData({ ...formData, twilioAccountSid: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
                     placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    required
                   />
                   <p className="text-sm text-gray-500 mt-1">
                     Your Twilio Account SID (starts with "AC")
@@ -336,7 +387,7 @@ export default function AdminConfig() {
 
                 <div>
                   <label htmlFor="twilioCampaignSid" className="block text-sm font-medium text-gray-700 mb-2">
-                    Campaign SID <span className="text-red-500">*</span>
+                    Campaign SID
                   </label>
                   <input
                     type="text"
@@ -345,7 +396,6 @@ export default function AdminConfig() {
                     onChange={(e) => setFormData({ ...formData, twilioCampaignSid: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
                     placeholder="CMxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    required
                   />
                   <p className="text-sm text-gray-500 mt-1">
                     Your Twilio Campaign SID (starts with "CM")
@@ -402,7 +452,7 @@ export default function AdminConfig() {
 
                 <div>
                   <label htmlFor="azureSenderEmail" className="block text-sm font-medium text-gray-700 mb-2">
-                    Sender email address <span className="text-red-500">*</span>
+                    Sender email address
                   </label>
                   <input
                     type="email"
@@ -411,7 +461,6 @@ export default function AdminConfig() {
                     onChange={(e) => setFormData({ ...formData, azureSenderEmail: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                     placeholder="noreply@tccnc.club"
-                    required
                   />
                   <p className="text-sm text-gray-500 mt-1">
                     The email address that will appear as the sender

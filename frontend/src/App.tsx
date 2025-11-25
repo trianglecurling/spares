@@ -14,6 +14,7 @@ import Profile from './pages/Profile';
 import AdminMembers from './pages/admin/AdminMembers';
 import AdminLeagues from './pages/admin/AdminLeagues';
 import AdminConfig from './pages/admin/AdminConfig';
+import AdminDatabaseConfig from './pages/admin/AdminDatabaseConfig';
 import Help from './pages/Help';
 import QuickStart from './pages/help/QuickStart';
 import RequestingSpare from './pages/help/RequestingSpare';
@@ -141,6 +142,14 @@ function App() {
             element={
               <ProtectedRoute adminOnly>
                 <AdminConfig />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/database-config"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminDatabaseConfig />
               </ProtectedRoute>
             }
           />

@@ -295,4 +295,134 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
     return { success: true };
   });
+
+  // Admin: Export leagues
+  fastify.get('/leagues/export', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member || !isAdmin(member)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+
+    const { db, schema } = getDrizzleDb();
+    const leagues = await db
+      .select()
+      .from(schema.leagues)
+      .orderBy(schema.leagues.day_of_week, schema.leagues.name) as League[];
+
+    const result = await Promise.all(leagues.map(async (league) => {
+      const drawTimes = await db
+        .select({ draw_time: schema.leagueDrawTimes.draw_time })
+        .from(schema.leagueDrawTimes)
+        .where(eq(schema.leagueDrawTimes.league_id, league.id))
+        .orderBy(asc(schema.leagueDrawTimes.draw_time));
+
+      return {
+        name: league.name,
+        dayOfWeek: league.day_of_week,
+        format: league.format,
+        startDate: league.start_date,
+        endDate: league.end_date,
+        drawTimes: drawTimes.map((dt: any) => dt.draw_time),
+      };
+    }));
+
+    return { leagues: result };
+  });
+
+  // Admin: Import leagues
+  const importLeaguesSchema = z.object({
+    leagues: z.array(z.object({
+      name: z.string().min(1),
+      dayOfWeek: z.number().min(0).max(6),
+      format: z.enum(['teams', 'doubles']),
+      startDate: z.string(),
+      endDate: z.string(),
+      drawTimes: z.array(z.string()),
+    })),
+  });
+
+  fastify.post('/leagues/import', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member || !isAdmin(member)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+
+    const body = importLeaguesSchema.parse(request.body);
+    const { db, schema } = getDrizzleDb();
+
+    const importedLeagues = [];
+
+    for (const leagueData of body.leagues) {
+      // Check if a league with the same name already exists
+      const existingLeagues = await db
+        .select()
+        .from(schema.leagues)
+        .where(eq(schema.leagues.name, leagueData.name))
+        .limit(1);
+
+      let leagueId: number;
+
+      if (existingLeagues.length > 0) {
+        // Update existing league
+        const existingLeague = existingLeagues[0] as League;
+        leagueId = existingLeague.id;
+
+        await db
+          .update(schema.leagues)
+          .set({
+            day_of_week: leagueData.dayOfWeek,
+            format: leagueData.format,
+            start_date: leagueData.startDate,
+            end_date: leagueData.endDate,
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(schema.leagues.id, leagueId));
+
+        // Delete existing draw times
+        await db
+          .delete(schema.leagueDrawTimes)
+          .where(eq(schema.leagueDrawTimes.league_id, leagueId));
+      } else {
+        // Create new league
+        const result = await db
+          .insert(schema.leagues)
+          .values({
+            name: leagueData.name,
+            day_of_week: leagueData.dayOfWeek,
+            format: leagueData.format,
+            start_date: leagueData.startDate,
+            end_date: leagueData.endDate,
+          })
+          .returning();
+
+        leagueId = result[0].id;
+      }
+
+      // Insert draw times
+      if (leagueData.drawTimes.length > 0) {
+        await db.insert(schema.leagueDrawTimes).values(
+          leagueData.drawTimes.map(drawTime => ({
+            league_id: leagueId,
+            draw_time: drawTime,
+          }))
+        );
+      }
+
+      importedLeagues.push({
+        id: leagueId,
+        name: leagueData.name,
+        dayOfWeek: leagueData.dayOfWeek,
+        format: leagueData.format,
+        startDate: leagueData.startDate,
+        endDate: leagueData.endDate,
+        drawTimes: leagueData.drawTimes,
+      });
+    }
+
+    return {
+      success: true,
+      imported: importedLeagues.length,
+      leagues: importedLeagues,
+    };
+  });
 }
