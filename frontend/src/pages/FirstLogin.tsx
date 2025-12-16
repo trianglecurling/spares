@@ -7,7 +7,7 @@ import Button from '../components/Button';
 import Footer from '../components/Footer';
 
 export default function FirstLogin() {
-  const { member, updateMember } = useAuth();
+  const { member, updateMember, logout } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [name, setName] = useState(member?.name || '');
@@ -65,7 +65,14 @@ export default function FirstLogin() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       <div className="flex-grow flex items-center justify-center px-4">
         <div className="max-w-2xl w-full">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 relative">
+            <button
+              type="button"
+              onClick={logout}
+              className="absolute top-4 right-4 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+            >
+              Logout
+            </button>
             <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
               Welcome to Triangle Curling Spares!
             </h1>

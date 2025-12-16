@@ -58,8 +58,16 @@ export default function Layout({ children }: LayoutProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-8">
-              <Link to="/" className="text-xl font-bold text-[#121033] dark:text-gray-100">
-                Triangle Curling
+              <Link
+                to="/"
+                className="group flex flex-col leading-tight focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-800 rounded"
+              >
+                <span className="text-xl font-bold text-[#121033] dark:text-gray-100 group-hover:text-primary-teal transition-colors">
+                  Triangle Curling
+                </span>
+                <span className="text-xs font-medium tracking-wide uppercase text-gray-600 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
+                  Spare Management
+                </span>
               </Link>
               
               {/* Desktop Navigation */}
