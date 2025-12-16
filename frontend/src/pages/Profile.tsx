@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -19,7 +19,7 @@ export default function Profile() {
   });
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
@@ -151,7 +151,7 @@ export default function Profile() {
                   <label htmlFor="optedInSms" className="text-sm select-none cursor-pointer">
                     <span className="font-medium text-gray-900 dark:text-gray-100">Receive text message notifications</span>
                     <p className="text-gray-600 dark:text-gray-400 mt-1">
-                      Get notified via SMS when new spare requests match your availability.
+                      Receive text message notifications when new spare requests match your availability and when someone has responded to your request. Message and data rates may apply. Reply STOP to any message to unsubscribe.
                     </p>
                   </label>
                 </div>
