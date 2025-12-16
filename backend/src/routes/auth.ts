@@ -6,7 +6,6 @@ import {
   generateAuthCode,
   generateToken,
   normalizeEmail,
-  normalizePhone,
   isAdmin,
   isServerAdmin,
 } from '../utils/auth.js';
@@ -27,6 +26,22 @@ function isMemberExpired(member: Member): boolean {
   if (!validThrough) return false;
   const today = new Date().toISOString().split('T')[0];
   return today > validThrough;
+}
+
+function normalizePhoneDigits10(input: string): string | null {
+  const digits = input.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) return digits.slice(1);
+  if (digits.length === 10) return digits;
+  return null;
+}
+
+function normalizeStoredPhoneDigits10(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return normalizePhoneDigits10(String(value));
+}
+
+function phoneDigits10ToE164(digits10: string): string {
+  return `+1${digits10}`;
 }
 
 const requestCodeSchema = z.object({
@@ -51,22 +66,46 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
 
     // Determine if it's email or phone
     const isEmail = body.contact.includes('@');
-    const normalizedContact = isEmail
-      ? normalizeEmail(body.contact)
-      : normalizePhone(body.contact);
+    const normalizedContact = isEmail ? normalizeEmail(body.contact) : body.contact;
 
-    // Find members with this contact info
-    const members = await db
-      .select()
-      .from(schema.members)
-      .where(
-        isEmail
-          ? sql`LOWER(${schema.members.email}) = LOWER(${normalizedContact})`
-          : eq(schema.members.phone, normalizedContact)
-      );
+    let members: Member[] = [];
+    let authContactToStore: string;
+
+    if (isEmail) {
+      members = await db
+        .select()
+        .from(schema.members)
+        .where(sql`LOWER(${schema.members.email}) = LOWER(${normalizedContact})`) as Member[];
+      authContactToStore = normalizedContact;
+    } else {
+      const digits10 = normalizePhoneDigits10(body.contact);
+      if (!digits10) {
+        return reply.code(404).send({ error: 'No member found with this contact information' });
+      }
+
+      // Load candidates and match in JS to handle legacy punctuation/format differences in stored phone values.
+      const candidates = await db
+        .select()
+        .from(schema.members)
+        .where(sql`${schema.members.phone} IS NOT NULL AND ${schema.members.phone} != ''`) as Member[];
+
+      members = candidates.filter((m) => normalizeStoredPhoneDigits10((m as any).phone) === digits10);
+      authContactToStore = phoneDigits10ToE164(digits10);
+    }
 
     if (members.length === 0) {
       return reply.code(404).send({ error: 'No member found with this contact information' });
+    }
+
+    // Phone login requires SMS enabled for at least one matching member
+    if (!isEmail) {
+      const anySmsEnabled = members.some((m) => (m as any).opted_in_sms === 1);
+      if (!anySmsEnabled) {
+        return reply.code(400).send({
+          error:
+            'SMS messages are not enabled for this user. Please log in with your email address, then update your SMS settings by visiting your profile page.',
+        });
+      }
     }
 
     // Generate auth code
@@ -74,7 +113,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     await db.insert(schema.authCodes).values({
-      contact: normalizedContact,
+      contact: authContactToStore,
       code,
       expires_at: expiresAt, // Drizzle PostgreSQL timestamp columns require Date objects, not strings
       used: 0,
@@ -84,11 +123,11 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     // Auth codes are time-sensitive but we can still return immediately
     const member = members[0]; // Use first member for sending
     if (isEmail && member.email && member.email_subscribed === 1) {
-      sendAuthCodeEmail(normalizedContact, member.name, code).catch((error) => {
+      sendAuthCodeEmail(authContactToStore, member.name, code).catch((error) => {
         console.error('Error sending auth code email:', error);
       });
-    } else if (!isEmail && member.phone) {
-      sendAuthCodeSMS(normalizedContact, code).catch((error) => {
+    } else if (!isEmail) {
+      sendAuthCodeSMS(authContactToStore, code).catch((error) => {
         console.error('Error sending auth code SMS:', error);
       });
     }
@@ -102,9 +141,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const { db, schema } = getDrizzleDb();
 
     const isEmail = body.contact.includes('@');
-    const normalizedContact = isEmail
-      ? normalizeEmail(body.contact)
-      : normalizePhone(body.contact);
+    const normalizedContact = isEmail ? normalizeEmail(body.contact) : body.contact;
+    const authContactToMatch = isEmail
+      ? normalizedContact
+      : (() => {
+          const digits10 = normalizePhoneDigits10(body.contact);
+          return digits10 ? phoneDigits10ToE164(digits10) : body.contact;
+        })();
 
     // Find valid auth code
     const now = new Date().toISOString();
@@ -113,7 +156,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       .from(schema.authCodes)
       .where(
         and(
-          eq(schema.authCodes.contact, normalizedContact),
+          eq(schema.authCodes.contact, authContactToMatch),
           eq(schema.authCodes.code, body.code),
           eq(schema.authCodes.used, 0),
           sql`${schema.authCodes.expires_at} > ${now}`
@@ -135,14 +178,23 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       .where(eq(schema.authCodes.id, authCode.id));
 
     // Get members with this contact
-    const members = await db
-      .select()
-      .from(schema.members)
-      .where(
-        isEmail
-          ? sql`LOWER(${schema.members.email}) = LOWER(${normalizedContact})`
-          : eq(schema.members.phone, normalizedContact)
-      );
+    let members: Member[] = [];
+    if (isEmail) {
+      members = await db
+        .select()
+        .from(schema.members)
+        .where(sql`LOWER(${schema.members.email}) = LOWER(${normalizedContact})`) as Member[];
+    } else {
+      const digits10 = normalizePhoneDigits10(body.contact);
+      if (!digits10) {
+        return reply.code(404).send({ error: 'No member found' });
+      }
+      const candidates = await db
+        .select()
+        .from(schema.members)
+        .where(sql`${schema.members.phone} IS NOT NULL AND ${schema.members.phone} != ''`) as Member[];
+      members = candidates.filter((m) => normalizeStoredPhoneDigits10((m as any).phone) === digits10);
+    }
 
     if (members.length === 0) {
       return reply.code(404).send({ error: 'No member found' });
