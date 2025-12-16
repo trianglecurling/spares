@@ -65,10 +65,24 @@ async function ensureAdminMembersExist(): Promise<void> {
     const memberCount = Number(memberCountResult[0]?.count || 0);
     
     if (memberCount === 0) {
-      // No members exist - create admin members from config
-      const config = getDatabaseConfig();
-      if (config && config.adminEmails && config.adminEmails.length > 0) {
-        for (const email of config.adminEmails) {
+      // No members exist - create server admin members from SERVER_ADMINS env var and database config
+      const dbConfig = getDatabaseConfig();
+      
+      // Combine SERVER_ADMINS env var and database config adminEmails
+      const serverAdminEmails = new Set<string>();
+      
+      // Add emails from SERVER_ADMINS environment variable
+      if (config.admins && config.admins.length > 0) {
+        config.admins.forEach(email => serverAdminEmails.add(normalizeEmail(email)));
+      }
+      
+      // Add emails from database config
+      if (dbConfig && dbConfig.adminEmails && dbConfig.adminEmails.length > 0) {
+        dbConfig.adminEmails.forEach(email => serverAdminEmails.add(normalizeEmail(email)));
+      }
+      
+      if (serverAdminEmails.size > 0) {
+        for (const email of serverAdminEmails) {
           const normalizedEmail = normalizeEmail(email);
           const emailName = normalizedEmail.split('@')[0];
           const name = emailName
@@ -86,14 +100,15 @@ async function ensureAdminMembersExist(): Promise<void> {
             await db.insert(schema.members).values({
               name,
               email: normalizedEmail,
-              is_admin: 1,
+              is_admin: 0,
+              is_server_admin: 1,
               email_subscribed: 1,
               opted_in_sms: 0,
               first_login_completed: 0,
               email_visible: 0,
               phone_visible: 0,
             });
-            console.log(`Created admin member: ${normalizedEmail}`);
+            console.log(`Created server admin member: ${normalizedEmail}`);
           }
         }
         adminMembersCreated = true;

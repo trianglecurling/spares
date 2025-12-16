@@ -51,7 +51,10 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       phone TEXT,
+      valid_through DATE,
+      spare_only INTEGER DEFAULT 0,
       is_admin INTEGER DEFAULT 0,
+      is_server_admin INTEGER DEFAULT 0,
       opted_in_sms INTEGER DEFAULT 0,
       email_subscribed INTEGER DEFAULT 1,
       first_login_completed INTEGER DEFAULT 0,
@@ -111,6 +114,17 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_league_draw_times_league_id ON league_draw_times(league_id);
+
+    -- League exceptions (dates when a league does NOT run)
+    CREATE TABLE IF NOT EXISTS league_exceptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      exception_date DATE NOT NULL,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, exception_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_exceptions_league_id ON league_exceptions(league_id);
 
     -- Member availability for leagues
     CREATE TABLE IF NOT EXISTS member_availability (
@@ -202,6 +216,9 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   const migrations = [
     { sql: 'ALTER TABLE members ADD COLUMN email_visible INTEGER DEFAULT 0', table: 'members', column: 'email_visible' },
     { sql: 'ALTER TABLE members ADD COLUMN phone_visible INTEGER DEFAULT 0', table: 'members', column: 'phone_visible' },
+    { sql: 'ALTER TABLE members ADD COLUMN is_server_admin INTEGER DEFAULT 0', table: 'members', column: 'is_server_admin' },
+    { sql: 'ALTER TABLE members ADD COLUMN valid_through DATE', table: 'members', column: 'valid_through' },
+    { sql: 'ALTER TABLE members ADD COLUMN spare_only INTEGER DEFAULT 0', table: 'members', column: 'spare_only' },
     { sql: 'ALTER TABLE server_config ADD COLUMN azure_sender_display_name TEXT', table: 'server_config', column: 'azure_sender_display_name' },
     { sql: 'ALTER TABLE server_config ADD COLUMN twilio_account_sid TEXT', table: 'server_config', column: 'twilio_account_sid' },
     { sql: 'ALTER TABLE server_config ADD COLUMN twilio_campaign_sid TEXT', table: 'server_config', column: 'twilio_campaign_sid' },
@@ -213,6 +230,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_status TEXT DEFAULT NULL', table: 'spare_requests', column: 'notification_status' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN next_notification_at DATETIME', table: 'spare_requests', column: 'next_notification_at' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0', table: 'spare_requests', column: 'notification_paused' },
+    { sql: 'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'', table: 'members', column: 'theme_preference' },
   ];
 
   for (const migration of migrations) {
@@ -227,6 +245,22 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       }
       // Otherwise ignore - column already exists
     }
+  }
+
+  // Migrate existing admins to server admins
+  try {
+    // Convert existing admins (is_admin=1) to server admins (is_server_admin=1, is_admin=0)
+    // This only runs once - check if any members have is_admin=1 and is_server_admin=0
+    const checkStmt = db.prepare("SELECT COUNT(*) as count FROM members WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)");
+    const result = await getPrepared(checkStmt);
+    if (result && result.count > 0) {
+      const migrateStmt = db.prepare('UPDATE members SET is_server_admin = 1, is_admin = 0 WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)');
+      await runPrepared(migrateStmt);
+      console.log(`Migrated ${result.count} existing admin(s) to server admin(s)`);
+    }
+  } catch (e) {
+    // Ignore migration errors - column might not exist yet or already migrated
+    console.log('Admin migration skipped (may already be complete)');
   }
 
   // Handle Twilio field migration (SQLite-specific, but safe to run on Postgres)
@@ -282,7 +316,10 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       phone TEXT,
+      valid_through DATE,
+      spare_only INTEGER DEFAULT 0,
       is_admin INTEGER DEFAULT 0,
+      is_server_admin INTEGER DEFAULT 0,
       opted_in_sms INTEGER DEFAULT 0,
       email_subscribed INTEGER DEFAULT 1,
       first_login_completed INTEGER DEFAULT 0,
@@ -342,6 +379,17 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_league_draw_times_league_id ON league_draw_times(league_id);
+
+    -- League exceptions (dates when a league does NOT run)
+    CREATE TABLE IF NOT EXISTS league_exceptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      exception_date DATE NOT NULL,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, exception_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_exceptions_league_id ON league_exceptions(league_id);
 
     -- Member availability for leagues
     CREATE TABLE IF NOT EXISTS member_availability (
@@ -433,6 +481,9 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   const migrations = [
     'ALTER TABLE members ADD COLUMN email_visible INTEGER DEFAULT 0',
     'ALTER TABLE members ADD COLUMN phone_visible INTEGER DEFAULT 0',
+    'ALTER TABLE members ADD COLUMN is_server_admin INTEGER DEFAULT 0',
+    'ALTER TABLE members ADD COLUMN valid_through DATE',
+    'ALTER TABLE members ADD COLUMN spare_only INTEGER DEFAULT 0',
     'ALTER TABLE server_config ADD COLUMN azure_sender_display_name TEXT',
     'ALTER TABLE server_config ADD COLUMN twilio_account_sid TEXT',
     'ALTER TABLE server_config ADD COLUMN twilio_campaign_sid TEXT',
@@ -444,6 +495,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE spare_requests ADD COLUMN notification_status TEXT DEFAULT NULL',
     'ALTER TABLE spare_requests ADD COLUMN next_notification_at DATETIME',
     'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0',
+    'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'',
   ];
 
   for (const migrationSQL of migrations) {
@@ -477,4 +529,19 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE INDEX IF NOT EXISTS idx_notification_queue_order ON spare_request_notification_queue(spare_request_id, queue_order);
     CREATE INDEX IF NOT EXISTS idx_notification_queue_notified ON spare_request_notification_queue(spare_request_id, notified_at);
   `);
+
+  // Migrate existing admins to server admins (sync version)
+  try {
+    // Convert existing admins (is_admin=1) to server admins (is_server_admin=1, is_admin=0)
+    const checkStmt = db.prepare("SELECT COUNT(*) as count FROM members WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)");
+    const result = checkStmt.get();
+    if (result && (result as any).count > 0) {
+      const migrateStmt = db.prepare('UPDATE members SET is_server_admin = 1, is_admin = 0 WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)');
+      migrateStmt.run();
+      console.log(`Migrated ${(result as any).count} existing admin(s) to server admin(s)`);
+    }
+  } catch (e) {
+    // Ignore migration errors - column might not exist yet or already migrated
+    console.log('Admin migration skipped (may already be complete)');
+  }
 }

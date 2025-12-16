@@ -77,21 +77,21 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <div className="flex-grow flex items-center justify-center px-4">
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      <div className="flex-grow flex items-center justify-center px-4 text-gray-900 dark:text-gray-100">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
-            <h1 className="text-4xl font-bold mb-2" style={{ color: '#121033' }}>
+            <h1 className="text-4xl font-bold mb-2 text-[#121033] dark:text-gray-100">
               Triangle Curling
             </h1>
-            <p className="text-gray-600">Spare Management System</p>
+            <p className="text-gray-600 dark:text-gray-400">Spare Management System</p>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
             {step === 'contact' && (
               <form onSubmit={handleRequestCode} className="space-y-4">
                 <div>
-                  <label htmlFor="contact" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="contact" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Email or Phone Number
                   </label>
                   <input
@@ -99,14 +99,14 @@ export default function Login() {
                     id="contact"
                     value={contact}
                     onChange={(e) => setContact(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                     placeholder="your.email@example.com"
                     required
                   />
                 </div>
 
                 {error && (
-                  <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
+                  <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded">
                     {error}
                   </div>
                 )}
@@ -120,7 +120,7 @@ export default function Login() {
             {step === 'code' && (
               <form onSubmit={handleVerifyCode} className="space-y-4">
                 <div>
-                  <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Enter the 6-digit code
                   </label>
                   <input
@@ -128,19 +128,19 @@ export default function Login() {
                     id="code"
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md text-center text-2xl tracking-widest focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md text-center text-2xl tracking-widest focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                     placeholder="000000"
                     maxLength={6}
                     required
                     autoFocus
                   />
-                  <p className="text-sm text-gray-500 mt-2">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                     Code sent to {contact}
                   </p>
                 </div>
 
                 {error && (
-                  <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
+                  <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded">
                     {error}
                   </div>
                 )}
@@ -167,12 +167,12 @@ export default function Login() {
 
             {step === 'select' && (
               <div className="space-y-4">
-                <p className="text-sm text-gray-600 mb-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                   Multiple members share this contact. Select your name:
                 </p>
 
                 {error && (
-                  <div className="text-red-600 text-sm bg-red-50 p-3 rounded mb-4">
+                  <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded mb-4">
                     {error}
                   </div>
                 )}
@@ -183,7 +183,7 @@ export default function Login() {
                       key={member.id}
                       onClick={() => handleSelectMember(member.id)}
                       disabled={loading}
-                      className="w-full px-4 py-3 text-left border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+                      className="w-full px-4 py-3 text-left border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                     >
                       {member.name}
                     </button>

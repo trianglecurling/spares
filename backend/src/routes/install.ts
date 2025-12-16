@@ -181,26 +181,27 @@ async function createAdminMembers(adminEmails: string[]): Promise<{ created: num
     const existingMember = existingMembers[0];
     
     if (!existingMember) {
-      // Create new admin member
+      // Create new server admin member (adminEmails from database config are server admins)
       await db.insert(schema.members).values({
         name,
         email: normalizedEmail,
-        is_admin: 1,
+        is_admin: 0,
+        is_server_admin: 1,
         email_subscribed: 1,
         opted_in_sms: 0,
         first_login_completed: 0,
         email_visible: 0,
         phone_visible: 0,
       });
-      console.log(`Created admin member: ${normalizedEmail}`);
+      console.log(`Created server admin member: ${normalizedEmail}`);
       created++;
     } else {
-      // Update existing member to be admin
+      // Update existing member to be server admin
       await db
         .update(schema.members)
-        .set({ is_admin: 1 })
+        .set({ is_admin: 0, is_server_admin: 1 })
         .where(eq(schema.members.id, existingMember.id));
-      console.log(`Updated existing member to admin: ${normalizedEmail}`);
+      console.log(`Updated existing member to server admin: ${normalizedEmail}`);
       updated++;
     }
   }

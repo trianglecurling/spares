@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
+import { useAlert } from '../../contexts/AlertContext';
 import Button from '../../components/Button';
 
 export default function AdminDatabaseConfig() {
   const navigate = useNavigate();
+  const { showAlert } = useAlert();
   const [databaseType, setDatabaseType] = useState<'sqlite' | 'postgres'>('sqlite');
   const [sqlitePath, setSqlitePath] = useState('./data/spares.sqlite');
   const [postgresHost, setPostgresHost] = useState('');
@@ -97,7 +99,7 @@ export default function AdminDatabaseConfig() {
 
       await api.post('/database-config', payload);
       
-      alert('Database configuration updated successfully! The server needs to be restarted for changes to take effect. Please restart the server using: sudo systemctl restart spares-production');
+      showAlert('Database configuration updated successfully! The server needs to be restarted for changes to take effect. Please restart the server using: sudo systemctl restart spares-production', 'success');
       navigate('/admin/config');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to update database configuration. Please check your settings and try again.');
@@ -108,7 +110,7 @@ export default function AdminDatabaseConfig() {
   if (loadingConfig) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500">Loading...</div>
+        <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
       </Layout>
     );
   }
@@ -124,19 +126,19 @@ export default function AdminDatabaseConfig() {
           >
             ← Back to Server Config
           </Button>
-          <h1 className="text-3xl font-bold" style={{ color: '#121033' }}>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
             Configure Database
           </h1>
-          <p className="text-gray-600 mt-2">
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
             Update your database connection settings. Changes will require a server restart.
           </p>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Database Type Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Database Type
               </label>
               <div className="space-y-2">
@@ -149,7 +151,7 @@ export default function AdminDatabaseConfig() {
                     onChange={(e) => setDatabaseType(e.target.value as 'sqlite' | 'postgres')}
                     className="mr-2"
                   />
-                  <span>SQLite (Local database file)</span>
+                  <span className="dark:text-gray-300">SQLite (Local database file)</span>
                 </label>
                 <label className="flex items-center">
                   <input
@@ -160,7 +162,7 @@ export default function AdminDatabaseConfig() {
                     onChange={(e) => setDatabaseType(e.target.value as 'sqlite' | 'postgres')}
                     className="mr-2"
                   />
-                  <span>PostgreSQL (Remote database server)</span>
+                  <span className="dark:text-gray-300">PostgreSQL (Remote database server)</span>
                 </label>
               </div>
             </div>
@@ -168,17 +170,17 @@ export default function AdminDatabaseConfig() {
             {/* SQLite Configuration */}
             {databaseType === 'sqlite' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Database File Path
                 </label>
                 <input
                   type="text"
                   value={sqlitePath}
                   onChange={(e) => setSqlitePath(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                   placeholder="./data/spares.sqlite"
                 />
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   Path relative to the backend directory where the database file will be stored.
                 </p>
               </div>
@@ -188,14 +190,14 @@ export default function AdminDatabaseConfig() {
             {databaseType === 'postgres' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Host
                   </label>
                   <input
                     type="text"
                     value={postgresHost}
                     onChange={(e) => setPostgresHost(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                     placeholder="your-server.postgres.database.azure.com"
                     required={databaseType === 'postgres'}
                   />
@@ -203,28 +205,28 @@ export default function AdminDatabaseConfig() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Port
                     </label>
                     <input
                       type="number"
                       value={postgresPort}
                       onChange={(e) => setPostgresPort(parseInt(e.target.value) || 5432)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                       min="1"
                       max="65535"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Database Name
                     </label>
                     <input
                       type="text"
                       value={postgresDatabase}
                       onChange={(e) => setPostgresDatabase(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                       placeholder="spares"
                       required={databaseType === 'postgres'}
                     />
@@ -232,30 +234,30 @@ export default function AdminDatabaseConfig() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Username
                   </label>
                   <input
                     type="text"
                     value={postgresUsername}
                     onChange={(e) => setPostgresUsername(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                     required={databaseType === 'postgres'}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Password
                   </label>
                   <input
                     type="password"
                     value={postgresPassword}
                     onChange={(e) => setPostgresPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                     placeholder={postgresPassword ? '' : 'Leave blank to keep current password'}
                   />
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                     Leave blank to keep the current password.
                   </p>
                 </div>
@@ -268,7 +270,7 @@ export default function AdminDatabaseConfig() {
                       onChange={(e) => setPostgresSSL(e.target.checked)}
                       className="mr-2"
                     />
-                    <span className="text-sm text-gray-700">Use SSL connection</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Use SSL connection</span>
                   </label>
                 </div>
               </div>
@@ -276,24 +278,24 @@ export default function AdminDatabaseConfig() {
 
             {/* Admin Emails */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Administrator Email Addresses
               </label>
               <textarea
                 value={adminEmails}
                 onChange={(e) => setAdminEmails(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                 rows={3}
                 placeholder="admin1@example.com, admin2@example.com"
                 required
               />
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 Enter email addresses separated by commas. These users will have administrator privileges.
               </p>
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded">
                 {error}
               </div>
             )}

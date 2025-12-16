@@ -2,6 +2,7 @@ import { EmailClient, EmailMessage } from '@azure/communication-email';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
+import { formatDateForEmail, formatTimeForEmail } from '../utils/dateFormat.js';
 
 let emailClient: EmailClient | null = null;
 let cachedConfig: { connectionString: string; senderEmail: string; disableEmail: boolean; testMode: boolean } | null = null;
@@ -103,18 +104,22 @@ function logEmail(options: EmailOptions, fullHtmlContent: string, prefix: string
 }
 
 export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<void> {
+  console.log(`[Email Service] sendEmail called for ${options.to}`);
   const fullHtmlContent = buildFullHtmlContent(options.htmlContent, memberToken);
 
   // Special case: Never send emails to @example.com addresses (log instead)
   if (options.to.toLowerCase().endsWith('@example.com')) {
+    console.log(`[Email Service] Blocking email to @example.com address: ${options.to}`);
     logEmail(options, fullHtmlContent, 'EXAMPLE.COM BLOCKED');
     return;
   }
 
   const dbConfig = await getConfigFromDatabase();
+  console.log(`[Email Service] Config: disableEmail=${dbConfig.disableEmail}, testMode=${dbConfig.testMode}`);
   
   // If email is disabled or in test mode, print to console instead of sending
   if (dbConfig.disableEmail || dbConfig.testMode) {
+    console.log(`[Email Service] Email disabled or test mode - logging email instead of sending`);
     logEmail(options, fullHtmlContent, 'TEST MODE');
     return;
   }
@@ -183,7 +188,8 @@ export async function sendSpareRequestEmail(
     message?: string;
     invitedMemberNames?: string[]; // For private requests
   },
-  acceptToken: string
+  acceptToken: string,
+  spareRequestId: number
 ): Promise<void> {
   const positionText = requestDetails.position
     ? ` as <strong>${requestDetails.position}</strong>`
@@ -203,27 +209,30 @@ export async function sendSpareRequestEmail(
     `
     : '';
 
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+
   const htmlContent = `
     <h2>New Spare Request</h2>
     <p>Hi ${recipientName},</p>
     <p>${requesterName} has requested a spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
-    <p><strong>Date:</strong> ${requestDetails.gameDate}<br>
-    <strong>Time:</strong> ${requestDetails.gameTime}</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
     ${invitedMembersList}
     ${messageText}
     <p>
-      <a href="${config.frontendUrl}/spare-request/respond?token=${acceptToken}" 
+      <a href="${config.frontendUrl}/spare-request/respond?token=${acceptToken}&requestId=${spareRequestId}" 
          style="display: inline-block; background-color: #01B9BC; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 10px;">
         Accept This Spare
       </a>
     </p>
-    <p style="color: #666; font-size: 14px;">Or copy this link: ${config.frontendUrl}/spare-request/respond?token=${acceptToken}</p>
+    <p style="color: #666; font-size: 14px;">Or copy this link: ${config.frontendUrl}/spare-request/respond?token=${acceptToken}&requestId=${spareRequestId}</p>
   `;
 
   await sendEmail(
     {
       to: recipientEmail,
-      subject: `Spare needed: ${requestDetails.gameDate} at ${requestDetails.gameTime}`,
+      subject: `Spare needed: ${formattedDate} at ${formattedTime}`,
       htmlContent,
       recipientName,
     },
@@ -246,13 +255,15 @@ export async function sendSpareResponseEmail(
 ): Promise<void> {
   const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
   const commentText = comment ? `<p><em>Comment: "${comment}"</em></p>` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
 
   const htmlContent = `
     <h2>Spare Request Filled</h2>
     <p>Hi ${requesterName},</p>
     <p><strong>${responderName}</strong> has agreed to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
-    <p><strong>Date:</strong> ${requestDetails.gameDate}<br>
-    <strong>Time:</strong> ${requestDetails.gameTime}</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
     ${commentText}
   `;
 
@@ -281,13 +292,15 @@ export async function sendSpareCancellationEmail(
   requesterToken?: string
 ): Promise<void> {
   const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
 
   const htmlContent = `
     <h2>Spare Cancellation</h2>
     <p>Hi ${requesterName},</p>
     <p><strong>${responderName}</strong> has canceled their offer to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
-    <p><strong>Date:</strong> ${requestDetails.gameDate}<br>
-    <strong>Time:</strong> ${requestDetails.gameTime}</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
     <p><strong>Reason:</strong> "${comment}"</p>
     <p>You can re-issue this spare request from your "My spare requests" page.</p>
   `;
@@ -295,7 +308,7 @@ export async function sendSpareCancellationEmail(
   await sendEmail(
     {
       to: requesterEmail,
-      subject: `Spare cancellation: ${requestDetails.gameDate} at ${requestDetails.gameTime}`,
+      subject: `Spare cancellation: ${formattedDate} at ${formattedTime}`,
       htmlContent,
       recipientName: requesterName,
     },

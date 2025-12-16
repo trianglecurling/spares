@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { HiOutlineClipboardDocument, HiPlus } from 'react-icons/hi2';
 import Layout from '../components/Layout';
 import api from '../utils/api';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import NotificationModal from '../components/NotificationModal';
+import { useAlert } from '../contexts/AlertContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 interface MySpareRequest {
   id: number;
@@ -31,6 +35,8 @@ interface NotificationStatus {
 }
 
 export default function MyRequests() {
+  const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
   const [requests, setRequests] = useState<MySpareRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [reissueRequest, setReissueRequest] = useState<MySpareRequest | null>(null);
@@ -38,6 +44,11 @@ export default function MyRequests() {
   const [reissuing, setReissuing] = useState(false);
   const [notificationStatuses, setNotificationStatuses] = useState<Record<number, NotificationStatus>>({});
   const [pausing, setPausing] = useState<number | null>(null);
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    message: string;
+    variant: 'success' | 'error';
+  }>({ isOpen: false, message: '', variant: 'success' });
 
   useEffect(() => {
     loadRequests();
@@ -92,16 +103,36 @@ export default function MyRequests() {
   };
 
   const handleCancel = async (id: number) => {
-    if (!confirm('Are you sure you want to cancel this spare request?')) {
+    const confirmed = await confirm({
+      title: 'Cancel spare request',
+      message: 'Are you sure you want to cancel this spare request?',
+      variant: 'danger',
+      confirmText: 'Yes, cancel request',
+      cancelText: 'Never mind',
+    });
+
+    if (!confirmed) {
       return;
     }
+
+    // Find the request to get details for the success message
+    const request = requests.find((r) => r.id === id);
 
     try {
       await api.post(`/spares/${id}/cancel`);
       setRequests(requests.map((r) => (r.id === id ? { ...r, status: 'cancelled' } : r)));
+      
+      // Show success notification
+      if (request) {
+        setNotification({
+          isOpen: true,
+          message: `Your spare request for ${request.requestedForName} has been successfully canceled.`,
+          variant: 'success',
+        });
+      }
     } catch (error) {
       console.error('Failed to cancel request:', error);
-      alert('Failed to cancel request');
+      showAlert('Failed to cancel request', 'error');
     }
   };
 
@@ -120,12 +151,14 @@ export default function MyRequests() {
       });
       
       if (response.data.notificationsQueued !== undefined) {
-        alert(
-          `Re-issued spare request. ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`
+        showAlert(
+          `Re-issued spare request. ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`,
+          'success'
         );
       } else {
-        alert(
-          `Re-issued spare request. ${response.data.notificationsSent || 0} notification(s) sent.`
+        showAlert(
+          `Re-issued spare request. ${response.data.notificationsSent || 0} notification(s) sent.`,
+          'success'
         );
       }
       
@@ -134,7 +167,7 @@ export default function MyRequests() {
       setReissueMessage('');
     } catch (error) {
       console.error('Failed to re-issue request:', error);
-      alert('Failed to re-issue request');
+      showAlert('Failed to re-issue request', 'error');
     } finally {
       setReissuing(false);
     }
@@ -153,7 +186,7 @@ export default function MyRequests() {
       }));
     } catch (error) {
       console.error('Failed to pause notifications:', error);
-      alert('Failed to pause notifications');
+      showAlert('Failed to pause notifications', 'error');
     } finally {
       setPausing(null);
     }
@@ -172,7 +205,7 @@ export default function MyRequests() {
       }));
     } catch (error) {
       console.error('Failed to unpause notifications:', error);
-      alert('Failed to unpause notifications');
+      showAlert('Failed to unpause notifications', 'error');
     } finally {
       setPausing(null);
     }
@@ -224,9 +257,9 @@ export default function MyRequests() {
 
   const getStatusBadge = (status: string) => {
     const colors = {
-      open: 'bg-blue-100 text-blue-800',
-      filled: 'bg-green-100 text-green-800',
-      cancelled: 'bg-gray-100 text-gray-800',
+      open: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200',
+      filled: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200',
+      cancelled: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300',
     };
 
     return (
@@ -240,34 +273,42 @@ export default function MyRequests() {
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold" style={{ color: '#121033' }}>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
             My spare requests
           </h1>
           <Link to="/request-spare">
-            <Button>New request</Button>
+            <Button>
+              <HiPlus className="w-5 h-5 mr-1" />
+              New request
+            </Button>
           </Link>
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : requests.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg shadow">
-            <div className="text-6xl mb-4">📋</div>
-            <p className="text-gray-600 text-lg mb-4">
+          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div className="flex justify-center mb-4">
+              <HiOutlineClipboardDocument className="w-16 h-16 text-gray-400 dark:text-gray-500" />
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">
               You have no current spare requests.
             </p>
             <Link to="/request-spare">
-              <Button>Create your first request</Button>
+              <Button>
+                <HiPlus className="w-5 h-5 mr-1" />
+                New spare request
+              </Button>
             </Link>
           </div>
         ) : (
           <div className="space-y-4">
             {requests.map((request) => (
-              <div key={request.id} className="bg-white rounded-lg shadow p-6">
+              <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <div className="flex items-center space-x-2 mb-2">
-                      <h3 className="text-lg font-semibold">
+                      <h3 className="text-lg font-semibold dark:text-gray-100">
                         Spare for {request.requestedForName}
                       </h3>
                       {getStatusBadge(request.status)}
@@ -278,40 +319,68 @@ export default function MyRequests() {
                       )}
                     </div>
 
-                    <div className="text-gray-600 space-y-1">
+                    <div className="text-gray-600 dark:text-gray-400 space-y-1">
                       <p>
-                        <span className="font-medium">When:</span> {formatDate(request.gameDate)}{' '}
+                        <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
                         at {formatTime(request.gameTime)}
                       </p>
                       <p>
-                        <span className="font-medium">Type:</span>{' '}
+                        <span className="font-medium dark:text-gray-300">Type:</span>{' '}
                         {request.requestType === 'public' ? 'Public' : 'Private'}
                       </p>
                       {request.message && (
                         <p className="italic mt-2">"{request.message}"</p>
                       )}
                       {request.status === 'open' && notificationStatuses[request.id] && (
-                        <div className="mt-3 p-3 bg-blue-50 rounded-md border border-blue-200">
-                          {notificationStatuses[request.id].notificationStatus === 'in_progress' ? (
-                            <>
-                              <p className="text-sm text-blue-800">
-                                <span className="font-medium">Notifications in progress...</span>{' '}
-                                {notificationStatuses[request.id].notifiedMembers} of {notificationStatuses[request.id].totalMembers} members notified.
-                                {notificationStatuses[request.id].notificationPaused && (
-                                  <span className="ml-2 font-semibold text-orange-600">(Paused)</span>
-                                )}
-                              </p>
-                            </>
-                          ) : notificationStatuses[request.id].notificationStatus === 'completed' ? (
-                            <p className="text-sm text-green-800">
-                              <span className="font-medium">All notifications sent.</span>{' '}
-                              {notificationStatuses[request.id].totalMembers} members notified.
-                            </p>
-                          ) : notificationStatuses[request.id].notificationStatus === 'stopped' ? (
-                            <p className="text-sm text-gray-600">
-                              Notifications stopped (request filled or cancelled).
-                            </p>
-                          ) : null}
+                        <div className={`mt-3 p-3 rounded-md border ${
+                          (() => {
+                            const status = notificationStatuses[request.id];
+                            const allNotified = status.notifiedMembers === status.totalMembers;
+                            if (status.notificationStatus === 'completed' || allNotified) {
+                              return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
+                            }
+                            if (status.notificationStatus === 'stopped') {
+                              return 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700';
+                            }
+                            return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
+                          })()
+                        }`}>
+                          {(() => {
+                            const status = notificationStatuses[request.id];
+                            const allNotified = status.notifiedMembers === status.totalMembers;
+                            
+                            // If all members are notified, show completed message even if status is 'in_progress'
+                            if (status.notificationStatus === 'completed' || allNotified) {
+                              return (
+                                <p className="text-sm text-green-800 dark:text-green-300">
+                                  <span className="font-medium">All notifications sent.</span>{' '}
+                                  {status.totalMembers} members notified.
+                                </p>
+                              );
+                            }
+                            
+                            if (status.notificationStatus === 'in_progress') {
+                              return (
+                                <p className="text-sm text-blue-800 dark:text-blue-300">
+                                  <span className="font-medium">Notifications in progress...</span>{' '}
+                                  {status.notifiedMembers} of {status.totalMembers} members notified.
+                                  {status.notificationPaused && (
+                                    <span className="ml-2 font-semibold text-orange-600 dark:text-orange-400">(Paused)</span>
+                                  )}
+                                </p>
+                              );
+                            }
+                            
+                            if (status.notificationStatus === 'stopped') {
+                              return (
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  Notifications stopped (request filled or cancelled).
+                                </p>
+                              );
+                            }
+                            
+                            return null;
+                          })()}
                         </div>
                       )}
                     </div>
@@ -320,25 +389,32 @@ export default function MyRequests() {
                   <div className="flex gap-2 ml-4">
                     {request.status === 'open' && (
                       <>
-                        {notificationStatuses[request.id]?.notificationStatus === 'in_progress' && (
-                          notificationStatuses[request.id].notificationPaused ? (
-                            <Button
-                              variant="secondary"
-                              onClick={() => handleUnpauseNotifications(request.id)}
-                              disabled={pausing === request.id}
-                            >
-                              {pausing === request.id ? 'Unpausing...' : 'Unpause notifications'}
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="secondary"
-                              onClick={() => handlePauseNotifications(request.id)}
-                              disabled={pausing === request.id}
-                            >
-                              {pausing === request.id ? 'Pausing...' : 'Pause notifications'}
-                            </Button>
-                          )
-                        )}
+                        {(() => {
+                          const status = notificationStatuses[request.id];
+                          const allNotified = status && status.notifiedMembers === status.totalMembers;
+                          const isInProgress = status?.notificationStatus === 'in_progress' && !allNotified;
+                          
+                          if (isInProgress) {
+                            return status.notificationPaused ? (
+                              <Button
+                                variant="secondary"
+                                onClick={() => handleUnpauseNotifications(request.id)}
+                                disabled={pausing === request.id}
+                              >
+                                {pausing === request.id ? 'Unpausing...' : 'Unpause notifications'}
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                onClick={() => handlePauseNotifications(request.id)}
+                                disabled={pausing === request.id}
+                              >
+                                {pausing === request.id ? 'Pausing...' : 'Pause notifications'}
+                              </Button>
+                            );
+                          }
+                          return null;
+                        })()}
                         {shouldShowReissueButton(request) && (
                           <Button
                             variant="secondary"
@@ -359,28 +435,28 @@ export default function MyRequests() {
                 </div>
 
                 {request.status === 'filled' && request.filledByName && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <p className="text-green-700 font-medium">
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-green-700 dark:text-green-400 font-medium">
                       ✓ Filled by {request.filledByName}
                     </p>
                     {request.filledAt && (
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         on {new Date(request.filledAt).toLocaleDateString()} at{' '}
                         {new Date(request.filledAt).toLocaleTimeString()}
                       </p>
                     )}
                     {request.sparerComment && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-md">
-                        <p className="text-sm font-medium text-gray-700 mb-1">Message from {request.filledByName}:</p>
-                        <p className="text-sm text-gray-600 italic">"{request.sparerComment}"</p>
+                      <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message from {request.filledByName}:</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 italic">"{request.sparerComment}"</p>
                       </div>
                     )}
                   </div>
                 )}
 
                 {request.status === 'cancelled' && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <p className="text-gray-600">This request was cancelled</p>
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-gray-600 dark:text-gray-400">This request was cancelled</p>
                   </div>
                 )}
               </div>
@@ -399,24 +475,24 @@ export default function MyRequests() {
       >
         {reissueRequest && (
           <div className="space-y-4">
-            <p className="text-gray-700">
+            <p className="text-gray-700 dark:text-gray-300">
               You're about to re-send notifications for your spare request for <strong>{reissueRequest.requestedForName}</strong> on{' '}
               {formatDate(reissueRequest.gameDate)} at {formatTime(reissueRequest.gameTime)}.
             </p>
 
             <div>
-              <label htmlFor="reissueMessage" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="reissueMessage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Message (optional)
               </label>
               <textarea
                 id="reissueMessage"
                 value={reissueMessage}
                 onChange={(e) => setReissueMessage(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 rows={4}
                 placeholder="Add or update your message for potential spares..."
               />
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Leave blank to use the original message, or update it with new information.
               </p>
             </div>
@@ -444,6 +520,14 @@ export default function MyRequests() {
           </div>
         )}
       </Modal>
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        message={notification.message}
+        variant={notification.variant}
+        onClose={() => setNotification({ ...notification, isOpen: false })}
+        autoCloseMs={notification.variant === 'success' ? 3000 : 0}
+      />
     </Layout>
   );
 }

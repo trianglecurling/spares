@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useAlert } from '../contexts/AlertContext';
 import Layout from '../components/Layout';
 import api from '../utils/api';
 import Button from '../components/Button';
@@ -34,7 +35,9 @@ interface SpareRequestPayload {
 
 export default function RequestSpare() {
   const { member } = useAuth();
+  const { showAlert } = useAlert();
   const navigate = useNavigate();
+  const isSpareOnly = Boolean(member?.spareOnly);
   
   // Form State
   const [requestedForName, setRequestedForName] = useState(member?.name || '');
@@ -65,6 +68,10 @@ export default function RequestSpare() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (isSpareOnly) {
+      setLoading(false);
+      return;
+    }
     // Load members and leagues
     const initData = async () => {
       setLoading(true);
@@ -82,7 +89,7 @@ export default function RequestSpare() {
       }
     };
     initData();
-  }, [member?.id]);
+  }, [member?.id, isSpareOnly]);
 
   // Load upcoming games when league changes
   useEffect(() => {
@@ -146,11 +153,15 @@ export default function RequestSpare() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (isSpareOnly) {
+      showAlert('Your account is set to spare-only, so you cannot request a spare.', 'error');
+      return;
+    }
     setSubmitting(true);
 
     try {
       if (!selectedGameSlot) {
-        alert('Please select a game time');
+        showAlert('Please select a game time', 'warning');
         setSubmitting(false);
         return;
       }
@@ -168,7 +179,7 @@ export default function RequestSpare() {
 
       if (requestType === 'private') {
         if (selectedMembers.length === 0) {
-          alert('Please select at least one member for a private request');
+          showAlert('Please select at least one member for a private request', 'warning');
           setSubmitting(false);
           return;
         }
@@ -178,18 +189,20 @@ export default function RequestSpare() {
       const response = await api.post('/spares', payload);
 
       if (response.data.notificationsQueued !== undefined) {
-        alert(
-          `Spare request created! ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`
+        showAlert(
+          `Spare request created! ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`,
+          'success'
         );
       } else {
-        alert(
-          `Spare request created! ${response.data.notificationsSent || 0} notification(s) sent.`
+        showAlert(
+          `Spare request created! ${response.data.notificationsSent || 0} notification(s) sent.`,
+          'success'
         );
       }
       navigate('/my-requests');
     } catch (error) {
       console.error('Failed to create spare request:', error);
-      alert('Failed to create spare request. Please try again.');
+      showAlert('Failed to create spare request. Please try again.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -257,17 +270,24 @@ export default function RequestSpare() {
     <Layout>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2" style={{ color: '#121033' }}>
+          <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
             Request a spare
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             Fill out the details below to request a spare for your game.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
+        {isSpareOnly && (
+          <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300 rounded-lg p-4">
+            Your account is marked as <span className="font-semibold">spare-only</span>, so you can’t create spare requests.
+            If this is a mistake, please ask an admin to update your account.
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-6">
           <div>
-            <label htmlFor="requestedForName" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="requestedForName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Person who needs the spare <span className="text-red-500">*</span>
             </label>
             <input
@@ -275,24 +295,24 @@ export default function RequestSpare() {
               id="requestedForName"
               value={requestedForName}
               onChange={(e) => setRequestedForName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
               required
             />
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Usually yourself, but can be someone else if requesting on their behalf
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="league" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="league" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 League <span className="text-red-500">*</span>
               </label>
               <select
                 id="league"
                 value={selectedLeagueId}
                 onChange={(e) => setSelectedLeagueId(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 required
                 disabled={loading}
               >
@@ -306,14 +326,14 @@ export default function RequestSpare() {
             </div>
 
             <div>
-              <label htmlFor="gameSlot" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="gameSlot" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Game date & time <span className="text-red-500">*</span>
               </label>
               <select
                 id="gameSlot"
                 value={selectedGameSlot}
                 onChange={(e) => setSelectedGameSlot(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 required
                 disabled={!selectedLeagueId || loadingGames}
               >
@@ -337,14 +357,14 @@ export default function RequestSpare() {
           </div>
 
           <div>
-            <label htmlFor="position" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="position" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Position (optional)
             </label>
             <select
               id="position"
               value={position}
               onChange={(e) => setPosition(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
             >
               <option value="">Any position</option>
               <option value="lead">Lead</option>
@@ -355,25 +375,25 @@ export default function RequestSpare() {
           </div>
 
           <div>
-            <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="message" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Personal message (optional)
             </label>
             <textarea
               id="message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
               rows={3}
               placeholder="Any additional details, such as who is on your team, who the opponent is, what are the stakes of this game, etc."
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Request type <span className="text-red-500">*</span>
             </label>
             <div className="space-y-2">
-              <label className="flex items-start p-4 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50">
+              <label className="flex items-start p-4 border border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <input
                   type="radio"
                   name="requestType"
@@ -383,14 +403,14 @@ export default function RequestSpare() {
                   className="mt-1 mr-3"
                 />
                 <div>
-                  <div className="font-medium">Public</div>
-                  <div className="text-sm text-gray-600">
+                  <div className="font-medium dark:text-gray-100">Public</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
                     Open to all members
                   </div>
                 </div>
               </label>
 
-              <label className="flex items-start p-4 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50">
+              <label className="flex items-start p-4 border border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <input
                   type="radio"
                   name="requestType"
@@ -400,8 +420,8 @@ export default function RequestSpare() {
                   className="mt-1 mr-3"
                 />
                 <div>
-                  <div className="font-medium">Private</div>
-                  <div className="text-sm text-gray-600">
+                  <div className="font-medium dark:text-gray-100">Private</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
                     Invite specific members only
                   </div>
                 </div>
@@ -411,7 +431,7 @@ export default function RequestSpare() {
 
           {requestType === 'private' && (
             <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Select members to invite <span className="text-red-500">*</span>
               </label>
               
@@ -448,13 +468,13 @@ export default function RequestSpare() {
                   }}
                   onFocus={() => setIsDropdownOpen(true)}
                   onKeyDown={handleKeyDown}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                   placeholder="Search for members..."
                   disabled={loading}
                 />
                 
                 {isDropdownOpen && searchTerm && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
                     {filteredMembers.length > 0 ? (
                       filteredMembers.map((m, index) => (
                         <button
@@ -462,15 +482,17 @@ export default function RequestSpare() {
                           type="button"
                           onClick={() => addMember(m.id)}
                           className={`w-full text-left px-4 py-2 focus:outline-none ${
-                            index === highlightedIndex ? 'bg-gray-100' : 'hover:bg-gray-50'
+                            index === highlightedIndex 
+                              ? 'bg-gray-100 dark:bg-gray-700' 
+                              : 'hover:bg-gray-50 dark:hover:bg-gray-700'
                           }`}
                         >
-                          <div className="font-medium">{m.name}</div>
-                          {m.email && <div className="text-xs text-gray-500">{m.email}</div>}
+                          <div className="font-medium dark:text-gray-100">{m.name}</div>
+                          {m.email && <div className="text-xs text-gray-500 dark:text-gray-400">{m.email}</div>}
                         </button>
                       ))
                     ) : (
-                      <div className="px-4 py-2 text-gray-500 text-sm">
+                      <div className="px-4 py-2 text-gray-500 dark:text-gray-400 text-sm">
                         No members found
                       </div>
                     )}
@@ -480,14 +502,14 @@ export default function RequestSpare() {
 
               {/* Available Members Box */}
               {selectedLeagueId && (
-                <div className="border border-gray-300 rounded-md p-4 bg-gray-50">
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                <div className="border border-gray-300 dark:border-gray-600 rounded-md p-4 bg-gray-50 dark:bg-gray-700/50">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                     Members available during {leagues.find(l => l.id.toString() === selectedLeagueId)?.name || 'this league'}
                   </label>
                   {loadingAvailableMembers ? (
-                    <div className="text-sm text-gray-500 text-center py-2">Loading...</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">Loading...</div>
                   ) : availableMembers.filter(m => !selectedMembers.includes(m.id)).length === 0 ? (
-                    <div className="text-sm text-gray-500 text-center py-2">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
                       {availableMembers.length === 0 
                         ? 'No members have set availability for this league'
                         : 'All available members have been selected'}
@@ -499,12 +521,12 @@ export default function RequestSpare() {
                         .map((m) => (
                           <div
                             key={m.id}
-                            className="flex items-center justify-between p-2 bg-white rounded border border-gray-200 hover:border-primary-teal transition-colors"
+                            className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600 hover:border-primary-teal transition-colors"
                           >
                             <div className="flex-1">
-                              <div className="font-medium text-sm">{m.name}</div>
+                              <div className="font-medium text-sm dark:text-gray-100">{m.name}</div>
                               {m.email && (
-                                <div className="text-xs text-gray-500">{m.email}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{m.email}</div>
                               )}
                             </div>
                             <button
@@ -522,13 +544,13 @@ export default function RequestSpare() {
               )}
 
               {loading && (
-                <div className="text-sm text-gray-500">Loading members...</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">Loading members...</div>
               )}
             </div>
           )}
 
           <div className="flex space-x-3">
-            <Button type="submit" disabled={submitting} className="flex-1">
+            <Button type="submit" disabled={submitting || isSpareOnly} className="flex-1">
               {submitting ? 'Submitting...' : 'Submit request'}
             </Button>
             <Button

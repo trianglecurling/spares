@@ -75,11 +75,20 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
           )
         );
     } else {
+      // Get existing can_skip value from any other record for this member
+      const existingRecords = await db
+        .select({ can_skip: schema.memberAvailability.can_skip })
+        .from(schema.memberAvailability)
+        .where(eq(schema.memberAvailability.member_id, member.id))
+        .limit(1);
+      
+      const canSkipValue = existingRecords.length > 0 ? existingRecords[0].can_skip : 0;
+
       await db.insert(schema.memberAvailability).values({
         member_id: member.id,
         league_id: body.leagueId,
         available: body.available ? 1 : 0,
-        can_skip: 0,
+        can_skip: canSkipValue,
       });
     }
 
@@ -96,16 +105,87 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     const body = setCanSkipSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
-    // Update all availability records for this member
-    await db
-      .update(schema.memberAvailability)
-      .set({
-        can_skip: body.canSkip ? 1 : 0,
-        updated_at: sql`CURRENT_TIMESTAMP`,
-      })
-      .where(eq(schema.memberAvailability.member_id, member.id));
+    // Check if member has any availability records
+    const existingRecords = await db
+      .select()
+      .from(schema.memberAvailability)
+      .where(eq(schema.memberAvailability.member_id, member.id))
+      .limit(1);
+
+    if (existingRecords.length > 0) {
+      // Update all existing availability records for this member
+      await db
+        .update(schema.memberAvailability)
+        .set({
+          can_skip: body.canSkip ? 1 : 0,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.memberAvailability.member_id, member.id));
+    } else {
+      // No records exist - create records for all leagues with can_skip set
+      const leagues = await db
+        .select()
+        .from(schema.leagues) as any[];
+
+      if (leagues.length > 0) {
+        await db.insert(schema.memberAvailability).values(
+          leagues.map((league) => ({
+            member_id: member.id,
+            league_id: league.id,
+            available: 0,
+            can_skip: body.canSkip ? 1 : 0,
+          }))
+        );
+      }
+    }
 
     return { success: true };
+  });
+
+  // Get a specific member's availability
+  fastify.get('/members/:memberId/availability', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const { memberId } = request.params as { memberId: string };
+    const targetMemberId = parseInt(memberId, 10);
+    const { db, schema } = getDrizzleDb();
+
+    // Get the target member's availability
+    const availability = await db
+      .select({
+        league_id: schema.memberAvailability.league_id,
+        available: schema.memberAvailability.available,
+        can_skip: schema.memberAvailability.can_skip,
+        league_name: schema.leagues.name,
+        league_day_of_week: schema.leagues.day_of_week,
+      })
+      .from(schema.memberAvailability)
+      .innerJoin(
+        schema.leagues,
+        eq(schema.memberAvailability.league_id, schema.leagues.id)
+      )
+      .where(eq(schema.memberAvailability.member_id, targetMemberId))
+      .orderBy(schema.leagues.day_of_week, schema.leagues.name);
+
+    // Get can_skip value (should be same across all records for a member)
+    const canSkip = availability.length > 0 ? availability[0].can_skip === 1 : false;
+
+    // Get only leagues where member is available
+    const availableLeagues = availability
+      .filter((a: any) => a.available === 1)
+      .map((a: any) => ({
+        leagueId: a.league_id,
+        leagueName: a.league_name,
+        dayOfWeek: a.league_day_of_week,
+      }));
+
+    return {
+      canSkip,
+      availableLeagues,
+    };
   });
 
   // Get members available for a specific league

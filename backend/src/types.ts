@@ -3,12 +3,16 @@ export interface Member {
   name: string;
   email: string | null;
   phone: string | null;
+  valid_through: string | null;
+  spare_only: number;
   is_admin: number;
+  is_server_admin: number;
   opted_in_sms: number;
   email_subscribed: number;
   first_login_completed: number;
   email_visible: number;
   phone_visible: number;
+  theme_preference: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -45,6 +49,12 @@ export interface LeagueDrawTime {
   id: number;
   league_id: number;
   draw_time: string;
+}
+
+export interface LeagueException {
+  id: number;
+  league_id: number;
+  exception_date: string;
 }
 
 export interface MemberAvailability {

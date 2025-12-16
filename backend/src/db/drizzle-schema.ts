@@ -11,12 +11,18 @@ export const membersSqlite = sqliteTable('members', {
   name: text('name').notNull(),
   email: text('email').notNull(),
   phone: text('phone'),
+  // If set (YYYY-MM-DD), member is valid through that date (inclusive). Null = no expiry.
+  valid_through: text('valid_through'),
+  // Spare-only members can participate as spares, but cannot create spare requests.
+  spare_only: integer('spare_only').default(0).notNull(),
   is_admin: integer('is_admin').default(0).notNull(),
+  is_server_admin: integer('is_server_admin').default(0).notNull(),
   opted_in_sms: integer('opted_in_sms').default(0).notNull(),
   email_subscribed: integer('email_subscribed').default(1).notNull(),
   first_login_completed: integer('first_login_completed').default(0).notNull(),
   email_visible: integer('email_visible').default(0).notNull(),
   phone_visible: integer('phone_visible').default(0).notNull(),
+  theme_preference: text('theme_preference').default('system'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -64,6 +70,15 @@ export const leagueDrawTimesSqlite = sqliteTable('league_draw_times', {
   draw_time: text('draw_time').notNull(),
 }, (table) => ({
   leagueIdIdx: index('idx_league_draw_times_league_id').on(table.league_id),
+}));
+
+export const leagueExceptionsSqlite = sqliteTable('league_exceptions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  exception_date: text('exception_date').notNull(), // YYYY-MM-DD
+}, (table) => ({
+  leagueIdIdx: index('idx_league_exceptions_league_id').on(table.league_id),
+  uniqueLeagueExceptionDate: uniqueIndex('league_exceptions_league_id_exception_date_unique').on(table.league_id, table.exception_date),
 }));
 
 export const memberAvailabilitySqlite = sqliteTable('member_availability', {
@@ -165,12 +180,16 @@ export const membersPg = pgTable('members', {
   name: textPg('name').notNull(),
   email: textPg('email').notNull(),
   phone: textPg('phone'),
+  valid_through: date('valid_through'),
+  spare_only: integerPg('spare_only').default(0).notNull(),
   is_admin: integerPg('is_admin').default(0).notNull(),
+  is_server_admin: integerPg('is_server_admin').default(0).notNull(),
   opted_in_sms: integerPg('opted_in_sms').default(0).notNull(),
   email_subscribed: integerPg('email_subscribed').default(1).notNull(),
   first_login_completed: integerPg('first_login_completed').default(0).notNull(),
   email_visible: integerPg('email_visible').default(0).notNull(),
   phone_visible: integerPg('phone_visible').default(0).notNull(),
+  theme_preference: textPg('theme_preference').default('system'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -218,6 +237,15 @@ export const leagueDrawTimesPg = pgTable('league_draw_times', {
   draw_time: time('draw_time').notNull(),
 }, (table) => ({
   leagueIdIdx: indexPg('idx_league_draw_times_league_id').on(table.league_id),
+}));
+
+export const leagueExceptionsPg = pgTable('league_exceptions', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  exception_date: date('exception_date').notNull(),
+}, (table) => ({
+  leagueIdIdx: indexPg('idx_league_exceptions_league_id').on(table.league_id),
+  uniqueLeagueExceptionDate: uniqueIndexPg('league_exceptions_league_id_exception_date_unique').on(table.league_id, table.exception_date),
 }));
 
 export const memberAvailabilityPg = pgTable('member_availability', {
@@ -320,6 +348,7 @@ export const sqliteSchema = {
   authTokens: authTokensSqlite,
   leagues: leaguesSqlite,
   leagueDrawTimes: leagueDrawTimesSqlite,
+  leagueExceptions: leagueExceptionsSqlite,
   memberAvailability: memberAvailabilitySqlite,
   spareRequests: spareRequestsSqlite,
   spareRequestInvitations: spareRequestInvitationsSqlite,
@@ -334,6 +363,7 @@ export const pgSchema = {
   authTokens: authTokensPg,
   leagues: leaguesPg,
   leagueDrawTimes: leagueDrawTimesPg,
+  leagueExceptions: leagueExceptionsPg,
   memberAvailability: memberAvailabilityPg,
   spareRequests: spareRequestsPg,
   spareRequestInvitations: spareRequestInvitationsPg,

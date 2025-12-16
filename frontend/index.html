@@ -6,6 +6,25 @@
     <meta name="description" content="Triangle Curling Club spare management system" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Triangle Curling - Spares</title>
+    <script>
+      (function() {
+        // Apply theme immediately before React loads to prevent flash.
+        // Source of truth: localStorage('themePreference') with values 'light' | 'dark' | 'system'.
+        var stored = localStorage.getItem('themePreference');
+        var root = document.documentElement;
+        var resolved =
+          stored === 'dark'
+            ? 'dark'
+            : stored === 'light'
+              ? 'light'
+              : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+        root.classList.remove('dark');
+        if (resolved === 'dark') root.classList.add('dark');
+        // Keep native controls consistent too
+        root.style.colorScheme = resolved;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

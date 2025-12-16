@@ -204,7 +204,7 @@ DATABASE_PATH=/var/www/spares.tccnc.club/backend/data/spares.sqlite
 
 JWT_SECRET=<generate-a-long-random-secret>
 
-SPARES_ADMINS=admin@example.com,another.admin@example.com
+SERVER_ADMINS=admin@example.com,another.admin@example.com
 
 AZURE_COMMUNICATION_CONNECTION_STRING=<your-azure-connection-string>
 AZURE_COMMUNICATION_SENDER_EMAIL=noreply@tccnc.club

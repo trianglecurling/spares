@@ -12,7 +12,7 @@ export function generateToken(member: Member): string {
     memberId: member.id,
     email: member.email,
     phone: member.phone,
-    isAdmin: member.is_admin === 1,
+    isAdmin: isAdmin(member),
   };
 
   // Token expires in 90 days
@@ -24,7 +24,7 @@ export function generateEmailLinkToken(member: Member): string {
     memberId: member.id,
     email: member.email,
     phone: member.phone,
-    isAdmin: member.is_admin === 1,
+    isAdmin: isAdmin(member),
   };
 
   // Token expires in 24 hours for email links
@@ -40,17 +40,58 @@ export function verifyToken(token: string): JWTPayload | null {
 }
 
 export function isAdmin(member: Member): boolean {
-  // Check database flag first
-  if (member.is_admin === 1) return true;
+  // Check database flags - either admin or server admin counts as admin
+  if (member.is_admin === 1 || member.is_server_admin === 1) return true;
   
   if (!member.email) return false;
   
   const normalizedEmail = normalizeEmail(member.email);
   
-  // Check old .env config (for backward compatibility)
+  // Check old .env config (for backward compatibility) - these are server admins
   if (config.admins.includes(normalizedEmail)) return true;
   
-  // Check database config file (new way)
+  // Check database config file (new way) - these are server admins
+  const dbConfig = getDatabaseConfig();
+  if (dbConfig && dbConfig.adminEmails) {
+    const normalizedAdminEmails = dbConfig.adminEmails.map(e => normalizeEmail(e));
+    if (normalizedAdminEmails.includes(normalizedEmail)) return true;
+  }
+  
+  return false;
+}
+
+export function isServerAdmin(member: Member): boolean {
+  // Check database flag
+  if (member.is_server_admin === 1) return true;
+  
+  if (!member.email) return false;
+  
+  const normalizedEmail = normalizeEmail(member.email);
+  
+  // Check SERVER_ADMINS environment variable (these are always server admins)
+  // Note: config.admins refers to SERVER_ADMINS env var
+  if (config.admins.includes(normalizedEmail)) return true;
+  
+  // Check database config file adminEmails (these are server admins)
+  const dbConfig = getDatabaseConfig();
+  if (dbConfig && dbConfig.adminEmails) {
+    const normalizedAdminEmails = dbConfig.adminEmails.map(e => normalizeEmail(e));
+    if (normalizedAdminEmails.includes(normalizedEmail)) return true;
+  }
+  
+  return false;
+}
+
+export function isInServerAdminsList(member: Member): boolean {
+  // Check if member is in SERVER_ADMINS environment variable (cannot be deleted)
+  if (!member.email) return false;
+  
+  const normalizedEmail = normalizeEmail(member.email);
+  
+  // Check SERVER_ADMINS environment variable
+  if (config.admins.includes(normalizedEmail)) return true;
+  
+  // Check database config file adminEmails
   const dbConfig = getDatabaseConfig();
   if (dbConfig && dbConfig.adminEmails) {
     const normalizedAdminEmails = dbConfig.adminEmails.map(e => normalizeEmail(e));

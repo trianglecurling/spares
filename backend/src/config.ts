@@ -9,7 +9,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'change-this-secret-key',
   databasePath: process.env.DATABASE_PATH || './data/spares.sqlite',
   
-  admins: (process.env.SPARES_ADMINS || '').split(',').map(email => email.trim()).filter(Boolean),
+  admins: (process.env.SERVER_ADMINS || '').split(',').map(email => email.trim()).filter(Boolean),
   
   azure: {
     connectionString: process.env.AZURE_COMMUNICATION_CONNECTION_STRING || '',

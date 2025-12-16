@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import { useAlert } from '../contexts/AlertContext';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
 import HelpHeader from '../components/HelpHeader';
 
 export default function Install() {
   const navigate = useNavigate();
+  const { showAlert } = useAlert();
   const [databaseType, setDatabaseType] = useState<'sqlite' | 'postgres'>('sqlite');
   const [sqlitePath, setSqlitePath] = useState('./data/spares.sqlite');
   const [postgresHost, setPostgresHost] = useState('');
@@ -87,8 +89,8 @@ export default function Install() {
       await api.post('/install', payload);
       
       // Installation successful - reload page to continue
-      alert('Installation successful! The server will restart. Please refresh the page.');
-      window.location.reload();
+      showAlert('Installation successful! The server will restart. Please refresh the page.', 'success');
+      setTimeout(() => window.location.reload(), 2000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Installation failed. Please check your settings and try again.');
       setLoading(false);

@@ -1,20 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
+import { useAlert } from '../../contexts/AlertContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
+import { formatPhone } from '../../utils/phone';
+import { HiEllipsisVertical } from 'react-icons/hi2';
 
 interface Member {
   id: number;
   name: string;
   email: string | null;
   phone: string | null;
+  validThrough?: string | null;
+  spareOnly?: boolean;
   isAdmin: boolean;
+  isServerAdmin?: boolean;
+  isInServerAdminsList?: boolean;
   emailSubscribed: boolean;
   optedInSms: boolean;
   createdAt: string;
   emailVisible: boolean;
   phoneVisible: boolean;
+  firstLoginCompleted: boolean;
 }
 
 interface ParsedMember {
@@ -24,6 +34,9 @@ interface ParsedMember {
 }
 
 export default function AdminMembers() {
+  const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
+  const { member: currentMember } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,7 +45,10 @@ export default function AdminMembers() {
     name: '',
     email: '',
     phone: '',
+    validThrough: '',
+    spareOnly: false,
     isAdmin: false,
+    isServerAdmin: false,
     emailVisible: false,
     phoneVisible: false,
   });
@@ -41,20 +57,66 @@ export default function AdminMembers() {
   // Bulk Add State
   const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
+  const [bulkValidThrough, setBulkValidThrough] = useState<string>('');
+  const [bulkSpareOnly, setBulkSpareOnly] = useState(false);
   const [parsedMembers, setParsedMembers] = useState<ParsedMember[]>([]);
   const [bulkStep, setBulkStep] = useState<'input' | 'confirm'>('input');
 
   // Bulk Delete State
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([]);
 
+  // Dropdown menu state
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const menuRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+
   useEffect(() => {
     loadMembers();
   }, []);
 
+  // Close dropdown menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuId !== null) {
+        const menuRef = menuRefs.current[openMenuId];
+        if (menuRef && !menuRef.contains(event.target as Node)) {
+          setOpenMenuId(null);
+        }
+      }
+    };
+
+    if (openMenuId !== null) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [openMenuId]);
+
   const loadMembers = async () => {
     try {
       const response = await api.get('/members');
-      setMembers(response.data);
+      // Ensure boolean values are properly converted
+      const membersWithBooleans = response.data.map((m: any) => ({
+        ...m,
+        validThrough: m.validThrough ?? null,
+        spareOnly: Boolean(m.spareOnly),
+        emailVisible: Boolean(m.emailVisible),
+        phoneVisible: Boolean(m.phoneVisible),
+        emailSubscribed: Boolean(m.emailSubscribed),
+        optedInSms: Boolean(m.optedInSms),
+        isAdmin: Boolean(m.isAdmin),
+        isServerAdmin: Boolean(m.isServerAdmin),
+        isInServerAdminsList: Boolean(m.isInServerAdminsList),
+        firstLoginCompleted: Boolean(m.firstLoginCompleted),
+      }));
+      // Sort so expired members appear at the end
+      const sorted = membersWithBooleans.sort((a: any, b: any) => {
+        const aExpired = isExpired(a.validThrough, a.isAdmin, a.isServerAdmin) ? 1 : 0;
+        const bExpired = isExpired(b.validThrough, b.isAdmin, b.isServerAdmin) ? 1 : 0;
+        if (aExpired !== bExpired) return aExpired - bExpired;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      });
+      setMembers(sorted);
       // Clear selection on reload to avoid stale IDs
       setSelectedMemberIds([]);
     } catch (error) {
@@ -67,11 +129,16 @@ export default function AdminMembers() {
   const handleOpenModal = (member?: Member) => {
     if (member) {
       setEditingMember(member);
+      // If user is in SERVER_ADMINS, force isServerAdmin to true
+      const isServerAdmin = member.isInServerAdminsList ? true : (member.isServerAdmin || false);
       setFormData({
         name: member.name,
         email: member.email || '',
         phone: member.phone || '',
-        isAdmin: member.isAdmin,
+        validThrough: member.validThrough || '',
+        spareOnly: Boolean(member.spareOnly),
+        isAdmin: member.isInServerAdminsList ? false : member.isAdmin,
+        isServerAdmin: isServerAdmin,
         emailVisible: member.emailVisible,
         phoneVisible: member.phoneVisible,
       });
@@ -81,7 +148,10 @@ export default function AdminMembers() {
         name: '',
         email: '',
         phone: '',
+        validThrough: '',
+        spareOnly: false,
         isAdmin: false,
+        isServerAdmin: false,
         emailVisible: false,
         phoneVisible: false,
       });
@@ -96,10 +166,29 @@ export default function AdminMembers() {
       name: '',
       email: '',
       phone: '',
+      validThrough: '',
+      spareOnly: false,
       isAdmin: false,
+      isServerAdmin: false,
       emailVisible: false,
       phoneVisible: false,
     });
+  };
+
+  const formatDateDisplay = (dateString?: string | null) => {
+    if (!dateString) return '';
+    // Adjust for timezone offset so YYYY-MM-DD displays correctly in local timezone
+    const date = new Date(dateString);
+    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+    const adjustedDate = new Date(date.getTime() + userTimezoneOffset);
+    return adjustedDate.toLocaleDateString();
+  };
+
+  const isExpired = (validThrough?: string | null, isAdminFlag?: boolean, isServerAdminFlag?: boolean) => {
+    if (isAdminFlag || isServerAdminFlag) return false;
+    if (!validThrough) return false;
+    const today = new Date().toISOString().split('T')[0];
+    return today > validThrough;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,35 +197,82 @@ export default function AdminMembers() {
 
     try {
       if (editingMember) {
-        await api.patch(`/members/${editingMember.id}`, {
+        const updateData: any = {
           name: formData.name,
           email: formData.email || undefined,
           phone: formData.phone || undefined,
-          isAdmin: formData.isAdmin,
           emailVisible: formData.emailVisible,
           phoneVisible: formData.phoneVisible,
-        });
+        };
+
+        // Valid-through can be edited for other members only (never self)
+        if (editingMember?.id !== currentMember?.id) {
+          updateData.validThrough = formData.validThrough ? formData.validThrough : null;
+          updateData.spareOnly = Boolean(formData.spareOnly);
+        }
+        
+        // Only server admins can set roles (and not for themselves)
+        if (currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id) {
+          // If user is in SERVER_ADMINS, they must remain server admin
+          if (editingMember?.isInServerAdminsList) {
+            updateData.isServerAdmin = true;
+            updateData.isAdmin = false;
+          } else {
+            updateData.isAdmin = formData.isAdmin;
+            updateData.isServerAdmin = formData.isServerAdmin;
+          }
+        } else if (currentMember?.isAdmin && editingMember?.id !== currentMember?.id) {
+          // Regular admins can only set isAdmin (and not for themselves)
+          updateData.isAdmin = formData.isAdmin;
+        }
+        
+        await api.patch(`/members/${editingMember.id}`, updateData);
       } else {
-        await api.post('/members', {
+        const createData: any = {
           name: formData.name,
           email: formData.email || undefined,
           phone: formData.phone || undefined,
-          isAdmin: formData.isAdmin,
-        });
+          validThrough: formData.validThrough ? formData.validThrough : null,
+          spareOnly: Boolean(formData.spareOnly),
+        };
+        
+        // Only server admins can set roles when creating
+        if (currentMember?.isServerAdmin) {
+          createData.isAdmin = formData.isAdmin;
+          createData.isServerAdmin = formData.isServerAdmin;
+        } else if (currentMember?.isAdmin) {
+          // Regular admins can only set isAdmin
+          createData.isAdmin = formData.isAdmin;
+        }
+        
+        await api.post('/members', createData);
       }
 
       await loadMembers();
       handleCloseModal();
     } catch (error) {
       console.error('Failed to save member:', error);
-      alert('Failed to save member');
+      showAlert('Failed to save member', 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete ${name}?`)) {
+    // Prevent self-deletion
+    if (currentMember && id === currentMember.id) {
+      showAlert('You cannot delete yourself', 'warning');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: 'Delete member',
+      message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -146,27 +282,49 @@ export default function AdminMembers() {
       setSelectedMemberIds(selectedMemberIds.filter((i) => i !== id));
     } catch (error) {
       console.error('Failed to delete member:', error);
-      alert('Failed to delete member');
+      showAlert('Failed to delete member', 'error');
     }
   };
 
   const handleSendWelcome = async (id: number, name: string) => {
-    if (!confirm(`Send welcome email to ${name}?`)) {
+    const confirmed = await confirm({
+      title: 'Send welcome email',
+      message: `Send welcome email to ${name}?`,
+      variant: 'info',
+      confirmText: 'Send',
+    });
+
+    if (!confirmed) {
       return;
     }
 
     try {
       await api.post(`/members/${id}/send-welcome`);
-      alert('Welcome email sent!');
+      showAlert('Welcome email sent!', 'success');
     } catch (error) {
       console.error('Failed to send welcome email:', error);
-      alert('Failed to send welcome email');
+      showAlert('Failed to send welcome email', 'error');
+    }
+  };
+
+  const handleCopyLoginLink = async (id: number, name: string) => {
+    try {
+      const response = await api.get(`/members/${id}/login-link`);
+      const loginLink = response.data.loginLink;
+      
+      await navigator.clipboard.writeText(loginLink);
+      showAlert(`Login link copied for ${name}!`, 'success');
+    } catch (error) {
+      console.error('Failed to copy login link:', error);
+      showAlert('Failed to copy login link', 'error');
     }
   };
 
   // Bulk Add Logic
   const handleOpenBulkModal = () => {
     setBulkText('');
+    setBulkValidThrough('');
+    setBulkSpareOnly(false);
     setParsedMembers([]);
     setBulkStep('input');
     setIsBulkAddModalOpen(true);
@@ -174,7 +332,7 @@ export default function AdminMembers() {
 
   const handleParseBulk = () => {
     if (!bulkText.trim()) {
-      alert('Please paste some data');
+      showAlert('Please paste some data', 'warning');
       return;
     }
 
@@ -187,7 +345,7 @@ export default function AdminMembers() {
     const dataLines = lines.length > 1 ? lines.slice(1) : [];
     
     if (dataLines.length === 0) {
-      alert('No data found. Please include a header row and at least one member.');
+      showAlert('No data found. Please include a header row and at least one member.', 'warning');
       return;
     }
 
@@ -209,7 +367,7 @@ export default function AdminMembers() {
     }).filter(m => m.name); // Remove empty rows
 
     if (parsed.length === 0) {
-      alert('No valid members found in data');
+      showAlert('No valid members found in data', 'warning');
       return;
     }
 
@@ -220,14 +378,20 @@ export default function AdminMembers() {
   const handleBulkSubmit = async () => {
     setSubmitting(true);
     try {
-      await api.post('/members/bulk', parsedMembers);
+      await api.post('/members/bulk', {
+        members: parsedMembers,
+        validThrough: bulkValidThrough ? bulkValidThrough : null,
+        spareOnly: bulkSpareOnly,
+      });
       await loadMembers();
       setIsBulkAddModalOpen(false);
       setBulkText('');
+      setBulkValidThrough('');
+      setBulkSpareOnly(false);
       setParsedMembers([]);
     } catch (error) {
       console.error('Failed to bulk add members:', error);
-      alert('Failed to bulk add members');
+      showAlert('Failed to bulk add members', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -235,9 +399,17 @@ export default function AdminMembers() {
 
   // Bulk Delete Logic
   const handleSelectAll = () => {
-    // Only select non-admins for bulk deletion
+    // Get all selectable members (excluding admins, server admins for regular admins, SERVER_ADMINS users, and self)
     const deletableMemberIds = members
-      .filter((m) => !m.isAdmin)
+      .filter((m) => {
+        if (m.id === currentMember?.id) return false;
+        if (m.isAdmin) return false;
+        // Regular admins cannot select server admins
+        if (m.isServerAdmin && !currentMember?.isServerAdmin) return false;
+        // SERVER_ADMINS users cannot be selected
+        if (m.isInServerAdminsList) return false;
+        return true;
+      })
       .map((m) => m.id);
 
     if (selectedMemberIds.length === deletableMemberIds.length && deletableMemberIds.length > 0) {
@@ -258,25 +430,92 @@ export default function AdminMembers() {
   const handleBulkDelete = async () => {
     if (selectedMemberIds.length === 0) return;
 
-    if (!confirm(`Are you sure you want to delete ${selectedMemberIds.length} members?`)) {
+    // Filter out current user from selected IDs
+    const idsToDelete = currentMember
+      ? selectedMemberIds.filter((id) => id !== currentMember.id)
+      : selectedMemberIds;
+
+    if (idsToDelete.length === 0) {
+      showAlert('You cannot delete yourself', 'warning');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: 'Delete members',
+      message: `Are you sure you want to delete ${idsToDelete.length} member${idsToDelete.length === 1 ? '' : 's'}? This action cannot be undone.`,
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+
+    if (!confirmed) {
       return;
     }
 
     setLoading(true);
     try {
-      await api.post('/members/bulk-delete', { ids: selectedMemberIds });
+      await api.post('/members/bulk-delete', { ids: idsToDelete });
       await loadMembers();
       setSelectedMemberIds([]);
     } catch (error) {
       console.error('Failed to bulk delete members:', error);
-      alert('Failed to bulk delete members');
+      showAlert('Failed to bulk delete members', 'error');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleBulkSendWelcome = async () => {
+    if (selectedMemberIds.length === 0) return;
+
+    // Filter to only members with email addresses
+    const membersWithEmails = members.filter(
+      (m) => selectedMemberIds.includes(m.id) && m.email
+    );
+
+    if (membersWithEmails.length === 0) {
+      showAlert('No selected members have email addresses', 'warning');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: 'Send welcome emails',
+      message: `Send welcome emails to ${membersWithEmails.length} member${membersWithEmails.length === 1 ? '' : 's'}?`,
+      variant: 'info',
+      confirmText: 'Send',
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await api.post('/members/bulk-send-welcome', {
+        ids: selectedMemberIds,
+      });
+      showAlert(
+        `Welcome emails sent to ${response.data.sent} member${response.data.sent === 1 ? '' : 's'}!`,
+        'success'
+      );
+    } catch (error: any) {
+      console.error('Failed to send welcome emails:', error);
+      const errorMessage =
+        error.response?.data?.error || 'Failed to send welcome emails';
+      showAlert(errorMessage, 'error');
+    }
+  };
+
   // Computed properties
-  const deletableMembersCount = members.filter((m) => !m.isAdmin).length;
+  const deletableMembersCount = members.filter(
+    (m) => {
+      if (m.id === currentMember?.id) return false;
+      if (m.isAdmin) return false;
+      // Regular admins cannot select server admins
+      if (m.isServerAdmin && !currentMember?.isServerAdmin) return false;
+      // SERVER_ADMINS users cannot be selected
+      if (m.isInServerAdminsList) return false;
+      return true;
+    }
+  ).length;
   const isAllSelected = 
     deletableMembersCount > 0 && 
     selectedMemberIds.length === deletableMembersCount;
@@ -285,17 +524,25 @@ export default function AdminMembers() {
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold" style={{ color: '#121033' }}>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
             Manage members
           </h1>
           <div className="space-x-3">
             {selectedMemberIds.length > 0 && (
-              <Button 
-                variant="danger" 
-                onClick={handleBulkDelete}
-              >
-                Delete selected ({selectedMemberIds.length})
-              </Button>
+              <>
+                <Button 
+                  variant="secondary" 
+                  onClick={handleBulkSendWelcome}
+                >
+                  Send welcome emails ({selectedMemberIds.length})
+                </Button>
+                <Button 
+                  variant="danger" 
+                  onClick={handleBulkDelete}
+                >
+                  Delete selected ({selectedMemberIds.length})
+                </Button>
+              </>
             )}
             <Button onClick={handleOpenBulkModal} variant="secondary">
               Bulk import
@@ -305,108 +552,176 @@ export default function AdminMembers() {
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10">
                     <input
                       type="checkbox"
                       checked={isAllSelected}
                       onChange={handleSelectAll}
-                      className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
+                      className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                     />
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Name
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Email
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Phone
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Valid through
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {members.map((member) => (
-                  <tr key={member.id} className={selectedMemberIds.includes(member.id) ? 'bg-blue-50' : ''}>
+                  <tr key={member.id} className={selectedMemberIds.includes(member.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {!member.isAdmin && (
+                      {!member.isAdmin && 
+                       (!currentMember || member.id !== currentMember.id) &&
+                       // Regular admins cannot select server admins for deletion
+                       !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
+                       // SERVER_ADMINS users cannot be selected for deletion
+                       !member.isInServerAdminsList && (
                         <input
                           type="checkbox"
                           checked={selectedMemberIds.includes(member.id)}
                           onChange={() => handleToggleSelect(member.id)}
-                          className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
+                          className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                         />
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className="text-sm font-medium text-gray-900">{member.name}</div>
-                        {member.isAdmin && (
-                          <span className="ml-2 px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{member.name}</div>
+                        {member.isServerAdmin ? (
+                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200">
+                            Server admin
+                          </span>
+                        ) : member.isAdmin ? (
+                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">
                             Admin
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {member.email || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {member.phone || '-'}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      {member.phone ? formatPhone(member.phone) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="space-y-1">
-                        {member.emailSubscribed ? (
-                          <div className="text-green-600">✓ Subscribed</div>
+                        {member.firstLoginCompleted ? (
+                          <div className="text-green-600 dark:text-green-400">✓ Registered</div>
                         ) : (
-                          <div className="text-gray-400">Unsubscribed</div>
+                          <div className="text-gray-400 dark:text-gray-500">Not registered</div>
                         )}
                         {member.optedInSms && (
-                          <div className="text-blue-600 text-xs">SMS enabled</div>
+                          <div className="text-blue-600 dark:text-blue-400 text-xs">SMS enabled</div>
                         )}
-                        <div className="text-xs text-gray-400">
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
                           {member.emailVisible ? 'Email public' : 'Email hidden'} •{' '}
                           {member.phoneVisible ? 'Phone public' : 'Phone hidden'}
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      <button
-                        onClick={() => handleOpenModal(member)}
-                        className="text-primary-teal hover:text-opacity-80"
-                      >
-                        Edit
-                      </button>
-                      {member.email && (
-                        <button
-                          onClick={() => handleSendWelcome(member.id, member.name)}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          Welcome email
-                        </button>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {member.isAdmin || member.isServerAdmin ? (
+                        <span className="text-gray-600 dark:text-gray-400">Always valid (admin)</span>
+                      ) : !member.validThrough ? (
+                        <span className="text-gray-600 dark:text-gray-400">No expiry</span>
+                      ) : isExpired(member.validThrough, member.isAdmin, member.isServerAdmin) ? (
+                        <span className="text-red-600 dark:text-red-400">
+                          Expired ({formatDateDisplay(member.validThrough)})
+                        </span>
+                      ) : (
+                        <span className="text-gray-900 dark:text-gray-100">{formatDateDisplay(member.validThrough)}</span>
                       )}
-                      <button
-                        onClick={() => handleDelete(member.id, member.name)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        Delete
-                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
+                      <div className="relative inline-block" ref={(el) => (menuRefs.current[member.id] = el)}>
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === member.id ? null : member.id)}
+                          className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2"
+                          aria-label="Actions menu"
+                        >
+                          <HiEllipsisVertical className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                        </button>
+                        {openMenuId === member.id && (
+                          <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700">
+                            <div className="py-1 flex flex-col">
+                              <button
+                                onClick={() => {
+                                  handleOpenModal(member);
+                                  setOpenMenuId(null);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+                              >
+                                Edit
+                              </button>
+                              {currentMember?.isServerAdmin && (
+                                <button
+                                  onClick={() => {
+                                    handleCopyLoginLink(member.id, member.name);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+                                >
+                                  Copy login link
+                                </button>
+                              )}
+                              {member.email && (
+                                <button
+                                  onClick={() => {
+                                    handleSendWelcome(member.id, member.name);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+                                >
+                                  Send welcome email
+                                </button>
+                              )}
+                              {(!currentMember || member.id !== currentMember.id) && 
+                               // Regular admins cannot delete server admins
+                               !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
+                               // SERVER_ADMINS users cannot be deleted by anyone
+                               !member.isInServerAdminsList && (
+                                <button
+                                  onClick={() => {
+                                    handleDelete(member.id, member.name);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
@@ -419,7 +734,7 @@ export default function AdminMembers() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -427,13 +742,13 @@ export default function AdminMembers() {
               id="name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Email <span className="text-red-500">*</span>
             </label>
             <input
@@ -441,7 +756,7 @@ export default function AdminMembers() {
               id="email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
               required
             />
             <div className="mt-2 flex items-center">
@@ -452,14 +767,14 @@ export default function AdminMembers() {
                 onChange={(e) => setFormData({ ...formData, emailVisible: e.target.checked })}
                 className="mr-2"
               />
-              <label htmlFor="emailVisible" className="text-sm text-gray-600">
+              <label htmlFor="emailVisible" className="text-sm text-gray-600 dark:text-gray-400">
                 Publicly visible
               </label>
             </div>
           </div>
 
           <div>
-            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Phone
             </label>
             <input
@@ -467,7 +782,7 @@ export default function AdminMembers() {
               id="phone"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
             />
             <div className="mt-2 flex items-center">
               <input
@@ -477,24 +792,140 @@ export default function AdminMembers() {
                 onChange={(e) => setFormData({ ...formData, phoneVisible: e.target.checked })}
                 className="mr-2"
               />
-              <label htmlFor="phoneVisible" className="text-sm text-gray-600">
+              <label htmlFor="phoneVisible" className="text-sm text-gray-600 dark:text-gray-400">
                 Publicly visible
               </label>
             </div>
           </div>
 
-          <div className="flex items-center">
+          <div>
+            <label htmlFor="validThrough" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Valid through (optional)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                id="validThrough"
+                value={formData.validThrough}
+                onChange={(e) => setFormData({ ...formData, validThrough: e.target.value })}
+                disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent disabled:opacity-60"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setFormData({ ...formData, validThrough: '' })}
+                disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
+              >
+                Clear
+              </Button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Leave empty for perpetual access. Admin/server admin users are always valid regardless of this date.
+              {editingMember && currentMember && editingMember.id === currentMember.id ? ' You cannot change your own date.' : ''}
+            </p>
+          </div>
+
+          <div className="flex items-start">
             <input
               type="checkbox"
-              id="isAdmin"
-              checked={formData.isAdmin}
-              onChange={(e) => setFormData({ ...formData, isAdmin: e.target.checked })}
-              className="mr-2"
+              id="spareOnly"
+              checked={formData.spareOnly}
+              onChange={(e) => setFormData({ ...formData, spareOnly: e.target.checked })}
+              disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
+              className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal disabled:opacity-60"
             />
-            <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700">
-              Administrator
+            <label htmlFor="spareOnly" className="text-sm text-gray-700 dark:text-gray-300">
+              <span className="font-medium">Spare-only member</span>
+              <div className="text-gray-600 dark:text-gray-400">
+                Can sign up to spare, but cannot create spare requests.
+                {editingMember && currentMember && editingMember.id === currentMember.id ? ' You cannot change your own status.' : ''}
+              </div>
             </label>
           </div>
+
+          {currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id ? (
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Role</div>
+              {editingMember?.isInServerAdminsList ? (
+                <div className="space-y-2">
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                      This user is in SERVER_ADMINS and must remain a server admin. Role cannot be changed.
+                    </p>
+                  </div>
+                  <div className="flex items-center opacity-60">
+                    <input
+                      type="radio"
+                      id="roleServerAdminLocked"
+                      name="role"
+                      checked={true}
+                      disabled
+                      className="mr-2"
+                    />
+                    <label htmlFor="roleServerAdminLocked" className="text-sm text-gray-700 dark:text-gray-300">
+                      Server admin (locked)
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
+                      id="roleRegular"
+                      name="role"
+                      checked={!formData.isAdmin && !formData.isServerAdmin}
+                      onChange={() => setFormData({ ...formData, isAdmin: false, isServerAdmin: false })}
+                      className="mr-2"
+                    />
+                    <label htmlFor="roleRegular" className="text-sm text-gray-700 dark:text-gray-300">
+                      Regular user
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
+                      id="roleAdmin"
+                      name="role"
+                      checked={formData.isAdmin && !formData.isServerAdmin}
+                      onChange={() => setFormData({ ...formData, isAdmin: true, isServerAdmin: false })}
+                      className="mr-2"
+                    />
+                    <label htmlFor="roleAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                      Admin
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
+                      id="roleServerAdmin"
+                      name="role"
+                      checked={formData.isServerAdmin}
+                      onChange={() => setFormData({ ...formData, isAdmin: false, isServerAdmin: true })}
+                      className="mr-2"
+                    />
+                    <label htmlFor="roleServerAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                      Server admin
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : currentMember?.isAdmin && !editingMember?.isServerAdmin && editingMember?.id !== currentMember?.id ? (
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="isAdmin"
+                checked={formData.isAdmin}
+                onChange={(e) => setFormData({ ...formData, isAdmin: e.target.checked })}
+                className="mr-2"
+              />
+              <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Administrator
+              </label>
+            </div>
+          ) : null}
 
           <div className="flex space-x-3">
             <Button type="submit" disabled={submitting} className="flex-1">
@@ -524,17 +955,53 @@ export default function AdminMembers() {
           {bulkStep === 'input' ? (
             <>
               <div className="flex-shrink-0">
-                <p className="text-sm text-gray-500 mb-2">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                   Paste your spreadsheet data here. Must include a header row.
                   <br />
                   Expected columns: <strong>First Name, Last Name, Phone, Email</strong>
                 </p>
                 <textarea
-                  className="w-full h-64 p-2 border border-gray-300 rounded font-mono text-sm"
+                  className="w-full h-64 p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded font-mono text-sm"
                   value={bulkText}
                   onChange={(e) => setBulkText(e.target.value)}
                   placeholder={'First Name\tLast Name\tPhone\tEmail\nJohn\tDoe\t555-0123\tjohn@example.com'}
                 />
+                <div className="mt-4">
+                  <label htmlFor="bulkValidThrough" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Valid through for all imported members (optional)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      id="bulkValidThrough"
+                      value={bulkValidThrough}
+                      onChange={(e) => setBulkValidThrough(e.target.value)}
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    />
+                    <Button type="button" variant="secondary" onClick={() => setBulkValidThrough('')}>
+                      Clear
+                    </Button>
+                  </div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Leave empty for perpetual access. Admin/server admin users are always valid regardless of this date.
+                  </p>
+                </div>
+
+                <div className="mt-4 flex items-start">
+                  <input
+                    type="checkbox"
+                    id="bulkSpareOnly"
+                    checked={bulkSpareOnly}
+                    onChange={(e) => setBulkSpareOnly(e.target.checked)}
+                    className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
+                  />
+                  <label htmlFor="bulkSpareOnly" className="text-sm text-gray-700 dark:text-gray-300">
+                    <span className="font-medium">Mark all imported members as spare-only</span>
+                    <div className="text-gray-600 dark:text-gray-400">
+                      Spare-only members can sign up to spare, but cannot create spare requests.
+                    </div>
+                  </label>
+                </div>
               </div>
               <div className="flex justify-end space-x-3 flex-shrink-0">
                 <Button
@@ -551,26 +1018,32 @@ export default function AdminMembers() {
           ) : (
             <>
               <div className="flex-1 min-h-0 flex flex-col">
-                <p className="mb-4 text-sm text-gray-600 flex-shrink-0">
+                <p className="mb-4 text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">
                   Found {parsedMembers.length} members. Please review before importing.
+                </p>
+                <p className="mb-4 text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">
+                  Valid through for all imported members:{' '}
+                  <span className="font-medium dark:text-gray-200">
+                    {bulkValidThrough ? formatDateDisplay(bulkValidThrough) : 'No expiry'}
+                  </span>
                 </p>
                 <div className="flex-1 overflow-auto min-h-0">
                   {/* Desktop table view */}
                   <div className="hidden sm:block">
-                    <table className="w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50 sticky top-0 z-10">
+                    <table className="w-full divide-y divide-gray-200 dark:divide-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
                         <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Phone</th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {parsedMembers.map((m, i) => (
                           <tr key={i}>
-                            <td className="px-3 py-2 text-sm whitespace-nowrap">{m.name}</td>
-                            <td className="px-3 py-2 text-sm break-words">{m.email}</td>
-                            <td className="px-3 py-2 text-sm whitespace-nowrap">{m.phone || '—'}</td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">{m.name}</td>
+                            <td className="px-3 py-2 text-sm break-words dark:text-gray-100">{m.email}</td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">{m.phone ? formatPhone(m.phone) : '—'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -579,14 +1052,14 @@ export default function AdminMembers() {
                   {/* Mobile card view */}
                   <div className="sm:hidden space-y-3">
                     {parsedMembers.map((m, i) => (
-                      <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                        <div className="font-medium text-sm mb-1">{m.name}</div>
-                        <div className="text-xs text-gray-600">
+                      <div key={i} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                        <div className="font-medium text-sm mb-1 dark:text-gray-100">{m.name}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">
                           <div className="mb-1">
                             <span className="font-medium">Email:</span> {m.email}
                           </div>
                           <div>
-                            <span className="font-medium">Phone:</span> {m.phone || '—'}
+                            <span className="font-medium">Phone:</span> {m.phone ? formatPhone(m.phone) : '—'}
                           </div>
                         </div>
                       </div>
@@ -594,7 +1067,7 @@ export default function AdminMembers() {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 pt-4 border-t flex-shrink-0">
+              <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 pt-4 border-t dark:border-gray-700 flex-shrink-0">
                 <Button
                   variant="secondary"
                   onClick={() => setBulkStep('input')}

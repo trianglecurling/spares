@@ -7,12 +7,15 @@ interface Member {
   name: string;
   email: string | null;
   phone: string | null;
+  spareOnly?: boolean;
   isAdmin: boolean;
+  isServerAdmin?: boolean;
   firstLoginCompleted: boolean;
   optedInSms: boolean;
   emailSubscribed: boolean;
   emailVisible: boolean;
   phoneVisible: boolean;
+  themePreference?: 'light' | 'dark' | 'system';
 }
 
 interface AuthContextType {
@@ -69,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // If database is not configured (503), don't clear token - just fail silently
           if (error.response?.status === 503 && error.response?.data?.requiresInstallation) {
             // Database not configured - don't verify token, but don't clear it either
-            console.log('Database not configured, skipping token verification');
+            // Intentionally silent: user may be on the install flow
           } else {
             console.error('Token verification failed:', error);
             localStorage.removeItem('authToken');

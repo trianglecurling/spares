@@ -34,7 +34,7 @@ Edit `backend/.env` and update at minimum:
 ```env
 # Required for basic functionality
 JWT_SECRET=your-super-secret-jwt-key-change-this-to-something-long-and-random
-SPARES_ADMINS=your.email@example.com
+SERVER_ADMINS=your.email@example.com
 
 # Optional: For email/SMS (can be added later)
 # AZURE_COMMUNICATION_CONNECTION_STRING=your-connection-string

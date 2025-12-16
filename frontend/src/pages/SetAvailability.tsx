@@ -108,7 +108,7 @@ export default function SetAvailability() {
   if (loading) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500">Loading...</div>
+        <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
       </Layout>
     );
   }
@@ -117,26 +117,26 @@ export default function SetAvailability() {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: '#121033' }}>
+          <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
             Set your sparing availability
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             Let others know when you're available to spare. Your changes are saved automatically.
           </p>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-lg">Comfortable skipping?</h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <h3 className="font-semibold text-lg dark:text-gray-100">Comfortable skipping?</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Check this if you're comfortable sparing as a skip
               </p>
             </div>
             <button
               onClick={() => handleToggleCanSkip(!canSkip)}
               className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                canSkip ? 'bg-primary-teal' : 'bg-gray-300'
+                canSkip ? 'bg-primary-teal' : 'bg-gray-300 dark:bg-gray-600'
               }`}
             >
               <span
@@ -149,14 +149,14 @@ export default function SetAvailability() {
         </div>
 
         {leagues.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg shadow">
-            <p className="text-gray-600">
+          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <p className="text-gray-600 dark:text-gray-400">
               No leagues have been set up yet. Check back later or contact an administrator.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold" style={{ color: '#121033' }}>
+            <h2 className="text-xl font-semibold text-[#121033] dark:text-gray-100">
               League availability
             </h2>
 
@@ -166,23 +166,23 @@ export default function SetAvailability() {
               return (
                 <div
                   key={league.id}
-                  className={`bg-white rounded-lg shadow p-6 transition-all border-l-4 ${
+                  className={`bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-all border-l-4 ${
                     available ? 'border-l-primary-teal' : 'border-l-transparent'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{league.name}</h3>
-                      <div className="text-sm text-gray-600 mt-1 space-y-1">
+                      <h3 className="font-semibold text-lg dark:text-gray-100">{league.name}</h3>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mt-1 space-y-1">
                         <p>
-                          <span className="font-medium">Day:</span> {getDayName(league.dayOfWeek)}
+                          <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
                         </p>
                         <p>
-                          <span className="font-medium">Times:</span>{' '}
+                          <span className="font-medium dark:text-gray-300">Times:</span>{' '}
                           {league.drawTimes.map(formatTime).join(', ')}
                         </p>
                         <p>
-                          <span className="font-medium">Format:</span>{' '}
+                          <span className="font-medium dark:text-gray-300">Format:</span>{' '}
                           {league.format === 'teams' ? 'Teams' : 'Doubles'}
                         </p>
                       </div>
@@ -202,7 +202,7 @@ export default function SetAvailability() {
                     <button
                       onClick={() => handleToggleLeague(league.id, available)}
                       className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                        available ? 'bg-primary-teal' : 'bg-gray-300'
+                        available ? 'bg-primary-teal' : 'bg-gray-300 dark:bg-gray-600'
                       }`}
                     >
                       <span

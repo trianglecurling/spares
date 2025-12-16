@@ -59,8 +59,8 @@ An administrator can set the current list of leagues. Each league has:
 # First run experience
 A user goes to https://spares.tccnc.club and is presented with a simple log in screen asking for email or phone (one single input field). Once logged in, if it is the user's first time logging in, we will confirm their contact info (name - encourage users to use the name that most people know them by, email, and phone number), then we will allow them to opt-in to text messages to receive updates. After that, we take them through the UI that allows them to set their sparing availability.
 
-# Administrators
-The app will read the SPARES_ADMINS value from a .env file. This value is a comma-separated list of email addresses who are always administrators. The app requires at least one administrator. Administrators listed in the .env file cannot be stripped of their admin rights via the UI - only by editing the .env file.
+# Server Administrators
+The app will read the SERVER_ADMINS value from a .env file. This value is a comma-separated list of email addresses who are always server administrators (highest privilege level). The app requires at least one server administrator. Server administrators listed in the .env file cannot be stripped of their admin rights via the UI - only by editing the .env file.
 
 # Email communication
 The application will send several emails on behalf of members:

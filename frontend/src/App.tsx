@@ -1,5 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { AlertProvider } from './contexts/AlertContext';
+import { ConfirmProvider } from './contexts/ConfirmContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -31,7 +34,10 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <ThemeProvider>
+          <AlertProvider>
+            <ConfirmProvider>
+            <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/unsubscribe" element={<Unsubscribe />} />
           <Route path="/install" element={<Install />} />
@@ -140,7 +146,7 @@ function App() {
           <Route
             path="/admin/config"
             element={
-              <ProtectedRoute adminOnly>
+              <ProtectedRoute serverAdminOnly>
                 <AdminConfig />
               </ProtectedRoute>
             }
@@ -156,6 +162,9 @@ function App() {
           
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+            </ConfirmProvider>
+          </AlertProvider>
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -8,15 +8,15 @@ export default function PublicVsPrivate() {
   const currentPath = location.pathname;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <HelpHeader />
       <div className="flex-grow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             {/* Sidebar Navigation */}
             <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow p-6 sticky top-8">
-                <h2 className="text-lg font-semibold mb-4" style={{ color: '#121033' }}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 sticky top-8">
+                <h2 className="text-lg font-semibold mb-4 text-[#121033] dark:text-gray-100">
                   Help Topics
                 </h2>
                 <nav className="space-y-2">
@@ -27,7 +27,7 @@ export default function PublicVsPrivate() {
                       className={`block px-3 py-2 rounded-md text-sm transition-colors ${
                         currentPath === section.path
                           ? 'bg-primary-teal text-white'
-                          : 'text-gray-700 hover:bg-gray-100'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                       }`}
                     >
                       {section.title}
@@ -39,19 +39,19 @@ export default function PublicVsPrivate() {
 
             {/* Main Content */}
             <div className="lg:col-span-3">
-              <div className="bg-white rounded-lg shadow p-8">
-                <h1 className="text-3xl font-bold mb-6" style={{ color: '#121033' }}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
+                <h1 className="text-3xl font-bold mb-6 text-[#121033] dark:text-gray-100">
                   Public vs Private Spare Requests
                 </h1>
 
-                <div className="prose max-w-none space-y-6 text-gray-700">
+                <div className="prose max-w-none space-y-6 text-gray-700 dark:text-gray-300">
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Public Requests
                     </h2>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                      <p className="font-semibold text-blue-900 mb-2">Best for:</p>
-                      <p className="text-blue-800">When you want to reach as many potential spares as possible</p>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                      <p className="font-semibold text-blue-900 dark:text-blue-200 mb-2">Best for:</p>
+                      <p className="text-blue-800 dark:text-blue-300">When you want to reach as many potential spares as possible</p>
                     </div>
                     <ul className="list-disc list-inside space-y-2">
                       <li><strong>Visibility:</strong> All members can see it on their dashboard immediately</li>
@@ -69,12 +69,12 @@ export default function PublicVsPrivate() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Private Requests
                     </h2>
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                      <p className="font-semibold text-green-900 mb-2">Best for:</p>
-                      <p className="text-green-800">When you have specific members in mind or want to limit who sees your request</p>
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
+                      <p className="font-semibold text-green-900 dark:text-green-200 mb-2">Best for:</p>
+                      <p className="text-green-800 dark:text-green-300">When you have specific members in mind or want to limit who sees your request</p>
                     </div>
                     <ul className="list-disc list-inside space-y-2">
                       <li><strong>Visibility:</strong> Only visible to the specific members you invite</li>
@@ -86,20 +86,20 @@ export default function PublicVsPrivate() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       When to Use Each Type
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="border border-gray-200 rounded-lg p-4">
-                        <h3 className="font-semibold mb-2" style={{ color: '#121033' }}>Use Public When:</h3>
+                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                        <h3 className="font-semibold mb-2 text-[#121033] dark:text-gray-100">Use Public When:</h3>
                         <ul className="list-disc list-inside space-y-1 text-sm">
                           <li>You need a spare and don't have specific people in mind</li>
                           <li>You want maximum visibility</li>
                           <li>You want to give everyone a fair chance</li>
                         </ul>
                       </div>
-                      <div className="border border-gray-200 rounded-lg p-4">
-                        <h3 className="font-semibold mb-2" style={{ color: '#121033' }}>Use Private When:</h3>
+                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                        <h3 className="font-semibold mb-2 text-[#121033] dark:text-gray-100">Use Private When:</h3>
                         <ul className="list-disc list-inside space-y-1 text-sm">
                           <li>You have specific members you want to ask</li>
                           <li>You want to keep the request private</li>
@@ -109,7 +109,7 @@ export default function PublicVsPrivate() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Switching Between Types
                     </h2>
                     <p className="mb-3">
@@ -119,7 +119,7 @@ export default function PublicVsPrivate() {
                   </section>
                 </div>
 
-                <div className="mt-8 pt-6 border-t border-gray-200">
+                <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
                   <Link to="/help" className="text-primary-teal hover:underline">
                     ← Back to Help Index
                   </Link>

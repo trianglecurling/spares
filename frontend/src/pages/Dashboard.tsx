@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { HiOutlineUserPlus, HiOutlineCalendar, HiOutlineInbox } from 'react-icons/hi2';
 import Layout from '../components/Layout';
 import api from '../utils/api';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
+import NotificationModal from '../components/NotificationModal';
+import { useAlert } from '../contexts/AlertContext';
+import { useConfirm } from '../contexts/ConfirmContext';
+import { useAuth } from '../contexts/AuthContext';
+import { formatPhone } from '../utils/phone';
 
 interface SpareRequest {
   id: number;
   requesterName: string;
+  requesterEmail?: string;
+  requesterPhone?: string;
   requestedForName: string;
   gameDate: string;
   gameTime: string;
@@ -28,11 +36,17 @@ interface MySpareRequest {
   requestType: string;
   status: string;
   filledByName?: string;
+  filledByEmail?: string;
+  filledByPhone?: string;
   filledAt?: string;
   sparerComment?: string;
 }
 
 export default function Dashboard() {
+  const { member } = useAuth();
+  const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [openRequests, setOpenRequests] = useState<SpareRequest[]>([]);
   const [mySparing, setMySparing] = useState<SpareRequest[]>([]);
   const [filledRequests, setFilledRequests] = useState<SpareRequest[]>([]);
@@ -45,10 +59,42 @@ export default function Dashboard() {
   const [cancelRequest, setCancelRequest] = useState<SpareRequest | null>(null);
   const [cancelComment, setCancelComment] = useState('');
   const [canceling, setCanceling] = useState(false);
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    message: string;
+    variant: 'success' | 'error';
+  }>({ isOpen: false, message: '', variant: 'success' });
 
   useEffect(() => {
     loadAllData();
   }, []);
+
+  // Check for requestId in URL and open dialog when data is loaded
+  useEffect(() => {
+    const requestIdParam = searchParams.get('requestId');
+    if (requestIdParam && !loading) {
+      const requestId = parseInt(requestIdParam, 10);
+      
+      // Check if user has already responded to this request
+      const alreadyResponded = mySparing.some(r => r.id === requestId);
+      if (alreadyResponded) {
+        showAlert('You are already signed up for this spare request.', 'error');
+        // Clear the requestId from URL
+        searchParams.delete('requestId');
+        setSearchParams(searchParams, { replace: true });
+        return;
+      }
+      
+      // Find the request in open requests
+      const request = openRequests.find(r => r.id === requestId);
+      if (request) {
+        setSelectedRequest(request);
+        // Clear the requestId from URL
+        searchParams.delete('requestId');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [loading, openRequests, mySparing, searchParams, setSearchParams, showAlert]);
 
   const loadAllData = async () => {
     try {
@@ -83,9 +129,45 @@ export default function Dashboard() {
       await loadAllData();
       setSelectedRequest(null);
       setComment('');
-    } catch (error) {
+      
+      // Show success notification
+      setNotification({
+        isOpen: true,
+        message: `You've successfully signed up to spare for ${selectedRequest.requestedForName}!`,
+        variant: 'success',
+      });
+    } catch (error: any) {
       console.error('Failed to respond to spare request:', error);
-      alert('Failed to respond. This request may have already been filled.');
+      
+      // Check for specific error cases
+      if (error.response?.status === 404) {
+        setNotification({
+          isOpen: true,
+          message: 'This spare request has been deleted and is no longer available.',
+          variant: 'error',
+        });
+        // Reload data to remove the deleted request from the list
+        await loadAllData();
+        setSelectedRequest(null);
+        setComment('');
+      } else if (error.response?.status === 400) {
+        const errorMessage = error.response?.data?.error || 'This spare request is no longer open.';
+        setNotification({
+          isOpen: true,
+          message: errorMessage,
+          variant: 'error',
+        });
+        // Reload data to update the request status
+        await loadAllData();
+        setSelectedRequest(null);
+        setComment('');
+      } else {
+        setNotification({
+          isOpen: true,
+          message: 'Failed to respond. Please try again.',
+          variant: 'error',
+        });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +177,7 @@ export default function Dashboard() {
     if (!cancelRequest) return;
 
     if (!cancelComment.trim()) {
-      alert('Please provide a comment explaining why you are canceling.');
+      showAlert('Please provide a comment explaining why you are canceling.', 'warning');
       return;
     }
 
@@ -109,26 +191,57 @@ export default function Dashboard() {
       await loadAllData();
       setCancelRequest(null);
       setCancelComment('');
+      
+      // Show success notification
+      setNotification({
+        isOpen: true,
+        message: `You've successfully canceled sparing for ${cancelRequest.requestedForName}.`,
+        variant: 'success',
+      });
     } catch (error) {
       console.error('Failed to cancel sparing:', error);
-      alert('Failed to cancel sparing. Please try again.');
+      setNotification({
+        isOpen: true,
+        message: 'Failed to cancel sparing. Please try again.',
+        variant: 'error',
+      });
     } finally {
       setCanceling(false);
     }
   };
 
   const handleCancelRequest = async (id: number) => {
-    if (!confirm('Are you sure you want to cancel this spare request?')) {
+    const confirmed = await confirm({
+      title: 'Cancel spare request',
+      message: 'Are you sure you want to cancel this spare request?',
+      variant: 'danger',
+      confirmText: 'Yes, cancel request',
+      cancelText: 'Never mind',
+    });
+
+    if (!confirmed) {
       return;
     }
+
+    // Find the request to get details for the success message
+    const request = myRequests.find((r) => r.id === id);
 
     try {
       await api.post(`/spares/${id}/cancel`);
       // Reload all data
       await loadAllData();
+      
+      // Show success notification
+      if (request) {
+        setNotification({
+          isOpen: true,
+          message: `Your spare request for ${request.requestedForName} has been successfully canceled.`,
+          variant: 'success',
+        });
+      }
     } catch (error) {
       console.error('Failed to cancel request:', error);
-      alert('Failed to cancel request');
+      showAlert('Failed to cancel request', 'error');
     }
   };
 
@@ -153,15 +266,15 @@ export default function Dashboard() {
   };
 
   const renderRequestCard = (request: SpareRequest, showButton = true, showMessage = true, showCancelButton = false) => (
-    <div key={request.id} className="bg-white rounded-lg shadow p-6">
+    <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <div className="flex items-center space-x-2 mb-2">
-            <h3 className="text-lg font-semibold">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               Spare needed for {request.requestedForName}
             </h3>
             {showButton && (
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium">
+              <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
                 Open
               </span>
             )}
@@ -172,17 +285,31 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div className="text-gray-600 space-y-1">
+          <div className="text-gray-600 dark:text-gray-400 space-y-1">
             <p>
-              <span className="font-medium">When:</span> {formatDate(request.gameDate)}{' '}
+              <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
               at {formatTime(request.gameTime)}
             </p>
             <p>
-              <span className="font-medium">Requested by:</span> {request.requesterName}
+              <span className="font-medium dark:text-gray-300">Requested by:</span> {request.requesterName}
             </p>
+            {request.requesterEmail && (
+              <p className="text-sm ml-4">
+                <a href={`mailto:${request.requesterEmail}`} className="text-primary-teal hover:underline">
+                  {request.requesterEmail}
+                </a>
+              </p>
+            )}
+            {request.requesterPhone && (
+              <p className="text-sm ml-4">
+                <a href={`tel:${request.requesterPhone.replace(/\D/g, '')}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
+                  {formatPhone(request.requesterPhone)}
+                </a>
+              </p>
+            )}
             {request.filledByName && (
               <p>
-                <span className="font-medium">Filled by:</span> {request.filledByName}
+                <span className="font-medium dark:text-gray-300">Filled by:</span> {request.filledByName}
               </p>
             )}
             {showMessage && request.message && (
@@ -216,39 +343,45 @@ export default function Dashboard() {
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold" style={{ color: '#121033' }}>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
             Dashboard
           </h1>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Link
-            to="/request-spare"
-            className="border-2 border-primary-orange text-gray-800 p-6 rounded-lg hover:bg-primary-orange hover:text-white transition-colors text-center"
-          >
-            <div className="text-4xl mb-2">🙋</div>
-            <div className="text-xl font-semibold">Request a spare</div>
-            <div className="text-sm mt-1">Need someone to fill in for your game?</div>
-          </Link>
+          {!member?.spareOnly && (
+            <Link
+              to="/request-spare"
+              className="border-2 border-primary-orange text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-primary-orange hover:text-white dark:hover:bg-primary-orange transition-colors text-center"
+            >
+              <div className="flex justify-center mb-2">
+                <HiOutlineUserPlus className="w-12 h-12" />
+              </div>
+              <div className="text-xl font-semibold">Request a spare</div>
+              <div className="text-sm mt-1 dark:text-gray-300">Need someone to fill in for your game?</div>
+            </Link>
+          )}
 
           <Link
             to="/availability"
-            className="border-2 border-primary-teal text-gray-800 p-6 rounded-lg hover:bg-primary-teal hover:text-white transition-colors text-center"
+            className="border-2 border-primary-teal text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-primary-teal hover:text-white dark:hover:bg-primary-teal transition-colors text-center"
           >
-            <div className="text-4xl mb-2">📅</div>
+            <div className="flex justify-center mb-2">
+              <HiOutlineCalendar className="w-12 h-12" />
+            </div>
             <div className="text-xl font-semibold">Set your availability</div>
-            <div className="text-sm mt-1">Let others know when you can spare</div>
+            <div className="text-sm mt-1 dark:text-gray-300">Let others know when you can spare</div>
           </Link>
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : (
           <div className="space-y-6">
             {/* My Upcoming Sparing */}
             {mySparing.length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold mb-4" style={{ color: '#121033' }}>
+                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                   My upcoming sparing
                 </h2>
                 <div className="space-y-4">
@@ -260,25 +393,25 @@ export default function Dashboard() {
             {/* My Spare Requests */}
             {myRequests.length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold mb-4" style={{ color: '#121033' }}>
+                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                   My spare requests
                 </h2>
                 <div className="space-y-4">
                   {myRequests.map((request) => (
-                    <div key={request.id} className="bg-white rounded-lg shadow p-6">
+                    <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-2">
-                            <h3 className="text-lg font-semibold">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                               Spare for {request.requestedForName}
                             </h3>
                             {request.status === 'open' && (
-                              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium">
+                              <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
                                 Open
                               </span>
                             )}
                             {request.status === 'filled' && (
-                              <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm font-medium">
+                              <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-2 py-1 rounded text-sm font-medium">
                                 Filled
                               </span>
                             )}
@@ -289,23 +422,39 @@ export default function Dashboard() {
                             )}
                           </div>
 
-                          <div className="text-gray-600 space-y-1">
+                          <div className="text-gray-600 dark:text-gray-400 space-y-1">
                             <p>
-                              <span className="font-medium">When:</span> {formatDate(request.gameDate)}{' '}
+                              <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
                               at {formatTime(request.gameTime)}
                             </p>
                             {request.message && (
                               <p className="italic mt-2">"{request.message}"</p>
                             )}
                             {request.status === 'filled' && request.filledByName && (
-                              <p className="text-green-700 font-medium mt-2">
-                                ✓ Filled by {request.filledByName}
-                              </p>
+                              <>
+                                <p className="text-green-700 dark:text-green-400 font-medium mt-2">
+                                  ✓ Filled by {request.filledByName}
+                                </p>
+                                {request.filledByEmail && (
+                                  <p className="text-sm ml-4 mt-1">
+                                    <a href={`mailto:${request.filledByEmail}`} className="text-primary-teal hover:underline">
+                                      {request.filledByEmail}
+                                    </a>
+                                  </p>
+                                )}
+                                {request.filledByPhone && (
+                                  <p className="text-sm ml-4 mt-1">
+                                    <a href={`tel:${request.filledByPhone.replace(/\D/g, '')}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
+                                      {formatPhone(request.filledByPhone)}
+                                    </a>
+                                  </p>
+                                )}
+                              </>
                             )}
                             {request.status === 'filled' && request.sparerComment && (
-                              <div className="mt-3 p-3 bg-gray-50 rounded-md">
-                                <p className="text-sm font-medium text-gray-700 mb-1">Message from {request.filledByName}:</p>
-                                <p className="text-sm text-gray-600 italic">"{request.sparerComment}"</p>
+                              <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message from {request.filledByName}:</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 italic">"{request.sparerComment}"</p>
                               </div>
                             )}
                           </div>
@@ -329,13 +478,15 @@ export default function Dashboard() {
 
             {/* Outstanding Spare Requests */}
             <div>
-              <h2 className="text-xl font-semibold mb-4" style={{ color: '#121033' }}>
+              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                 Outstanding spare requests
               </h2>
               {openRequests.length === 0 ? (
-                <div className="text-center py-8 bg-white rounded-lg shadow">
-                  <div className="text-4xl mb-2">🎯</div>
-                  <p className="text-gray-600">
+                <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg shadow">
+                  <div className="flex justify-center mb-2">
+                    <HiOutlineInbox className="w-12 h-12 text-gray-400 dark:text-gray-500" />
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-400">
                     No open spare requests at the moment. Check back later!
                   </p>
                 </div>
@@ -353,10 +504,10 @@ export default function Dashboard() {
                   onClick={() => setShowFilled(!showFilled)}
                   className="flex items-center justify-between w-full text-left mb-4"
                 >
-                  <h2 className="text-xl font-semibold" style={{ color: '#121033' }}>
+                  <h2 className="text-xl font-semibold text-[#121033] dark:text-gray-100">
                     Filled spare requests
                   </h2>
-                  <span className="text-gray-500 text-sm">
+                  <span className="text-gray-500 dark:text-gray-400 text-sm">
                     {showFilled ? '▼' : '▶'} {filledRequests.length}
                   </span>
                 </button>
@@ -381,26 +532,26 @@ export default function Dashboard() {
       >
         {selectedRequest && (
           <div className="space-y-4">
-            <p className="text-gray-700">
+            <p className="text-gray-700 dark:text-gray-300">
               You're signing up to spare for <strong>{selectedRequest.requestedForName}</strong> on{' '}
               {formatDate(selectedRequest.gameDate)} at {formatTime(selectedRequest.gameTime)}.
             </p>
 
             {selectedRequest.position && (
-              <p className="text-gray-700">
+              <p className="text-gray-700 dark:text-gray-300">
                 Position: <strong>{selectedRequest.position}</strong>
               </p>
             )}
 
             <div>
-              <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="comment" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Optional message for {selectedRequest.requesterName}
               </label>
               <textarea
                 id="comment"
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 rows={3}
                 placeholder="Add any notes or questions..."
               />
@@ -440,19 +591,19 @@ export default function Dashboard() {
       >
         {cancelRequest && (
           <div className="space-y-4">
-            <p className="text-gray-700">
+            <p className="text-gray-700 dark:text-gray-300">
               Are you sure you want to cancel sparing for <strong>{cancelRequest.requestedForName}</strong>? Please include a comment for the spare requester.
             </p>
 
             <div>
-              <label htmlFor="cancelComment" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="cancelComment" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Comment <span className="text-red-500">*</span>
               </label>
               <textarea
                 id="cancelComment"
                 value={cancelComment}
                 onChange={(e) => setCancelComment(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 rows={4}
                 placeholder="Please explain why you need to cancel..."
                 required
@@ -477,12 +628,20 @@ export default function Dashboard() {
                 disabled={canceling}
                 className="flex-1"
               >
-                Cancel
+                Never mind
               </Button>
             </div>
           </div>
         )}
       </Modal>
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        message={notification.message}
+        variant={notification.variant}
+        onClose={() => setNotification({ ...notification, isOpen: false })}
+        autoCloseMs={notification.variant === 'success' ? 3000 : 0}
+      />
     </Layout>
   );
 }

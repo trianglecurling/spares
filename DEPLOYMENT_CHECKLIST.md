@@ -79,7 +79,7 @@ JWT_SECRET=<generate-a-long-random-secret-here>
 
 # These are now optional since we use db-config.json for admins
 # But can be used as fallback:
-# SPARES_ADMINS=admin@example.com
+# SERVER_ADMINS=admin@example.com
 
 AZURE_COMMUNICATION_CONNECTION_STRING=<your-azure-connection-string>
 AZURE_COMMUNICATION_SENDER_EMAIL=noreply@tccnc.club

@@ -1,14 +1,18 @@
-import React, { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { HiXMark } from 'react-icons/hi2';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
 }
 
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+  const modalRef = useFocusTrap(isOpen);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -45,26 +49,19 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
           onClick={onClose}
         />
         
-        <div className={`relative bg-white rounded-lg shadow-xl ${sizeClasses[size]} w-full p-4 sm:p-6 max-h-[95vh] flex flex-col`}>
+        <div
+          ref={modalRef}
+          className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl ${sizeClasses[size]} w-full p-4 sm:p-6 max-h-[95vh] flex flex-col`}
+        >
           <div className="flex justify-between items-center mb-4 flex-shrink-0">
-            <h3 className="text-lg font-semibold" style={{ color: '#121033' }}>
+            <h3 className="text-lg font-semibold text-[#121033] dark:text-gray-100">
               {title}
             </h3>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
             >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <HiXMark className="w-6 h-6" />
             </button>
           </div>
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">

@@ -63,7 +63,7 @@ cp backend/env.template backend/.env
 
 Required environment variables:
 - `JWT_SECRET`: A long random string for JWT signing
-- `SPARES_ADMINS`: Comma-separated list of admin email addresses
+- `SERVER_ADMINS`: Comma-separated list of server admin email addresses
 - `AZURE_COMMUNICATION_CONNECTION_STRING`: Azure Communication Services connection string
 - `AZURE_COMMUNICATION_SENDER_EMAIL`: Verified sender email address
 - `TWILIO_ACCOUNT_SID`: Twilio account SID
@@ -155,7 +155,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 
 ### Setting Up First Admin
 
-1. Add your email address to the `SPARES_ADMINS` environment variable in `.env`
+1. Add your email address to the `SERVER_ADMINS` environment variable in `.env`
 2. Restart the backend server
 3. Log in using your email address
 

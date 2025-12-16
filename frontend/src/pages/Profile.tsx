@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import api from '../utils/api';
 import Button from '../components/Button';
 
 export default function Profile() {
   const { member, updateMember } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: member?.name || '',
@@ -45,15 +47,17 @@ export default function Profile() {
   return (
     <Layout>
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6" style={{ color: '#121033' }}>
+        <h1 className="text-3xl font-bold mb-6 text-[#121033] dark:text-gray-100">
           My profile
         </h1>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           {message && (
             <div
               className={`mb-6 p-4 rounded ${
-                message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+                message.type === 'success' 
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200' 
+                  : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
               }`}
             >
               {message.text}
@@ -62,7 +66,7 @@ export default function Profile() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -70,17 +74,17 @@ export default function Profile() {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 required
               />
             </div>
 
-            <div className="border-t pt-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Contact information</h2>
+            <div className="border-t pt-6 dark:border-gray-700">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Contact information</h2>
               
               <div className="space-y-6">
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Email address <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -88,7 +92,7 @@ export default function Profile() {
                     id="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                     required
                   />
                   <div className="mt-2 flex items-start">
@@ -99,14 +103,14 @@ export default function Profile() {
                       onChange={(e) => setFormData({ ...formData, emailVisible: e.target.checked })}
                       className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
                     />
-                    <label htmlFor="emailVisible" className="text-sm text-gray-600 select-none cursor-pointer">
+                    <label htmlFor="emailVisible" className="text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer">
                       Show my email in the member directory
                     </label>
                   </div>
                 </div>
 
                 <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Phone number
                   </label>
                   <input
@@ -114,7 +118,7 @@ export default function Profile() {
                     id="phone"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                   />
                   <div className="mt-2 flex items-start">
                     <input
@@ -124,7 +128,7 @@ export default function Profile() {
                       onChange={(e) => setFormData({ ...formData, phoneVisible: e.target.checked })}
                       className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
                     />
-                    <label htmlFor="phoneVisible" className="text-sm text-gray-600 select-none cursor-pointer">
+                    <label htmlFor="phoneVisible" className="text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer">
                       Show my phone number in the member directory
                     </label>
                   </div>
@@ -132,10 +136,10 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="border-t pt-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Notifications</h2>
+            <div className="border-t pt-6 dark:border-gray-700">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Notifications</h2>
               
-              <div className="bg-blue-50 p-4 rounded-md">
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
                 <div className="flex items-start">
                   <input
                     type="checkbox"
@@ -145,10 +149,55 @@ export default function Profile() {
                     className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
                   />
                   <label htmlFor="optedInSms" className="text-sm select-none cursor-pointer">
-                    <span className="font-medium text-gray-900">Receive text message notifications</span>
-                    <p className="text-gray-600 mt-1">
+                    <span className="font-medium text-gray-900 dark:text-gray-100">Receive text message notifications</span>
+                    <p className="text-gray-600 dark:text-gray-400 mt-1">
                       Get notified via SMS when new spare requests match your availability.
                     </p>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-6 dark:border-gray-700">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Appearance</h2>
+              
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Theme
+                </label>
+                <div className="space-y-2">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="theme"
+                      value="system"
+                      checked={theme === 'system'}
+                      onChange={() => setTheme('system')}
+                      className="mr-3 text-primary-teal focus:ring-primary-teal"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">System default</span>
+                  </label>
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="theme"
+                      value="light"
+                      checked={theme === 'light'}
+                      onChange={() => setTheme('light')}
+                      className="mr-3 text-primary-teal focus:ring-primary-teal"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Light</span>
+                  </label>
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="theme"
+                      value="dark"
+                      checked={theme === 'dark'}
+                      onChange={() => setTheme('dark')}
+                      className="mr-3 text-primary-teal focus:ring-primary-teal"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Dark</span>
                   </label>
                 </div>
               </div>

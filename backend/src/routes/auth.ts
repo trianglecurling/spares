@@ -8,10 +8,26 @@ import {
   normalizeEmail,
   normalizePhone,
   isAdmin,
+  isServerAdmin,
 } from '../utils/auth.js';
 import { sendAuthCodeEmail } from '../services/email.js';
 import { sendAuthCodeSMS } from '../services/sms.js';
 import { Member } from '../types.js';
+
+function normalizeDateString(value: any): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString().split('T')[0];
+  return String(value);
+}
+
+function isMemberExpired(member: Member): boolean {
+  if (isAdmin(member) || isServerAdmin(member)) return false;
+  const validThrough = normalizeDateString((member as any).valid_through);
+  if (!validThrough) return false;
+  const today = new Date().toISOString().split('T')[0];
+  return today > validThrough;
+}
 
 const requestCodeSchema = z.object({
   contact: z.string().min(1),
@@ -64,12 +80,17 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       used: 0,
     });
 
-    // Send code via email or SMS
+    // Send code via email or SMS asynchronously (fire-and-forget) to avoid blocking the response
+    // Auth codes are time-sensitive but we can still return immediately
     const member = members[0]; // Use first member for sending
     if (isEmail && member.email && member.email_subscribed === 1) {
-      await sendAuthCodeEmail(normalizedContact, member.name, code);
+      sendAuthCodeEmail(normalizedContact, member.name, code).catch((error) => {
+        console.error('Error sending auth code email:', error);
+      });
     } else if (!isEmail && member.phone) {
-      await sendAuthCodeSMS(normalizedContact, code);
+      sendAuthCodeSMS(normalizedContact, code).catch((error) => {
+        console.error('Error sending auth code SMS:', error);
+      });
     }
 
     return { success: true, multipleMembers: members.length > 1 };
@@ -130,6 +151,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     // If only one member, generate token and return
     if (members.length === 1) {
       const member = members[0];
+      if (isMemberExpired(member as any)) {
+        return reply.code(403).send({ error: 'Membership expired' });
+      }
       const token = generateToken(member as Member);
 
       return {
@@ -139,10 +163,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
           name: member.name,
           email: member.email,
           phone: member.phone,
+          spareOnly: (member as any).spare_only === 1,
           isAdmin: isAdmin(member as Member),
+          isServerAdmin: isServerAdmin(member as Member),
           firstLoginCompleted: member.first_login_completed === 1,
           optedInSms: member.opted_in_sms === 1,
           emailSubscribed: member.email_subscribed === 1,
+          themePreference: member.theme_preference || 'system',
         },
       };
     }
@@ -212,6 +239,10 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Member not found' });
     }
 
+    if (isMemberExpired(member as any)) {
+      return reply.code(403).send({ error: 'Membership expired' });
+    }
+
     const token = generateToken(member as Member);
 
     return {
@@ -221,10 +252,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         name: member.name,
         email: member.email,
         phone: member.phone,
+        spareOnly: (member as any).spare_only === 1,
         isAdmin: isAdmin(member),
+        isServerAdmin: isServerAdmin(member),
         firstLoginCompleted: member.first_login_completed === 1,
         optedInSms: member.opted_in_sms === 1,
         emailSubscribed: member.email_subscribed === 1,
+        themePreference: member.theme_preference || 'system',
       },
     };
   });
@@ -244,10 +278,13 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         name: member.name,
         email: member.email,
         phone: member.phone,
+        spareOnly: (member as any).spare_only === 1,
         isAdmin: isAdmin(member),
+        isServerAdmin: isServerAdmin(member),
         firstLoginCompleted: member.first_login_completed === 1,
         optedInSms: member.opted_in_sms === 1,
         emailSubscribed: member.email_subscribed === 1,
+        themePreference: member.theme_preference || 'system',
       },
     };
   });

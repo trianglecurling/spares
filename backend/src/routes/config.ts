@@ -2,7 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { isAdmin } from '../utils/auth.js';
+import { isServerAdmin } from '../utils/auth.js';
+import { invalidateTestTimeCache } from '../utils/time.js';
 import { Member } from '../types.js';
 import { sendEmail } from '../services/email.js';
 import { sendSMS } from '../services/sms.js';
@@ -29,7 +30,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Get server configuration (admin only)
   fastify.get('/config', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -78,7 +79,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Update server configuration (admin only)
   fastify.patch('/config', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -118,7 +119,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       updateData.disable_sms = body.disableSms ? 1 : 0;
     }
     if (body.testCurrentTime !== undefined) {
-      updateData.test_current_time = body.testCurrentTime || null;
+      // Convert string to Date object for PostgreSQL timestamp column
+      updateData.test_current_time = body.testCurrentTime ? new Date(body.testCurrentTime) : null;
     }
     if (body.notificationDelaySeconds !== undefined) {
       updateData.notification_delay_seconds = body.notificationDelaySeconds;
@@ -131,6 +133,11 @@ export async function configRoutes(fastify: FastifyInstance) {
         .update(schema.serverConfig)
         .set(updateData)
         .where(eq(schema.serverConfig.id, 1));
+      
+      // Invalidate test time cache if test time was updated
+      if (body.testCurrentTime !== undefined) {
+        invalidateTestTimeCache();
+      }
       
       // Invalidate cached clients in email and SMS services
       // This will force them to reinitialize with new credentials
@@ -173,7 +180,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Send test email (admin only)
   fastify.post('/config/test-email', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -207,7 +214,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Send test SMS (admin only)
   fastify.post('/config/test-sms', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -232,7 +239,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Get database configuration (admin only)
   fastify.get('/database-config', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -276,7 +283,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.post('/database-config', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 

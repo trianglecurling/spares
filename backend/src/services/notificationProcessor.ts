@@ -2,7 +2,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendSpareRequestEmail } from './email.js';
 import { sendSpareRequestSMS } from './sms.js';
 import { generateEmailLinkToken } from '../utils/auth.js';
-import { getCurrentTime, getCurrentTimestamp } from '../utils/time.js';
+import { getCurrentTime, getCurrentTimestamp, getCurrentTimeAsync } from '../utils/time.js';
 import { eq, and, or, sql, asc, isNull, isNotNull, lte } from 'drizzle-orm';
 import { Member } from '../types.js';
 
@@ -34,7 +34,7 @@ interface SpareRequest {
  */
 export async function processNextNotification(): Promise<void> {
   const { db, schema } = getDrizzleDb();
-  const now = getCurrentTime();
+  const now = await getCurrentTimeAsync();
   
   // Ensure now is a Date object - Drizzle PostgreSQL timestamp columns require Date objects
   // getCurrentTime() should always return a Date, but we'll be defensive
@@ -173,6 +173,7 @@ export async function processNextNotification(): Promise<void> {
         updated_at: new Date().toISOString(),
       } as Member;
       const acceptToken = generateEmailLinkToken(memberForToken);
+      console.log(`[Notification Processor] Calling sendSpareRequestEmail for ${nextInQueue.email} (request ${spareRequest.id})`);
       await sendSpareRequestEmail(
         nextInQueue.email,
         nextInQueue.name,
@@ -184,9 +185,10 @@ export async function processNextNotification(): Promise<void> {
           position: spareRequest.position || undefined,
           message: spareRequest.message || undefined,
         },
-        acceptToken
+        acceptToken,
+        spareRequest.id
       );
-      console.log(`[Notification Processor] Email sent to ${nextInQueue.email}`);
+      console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
     }
 
     if (nextInQueue.phone && nextInQueue.opted_in_sms === 1) {

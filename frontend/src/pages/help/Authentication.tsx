@@ -8,15 +8,15 @@ export default function Authentication() {
   const currentPath = location.pathname;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <HelpHeader />
       <div className="flex-grow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             {/* Sidebar Navigation */}
             <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow p-6 sticky top-8">
-                <h2 className="text-lg font-semibold mb-4" style={{ color: '#121033' }}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 sticky top-8">
+                <h2 className="text-lg font-semibold mb-4 text-[#121033] dark:text-gray-100">
                   Help Topics
                 </h2>
                 <nav className="space-y-2">
@@ -27,7 +27,7 @@ export default function Authentication() {
                       className={`block px-3 py-2 rounded-md text-sm transition-colors ${
                         currentPath === section.path
                           ? 'bg-primary-teal text-white'
-                          : 'text-gray-700 hover:bg-gray-100'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                       }`}
                     >
                       {section.title}
@@ -39,14 +39,14 @@ export default function Authentication() {
 
             {/* Main Content */}
             <div className="lg:col-span-3">
-              <div className="bg-white rounded-lg shadow p-8">
-                <h1 className="text-3xl font-bold mb-6" style={{ color: '#121033' }}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
+                <h1 className="text-3xl font-bold mb-6 text-[#121033] dark:text-gray-100">
                   Authentication & Login
                 </h1>
 
-                <div className="prose max-w-none space-y-6 text-gray-700">
+                <div className="prose max-w-none space-y-6 text-gray-700 dark:text-gray-300">
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       How to Log In
                     </h2>
                     <ol className="list-decimal list-inside space-y-3">
@@ -69,7 +69,7 @@ export default function Authentication() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       First-Time Login
                     </h2>
                     <p className="mb-3">
@@ -84,7 +84,7 @@ export default function Authentication() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Staying Logged In
                     </h2>
                     <p className="mb-3">
@@ -99,7 +99,7 @@ export default function Authentication() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Multiple Accounts
                     </h2>
                     <p className="mb-3">
@@ -113,7 +113,7 @@ export default function Authentication() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Security
                     </h2>
                     <ul className="list-disc list-inside space-y-2">
@@ -125,7 +125,7 @@ export default function Authentication() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4" style={{ color: '#121033' }}>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Troubleshooting
                     </h2>
                     <ul className="list-disc list-inside space-y-2">
@@ -137,7 +137,7 @@ export default function Authentication() {
                   </section>
                 </div>
 
-                <div className="mt-8 pt-6 border-t border-gray-200">
+                <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
                   <Link to="/help" className="text-primary-teal hover:underline">
                     ← Back to Help Index
                   </Link>

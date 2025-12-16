@@ -12,6 +12,7 @@ const createLeagueSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
   drawTimes: z.array(z.string()),
+  exceptions: z.array(z.string()).optional(),
 });
 
 const updateLeagueSchema = z.object({
@@ -21,7 +22,18 @@ const updateLeagueSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   drawTimes: z.array(z.string()).optional(),
+  exceptions: z.array(z.string()).optional(),
 });
+
+function normalizeDateString(value: any): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString().split('T')[0];
+  return String(value);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)));
+}
 
 export async function leagueRoutes(fastify: FastifyInstance) {
   // Get all leagues
@@ -44,6 +56,12 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         .where(eq(schema.leagueDrawTimes.league_id, league.id))
         .orderBy(asc(schema.leagueDrawTimes.draw_time));
 
+      const exceptions = await db
+        .select({ exception_date: schema.leagueExceptions.exception_date })
+        .from(schema.leagueExceptions)
+        .where(eq(schema.leagueExceptions.league_id, league.id))
+        .orderBy(asc(schema.leagueExceptions.exception_date));
+
       return {
         id: league.id,
         name: league.name,
@@ -52,6 +70,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         startDate: league.start_date,
         endDate: league.end_date,
         drawTimes: drawTimes.map((dt: any) => dt.draw_time),
+        exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
       };
     }));
 
@@ -86,6 +105,12 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .where(eq(schema.leagueDrawTimes.league_id, leagueId))
       .orderBy(asc(schema.leagueDrawTimes.draw_time));
 
+    const exceptionsRows = await db
+      .select({ exception_date: schema.leagueExceptions.exception_date })
+      .from(schema.leagueExceptions)
+      .where(eq(schema.leagueExceptions.league_id, leagueId));
+    const exceptions = new Set(exceptionsRows.map((ex: any) => normalizeDateString(ex.exception_date)));
+
     const games: { date: string; time: string }[] = [];
     
     // Parse dates carefully to avoid timezone issues
@@ -115,6 +140,12 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     // Using <= works correctly if dates are normalized to UTC midnight
     while (currentDate <= endDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
+
+      // Skip dates where the league does not run (holiday / off week / etc.)
+      if (exceptions.has(dateStr)) {
+        currentDate.setUTCDate(currentDate.getUTCDate() + 7);
+        continue;
+      }
       
       for (const dt of drawTimes) {
         // If the game is today, check if the time has passed
@@ -150,6 +181,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
     const body = createLeagueSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
+    const exceptions = uniqueStrings(body.exceptions ?? []);
 
     const result = await db
       .insert(schema.leagues)
@@ -174,6 +206,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       );
     }
 
+    // Insert exceptions
+    if (exceptions.length > 0) {
+      await db.insert(schema.leagueExceptions).values(
+        exceptions.map((d) => ({
+          league_id: leagueId,
+          exception_date: d,
+        }))
+      );
+    }
+
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -188,6 +230,12 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .where(eq(schema.leagueDrawTimes.league_id, leagueId))
       .orderBy(asc(schema.leagueDrawTimes.draw_time));
 
+    const exceptionRows = await db
+      .select({ exception_date: schema.leagueExceptions.exception_date })
+      .from(schema.leagueExceptions)
+      .where(eq(schema.leagueExceptions.league_id, leagueId))
+      .orderBy(asc(schema.leagueExceptions.exception_date));
+
     return {
       id: league.id,
       name: league.name,
@@ -196,6 +244,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       startDate: league.start_date,
       endDate: league.end_date,
       drawTimes: drawTimes.map((dt: any) => dt.draw_time),
+      exceptions: exceptionRows.map((ex: any) => normalizeDateString(ex.exception_date)),
     };
   });
 
@@ -253,6 +302,23 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       }
     }
 
+    // Update exceptions if provided
+    if (body.exceptions !== undefined) {
+      const exceptions = uniqueStrings(body.exceptions);
+      await db
+        .delete(schema.leagueExceptions)
+        .where(eq(schema.leagueExceptions.league_id, leagueId));
+
+      if (exceptions.length > 0) {
+        await db.insert(schema.leagueExceptions).values(
+          exceptions.map((d) => ({
+            league_id: leagueId,
+            exception_date: d,
+          }))
+        );
+      }
+    }
+
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -267,6 +333,12 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .where(eq(schema.leagueDrawTimes.league_id, leagueId))
       .orderBy(asc(schema.leagueDrawTimes.draw_time));
 
+    const exceptionRows = await db
+      .select({ exception_date: schema.leagueExceptions.exception_date })
+      .from(schema.leagueExceptions)
+      .where(eq(schema.leagueExceptions.league_id, leagueId))
+      .orderBy(asc(schema.leagueExceptions.exception_date));
+
     return {
       id: league.id,
       name: league.name,
@@ -275,6 +347,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       startDate: league.start_date,
       endDate: league.end_date,
       drawTimes: drawTimes.map((dt: any) => dt.draw_time),
+      exceptions: exceptionRows.map((ex: any) => normalizeDateString(ex.exception_date)),
     };
   });
 
@@ -316,6 +389,12 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         .where(eq(schema.leagueDrawTimes.league_id, league.id))
         .orderBy(asc(schema.leagueDrawTimes.draw_time));
 
+      const exceptions = await db
+        .select({ exception_date: schema.leagueExceptions.exception_date })
+        .from(schema.leagueExceptions)
+        .where(eq(schema.leagueExceptions.league_id, league.id))
+        .orderBy(asc(schema.leagueExceptions.exception_date));
+
       return {
         name: league.name,
         dayOfWeek: league.day_of_week,
@@ -323,6 +402,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         startDate: league.start_date,
         endDate: league.end_date,
         drawTimes: drawTimes.map((dt: any) => dt.draw_time),
+        exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
       };
     }));
 
@@ -338,6 +418,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       startDate: z.string(),
       endDate: z.string(),
       drawTimes: z.array(z.string()),
+      exceptions: z.array(z.string()).optional(),
     })),
   });
 
@@ -382,6 +463,10 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         await db
           .delete(schema.leagueDrawTimes)
           .where(eq(schema.leagueDrawTimes.league_id, leagueId));
+        // Delete existing exceptions
+        await db
+          .delete(schema.leagueExceptions)
+          .where(eq(schema.leagueExceptions.league_id, leagueId));
       } else {
         // Create new league
         const result = await db
@@ -408,6 +493,17 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         );
       }
 
+      // Insert exceptions
+      const exceptions = uniqueStrings(leagueData.exceptions ?? []);
+      if (exceptions.length > 0) {
+        await db.insert(schema.leagueExceptions).values(
+          exceptions.map((d) => ({
+            league_id: leagueId,
+            exception_date: d,
+          }))
+        );
+      }
+
       importedLeagues.push({
         id: leagueId,
         name: leagueData.name,
@@ -416,6 +512,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         startDate: leagueData.startDate,
         endDate: leagueData.endDate,
         drawTimes: leagueData.drawTimes,
+        exceptions,
       });
     }
 

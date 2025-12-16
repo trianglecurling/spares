@@ -10,11 +10,16 @@ export default function RespondToSpare() {
   useEffect(() => {
     if (!isLoading) {
       const token = searchParams.get('token');
+      const requestId = searchParams.get('requestId');
       if (token) {
         // Token will be handled by AuthContext
-        // Just redirect to dashboard after a moment
+        // Redirect to dashboard with requestId to open the response dialog
         setTimeout(() => {
-          navigate('/?responseMode=true');
+          if (requestId) {
+            navigate(`/?requestId=${requestId}`);
+          } else {
+            navigate('/');
+          }
         }, 500);
       }
     }

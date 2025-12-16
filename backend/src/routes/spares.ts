@@ -6,7 +6,7 @@ import { Member, SpareRequest, League } from '../types.js';
 import { sendSpareRequestEmail, sendSpareResponseEmail, sendSpareCancellationEmail } from '../services/email.js';
 import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } from '../services/sms.js';
 import { generateToken, generateEmailLinkToken } from '../utils/auth.js';
-import { getCurrentDateString, getCurrentTimestamp, getCurrentTime } from '../utils/time.js';
+import { getCurrentDateString, getCurrentTimestamp, getCurrentTime, getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
 
 const createSpareRequestSchema = z.object({
   requestedForName: z.string().min(1),
@@ -39,7 +39,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     const { db, schema } = getDrizzleDb();
-    const today = getCurrentDateString();
+    const today = await getCurrentDateStringAsync();
     
     // Check if member can skip
     const memberAvailability = await db
@@ -148,7 +148,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     const { db, schema } = getDrizzleDb();
-    const today = getCurrentDateString();
+    const today = await getCurrentDateStringAsync();
     
     const requests = await db
       .select({
@@ -161,6 +161,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
         request_type: schema.spareRequests.request_type,
         status: schema.spareRequests.status,
         filled_by_name: schema.members.name,
+        filled_by_email: schema.members.email,
+        filled_by_phone: schema.members.phone,
         filled_at: schema.spareRequests.filled_at,
         notifications_sent_at: schema.spareRequests.notifications_sent_at,
         had_cancellation: schema.spareRequests.had_cancellation,
@@ -201,6 +203,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requestType: req.request_type,
         status: req.status,
         filledByName: req.filled_by_name,
+        filledByEmail: req.filled_by_email,
+        filledByPhone: req.filled_by_phone,
         filledAt: req.filled_at,
         sparerComment: req.sparer_comment,
         notificationsSentAt: req.notifications_sent_at,
@@ -218,13 +222,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     const { db, schema } = getDrizzleDb();
-    const today = getCurrentDateString();
+    const today = await getCurrentDateStringAsync();
     
     const requests = await db
       .select({
         id: schema.spareRequests.id,
         requester_name: schema.members.name,
         requester_email: schema.members.email,
+        requester_phone: schema.members.phone,
         requested_for_name: schema.spareRequests.requested_for_name,
         game_date: schema.spareRequests.game_date,
         game_time: schema.spareRequests.game_time,
@@ -247,6 +252,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
     return requests.map((req: any) => ({
       id: req.id,
       requesterName: req.requester_name,
+      requesterEmail: req.requester_email,
+      requesterPhone: req.requester_phone,
       requestedForName: req.requested_for_name,
       gameDate: req.game_date,
       gameTime: req.game_time,
@@ -265,7 +272,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     const { db, schema } = getDrizzleDb();
-    const today = getCurrentDateString();
+    const today = await getCurrentDateStringAsync();
     
     // Get filled requests that are upcoming, excluding ones the user filled
     // Use a subquery approach since we need to join members twice
@@ -334,6 +341,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
+    if ((member as any).spare_only === 1) {
+      return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
+    }
 
     const body = createSpareRequestSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
@@ -385,42 +395,41 @@ export async function spareRoutes(fastify: FastifyInstance) {
       // Get list of all invited member names for the email
       const invitedMemberNames = recipientMembers.map(m => m.name).sort();
 
-      // Send notifications immediately for private requests
+      // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
       for (const recipient of recipientMembers) {
         if (recipient.email) {
           const acceptToken = generateEmailLinkToken(recipient);
           
-          try {
-            await sendSpareRequestEmail(
-              recipient.email,
-              recipient.name,
-              member.name,
-              {
-                requestedForName: body.requestedForName,
-                gameDate: body.gameDate,
-                gameTime: body.gameTime,
-                position: body.position,
-                message: body.message,
-                invitedMemberNames: invitedMemberNames,
-              },
-              acceptToken
-            );
-          } catch (error) {
+          // Don't await - send in background
+          sendSpareRequestEmail(
+            recipient.email,
+            recipient.name,
+            member.name,
+            {
+              requestedForName: body.requestedForName,
+              gameDate: body.gameDate,
+              gameTime: body.gameTime,
+              position: body.position,
+              message: body.message,
+              invitedMemberNames: invitedMemberNames,
+            },
+            acceptToken,
+            requestId
+          ).catch((error) => {
             console.error('Error sending spare request email:', error);
-          }
+          });
         }
 
         if (recipient.phone && recipient.opted_in_sms === 1) {
-          try {
-            await sendSpareRequestSMS(
-              recipient.phone,
-              member.name,
-              body.gameDate,
-              body.gameTime
-            );
-          } catch (error) {
+          // Don't await - send in background
+          sendSpareRequestSMS(
+            recipient.phone,
+            member.name,
+            body.gameDate,
+            body.gameTime
+          ).catch((error) => {
             console.error('Error sending spare request SMS:', error);
-          }
+          });
         }
       }
 
@@ -429,7 +438,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         await db
           .update(schema.spareRequests)
           .set({
-            notifications_sent_at: getCurrentTime(),
+            notifications_sent_at: await getCurrentTimeAsync(),
             notification_status: 'completed',
           })
           .where(eq(schema.spareRequests.id, requestId));
@@ -446,7 +455,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const [gameYear, gameMonth, gameDay] = body.gameDate.split('-').map(Number);
       const [gameHours, gameMinutes] = body.gameTime.split(':').map(Number);
       const gameDateTime = new Date(gameYear, gameMonth - 1, gameDay, gameHours, gameMinutes);
-      const currentTime = getCurrentTime();
+      const currentTime = await getCurrentTimeAsync();
       const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
       const isLessThan24Hours = hoursUntilGame < 24;
 
@@ -530,7 +539,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
                   position: body.position,
                   message: body.message,
                 },
-                acceptToken
+                acceptToken,
+                requestId
               );
             } catch (error) {
               console.error('Error sending spare request email:', error);
@@ -556,7 +566,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           await db
             .update(schema.spareRequests)
             .set({
-              notifications_sent_at: getCurrentTime(),
+              notifications_sent_at: await getCurrentTimeAsync(),
               notification_status: 'completed',
             })
             .where(eq(schema.spareRequests.id, requestId));
@@ -612,7 +622,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .update(schema.spareRequests)
           .set({
             notification_status: 'in_progress',
-            next_notification_at: getCurrentTime(),
+            next_notification_at: await getCurrentTimeAsync(),
             notification_paused: 0,
           })
           .where(eq(schema.spareRequests.id, requestId));
@@ -656,6 +666,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'This spare request is no longer open' });
     }
 
+    // Check if user has already responded to this request
+    const existingResponses = await db
+      .select()
+      .from(schema.spareResponses)
+      .where(
+        and(
+          eq(schema.spareResponses.spare_request_id, requestId),
+          eq(schema.spareResponses.member_id, member.id)
+        )
+      )
+      .limit(1);
+
+    if (existingResponses.length > 0) {
+      return reply.code(400).send({ error: 'You are already signed up for this spare request.' });
+    }
+
     // Create response
     await db.insert(schema.spareResponses).values({
       spare_request_id: requestId,
@@ -669,7 +695,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .set({
         status: 'filled',
         filled_by_member_id: member.id,
-        filled_at: getCurrentTime(),
+        filled_at: await getCurrentTimeAsync(),
         had_cancellation: 0,
         notification_status: 'stopped',
         next_notification_at: null,
@@ -685,40 +711,39 @@ export async function spareRoutes(fastify: FastifyInstance) {
     
     const requester = requesters[0] as Member;
 
-    // Send notification to requester
+    // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
+    // The user experience is more important than waiting for external API calls
     if (requester.email && requester.email_subscribed === 1) {
       const requesterToken = generateToken(requester);
       
-      try {
-        await sendSpareResponseEmail(
-          requester.email,
-          requester.name,
-          member.name,
-          {
-            requestedForName: spareRequest.requested_for_name,
-            gameDate: spareRequest.game_date,
-            gameTime: spareRequest.game_time,
-            position: spareRequest.position || undefined,
-          },
-          body.comment,
-          requesterToken
-        );
-      } catch (error) {
+      // Don't await - send in background
+      sendSpareResponseEmail(
+        requester.email,
+        requester.name,
+        member.name,
+        {
+          requestedForName: spareRequest.requested_for_name,
+          gameDate: spareRequest.game_date,
+          gameTime: spareRequest.game_time,
+          position: spareRequest.position || undefined,
+        },
+        body.comment,
+        requesterToken
+      ).catch((error) => {
         console.error('Error sending spare response email:', error);
-      }
+      });
     }
 
     if (requester.phone && requester.opted_in_sms === 1) {
-      try {
-        await sendSpareFilledSMS(
-          requester.phone,
-          member.name,
-          spareRequest.game_date,
-          spareRequest.game_time
-        );
-      } catch (error) {
+      // Don't await - send in background
+      sendSpareFilledSMS(
+        requester.phone,
+        member.name,
+        spareRequest.game_date,
+        spareRequest.game_time
+      ).catch((error) => {
         console.error('Error sending spare filled SMS:', error);
-      }
+      });
     }
 
     return { success: true };
@@ -823,40 +848,38 @@ export async function spareRoutes(fastify: FastifyInstance) {
     
     const requester = requesters[0] as Member;
 
-    // Send notification to requester
+    // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
     if (requester.email && requester.email_subscribed === 1) {
       const requesterToken = generateToken(requester);
       
-      try {
-        await sendSpareCancellationEmail(
-          requester.email,
-          requester.name,
-          member.name,
-          {
-            requestedForName: spareRequest.requested_for_name,
-            gameDate: spareRequest.game_date,
-            gameTime: spareRequest.game_time,
-            position: spareRequest.position || undefined,
-          },
-          body.comment,
-          requesterToken
-        );
-      } catch (error) {
+      // Don't await - send in background
+      sendSpareCancellationEmail(
+        requester.email,
+        requester.name,
+        member.name,
+        {
+          requestedForName: spareRequest.requested_for_name,
+          gameDate: spareRequest.game_date,
+          gameTime: spareRequest.game_time,
+          position: spareRequest.position || undefined,
+        },
+        body.comment,
+        requesterToken
+      ).catch((error) => {
         console.error('Error sending spare cancellation email:', error);
-      }
+      });
     }
 
     if (requester.phone && requester.opted_in_sms === 1) {
-      try {
-        await sendSpareCancellationSMS(
-          requester.phone,
-          member.name,
-          spareRequest.game_date,
-          spareRequest.game_time
-        );
-      } catch (error) {
+      // Don't await - send in background
+      sendSpareCancellationSMS(
+        requester.phone,
+        member.name,
+        spareRequest.game_date,
+        spareRequest.game_time
+      ).catch((error) => {
         console.error('Error sending spare cancellation SMS:', error);
-      }
+      });
     }
 
     return { success: true };
@@ -864,13 +887,19 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
   // Re-issue spare request (re-send notifications)
   fastify.post('/spares/:id/reissue', async (request, reply) => {
+    console.log(`[Re-issue] ===== RE-ISSUE ENDPOINT CALLED =====`);
     const member = (request as any).member as Member;
     if (!member) {
+      console.log(`[Re-issue] Unauthorized - no member`);
       return reply.code(401).send({ error: 'Unauthorized' });
+    }
+    if ((member as any).spare_only === 1) {
+      return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
     }
 
     const { id } = request.params as { id: string };
     const requestId = parseInt(id, 10);
+    console.log(`[Re-issue] Processing re-issue for request ${requestId} by member ${member.name} (${member.email})`);
     const body = reissueSpareRequestSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
@@ -920,6 +949,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Determine who to notify (same logic as creating a request)
     let recipientMembers: Member[] = [];
+    
+    console.log(`[Re-issue] Starting re-issue for request ${requestId}, type: ${spareRequest.request_type}`);
 
     if (spareRequest.request_type === 'private') {
       // Private requests: send immediately to all invited members
@@ -944,43 +975,47 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       // Get list of all invited member names for the email
       const invitedMemberNames = recipientMembers.map(m => m.name).sort();
+      
+      console.log(`[Re-issue] Private request: Found ${recipientMembers.length} recipient members with email_subscribed=1`);
 
-      // Send notifications immediately for private requests
+      // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
       for (const recipient of recipientMembers) {
         if (recipient.email) {
           const acceptToken = generateEmailLinkToken(recipient);
           
-          try {
-            await sendSpareRequestEmail(
-              recipient.email,
-              recipient.name,
-              member.name,
-              {
-                requestedForName: spareRequest.requested_for_name,
-                gameDate: spareRequest.game_date,
-                gameTime: spareRequest.game_time,
-                position: spareRequest.position || undefined,
-                message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
-                invitedMemberNames: invitedMemberNames,
-              },
-              acceptToken
-            );
-          } catch (error) {
-            console.error('Error sending spare request email:', error);
-          }
+          console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
+          // Don't await - send in background
+          sendSpareRequestEmail(
+            recipient.email,
+            recipient.name,
+            member.name,
+            {
+              requestedForName: spareRequest.requested_for_name,
+              gameDate: spareRequest.game_date,
+              gameTime: spareRequest.game_time,
+              position: spareRequest.position || undefined,
+              message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
+              invitedMemberNames: invitedMemberNames,
+            },
+            acceptToken,
+            requestId
+          ).then(() => {
+            console.log(`[Re-issue] Email function completed for ${recipient.email}`);
+          }).catch((error) => {
+            console.error(`[Re-issue] Error sending spare request email to ${recipient.email}:`, error);
+          });
         }
 
         if (recipient.phone && recipient.opted_in_sms === 1) {
-          try {
-            await sendSpareRequestSMS(
-              recipient.phone,
-              member.name,
-              spareRequest.game_date,
-              spareRequest.game_time
-            );
-          } catch (error) {
+          // Don't await - send in background
+          sendSpareRequestSMS(
+            recipient.phone,
+            member.name,
+            spareRequest.game_date,
+            spareRequest.game_time
+          ).catch((error) => {
             console.error('Error sending spare request SMS:', error);
-          }
+          });
         }
       }
 
@@ -989,7 +1024,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         await db
           .update(schema.spareRequests)
           .set({
-            notifications_sent_at: getCurrentTime(),
+            notifications_sent_at: await getCurrentTimeAsync(),
             had_cancellation: 0,
             notification_status: 'completed',
           })
@@ -1006,7 +1041,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const [reissueYear, reissueMonth, reissueDay] = spareRequest.game_date.split('-').map(Number);
       const [reissueHours, reissueMinutes] = spareRequest.game_time.split(':').map(Number);
       const gameDateTime = new Date(reissueYear, reissueMonth - 1, reissueDay, reissueHours, reissueMinutes);
-      const currentTime = getCurrentTime();
+      const currentTime = await getCurrentTimeAsync();
       const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
       const isLessThan24Hours = hoursUntilGame < 24;
 
@@ -1065,43 +1100,48 @@ export async function spareRoutes(fastify: FastifyInstance) {
           )
           .where(and(...conditions)) as Member[];
       }
+      
+      console.log(`[Re-issue] Public request: Found ${recipientMembers.length} recipient members, isLessThan24Hours: ${isLessThan24Hours}`);
 
       if (isLessThan24Hours) {
-        // Less than 24 hours: send notifications immediately to all matching members
+        // Less than 24 hours: send notifications asynchronously (fire-and-forget) to avoid blocking
+        console.log(`[Re-issue] Sending immediate notifications (<24h path)`);
         for (const recipient of recipientMembers) {
           if (recipient.email) {
             const acceptToken = generateEmailLinkToken(recipient);
             
-            try {
-              await sendSpareRequestEmail(
-                recipient.email,
-                recipient.name,
-                member.name,
-                {
-                  requestedForName: spareRequest.requested_for_name,
-                  gameDate: spareRequest.game_date,
-                  gameTime: spareRequest.game_time,
-                  position: spareRequest.position || undefined,
-                  message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
-                },
-                acceptToken
-              );
-            } catch (error) {
-              console.error('Error sending spare request email:', error);
-            }
+            console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
+            // Don't await - send in background
+            sendSpareRequestEmail(
+              recipient.email,
+              recipient.name,
+              member.name,
+              {
+                requestedForName: spareRequest.requested_for_name,
+                gameDate: spareRequest.game_date,
+                gameTime: spareRequest.game_time,
+                position: spareRequest.position || undefined,
+                message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
+              },
+              acceptToken,
+              requestId
+            ).then(() => {
+              console.log(`[Re-issue] Email function completed for ${recipient.email}`);
+            }).catch((error) => {
+              console.error(`[Re-issue] Error sending spare request email to ${recipient.email}:`, error);
+            });
           }
 
           if (recipient.phone && recipient.opted_in_sms === 1) {
-            try {
-              await sendSpareRequestSMS(
-                recipient.phone,
-                member.name,
-                spareRequest.game_date,
-                spareRequest.game_time
-              );
-            } catch (error) {
+            // Don't await - send in background
+            sendSpareRequestSMS(
+              recipient.phone,
+              member.name,
+              spareRequest.game_date,
+              spareRequest.game_time
+            ).catch((error) => {
               console.error('Error sending spare request SMS:', error);
-            }
+            });
           }
         }
 
@@ -1110,7 +1150,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           await db
             .update(schema.spareRequests)
             .set({
-              notifications_sent_at: getCurrentTime(),
+              notifications_sent_at: await getCurrentTimeAsync(),
               had_cancellation: 0,
               notification_status: 'completed',
             })
@@ -1123,12 +1163,15 @@ export async function spareRoutes(fastify: FastifyInstance) {
             .where(eq(schema.spareRequests.id, requestId));
         }
 
+        console.log(`[Re-issue] Completed immediate notifications for ${recipientMembers.length} members`);
+        console.log(`[Re-issue] Completed immediate notifications for ${recipientMembers.length} members`);
         return {
           success: true,
           notificationsSent: recipientMembers.length,
         };
       } else {
         // More than 24 hours: set up staggered notification queue
+        console.log(`[Re-issue] Setting up staggered notification queue (>=24h path) for ${recipientMembers.length} members`);
         // Shuffle the list randomly
         const shuffled = [...recipientMembers].sort(() => Math.random() - 0.5);
 
@@ -1147,7 +1190,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         // Clear paused flag when starting notifications
         // This will trigger the notification processor to send the first notification immediately
         // After the first notification, it will wait for the configured delay before sending the next one
-        const currentTime = getCurrentTime();
+        const currentTime = await getCurrentTimeAsync();
         await db
           .update(schema.spareRequests)
           .set({
@@ -1384,7 +1427,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .update(schema.spareRequests)
       .set({
         notification_paused: 0,
-        next_notification_at: getCurrentTime(),
+        next_notification_at: await getCurrentTimeAsync(),
       })
       .where(eq(schema.spareRequests.id, requestId));
 
