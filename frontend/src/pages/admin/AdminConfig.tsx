@@ -179,12 +179,20 @@ export default function AdminConfig() {
           <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
             Server configuration
           </h1>
-          <Link
-            to="/admin/database-config"
-            className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
-          >
-            Configure database →
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/admin/feedback"
+              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+            >
+              View feedback →
+            </Link>
+            <Link
+              to="/admin/database-config"
+              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+            >
+              Configure database →
+            </Link>
+          </div>
         </div>
 
         {message && (

@@ -17,12 +17,29 @@ export default function FirstLogin() {
   const [emailVisible, setEmailVisible] = useState(true);
   const [phoneVisible, setPhoneVisible] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [smsDisabled, setSmsDisabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (member?.firstLoginCompleted) {
       navigate('/');
     }
   }, [member, navigate]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.get('/public-config');
+        setSmsDisabled(!!res.data?.disableSms);
+        if (res.data?.disableSms) {
+          setOptedInSms(false);
+        }
+      } catch {
+        // If we can't load config, default to showing the checkbox (existing behavior).
+        setSmsDisabled(false);
+      }
+    };
+    load();
+  }, []);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +50,7 @@ export default function FirstLogin() {
         name,
         email,
         phone: phone || undefined,
-        optedInSms,
+        optedInSms: smsDisabled ? false : optedInSms,
         emailVisible,
         phoneVisible,
       });
@@ -164,24 +181,26 @@ export default function FirstLogin() {
                   </div>
                 </div>
 
-                <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600">
-                  <div className="flex items-start">
-                    <input
-                      type="checkbox"
-                      id="optedInSms"
-                      checked={optedInSms}
-                      onChange={(e) => setOptedInSms(e.target.checked)}
-                      className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
-                    />
-                    <label htmlFor="optedInSms" className="text-sm text-gray-700 dark:text-gray-200">
-                      <span className="font-medium">Opt in to text messages</span>
-                      <p className="text-gray-600 dark:text-gray-400 mt-1">
-                        Receive text message notifications when new spare requests match your
-                        availability and when someone has responded to your request. You can change this later. Message and data rates may apply. Reply STOP to any message to unsubscribe.
-                      </p>
-                    </label>
+                {smsDisabled === false && (
+                  <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600">
+                    <div className="flex items-start">
+                      <input
+                        type="checkbox"
+                        id="optedInSms"
+                        checked={optedInSms}
+                        onChange={(e) => setOptedInSms(e.target.checked)}
+                        className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
+                      />
+                      <label htmlFor="optedInSms" className="text-sm text-gray-700 dark:text-gray-200">
+                        <span className="font-medium">Opt in to text messages</span>
+                        <p className="text-gray-600 dark:text-gray-400 mt-1">
+                          Receive text message notifications when new spare requests match your
+                          availability and when someone has responded to your request. You can change this later. Message and data rates may apply. Reply STOP to any message to unsubscribe.
+                        </p>
+                      </label>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? 'Saving...' : 'Continue'}

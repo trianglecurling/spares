@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import FirstLogin from './pages/FirstLogin';
 import SetAvailability from './pages/SetAvailability';
 import RequestSpare from './pages/RequestSpare';
+import RequestSpareConfirm from './pages/RequestSpareConfirm';
 import RespondToSpare from './pages/RespondToSpare';
 import MyRequests from './pages/MyRequests';
 import Unsubscribe from './pages/Unsubscribe';
@@ -29,6 +30,8 @@ import EmailSMS from './pages/help/EmailSMS';
 import Availability from './pages/help/Availability';
 import ManagingRequests from './pages/help/ManagingRequests';
 import Install from './pages/Install';
+import Feedback from './pages/Feedback';
+import AdminFeedback from './pages/admin/AdminFeedback';
 
 function App() {
   return (
@@ -53,6 +56,7 @@ function App() {
           <Route path="/help/email-sms" element={<EmailSMS />} />
           <Route path="/help/availability" element={<Availability />} />
           <Route path="/help/managing-requests" element={<ManagingRequests />} />
+          <Route path="/feedback" element={<Feedback />} />
           
           <Route
             path="/"
@@ -83,6 +87,14 @@ function App() {
           
           <Route
             path="/request-spare"
+            element={
+              <ProtectedRoute>
+                <RequestSpareConfirm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/request-spare/new"
             element={
               <ProtectedRoute>
                 <RequestSpare />
@@ -156,6 +168,14 @@ function App() {
             element={
               <ProtectedRoute adminOnly>
                 <AdminDatabaseConfig />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/feedback"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminFeedback />
               </ProtectedRoute>
             }
           />

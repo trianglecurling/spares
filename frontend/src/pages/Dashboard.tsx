@@ -10,6 +10,7 @@ import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPhone } from '../utils/phone';
+import { renderMe } from '../utils/me';
 
 interface SpareRequest {
   id: number;
@@ -265,13 +266,19 @@ export default function Dashboard() {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
+  const filledBadge = (
+    <span className="px-2 py-1 rounded text-sm font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">
+      Filled
+    </span>
+  );
+
   const renderRequestCard = (request: SpareRequest, showButton = true, showMessage = true, showCancelButton = false) => (
     <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <div className="flex items-center space-x-2 mb-2">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Spare needed for {request.requestedForName}
+              Spare needed for {renderMe(request.requestedForName, member?.name)}
             </h3>
             {showButton && (
               <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
@@ -291,7 +298,8 @@ export default function Dashboard() {
               at {formatTime(request.gameTime)}
             </p>
             <p>
-              <span className="font-medium dark:text-gray-300">Requested by:</span> {request.requesterName}
+              <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+              {renderMe(request.requesterName, member?.name)}
             </p>
             {request.requesterEmail && (
               <p className="text-sm ml-4">
@@ -309,7 +317,8 @@ export default function Dashboard() {
             )}
             {request.filledByName && (
               <p>
-                <span className="font-medium dark:text-gray-300">Filled by:</span> {request.filledByName}
+                <span className="font-medium dark:text-gray-300">Filled by:</span>{' '}
+                {renderMe(request.filledByName, member?.name)}
               </p>
             )}
             {showMessage && request.message && (
@@ -403,11 +412,11 @@ export default function Dashboard() {
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-2">
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                              Spare for {request.requestedForName}
+                        Spare for {renderMe(request.requestedForName, member?.name)}
                             </h3>
                             {request.status === 'open' && (
                               <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
-                                Open
+                          Unfilled
                               </span>
                             )}
                             {request.status === 'filled' && (
@@ -433,7 +442,7 @@ export default function Dashboard() {
                             {request.status === 'filled' && request.filledByName && (
                               <>
                                 <p className="text-green-700 dark:text-green-400 font-medium mt-2">
-                                  ✓ Filled by {request.filledByName}
+                                  ✓ Filled by {renderMe(request.filledByName, member?.name)}
                                 </p>
                                 {request.filledByEmail && (
                                   <p className="text-sm ml-4 mt-1">
@@ -453,7 +462,9 @@ export default function Dashboard() {
                             )}
                             {request.status === 'filled' && request.sparerComment && (
                               <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message from {request.filledByName}:</p>
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  Message from {renderMe(request.filledByName, member?.name)}:
+                                </p>
                                 <p className="text-sm text-gray-600 dark:text-gray-400 italic">"{request.sparerComment}"</p>
                               </div>
                             )}
@@ -500,22 +511,59 @@ export default function Dashboard() {
             {/* Filled Spare Requests */}
             {filledRequests.length > 0 && (
               <div>
-                <button
-                  onClick={() => setShowFilled(!showFilled)}
-                  className="flex items-center justify-between w-full text-left mb-4"
-                >
-                  <h2 className="text-xl font-semibold text-[#121033] dark:text-gray-100">
-                    Filled spare requests
-                  </h2>
-                  <span className="text-gray-500 dark:text-gray-400 text-sm">
-                    {showFilled ? '▼' : '▶'} {filledRequests.length}
-                  </span>
-                </button>
-                {showFilled && (
-                  <div className="space-y-4">
-                    {filledRequests.map((request) => renderRequestCard(request, false, false))}
-                  </div>
-                )}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowFilled(!showFilled)}
+                    className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                    aria-expanded={showFilled}
+                  >
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      Filled spare requests
+                    </h2>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      {showFilled ? '▼' : '▶'} {filledRequests.length}
+                    </span>
+                  </button>
+
+                  {showFilled && (
+                    <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4">
+                      <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {filledRequests.map((request) => (
+                          <div key={request.id} className="py-3 flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                  {formatDate(request.gameDate)} • {formatTime(request.gameTime)}
+                                </span>
+                                {filledBadge}
+                                {request.position && (
+                                  <span className="text-xs px-2 py-0.5 rounded bg-primary-teal text-white">
+                                    {request.position}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                                Spare for{' '}
+                                <span className="font-medium dark:text-gray-300">
+                                  {renderMe(request.requestedForName, member?.name)}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                Requested by {renderMe(request.requesterName, member?.name)}
+                                {request.filledByName ? ` • Filled by ${renderMe(request.filledByName, member?.name)}` : ''}
+                              </div>
+                            </div>
+
+                            <div className="text-xs text-gray-500 dark:text-gray-400 shrink-0 pt-0.5">
+                              {request.requestType === 'public' ? 'Public' : 'Private'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

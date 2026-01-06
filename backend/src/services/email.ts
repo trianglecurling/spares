@@ -240,6 +240,164 @@ export async function sendSpareRequestEmail(
   );
 }
 
+export async function sendSpareRequestCreatedEmail(
+  requesterEmail: string,
+  requesterName: string,
+  requestDetails: {
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+    message?: string;
+  },
+  requesterToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const messageText = requestDetails.message ? `<p><em>Message: "${requestDetails.message}"</em></p>` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+
+  const htmlContent = `
+    <h2>Spare Request Created</h2>
+    <p>Hi ${requesterName},</p>
+    <p>You created a spare request for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${messageText}
+    <p>You can view and manage this request from your "My spare requests" page.</p>
+  `;
+
+  await sendEmail(
+    {
+      to: requesterEmail,
+      subject: `Spare request created: ${formattedDate} at ${formattedTime}`,
+      htmlContent,
+      recipientName: requesterName,
+    },
+    requesterToken
+  );
+}
+
+export async function sendSpareRequestCcCreatedEmail(
+  ccEmail: string,
+  ccName: string,
+  requesterName: string,
+  requestDetails: {
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+    message?: string;
+  },
+  ccToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const messageText = requestDetails.message ? `<p><em>Message: "${requestDetails.message}"</em></p>` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+
+  const htmlContent = `
+    <h2>You were CC'd on a Spare Request</h2>
+    <p>Hi ${ccName},</p>
+    <p><strong>${requesterName}</strong> created a spare request for <strong>${requestDetails.requestedForName}</strong>${positionText} and CC'd you on it.</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${messageText}
+    <p>This email is for your awareness. You can log in to see the request details.</p>
+  `;
+
+  await sendEmail(
+    {
+      to: ccEmail,
+      subject: `CC: Spare needed ${formattedDate} at ${formattedTime}`,
+      htmlContent,
+      recipientName: ccName,
+    },
+    ccToken
+  );
+}
+
+export async function sendSpareRequestCcFilledEmail(
+  ccEmail: string,
+  ccName: string,
+  requesterName: string,
+  responderName: string,
+  requestDetails: {
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  comment?: string,
+  ccToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const commentText = comment ? `<p><em>Comment: "${comment}"</em></p>` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+
+  const htmlContent = `
+    <h2>Spare Request Filled (CC)</h2>
+    <p>Hi ${ccName},</p>
+    <p>This is an update for a spare request you were CC'd on.</p>
+    <p><strong>${responderName}</strong> has agreed to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Requested by:</strong> ${requesterName}</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${commentText}
+  `;
+
+  await sendEmail(
+    {
+      to: ccEmail,
+      subject: `CC: Spare request filled`,
+      htmlContent,
+      recipientName: ccName,
+    },
+    ccToken
+  );
+}
+
+export async function sendSpareRequestCcCancellationEmail(
+  ccEmail: string,
+  ccName: string,
+  requesterName: string,
+  responderName: string,
+  requestDetails: {
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  comment: string,
+  ccToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+
+  const htmlContent = `
+    <h2>Spare Cancellation (CC)</h2>
+    <p>Hi ${ccName},</p>
+    <p>This is an update for a spare request you were CC'd on.</p>
+    <p><strong>${responderName}</strong> has canceled their offer to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Requested by:</strong> ${requesterName}</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    <p><strong>Reason:</strong> "${comment}"</p>
+  `;
+
+  await sendEmail(
+    {
+      to: ccEmail,
+      subject: `CC: Spare cancellation: ${formattedDate} at ${formattedTime}`,
+      htmlContent,
+      recipientName: ccName,
+    },
+    ccToken
+  );
+}
+
 export async function sendSpareResponseEmail(
   requesterEmail: string,
   requesterName: string,

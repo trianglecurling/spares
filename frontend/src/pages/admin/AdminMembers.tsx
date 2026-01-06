@@ -41,6 +41,8 @@ export default function AdminMembers() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportTsv, setExportTsv] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -184,11 +186,88 @@ export default function AdminMembers() {
     return adjustedDate.toLocaleDateString();
   };
 
+  const formatDateIso = (dateString?: string | null) => {
+    if (!dateString) return '';
+    if (typeof dateString === 'string') return dateString;
+    try {
+      return new Date(dateString).toISOString().split('T')[0];
+    } catch {
+      return String(dateString);
+    }
+  };
+
   const isExpired = (validThrough?: string | null, isAdminFlag?: boolean, isServerAdminFlag?: boolean) => {
     if (isAdminFlag || isServerAdminFlag) return false;
     if (!validThrough) return false;
     const today = new Date().toISOString().split('T')[0];
     return today > validThrough;
+  };
+
+  const toTsvCell = (value: unknown) => {
+    if (value === null || value === undefined) return '';
+    return String(value).replace(/[\t\r\n]+/g, ' ').trim();
+  };
+
+  const generateMembersTsv = () => {
+    const header = [
+      'id',
+      'name',
+      'email',
+      'phone',
+      'role',
+      'spareOnly',
+      'validThrough',
+      'expired',
+      'registered',
+      'emailSubscribed',
+      'optedInSms',
+      'emailVisible',
+      'phoneVisible',
+      'createdAt',
+    ];
+
+    const rows = members.map((m) => {
+      const role = m.isServerAdmin ? 'server_admin' : m.isAdmin ? 'admin' : 'member';
+      const expired = isExpired(m.validThrough, m.isAdmin, m.isServerAdmin);
+      return [
+        m.id,
+        m.name,
+        m.email || '',
+        m.phone || '',
+        role,
+        Boolean(m.spareOnly),
+        formatDateIso(m.validThrough),
+        expired,
+        Boolean(m.firstLoginCompleted),
+        Boolean(m.emailSubscribed),
+        Boolean(m.optedInSms),
+        Boolean(m.emailVisible),
+        Boolean(m.phoneVisible),
+        toTsvCell(m.createdAt),
+      ].map(toTsvCell);
+    });
+
+    return [header.join('\t'), ...rows.map((r) => r.join('\t'))].join('\n');
+  };
+
+  const handleOpenExportTsv = () => {
+    if (!members.length) {
+      showAlert('No members to export yet', 'warning');
+      return;
+    }
+    const tsv = generateMembersTsv();
+    setExportTsv(tsv);
+    setIsExportModalOpen(true);
+  };
+
+  const handleCopyExportTsv = async () => {
+    try {
+      await navigator.clipboard.writeText(exportTsv);
+      showAlert('TSV copied to clipboard!', 'success');
+    } catch (error) {
+      console.error('Failed to copy TSV:', error);
+      showAlert('Failed to copy TSV', 'error');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -528,6 +607,9 @@ export default function AdminMembers() {
             Manage members
           </h1>
           <div className="space-x-3">
+            <Button onClick={handleOpenExportTsv} variant="secondary">
+              Export TSV
+            </Button>
             {selectedMemberIds.length > 0 && (
               <>
                 <Button 
@@ -1081,6 +1163,31 @@ export default function AdminMembers() {
               </div>
             </>
           )}
+        </div>
+      </Modal>
+
+      {/* Export TSV Modal */}
+      <Modal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title="Export members (TSV)"
+        size="xl"
+      >
+        <div className="flex flex-col h-full min-h-0 space-y-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Copy and paste this into a spreadsheet (tab-separated values).
+          </div>
+          <textarea
+            className="w-full flex-1 min-h-0 p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded font-mono text-xs"
+            value={exportTsv}
+            readOnly
+          />
+          <div className="flex justify-end space-x-3">
+            <Button variant="secondary" onClick={() => setIsExportModalOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={handleCopyExportTsv}>Copy TSV</Button>
+          </div>
         </div>
       </Modal>
     </Layout>

@@ -36,6 +36,12 @@ export default function Footer({ simple = false }: FooterProps) {
             >
               Privacy Policy
             </a>
+            <Link
+              to="/feedback"
+              className="hover:text-primary-teal transition-colors"
+            >
+              Report Issues
+            </Link>
             {!simple && (
               <>
                 <a 
@@ -45,12 +51,6 @@ export default function Footer({ simple = false }: FooterProps) {
                   className="hover:text-primary-teal transition-colors"
                 >
                   League Info
-                </a>
-                <a 
-                  href="mailto:av@trianglecurling.com" 
-                  className="hover:text-primary-teal transition-colors"
-                >
-                  Report Issues
                 </a>
               </>
             )}

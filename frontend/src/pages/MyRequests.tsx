@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { HiOutlineClipboardDocument, HiPlus } from 'react-icons/hi2';
+import { HiChevronDown, HiOutlineClipboardDocument, HiPlus } from 'react-icons/hi2';
 import Layout from '../components/Layout';
 import api from '../utils/api';
 import Button from '../components/Button';
@@ -8,6 +8,8 @@ import Modal from '../components/Modal';
 import NotificationModal from '../components/NotificationModal';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useAuth } from '../contexts/AuthContext';
+import { renderMe } from '../utils/me';
 
 interface MySpareRequest {
   id: number;
@@ -37,8 +39,14 @@ interface NotificationStatus {
 export default function MyRequests() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const { member } = useAuth();
   const [requests, setRequests] = useState<MySpareRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pastExpanded, setPastExpanded] = useState(false);
+  const [pastLoading, setPastLoading] = useState(false);
+  const [pastLoaded, setPastLoaded] = useState(false);
+  const [pastError, setPastError] = useState<string | null>(null);
+  const [pastRequests, setPastRequests] = useState<MySpareRequest[]>([]);
   const [reissueRequest, setReissueRequest] = useState<MySpareRequest | null>(null);
   const [reissueMessage, setReissueMessage] = useState('');
   const [reissuing, setReissuing] = useState(false);
@@ -99,6 +107,21 @@ export default function MyRequests() {
       console.error('Failed to load requests:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPastRequests = async () => {
+    setPastError(null);
+    setPastLoading(true);
+    try {
+      const response = await api.get('/spares/my-requests/past');
+      setPastRequests(response.data);
+      setPastLoaded(true);
+    } catch (error) {
+      console.error('Failed to load past requests:', error);
+      setPastError('Failed to load past requests');
+    } finally {
+      setPastLoading(false);
     }
   };
 
@@ -264,7 +287,7 @@ export default function MyRequests() {
 
     return (
       <span className={`px-2 py-1 rounded text-sm font-medium ${colors[status as keyof typeof colors]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {status === 'open' ? 'Unfilled' : status.charAt(0).toUpperCase() + status.slice(1)}
       </span>
     );
   };
@@ -309,7 +332,7 @@ export default function MyRequests() {
                   <div>
                     <div className="flex items-center space-x-2 mb-2">
                       <h3 className="text-lg font-semibold dark:text-gray-100">
-                        Spare for {request.requestedForName}
+                        Spare for {renderMe(request.requestedForName, member?.name)}
                       </h3>
                       {getStatusBadge(request.status)}
                       {request.position && (
@@ -437,7 +460,7 @@ export default function MyRequests() {
                 {request.status === 'filled' && request.filledByName && (
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-green-700 dark:text-green-400 font-medium">
-                      ✓ Filled by {request.filledByName}
+                      ✓ Filled by {renderMe(request.filledByName, member?.name)}
                     </p>
                     {request.filledAt && (
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -447,7 +470,9 @@ export default function MyRequests() {
                     )}
                     {request.sparerComment && (
                       <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message from {request.filledByName}:</p>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Message from {renderMe(request.filledByName, member?.name)}:
+                        </p>
                         <p className="text-sm text-gray-600 dark:text-gray-400 italic">"{request.sparerComment}"</p>
                       </div>
                     )}
@@ -463,6 +488,88 @@ export default function MyRequests() {
             ))}
           </div>
         )}
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <button
+            type="button"
+            className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            onClick={() => {
+              const next = !pastExpanded;
+              setPastExpanded(next);
+              if (next && !pastLoaded && !pastLoading) {
+                loadPastRequests();
+              }
+            }}
+            aria-expanded={pastExpanded}
+          >
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Past spare requests
+              </h2>
+            </div>
+            <HiChevronDown
+              className={`w-5 h-5 text-gray-500 dark:text-gray-400 transition-transform ${pastExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {pastExpanded && (
+            <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4">
+              {pastLoading ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Loading past requests...</div>
+              ) : pastError ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-red-600 dark:text-red-400">{pastError}</div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => loadPastRequests()}
+                    className="shrink-0"
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : pastRequests.length === 0 ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  No past spare requests found.
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {pastRequests.map((request) => (
+                    <div key={request.id} className="py-3 flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {formatDate(request.gameDate)} • {formatTime(request.gameTime)}
+                          </span>
+                          {getStatusBadge(request.status)}
+                          {request.position && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-primary-teal text-white">
+                              {request.position}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                          Spare for{' '}
+                          <span className="font-medium dark:text-gray-300">
+                            {renderMe(request.requestedForName, member?.name)}
+                          </span>
+                        </div>
+                        {request.status === 'filled' && request.filledByName && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Filled by {renderMe(request.filledByName, member?.name)}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-gray-500 dark:text-gray-400 shrink-0 pt-0.5">
+                        {request.requestType === 'public' ? 'Public' : 'Private'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <Modal

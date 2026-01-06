@@ -7,6 +7,24 @@ let cachedTestTime: string | null | undefined = undefined;
 let cacheTimestamp = 0;
 let cachePromise: Promise<Date> | null = null;
 const CACHE_TTL = 1000; // Cache for 1 second
+// If the DB is temporarily unavailable, back off to avoid spamming queries/logs.
+let dbErrorBackoffUntil = 0;
+let lastDbErrorLogAt = 0;
+const DB_ERROR_BACKOFF_MS = 30_000;
+const DB_ERROR_LOG_THROTTLE_MS = 30_000;
+
+function isTransientDbDisconnectError(error: unknown): boolean {
+  const msg = String((error as any)?.cause?.message ?? (error as any)?.message ?? '');
+  return (
+    msg.includes('Connection terminated unexpectedly') ||
+    msg.includes('terminating connection') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('EPIPE') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('Connection terminated') ||
+    msg.includes('Connection refused')
+  );
+}
 
 /**
  * Invalidates the test time cache. Call this when the test time is updated.
@@ -30,6 +48,11 @@ export async function getCurrentTimeAsync(): Promise<Date> {
     return new Date();
   }
 
+  // If we recently hit a DB error, avoid re-querying until the backoff elapses.
+  if (now < dbErrorBackoffUntil) {
+    return new Date();
+  }
+
   // If there's already a pending request, wait for it
   if (cachePromise) {
     return cachePromise;
@@ -43,22 +66,39 @@ export async function getCurrentTimeAsync(): Promise<Date> {
         return new Date();
       }
 
-      const { db, schema } = getDrizzleDb();
-      const serverConfigs = await db
-        .select({ test_current_time: schema.serverConfig.test_current_time })
-        .from(schema.serverConfig)
-        .where(eq(schema.serverConfig.id, 1))
-        .limit(1);
+      try {
+        const { db, schema } = getDrizzleDb();
+        const serverConfigs = await db
+          .select({ test_current_time: schema.serverConfig.test_current_time })
+          .from(schema.serverConfig)
+          .where(eq(schema.serverConfig.id, 1))
+          .limit(1);
 
-      const testTime = serverConfigs[0]?.test_current_time;
-      
-      cachedTestTime = testTime ? (testTime instanceof Date ? testTime.toISOString() : testTime) : null;
-      cacheTimestamp = Date.now();
+        const testTime = serverConfigs[0]?.test_current_time;
 
-      if (cachedTestTime) {
-        return new Date(cachedTestTime);
+        cachedTestTime = testTime ? (testTime instanceof Date ? testTime.toISOString() : testTime) : null;
+        cacheTimestamp = Date.now();
+
+        if (cachedTestTime) {
+          return new Date(cachedTestTime);
+        }
+        return new Date();
+      } catch (error) {
+        // DB might be restarting / briefly unavailable. Don't let callers crash or spam logs.
+        const shouldBackoff = isTransientDbDisconnectError(error);
+        if (shouldBackoff) {
+          dbErrorBackoffUntil = Date.now() + DB_ERROR_BACKOFF_MS;
+          const nowMs = Date.now();
+          if (nowMs - lastDbErrorLogAt > DB_ERROR_LOG_THROTTLE_MS) {
+            lastDbErrorLogAt = nowMs;
+            console.warn('[time] DB unavailable while fetching test_current_time; falling back to real time.');
+          }
+          cachedTestTime = null;
+          cacheTimestamp = Date.now();
+          return new Date();
+        }
+        throw error;
       }
-      return new Date();
     } finally {
       cachePromise = null;
     }
@@ -147,4 +187,3 @@ export async function getCurrentTimestampAsync(): Promise<string> {
   const time = await getCurrentTimeAsync();
   return time.toISOString();
 }
-

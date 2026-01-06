@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -9,6 +9,7 @@ export default function Profile() {
   const { member, updateMember } = useAuth();
   const { theme, setTheme } = useTheme();
   const [loading, setLoading] = useState(false);
+  const [smsDisabled, setSmsDisabled] = useState<boolean | null>(null);
   const [formData, setFormData] = useState({
     name: member?.name || '',
     email: member?.email || '',
@@ -18,6 +19,21 @@ export default function Profile() {
     phoneVisible: member?.phoneVisible || false,
   });
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.get('/public-config');
+        setSmsDisabled(!!res.data?.disableSms);
+        if (res.data?.disableSms) {
+          setFormData((prev) => ({ ...prev, optedInSms: false }));
+        }
+      } catch {
+        setSmsDisabled(false);
+      }
+    };
+    load();
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,7 +45,7 @@ export default function Profile() {
         name: formData.name,
         email: formData.email,
         phone: formData.phone || undefined,
-        optedInSms: formData.optedInSms,
+        optedInSms: smsDisabled ? false : formData.optedInSms,
         emailVisible: formData.emailVisible,
         phoneVisible: formData.phoneVisible,
       });
@@ -136,27 +152,29 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="border-t pt-6 dark:border-gray-700">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Notifications</h2>
-              
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
-                <div className="flex items-start">
-                  <input
-                    type="checkbox"
-                    id="optedInSms"
-                    checked={formData.optedInSms}
-                    onChange={(e) => setFormData({ ...formData, optedInSms: e.target.checked })}
-                    className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
-                  />
-                  <label htmlFor="optedInSms" className="text-sm select-none cursor-pointer">
-                    <span className="font-medium text-gray-900 dark:text-gray-100">Receive text message notifications</span>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">
-                      Receive text message notifications when new spare requests match your availability and when someone has responded to your request. Message and data rates may apply. Reply STOP to any message to unsubscribe.
-                    </p>
-                  </label>
+            {smsDisabled === false && (
+              <div className="border-t pt-6 dark:border-gray-700">
+                <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Notifications</h2>
+                
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
+                  <div className="flex items-start">
+                    <input
+                      type="checkbox"
+                      id="optedInSms"
+                      checked={formData.optedInSms}
+                      onChange={(e) => setFormData({ ...formData, optedInSms: e.target.checked })}
+                      className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
+                    />
+                    <label htmlFor="optedInSms" className="text-sm select-none cursor-pointer">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">Receive text message notifications</span>
+                      <p className="text-gray-600 dark:text-gray-400 mt-1">
+                        Receive text message notifications when new spare requests match your availability and when someone has responded to your request. Message and data rates may apply. Reply STOP to any message to unsubscribe.
+                      </p>
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="border-t pt-6 dark:border-gray-700">
               <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Appearance</h2>

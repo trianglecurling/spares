@@ -180,6 +180,20 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spare_request_invitations_request_id ON spare_request_invitations(spare_request_id);
     CREATE INDEX IF NOT EXISTS idx_spare_request_invitations_member_id ON spare_request_invitations(member_id);
 
+    -- Spare request CCs (up to 4 members can be CC'd on a request)
+    CREATE TABLE IF NOT EXISTS spare_request_ccs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      spare_request_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(spare_request_id, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_spare_request_ccs_request_id ON spare_request_ccs(spare_request_id);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_ccs_member_id ON spare_request_ccs(member_id);
+
     -- Responses to spare requests
     CREATE TABLE IF NOT EXISTS spare_responses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,6 +224,25 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
 
     -- Insert default row if it doesn't exist
     INSERT OR IGNORE INTO server_config (id) VALUES (1);
+  `);
+
+  // Feedback table (support/admin visible)
+  await execSQL(db, `
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL CHECK(category IN ('suggestion', 'problem', 'question', 'general')),
+      body TEXT NOT NULL,
+      email TEXT,
+      member_id INTEGER,
+      page_path TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
+    CREATE INDEX IF NOT EXISTS idx_feedback_member_id ON feedback(member_id);
+    CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
   `);
 
   // Migrations - try to add columns if they don't exist
@@ -445,6 +478,20 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE INDEX IF NOT EXISTS idx_spare_request_invitations_request_id ON spare_request_invitations(spare_request_id);
     CREATE INDEX IF NOT EXISTS idx_spare_request_invitations_member_id ON spare_request_invitations(member_id);
 
+    -- Spare request CCs (up to 4 members can be CC'd on a request)
+    CREATE TABLE IF NOT EXISTS spare_request_ccs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      spare_request_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(spare_request_id, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_spare_request_ccs_request_id ON spare_request_ccs(spare_request_id);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_ccs_member_id ON spare_request_ccs(member_id);
+
     -- Responses to spare requests
     CREATE TABLE IF NOT EXISTS spare_responses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -475,6 +522,25 @@ export function createSchemaSync(db: DatabaseAdapter): void {
 
     -- Insert default row if it doesn't exist
     INSERT OR IGNORE INTO server_config (id) VALUES (1);
+  `);
+
+  // Feedback table (support/admin visible)
+  execSQLSync(db, `
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL CHECK(category IN ('suggestion', 'problem', 'question', 'general')),
+      body TEXT NOT NULL,
+      email TEXT,
+      member_id INTEGER,
+      page_path TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
+    CREATE INDEX IF NOT EXISTS idx_feedback_member_id ON feedback(member_id);
+    CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
   `);
 
   // Migrations - try to add columns if they don't exist

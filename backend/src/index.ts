@@ -10,6 +10,8 @@ import { availabilityRoutes } from './routes/availability.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
 import { installRoutes } from './routes/install.js';
+import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
+import { publicConfigRoutes } from './routes/publicConfig.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 
@@ -186,6 +188,10 @@ fastify.get('/api/health', async () => {
 
 // Auth routes (no auth required)
 fastify.register(publicAuthRoutes, { prefix: '/api' });
+// Feedback routes (no auth required; may still accept optional auth header)
+fastify.register(publicFeedbackRoutes, { prefix: '/api' });
+// Public config flags (no auth required)
+fastify.register(publicConfigRoutes, { prefix: '/api' });
 
 // Protected routes
 fastify.register(
@@ -198,6 +204,7 @@ fastify.register(
     await instance.register(availabilityRoutes, { prefix: '/api' });
     await instance.register(spareRoutes, { prefix: '/api' });
     await instance.register(configRoutes, { prefix: '/api' });
+    await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
   }
 );
 

@@ -92,15 +92,16 @@ export default function Login() {
               <form onSubmit={handleRequestCode} className="space-y-4">
                 <div>
                   <label htmlFor="contact" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Email or Phone Number
+                    Email address
                   </label>
                   <input
-                    type="text"
+                    type="email"
                     id="contact"
                     value={contact}
                     onChange={(e) => setContact(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                     placeholder="your.email@example.com"
+                    autoComplete="email"
                     required
                   />
                 </div>

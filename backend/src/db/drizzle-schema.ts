@@ -131,6 +131,17 @@ export const spareRequestInvitationsSqlite = sqliteTable('spare_request_invitati
   uniqueRequestMember: uniqueIndex('spare_request_invitations_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
 }));
 
+export const spareRequestCcsSqlite = sqliteTable('spare_request_ccs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  spare_request_id: integer('spare_request_id').notNull().references(() => spareRequestsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  requestIdIdx: index('idx_spare_request_ccs_request_id').on(table.spare_request_id),
+  memberIdIdx: index('idx_spare_request_ccs_member_id').on(table.member_id),
+  uniqueRequestMember: uniqueIndex('spare_request_ccs_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
+}));
+
 export const spareResponsesSqlite = sqliteTable('spare_responses', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   spare_request_id: integer('spare_request_id').notNull().references(() => spareRequestsSqlite.id, { onDelete: 'cascade' }),
@@ -172,6 +183,21 @@ export const spareRequestNotificationQueueSqlite = sqliteTable('spare_request_no
   orderIdx: index('idx_notification_queue_order').on(table.spare_request_id, table.queue_order),
   notifiedIdx: index('idx_notification_queue_notified').on(table.spare_request_id, table.notified_at),
   uniqueRequestMember: uniqueIndex('spare_request_notification_queue_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
+}));
+
+export const feedbackSqlite = sqliteTable('feedback', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  category: text('category').notNull().$type<'suggestion' | 'problem' | 'question' | 'general'>(),
+  body: text('body').notNull(),
+  email: text('email'),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  page_path: text('page_path'),
+  user_agent: text('user_agent'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  createdAtIdx: index('idx_feedback_created_at').on(table.created_at),
+  memberIdIdx: index('idx_feedback_member_id').on(table.member_id),
+  categoryIdx: index('idx_feedback_category').on(table.category),
 }));
 
 // ========== PostgreSQL Schema ==========
@@ -298,6 +324,17 @@ export const spareRequestInvitationsPg = pgTable('spare_request_invitations', {
   uniqueRequestMember: uniqueIndexPg('spare_request_invitations_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
 }));
 
+export const spareRequestCcsPg = pgTable('spare_request_ccs', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  spare_request_id: integerPg('spare_request_id').notNull().references(() => spareRequestsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  requestIdIdx: indexPg('idx_spare_request_ccs_request_id').on(table.spare_request_id),
+  memberIdIdx: indexPg('idx_spare_request_ccs_member_id').on(table.member_id),
+  uniqueRequestMember: uniqueIndexPg('spare_request_ccs_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
+}));
+
 export const spareResponsesPg = pgTable('spare_responses', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   spare_request_id: integerPg('spare_request_id').notNull().references(() => spareRequestsPg.id, { onDelete: 'cascade' }),
@@ -341,6 +378,21 @@ export const spareRequestNotificationQueuePg = pgTable('spare_request_notificati
   uniqueRequestMember: uniqueIndexPg('spare_request_notification_queue_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
 }));
 
+export const feedbackPg = pgTable('feedback', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  category: textPg('category').notNull().$type<'suggestion' | 'problem' | 'question' | 'general'>(),
+  body: textPg('body').notNull(),
+  email: textPg('email'),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  page_path: textPg('page_path'),
+  user_agent: textPg('user_agent'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  createdAtIdx: indexPg('idx_feedback_created_at').on(table.created_at),
+  memberIdIdx: indexPg('idx_feedback_member_id').on(table.member_id),
+  categoryIdx: indexPg('idx_feedback_category').on(table.category),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -352,9 +404,11 @@ export const sqliteSchema = {
   memberAvailability: memberAvailabilitySqlite,
   spareRequests: spareRequestsSqlite,
   spareRequestInvitations: spareRequestInvitationsSqlite,
+  spareRequestCcs: spareRequestCcsSqlite,
   spareResponses: spareResponsesSqlite,
   serverConfig: serverConfigSqlite,
   spareRequestNotificationQueue: spareRequestNotificationQueueSqlite,
+  feedback: feedbackSqlite,
 };
 
 export const pgSchema = {
@@ -367,7 +421,9 @@ export const pgSchema = {
   memberAvailability: memberAvailabilityPg,
   spareRequests: spareRequestsPg,
   spareRequestInvitations: spareRequestInvitationsPg,
+  spareRequestCcs: spareRequestCcsPg,
   spareResponses: spareResponsesPg,
   serverConfig: serverConfigPg,
   spareRequestNotificationQueue: spareRequestNotificationQueuePg,
+  feedback: feedbackPg,
 };

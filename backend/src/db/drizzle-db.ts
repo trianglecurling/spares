@@ -36,9 +36,11 @@ export function getDrizzleDb() {
       memberAvailability: sqliteSchema.memberAvailabilitySqlite,
       spareRequests: sqliteSchema.spareRequestsSqlite,
       spareRequestInvitations: sqliteSchema.spareRequestInvitationsSqlite,
+      spareRequestCcs: sqliteSchema.spareRequestCcsSqlite,
       spareResponses: sqliteSchema.spareResponsesSqlite,
       serverConfig: sqliteSchema.serverConfigSqlite,
       spareRequestNotificationQueue: sqliteSchema.spareRequestNotificationQueueSqlite,
+      feedback: sqliteSchema.feedbackSqlite,
     };
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
@@ -65,9 +67,11 @@ export function getDrizzleDb() {
       memberAvailability: pgSchema.memberAvailabilityPg,
       spareRequests: pgSchema.spareRequestsPg,
       spareRequestInvitations: pgSchema.spareRequestInvitationsPg,
+      spareRequestCcs: pgSchema.spareRequestCcsPg,
       spareResponses: pgSchema.spareResponsesPg,
       serverConfig: pgSchema.serverConfigPg,
       spareRequestNotificationQueue: pgSchema.spareRequestNotificationQueuePg,
+      feedback: pgSchema.feedbackPg,
     };
   } else {
     throw new Error(`Unsupported database type: ${(config as any).type}`);

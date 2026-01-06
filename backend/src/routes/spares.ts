@@ -3,10 +3,18 @@ import { z } from 'zod';
 import { eq, and, or, sql, asc, desc, isNull, isNotNull, inArray, gte, ne } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member, SpareRequest, League } from '../types.js';
-import { sendSpareRequestEmail, sendSpareResponseEmail, sendSpareCancellationEmail } from '../services/email.js';
+import {
+  sendSpareRequestEmail,
+  sendSpareRequestCreatedEmail,
+  sendSpareRequestCcCreatedEmail,
+  sendSpareRequestCcFilledEmail,
+  sendSpareRequestCcCancellationEmail,
+  sendSpareResponseEmail,
+  sendSpareCancellationEmail,
+} from '../services/email.js';
 import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } from '../services/sms.js';
 import { generateToken, generateEmailLinkToken } from '../utils/auth.js';
-import { getCurrentDateString, getCurrentTimestamp, getCurrentTime, getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
+import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
 
 const createSpareRequestSchema = z.object({
   requestedForName: z.string().min(1),
@@ -16,6 +24,7 @@ const createSpareRequestSchema = z.object({
   message: z.string().optional(),
   requestType: z.enum(['public', 'private']),
   invitedMemberIds: z.array(z.number()).optional(),
+  ccMemberIds: z.array(z.number()).max(4).optional(),
 });
 
 const respondToSpareRequestSchema = z.object({
@@ -31,6 +40,25 @@ const reissueSpareRequestSchema = z.object({
 });
 
 export async function spareRoutes(fastify: FastifyInstance) {
+  async function getCcMembersForRequest(requestId: number): Promise<Member[]> {
+    const { db, schema } = getDrizzleDb();
+    const rows = await db
+      .select({
+        id: schema.members.id,
+        name: schema.members.name,
+        email: schema.members.email,
+        phone: schema.members.phone,
+        is_admin: schema.members.is_admin,
+        is_server_admin: schema.members.is_server_admin,
+        email_subscribed: schema.members.email_subscribed,
+      })
+      .from(schema.spareRequestCcs)
+      .innerJoin(schema.members, eq(schema.spareRequestCcs.member_id, schema.members.id))
+      .where(eq(schema.spareRequestCcs.spare_request_id, requestId));
+
+    return rows as unknown as Member[];
+  }
+
   // Get all public spare requests
   fastify.get('/spares', async (request, reply) => {
     const member = (request as any).member as Member;
@@ -214,6 +242,79 @@ export async function spareRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // Get member's past spare requests (read-only, includes filled or unfilled)
+  fastify.get('/spares/my-requests/past', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const { db, schema } = getDrizzleDb();
+    const today = await getCurrentDateStringAsync();
+    const now = await getCurrentTimeAsync();
+    const nowTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const requests = await db
+      .select({
+        id: schema.spareRequests.id,
+        requested_for_name: schema.spareRequests.requested_for_name,
+        game_date: schema.spareRequests.game_date,
+        game_time: schema.spareRequests.game_time,
+        position: schema.spareRequests.position,
+        message: schema.spareRequests.message,
+        request_type: schema.spareRequests.request_type,
+        status: schema.spareRequests.status,
+        filled_by_name: schema.members.name,
+        filled_by_email: schema.members.email,
+        filled_by_phone: schema.members.phone,
+        filled_at: schema.spareRequests.filled_at,
+        notifications_sent_at: schema.spareRequests.notifications_sent_at,
+        had_cancellation: schema.spareRequests.had_cancellation,
+        created_at: schema.spareRequests.created_at,
+        sparer_comment: schema.spareResponses.comment,
+      })
+      .from(schema.spareRequests)
+      .leftJoin(schema.members, eq(schema.spareRequests.filled_by_member_id, schema.members.id))
+      .leftJoin(
+        schema.spareResponses,
+        eq(schema.spareRequests.id, schema.spareResponses.spare_request_id)
+      )
+      .where(
+        and(
+          eq(schema.spareRequests.requester_id, member.id),
+          or(
+            sql`${schema.spareRequests.game_date} < ${today}`,
+            and(
+              eq(schema.spareRequests.game_date, today),
+              sql`${schema.spareRequests.game_time} < ${nowTime}`
+            )
+          )
+        )
+      )
+      .orderBy(desc(schema.spareRequests.game_date), desc(schema.spareRequests.game_time));
+
+    return requests.map((req: any) => {
+      return {
+        id: req.id,
+        requestedForName: req.requested_for_name,
+        gameDate: req.game_date,
+        gameTime: req.game_time,
+        position: req.position,
+        message: req.message,
+        requestType: req.request_type,
+        status: req.status,
+        filledByName: req.filled_by_name,
+        filledByEmail: req.filled_by_email,
+        filledByPhone: req.filled_by_phone,
+        filledAt: req.filled_at,
+        sparerComment: req.sparer_comment,
+        notificationsSentAt: req.notifications_sent_at,
+        hadCancellation: req.had_cancellation === 1,
+        createdAt: req.created_at,
+      };
+    });
+  });
+
   // Get spare requests the user has signed up to fill (upcoming)
   fastify.get('/spares/my-sparing', async (request, reply) => {
     const member = (request as any).member as Member;
@@ -296,7 +397,16 @@ export async function spareRoutes(fastify: FastifyInstance) {
         and(
           eq(schema.spareRequests.status, 'filled'),
           gte(schema.spareRequests.game_date, today),
-          ne(schema.spareRequests.filled_by_member_id, member.id)
+          // Exclude any requests the user is involved with (requester or sparer)
+          ne(schema.spareRequests.requester_id, member.id),
+          ne(schema.spareRequests.filled_by_member_id, member.id),
+          // Also exclude private requests where the user was invited
+          sql`NOT EXISTS (
+            SELECT 1
+            FROM ${schema.spareRequestInvitations}
+            WHERE ${schema.spareRequestInvitations.spare_request_id} = ${schema.spareRequests.id}
+              AND ${schema.spareRequestInvitations.member_id} = ${member.id}
+          )`
         )
       )
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
@@ -366,6 +476,75 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .returning();
 
     const requestId = result[0].id;
+
+    // Store CCs (up to 4, members only, no self)
+    const ccIds = Array.from(new Set((body.ccMemberIds || []).filter((id) => id !== member.id))).slice(0, 4);
+    if (ccIds.length > 0) {
+      const ccMembersExist = await db
+        .select({ id: schema.members.id })
+        .from(schema.members)
+        .where(inArray(schema.members.id, ccIds));
+      if (ccMembersExist.length !== ccIds.length) {
+        return reply.code(400).send({ error: 'Invalid CC members' });
+      }
+
+      await db.insert(schema.spareRequestCcs).values(
+        ccIds.map((ccId) => ({
+          spare_request_id: requestId,
+          member_id: ccId,
+        }))
+      );
+    }
+
+    // Send confirmation email to creator + CC recipients (separately, no email-level CC)
+    try {
+      if (member.email && (member as any).email_subscribed === 1) {
+        const requesterToken = generateToken(member);
+        sendSpareRequestCreatedEmail(
+          member.email,
+          member.name,
+          {
+            requestedForName: body.requestedForName,
+            gameDate: body.gameDate,
+            gameTime: body.gameTime,
+            position: body.position,
+            message: body.message,
+          },
+          requesterToken
+        ).catch((error) => {
+          console.error('Error sending spare request created email:', error);
+        });
+      }
+
+      if (ccIds.length > 0) {
+        const ccMembers = await db
+          .select()
+          .from(schema.members)
+          .where(inArray(schema.members.id, ccIds)) as Member[];
+
+        for (const ccMember of ccMembers) {
+          if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
+          const ccToken = generateToken(ccMember);
+          sendSpareRequestCcCreatedEmail(
+            ccMember.email,
+            ccMember.name,
+            member.name,
+            {
+              requestedForName: body.requestedForName,
+              gameDate: body.gameDate,
+              gameTime: body.gameTime,
+              position: body.position,
+              message: body.message,
+            },
+            ccToken
+          ).catch((error) => {
+            console.error('Error sending spare request CC created email:', error);
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error scheduling spare request confirmation/CC emails:', error);
+    }
 
     // Determine who to notify
     let recipientMembers: Member[] = [];
@@ -711,6 +890,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
     
     const requester = requesters[0] as Member;
 
+    // Get CC recipients for this request
+    const ccMembers = await getCcMembersForRequest(requestId);
+
     // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
     // The user experience is more important than waiting for external API calls
     if (requester.email && requester.email_subscribed === 1) {
@@ -731,6 +913,27 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requesterToken
       ).catch((error) => {
         console.error('Error sending spare response email:', error);
+      });
+    }
+
+    for (const ccMember of ccMembers) {
+      if (!ccMember.email || (ccMember as any).email_subscribed !== 1) continue;
+      const ccToken = generateToken(ccMember);
+      sendSpareRequestCcFilledEmail(
+        ccMember.email,
+        ccMember.name,
+        requester.name,
+        member.name,
+        {
+          requestedForName: spareRequest.requested_for_name,
+          gameDate: spareRequest.game_date,
+          gameTime: spareRequest.game_time,
+          position: spareRequest.position || undefined,
+        },
+        body.comment,
+        ccToken
+      ).catch((error) => {
+        console.error('Error sending spare request CC filled email:', error);
       });
     }
 
@@ -848,6 +1051,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
     
     const requester = requesters[0] as Member;
 
+    // Get CC recipients for this request
+    const ccMembers = await getCcMembersForRequest(requestId);
+
     // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
     if (requester.email && requester.email_subscribed === 1) {
       const requesterToken = generateToken(requester);
@@ -867,6 +1073,27 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requesterToken
       ).catch((error) => {
         console.error('Error sending spare cancellation email:', error);
+      });
+    }
+
+    for (const ccMember of ccMembers) {
+      if (!ccMember.email || (ccMember as any).email_subscribed !== 1) continue;
+      const ccToken = generateToken(ccMember);
+      sendSpareRequestCcCancellationEmail(
+        ccMember.email,
+        ccMember.name,
+        requester.name,
+        member.name,
+        {
+          requestedForName: spareRequest.requested_for_name,
+          gameDate: spareRequest.game_date,
+          gameTime: spareRequest.game_time,
+          position: spareRequest.position || undefined,
+        },
+        body.comment,
+        ccToken
+      ).catch((error) => {
+        console.error('Error sending spare request CC cancellation email:', error);
       });
     }
 

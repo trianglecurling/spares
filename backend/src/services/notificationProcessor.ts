@@ -6,6 +6,22 @@ import { getCurrentTime, getCurrentTimestamp, getCurrentTimeAsync } from '../uti
 import { eq, and, or, sql, asc, isNull, isNotNull, lte } from 'drizzle-orm';
 import { Member } from '../types.js';
 
+let lastDbErrorLogAt = 0;
+const DB_ERROR_LOG_THROTTLE_MS = 30_000;
+
+function isTransientDbDisconnectError(error: unknown): boolean {
+  const msg = String((error as any)?.cause?.message ?? (error as any)?.message ?? '');
+  return (
+    msg.includes('Connection terminated unexpectedly') ||
+    msg.includes('terminating connection') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('EPIPE') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('Connection terminated') ||
+    msg.includes('Connection refused')
+  );
+}
+
 interface NotificationQueueItem {
   id: number;
   spare_request_id: number;
@@ -33,128 +49,128 @@ interface SpareRequest {
  * This function should be called periodically (e.g., every minute) to process pending notifications.
  */
 export async function processNextNotification(): Promise<void> {
-  const { db, schema } = getDrizzleDb();
-  const now = await getCurrentTimeAsync();
-  
-  // Ensure now is a Date object - Drizzle PostgreSQL timestamp columns require Date objects
-  // getCurrentTime() should always return a Date, but we'll be defensive
-  let nowDate: Date;
-  if (now instanceof Date && !isNaN(now.getTime())) {
-    nowDate = now;
-  } else {
-    // Fallback: create a new Date
-    console.warn('getCurrentTime() did not return a valid Date, using current time');
-    nowDate = new Date();
-  }
-  
-  // Double-check it's a valid Date object with toISOString method
-  if (typeof nowDate.toISOString !== 'function') {
-    console.error('nowDate is not a valid Date object, creating new Date');
-    nowDate = new Date();
-  }
-
-  // Find spare requests that need the next notification sent
-  // Conditions:
-  // 1. Status is 'open' (not filled or cancelled)
-  // 2. notification_status is 'in_progress' (staggered notifications active)
-  // 3. notification_paused is 0 (not paused)
-  // 4. next_notification_at is in the past or null
-  const pendingRequests = await db
-    .select()
-    .from(schema.spareRequests)
-    .where(
-      and(
-        eq(schema.spareRequests.status, 'open'),
-        eq(schema.spareRequests.notification_status, 'in_progress'),
-        eq(schema.spareRequests.notification_paused, 0),
-        or(
-          isNull(schema.spareRequests.next_notification_at),
-          lte(schema.spareRequests.next_notification_at, nowDate)
-        )!
-      )
-    )
-    .orderBy(
-      sql`${schema.spareRequests.next_notification_at} ASC NULLS FIRST`
-    )
-    .limit(1) as SpareRequest[];
-
-  if (pendingRequests.length === 0) {
-    return; // Nothing to process
-  }
-
-  const spareRequest = pendingRequests[0];
-
-  // Get the next member in the queue who hasn't been notified yet
-  const nextInQueueResults = await db
-    .select({
-      queue_id: schema.spareRequestNotificationQueue.id,
-      spare_request_id: schema.spareRequestNotificationQueue.spare_request_id,
-      member_id: schema.spareRequestNotificationQueue.member_id,
-      queue_order: schema.spareRequestNotificationQueue.queue_order,
-      notified_at: schema.spareRequestNotificationQueue.notified_at,
-      id: schema.members.id,
-      name: schema.members.name,
-      email: schema.members.email,
-      phone: schema.members.phone,
-      opted_in_sms: schema.members.opted_in_sms,
-    })
-    .from(schema.spareRequestNotificationQueue)
-    .innerJoin(
-      schema.members,
-      eq(schema.spareRequestNotificationQueue.member_id, schema.members.id)
-    )
-    .where(
-      and(
-        eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequest.id),
-        isNull(schema.spareRequestNotificationQueue.notified_at)
-      )
-    )
-    .orderBy(asc(schema.spareRequestNotificationQueue.queue_order))
-    .limit(1);
-  
-  const nextInQueue = nextInQueueResults[0] as {
-    queue_id: number;
-    spare_request_id: number;
-    member_id: number;
-    queue_order: number;
-    notified_at: string | null;
-    id: number;
-    name: string;
-    email: string | null;
-    phone: string | null;
-    opted_in_sms: number;
-  } | undefined;
-
-  if (!nextInQueue) {
-    // No more members to notify - mark as complete
-    await db
-      .update(schema.spareRequests)
-      .set({
-        notification_status: 'completed',
-        next_notification_at: null,
-      })
-      .where(eq(schema.spareRequests.id, spareRequest.id));
-    return;
-  }
-
-  // Get requester details
-  const requesters = await db
-    .select({ name: schema.members.name })
-    .from(schema.members)
-    .where(eq(schema.members.id, spareRequest.requester_id))
-    .limit(1);
-  
-  const requester = requesters[0] as { name: string } | undefined;
-
-  if (!requester) {
-    console.error(`Requester not found for spare request ${spareRequest.id}`);
-    return;
-  }
-
-  // Send notification to this member
-  console.log(`[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`);
-  
   try {
+    const { db, schema } = getDrizzleDb();
+    const now = await getCurrentTimeAsync();
+
+    // Ensure now is a Date object - Drizzle PostgreSQL timestamp columns require Date objects
+    // getCurrentTime() should always return a Date, but we'll be defensive
+    let nowDate: Date;
+    if (now instanceof Date && !isNaN(now.getTime())) {
+      nowDate = now;
+    } else {
+      // Fallback: create a new Date
+      console.warn('getCurrentTime() did not return a valid Date, using current time');
+      nowDate = new Date();
+    }
+
+    // Double-check it's a valid Date object with toISOString method
+    if (typeof nowDate.toISOString !== 'function') {
+      console.error('nowDate is not a valid Date object, creating new Date');
+      nowDate = new Date();
+    }
+
+    // Find spare requests that need the next notification sent
+    // Conditions:
+    // 1. Status is 'open' (not filled or cancelled)
+    // 2. notification_status is 'in_progress' (staggered notifications active)
+    // 3. notification_paused is 0 (not paused)
+    // 4. next_notification_at is in the past or null
+    const pendingRequests = await db
+      .select()
+      .from(schema.spareRequests)
+      .where(
+        and(
+          eq(schema.spareRequests.status, 'open'),
+          eq(schema.spareRequests.notification_status, 'in_progress'),
+          eq(schema.spareRequests.notification_paused, 0),
+          or(
+            isNull(schema.spareRequests.next_notification_at),
+            lte(schema.spareRequests.next_notification_at, nowDate)
+          )!
+        )
+      )
+      .orderBy(
+        sql`${schema.spareRequests.next_notification_at} ASC NULLS FIRST`
+      )
+      .limit(1) as SpareRequest[];
+
+    if (pendingRequests.length === 0) {
+      return; // Nothing to process
+    }
+
+    const spareRequest = pendingRequests[0];
+
+    // Get the next member in the queue who hasn't been notified yet
+    const nextInQueueResults = await db
+      .select({
+        queue_id: schema.spareRequestNotificationQueue.id,
+        spare_request_id: schema.spareRequestNotificationQueue.spare_request_id,
+        member_id: schema.spareRequestNotificationQueue.member_id,
+        queue_order: schema.spareRequestNotificationQueue.queue_order,
+        notified_at: schema.spareRequestNotificationQueue.notified_at,
+        id: schema.members.id,
+        name: schema.members.name,
+        email: schema.members.email,
+        phone: schema.members.phone,
+        opted_in_sms: schema.members.opted_in_sms,
+      })
+      .from(schema.spareRequestNotificationQueue)
+      .innerJoin(
+        schema.members,
+        eq(schema.spareRequestNotificationQueue.member_id, schema.members.id)
+      )
+      .where(
+        and(
+          eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequest.id),
+          isNull(schema.spareRequestNotificationQueue.notified_at)
+        )
+      )
+      .orderBy(asc(schema.spareRequestNotificationQueue.queue_order))
+      .limit(1);
+
+    const nextInQueue = nextInQueueResults[0] as {
+      queue_id: number;
+      spare_request_id: number;
+      member_id: number;
+      queue_order: number;
+      notified_at: string | null;
+      id: number;
+      name: string;
+      email: string | null;
+      phone: string | null;
+      opted_in_sms: number;
+    } | undefined;
+
+    if (!nextInQueue) {
+      // No more members to notify - mark as complete
+      await db
+        .update(schema.spareRequests)
+        .set({
+          notification_status: 'completed',
+          next_notification_at: null,
+        })
+        .where(eq(schema.spareRequests.id, spareRequest.id));
+      return;
+    }
+
+    // Get requester details
+    const requesters = await db
+      .select({ name: schema.members.name })
+      .from(schema.members)
+      .where(eq(schema.members.id, spareRequest.requester_id))
+      .limit(1);
+
+    const requester = requesters[0] as { name: string } | undefined;
+
+    if (!requester) {
+      console.error(`Requester not found for spare request ${spareRequest.id}`);
+      return;
+    }
+
+    // Send notification to this member
+    console.log(`[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`);
+
     if (nextInQueue.email) {
       // Generate token using member object (need to construct it from the query result)
       // Match the Member interface from types.ts
@@ -258,34 +274,19 @@ export async function processNextNotification(): Promise<void> {
       .set({ next_notification_at: nextNotificationTime })
       .where(eq(schema.spareRequests.id, spareRequest.id));
   } catch (error) {
-    console.error(`Error sending notification for spare request ${spareRequest.id}:`, error);
-    // Mark as notified anyway to avoid retrying indefinitely (use queue_id)
-    // Drizzle PostgreSQL timestamp columns require Date objects
-    await db
-      .update(schema.spareRequestNotificationQueue)
-      .set({ notified_at: nowDate })
-      .where(eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id));
-    
-    // Schedule next notification based on configured delay even if this one failed
-    const configResults = await db
-      .select({ notification_delay_seconds: schema.serverConfig.notification_delay_seconds })
-      .from(schema.serverConfig)
-      .where(eq(schema.serverConfig.id, 1))
-      .limit(1);
-    
-    const config = configResults[0] as { notification_delay_seconds: number | null } | undefined;
-    const delaySeconds = config?.notification_delay_seconds ?? 180; // Default to 3 minutes
-    let nextNotificationTime = new Date(nowDate.getTime() + delaySeconds * 1000);
-    // Ensure nextNotificationTime is a valid Date object
-    if (!(nextNotificationTime instanceof Date) || isNaN(nextNotificationTime.getTime())) {
-      console.error('Invalid nextNotificationTime in error handler, using current time');
-      nextNotificationTime = new Date();
+    // If the DB connection drops (restart / idle timeout), this interval will spam logs.
+    // Throttle these errors and just retry on the next interval.
+    if (isTransientDbDisconnectError(error)) {
+      const nowMs = Date.now();
+      if (nowMs - lastDbErrorLogAt > DB_ERROR_LOG_THROTTLE_MS) {
+        lastDbErrorLogAt = nowMs;
+        console.warn('[Notification Processor] DB unavailable; will retry.');
+      }
+      return;
     }
-    // Drizzle expects Date objects for timestamp columns (not ISO strings)
-    await db
-      .update(schema.spareRequests)
-      .set({ next_notification_at: nextNotificationTime })
-      .where(eq(schema.spareRequests.id, spareRequest.id));
+
+    // For non-transient errors, keep the original behavior (surface the error).
+    throw error;
   }
 }
 
