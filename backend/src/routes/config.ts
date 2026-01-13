@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { eq, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isServerAdmin } from '../utils/auth.js';
-import { invalidateTestTimeCache } from '../utils/time.js';
+import { getCurrentDateStringAsync, invalidateTestTimeCache } from '../utils/time.js';
 import { Member } from '../types.js';
 import { sendEmail } from '../services/email.js';
 import { sendSMS } from '../services/sms.js';
@@ -24,6 +24,10 @@ const updateConfigSchema = z.object({
   disableSms: z.boolean().optional(),
   testCurrentTime: z.string().nullable().optional(),
   notificationDelaySeconds: z.number().int().min(1).optional(),
+});
+
+const observabilityQuerySchema = z.object({
+  rangeDays: z.coerce.number().int().min(1).max(180).optional(),
 });
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -73,6 +77,165 @@ export async function configRoutes(fastify: FastifyInstance) {
       testCurrentTime: config.test_current_time,
       notificationDelaySeconds: config.notification_delay_seconds ?? 180,
       updatedAt: config.updated_at,
+    };
+  });
+
+  // Observability metrics (server admin only)
+  fastify.get('/config/observability', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member || !isServerAdmin(member)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+
+    const { rangeDays } = observabilityQuerySchema.parse((request as any).query || {});
+    const days = rangeDays ?? 30;
+
+    const todayStr = await getCurrentDateStringAsync(); // YYYY-MM-DD
+    const todayUtc = new Date(`${todayStr}T00:00:00.000Z`);
+    const startUtc = new Date(todayUtc);
+    startUtc.setUTCDate(startUtc.getUTCDate() - (days - 1));
+    const startStr = startUtc.toISOString().slice(0, 10);
+
+    const dateList: string[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(startUtc);
+      d.setUTCDate(startUtc.getUTCDate() + i);
+      dateList.push(d.toISOString().slice(0, 10));
+    }
+
+    const { db, schema } = getDrizzleDb();
+
+    // Totals
+    const membersTotalRows = await db.select({ count: sql<number>`COUNT(*)` }).from(schema.members);
+    const membersTotal = Number(membersTotalRows[0]?.count || 0);
+
+    // DAU (count unique member_id per day)
+    const dauRows = await db
+      .select({
+        date: schema.dailyActivity.activity_date,
+        dau: sql<number>`COUNT(DISTINCT ${schema.dailyActivity.member_id})`,
+      })
+      .from(schema.dailyActivity)
+      .where(sql`${schema.dailyActivity.activity_date} >= ${startStr}`)
+      .groupBy(schema.dailyActivity.activity_date);
+
+    const dauByDate = new Map<string, number>();
+    for (const row of dauRows as any[]) {
+      dauByDate.set(String(row.date), Number(row.dau || 0));
+    }
+
+    // Events per day by type
+    const eventRows = await db
+      .select({
+        date: sql<string>`DATE(${schema.observabilityEvents.created_at})`,
+        eventType: schema.observabilityEvents.event_type,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(schema.observabilityEvents)
+      .where(sql`DATE(${schema.observabilityEvents.created_at}) >= ${startStr}`)
+      .groupBy(sql`DATE(${schema.observabilityEvents.created_at})`, schema.observabilityEvents.event_type);
+
+    const eventsByDateType = new Map<string, Map<string, number>>();
+    for (const row of eventRows as any[]) {
+      const date = String(row.date);
+      const type = String(row.eventType);
+      const count = Number(row.count || 0);
+      if (!eventsByDateType.has(date)) eventsByDateType.set(date, new Map());
+      eventsByDateType.get(date)!.set(type, count);
+    }
+
+    // Spare request created per day (from DB)
+    const spareCreatedRows = await db
+      .select({
+        date: sql<string>`DATE(${schema.spareRequests.created_at})`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(schema.spareRequests)
+      .where(sql`DATE(${schema.spareRequests.created_at}) >= ${startStr}`)
+      .groupBy(sql`DATE(${schema.spareRequests.created_at})`);
+
+    const spareCreatedByDate = new Map<string, number>();
+    for (const row of spareCreatedRows as any[]) {
+      spareCreatedByDate.set(String(row.date), Number(row.count || 0));
+    }
+
+    // Spare request filled per day (from DB)
+    const spareFilledRows = await db
+      .select({
+        date: sql<string>`DATE(${schema.spareRequests.filled_at})`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(schema.spareRequests)
+      .where(sql`${schema.spareRequests.filled_at} IS NOT NULL AND DATE(${schema.spareRequests.filled_at}) >= ${startStr}`)
+      .groupBy(sql`DATE(${schema.spareRequests.filled_at})`);
+
+    const spareFilledByDate = new Map<string, number>();
+    for (const row of spareFilledRows as any[]) {
+      spareFilledByDate.set(String(row.date), Number(row.count || 0));
+    }
+
+    // Avg time-to-fill for requests filled in range (best-effort)
+    const filledTimingRows = await db
+      .select({
+        createdAt: schema.spareRequests.created_at,
+        filledAt: schema.spareRequests.filled_at,
+      })
+      .from(schema.spareRequests)
+      .where(sql`${schema.spareRequests.filled_at} IS NOT NULL AND DATE(${schema.spareRequests.filled_at}) >= ${startStr}`);
+
+    let totalFillMs = 0;
+    let fillCount = 0;
+    for (const row of filledTimingRows as any[]) {
+      const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(String(row.createdAt));
+      const filledAt = row.filledAt instanceof Date ? row.filledAt : new Date(String(row.filledAt));
+      const diff = filledAt.getTime() - createdAt.getTime();
+      if (Number.isFinite(diff) && diff >= 0) {
+        totalFillMs += diff;
+        fillCount += 1;
+      }
+    }
+    const avgTimeToFillMinutes = fillCount > 0 ? Math.round((totalFillMs / fillCount) / 60000) : null;
+
+    // Build day-by-day series
+    const series = dateList.map((date) => {
+      const events = eventsByDateType.get(date) || new Map<string, number>();
+      return {
+        date,
+        dau: dauByDate.get(date) || 0,
+        emailsSent: events.get('email.sent') || 0,
+        emailsLogged: events.get('email.logged') || 0,
+        smsSent: events.get('sms.sent') || 0,
+        smsLogged: events.get('sms.logged') || 0,
+        spareRequestsCreated: spareCreatedByDate.get(date) || 0,
+        spareRequestsFilled: spareFilledByDate.get(date) || 0,
+        spareOffersCancelled: events.get('spare.offer.cancelled') || 0,
+        spareRequestsCancelled: events.get('spare.request.cancelled') || 0,
+        logins: events.get('auth.login_success') || 0,
+        authCodesRequested: events.get('auth.code_requested') || 0,
+      };
+    });
+
+    const today = series[series.length - 1];
+    const last7 = series.slice(-7);
+    const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+    const avg = (arr: number[]) => (arr.length ? Math.round(sum(arr) / arr.length) : 0);
+
+    return {
+      rangeDays: days,
+      startDate: startStr,
+      endDate: todayStr,
+      totals: {
+        membersTotal,
+        dauToday: today?.dau || 0,
+        dau7DayAvg: avg(last7.map((d) => d.dau)),
+        emailsToday: (today?.emailsSent || 0) + (today?.emailsLogged || 0),
+        emailsSentToday: today?.emailsSent || 0,
+        emailsLoggedToday: today?.emailsLogged || 0,
+        spareRequestsCreatedToday: today?.spareRequestsCreated || 0,
+        spareRequestsFilledToday: today?.spareRequestsFilled || 0,
+        avgTimeToFillMinutes,
+      },
+      series,
     };
   });
 

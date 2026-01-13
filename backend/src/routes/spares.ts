@@ -11,12 +11,16 @@ import {
   sendSpareRequestCcCancellationEmail,
   sendSpareResponseEmail,
   sendSpareCancellationEmail,
+  sendSpareOfferConfirmationEmail,
+  sendSpareOfferCancellationConfirmationEmail,
 } from '../services/email.js';
 import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } from '../services/sms.js';
 import { generateToken, generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
+import { logEvent } from '../services/observability.js';
 
 const createSpareRequestSchema = z.object({
+  leagueId: z.number(),
   requestedForName: z.string().min(1),
   gameDate: z.string(),
   gameTime: z.string(),
@@ -98,6 +102,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const publicRequests = await db
       .select({
         id: schema.spareRequests.id,
+        league_name: schema.leagues.name,
         requester_name: schema.members.name,
         requester_email: schema.members.email,
         requester_phone: schema.members.phone,
@@ -111,6 +116,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
+      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
       .where(and(...publicConditions))
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
 
@@ -136,6 +142,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const privateRequests = await db
       .select({
         id: schema.spareRequests.id,
+        league_name: schema.leagues.name,
         requester_name: schema.members.name,
         requester_email: schema.members.email,
         requester_phone: schema.members.phone,
@@ -150,6 +157,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
       .innerJoin(schema.spareRequestInvitations, eq(schema.spareRequests.id, schema.spareRequestInvitations.spare_request_id))
+      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
       .where(and(...privateConditions))
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
 
@@ -161,6 +169,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       requestedForName: req.requested_for_name,
       gameDate: req.game_date,
       gameTime: req.game_time,
+      leagueName: req.league_name || null,
       position: req.position,
       message: req.message,
       requestType: req.request_type,
@@ -181,6 +190,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const requests = await db
       .select({
         id: schema.spareRequests.id,
+        league_name: schema.leagues.name,
         requested_for_name: schema.spareRequests.requested_for_name,
         game_date: schema.spareRequests.game_date,
         game_time: schema.spareRequests.game_time,
@@ -199,6 +209,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .leftJoin(schema.members, eq(schema.spareRequests.filled_by_member_id, schema.members.id))
+      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
       .leftJoin(
         schema.spareResponses,
         eq(schema.spareRequests.id, schema.spareResponses.spare_request_id)
@@ -226,6 +237,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requestedForName: req.requested_for_name,
         gameDate: req.game_date,
         gameTime: req.game_time,
+        leagueName: req.league_name || null,
         position: req.position,
         message: req.message,
         requestType: req.request_type,
@@ -328,6 +340,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const requests = await db
       .select({
         id: schema.spareRequests.id,
+        league_name: schema.leagues.name,
         requester_name: schema.members.name,
         requester_email: schema.members.email,
         requester_phone: schema.members.phone,
@@ -341,6 +354,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
+      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
       .where(
         and(
           eq(schema.spareRequests.filled_by_member_id, member.id),
@@ -358,6 +372,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       requestedForName: req.requested_for_name,
       gameDate: req.game_date,
       gameTime: req.game_time,
+      leagueName: req.league_name || null,
       position: req.position,
       message: req.message,
       requestType: req.request_type,
@@ -380,6 +395,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const requestsRaw = await db
       .select({
         id: schema.spareRequests.id,
+        league_name: schema.leagues.name,
         requester_name: schema.members.name,
         filled_by_member_id: schema.spareRequests.filled_by_member_id,
         requested_for_name: schema.spareRequests.requested_for_name,
@@ -393,9 +409,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
+      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
       .where(
         and(
           eq(schema.spareRequests.status, 'filled'),
+          eq(schema.spareRequests.request_type, 'public'),
           gte(schema.spareRequests.game_date, today),
           // Exclude any requests the user is involved with (requester or sparer)
           ne(schema.spareRequests.requester_id, member.id),
@@ -436,6 +454,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       requestedForName: req.requested_for_name,
       gameDate: req.game_date,
       gameTime: req.game_time,
+      leagueName: req.league_name || null,
       position: req.position,
       message: req.message,
       requestType: req.request_type,
@@ -458,11 +477,25 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const body = createSpareRequestSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
+    // Validate league (used for display in UI/emails, and for public-request filtering).
+    // Also prevents malformed/forged requests from referencing a non-existent league.
+    const leagueRows = await db
+      .select()
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, body.leagueId))
+      .limit(1) as League[];
+    const league = leagueRows[0];
+    if (!league) {
+      return reply.code(400).send({ error: 'Invalid league' });
+    }
+    const leagueName = league.name;
+
     // Create the spare request
     const result = await db
       .insert(schema.spareRequests)
       .values({
         requester_id: member.id,
+        league_id: body.leagueId,
         requested_for_name: body.requestedForName,
         game_date: body.gameDate,
         game_time: body.gameTime,
@@ -476,6 +509,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .returning();
 
     const requestId = result[0].id;
+
+    // Best-effort analytics (do not block)
+    logEvent({
+      eventType: 'spare.request.created',
+      memberId: member.id,
+      relatedId: requestId,
+      meta: { requestType: body.requestType, leagueId: body.leagueId },
+    }).catch(() => {});
 
     // Store CCs (up to 4, members only, no self)
     const ccIds = Array.from(new Set((body.ccMemberIds || []).filter((id) => id !== member.id))).slice(0, 4);
@@ -504,6 +545,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           member.email,
           member.name,
           {
+            leagueName,
             requestedForName: body.requestedForName,
             gameDate: body.gameDate,
             gameTime: body.gameTime,
@@ -530,6 +572,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
             ccMember.name,
             member.name,
             {
+              leagueName,
               requestedForName: body.requestedForName,
               gameDate: body.gameDate,
               gameTime: body.gameTime,
@@ -585,6 +628,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
             recipient.name,
             member.name,
             {
+              leagueName,
               requestedForName: body.requestedForName,
               gameDate: body.gameDate,
               gameTime: body.gameTime,
@@ -639,66 +683,74 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const isLessThan24Hours = hoursUntilGame < 24;
 
       // Find matching available members for public requests
-      // Match based on league that matches the day of week
+      // Match based on the selected leagueId (previously inferred by day-of-week, which was too broad)
       // Parse date string as local date to avoid timezone issues
       const gameDateObj = new Date(gameYear, gameMonth - 1, gameDay); // month is 0-indexed
       const dayOfWeek = gameDateObj.getDay();
 
-      // Find leagues that match this day and are active on this date
-      const matchingLeagues = await db
-        .select()
+      // Validate league exists + matches this date/day
+      if (league.day_of_week !== dayOfWeek) {
+        return reply.code(400).send({ error: 'Selected league does not run on that day' });
+      }
+      // Active range check
+      const inRangeRows = await db
+        .select({ ok: sql<number>`1` })
         .from(schema.leagues)
         .where(
           and(
-            eq(schema.leagues.day_of_week, dayOfWeek),
+            eq(schema.leagues.id, body.leagueId),
             sql`date(${schema.leagues.start_date}) <= date(${body.gameDate})`,
             sql`date(${schema.leagues.end_date}) >= date(${body.gameDate})`
           )
-        ) as League[];
-
-      console.log(`[Spare Request] Matching leagues for day ${dayOfWeek}, date ${body.gameDate}:`, matchingLeagues.length);
-
-      if (matchingLeagues.length > 0) {
-        const leagueIds = matchingLeagues.map((l) => l.id);
-        
-        // Get members who are available for these leagues
-        let conditions = [
-          inArray(schema.memberAvailability.league_id, leagueIds),
-          eq(schema.memberAvailability.available, 1),
-          eq(schema.members.email_subscribed, 1),
-          ne(schema.members.id, member.id),
-        ];
-        
-        // If position is skip, only notify those who can skip
-        if (body.position === 'skip') {
-          conditions.push(eq(schema.memberAvailability.can_skip, 1));
-        }
-
-        recipientMembers = await db
-          .selectDistinct({
-            id: schema.members.id,
-            name: schema.members.name,
-            email: schema.members.email,
-            phone: schema.members.phone,
-            is_admin: schema.members.is_admin,
-            opted_in_sms: schema.members.opted_in_sms,
-            email_subscribed: schema.members.email_subscribed,
-            first_login_completed: schema.members.first_login_completed,
-            email_visible: schema.members.email_visible,
-            phone_visible: schema.members.phone_visible,
-            created_at: schema.members.created_at,
-            updated_at: schema.members.updated_at,
-          })
-          .from(schema.members)
-          .innerJoin(
-            schema.memberAvailability,
-            eq(schema.members.id, schema.memberAvailability.member_id)
-          )
-          .where(and(...conditions)) as Member[];
-        console.log(`[Spare Request] Found ${recipientMembers.length} matching members for leagues:`, leagueIds);
-      } else {
-        console.log(`[Spare Request] No matching leagues found for day ${dayOfWeek}, date ${body.gameDate}`);
+        )
+        .limit(1);
+      if (inRangeRows.length === 0) {
+        return reply.code(400).send({ error: 'Selected league is not active on that date' });
       }
+      // Exception date check
+      const exceptionRows = await db
+        .select({ id: schema.leagueExceptions.id })
+        .from(schema.leagueExceptions)
+        .where(and(eq(schema.leagueExceptions.league_id, body.leagueId), eq(schema.leagueExceptions.exception_date, body.gameDate)))
+        .limit(1);
+      if (exceptionRows.length > 0) {
+        return reply.code(400).send({ error: 'Selected league does not run on that date' });
+      }
+
+      // Get members who are available for this league
+      const conditions = [
+        eq(schema.memberAvailability.league_id, body.leagueId),
+        eq(schema.memberAvailability.available, 1),
+        eq(schema.members.email_subscribed, 1),
+        ne(schema.members.id, member.id),
+      ];
+      // If position is skip, only notify those who can skip
+      if (body.position === 'skip') {
+        conditions.push(eq(schema.memberAvailability.can_skip, 1));
+      }
+
+      recipientMembers = await db
+        .selectDistinct({
+          id: schema.members.id,
+          name: schema.members.name,
+          email: schema.members.email,
+          phone: schema.members.phone,
+          is_admin: schema.members.is_admin,
+          opted_in_sms: schema.members.opted_in_sms,
+          email_subscribed: schema.members.email_subscribed,
+          first_login_completed: schema.members.first_login_completed,
+          email_visible: schema.members.email_visible,
+          phone_visible: schema.members.phone_visible,
+          created_at: schema.members.created_at,
+          updated_at: schema.members.updated_at,
+        })
+        .from(schema.members)
+        .innerJoin(
+          schema.memberAvailability,
+          eq(schema.members.id, schema.memberAvailability.member_id)
+        )
+        .where(and(...conditions)) as Member[];
+      console.log(`[Spare Request] Found ${recipientMembers.length} matching members for league ${body.leagueId}`);
 
       if (isLessThan24Hours) {
         // Less than 24 hours: send notifications immediately to all matching members
@@ -712,6 +764,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 recipient.name,
                 member.name,
                 {
+                  leagueName,
                   requestedForName: body.requestedForName,
                   gameDate: body.gameDate,
                   gameTime: body.gameTime,
@@ -881,6 +934,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .where(eq(schema.spareRequests.id, requestId));
 
+    // Best-effort analytics (do not block)
+    logEvent({ eventType: 'spare.request.filled', memberId: member.id, relatedId: requestId }).catch(() => {});
+
     // Get requester info
     const requesters = await db
       .select()
@@ -913,6 +969,26 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requesterToken
       ).catch((error) => {
         console.error('Error sending spare response email:', error);
+      });
+    }
+
+    // Confirmation email to the responder (the member who signed up to spare)
+    if (member.email && member.email_subscribed === 1) {
+      const responderToken = generateToken(member);
+      sendSpareOfferConfirmationEmail(
+        member.email,
+        member.name,
+        requester.name,
+        {
+          requestedForName: spareRequest.requested_for_name,
+          gameDate: spareRequest.game_date,
+          gameTime: spareRequest.game_time,
+          position: spareRequest.position || undefined,
+        },
+        body.comment,
+        responderToken
+      ).catch((error) => {
+        console.error('Error sending spare offer confirmation email:', error);
       });
     }
 
@@ -984,6 +1060,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .set({ status: 'cancelled' })
       .where(eq(schema.spareRequests.id, requestId));
 
+    // Best-effort analytics (do not block)
+    logEvent({ eventType: 'spare.request.cancelled', memberId: member.id, relatedId: requestId }).catch(() => {});
+
     return { success: true };
   });
 
@@ -1042,6 +1121,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .where(eq(schema.spareRequests.id, requestId));
 
+    // Best-effort analytics (do not block)
+    logEvent({ eventType: 'spare.offer.cancelled', memberId: member.id, relatedId: requestId }).catch(() => {});
+
     // Get requester info
     const requesters = await db
       .select()
@@ -1073,6 +1155,26 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requesterToken
       ).catch((error) => {
         console.error('Error sending spare cancellation email:', error);
+      });
+    }
+
+    // Confirmation email to the responder (the member who cancelled sparing)
+    if (member.email && member.email_subscribed === 1) {
+      const responderToken = generateToken(member);
+      sendSpareOfferCancellationConfirmationEmail(
+        member.email,
+        member.name,
+        requester.name,
+        {
+          requestedForName: spareRequest.requested_for_name,
+          gameDate: spareRequest.game_date,
+          gameTime: spareRequest.game_time,
+          position: spareRequest.position || undefined,
+        },
+        body.comment,
+        responderToken
+      ).catch((error) => {
+        console.error('Error sending spare offer cancellation confirmation email:', error);
       });
     }
 

@@ -181,6 +181,12 @@ export default function AdminConfig() {
           </h1>
           <div className="flex items-center gap-4">
             <Link
+              to="/admin/observability"
+              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+            >
+              Observability →
+            </Link>
+            <Link
               to="/admin/feedback"
               className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
             >

@@ -26,23 +26,44 @@ interface MemberAvailability {
   }[];
 }
 
+interface LeagueOption {
+  id: number;
+  name: string;
+  dayOfWeek: number;
+}
+
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function MembersDirectory() {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
+  const [leagueFilterId, setLeagueFilterId] = useState<string>(''); // '' = all leagues
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [memberAvailability, setMemberAvailability] = useState<MemberAvailability | null>(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
 
   useEffect(() => {
+    loadLeagues();
     loadMembers();
   }, []);
 
-  const loadMembers = async () => {
+  const loadLeagues = async () => {
     try {
-      const response = await api.get('/members/directory');
+      const response = await api.get('/leagues');
+      setLeagues(response.data || []);
+    } catch (error) {
+      console.error('Failed to load leagues:', error);
+      setLeagues([]);
+    }
+  };
+
+  const loadMembers = async (leagueId?: number) => {
+    setLoading(true);
+    try {
+      const url = leagueId ? `/members/directory?leagueId=${leagueId}` : '/members/directory';
+      const response = await api.get(url);
       setMembers(response.data);
     } catch (error) {
       console.error('Failed to load members:', error);
@@ -81,14 +102,35 @@ export default function MembersDirectory() {
           <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
             Member directory
           </h1>
-          <div className="w-full md:w-64">
-            <input
-              type="text"
-              placeholder="Search members..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
-            />
+          <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
+            <div className="w-full sm:w-72">
+              <select
+                value={leagueFilterId}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setLeagueFilterId(value);
+                  const parsed = value ? parseInt(value, 10) : undefined;
+                  loadMembers(parsed);
+                }}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              >
+                <option value="">Filter by league availability (all)</option>
+                {leagues.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({DAY_NAMES[l.dayOfWeek]})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-full sm:w-64">
+              <input
+                type="text"
+                placeholder="Search members..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              />
+            </div>
           </div>
         </div>
 

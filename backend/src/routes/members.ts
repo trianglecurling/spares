@@ -63,6 +63,10 @@ const bulkCreateRequestSchema = z.union([
   }),
 ]);
 
+const directoryQuerySchema = z.object({
+  leagueId: z.coerce.number().int().positive().optional(),
+});
+
 interface MemberUpdateData {
   name?: string;
   email?: string;
@@ -267,10 +271,50 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const member = (request as AuthenticatedRequest).member;
 
     const { db, schema } = getDrizzleDb();
-    const members = await db
-      .select()
-      .from(schema.members)
-      .orderBy(schema.members.name) as Member[];
+    const { leagueId } = directoryQuerySchema.parse((request as any).query || {});
+
+    // Explicit selection so joins don't create ambiguous column names
+    const memberSelect = {
+      id: schema.members.id,
+      name: schema.members.name,
+      email: schema.members.email,
+      phone: schema.members.phone,
+      valid_through: (schema.members as any).valid_through,
+      spare_only: (schema.members as any).spare_only,
+      is_admin: (schema.members as any).is_admin,
+      is_server_admin: (schema.members as any).is_server_admin,
+      opted_in_sms: (schema.members as any).opted_in_sms,
+      email_subscribed: (schema.members as any).email_subscribed,
+      first_login_completed: (schema.members as any).first_login_completed,
+      email_visible: (schema.members as any).email_visible,
+      phone_visible: (schema.members as any).phone_visible,
+      theme_preference: (schema.members as any).theme_preference,
+      created_at: (schema.members as any).created_at,
+      updated_at: (schema.members as any).updated_at,
+    };
+
+    let members: Member[];
+    if (leagueId) {
+      members = await db
+        .select(memberSelect)
+        .from(schema.members)
+        .innerJoin(
+          schema.memberAvailability,
+          eq(schema.memberAvailability.member_id, schema.members.id)
+        )
+        .where(
+          and(
+            eq(schema.memberAvailability.league_id, leagueId),
+            eq(schema.memberAvailability.available, 1)
+          )
+        )
+        .orderBy(schema.members.name) as unknown as Member[];
+    } else {
+      members = await db
+        .select(memberSelect)
+        .from(schema.members)
+        .orderBy(schema.members.name) as unknown as Member[];
+    }
 
     const isCurrentUserAdmin = isAdmin(member);
     const activeMembers = members.filter((m) => !isMemberExpired(m));

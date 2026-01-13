@@ -147,6 +147,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE TABLE IF NOT EXISTS spare_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       requester_id INTEGER NOT NULL,
+      league_id INTEGER,
       requested_for_name TEXT NOT NULL,
       game_date DATE NOT NULL,
       game_time TIME NOT NULL,
@@ -159,7 +160,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requester_id) REFERENCES members(id) ON DELETE CASCADE,
-      FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL
+      FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE SET NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_spare_requests_requester_id ON spare_requests(requester_id);
@@ -219,6 +221,11 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       azure_connection_string TEXT,
       azure_sender_email TEXT,
       azure_sender_display_name TEXT,
+      test_mode INTEGER DEFAULT 0,
+      disable_email INTEGER DEFAULT 0,
+      disable_sms INTEGER DEFAULT 0,
+      test_current_time DATETIME,
+      notification_delay_seconds INTEGER DEFAULT 180,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -245,6 +252,34 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
   `);
 
+  // Observability events (best-effort analytics for server admins)
+  await execSQL(db, `
+    CREATE TABLE IF NOT EXISTS observability_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      member_id INTEGER,
+      related_id INTEGER,
+      meta TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_observability_events_created_at ON observability_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_observability_events_event_type ON observability_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_observability_events_member_id ON observability_events(member_id);
+
+    CREATE TABLE IF NOT EXISTS daily_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_date TEXT NOT NULL,
+      member_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(member_id, activity_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_daily_activity_activity_date ON daily_activity(activity_date);
+    CREATE INDEX IF NOT EXISTS idx_daily_activity_member_id ON daily_activity(member_id);
+  `);
+
   // Migrations - try to add columns if they don't exist
   const migrations = [
     { sql: 'ALTER TABLE members ADD COLUMN email_visible INTEGER DEFAULT 0', table: 'members', column: 'email_visible' },
@@ -256,6 +291,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE server_config ADD COLUMN twilio_account_sid TEXT', table: 'server_config', column: 'twilio_account_sid' },
     { sql: 'ALTER TABLE server_config ADD COLUMN twilio_campaign_sid TEXT', table: 'server_config', column: 'twilio_campaign_sid' },
     { sql: 'ALTER TABLE server_config ADD COLUMN test_mode INTEGER DEFAULT 0', table: 'server_config', column: 'test_mode' },
+    { sql: 'ALTER TABLE server_config ADD COLUMN disable_email INTEGER DEFAULT 0', table: 'server_config', column: 'disable_email' },
+    { sql: 'ALTER TABLE server_config ADD COLUMN disable_sms INTEGER DEFAULT 0', table: 'server_config', column: 'disable_sms' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notifications_sent_at DATETIME', table: 'spare_requests', column: 'notifications_sent_at' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN had_cancellation INTEGER DEFAULT 0', table: 'spare_requests', column: 'had_cancellation' },
     { sql: 'ALTER TABLE server_config ADD COLUMN test_current_time DATETIME', table: 'server_config', column: 'test_current_time' },
@@ -264,6 +301,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE spare_requests ADD COLUMN next_notification_at DATETIME', table: 'spare_requests', column: 'next_notification_at' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0', table: 'spare_requests', column: 'notification_paused' },
     { sql: 'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'', table: 'members', column: 'theme_preference' },
+    { sql: 'ALTER TABLE spare_requests ADD COLUMN league_id INTEGER', table: 'spare_requests', column: 'league_id' },
   ];
 
   for (const migration of migrations) {
@@ -278,6 +316,13 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       }
       // Otherwise ignore - column already exists
     }
+  }
+
+  // Indexes that depend on migrated columns (safe on existing DBs)
+  try {
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
+  } catch (e: any) {
+    // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
 
   // Migrate existing admins to server admins
@@ -322,6 +367,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       spare_request_id INTEGER NOT NULL,
       member_id INTEGER NOT NULL,
       queue_order INTEGER NOT NULL,
+      claimed_at DATETIME,
       notified_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
@@ -333,6 +379,23 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_notification_queue_order ON spare_request_notification_queue(spare_request_id, queue_order);
     CREATE INDEX IF NOT EXISTS idx_notification_queue_notified ON spare_request_notification_queue(spare_request_id, notified_at);
   `);
+
+  // Migrate notification queue table (add claimed_at if missing)
+  try {
+    await execSQL(db, 'ALTER TABLE spare_request_notification_queue ADD COLUMN claimed_at DATETIME');
+  } catch (e: any) {
+    const errorMsg = e?.message || '';
+    if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
+      throw e;
+    }
+  }
+
+  // Index for claimed_at (after the column exists)
+  try {
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_notification_queue_claimed ON spare_request_notification_queue(spare_request_id, claimed_at);');
+  } catch (e: any) {
+    // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
+  }
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -445,6 +508,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE TABLE IF NOT EXISTS spare_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       requester_id INTEGER NOT NULL,
+      league_id INTEGER,
       requested_for_name TEXT NOT NULL,
       game_date DATE NOT NULL,
       game_time TIME NOT NULL,
@@ -457,7 +521,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requester_id) REFERENCES members(id) ON DELETE CASCADE,
-      FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL
+      FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE SET NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_spare_requests_requester_id ON spare_requests(requester_id);
@@ -517,6 +582,11 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       azure_connection_string TEXT,
       azure_sender_email TEXT,
       azure_sender_display_name TEXT,
+      test_mode INTEGER DEFAULT 0,
+      disable_email INTEGER DEFAULT 0,
+      disable_sms INTEGER DEFAULT 0,
+      test_current_time DATETIME,
+      notification_delay_seconds INTEGER DEFAULT 180,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -543,6 +613,34 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
   `);
 
+  // Observability events (best-effort analytics for server admins)
+  execSQLSync(db, `
+    CREATE TABLE IF NOT EXISTS observability_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      member_id INTEGER,
+      related_id INTEGER,
+      meta TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_observability_events_created_at ON observability_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_observability_events_event_type ON observability_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_observability_events_member_id ON observability_events(member_id);
+
+    CREATE TABLE IF NOT EXISTS daily_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_date TEXT NOT NULL,
+      member_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(member_id, activity_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_daily_activity_activity_date ON daily_activity(activity_date);
+    CREATE INDEX IF NOT EXISTS idx_daily_activity_member_id ON daily_activity(member_id);
+  `);
+
   // Migrations - try to add columns if they don't exist
   const migrations = [
     'ALTER TABLE members ADD COLUMN email_visible INTEGER DEFAULT 0',
@@ -554,6 +652,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE server_config ADD COLUMN twilio_account_sid TEXT',
     'ALTER TABLE server_config ADD COLUMN twilio_campaign_sid TEXT',
     'ALTER TABLE server_config ADD COLUMN test_mode INTEGER DEFAULT 0',
+    'ALTER TABLE server_config ADD COLUMN disable_email INTEGER DEFAULT 0',
+    'ALTER TABLE server_config ADD COLUMN disable_sms INTEGER DEFAULT 0',
     'ALTER TABLE spare_requests ADD COLUMN notifications_sent_at DATETIME',
     'ALTER TABLE spare_requests ADD COLUMN had_cancellation INTEGER DEFAULT 0',
     'ALTER TABLE server_config ADD COLUMN test_current_time DATETIME',
@@ -562,6 +662,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE spare_requests ADD COLUMN next_notification_at DATETIME',
     'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0',
     'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'',
+    'ALTER TABLE spare_requests ADD COLUMN league_id INTEGER',
   ];
 
   for (const migrationSQL of migrations) {
@@ -577,6 +678,13 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     }
   }
 
+  // Indexes that depend on migrated columns (safe on existing DBs)
+  try {
+    execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
+  } catch {
+    // ignore
+  }
+
   // Create notification queue table
   execSQLSync(db, `
     CREATE TABLE IF NOT EXISTS spare_request_notification_queue (
@@ -584,6 +692,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       spare_request_id INTEGER NOT NULL,
       member_id INTEGER NOT NULL,
       queue_order INTEGER NOT NULL,
+      claimed_at DATETIME,
       notified_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
@@ -595,6 +704,23 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE INDEX IF NOT EXISTS idx_notification_queue_order ON spare_request_notification_queue(spare_request_id, queue_order);
     CREATE INDEX IF NOT EXISTS idx_notification_queue_notified ON spare_request_notification_queue(spare_request_id, notified_at);
   `);
+
+  // Migrate notification queue table (add claimed_at if missing) - sync
+  try {
+    execSQLSync(db, 'ALTER TABLE spare_request_notification_queue ADD COLUMN claimed_at DATETIME');
+  } catch (e: any) {
+    const errorMsg = e?.message || '';
+    if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
+      throw e;
+    }
+  }
+
+  // Index for claimed_at (after the column exists)
+  try {
+    execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_notification_queue_claimed ON spare_request_notification_queue(spare_request_id, claimed_at);');
+  } catch {
+    // ignore
+  }
 
   // Migrate existing admins to server admins (sync version)
   try {

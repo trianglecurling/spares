@@ -4,6 +4,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member } from '../types.js';
 import { eq } from 'drizzle-orm';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
+import { recordDailyActivity } from '../services/observability.js';
 
 function normalizeDateString(value: any): string | null {
   if (value === null || value === undefined) return null;
@@ -57,5 +58,8 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   }
 
   (request as any).member = member;
+
+  // Best-effort DAU tracking (do not block request)
+  recordDailyActivity(member.id).catch(() => {});
 }
 

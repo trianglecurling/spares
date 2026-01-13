@@ -98,6 +98,7 @@ export const memberAvailabilitySqlite = sqliteTable('member_availability', {
 export const spareRequestsSqlite = sqliteTable('spare_requests', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   requester_id: integer('requester_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  league_id: integer('league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
   requested_for_name: text('requested_for_name').notNull(),
   game_date: text('game_date').notNull(),
   game_time: text('game_time').notNull(),
@@ -116,6 +117,7 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   notification_paused: integer('notification_paused').default(0).notNull(),
 }, (table) => ({
   requesterIdIdx: index('idx_spare_requests_requester_id').on(table.requester_id),
+  leagueIdIdx: index('idx_spare_requests_league_id').on(table.league_id),
   gameDateIdx: index('idx_spare_requests_game_date').on(table.game_date),
   statusIdx: index('idx_spare_requests_status').on(table.status),
 }));
@@ -176,12 +178,14 @@ export const spareRequestNotificationQueueSqlite = sqliteTable('spare_request_no
   spare_request_id: integer('spare_request_id').notNull().references(() => spareRequestsSqlite.id, { onDelete: 'cascade' }),
   member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
   queue_order: integer('queue_order').notNull(),
+  claimed_at: text('claimed_at'),
   notified_at: text('notified_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   requestIdIdx: index('idx_notification_queue_request_id').on(table.spare_request_id),
   orderIdx: index('idx_notification_queue_order').on(table.spare_request_id, table.queue_order),
   notifiedIdx: index('idx_notification_queue_notified').on(table.spare_request_id, table.notified_at),
+  claimedIdx: index('idx_notification_queue_claimed').on(table.spare_request_id, table.claimed_at),
   uniqueRequestMember: uniqueIndex('spare_request_notification_queue_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
 }));
 
@@ -198,6 +202,32 @@ export const feedbackSqlite = sqliteTable('feedback', {
   createdAtIdx: index('idx_feedback_created_at').on(table.created_at),
   memberIdIdx: index('idx_feedback_member_id').on(table.member_id),
   categoryIdx: index('idx_feedback_category').on(table.category),
+}));
+
+// Observability / analytics events (best-effort logging)
+export const observabilityEventsSqlite = sqliteTable('observability_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_type: text('event_type').notNull(),
+  member_id: integer('member_id'),
+  related_id: integer('related_id'),
+  meta: text('meta'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  createdAtIdx: index('idx_observability_events_created_at').on(table.created_at),
+  eventTypeIdx: index('idx_observability_events_event_type').on(table.event_type),
+  memberIdIdx: index('idx_observability_events_member_id').on(table.member_id),
+}));
+
+// Daily active users table (one row per member per day; duplicates ignored)
+export const dailyActivitySqlite = sqliteTable('daily_activity', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  activity_date: text('activity_date').notNull(), // YYYY-MM-DD
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  uniqueMemberDay: uniqueIndex('daily_activity_member_id_activity_date_unique').on(table.member_id, table.activity_date),
+  activityDateIdx: index('idx_daily_activity_activity_date').on(table.activity_date),
+  memberIdIdx: index('idx_daily_activity_member_id').on(table.member_id),
 }));
 
 // ========== PostgreSQL Schema ==========
@@ -291,6 +321,7 @@ export const memberAvailabilityPg = pgTable('member_availability', {
 export const spareRequestsPg = pgTable('spare_requests', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   requester_id: integerPg('requester_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  league_id: integerPg('league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
   requested_for_name: textPg('requested_for_name').notNull(),
   game_date: date('game_date').notNull(),
   game_time: time('game_time').notNull(),
@@ -309,6 +340,7 @@ export const spareRequestsPg = pgTable('spare_requests', {
   notification_paused: integerPg('notification_paused').default(0).notNull(),
 }, (table) => ({
   requesterIdIdx: indexPg('idx_spare_requests_requester_id').on(table.requester_id),
+  leagueIdIdx: indexPg('idx_spare_requests_league_id').on(table.league_id),
   gameDateIdx: indexPg('idx_spare_requests_game_date').on(table.game_date),
   statusIdx: indexPg('idx_spare_requests_status').on(table.status),
 }));
@@ -369,12 +401,14 @@ export const spareRequestNotificationQueuePg = pgTable('spare_request_notificati
   spare_request_id: integerPg('spare_request_id').notNull().references(() => spareRequestsPg.id, { onDelete: 'cascade' }),
   member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
   queue_order: integerPg('queue_order').notNull(),
+  claimed_at: timestamp('claimed_at', { withTimezone: false }),
   notified_at: timestamp('notified_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   requestIdIdx: indexPg('idx_notification_queue_request_id').on(table.spare_request_id),
   orderIdx: indexPg('idx_notification_queue_order').on(table.spare_request_id, table.queue_order),
   notifiedIdx: indexPg('idx_notification_queue_notified').on(table.spare_request_id, table.notified_at),
+  claimedIdx: indexPg('idx_notification_queue_claimed').on(table.spare_request_id, table.claimed_at),
   uniqueRequestMember: uniqueIndexPg('spare_request_notification_queue_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
 }));
 
@@ -393,6 +427,30 @@ export const feedbackPg = pgTable('feedback', {
   categoryIdx: indexPg('idx_feedback_category').on(table.category),
 }));
 
+export const observabilityEventsPg = pgTable('observability_events', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_type: textPg('event_type').notNull(),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  related_id: integerPg('related_id'),
+  meta: textPg('meta'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  createdAtIdx: indexPg('idx_observability_events_created_at').on(table.created_at),
+  eventTypeIdx: indexPg('idx_observability_events_event_type').on(table.event_type),
+  memberIdIdx: indexPg('idx_observability_events_member_id').on(table.member_id),
+}));
+
+export const dailyActivityPg = pgTable('daily_activity', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  activity_date: textPg('activity_date').notNull(), // YYYY-MM-DD
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  uniqueMemberDay: uniqueIndexPg('daily_activity_member_id_activity_date_unique').on(table.member_id, table.activity_date),
+  activityDateIdx: indexPg('idx_daily_activity_activity_date').on(table.activity_date),
+  memberIdIdx: indexPg('idx_daily_activity_member_id').on(table.member_id),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -409,6 +467,8 @@ export const sqliteSchema = {
   serverConfig: serverConfigSqlite,
   spareRequestNotificationQueue: spareRequestNotificationQueueSqlite,
   feedback: feedbackSqlite,
+  observabilityEvents: observabilityEventsSqlite,
+  dailyActivity: dailyActivitySqlite,
 };
 
 export const pgSchema = {
@@ -426,4 +486,6 @@ export const pgSchema = {
   serverConfig: serverConfigPg,
   spareRequestNotificationQueue: spareRequestNotificationQueuePg,
   feedback: feedbackPg,
+  observabilityEvents: observabilityEventsPg,
+  dailyActivity: dailyActivityPg,
 };

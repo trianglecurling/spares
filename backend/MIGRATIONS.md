@@ -8,6 +8,20 @@ The database schema is defined in `src/db/drizzle-schema.ts`. This is the single
 
 Drizzle Kit provides several commands for managing migrations:
 
+## Initializing a Fresh Database
+
+If you're starting with an empty database (e.g. a new `spares_test` Postgres DB), initialize the schema using the backend's built-in schema creator:
+
+```bash
+cd backend
+npm run db:init
+```
+
+This:
+- Creates all tables (SQLite or Postgres, based on `data/db-config.json`)
+- Seeds the required `server_config` row
+- Creates initial server-admin members if the members table is empty (using `SERVER_ADMINS` and/or `adminEmails` in `data/db-config.json`)
+
 ### 1. Generate Migration Files
 
 When you change the schema in `drizzle-schema.ts`, generate migration files:

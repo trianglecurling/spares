@@ -20,6 +20,7 @@ interface SpareRequest {
   requestedForName: string;
   gameDate: string;
   gameTime: string;
+  leagueName?: string | null;
   position?: string;
   message?: string;
   requestType: string;
@@ -32,6 +33,7 @@ interface MySpareRequest {
   requestedForName: string;
   gameDate: string;
   gameTime: string;
+  leagueName?: string | null;
   position?: string;
   message?: string;
   requestType: string;
@@ -296,6 +298,7 @@ export default function Dashboard() {
             <p>
               <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
               at {formatTime(request.gameTime)}
+              {request.leagueName ? <span> • {request.leagueName}</span> : null}
             </p>
             <p>
               <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
@@ -435,6 +438,7 @@ export default function Dashboard() {
                             <p>
                               <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
                               at {formatTime(request.gameTime)}
+                              {request.leagueName ? <span> • {request.leagueName}</span> : null}
                             </p>
                             {request.message && (
                               <p className="italic mt-2">"{request.message}"</p>
@@ -535,6 +539,7 @@ export default function Dashboard() {
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                                   {formatDate(request.gameDate)} • {formatTime(request.gameTime)}
+                                  {request.leagueName ? ` • ${request.leagueName}` : ''}
                                 </span>
                                 {filledBadge}
                                 {request.position && (
@@ -555,9 +560,6 @@ export default function Dashboard() {
                               </div>
                             </div>
 
-                            <div className="text-xs text-gray-500 dark:text-gray-400 shrink-0 pt-0.5">
-                              {request.requestType === 'public' ? 'Public' : 'Private'}
-                            </div>
                           </div>
                         ))}
                       </div>
@@ -582,7 +584,8 @@ export default function Dashboard() {
           <div className="space-y-4">
             <p className="text-gray-700 dark:text-gray-300">
               You're signing up to spare for <strong>{selectedRequest.requestedForName}</strong> on{' '}
-              {formatDate(selectedRequest.gameDate)} at {formatTime(selectedRequest.gameTime)}.
+              {formatDate(selectedRequest.gameDate)} at {formatTime(selectedRequest.gameTime)}
+              {selectedRequest.leagueName ? ` • ${selectedRequest.leagueName}` : ''}.
             </p>
 
             {selectedRequest.position && (

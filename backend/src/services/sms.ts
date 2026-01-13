@@ -2,6 +2,7 @@ import twilio from 'twilio';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
+import { logEvent } from './observability.js';
 
 let twilioClient: ReturnType<typeof twilio> | null = null;
 let cachedConfig: {
@@ -21,21 +22,43 @@ async function getConfigFromDatabase() {
     return cachedConfig;
   }
 
-  const { db, schema } = getDrizzleDb();
-  const serverConfigs = await db
-    .select({
-      twilio_api_key_sid: schema.serverConfig.twilio_api_key_sid,
-      twilio_api_key_secret: schema.serverConfig.twilio_api_key_secret,
-      twilio_account_sid: schema.serverConfig.twilio_account_sid,
-      twilio_campaign_sid: schema.serverConfig.twilio_campaign_sid,
-      disable_sms: schema.serverConfig.disable_sms,
-      test_mode: schema.serverConfig.test_mode,
-    })
-    .from(schema.serverConfig)
-    .where(eq(schema.serverConfig.id, 1))
-    .limit(1);
-  
-  const serverConfig = serverConfigs[0];
+  // Important: on fresh/partially-migrated databases, selecting columns from server_config
+  // can throw (e.g. "column does not exist"). In that case, fall back to env config
+  // and let sendSMS() log to console if not configured.
+  let serverConfig:
+    | {
+        twilio_api_key_sid?: string | null;
+        twilio_api_key_secret?: string | null;
+        twilio_account_sid?: string | null;
+        twilio_campaign_sid?: string | null;
+        disable_sms?: number | null;
+        test_mode?: number | null;
+      }
+    | undefined;
+
+  try {
+    const { db, schema } = getDrizzleDb();
+    const serverConfigs = await db
+      .select({
+        twilio_api_key_sid: schema.serverConfig.twilio_api_key_sid,
+        twilio_api_key_secret: schema.serverConfig.twilio_api_key_secret,
+        twilio_account_sid: schema.serverConfig.twilio_account_sid,
+        twilio_campaign_sid: schema.serverConfig.twilio_campaign_sid,
+        disable_sms: schema.serverConfig.disable_sms,
+        test_mode: schema.serverConfig.test_mode,
+      })
+      .from(schema.serverConfig)
+      .where(eq(schema.serverConfig.id, 1))
+      .limit(1);
+
+    serverConfig = serverConfigs[0];
+  } catch (error) {
+    console.warn(
+      '[SMS Service] Failed to read server_config from database; falling back to env config. Error:',
+      error
+    );
+    serverConfig = undefined;
+  }
 
   cachedConfig = {
     apiKeySid: serverConfig?.twilio_api_key_sid || config.twilio.accountSid,
@@ -78,11 +101,13 @@ export async function sendSMS(to: string, message: string): Promise<void> {
     console.log('To:', to);
     console.log('Message:', message);
     console.log('='.repeat(80));
+    logEvent({ eventType: 'sms.logged', meta: { reason: dbConfig.disableSms ? 'disabled' : 'test_mode' } }).catch(() => {});
     return;
   }
   
   if (!dbConfig.apiKeySid || !dbConfig.apiKeySecret || !dbConfig.accountSid || !dbConfig.campaignSid) {
     console.log('SMS not configured. Would send to', to, ':', message);
+    logEvent({ eventType: 'sms.logged', meta: { reason: 'not_configured' } }).catch(() => {});
     return;
   }
 
@@ -94,9 +119,16 @@ export async function sendSMS(to: string, message: string): Promise<void> {
       to: to,
       messagingServiceSid: dbConfig.campaignSid,
     });
+    logEvent({ eventType: 'sms.sent' }).catch(() => {});
   } catch (error) {
-    console.error('Error sending SMS:', error);
-    throw error;
+    console.error('[SMS Service] Error sending SMS - logging to console instead:', error);
+    console.log('='.repeat(80));
+    console.log('[SEND FAILED - LOGGED] SMS would be sent:');
+    console.log('To:', to);
+    console.log('Message:', message);
+    console.log('='.repeat(80));
+    logEvent({ eventType: 'sms.logged', meta: { reason: 'send_failed' } }).catch(() => {});
+    return;
   }
 }
 

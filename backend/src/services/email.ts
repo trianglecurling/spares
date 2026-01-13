@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 import { formatDateForEmail, formatTimeForEmail } from '../utils/dateFormat.js';
+import { logEvent } from './observability.js';
 
 let emailClient: EmailClient | null = null;
 let cachedConfig: { connectionString: string; senderEmail: string; disableEmail: boolean; testMode: boolean } | null = null;
@@ -15,19 +16,39 @@ async function getConfigFromDatabase() {
     return cachedConfig;
   }
 
-  const { db, schema } = getDrizzleDb();
-  const serverConfigs = await db
-    .select({
-      azure_connection_string: schema.serverConfig.azure_connection_string,
-      azure_sender_email: schema.serverConfig.azure_sender_email,
-      disable_email: schema.serverConfig.disable_email,
-      test_mode: schema.serverConfig.test_mode,
-    })
-    .from(schema.serverConfig)
-    .where(eq(schema.serverConfig.id, 1))
-    .limit(1);
-  
-  const serverConfig = serverConfigs[0];
+  // Important: on fresh/partially-migrated databases, selecting columns from server_config
+  // can throw (e.g. "column does not exist"). In that case, fall back to env config
+  // and let sendEmail() log to console if not configured.
+  let serverConfig:
+    | {
+        azure_connection_string?: string | null;
+        azure_sender_email?: string | null;
+        disable_email?: number | null;
+        test_mode?: number | null;
+      }
+    | undefined;
+
+  try {
+    const { db, schema } = getDrizzleDb();
+    const serverConfigs = await db
+      .select({
+        azure_connection_string: schema.serverConfig.azure_connection_string,
+        azure_sender_email: schema.serverConfig.azure_sender_email,
+        disable_email: schema.serverConfig.disable_email,
+        test_mode: schema.serverConfig.test_mode,
+      })
+      .from(schema.serverConfig)
+      .where(eq(schema.serverConfig.id, 1))
+      .limit(1);
+
+    serverConfig = serverConfigs[0];
+  } catch (error) {
+    console.warn(
+      '[Email Service] Failed to read server_config from database; falling back to env config. Error:',
+      error
+    );
+    serverConfig = undefined;
+  }
 
   cachedConfig = {
     connectionString: serverConfig?.azure_connection_string || config.azure.connectionString,
@@ -111,6 +132,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
   if (options.to.toLowerCase().endsWith('@example.com')) {
     console.log(`[Email Service] Blocking email to @example.com address: ${options.to}`);
     logEmail(options, fullHtmlContent, 'EXAMPLE.COM BLOCKED');
+    logEvent({ eventType: 'email.logged', meta: { reason: 'blocked_example_com' } }).catch(() => {});
     return;
   }
 
@@ -121,11 +143,13 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
   if (dbConfig.disableEmail || dbConfig.testMode) {
     console.log(`[Email Service] Email disabled or test mode - logging email instead of sending`);
     logEmail(options, fullHtmlContent, 'TEST MODE');
+    logEvent({ eventType: 'email.logged', meta: { reason: dbConfig.disableEmail ? 'disabled' : 'test_mode' } }).catch(() => {});
     return;
   }
   
   if (!dbConfig.connectionString) {
     console.log('Email not configured. Would send:', options);
+    logEvent({ eventType: 'email.logged', meta: { reason: 'not_configured' } }).catch(() => {});
     return;
   }
 
@@ -147,9 +171,14 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
 
     const poller = await client.beginSend(message);
     await poller.pollUntilDone();
+    logEvent({ eventType: 'email.sent' }).catch(() => {});
   } catch (error) {
-    console.error('Error sending email:', error);
-    throw error;
+    // If sending fails for any reason (misconfiguration, transient outage, etc),
+    // fall back to logging so auth/login flows can continue.
+    console.error('[Email Service] Error sending email - logging to console instead:', error);
+    logEmail(options, fullHtmlContent, 'SEND FAILED - LOGGED');
+    logEvent({ eventType: 'email.logged', meta: { reason: 'send_failed' } }).catch(() => {});
+    return;
   }
 }
 
@@ -181,6 +210,7 @@ export async function sendSpareRequestEmail(
   recipientName: string,
   requesterName: string,
   requestDetails: {
+    leagueName?: string;
     requestedForName: string;
     gameDate: string;
     gameTime: string;
@@ -211,6 +241,9 @@ export async function sendSpareRequestEmail(
 
   const formattedDate = formatDateForEmail(requestDetails.gameDate);
   const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
 
   const htmlContent = `
     <h2>New Spare Request</h2>
@@ -218,6 +251,7 @@ export async function sendSpareRequestEmail(
     <p>${requesterName} has requested a spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
     ${invitedMembersList}
     ${messageText}
     <p>
@@ -232,7 +266,7 @@ export async function sendSpareRequestEmail(
   await sendEmail(
     {
       to: recipientEmail,
-      subject: `Spare needed: ${formattedDate} at ${formattedTime}`,
+      subject: `Spare needed: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName,
     },
@@ -244,6 +278,7 @@ export async function sendSpareRequestCreatedEmail(
   requesterEmail: string,
   requesterName: string,
   requestDetails: {
+    leagueName?: string;
     requestedForName: string;
     gameDate: string;
     gameTime: string;
@@ -256,6 +291,9 @@ export async function sendSpareRequestCreatedEmail(
   const messageText = requestDetails.message ? `<p><em>Message: "${requestDetails.message}"</em></p>` : '';
   const formattedDate = formatDateForEmail(requestDetails.gameDate);
   const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
 
   const htmlContent = `
     <h2>Spare Request Created</h2>
@@ -263,6 +301,7 @@ export async function sendSpareRequestCreatedEmail(
     <p>You created a spare request for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
     ${messageText}
     <p>You can view and manage this request from your "My spare requests" page.</p>
   `;
@@ -270,7 +309,7 @@ export async function sendSpareRequestCreatedEmail(
   await sendEmail(
     {
       to: requesterEmail,
-      subject: `Spare request created: ${formattedDate} at ${formattedTime}`,
+      subject: `Spare request created: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName: requesterName,
     },
@@ -283,6 +322,7 @@ export async function sendSpareRequestCcCreatedEmail(
   ccName: string,
   requesterName: string,
   requestDetails: {
+    leagueName?: string;
     requestedForName: string;
     gameDate: string;
     gameTime: string;
@@ -295,6 +335,9 @@ export async function sendSpareRequestCcCreatedEmail(
   const messageText = requestDetails.message ? `<p><em>Message: "${requestDetails.message}"</em></p>` : '';
   const formattedDate = formatDateForEmail(requestDetails.gameDate);
   const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
 
   const htmlContent = `
     <h2>You were CC'd on a Spare Request</h2>
@@ -302,6 +345,7 @@ export async function sendSpareRequestCcCreatedEmail(
     <p><strong>${requesterName}</strong> created a spare request for <strong>${requestDetails.requestedForName}</strong>${positionText} and CC'd you on it.</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
     ${messageText}
     <p>This email is for your awareness. You can log in to see the request details.</p>
   `;
@@ -309,7 +353,7 @@ export async function sendSpareRequestCcCreatedEmail(
   await sendEmail(
     {
       to: ccEmail,
-      subject: `CC: Spare needed ${formattedDate} at ${formattedTime}`,
+      subject: `CC: Spare needed ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName: ccName,
     },
@@ -323,6 +367,7 @@ export async function sendSpareRequestCcFilledEmail(
   requesterName: string,
   responderName: string,
   requestDetails: {
+    leagueName?: string;
     requestedForName: string;
     gameDate: string;
     gameTime: string;
@@ -335,6 +380,9 @@ export async function sendSpareRequestCcFilledEmail(
   const commentText = comment ? `<p><em>Comment: "${comment}"</em></p>` : '';
   const formattedDate = formatDateForEmail(requestDetails.gameDate);
   const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
 
   const htmlContent = `
     <h2>Spare Request Filled (CC)</h2>
@@ -344,13 +392,14 @@ export async function sendSpareRequestCcFilledEmail(
     <p><strong>Requested by:</strong> ${requesterName}</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
     ${commentText}
   `;
 
   await sendEmail(
     {
       to: ccEmail,
-      subject: `CC: Spare request filled`,
+      subject: `CC: Spare request filled${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName: ccName,
     },
@@ -364,6 +413,7 @@ export async function sendSpareRequestCcCancellationEmail(
   requesterName: string,
   responderName: string,
   requestDetails: {
+    leagueName?: string;
     requestedForName: string;
     gameDate: string;
     gameTime: string;
@@ -375,6 +425,9 @@ export async function sendSpareRequestCcCancellationEmail(
   const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
   const formattedDate = formatDateForEmail(requestDetails.gameDate);
   const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
 
   const htmlContent = `
     <h2>Spare Cancellation (CC)</h2>
@@ -384,13 +437,14 @@ export async function sendSpareRequestCcCancellationEmail(
     <p><strong>Requested by:</strong> ${requesterName}</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
     <p><strong>Reason:</strong> "${comment}"</p>
   `;
 
   await sendEmail(
     {
       to: ccEmail,
-      subject: `CC: Spare cancellation: ${formattedDate} at ${formattedTime}`,
+      subject: `CC: Spare cancellation: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName: ccName,
     },
@@ -403,6 +457,7 @@ export async function sendSpareResponseEmail(
   requesterName: string,
   responderName: string,
   requestDetails: {
+    leagueName?: string;
     requestedForName: string;
     gameDate: string;
     gameTime: string;
@@ -415,6 +470,9 @@ export async function sendSpareResponseEmail(
   const commentText = comment ? `<p><em>Comment: "${comment}"</em></p>` : '';
   const formattedDate = formatDateForEmail(requestDetails.gameDate);
   const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
 
   const htmlContent = `
     <h2>Spare Request Filled</h2>
@@ -422,13 +480,14 @@ export async function sendSpareResponseEmail(
     <p><strong>${responderName}</strong> has agreed to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
     ${commentText}
   `;
 
   await sendEmail(
     {
       to: requesterEmail,
-      subject: `Your spare request has been filled`,
+      subject: `Your spare request has been filled${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName: requesterName,
     },
@@ -441,6 +500,7 @@ export async function sendSpareCancellationEmail(
   requesterName: string,
   responderName: string,
   requestDetails: {
+    leagueName?: string;
     requestedForName: string;
     gameDate: string;
     gameTime: string;
@@ -452,6 +512,9 @@ export async function sendSpareCancellationEmail(
   const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
   const formattedDate = formatDateForEmail(requestDetails.gameDate);
   const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
 
   const htmlContent = `
     <h2>Spare Cancellation</h2>
@@ -459,6 +522,7 @@ export async function sendSpareCancellationEmail(
     <p><strong>${responderName}</strong> has canceled their offer to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
     <p><strong>Reason:</strong> "${comment}"</p>
     <p>You can re-issue this spare request from your "My spare requests" page.</p>
   `;
@@ -466,11 +530,99 @@ export async function sendSpareCancellationEmail(
   await sendEmail(
     {
       to: requesterEmail,
-      subject: `Spare cancellation: ${formattedDate} at ${formattedTime}`,
+      subject: `Spare cancellation: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName: requesterName,
     },
     requesterToken
+  );
+}
+
+export async function sendSpareOfferConfirmationEmail(
+  responderEmail: string,
+  responderName: string,
+  requesterName: string,
+  requestDetails: {
+    leagueName?: string;
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  comment?: string,
+  responderToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const commentText = comment ? `<p><em>Your comment: "${comment}"</em></p>` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
+
+  const htmlContent = `
+    <h2>You're Signed Up to Spare</h2>
+    <p>Hi ${responderName},</p>
+    <p>Thanks — you are signed up to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Requested by:</strong> ${requesterName}</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
+    ${commentText}
+    <p>If something changes and you can't make it, please cancel your offer in the app as soon as possible.</p>
+  `;
+
+  await sendEmail(
+    {
+      to: responderEmail,
+      subject: `Spare confirmation: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
+      htmlContent,
+      recipientName: responderName,
+    },
+    responderToken
+  );
+}
+
+export async function sendSpareOfferCancellationConfirmationEmail(
+  responderEmail: string,
+  responderName: string,
+  requesterName: string,
+  requestDetails: {
+    leagueName?: string;
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  comment: string,
+  responderToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
+
+  const htmlContent = `
+    <h2>Spare Offer Cancelled</h2>
+    <p>Hi ${responderName},</p>
+    <p>This confirms you cancelled your offer to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Requested by:</strong> ${requesterName}</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
+    <p><strong>Your reason:</strong> "${comment}"</p>
+  `;
+
+  await sendEmail(
+    {
+      to: responderEmail,
+      subject: `Spare cancellation confirmation: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
+      htmlContent,
+      recipientName: responderName,
+    },
+    responderToken
   );
 }
 

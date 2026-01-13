@@ -3,7 +3,7 @@ import { sendSpareRequestEmail } from './email.js';
 import { sendSpareRequestSMS } from './sms.js';
 import { generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTime, getCurrentTimestamp, getCurrentTimeAsync } from '../utils/time.js';
-import { eq, and, or, sql, asc, isNull, isNotNull, lte } from 'drizzle-orm';
+import { eq, and, or, sql, asc, isNull, isNotNull, lte, lt } from 'drizzle-orm';
 import { Member } from '../types.js';
 
 let lastDbErrorLogAt = 0;
@@ -33,6 +33,7 @@ interface NotificationQueueItem {
 interface SpareRequest {
   id: number;
   requester_id: number;
+  league_id: number | null;
   requested_for_name: string;
   game_date: string;
   game_time: string;
@@ -101,13 +102,19 @@ export async function processNextNotification(): Promise<void> {
 
     const spareRequest = pendingRequests[0];
 
-    // Get the next member in the queue who hasn't been notified yet
+    // Get the next member in the queue who hasn't been notified yet.
+    // Note: We also support "claimed_at" to avoid duplicate sends when multiple processors are running.
+    // If a process crashes after claiming, the claim expires and can be retried.
+    const claimTimeoutMs = 10 * 60 * 1000; // 10 minutes
+    const claimExpiredBefore = new Date(nowDate.getTime() - claimTimeoutMs);
+
     const nextInQueueResults = await db
       .select({
         queue_id: schema.spareRequestNotificationQueue.id,
         spare_request_id: schema.spareRequestNotificationQueue.spare_request_id,
         member_id: schema.spareRequestNotificationQueue.member_id,
         queue_order: schema.spareRequestNotificationQueue.queue_order,
+        claimed_at: (schema.spareRequestNotificationQueue as any).claimed_at,
         notified_at: schema.spareRequestNotificationQueue.notified_at,
         id: schema.members.id,
         name: schema.members.name,
@@ -123,7 +130,11 @@ export async function processNextNotification(): Promise<void> {
       .where(
         and(
           eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequest.id),
-          isNull(schema.spareRequestNotificationQueue.notified_at)
+          isNull(schema.spareRequestNotificationQueue.notified_at),
+          or(
+            isNull((schema.spareRequestNotificationQueue as any).claimed_at),
+            lt((schema.spareRequestNotificationQueue as any).claimed_at, claimExpiredBefore)
+          )!
         )
       )
       .orderBy(asc(schema.spareRequestNotificationQueue.queue_order))
@@ -134,6 +145,7 @@ export async function processNextNotification(): Promise<void> {
       spare_request_id: number;
       member_id: number;
       queue_order: number;
+      claimed_at: any;
       notified_at: string | null;
       id: number;
       name: string;
@@ -168,63 +180,104 @@ export async function processNextNotification(): Promise<void> {
       return;
     }
 
+    // Claim the queue item BEFORE sending to prevent duplicate sends across multiple processors.
+    const claimedRows = await db
+      .update(schema.spareRequestNotificationQueue)
+      .set({ claimed_at: nowDate })
+      .where(
+        and(
+          eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id),
+          isNull(schema.spareRequestNotificationQueue.notified_at),
+          or(
+            isNull((schema.spareRequestNotificationQueue as any).claimed_at),
+            lt((schema.spareRequestNotificationQueue as any).claimed_at, claimExpiredBefore)
+          )!
+        )
+      )
+      .returning({ id: schema.spareRequestNotificationQueue.id });
+
+    if (!claimedRows || claimedRows.length === 0) {
+      // Another processor claimed it first.
+      return;
+    }
+
     // Send notification to this member
     console.log(`[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`);
 
-    if (nextInQueue.email) {
-      // Generate token using member object (need to construct it from the query result)
-      // Match the Member interface from types.ts
-      const memberForToken = {
-        id: nextInQueue.id,
-        name: nextInQueue.name,
-        email: nextInQueue.email,
-        phone: nextInQueue.phone,
-        is_admin: 0, // Not admin for spare requests
-        first_login_completed: 1, // Assuming first login completed
-        opted_in_sms: nextInQueue.opted_in_sms,
-        email_subscribed: 1, // Assuming subscribed if email is present
-        email_visible: 0,
-        phone_visible: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      } as Member;
-      const acceptToken = generateEmailLinkToken(memberForToken);
-      console.log(`[Notification Processor] Calling sendSpareRequestEmail for ${nextInQueue.email} (request ${spareRequest.id})`);
-      await sendSpareRequestEmail(
-        nextInQueue.email,
-        nextInQueue.name,
-        requester.name,
-        {
-          requestedForName: spareRequest.requested_for_name,
-          gameDate: spareRequest.game_date,
-          gameTime: spareRequest.game_time,
-          position: spareRequest.position || undefined,
-          message: spareRequest.message || undefined,
-        },
-        acceptToken,
-        spareRequest.id
-      );
-      console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
-    }
+    try {
+      // League name (optional; older requests may not have league_id)
+      let leagueName: string | undefined;
+      if ((spareRequest as any).league_id) {
+        const leagueRows = await db
+          .select({ name: schema.leagues.name })
+          .from(schema.leagues)
+          .where(eq(schema.leagues.id, (spareRequest as any).league_id))
+          .limit(1);
+        leagueName = leagueRows[0]?.name || undefined;
+      }
 
-    if (nextInQueue.phone && nextInQueue.opted_in_sms === 1) {
-      await sendSpareRequestSMS(
-        nextInQueue.phone,
-        requester.name,
-        spareRequest.game_date,
-        spareRequest.game_time
-      );
-      console.log(`[Notification Processor] SMS sent to ${nextInQueue.phone}`);
-    }
+      if (nextInQueue.email) {
+        // Generate token using member object (need to construct it from the query result)
+        // Match the Member interface from types.ts
+        const memberForToken = {
+          id: nextInQueue.id,
+          name: nextInQueue.name,
+          email: nextInQueue.email,
+          phone: nextInQueue.phone,
+          is_admin: 0, // Not admin for spare requests
+          first_login_completed: 1, // Assuming first login completed
+          opted_in_sms: nextInQueue.opted_in_sms,
+          email_subscribed: 1, // Assuming subscribed if email is present
+          email_visible: 0,
+          phone_visible: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as Member;
+        const acceptToken = generateEmailLinkToken(memberForToken);
+        console.log(`[Notification Processor] Calling sendSpareRequestEmail for ${nextInQueue.email} (request ${spareRequest.id})`);
+        await sendSpareRequestEmail(
+          nextInQueue.email,
+          nextInQueue.name,
+          requester.name,
+          {
+            leagueName,
+            requestedForName: spareRequest.requested_for_name,
+            gameDate: spareRequest.game_date,
+            gameTime: spareRequest.game_time,
+            position: spareRequest.position || undefined,
+            message: spareRequest.message || undefined,
+          },
+          acceptToken,
+          spareRequest.id
+        );
+        console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
+      }
 
-    // Mark this member as notified (use queue_id to avoid ambiguity)
-    // Drizzle PostgreSQL timestamp columns require Date objects
-    const updateResult = await db
-      .update(schema.spareRequestNotificationQueue)
-      .set({ notified_at: nowDate })
-      .where(eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id));
-    
-    console.log(`[Notification Processor] Marked queue item ${nextInQueue.queue_id} (member ${nextInQueue.member_id}) as notified`);
+      if (nextInQueue.phone && nextInQueue.opted_in_sms === 1) {
+        await sendSpareRequestSMS(
+          nextInQueue.phone,
+          requester.name,
+          spareRequest.game_date,
+          spareRequest.game_time
+        );
+        console.log(`[Notification Processor] SMS sent to ${nextInQueue.phone}`);
+      }
+
+      // Mark this member as notified (and clear claim)
+      await db
+        .update(schema.spareRequestNotificationQueue)
+        .set({ notified_at: nowDate, claimed_at: null })
+        .where(eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id));
+
+      console.log(`[Notification Processor] Marked queue item ${nextInQueue.queue_id} (member ${nextInQueue.member_id}) as notified`);
+    } catch (error) {
+      // Clear claim so it can be retried later.
+      await db
+        .update(schema.spareRequestNotificationQueue)
+        .set({ claimed_at: null })
+        .where(eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id));
+      throw error;
+    }
 
     // Check if request is still open (might have been filled while we were processing)
     const currentStatusResults = await db

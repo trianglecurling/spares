@@ -93,7 +93,7 @@ npm run dev:backend
 Initialize the database:
 
 ```bash
-npm run db:migrate --workspace=backend
+npm run db:init --workspace=backend
 ```
 
 ### Building for Production

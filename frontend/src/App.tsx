@@ -32,6 +32,7 @@ import ManagingRequests from './pages/help/ManagingRequests';
 import Install from './pages/Install';
 import Feedback from './pages/Feedback';
 import AdminFeedback from './pages/admin/AdminFeedback';
+import AdminObservability from './pages/admin/AdminObservability';
 
 function App() {
   return (
@@ -160,6 +161,14 @@ function App() {
             element={
               <ProtectedRoute serverAdminOnly>
                 <AdminConfig />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/observability"
+            element={
+              <ProtectedRoute serverAdminOnly>
+                <AdminObservability />
               </ProtectedRoute>
             }
           />

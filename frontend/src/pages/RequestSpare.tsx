@@ -30,6 +30,7 @@ interface GameSlot {
 }
 
 interface SpareRequestPayload {
+  leagueId: number;
   requestedForName: string;
   gameDate: string;
   gameTime: string;
@@ -276,6 +277,7 @@ export default function RequestSpare() {
       const [gameDate, gameTime] = selectedGameSlot.split('|');
 
       const payload: SpareRequestPayload = {
+        leagueId: Number(selectedLeagueId),
         requestedForName: effectiveRequestedForName,
         gameDate,
         gameTime,

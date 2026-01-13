@@ -12,6 +12,7 @@ import {
 import { sendAuthCodeEmail } from '../services/email.js';
 import { sendAuthCodeSMS } from '../services/sms.js';
 import { Member } from '../types.js';
+import { logEvent } from '../services/observability.js';
 
 function normalizeDateString(value: any): string | null {
   if (value === null || value === undefined) return null;
@@ -119,6 +120,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       used: 0,
     });
 
+    // Best-effort analytics (do not block)
+    logEvent({
+      eventType: 'auth.code_requested',
+      meta: { channel: isEmail ? 'email' : 'sms', matchedMembers: members.length },
+    }).catch(() => {});
+
     // Send code via email or SMS asynchronously (fire-and-forget) to avoid blocking the response
     // Auth codes are time-sensitive but we can still return immediately
     const member = members[0]; // Use first member for sending
@@ -208,6 +215,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       }
       const token = generateToken(member as Member);
 
+      // Best-effort analytics (do not block)
+      logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
+
       return {
         token,
         member: {
@@ -296,6 +306,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     }
 
     const token = generateToken(member as Member);
+
+    // Best-effort analytics (do not block)
+    logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
     return {
       token,
