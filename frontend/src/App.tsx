@@ -11,6 +11,7 @@ import SetAvailability from './pages/SetAvailability';
 import RequestSpare from './pages/RequestSpare';
 import RequestSpareConfirm from './pages/RequestSpareConfirm';
 import RespondToSpare from './pages/RespondToSpare';
+import DeclineSpare from './pages/DeclineSpare';
 import MyRequests from './pages/MyRequests';
 import Unsubscribe from './pages/Unsubscribe';
 import MembersDirectory from './pages/MembersDirectory';
@@ -108,6 +109,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <RespondToSpare />
+              </ProtectedRoute>
+            }
+          />
+          
+          <Route
+            path="/spare-request/decline"
+            element={
+              <ProtectedRoute>
+                <DeclineSpare />
               </ProtectedRoute>
             }
           />

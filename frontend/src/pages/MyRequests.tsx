@@ -25,7 +25,23 @@ interface MySpareRequest {
   sparerComment?: string;
   notificationsSentAt?: string;
   hadCancellation?: boolean;
+  invites?: { name: string; status: 'pending' | 'declined' }[];
+  inviteCounts?: { total: number; pending: number; declined: number };
   createdAt: string;
+}
+
+interface DirectoryMember {
+  id: number;
+  name: string;
+}
+
+interface InvitationStatusRow {
+  memberId: number;
+  name: string;
+  status: 'pending' | 'declined';
+  declinedAt: string | null;
+  declineComment: string | null;
+  invitedAt: string;
 }
 
 interface NotificationStatus {
@@ -50,6 +66,13 @@ export default function MyRequests() {
   const [reissueRequest, setReissueRequest] = useState<MySpareRequest | null>(null);
   const [reissueMessage, setReissueMessage] = useState('');
   const [reissuing, setReissuing] = useState(false);
+  const [inviteRequest, setInviteRequest] = useState<MySpareRequest | null>(null);
+  const [invitees, setInvitees] = useState<DirectoryMember[]>([]);
+  const [inviteFilter, setInviteFilter] = useState('');
+  const [selectedInviteIds, setSelectedInviteIds] = useState<Set<number>>(new Set());
+  const [inviting, setInviting] = useState(false);
+  const [invitationStatuses, setInvitationStatuses] = useState<InvitationStatusRow[]>([]);
+  const [loadingInvitations, setLoadingInvitations] = useState(false);
   const [notificationStatuses, setNotificationStatuses] = useState<Record<number, NotificationStatus>>({});
   const [pausing, setPausing] = useState<number | null>(null);
   const [notification, setNotification] = useState<{
@@ -193,6 +216,80 @@ export default function MyRequests() {
       showAlert('Failed to re-issue request', 'error');
     } finally {
       setReissuing(false);
+    }
+  };
+
+  const openInviteModal = async (request: MySpareRequest) => {
+    setInviteRequest(request);
+    setInviteFilter('');
+    setSelectedInviteIds(new Set());
+    setLoadingInvitations(true);
+    try {
+      const [dirRes, invitesRes] = await Promise.all([
+        api.get('/members/directory'),
+        api.get(`/spares/${request.id}/invitations`),
+      ]);
+      setInvitees((dirRes.data || []).map((m: any) => ({ id: m.id, name: m.name })));
+      setInvitationStatuses(invitesRes.data || []);
+    } catch (e) {
+      console.error('Failed to load invite modal data:', e);
+      setInvitees([]);
+      setInvitationStatuses([]);
+      showAlert('Failed to load invitation data', 'error');
+    } finally {
+      setLoadingInvitations(false);
+    }
+  };
+
+  const handleInviteMore = async () => {
+    if (!inviteRequest) return;
+    const ids = Array.from(selectedInviteIds);
+    if (ids.length === 0) {
+      showAlert('Select at least one member to invite', 'warning');
+      return;
+    }
+    setInviting(true);
+    try {
+      await api.post(`/spares/${inviteRequest.id}/invite`, { memberIds: ids });
+      showAlert(`Invited ${ids.length} member(s).`, 'success');
+      await loadRequests();
+      setInviteRequest(null);
+      setSelectedInviteIds(new Set());
+      setInvitationStatuses([]);
+    } catch (e: any) {
+      console.error('Failed to invite more members:', e);
+      const msg = e.response?.data?.error || 'Failed to invite members';
+      showAlert(msg, 'error');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleMakePublic = async (request: MySpareRequest) => {
+    const confirmed = await confirm({
+      title: 'Convert to public request?',
+      message:
+        'This will convert your private spare request to a public request and start notifying available members. This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Convert to public',
+      cancelText: 'Keep private',
+    });
+    if (!confirmed) return;
+
+    try {
+      const res = await api.post(`/spares/${request.id}/make-public`);
+      if (res.data?.notificationsQueued !== undefined) {
+        showAlert(`Converted to public. ${res.data.notificationsQueued} notification(s) queued.`, 'success');
+      } else if (res.data?.notificationsSent !== undefined) {
+        showAlert(`Converted to public. ${res.data.notificationsSent} notification(s) sent.`, 'success');
+      } else {
+        showAlert('Converted to public.', 'success');
+      }
+      await loadRequests();
+    } catch (e: any) {
+      console.error('Failed to make public:', e);
+      const msg = e.response?.data?.error || 'Failed to convert to public';
+      showAlert(msg, 'error');
     }
   };
 
@@ -351,6 +448,30 @@ export default function MyRequests() {
                         <span className="font-medium dark:text-gray-300">Type:</span>{' '}
                         {request.requestType === 'public' ? 'Public' : 'Private'}
                       </p>
+                      {request.status === 'open' && request.requestType === 'private' && request.inviteCounts && (
+                        <div className="mt-1">
+                          <p className="text-sm text-gray-700 dark:text-gray-300">
+                            <span className="font-medium">Invites:</span>{' '}
+                            {request.inviteCounts.pending} pending, {request.inviteCounts.declined} declined
+                          </p>
+                          {request.invites && request.invites.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {request.invites.map((i) => (
+                                <span
+                                  key={`${request.id}-${i.name}`}
+                                  className={`px-2 py-1 rounded text-xs font-medium ${
+                                    i.status === 'declined'
+                                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
+                                      : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'
+                                  }`}
+                                >
+                                  {i.name} • {i.status}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {request.message && (
                         <p className="italic mt-2">"{request.message}"</p>
                       )}
@@ -445,6 +566,22 @@ export default function MyRequests() {
                           >
                             Re-issue
                           </Button>
+                        )}
+                        {request.requestType === 'private' && (
+                          <>
+                            <Button
+                              variant="secondary"
+                              onClick={() => openInviteModal(request)}
+                            >
+                              Invite more
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleMakePublic(request)}
+                            >
+                              Make public
+                            </Button>
+                          </>
                         )}
                         <Button
                           variant="danger"
@@ -624,6 +761,123 @@ export default function MyRequests() {
                 Cancel
               </Button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!inviteRequest}
+        onClose={() => {
+          setInviteRequest(null);
+          setInviteFilter('');
+          setSelectedInviteIds(new Set());
+          setInvitationStatuses([]);
+        }}
+        title="Invite more people"
+        size="lg"
+      >
+        {inviteRequest && (
+          <div className="space-y-4">
+            <p className="text-gray-700 dark:text-gray-300">
+              Invite more members to your private spare request for <strong>{renderMe(inviteRequest.requestedForName, member?.name)}</strong>.
+            </p>
+
+            {loadingInvitations ? (
+              <div className="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+            ) : (
+              <>
+                <div className="bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded-md p-3">
+                  <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">
+                    Current invites
+                  </div>
+                  {invitationStatuses.length === 0 ? (
+                    <div className="text-sm text-gray-600 dark:text-gray-400">No invites found.</div>
+                  ) : (
+                    <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                      {invitationStatuses.map((i) => (
+                        <li key={i.memberId}>
+                          {i.name}{' '}
+                          {i.status === 'declined' ? (
+                            <span className="text-gray-500 dark:text-gray-400">(declined)</span>
+                          ) : (
+                            <span className="text-gray-500 dark:text-gray-400">(pending)</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Add invitees
+                  </label>
+                  <input
+                    type="text"
+                    value={inviteFilter}
+                    onChange={(e) => setInviteFilter(e.target.value)}
+                    placeholder="Search members..."
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  />
+                </div>
+
+                <div className="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-md">
+                  {invitees
+                    .filter((m) => m.name.toLowerCase().includes(inviteFilter.toLowerCase()))
+                    .map((m) => {
+                      const alreadyInvited = invitationStatuses.some((i) => i.memberId === m.id);
+                      const checked = selectedInviteIds.has(m.id);
+                      return (
+                        <label
+                          key={m.id}
+                          className={`flex items-center gap-3 px-4 py-2 border-b border-gray-100 dark:border-gray-700 ${
+                            alreadyInvited ? 'opacity-60' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={alreadyInvited}
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = new Set(selectedInviteIds);
+                              if (e.target.checked) next.add(m.id);
+                              else next.delete(m.id);
+                              setSelectedInviteIds(next);
+                            }}
+                          />
+                          <span className="text-sm text-gray-800 dark:text-gray-100">{m.name}</span>
+                          {alreadyInvited && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">(already invited)</span>
+                          )}
+                        </label>
+                      );
+                    })}
+                </div>
+
+                <div className="flex space-x-3 pt-2">
+                  <Button
+                    onClick={handleInviteMore}
+                    disabled={inviting || selectedInviteIds.size === 0}
+                    className="flex-1"
+                  >
+                    {inviting ? 'Inviting...' : 'Send invites'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setInviteRequest(null);
+                      setInviteFilter('');
+                      setSelectedInviteIds(new Set());
+                      setInvitationStatuses([]);
+                    }}
+                    disabled={inviting}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </Modal>

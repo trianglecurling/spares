@@ -39,6 +39,14 @@ const cancelSparingSchema = z.object({
   comment: z.string().min(1, 'Comment is required'),
 });
 
+const declinePrivateInviteSchema = z.object({
+  comment: z.string().optional(),
+});
+
+const inviteMoreSchema = z.object({
+  memberIds: z.array(z.number()).min(1),
+});
+
 const reissueSpareRequestSchema = z.object({
   message: z.string().optional(),
 });
@@ -62,6 +70,79 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     return rows as unknown as Member[];
   }
+
+  // Get spare requests the user was CC'd on (upcoming; includes private requests)
+  fastify.get('/spares/cc', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const { db, schema } = getDrizzleDb();
+    const today = await getCurrentDateStringAsync();
+
+    const rowsRaw = await db
+      .select({
+        id: schema.spareRequests.id,
+        league_name: schema.leagues.name,
+        requester_name: schema.members.name,
+        requester_email: schema.members.email,
+        requester_phone: schema.members.phone,
+        requested_for_name: schema.spareRequests.requested_for_name,
+        game_date: schema.spareRequests.game_date,
+        game_time: schema.spareRequests.game_time,
+        position: schema.spareRequests.position,
+        message: schema.spareRequests.message,
+        request_type: schema.spareRequests.request_type,
+        status: schema.spareRequests.status,
+        filled_by_member_id: schema.spareRequests.filled_by_member_id,
+        filled_at: schema.spareRequests.filled_at,
+        created_at: schema.spareRequests.created_at,
+      })
+      .from(schema.spareRequestCcs)
+      .innerJoin(schema.spareRequests, eq(schema.spareRequestCcs.spare_request_id, schema.spareRequests.id))
+      .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
+      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
+      .where(
+        and(
+          eq(schema.spareRequestCcs.member_id, member.id),
+          gte(schema.spareRequests.game_date, today)
+        )
+      )
+      .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
+
+    // Resolve filled-by names separately (avoids joining members twice)
+    const filledByIds = rowsRaw
+      .map((r: any) => r.filled_by_member_id)
+      .filter((id: any): id is number => id !== null);
+
+    const filledByMembers = filledByIds.length > 0
+      ? await db
+          .select({ id: schema.members.id, name: schema.members.name })
+          .from(schema.members)
+          .where(inArray(schema.members.id, filledByIds))
+      : [];
+
+    const filledByNameMap = new Map(filledByMembers.map((m: any) => [m.id, m.name]));
+
+    return rowsRaw.map((req: any) => ({
+      id: req.id,
+      requesterName: req.requester_name,
+      requesterEmail: req.requester_email,
+      requesterPhone: req.requester_phone,
+      requestedForName: req.requested_for_name,
+      gameDate: req.game_date,
+      gameTime: req.game_time,
+      leagueName: req.league_name || null,
+      position: req.position,
+      message: req.message,
+      requestType: req.request_type,
+      status: req.status,
+      filledByName: req.filled_by_member_id ? filledByNameMap.get(req.filled_by_member_id) || null : null,
+      filledAt: req.filled_at,
+      createdAt: req.created_at,
+    }));
+  });
 
   // Get all public spare requests
   fastify.get('/spares', async (request, reply) => {
@@ -153,6 +234,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         message: schema.spareRequests.message,
         request_type: schema.spareRequests.request_type,
         created_at: schema.spareRequests.created_at,
+        invite_declined_at: (schema.spareRequestInvitations as any).declined_at,
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
@@ -173,8 +255,464 @@ export async function spareRoutes(fastify: FastifyInstance) {
       position: req.position,
       message: req.message,
       requestType: req.request_type,
+      inviteStatus: req.request_type === 'private' ? (req.invite_declined_at ? 'declined' : 'pending') : undefined,
       createdAt: req.created_at,
     }));
+  });
+
+  // Decline a private spare request invitation (invited member only)
+  fastify.post('/spares/:id/decline', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const { id } = request.params as { id: string };
+    const requestId = parseInt(id, 10);
+    const body = declinePrivateInviteSchema.parse(request.body);
+    const comment = (body.comment || '').trim();
+
+    const { db, schema } = getDrizzleDb();
+
+    const spareRequests = await db
+      .select()
+      .from(schema.spareRequests)
+      .where(eq(schema.spareRequests.id, requestId))
+      .limit(1);
+    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    if (!spareRequest) {
+      return reply.code(404).send({ error: 'Spare request not found' });
+    }
+    if (spareRequest.request_type !== 'private') {
+      return reply.code(400).send({ error: 'Declining is only supported for private spare requests' });
+    }
+    if (spareRequest.status !== 'open') {
+      return reply.code(400).send({ error: 'This spare request is no longer open' });
+    }
+
+    const invites = await db
+      .select()
+      .from(schema.spareRequestInvitations)
+      .where(
+        and(
+          eq(schema.spareRequestInvitations.spare_request_id, requestId),
+          eq(schema.spareRequestInvitations.member_id, member.id)
+        )
+      )
+      .limit(1);
+    const invite = invites[0] as any;
+    if (!invite) {
+      return reply.code(403).send({ error: 'You are not invited to this private spare request' });
+    }
+
+    // Mark declined (idempotent)
+    await db
+      .update(schema.spareRequestInvitations)
+      .set({
+        declined_at: await getCurrentTimeAsync(),
+        decline_comment: comment || null,
+      })
+      .where(eq(schema.spareRequestInvitations.id, invite.id));
+
+    // Notify requester if a message was provided
+    if (comment) {
+      try {
+        const requesters = await db
+          .select()
+          .from(schema.members)
+          .where(eq(schema.members.id, spareRequest.requester_id))
+          .limit(1);
+        const requester = requesters[0] as Member | undefined;
+        if (requester?.email && requester.email_subscribed === 1) {
+          const requesterToken = generateToken(requester);
+          const { sendPrivateInviteDeclinedEmail } = await import('../services/email.js');
+          sendPrivateInviteDeclinedEmail(
+            requester.email,
+            requester.name,
+            member.name,
+            {
+              requestedForName: spareRequest.requested_for_name,
+              gameDate: spareRequest.game_date,
+              gameTime: spareRequest.game_time,
+              position: spareRequest.position || undefined,
+            },
+            comment,
+            requesterToken
+          ).catch((e: any) => {
+            console.error('Error sending private invite declined email:', e);
+          });
+        }
+      } catch (e) {
+        console.error('Error scheduling private invite declined email:', e);
+      }
+    }
+
+    // If all invited members have declined, notify requester once
+    try {
+      const remaining = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(schema.spareRequestInvitations)
+        .where(
+          and(
+            eq(schema.spareRequestInvitations.spare_request_id, requestId),
+            isNull((schema.spareRequestInvitations as any).declined_at)
+          )
+        );
+      const remainingCount = Number(remaining[0]?.count || 0);
+      if (remainingCount === 0 && (spareRequest as any).all_invites_declined_notified !== 1) {
+        // Mark notified first to reduce dupes
+        await db
+          .update(schema.spareRequests)
+          .set({ all_invites_declined_notified: 1 })
+          .where(eq(schema.spareRequests.id, requestId));
+
+        const requesters = await db
+          .select()
+          .from(schema.members)
+          .where(eq(schema.members.id, spareRequest.requester_id))
+          .limit(1);
+        const requester = requesters[0] as Member | undefined;
+        if (requester?.email && requester.email_subscribed === 1) {
+          const requesterToken = generateToken(requester);
+          const { sendAllPrivateInvitesDeclinedEmail } = await import('../services/email.js');
+          sendAllPrivateInvitesDeclinedEmail(
+            requester.email,
+            requester.name,
+            {
+              requestedForName: spareRequest.requested_for_name,
+              gameDate: spareRequest.game_date,
+              gameTime: spareRequest.game_time,
+              position: spareRequest.position || undefined,
+            },
+            requesterToken
+          ).catch((e: any) => {
+            console.error('Error sending all invites declined email:', e);
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error checking all-invites-declined state:', e);
+    }
+
+    return { success: true };
+  });
+
+  // Get invitation statuses for a private spare request (requester only)
+  fastify.get('/spares/:id/invitations', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+
+    const { id } = request.params as { id: string };
+    const requestId = parseInt(id, 10);
+    const { db, schema } = getDrizzleDb();
+
+    const spareRequests = await db
+      .select()
+      .from(schema.spareRequests)
+      .where(eq(schema.spareRequests.id, requestId))
+      .limit(1);
+    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
+    if (spareRequest.requester_id !== member.id) return reply.code(403).send({ error: 'Forbidden' });
+    if (spareRequest.request_type !== 'private') return reply.code(400).send({ error: 'Not a private request' });
+
+    const rows = await db
+      .select({
+        member_id: schema.members.id,
+        name: schema.members.name,
+        email: schema.members.email,
+        declined_at: (schema.spareRequestInvitations as any).declined_at,
+        decline_comment: (schema.spareRequestInvitations as any).decline_comment,
+        created_at: schema.spareRequestInvitations.created_at,
+      })
+      .from(schema.spareRequestInvitations)
+      .innerJoin(schema.members, eq(schema.spareRequestInvitations.member_id, schema.members.id))
+      .where(eq(schema.spareRequestInvitations.spare_request_id, requestId))
+      .orderBy(asc(schema.members.name));
+
+    return rows.map((r: any) => ({
+      memberId: r.member_id,
+      name: r.name,
+      email: r.email,
+      status: r.declined_at ? 'declined' : 'pending',
+      declinedAt: r.declined_at || null,
+      declineComment: r.decline_comment || null,
+      invitedAt: r.created_at,
+    }));
+  });
+
+  // Invite more people to a private spare request (requester only)
+  fastify.post('/spares/:id/invite', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+
+    const { id } = request.params as { id: string };
+    const requestId = parseInt(id, 10);
+    const body = inviteMoreSchema.parse(request.body);
+    const memberIds = Array.from(new Set(body.memberIds.filter((mId) => mId !== member.id)));
+    if (memberIds.length === 0) {
+      return reply.code(400).send({ error: 'No valid members to invite' });
+    }
+
+    const { db, schema } = getDrizzleDb();
+
+    const spareRequests = await db
+      .select()
+      .from(schema.spareRequests)
+      .where(eq(schema.spareRequests.id, requestId))
+      .limit(1);
+    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
+    if (spareRequest.requester_id !== member.id) return reply.code(403).send({ error: 'Forbidden' });
+    if (spareRequest.request_type !== 'private') return reply.code(400).send({ error: 'Only private requests can invite more members' });
+    if (spareRequest.status !== 'open') return reply.code(400).send({ error: 'Only open requests can be updated' });
+
+    // Load invitees
+    const invitees = await db
+      .select()
+      .from(schema.members)
+      .where(inArray(schema.members.id, memberIds)) as Member[];
+    if (invitees.length !== memberIds.length) {
+      return reply.code(400).send({ error: 'One or more invited members were not found' });
+    }
+
+    // Determine which invites are new or were previously declined (need re-notify)
+    const existingInvites = await db
+      .select()
+      .from(schema.spareRequestInvitations)
+      .where(
+        and(
+          eq(schema.spareRequestInvitations.spare_request_id, requestId),
+          inArray(schema.spareRequestInvitations.member_id, memberIds)
+        )
+      ) as any[];
+    const existingByMemberId = new Map<number, any>(existingInvites.map((i: any) => [i.member_id, i]));
+
+    const toNotifyIds: number[] = [];
+    for (const mId of memberIds) {
+      const existing = existingByMemberId.get(mId);
+      if (!existing) {
+        // Insert new invite
+        await db.insert(schema.spareRequestInvitations).values({
+          spare_request_id: requestId,
+          member_id: mId,
+        });
+        toNotifyIds.push(mId);
+      } else if (existing.declined_at) {
+        // Re-invite: clear decline fields
+        await db
+          .update(schema.spareRequestInvitations)
+          .set({ declined_at: null, decline_comment: null })
+          .where(eq(schema.spareRequestInvitations.id, existing.id));
+        toNotifyIds.push(mId);
+      }
+    }
+
+    // Reset "all declined" notification flag since we are inviting again
+    await db
+      .update(schema.spareRequests)
+      .set({ all_invites_declined_notified: 0 })
+      .where(eq(schema.spareRequests.id, requestId));
+
+    if (toNotifyIds.length > 0) {
+      // Compute invited member names list (for email copy)
+      const allInvites = await db
+        .select({ name: schema.members.name })
+        .from(schema.spareRequestInvitations)
+        .innerJoin(schema.members, eq(schema.spareRequestInvitations.member_id, schema.members.id))
+        .where(eq(schema.spareRequestInvitations.spare_request_id, requestId));
+      const invitedMemberNames = allInvites.map((r: any) => r.name).sort();
+
+      // Get league name (best-effort)
+      const leagueId = (spareRequest as any).league_id;
+      let leagueName: string | undefined;
+      if (leagueId) {
+        const leagueRows = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1) as any[];
+        leagueName = leagueRows[0]?.name;
+      }
+
+      const toNotify = invitees.filter((m) => toNotifyIds.includes(m.id));
+      for (const recipient of toNotify) {
+        const acceptToken = generateEmailLinkToken(recipient);
+        if (recipient.email && recipient.email_subscribed === 1) {
+          sendSpareRequestEmail(
+            recipient.email,
+            recipient.name,
+            member.name,
+            {
+              leagueName,
+              requestedForName: spareRequest.requested_for_name,
+              gameDate: spareRequest.game_date,
+              gameTime: spareRequest.game_time,
+              position: spareRequest.position || undefined,
+              message: spareRequest.message || undefined,
+              invitedMemberNames,
+            },
+            acceptToken,
+            requestId
+          ).catch((e: any) => console.error('Error sending private invite email:', e));
+        }
+
+        if (recipient.phone && (recipient as any).opted_in_sms === 1) {
+          sendSpareRequestSMS(recipient.phone, member.name, spareRequest.game_date, spareRequest.game_time).catch((e: any) =>
+            console.error('Error sending private invite SMS:', e)
+          );
+        }
+      }
+    }
+
+    return { success: true, invited: toNotifyIds.length };
+  });
+
+  // Convert a private spare request to public (requester only; irreversible)
+  fastify.post('/spares/:id/make-public', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+
+    const { id } = request.params as { id: string };
+    const requestId = parseInt(id, 10);
+    const { db, schema } = getDrizzleDb();
+
+    const spareRequests = await db
+      .select()
+      .from(schema.spareRequests)
+      .where(eq(schema.spareRequests.id, requestId))
+      .limit(1);
+    const spareRequest = spareRequests[0] as any;
+    if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
+    if (spareRequest.requester_id !== member.id) return reply.code(403).send({ error: 'Forbidden' });
+    if (spareRequest.request_type !== 'private') return reply.code(400).send({ error: 'Only private requests can be made public' });
+    if (spareRequest.status !== 'open') return reply.code(400).send({ error: 'Only open requests can be updated' });
+
+    // Convert request type
+    await db
+      .update(schema.spareRequests)
+      .set({
+        request_type: 'public',
+        notification_status: null,
+        next_notification_at: null,
+        notification_paused: 0,
+      })
+      .where(eq(schema.spareRequests.id, requestId));
+
+    // Kick off public notification flow (same logic as create public request)
+    const leagueId = spareRequest.league_id;
+    if (!leagueId) {
+      return reply.code(400).send({ error: 'Cannot make public without a league' });
+    }
+
+    const leagueRows = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1) as any[];
+    const league = leagueRows[0];
+    if (!league) return reply.code(400).send({ error: 'Invalid league' });
+    const leagueName = league.name;
+
+    // Parse date/time as local to avoid timezone issues
+    const [gameYear, gameMonth, gameDay] = String(spareRequest.game_date).split('-').map(Number);
+    const [gameHours, gameMinutes] = String(spareRequest.game_time).split(':').map(Number);
+    const gameDateTime = new Date(gameYear, gameMonth - 1, gameDay, gameHours, gameMinutes);
+    const currentTime = await getCurrentTimeAsync();
+    const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
+    const isLessThan24Hours = hoursUntilGame < 24;
+
+    // Clear any existing notification queue
+    await db.delete(schema.spareRequestNotificationQueue).where(eq(schema.spareRequestNotificationQueue.spare_request_id, requestId));
+
+    // Recipient selection (public)
+    const conditions: any[] = [
+      eq(schema.memberAvailability.league_id, leagueId),
+      eq(schema.memberAvailability.available, 1),
+      eq(schema.members.email_subscribed, 1),
+      ne(schema.members.id, member.id),
+    ];
+    if (spareRequest.position === 'skip') {
+      conditions.push(eq(schema.memberAvailability.can_skip, 1));
+    }
+    const recipientMembers = await db
+      .selectDistinct({
+        id: schema.members.id,
+        name: schema.members.name,
+        email: schema.members.email,
+        phone: schema.members.phone,
+        is_admin: schema.members.is_admin,
+        opted_in_sms: schema.members.opted_in_sms,
+        email_subscribed: schema.members.email_subscribed,
+        first_login_completed: schema.members.first_login_completed,
+        email_visible: schema.members.email_visible,
+        phone_visible: schema.members.phone_visible,
+        created_at: schema.members.created_at,
+        updated_at: schema.members.updated_at,
+      })
+      .from(schema.members)
+      .innerJoin(schema.memberAvailability, eq(schema.members.id, schema.memberAvailability.member_id))
+      .where(and(...conditions)) as Member[];
+
+    if (isLessThan24Hours) {
+      for (const recipient of recipientMembers) {
+        if (recipient.email) {
+          const acceptToken = generateEmailLinkToken(recipient);
+          sendSpareRequestEmail(
+            recipient.email,
+            recipient.name,
+            member.name,
+            {
+              leagueName,
+              requestedForName: spareRequest.requested_for_name,
+              gameDate: spareRequest.game_date,
+              gameTime: spareRequest.game_time,
+              position: spareRequest.position || undefined,
+              message: spareRequest.message || undefined,
+            },
+            acceptToken,
+            requestId
+          ).catch((e: any) => console.error('Error sending public spare email:', e));
+        }
+        if (recipient.phone && (recipient as any).opted_in_sms === 1) {
+          sendSpareRequestSMS(recipient.phone, member.name, spareRequest.game_date, spareRequest.game_time).catch((e: any) =>
+            console.error('Error sending public spare SMS:', e)
+          );
+        }
+      }
+      if (recipientMembers.length > 0) {
+        await db
+          .update(schema.spareRequests)
+          .set({
+            notifications_sent_at: await getCurrentTimeAsync(),
+            notification_status: 'completed',
+          })
+          .where(eq(schema.spareRequests.id, requestId));
+      }
+      return { success: true, notificationsSent: recipientMembers.length };
+    }
+
+    if (recipientMembers.length === 0) {
+      await db
+        .update(schema.spareRequests)
+        .set({
+          notification_status: 'completed',
+          next_notification_at: null,
+        })
+        .where(eq(schema.spareRequests.id, requestId));
+      return { success: true, notificationsQueued: 0, notificationStatus: 'completed' };
+    }
+
+    const shuffled = [...recipientMembers].sort(() => Math.random() - 0.5);
+    await db.insert(schema.spareRequestNotificationQueue).values(
+      shuffled.map((recipient, index) => ({
+        spare_request_id: requestId,
+        member_id: recipient.id,
+        queue_order: index,
+      }))
+    );
+    await db
+      .update(schema.spareRequests)
+      .set({
+        notification_status: 'in_progress',
+        next_notification_at: await getCurrentTimeAsync(),
+        notification_paused: 0,
+      })
+      .where(eq(schema.spareRequests.id, requestId));
+
+    return { success: true, notificationsQueued: shuffled.length, notificationStatus: 'in_progress' };
   });
 
   // Get member's own spare requests
@@ -231,7 +769,35 @@ export async function spareRoutes(fastify: FastifyInstance) {
         asc(schema.spareRequests.game_time)
       );
 
+    const privateRequestIds = requests
+      .filter((r: any) => r.request_type === 'private')
+      .map((r: any) => r.id) as number[];
+
+    const inviteMap = new Map<number, { name: string; status: 'pending' | 'declined' }[]>();
+    if (privateRequestIds.length > 0) {
+      const inviteRows = await db
+        .select({
+          request_id: schema.spareRequestInvitations.spare_request_id,
+          name: schema.members.name,
+          declined_at: (schema.spareRequestInvitations as any).declined_at,
+        })
+        .from(schema.spareRequestInvitations)
+        .innerJoin(schema.members, eq(schema.spareRequestInvitations.member_id, schema.members.id))
+        .where(inArray(schema.spareRequestInvitations.spare_request_id, privateRequestIds))
+        .orderBy(asc(schema.members.name));
+
+      for (const row of inviteRows as any[]) {
+        const reqId = Number(row.request_id);
+        const list = inviteMap.get(reqId) || [];
+        list.push({ name: String(row.name), status: row.declined_at ? 'declined' : 'pending' });
+        inviteMap.set(reqId, list);
+      }
+    }
+
     return requests.map((req: any) => {
+      const invites = req.request_type === 'private' ? inviteMap.get(req.id) || [] : undefined;
+      const declinedCount = invites ? invites.filter((i) => i.status === 'declined').length : 0;
+      const pendingCount = invites ? invites.filter((i) => i.status === 'pending').length : 0;
       return {
         id: req.id,
         requestedForName: req.requested_for_name,
@@ -249,6 +815,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
         sparerComment: req.sparer_comment,
         notificationsSentAt: req.notifications_sent_at,
         hadCancellation: req.had_cancellation === 1,
+        invites,
+        inviteCounts: invites
+          ? { total: invites.length, pending: pendingCount, declined: declinedCount }
+          : undefined,
         createdAt: req.created_at,
       };
     });
@@ -896,6 +1466,38 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     if (spareRequest.status !== 'open') {
       return reply.code(400).send({ error: 'This spare request is no longer open' });
+    }
+
+    // Private requests: must be invited. If previously declined, require a message.
+    if (spareRequest.request_type === 'private') {
+      const invites = await db
+        .select()
+        .from(schema.spareRequestInvitations)
+        .where(
+          and(
+            eq(schema.spareRequestInvitations.spare_request_id, requestId),
+            eq(schema.spareRequestInvitations.member_id, member.id)
+          )
+        )
+        .limit(1);
+      const invite = invites[0] as any;
+      if (!invite) {
+        return reply.code(403).send({ error: 'You are not invited to this private spare request' });
+      }
+
+      const wasDeclined = !!invite.declined_at;
+      const comment = (body.comment || '').trim();
+      if (wasDeclined && !comment) {
+        return reply.code(400).send({ error: 'A message is required when accepting after declining this private request.' });
+      }
+
+      // If they are accepting now, clear any prior decline state.
+      if (wasDeclined) {
+        await db
+          .update(schema.spareRequestInvitations)
+          .set({ declined_at: null, decline_comment: null })
+          .where(eq(schema.spareRequestInvitations.id, invite.id));
+      }
     }
 
     // Check if user has already responded to this request

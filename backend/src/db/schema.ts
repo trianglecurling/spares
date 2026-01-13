@@ -173,6 +173,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       spare_request_id INTEGER NOT NULL,
       member_id INTEGER NOT NULL,
+      declined_at DATETIME,
+      decline_comment TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
       FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
@@ -302,6 +304,9 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0', table: 'spare_requests', column: 'notification_paused' },
     { sql: 'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'', table: 'members', column: 'theme_preference' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN league_id INTEGER', table: 'spare_requests', column: 'league_id' },
+    { sql: 'ALTER TABLE spare_request_invitations ADD COLUMN declined_at DATETIME', table: 'spare_request_invitations', column: 'declined_at' },
+    { sql: 'ALTER TABLE spare_request_invitations ADD COLUMN decline_comment TEXT', table: 'spare_request_invitations', column: 'decline_comment' },
+    { sql: 'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0', table: 'spare_requests', column: 'all_invites_declined_notified' },
   ];
 
   for (const migration of migrations) {
@@ -534,6 +539,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       spare_request_id INTEGER NOT NULL,
       member_id INTEGER NOT NULL,
+      declined_at DATETIME,
+      decline_comment TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
       FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
@@ -663,6 +670,9 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0',
     'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'',
     'ALTER TABLE spare_requests ADD COLUMN league_id INTEGER',
+    'ALTER TABLE spare_request_invitations ADD COLUMN declined_at DATETIME',
+    'ALTER TABLE spare_request_invitations ADD COLUMN decline_comment TEXT',
+    'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0',
   ];
 
   for (const migrationSQL of migrations) {

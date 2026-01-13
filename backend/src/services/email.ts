@@ -260,6 +260,17 @@ export async function sendSpareRequestEmail(
         Accept This Spare
       </a>
     </p>
+    ${
+      requestDetails.invitedMemberNames && requestDetails.invitedMemberNames.length > 0
+        ? `<p>
+      <a href="${config.frontendUrl}/spare-request/decline?token=${acceptToken}&requestId=${spareRequestId}"
+         style="display: inline-block; background-color: #6b7280; color: white; padding: 10px 18px; text-decoration: none; border-radius: 4px; margin-top: 8px;">
+        Decline
+      </a>
+    </p>
+    <p style="color: #666; font-size: 14px;">If you decline, you can optionally include a message.</p>`
+        : ''
+    }
     <p style="color: #666; font-size: 14px;">Or copy this link: ${config.frontendUrl}/spare-request/respond?token=${acceptToken}&requestId=${spareRequestId}</p>
   `;
 
@@ -271,6 +282,100 @@ export async function sendSpareRequestEmail(
       recipientName,
     },
     acceptToken
+  );
+}
+
+export async function sendPrivateInviteDeclinedEmail(
+  requesterEmail: string,
+  requesterName: string,
+  declinerName: string,
+  requestDetails: {
+    leagueName?: string;
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  comment: string,
+  requesterToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
+
+  const myRequestsUrl = `${config.frontendUrl}/my-requests`;
+
+  const htmlContent = `
+    <h2>Private Invite Declined</h2>
+    <p>Hi ${requesterName},</p>
+    <p><strong>${declinerName}</strong> declined your private spare request for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
+    <p><strong>Message:</strong> "${comment}"</p>
+    <p>You can manage this request on your <a href="${myRequestsUrl}">My requests</a> page.</p>
+  `;
+
+  await sendEmail(
+    {
+      to: requesterEmail,
+      subject: `Declined: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
+      htmlContent,
+      recipientName: requesterName,
+    },
+    requesterToken
+  );
+}
+
+export async function sendAllPrivateInvitesDeclinedEmail(
+  requesterEmail: string,
+  requesterName: string,
+  requestDetails: {
+    leagueName?: string;
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  requesterToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
+
+  const myRequestsUrl = `${config.frontendUrl}/my-requests`;
+
+  const htmlContent = `
+    <h2>All Invitees Declined</h2>
+    <p>Hi ${requesterName},</p>
+    <p>All invited members have declined your private spare request for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
+    <p>
+      Next steps:
+      <ul>
+        <li>Invite more people</li>
+        <li>Or convert the request to public (this cannot be undone) to start notifying available spares automatically</li>
+      </ul>
+    </p>
+    <p>Go to <a href="${myRequestsUrl}">My requests</a> to manage this request.</p>
+  `;
+
+  await sendEmail(
+    {
+      to: requesterEmail,
+      subject: `All declined: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
+      htmlContent,
+      recipientName: requesterName,
+    },
+    requesterToken
   );
 }
 
@@ -347,7 +452,7 @@ export async function sendSpareRequestCcCreatedEmail(
     <strong>Time:</strong> ${formattedTime}</p>
     ${leagueLine}
     ${messageText}
-    <p>This email is for your awareness. You can log in to see the request details.</p>
+    <p>This email is for your awareness. You can log in to view it on your dashboard under <strong>"Requests I've been CC'd on"</strong>.</p>
   `;
 
   await sendEmail(

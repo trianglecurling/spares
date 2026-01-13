@@ -87,6 +87,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   sessionStorage.setItem('pendingSpareAcceptRequestId', requestId);
                   sessionStorage.setItem('postFirstLoginSuggestAvailability', '1');
                 }
+              } else if (currentPath === '/spare-request/decline') {
+                const requestId = params.get('requestId');
+                if (requestId) {
+                  sessionStorage.setItem('pendingSpareDeclineRequestId', requestId);
+                  sessionStorage.setItem('postFirstLoginSuggestAvailability', '1');
+                }
               } else if (currentPath !== '/first-login' && currentPath !== '/login') {
                 // Avoid storing /first-login as the redirect target (that creates a loop back to dashboard).
                 sessionStorage.setItem('postFirstLoginRedirect', intendedPath);

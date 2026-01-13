@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { HiOutlineUserPlus, HiOutlineCalendar, HiOutlineInbox } from 'react-icons/hi2';
+import axios from 'axios';
 import Layout from '../components/Layout';
 import api from '../utils/api';
 import Modal from '../components/Modal';
@@ -24,8 +25,11 @@ interface SpareRequest {
   position?: string;
   message?: string;
   requestType: string;
+  inviteStatus?: 'pending' | 'declined';
   createdAt: string;
   filledByName?: string;
+  status?: string;
+  filledAt?: string;
 }
 
 interface MySpareRequest {
@@ -54,12 +58,16 @@ export default function Dashboard() {
   const [openRequests, setOpenRequests] = useState<SpareRequest[]>([]);
   const [mySparing, setMySparing] = useState<SpareRequest[]>([]);
   const [filledRequests, setFilledRequests] = useState<SpareRequest[]>([]);
+  const [ccRequests, setCcRequests] = useState<SpareRequest[]>([]);
   const [myRequests, setMyRequests] = useState<MySpareRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilled, setShowFilled] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SpareRequest | null>(null);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [declineRequest, setDeclineRequest] = useState<SpareRequest | null>(null);
+  const [declineComment, setDeclineComment] = useState('');
+  const [declining, setDeclining] = useState(false);
   const [cancelRequest, setCancelRequest] = useState<SpareRequest | null>(null);
   const [cancelComment, setCancelComment] = useState('');
   const [canceling, setCanceling] = useState(false);
@@ -100,17 +108,39 @@ export default function Dashboard() {
     }
   }, [loading, openRequests, mySparing, searchParams, setSearchParams, showAlert]);
 
+  // Check for declineRequestId in URL and open decline dialog when data is loaded
+  useEffect(() => {
+    const declineIdParam = searchParams.get('declineRequestId');
+    if (declineIdParam && !loading) {
+      const requestId = parseInt(declineIdParam, 10);
+      const request = openRequests.find(r => r.id === requestId);
+      if (request) {
+        if (request.requestType !== 'private') {
+          showAlert('Decline is only available for private spare requests.', 'error');
+        } else {
+          setDeclineRequest(request);
+        }
+      } else {
+        showAlert('Spare request not found (it may no longer be available).', 'error');
+      }
+      searchParams.delete('declineRequestId');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [loading, openRequests, searchParams, setSearchParams, showAlert]);
+
   const loadAllData = async () => {
     try {
-      const [openRes, mySparingRes, filledRes, myRequestsRes] = await Promise.all([
+      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes] = await Promise.all([
         api.get('/spares'),
         api.get('/spares/my-sparing'),
         api.get('/spares/filled-upcoming'),
+        api.get('/spares/cc'),
         api.get('/spares/my-requests'),
       ]);
       setOpenRequests(openRes.data);
       setMySparing(mySparingRes.data);
       setFilledRequests(filledRes.data);
+      setCcRequests(ccRes.data || []);
       // Filter out cancelled requests - only show open and filled
       setMyRequests(myRequestsRes.data.filter((r: MySpareRequest) => r.status !== 'cancelled'));
     } catch (error) {
@@ -123,10 +153,20 @@ export default function Dashboard() {
   const handleRespond = async () => {
     if (!selectedRequest) return;
 
+    const mustProvideComment =
+      selectedRequest.requestType === 'private' && selectedRequest.inviteStatus === 'declined';
+    if (mustProvideComment && !comment.trim()) {
+      showAlert(
+        'Please include a message when accepting after previously declining this private request.',
+        'warning'
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
       await api.post(`/spares/${selectedRequest.id}/respond`, {
-        comment: comment || undefined,
+        comment: comment.trim() || undefined,
       });
 
       // Reload all data
@@ -162,11 +202,14 @@ export default function Dashboard() {
       } catch {
         // ignore
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to respond to spare request:', error);
-      
+
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const data = axios.isAxiosError(error) ? (error.response?.data as { error?: string } | undefined) : undefined;
+
       // Check for specific error cases
-      if (error.response?.status === 404) {
+      if (status === 404) {
         setNotification({
           isOpen: true,
           message: 'This spare request has been deleted and is no longer available.',
@@ -176,8 +219,8 @@ export default function Dashboard() {
         await loadAllData();
         setSelectedRequest(null);
         setComment('');
-      } else if (error.response?.status === 400) {
-        const errorMessage = error.response?.data?.error || 'This spare request is no longer open.';
+      } else if (status === 400) {
+        const errorMessage = data?.error || 'This spare request is no longer open.';
         setNotification({
           isOpen: true,
           message: errorMessage,
@@ -236,40 +279,61 @@ export default function Dashboard() {
     }
   };
 
-  const handleCancelRequest = async (id: number) => {
-    const confirmed = await confirm({
-      title: 'Cancel spare request',
-      message: 'Are you sure you want to cancel this spare request?',
-      variant: 'danger',
-      confirmText: 'Yes, cancel request',
-      cancelText: 'Never mind',
-    });
-
-    if (!confirmed) {
+  const handleDecline = async () => {
+    if (!declineRequest) return;
+    if (declineRequest.requestType !== 'private') {
+      showAlert('Decline is only available for private spare requests.', 'error');
       return;
     }
 
-    // Find the request to get details for the success message
-    const request = myRequests.find((r) => r.id === id);
-
+    setDeclining(true);
     try {
-      await api.post(`/spares/${id}/cancel`);
-      // Reload all data
+      await api.post(`/spares/${declineRequest.id}/decline`, {
+        comment: declineComment.trim() || undefined,
+      });
+
       await loadAllData();
-      
-      // Show success notification
-      if (request) {
-        setNotification({
-          isOpen: true,
-          message: `Your spare request for ${request.requestedForName} has been successfully canceled.`,
-          variant: 'success',
-        });
+      setDeclineRequest(null);
+      setDeclineComment('');
+      setNotification({
+        isOpen: true,
+        message: `You declined the private spare request for ${declineRequest.requestedForName}.`,
+        variant: 'success',
+      });
+
+      // If this user just came through first-login via a decline link, optionally prompt them
+      // to set their availability after they've declined.
+      try {
+        const shouldSuggest = sessionStorage.getItem('postFirstLoginSuggestAvailability') === '1';
+        if (shouldSuggest) {
+          sessionStorage.removeItem('postFirstLoginSuggestAvailability');
+          const go = await confirm({
+            title: 'Set your availability?',
+            message:
+              "Want to set your sparing availability now so others can find you for future spare requests?",
+            confirmText: 'Set availability',
+            cancelText: 'Not now',
+            variant: 'info',
+          });
+          if (go) {
+            navigate('/availability');
+          }
+        }
+      } catch {
+        // ignore
       }
-    } catch (error) {
-      console.error('Failed to cancel request:', error);
-      showAlert('Failed to cancel request', 'error');
+    } catch (error: unknown) {
+      console.error('Failed to decline spare request:', error);
+      const msg =
+        (axios.isAxiosError(error) ? (error.response?.data as { error?: string } | undefined)?.error : undefined) ||
+        'Failed to decline. Please try again.';
+      setNotification({ isOpen: true, message: msg, variant: 'error' });
+    } finally {
+      setDeclining(false);
     }
   };
+
+  // Note: cancelling / managing spare requests is handled on the My Requests page (/my-requests).
 
   const formatDate = (dateStr: string) => {
     // Parse date string as local date to avoid timezone issues
@@ -297,7 +361,44 @@ export default function Dashboard() {
     </span>
   );
 
-  const renderRequestCard = (request: SpareRequest, showButton = true, showMessage = true, showCancelButton = false) => (
+  const statusBadge = (status?: string) => {
+    if (status === 'filled') return filledBadge;
+    if (status === 'cancelled') {
+      return (
+        <span className="px-2 py-1 rounded text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+          Cancelled
+        </span>
+      );
+    }
+    return (
+      <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
+        Open
+      </span>
+    );
+  };
+
+  const requestTypeBadge = (requestType?: string) => {
+    if (requestType === 'private') {
+      return (
+        <span className="px-2 py-1 rounded text-sm font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200">
+          Private
+        </span>
+      );
+    }
+    if (requestType === 'public') {
+      return (
+        <span className="px-2 py-1 rounded text-sm font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200">
+          Public
+        </span>
+      );
+    }
+    return null;
+  };
+
+  const renderRequestCard = (request: SpareRequest, showButton = true, showMessage = true, showCancelButton = false) => {
+    const isPrivateInviteDeclined = request.requestType === 'private' && request.inviteStatus === 'declined';
+
+    return (
     <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
       <div className="flex justify-between items-start">
         <div className="flex-1">
@@ -310,6 +411,7 @@ export default function Dashboard() {
                 Open
               </span>
             )}
+            {requestTypeBadge(request.requestType)}
             {request.position && (
               <span className="bg-primary-teal text-white px-2 py-1 rounded text-sm">
                 {request.position}
@@ -353,12 +455,26 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 ml-4">
+        <div className="flex flex-row flex-wrap gap-2 ml-4 justify-end">
+          {showButton && request.requestType === 'private' && isPrivateInviteDeclined && (
+            <span className="px-3 py-2 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+              Declined
+            </span>
+          )}
           {showButton && (
+            <Button onClick={() => setSelectedRequest(request)}>
+              {isPrivateInviteDeclined ? 'Sign Up Anyway' : 'Sign Up'}
+            </Button>
+          )}
+          {showButton && request.requestType === 'private' && !isPrivateInviteDeclined && (
             <Button
-              onClick={() => setSelectedRequest(request)}
+              variant="secondary"
+              onClick={() => {
+                setDeclineRequest(request);
+                setDeclineComment('');
+              }}
             >
-              Sign Up
+              Decline
             </Button>
           )}
           {showCancelButton && (
@@ -372,7 +488,8 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <Layout>
@@ -429,7 +546,13 @@ export default function Dashboard() {
             {myRequests.length > 0 && (
               <div>
                 <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
-                  My spare requests
+                  My spare requests{' '}
+                  <Link
+                    to="/my-requests"
+                    className="text-sm font-normal text-primary-teal hover:underline"
+                  >
+                    (manage)
+                  </Link>
                 </h2>
                 <div className="space-y-4">
                   {myRequests.map((request) => (
@@ -450,6 +573,7 @@ export default function Dashboard() {
                                 Filled
                               </span>
                             )}
+                            {requestTypeBadge(request.requestType)}
                             {request.position && (
                               <span className="bg-primary-teal text-white px-2 py-1 rounded text-sm">
                                 {request.position}
@@ -497,16 +621,56 @@ export default function Dashboard() {
                             )}
                           </div>
                         </div>
-                        {request.status === 'open' && (
-                          <div className="ml-4">
-                            <Button
-                              variant="danger"
-                              onClick={() => handleCancelRequest(request.id)}
-                            >
-                              Cancel
-                            </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Requests I've been CC'd on */}
+            {ccRequests.length > 0 && (
+              <div>
+                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                  Requests I've been CC&apos;d on
+                </h2>
+                <div className="space-y-4">
+                  {ccRequests.map((request) => (
+                    <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-2 flex-wrap">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                              Spare for {renderMe(request.requestedForName, member?.name)}
+                            </h3>
+                            {statusBadge(request.status)}
+                            {requestTypeBadge(request.requestType)}
+                            {request.position && (
+                              <span className="bg-primary-teal text-white px-2 py-1 rounded text-sm">
+                                {request.position}
+                              </span>
+                            )}
                           </div>
-                        )}
+
+                          <div className="text-gray-600 dark:text-gray-400 space-y-1">
+                            <p>
+                              <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)} at{' '}
+                              {formatTime(request.gameTime)}
+                              {request.leagueName ? <span> • {request.leagueName}</span> : null}
+                            </p>
+                            <p>
+                              <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+                              {renderMe(request.requesterName, member?.name)}
+                            </p>
+                            {request.filledByName && (
+                              <p>
+                                <span className="font-medium dark:text-gray-300">Filled by:</span>{' '}
+                                {renderMe(request.filledByName, member?.name)}
+                              </p>
+                            )}
+                            {request.message ? <p className="italic mt-2">"{request.message}"</p> : null}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -565,6 +729,7 @@ export default function Dashboard() {
                                   {request.leagueName ? ` • ${request.leagueName}` : ''}
                                 </span>
                                 {filledBadge}
+                                {requestTypeBadge(request.requestType)}
                                 {request.position && (
                                   <span className="text-xs px-2 py-0.5 rounded bg-primary-teal text-white">
                                     {request.position}
@@ -619,7 +784,9 @@ export default function Dashboard() {
 
             <div>
               <label htmlFor="comment" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Optional message for {selectedRequest.requesterName}
+                {selectedRequest.requestType === 'private' && selectedRequest.inviteStatus === 'declined'
+                  ? `Message for ${selectedRequest.requesterName} (required)`
+                  : `Optional message for ${selectedRequest.requesterName}`}
               </label>
               <textarea
                 id="comment"
@@ -627,14 +794,23 @@ export default function Dashboard() {
                 onChange={(e) => setComment(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 rows={3}
-                placeholder="Add any notes or questions..."
+                placeholder={
+                  selectedRequest.requestType === 'private' && selectedRequest.inviteStatus === 'declined'
+                    ? 'Since you previously declined this request, please explain what changed so the requester isn’t confused...'
+                    : 'Add any notes or questions...'
+                }
               />
             </div>
 
             <div className="flex space-x-3">
               <Button
                 onClick={handleRespond}
-                disabled={submitting}
+                disabled={
+                  submitting ||
+                  (selectedRequest.requestType === 'private' &&
+                    selectedRequest.inviteStatus === 'declined' &&
+                    !comment.trim())
+                }
                 className="flex-1"
               >
                 {submitting ? 'Confirming...' : 'Confirm'}
@@ -646,6 +822,61 @@ export default function Dashboard() {
                   setComment('');
                 }}
                 disabled={submitting}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!declineRequest}
+        onClose={() => {
+          setDeclineRequest(null);
+          setDeclineComment('');
+        }}
+        title="Decline private spare request"
+      >
+        {declineRequest && (
+          <div className="space-y-4">
+            <p className="text-gray-700 dark:text-gray-300">
+              You&apos;re declining a private spare request for <strong>{declineRequest.requestedForName}</strong> on{' '}
+              {formatDate(declineRequest.gameDate)} at {formatTime(declineRequest.gameTime)}
+              {declineRequest.leagueName ? ` • ${declineRequest.leagueName}` : ''}.
+            </p>
+
+            <div>
+              <label htmlFor="declineComment" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Optional message to the requester
+              </label>
+              <textarea
+                id="declineComment"
+                value={declineComment}
+                onChange={(e) => setDeclineComment(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                rows={3}
+                placeholder="If you add a message, it will be emailed to the requester."
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <Button
+                variant="danger"
+                onClick={handleDecline}
+                disabled={declining}
+                className="flex-1"
+              >
+                {declining ? 'Declining...' : 'Decline'}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setDeclineRequest(null);
+                  setDeclineComment('');
+                }}
+                disabled={declining}
                 className="flex-1"
               >
                 Cancel

@@ -115,6 +115,7 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   notification_status: text('notification_status').$type<'in_progress' | 'completed' | 'paused' | null>(),
   next_notification_at: text('next_notification_at'),
   notification_paused: integer('notification_paused').default(0).notNull(),
+  all_invites_declined_notified: integer('all_invites_declined_notified').default(0).notNull(),
 }, (table) => ({
   requesterIdIdx: index('idx_spare_requests_requester_id').on(table.requester_id),
   leagueIdIdx: index('idx_spare_requests_league_id').on(table.league_id),
@@ -127,6 +128,8 @@ export const spareRequestInvitationsSqlite = sqliteTable('spare_request_invitati
   spare_request_id: integer('spare_request_id').notNull().references(() => spareRequestsSqlite.id, { onDelete: 'cascade' }),
   member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  declined_at: text('declined_at'),
+  decline_comment: text('decline_comment'),
 }, (table) => ({
   requestIdIdx: index('idx_spare_request_invitations_request_id').on(table.spare_request_id),
   memberIdIdx: index('idx_spare_request_invitations_member_id').on(table.member_id),
@@ -338,6 +341,7 @@ export const spareRequestsPg = pgTable('spare_requests', {
   notification_status: textPg('notification_status').$type<'in_progress' | 'completed' | 'paused' | null>(),
   next_notification_at: timestamp('next_notification_at', { withTimezone: false }),
   notification_paused: integerPg('notification_paused').default(0).notNull(),
+  all_invites_declined_notified: integerPg('all_invites_declined_notified').default(0).notNull(),
 }, (table) => ({
   requesterIdIdx: indexPg('idx_spare_requests_requester_id').on(table.requester_id),
   leagueIdIdx: indexPg('idx_spare_requests_league_id').on(table.league_id),
@@ -350,6 +354,8 @@ export const spareRequestInvitationsPg = pgTable('spare_request_invitations', {
   spare_request_id: integerPg('spare_request_id').notNull().references(() => spareRequestsPg.id, { onDelete: 'cascade' }),
   member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  declined_at: timestamp('declined_at', { withTimezone: false }),
+  decline_comment: textPg('decline_comment'),
 }, (table) => ({
   requestIdIdx: indexPg('idx_spare_request_invitations_request_id').on(table.spare_request_id),
   memberIdIdx: indexPg('idx_spare_request_invitations_member_id').on(table.member_id),

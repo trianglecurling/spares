@@ -82,6 +82,15 @@ export default function FirstLogin() {
         return;
       }
 
+      // 1b) If the user came from a decline link, go back to dashboard with declineRequestId
+      // so the decline modal opens.
+      const pendingDeclineId = sessionStorage.getItem('pendingSpareDeclineRequestId');
+      if (pendingDeclineId) {
+        sessionStorage.removeItem('pendingSpareDeclineRequestId');
+        navigate(`/?declineRequestId=${pendingDeclineId}`, { replace: true });
+        return;
+      }
+
       // 2) Otherwise, if there was a stored redirect target (non-first-login), go there.
       const redirect = sessionStorage.getItem('postFirstLoginRedirect');
       const redirectPath = redirect ? redirect.split('?')[0] : null;
@@ -243,6 +252,10 @@ export default function FirstLogin() {
                       if (pendingRequestId) {
                         return "Next we'll take you back to confirm the spare request you were invited to.";
                       }
+                      const pendingDeclineId = sessionStorage.getItem('pendingSpareDeclineRequestId');
+                      if (pendingDeclineId) {
+                        return "Next we'll take you back to decline the spare request you were invited to.";
+                      }
                       return "Now let's set your sparing availability so others can find you when they need a spare.";
                     })()}
                   </p>
@@ -252,6 +265,8 @@ export default function FirstLogin() {
                   {loading ? 'Loading...' : (() => {
                     const pendingRequestId = sessionStorage.getItem('pendingSpareAcceptRequestId');
                     if (pendingRequestId) return 'Continue to spare request';
+                    const pendingDeclineId = sessionStorage.getItem('pendingSpareDeclineRequestId');
+                    if (pendingDeclineId) return 'Continue to decline spare request';
                     return 'Set my availability';
                   })()}
                 </Button>

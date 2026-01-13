@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
-export default function RespondToSpare() {
+export default function DeclineSpare() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { isLoading } = useAuth();
@@ -14,7 +14,7 @@ export default function RespondToSpare() {
       // We only need requestId to continue the flow.
       setTimeout(() => {
         if (requestId) {
-          navigate(`/?requestId=${requestId}`);
+          navigate(`/?declineRequestId=${requestId}`);
         } else {
           navigate('/');
         }
@@ -30,7 +30,7 @@ export default function RespondToSpare() {
           Loading...
         </h1>
         <p className="text-gray-600">
-          Please wait while we redirect you to respond to the spare request.
+          Please wait while we redirect you to decline the private spare request.
         </p>
       </div>
     </div>
