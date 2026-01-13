@@ -19,11 +19,13 @@ export default function FirstLogin() {
   const [loading, setLoading] = useState(false);
   const [smsDisabled, setSmsDisabled] = useState<boolean | null>(null);
 
+  // If someone manually hits /first-login after they've already completed it, send them home.
+  // Important: do NOT auto-redirect on completion, because handleComplete decides where to go.
   useEffect(() => {
-    if (member?.firstLoginCompleted) {
-      navigate('/');
+    if (member?.firstLoginCompleted && step === 1) {
+      navigate('/', { replace: true });
     }
-  }, [member, navigate]);
+  }, [member, navigate, step]);
 
   useEffect(() => {
     const load = async () => {
@@ -70,6 +72,26 @@ export default function FirstLogin() {
     try {
       await api.post('/members/me/complete-first-login');
       updateMember({ ...member!, firstLoginCompleted: true });
+
+      // 1) If the user came from a spare accept link, go back to the dashboard with requestId
+      // so the accept popup opens.
+      const pendingRequestId = sessionStorage.getItem('pendingSpareAcceptRequestId');
+      if (pendingRequestId) {
+        sessionStorage.removeItem('pendingSpareAcceptRequestId');
+        navigate(`/?requestId=${pendingRequestId}`, { replace: true });
+        return;
+      }
+
+      // 2) Otherwise, if there was a stored redirect target (non-first-login), go there.
+      const redirect = sessionStorage.getItem('postFirstLoginRedirect');
+      const redirectPath = redirect ? redirect.split('?')[0] : null;
+      if (redirect && redirectPath && redirectPath !== '/first-login' && redirectPath !== '/') {
+        sessionStorage.removeItem('postFirstLoginRedirect');
+        navigate(redirect, { replace: true });
+        return;
+      }
+
+      // 3) Default: new user should set availability
       navigate('/availability');
     } catch (error) {
       console.error('Failed to complete first login:', error);
@@ -216,13 +238,22 @@ export default function FirstLogin() {
                     You're all set!
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Now let's set your sparing availability so others can find you when they need a
-                    spare.
+                    {(() => {
+                      const pendingRequestId = sessionStorage.getItem('pendingSpareAcceptRequestId');
+                      if (pendingRequestId) {
+                        return "Next we'll take you back to confirm the spare request you were invited to.";
+                      }
+                      return "Now let's set your sparing availability so others can find you when they need a spare.";
+                    })()}
                   </p>
                 </div>
 
                 <Button onClick={handleComplete} disabled={loading} className="w-full">
-                  {loading ? 'Loading...' : 'Set my availability'}
+                  {loading ? 'Loading...' : (() => {
+                    const pendingRequestId = sessionStorage.getItem('pendingSpareAcceptRequestId');
+                    if (pendingRequestId) return 'Continue to spare request';
+                    return 'Set my availability';
+                  })()}
                 </Button>
               </div>
             )}

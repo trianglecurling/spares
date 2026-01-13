@@ -42,8 +42,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (urlToken) {
       localStorage.setItem('authToken', urlToken);
       setToken(urlToken);
-      // Remove token from URL
-      window.history.replaceState({}, '', window.location.pathname);
+      // Remove token from URL but preserve any other query params (e.g. requestId)
+      const params = new URLSearchParams(window.location.search);
+      params.delete('token');
+      const newSearch = params.toString();
+      window.history.replaceState(
+        {},
+        '',
+        window.location.pathname + (newSearch ? `?${newSearch}` : '')
+      );
     }
 
     // Verify existing token
@@ -66,7 +73,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           // Redirect to first login if needed
           if (!response.data.member.firstLoginCompleted) {
-            navigate('/first-login');
+            // Preserve where the user was trying to go so we can return after first-login setup.
+            // Special-case spare accept links so we can restore the requestId flow reliably.
+            const intendedPath = window.location.pathname + window.location.search;
+            try {
+              const currentPath = window.location.pathname;
+              const currentSearch = window.location.search;
+              const params = new URLSearchParams(currentSearch);
+
+              if (currentPath === '/spare-request/respond') {
+                const requestId = params.get('requestId');
+                if (requestId) {
+                  sessionStorage.setItem('pendingSpareAcceptRequestId', requestId);
+                  sessionStorage.setItem('postFirstLoginSuggestAvailability', '1');
+                }
+              } else if (currentPath !== '/first-login' && currentPath !== '/login') {
+                // Avoid storing /first-login as the redirect target (that creates a loop back to dashboard).
+                sessionStorage.setItem('postFirstLoginRedirect', intendedPath);
+              }
+            } catch {
+              // ignore
+            }
+            navigate('/first-login', { replace: true });
           }
         } catch (error: any) {
           // If database is not configured (503), don't clear token - just fail silently
@@ -92,7 +120,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setMember(newMember);
     
     if (!newMember.firstLoginCompleted) {
-      navigate('/first-login');
+      try {
+        if (redirectTo) {
+          sessionStorage.setItem('postFirstLoginRedirect', redirectTo);
+        }
+      } catch {
+        // ignore
+      }
+      navigate('/first-login', { replace: true });
     } else {
       // Use the redirect destination if provided, otherwise default to dashboard
       navigate(redirectTo || '/');

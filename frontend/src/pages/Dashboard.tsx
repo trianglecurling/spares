@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { HiOutlineUserPlus, HiOutlineCalendar, HiOutlineInbox } from 'react-icons/hi2';
 import Layout from '../components/Layout';
 import api from '../utils/api';
@@ -49,6 +49,7 @@ export default function Dashboard() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [openRequests, setOpenRequests] = useState<SpareRequest[]>([]);
   const [mySparing, setMySparing] = useState<SpareRequest[]>([]);
@@ -139,6 +140,28 @@ export default function Dashboard() {
         message: `You've successfully signed up to spare for ${selectedRequest.requestedForName}!`,
         variant: 'success',
       });
+
+      // If this user just came through first-login via a spare accept link, optionally prompt them
+      // to set their availability after they've successfully accepted.
+      try {
+        const shouldSuggest = sessionStorage.getItem('postFirstLoginSuggestAvailability') === '1';
+        if (shouldSuggest) {
+          sessionStorage.removeItem('postFirstLoginSuggestAvailability');
+          const go = await confirm({
+            title: 'Set your availability?',
+            message:
+              "Want to set your sparing availability now so others can find you for future spare requests?",
+            confirmText: 'Set availability',
+            cancelText: 'Not now',
+            variant: 'info',
+          });
+          if (go) {
+            navigate('/availability');
+          }
+        }
+      } catch {
+        // ignore
+      }
     } catch (error: any) {
       console.error('Failed to respond to spare request:', error);
       
