@@ -104,6 +104,43 @@ export default function Dashboard() {
         // Clear the requestId from URL
         searchParams.delete('requestId');
         setSearchParams(searchParams, { replace: true });
+      } else {
+        // If the request isn't in the open list, it was likely filled/cancelled/deleted already.
+        // Ask the backend for the status so we can show a specific message.
+        (async () => {
+          try {
+            const res = await api.get(`/spares/${requestId}/status`);
+            const status = (res.data?.status as string | undefined) || 'unknown';
+
+            const message =
+              status === 'filled'
+                ? 'Sorry, this spare request has already been filled. See your dashboard for any unfilled spare requests.'
+                : 'Sorry, this spare request has been deleted and is no longer available. See your dashboard for any unfilled spare requests.';
+
+            setNotification({ isOpen: true, message, variant: 'error' });
+          } catch (error: unknown) {
+            const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+            // 404 -> deleted; 403 -> not available to this user (treat as deleted for UX)
+            if (status === 404 || status === 403) {
+              setNotification({
+                isOpen: true,
+                message:
+                  'Sorry, this spare request has been deleted and is no longer available. See your dashboard for any unfilled spare requests.',
+                variant: 'error',
+              });
+            } else {
+              setNotification({
+                isOpen: true,
+                message:
+                  'Sorry, we could not load that spare request. See your dashboard for any unfilled spare requests.',
+                variant: 'error',
+              });
+            }
+          } finally {
+            searchParams.delete('requestId');
+            setSearchParams(searchParams, { replace: true });
+          }
+        })();
       }
     }
   }, [loading, openRequests, mySparing, searchParams, setSearchParams, showAlert]);

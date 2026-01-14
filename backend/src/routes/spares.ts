@@ -442,6 +442,71 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }));
   });
 
+  // Get basic status for a spare request (used for email deep-link feedback)
+  fastify.get('/spares/:id/status', async (request, reply) => {
+    const member = (request as any).member as Member;
+    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+
+    const { id } = request.params as { id: string };
+    const requestId = parseInt(id, 10);
+    if (!Number.isFinite(requestId)) {
+      return reply.code(400).send({ error: 'Invalid request id' });
+    }
+
+    const { db, schema } = getDrizzleDb();
+
+    const rows = await db
+      .select({
+        id: schema.spareRequests.id,
+        requester_id: schema.spareRequests.requester_id,
+        request_type: schema.spareRequests.request_type,
+        status: schema.spareRequests.status,
+      })
+      .from(schema.spareRequests)
+      .where(eq(schema.spareRequests.id, requestId))
+      .limit(1);
+
+    const spareRequest = rows[0] as any | undefined;
+    if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
+
+    // Public requests: any authenticated member can check status.
+    if (spareRequest.request_type === 'public') {
+      return { id: spareRequest.id, status: spareRequest.status };
+    }
+
+    // Private requests: only requester, invited members, or CC members can check status.
+    if (spareRequest.requester_id === member.id) {
+      return { id: spareRequest.id, status: spareRequest.status };
+    }
+
+    const invite = await db
+      .select({ id: schema.spareRequestInvitations.id })
+      .from(schema.spareRequestInvitations)
+      .where(
+        and(
+          eq(schema.spareRequestInvitations.spare_request_id, requestId),
+          eq(schema.spareRequestInvitations.member_id, member.id)
+        )
+      )
+      .limit(1);
+    if (invite.length > 0) {
+      return { id: spareRequest.id, status: spareRequest.status };
+    }
+
+    const cc = await db
+      .select({ id: schema.spareRequestCcs.id })
+      .from(schema.spareRequestCcs)
+      .where(
+        and(eq(schema.spareRequestCcs.spare_request_id, requestId), eq(schema.spareRequestCcs.member_id, member.id))
+      )
+      .limit(1);
+    if (cc.length > 0) {
+      return { id: spareRequest.id, status: spareRequest.status };
+    }
+
+    return reply.code(403).send({ error: 'Forbidden' });
+  });
+
   // Invite more people to a private spare request (requester only)
   fastify.post('/spares/:id/invite', async (request, reply) => {
     const member = (request as any).member as Member;
