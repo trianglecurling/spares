@@ -18,6 +18,7 @@ import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } fro
 import { generateToken, generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
 import { logEvent } from '../services/observability.js';
+import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
@@ -514,7 +515,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .set({ all_invites_declined_notified: 0 })
       .where(eq(schema.spareRequests.id, requestId));
 
+    let inviteNotificationGeneration = Number((spareRequest as any).notification_generation ?? 0);
     if (toNotifyIds.length > 0) {
+      // Bump notification_generation so reinvites can send again, while still deduping double-submits.
+      await db
+        .update(schema.spareRequests)
+        .set({ notification_generation: sql`${schema.spareRequests.notification_generation} + 1` })
+        .where(eq(schema.spareRequests.id, requestId));
+
+      const genRows = await db
+        .select({ notification_generation: schema.spareRequests.notification_generation })
+        .from(schema.spareRequests)
+        .where(eq(schema.spareRequests.id, requestId))
+        .limit(1);
+      inviteNotificationGeneration = Number(genRows[0]?.notification_generation ?? inviteNotificationGeneration);
+
       // Compute invited member names list (for email copy)
       const allInvites = await db
         .select({ name: schema.members.name })
@@ -535,28 +550,45 @@ export async function spareRoutes(fastify: FastifyInstance) {
       for (const recipient of toNotify) {
         const acceptToken = generateEmailLinkToken(recipient);
         if (recipient.email && recipient.email_subscribed === 1) {
-          sendSpareRequestEmail(
-            recipient.email,
-            recipient.name,
-            member.name,
+          sendOnceWithDeliveryClaim(
             {
-              leagueName,
-              requestedForName: spareRequest.requested_for_name,
-              gameDate: spareRequest.game_date,
-              gameTime: spareRequest.game_time,
-              position: spareRequest.position || undefined,
-              message: spareRequest.message || undefined,
-              invitedMemberNames,
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration: inviteNotificationGeneration,
+              channel: 'email',
+              kind: 'spare_request',
             },
-            acceptToken,
-            requestId
+            () =>
+              sendSpareRequestEmail(
+                recipient.email!,
+                recipient.name,
+                member.name,
+                {
+                  leagueName,
+                  requestedForName: spareRequest.requested_for_name,
+                  gameDate: spareRequest.game_date,
+                  gameTime: spareRequest.game_time,
+                  position: spareRequest.position || undefined,
+                  message: spareRequest.message || undefined,
+                  invitedMemberNames,
+                },
+                acceptToken,
+                requestId
+              )
           ).catch((e: any) => console.error('Error sending private invite email:', e));
         }
 
         if (recipient.phone && (recipient as any).opted_in_sms === 1) {
-          sendSpareRequestSMS(recipient.phone, member.name, spareRequest.game_date, spareRequest.game_time).catch((e: any) =>
-            console.error('Error sending private invite SMS:', e)
-          );
+          sendOnceWithDeliveryClaim(
+            {
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration: inviteNotificationGeneration,
+              channel: 'sms',
+              kind: 'spare_request',
+            },
+            () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
+          ).catch((e: any) => console.error('Error sending private invite SMS:', e));
         }
       }
     }
@@ -592,8 +624,16 @@ export async function spareRoutes(fastify: FastifyInstance) {
         notification_status: null,
         next_notification_at: null,
         notification_paused: 0,
+        notification_generation: sql`${schema.spareRequests.notification_generation} + 1`,
       })
       .where(eq(schema.spareRequests.id, requestId));
+
+    const genRows = await db
+      .select({ notification_generation: schema.spareRequests.notification_generation })
+      .from(schema.spareRequests)
+      .where(eq(schema.spareRequests.id, requestId))
+      .limit(1);
+    const notificationGeneration = Number(genRows[0]?.notification_generation ?? 0);
 
     // Kick off public notification flow (same logic as create public request)
     const leagueId = spareRequest.league_id;
@@ -650,26 +690,43 @@ export async function spareRoutes(fastify: FastifyInstance) {
       for (const recipient of recipientMembers) {
         if (recipient.email) {
           const acceptToken = generateEmailLinkToken(recipient);
-          sendSpareRequestEmail(
-            recipient.email,
-            recipient.name,
-            member.name,
+          sendOnceWithDeliveryClaim(
             {
-              leagueName,
-              requestedForName: spareRequest.requested_for_name,
-              gameDate: spareRequest.game_date,
-              gameTime: spareRequest.game_time,
-              position: spareRequest.position || undefined,
-              message: spareRequest.message || undefined,
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration,
+              channel: 'email',
+              kind: 'spare_request',
             },
-            acceptToken,
-            requestId
+            () =>
+              sendSpareRequestEmail(
+                recipient.email!,
+                recipient.name,
+                member.name,
+                {
+                  leagueName,
+                  requestedForName: spareRequest.requested_for_name,
+                  gameDate: spareRequest.game_date,
+                  gameTime: spareRequest.game_time,
+                  position: spareRequest.position || undefined,
+                  message: spareRequest.message || undefined,
+                },
+                acceptToken,
+                requestId
+              )
           ).catch((e: any) => console.error('Error sending public spare email:', e));
         }
         if (recipient.phone && (recipient as any).opted_in_sms === 1) {
-          sendSpareRequestSMS(recipient.phone, member.name, spareRequest.game_date, spareRequest.game_time).catch((e: any) =>
-            console.error('Error sending public spare SMS:', e)
-          );
+          sendOnceWithDeliveryClaim(
+            {
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration,
+              channel: 'sms',
+              kind: 'spare_request',
+            },
+            () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
+          ).catch((e: any) => console.error('Error sending public spare SMS:', e));
         }
       }
       if (recipientMembers.length > 0) {
@@ -1075,10 +1132,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
         status: 'open',
         had_cancellation: 0,
         notification_paused: 0,
+        notification_generation: 1,
       })
       .returning();
 
     const requestId = result[0].id;
+    const notificationGeneration = Number((result[0] as any).notification_generation ?? 1);
 
     // Best-effort analytics (do not block)
     logEvent({
@@ -1193,21 +1252,31 @@ export async function spareRoutes(fastify: FastifyInstance) {
           const acceptToken = generateEmailLinkToken(recipient);
           
           // Don't await - send in background
-          sendSpareRequestEmail(
-            recipient.email,
-            recipient.name,
-            member.name,
+          sendOnceWithDeliveryClaim(
             {
-              leagueName,
-              requestedForName: body.requestedForName,
-              gameDate: body.gameDate,
-              gameTime: body.gameTime,
-              position: body.position,
-              message: body.message,
-              invitedMemberNames: invitedMemberNames,
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration,
+              channel: 'email',
+              kind: 'spare_request',
             },
-            acceptToken,
-            requestId
+            () =>
+              sendSpareRequestEmail(
+                recipient.email!,
+                recipient.name,
+                member.name,
+                {
+                  leagueName,
+                  requestedForName: body.requestedForName,
+                  gameDate: body.gameDate,
+                  gameTime: body.gameTime,
+                  position: body.position,
+                  message: body.message,
+                  invitedMemberNames: invitedMemberNames,
+                },
+                acceptToken,
+                requestId
+              )
           ).catch((error) => {
             console.error('Error sending spare request email:', error);
           });
@@ -1215,11 +1284,15 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
         if (recipient.phone && recipient.opted_in_sms === 1) {
           // Don't await - send in background
-          sendSpareRequestSMS(
-            recipient.phone,
-            member.name,
-            body.gameDate,
-            body.gameTime
+          sendOnceWithDeliveryClaim(
+            {
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration,
+              channel: 'sms',
+              kind: 'spare_request',
+            },
+            () => sendSpareRequestSMS(recipient.phone!, member.name, body.gameDate, body.gameTime)
           ).catch((error) => {
             console.error('Error sending spare request SMS:', error);
           });
@@ -1329,20 +1402,30 @@ export async function spareRoutes(fastify: FastifyInstance) {
             const acceptToken = generateEmailLinkToken(recipient);
             
             try {
-              await sendSpareRequestEmail(
-                recipient.email,
-                recipient.name,
-                member.name,
+              await sendOnceWithDeliveryClaim(
                 {
-                  leagueName,
-                  requestedForName: body.requestedForName,
-                  gameDate: body.gameDate,
-                  gameTime: body.gameTime,
-                  position: body.position,
-                  message: body.message,
+                  spareRequestId: requestId,
+                  memberId: recipient.id,
+                  notificationGeneration,
+                  channel: 'email',
+                  kind: 'spare_request',
                 },
-                acceptToken,
-                requestId
+                () =>
+                  sendSpareRequestEmail(
+                    recipient.email!,
+                    recipient.name,
+                    member.name,
+                    {
+                      leagueName,
+                      requestedForName: body.requestedForName,
+                      gameDate: body.gameDate,
+                      gameTime: body.gameTime,
+                      position: body.position,
+                      message: body.message,
+                    },
+                    acceptToken,
+                    requestId
+                  )
               );
             } catch (error) {
               console.error('Error sending spare request email:', error);
@@ -1351,11 +1434,15 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
           if (recipient.phone && recipient.opted_in_sms === 1) {
             try {
-              await sendSpareRequestSMS(
-                recipient.phone,
-                member.name,
-                body.gameDate,
-                body.gameTime
+              await sendOnceWithDeliveryClaim(
+                {
+                  spareRequestId: requestId,
+                  memberId: recipient.id,
+                  notificationGeneration,
+                  channel: 'sms',
+                  kind: 'spare_request',
+                },
+                () => sendSpareRequestSMS(recipient.phone!, member.name, body.gameDate, body.gameTime)
               );
             } catch (error) {
               console.error('Error sending spare request SMS:', error);
@@ -1856,6 +1943,18 @@ export async function spareRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'You can only re-issue open requests' });
     }
 
+    // Bump notification_generation so this re-issue can legitimately resend notifications.
+    await db
+      .update(schema.spareRequests)
+      .set({ notification_generation: sql`${schema.spareRequests.notification_generation} + 1` })
+      .where(eq(schema.spareRequests.id, requestId));
+    const genRows = await db
+      .select({ notification_generation: schema.spareRequests.notification_generation })
+      .from(schema.spareRequests)
+      .where(eq(schema.spareRequests.id, requestId))
+      .limit(1);
+    const notificationGeneration = Number(genRows[0]?.notification_generation ?? 0);
+
     // Update message if provided
     if (body.message !== undefined) {
       await db
@@ -1916,34 +2015,50 @@ export async function spareRoutes(fastify: FastifyInstance) {
           
           console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
           // Don't await - send in background
-          sendSpareRequestEmail(
-            recipient.email,
-            recipient.name,
-            member.name,
+          sendOnceWithDeliveryClaim(
             {
-              requestedForName: spareRequest.requested_for_name,
-              gameDate: spareRequest.game_date,
-              gameTime: spareRequest.game_time,
-              position: spareRequest.position || undefined,
-              message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
-              invitedMemberNames: invitedMemberNames,
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration,
+              channel: 'email',
+              kind: 'spare_request',
             },
-            acceptToken,
-            requestId
-          ).then(() => {
-            console.log(`[Re-issue] Email function completed for ${recipient.email}`);
-          }).catch((error) => {
-            console.error(`[Re-issue] Error sending spare request email to ${recipient.email}:`, error);
-          });
+            () =>
+              sendSpareRequestEmail(
+                recipient.email!,
+                recipient.name,
+                member.name,
+                {
+                  requestedForName: spareRequest.requested_for_name,
+                  gameDate: spareRequest.game_date,
+                  gameTime: spareRequest.game_time,
+                  position: spareRequest.position || undefined,
+                  message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
+                  invitedMemberNames: invitedMemberNames,
+                },
+                acceptToken,
+                requestId
+              )
+          )
+            .then(() => {
+              console.log(`[Re-issue] Email function completed for ${recipient.email}`);
+            })
+            .catch((error) => {
+              console.error(`[Re-issue] Error sending spare request email to ${recipient.email}:`, error);
+            });
         }
 
         if (recipient.phone && recipient.opted_in_sms === 1) {
           // Don't await - send in background
-          sendSpareRequestSMS(
-            recipient.phone,
-            member.name,
-            spareRequest.game_date,
-            spareRequest.game_time
+          sendOnceWithDeliveryClaim(
+            {
+              spareRequestId: requestId,
+              memberId: recipient.id,
+              notificationGeneration,
+              channel: 'sms',
+              kind: 'spare_request',
+            },
+            () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
           ).catch((error) => {
             console.error('Error sending spare request SMS:', error);
           });
@@ -2043,33 +2158,49 @@ export async function spareRoutes(fastify: FastifyInstance) {
             
             console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
             // Don't await - send in background
-            sendSpareRequestEmail(
-              recipient.email,
-              recipient.name,
-              member.name,
+            sendOnceWithDeliveryClaim(
               {
-                requestedForName: spareRequest.requested_for_name,
-                gameDate: spareRequest.game_date,
-                gameTime: spareRequest.game_time,
-                position: spareRequest.position || undefined,
-                message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
+                spareRequestId: requestId,
+                memberId: recipient.id,
+                notificationGeneration,
+                channel: 'email',
+                kind: 'spare_request',
               },
-              acceptToken,
-              requestId
-            ).then(() => {
-              console.log(`[Re-issue] Email function completed for ${recipient.email}`);
-            }).catch((error) => {
-              console.error(`[Re-issue] Error sending spare request email to ${recipient.email}:`, error);
-            });
+              () =>
+                sendSpareRequestEmail(
+                  recipient.email!,
+                  recipient.name,
+                  member.name,
+                  {
+                    requestedForName: spareRequest.requested_for_name,
+                    gameDate: spareRequest.game_date,
+                    gameTime: spareRequest.game_time,
+                    position: spareRequest.position || undefined,
+                    message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
+                  },
+                  acceptToken,
+                  requestId
+                )
+            )
+              .then(() => {
+                console.log(`[Re-issue] Email function completed for ${recipient.email}`);
+              })
+              .catch((error) => {
+                console.error(`[Re-issue] Error sending spare request email to ${recipient.email}:`, error);
+              });
           }
 
           if (recipient.phone && recipient.opted_in_sms === 1) {
             // Don't await - send in background
-            sendSpareRequestSMS(
-              recipient.phone,
-              member.name,
-              spareRequest.game_date,
-              spareRequest.game_time
+            sendOnceWithDeliveryClaim(
+              {
+                spareRequestId: requestId,
+                memberId: recipient.id,
+                notificationGeneration,
+                channel: 'sms',
+                kind: 'spare_request',
+              },
+              () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
             ).catch((error) => {
               console.error('Error sending spare request SMS:', error);
             });

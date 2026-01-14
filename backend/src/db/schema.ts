@@ -157,6 +157,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'filled', 'cancelled')),
       filled_by_member_id INTEGER,
       filled_at DATETIME,
+      notification_generation INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requester_id) REFERENCES members(id) ON DELETE CASCADE,
@@ -307,6 +308,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE spare_request_invitations ADD COLUMN declined_at DATETIME', table: 'spare_request_invitations', column: 'declined_at' },
     { sql: 'ALTER TABLE spare_request_invitations ADD COLUMN decline_comment TEXT', table: 'spare_request_invitations', column: 'decline_comment' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0', table: 'spare_requests', column: 'all_invites_declined_notified' },
+    { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_generation INTEGER DEFAULT 0', table: 'spare_requests', column: 'notification_generation' },
   ];
 
   for (const migration of migrations) {
@@ -401,6 +403,29 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   } catch (e: any) {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
+
+  // Idempotency log for spare-request deliveries (email/SMS) per notification generation
+  await execSQL(db, `
+    CREATE TABLE IF NOT EXISTS spare_request_notification_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      spare_request_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      notification_generation INTEGER NOT NULL,
+      channel TEXT NOT NULL CHECK(channel IN ('email', 'sms')),
+      kind TEXT NOT NULL,
+      claimed_at DATETIME,
+      sent_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(spare_request_id, member_id, notification_generation, channel, kind)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_req ON spare_request_notification_deliveries(spare_request_id);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_member ON spare_request_notification_deliveries(member_id);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_claimed ON spare_request_notification_deliveries(spare_request_id, claimed_at);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_sent ON spare_request_notification_deliveries(spare_request_id, sent_at);
+  `);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -523,6 +548,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'filled', 'cancelled')),
       filled_by_member_id INTEGER,
       filled_at DATETIME,
+      notification_generation INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requester_id) REFERENCES members(id) ON DELETE CASCADE,
@@ -673,6 +699,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE spare_request_invitations ADD COLUMN declined_at DATETIME',
     'ALTER TABLE spare_request_invitations ADD COLUMN decline_comment TEXT',
     'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0',
+    'ALTER TABLE spare_requests ADD COLUMN notification_generation INTEGER DEFAULT 0',
   ];
 
   for (const migrationSQL of migrations) {
@@ -731,6 +758,29 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   } catch {
     // ignore
   }
+
+  // Idempotency log for spare-request deliveries (email/SMS) per notification generation
+  execSQLSync(db, `
+    CREATE TABLE IF NOT EXISTS spare_request_notification_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      spare_request_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      notification_generation INTEGER NOT NULL,
+      channel TEXT NOT NULL CHECK(channel IN ('email', 'sms')),
+      kind TEXT NOT NULL,
+      claimed_at DATETIME,
+      sent_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (spare_request_id) REFERENCES spare_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(spare_request_id, member_id, notification_generation, channel, kind)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_req ON spare_request_notification_deliveries(spare_request_id);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_member ON spare_request_notification_deliveries(member_id);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_claimed ON spare_request_notification_deliveries(spare_request_id, claimed_at);
+    CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_sent ON spare_request_notification_deliveries(spare_request_id, sent_at);
+  `);
 
   // Migrate existing admins to server admins (sync version)
   try {

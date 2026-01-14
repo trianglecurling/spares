@@ -5,6 +5,7 @@ import { generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTime, getCurrentTimestamp, getCurrentTimeAsync } from '../utils/time.js';
 import { eq, and, or, sql, asc, isNull, isNotNull, lte, lt } from 'drizzle-orm';
 import { Member } from '../types.js';
+import { sendOnceWithDeliveryClaim } from './spareRequestDelivery.js';
 
 let lastDbErrorLogAt = 0;
 const DB_ERROR_LOG_THROTTLE_MS = 30_000;
@@ -42,6 +43,7 @@ interface SpareRequest {
   status: string;
   notification_status: string | null;
   next_notification_at: string | null;
+  notification_generation?: number | null;
 }
 
 
@@ -205,6 +207,7 @@ export async function processNextNotification(): Promise<void> {
     console.log(`[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`);
 
     try {
+      const generation = Number((spareRequest as any).notification_generation ?? 0);
       // League name (optional; older requests may not have league_id)
       let leagueName: string | undefined;
       if ((spareRequest as any).league_id) {
@@ -234,33 +237,67 @@ export async function processNextNotification(): Promise<void> {
           updated_at: new Date().toISOString(),
         } as Member;
         const acceptToken = generateEmailLinkToken(memberForToken);
-        console.log(`[Notification Processor] Calling sendSpareRequestEmail for ${nextInQueue.email} (request ${spareRequest.id})`);
-        await sendSpareRequestEmail(
-          nextInQueue.email,
-          nextInQueue.name,
-          requester.name,
+        const sent = await sendOnceWithDeliveryClaim(
           {
-            leagueName,
-            requestedForName: spareRequest.requested_for_name,
-            gameDate: spareRequest.game_date,
-            gameTime: spareRequest.game_time,
-            position: spareRequest.position || undefined,
-            message: spareRequest.message || undefined,
+            spareRequestId: spareRequest.id,
+            memberId: nextInQueue.member_id,
+            notificationGeneration: generation,
+            channel: 'email',
+            kind: 'spare_request',
           },
-          acceptToken,
-          spareRequest.id
+          async () => {
+            console.log(
+              `[Notification Processor] Calling sendSpareRequestEmail for ${nextInQueue.email} (request ${spareRequest.id})`
+            );
+            await sendSpareRequestEmail(
+              nextInQueue.email!,
+              nextInQueue.name,
+              requester.name,
+              {
+                leagueName,
+                requestedForName: spareRequest.requested_for_name,
+                gameDate: spareRequest.game_date,
+                gameTime: spareRequest.game_time,
+                position: spareRequest.position || undefined,
+                message: spareRequest.message || undefined,
+              },
+              acceptToken,
+              spareRequest.id
+            );
+            console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
+          }
         );
-        console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
+        if (!sent) {
+          console.log(
+            `[Notification Processor] Skipping duplicate email to ${nextInQueue.email} for request ${spareRequest.id}`
+          );
+        }
       }
 
       if (nextInQueue.phone && nextInQueue.opted_in_sms === 1) {
-        await sendSpareRequestSMS(
-          nextInQueue.phone,
-          requester.name,
-          spareRequest.game_date,
-          spareRequest.game_time
+        const sent = await sendOnceWithDeliveryClaim(
+          {
+            spareRequestId: spareRequest.id,
+            memberId: nextInQueue.member_id,
+            notificationGeneration: generation,
+            channel: 'sms',
+            kind: 'spare_request',
+          },
+          async () => {
+            await sendSpareRequestSMS(
+              nextInQueue.phone!,
+              requester.name,
+              spareRequest.game_date,
+              spareRequest.game_time
+            );
+            console.log(`[Notification Processor] SMS sent to ${nextInQueue.phone}`);
+          }
         );
-        console.log(`[Notification Processor] SMS sent to ${nextInQueue.phone}`);
+        if (!sent) {
+          console.log(
+            `[Notification Processor] Skipping duplicate SMS to ${nextInQueue.phone} for request ${spareRequest.id}`
+          );
+        }
       }
 
       // Mark this member as notified (and clear claim)

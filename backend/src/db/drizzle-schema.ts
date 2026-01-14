@@ -108,6 +108,7 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   status: text('status').default('open').notNull().$type<'open' | 'filled' | 'cancelled'>(),
   filled_by_member_id: integer('filled_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   filled_at: text('filled_at'),
+  notification_generation: integer('notification_generation').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
   notifications_sent_at: text('notifications_sent_at'),
@@ -190,6 +191,30 @@ export const spareRequestNotificationQueueSqlite = sqliteTable('spare_request_no
   notifiedIdx: index('idx_notification_queue_notified').on(table.spare_request_id, table.notified_at),
   claimedIdx: index('idx_notification_queue_claimed').on(table.spare_request_id, table.claimed_at),
   uniqueRequestMember: uniqueIndex('spare_request_notification_queue_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
+}));
+
+export const spareRequestNotificationDeliveriesSqlite = sqliteTable('spare_request_notification_deliveries', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  spare_request_id: integer('spare_request_id').notNull().references(() => spareRequestsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  notification_generation: integer('notification_generation').notNull(),
+  channel: text('channel').notNull().$type<'email' | 'sms'>(),
+  kind: text('kind').notNull(),
+  claimed_at: text('claimed_at'),
+  sent_at: text('sent_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  reqIdx: index('idx_spare_request_notification_deliveries_req').on(table.spare_request_id),
+  memberIdx: index('idx_spare_request_notification_deliveries_member').on(table.member_id),
+  claimedIdx: index('idx_spare_request_notification_deliveries_claimed').on(table.spare_request_id, table.claimed_at),
+  sentIdx: index('idx_spare_request_notification_deliveries_sent').on(table.spare_request_id, table.sent_at),
+  uniqueKey: uniqueIndex('spare_request_notification_deliveries_unique_key').on(
+    table.spare_request_id,
+    table.member_id,
+    table.notification_generation,
+    table.channel,
+    table.kind
+  ),
 }));
 
 export const feedbackSqlite = sqliteTable('feedback', {
@@ -334,6 +359,7 @@ export const spareRequestsPg = pgTable('spare_requests', {
   status: textPg('status').default('open').notNull().$type<'open' | 'filled' | 'cancelled'>(),
   filled_by_member_id: integerPg('filled_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   filled_at: timestamp('filled_at', { withTimezone: false }),
+  notification_generation: integerPg('notification_generation').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
   notifications_sent_at: timestamp('notifications_sent_at', { withTimezone: false }),
@@ -418,6 +444,30 @@ export const spareRequestNotificationQueuePg = pgTable('spare_request_notificati
   uniqueRequestMember: uniqueIndexPg('spare_request_notification_queue_spare_request_id_member_id_unique').on(table.spare_request_id, table.member_id),
 }));
 
+export const spareRequestNotificationDeliveriesPg = pgTable('spare_request_notification_deliveries', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  spare_request_id: integerPg('spare_request_id').notNull().references(() => spareRequestsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  notification_generation: integerPg('notification_generation').notNull(),
+  channel: textPg('channel').notNull().$type<'email' | 'sms'>(),
+  kind: textPg('kind').notNull(),
+  claimed_at: timestamp('claimed_at', { withTimezone: false }),
+  sent_at: timestamp('sent_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  reqIdx: indexPg('idx_spare_request_notification_deliveries_req').on(table.spare_request_id),
+  memberIdx: indexPg('idx_spare_request_notification_deliveries_member').on(table.member_id),
+  claimedIdx: indexPg('idx_spare_request_notification_deliveries_claimed').on(table.spare_request_id, table.claimed_at),
+  sentIdx: indexPg('idx_spare_request_notification_deliveries_sent').on(table.spare_request_id, table.sent_at),
+  uniqueKey: uniqueIndexPg('spare_request_notification_deliveries_unique_key').on(
+    table.spare_request_id,
+    table.member_id,
+    table.notification_generation,
+    table.channel,
+    table.kind
+  ),
+}));
+
 export const feedbackPg = pgTable('feedback', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   category: textPg('category').notNull().$type<'suggestion' | 'problem' | 'question' | 'general'>(),
@@ -472,6 +522,7 @@ export const sqliteSchema = {
   spareResponses: spareResponsesSqlite,
   serverConfig: serverConfigSqlite,
   spareRequestNotificationQueue: spareRequestNotificationQueueSqlite,
+  spareRequestNotificationDeliveries: spareRequestNotificationDeliveriesSqlite,
   feedback: feedbackSqlite,
   observabilityEvents: observabilityEventsSqlite,
   dailyActivity: dailyActivitySqlite,
@@ -491,6 +542,7 @@ export const pgSchema = {
   spareResponses: spareResponsesPg,
   serverConfig: serverConfigPg,
   spareRequestNotificationQueue: spareRequestNotificationQueuePg,
+  spareRequestNotificationDeliveries: spareRequestNotificationDeliveriesPg,
   feedback: feedbackPg,
   observabilityEvents: observabilityEventsPg,
   dailyActivity: dailyActivityPg,
