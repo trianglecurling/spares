@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../utils/api';
 import Button from '../components/Button';
@@ -15,9 +15,29 @@ export default function Login() {
   const [tempToken, setTempToken] = useState('');
   const { login } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Get the intended destination from location state
   const from = (location.state as any)?.from?.pathname || null;
+
+  useEffect(() => {
+    let isActive = true;
+
+    api.get('/install/status')
+      .then((response) => {
+        if (!isActive) return;
+        if (response.data?.configured === false) {
+          navigate('/install', { replace: true });
+        }
+      })
+      .catch(() => {
+        // If the backend isn't reachable yet, stay on login.
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [navigate]);
 
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -16,6 +16,7 @@ export default function AdminDatabaseConfig() {
   const [postgresUsername, setPostgresUsername] = useState('');
   const [postgresPassword, setPostgresPassword] = useState('');
   const [postgresSSL, setPostgresSSL] = useState(false);
+  const [hasExistingPostgresConfig, setHasExistingPostgresConfig] = useState(false);
   const [adminEmails, setAdminEmails] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -42,6 +43,7 @@ export default function AdminDatabaseConfig() {
           setPostgresUsername(config.postgres.username || '');
           setPostgresPassword(''); // Don't populate password
           setPostgresSSL(config.postgres.ssl || false);
+          setHasExistingPostgresConfig(true);
         }
         if (config.adminEmails) {
           setAdminEmails(config.adminEmails.join(', '));
@@ -82,7 +84,7 @@ export default function AdminDatabaseConfig() {
           path: sqlitePath,
         };
       } else {
-        if (!postgresHost || !postgresDatabase || !postgresUsername || !postgresPassword) {
+        if (!postgresHost || !postgresDatabase || !postgresUsername || (!postgresPassword && !hasExistingPostgresConfig)) {
           setError('Please fill in all PostgreSQL connection fields');
           setLoading(false);
           return;
@@ -92,9 +94,11 @@ export default function AdminDatabaseConfig() {
           port: postgresPort,
           database: postgresDatabase,
           username: postgresUsername,
-          password: postgresPassword,
           ssl: postgresSSL,
         };
+        if (postgresPassword) {
+          payload.postgres.password = postgresPassword;
+        }
       }
 
       await api.post('/database-config', payload);

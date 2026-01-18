@@ -1,0 +1,75 @@
+I want to significantly expand the scope of this project. I want this app to become more than a spares management system. I want it to be a full curling league management system. Let's cover the desired functionality.
+
+First of all, some terminology:
+Game - a game is a single match between exactly two teams. A game is played on a sheet and is scheduled during a draw.
+Draw - a draw is a date and time when games are played. The number of games in a draw is less than or equal to the number of sheets.
+Sheet - a sheet is the field of play for a game. For example, with four sheets, four simultaneous games can be played.
+
+1. League management
+Right now we have a simple way for admins to define leagues. This is a great start for setting up leagues.
+
+2. Sheets
+Games are played on sheets. We need a way to define our sheets and name them (this will be used later to build league schedules).
+
+3. Teams
+Each league will need a way to add teams. Depending on the league format (teams or doubles), each team will have some number of players.
+
+Teams: 4 players - Lead, second, third, fourth. Additionally, one of those players is designated the "Skip" and another is designated the "Vice" (the skip and the vice cannot be the same player). We should permit 3-person teams, in which case there is no "second" (so we have lead, third, and fourth, again, with a skip and a vice). We should also allow for up to 4 alternates, but it will be unusual to have any alternates, so the UI should not expose them unless present.
+
+Doubles: 2 players - Player 1 and Player 2. We should also allow up to 2 alternates, similar to above.
+
+The members that make up a team should come from the list of members (i.e. the user should be able to build teams using an autocomplete).
+
+All teams can also have a team name, although if the team name is omitted, the implied team name is "Team <Last name of the skip>" (for a 'teams' team) or "<Player 1 Last Name>/<Player 2 Last Name>" (for a 'doubles' team).
+
+4. Divisions
+A league has one or more into which teams are divided. By default, each league has one division, but more can be created. Divisions can be named. When creating a team, if there are multiple divisions, the user should be able to select which division the team belongs in (otherwise they are automatically assigned to the default division). If multiple divisions exist, we need UI to reassign the division of each team.
+
+5. Draws
+Each league has multiple draws which are defined by the league parameters (day and draw times of the league, minus exceptions). We should add the ability to create additional day+time one-off draws for a given league. By default, any given draw has all sheets available, but we should be able to specify a subset of sheets that are available for the draw.
+
+6. Rounds
+A league has one round by default. Rounds will be used to generate the games (i.e. match-ups) for the league. Each potential league game will be assigned to a round. We'll talk more about how rounds work when we get into schedule generation.
+
+7. Games
+A game is a single match-up between two teams. A game takes place at a specific date and time, and it takes place on a specific sheet, however, games may be "unscheduled" meaning they do not have a date, time, or sheet assignment.
+
+8. Results
+Each game will have a result. The result is recorded as a list of non-negative integers for each team. The values in this list are successive tiebreaker point values. For example, the league manager might record a win as a 1 for the winning team and a 0 for the losing team, but the second value might be the score of the game, so the first team's result would be (1, 7) and the second team's would be (0, 4). In the event of a tie between two teams from win/loss record, the tie could be broken by cumulative points scored.
+
+We will always be able to produce a ranking of teams throughout the season using the game results.
+
+9. Ranking
+Using the results describe above, we can generate a ranking of teams, from first place to last place. Teams may be tied, in which case they will be listed with the same rank, with the next placing team skipping the appropriate number of tanks (e.g. first place, first place, third place). We also need a league setting that determines whether or not head-to-head should be used as the first tiebreaker, since that can't be captured in the list of scores.
+
+10. Game scheduling
+There are two ways of scheduling games: manual and automatic.
+Manual: Games are entered, one by one, into available slots (the slots are determined by draw and sheet availability). Manually entered games have: game date, game time, sheet assignment, team 1, and team 2. Games may also be "unscheduled" meaning they have no game date, time, or sheet assignment.
+Automatic: We will automatically generate games to construct a round robin for the selected divisions. When automatically generating games, these principles should be followed:
+a) The user will be able to specify multiple round robin strategies for game generation. Each strategy is given a priority. Strategies with the higher priority (lower number) are completed before the next is considered, but it's also possible for multiple strategies to have the same priority, in which case they each generate an equal number of games per team.
+
+A round robin strategy includes:
+- intra-division or cross-division games
+- number of games per team (by default, this will be the number of teams in the division minus 1)
+a) To the extent possible, teams should play on each sheet roughly an equal number of times.
+b) To the extent possible, teams should be assigned as "Team 1" and as "Team 2" roughly an equal number of times
+c) If there are not enough game slots to complete the round robin strategy, schedule a partial round robin (i.e. teams will not necessarily play every other team). The user will have the option to leave the rest of the games as "unscheduled" or simply not generate them at all.
+d) If there are more game slots than we need for a full round robin, leave those slots with no games scheduled.
+
+Automatic game generation does not include tournament-style playoff games; those games can be entered manually by the league manager.
+
+The generated game schedule should be previewed to the user so they can review before saving it.
+
+The automatic game generation should also be able to take in prioritized bye requests from each team. This means that we will need a way for a team representative to specify their bye priorities prior to schedule generation. To the extent possible, we should honor the highest priority bye requests from each team.
+
+11. League participant dashboard experience
+Because this is a relatively large scope expansion, I'm thinking we should have 2 tabs below the CTA buttons on the dashboard - "Leagues" and "Sparing". When on the sparing tab, we show all the sparing details that we show currently. When on the leagues tab, we should see a heading for each league that the user is part of, followed by details about upcoming games. League participants should be able to view their upcoming games. They should be able to see who they are playing and what sheet they are on. Participants should be able to easily request a spare for an upcoming game - we would automatically fill in the league and draw, for example.
+
+12. Leagues page
+We will open up the leagues page to all users, not just admins. Of course, only admins can edit leagues, but everyone can view them. From the leagues page, anyone will be able to drill into a league to see the league schedule, the teams (and the team rosters), rankings/points, etc. A future addition might be some automated statkeeping and analytics, such as calculating the chances of a team finishing at a certain rank.
+
+IMPLEMENTATION PLAN:
+[Build the implementation plan here]
+
+QUESTIONS:
+[Ask any questions about the design and/or implementation here]

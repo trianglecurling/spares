@@ -99,11 +99,11 @@ export default function Install() {
 
   if (checking) {
     return (
-      <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
         <HelpHeader />
         <div className="flex-grow flex items-center justify-center">
           <div className="text-center">
-            <p className="text-gray-600">Checking installation status...</p>
+          <p className="text-gray-600 dark:text-gray-400">Checking installation status...</p>
           </div>
         </div>
         <Footer />
@@ -112,26 +112,26 @@ export default function Install() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <HelpHeader />
       <div className="flex-grow">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="bg-white rounded-lg shadow p-8">
-            <h1 className="text-3xl font-bold mb-6" style={{ color: '#121033' }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
+            <h1 className="text-3xl font-bold mb-6 text-[#121033] dark:text-gray-100">
               Database Installation
             </h1>
-            <p className="text-gray-600 mb-8">
+            <p className="text-gray-600 dark:text-gray-400 mb-8">
               Configure your database connection and administrator accounts to complete the installation.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Database Type Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Database Type
                 </label>
                 <div className="space-y-2">
-                  <label className="flex items-center">
+                  <label className="flex items-center text-gray-800 dark:text-gray-200">
                     <input
                       type="radio"
                       name="databaseType"
@@ -142,7 +142,7 @@ export default function Install() {
                     />
                     <span>SQLite (Local database file)</span>
                   </label>
-                  <label className="flex items-center">
+                  <label className="flex items-center text-gray-800 dark:text-gray-200">
                     <input
                       type="radio"
                       name="databaseType"
@@ -159,17 +159,17 @@ export default function Install() {
               {/* SQLite Configuration */}
               {databaseType === 'sqlite' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Database File Path
                   </label>
                   <input
                     type="text"
                     value={sqlitePath}
                     onChange={(e) => setSqlitePath(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                     placeholder="./data/spares.sqlite"
                   />
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                     Path relative to the backend directory where the database file will be stored.
                   </p>
                 </div>
@@ -179,14 +179,14 @@ export default function Install() {
               {databaseType === 'postgres' && (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Host
                     </label>
                     <input
                       type="text"
                       value={postgresHost}
                       onChange={(e) => setPostgresHost(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                       placeholder="your-server.postgres.database.azure.com"
                       required
                     />
@@ -194,28 +194,28 @@ export default function Install() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Port
                       </label>
                       <input
                         type="number"
                         value={postgresPort}
                         onChange={(e) => setPostgresPort(parseInt(e.target.value) || 5432)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                         min="1"
                         max="65535"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Database Name
                       </label>
                       <input
                         type="text"
                         value={postgresDatabase}
                         onChange={(e) => setPostgresDatabase(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                         placeholder="spares"
                         required
                       />
@@ -223,33 +223,33 @@ export default function Install() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Username
                     </label>
                     <input
                       type="text"
                       value={postgresUsername}
                       onChange={(e) => setPostgresUsername(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Password
                     </label>
                     <input
                       type="password"
                       value={postgresPassword}
                       onChange={(e) => setPostgresPassword(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="flex items-center">
+                    <label className="flex items-center text-gray-700 dark:text-gray-300">
                       <input
                         type="checkbox"
                         checked={postgresSSL}
@@ -264,24 +264,24 @@ export default function Install() {
 
               {/* Admin Emails */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Administrator Email Addresses
                 </label>
                 <textarea
                   value={adminEmails}
                   onChange={(e) => setAdminEmails(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
                   rows={3}
                   placeholder="admin1@example.com, admin2@example.com"
                   required
                 />
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   Enter email addresses separated by commas. These users will have administrator privileges.
                 </p>
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded">
                   {error}
                 </div>
               )}

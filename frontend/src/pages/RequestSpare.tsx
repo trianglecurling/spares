@@ -315,7 +315,12 @@ export default function RequestSpare() {
       navigate('/my-requests');
     } catch (error) {
       console.error('Failed to create spare request:', error);
-      showAlert('Failed to create spare request. Please try again.', 'error');
+      const responseError = (error as any)?.response?.data?.error;
+      const errorMessage =
+        typeof responseError === 'string' && responseError.trim()
+          ? responseError
+          : 'Failed to create spare request. Please try again.';
+      showAlert(errorMessage, 'error');
     } finally {
       setSubmitting(false);
     }
