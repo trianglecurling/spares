@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "serviceName": "spares-frontend",
+  "exporterOtlpEndpoint": "http://localhost:4318/v1/traces",
+  "backendOrigin": "http://localhost:3016",
+  "appVersion": ""
+}

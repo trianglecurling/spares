@@ -1,3 +1,4 @@
+import './otel.js';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { config } from './config.js';
