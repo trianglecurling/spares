@@ -1,8 +1,8 @@
 {
   "enabled": true,
   "serviceName": "spares-frontend",
-  "exporterOtlpEndpoint": "http://localhost:4318/v1/traces",
-  "exporterOtlpLogsEndpoint": "http://localhost:4318/v1/logs",
+  "exporterOtlpEndpoint": "http://observability.tccnc.club:4318/v1/traces",
+  "exporterOtlpLogsEndpoint": "http://observability.tccnc.club:4318/v1/logs",
   "backendOrigin": "http://localhost:3016",
   "captureConsoleLogs": true,
   "appVersion": ""
