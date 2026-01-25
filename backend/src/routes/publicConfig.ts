@@ -9,7 +9,10 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
     const { db, schema } = getDrizzleDb();
 
     const rows = await db
-      .select({ disable_sms: schema.serverConfig.disable_sms })
+      .select({
+        disable_sms: schema.serverConfig.disable_sms,
+        capture_frontend_logs: schema.serverConfig.capture_frontend_logs,
+      })
       .from(schema.serverConfig)
       .where(eq(schema.serverConfig.id, 1))
       .limit(1);
@@ -18,6 +21,7 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
 
     return {
       disableSms: cfg?.disable_sms === 1,
+      captureFrontendLogs: cfg?.capture_frontend_logs !== 0,
     };
   });
 }

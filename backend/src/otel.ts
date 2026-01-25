@@ -12,6 +12,32 @@ import {
 } from '@opentelemetry/semantic-conventions';
 
 const otelEnabled = process.env.OTEL_ENABLED !== 'false';
+let backendLogCaptureEnabled = process.env.OTEL_CAPTURE_CONSOLE_LOGS !== 'false';
+
+export const setBackendLogCaptureEnabled = (enabled: boolean) => {
+  backendLogCaptureEnabled = enabled;
+};
+
+export const loadBackendLogCaptureFromDb = async () => {
+  try {
+    const [{ eq }, { getDrizzleDb }] = await Promise.all([
+      import('drizzle-orm'),
+      import('./db/drizzle-db.js'),
+    ]);
+    const { db, schema } = getDrizzleDb();
+    const rows = await db
+      .select({ capture_backend_logs: schema.serverConfig.capture_backend_logs })
+      .from(schema.serverConfig)
+      .where(eq(schema.serverConfig.id, 1))
+      .limit(1);
+    const cfg = rows[0];
+    if (cfg) {
+      setBackendLogCaptureEnabled(cfg.capture_backend_logs !== 0);
+    }
+  } catch {
+    // Best-effort: if DB isn't ready, keep env-driven default.
+  }
+};
 
 if (otelEnabled) {
   const baseEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
@@ -20,8 +46,6 @@ if (otelEnabled) {
     `${baseEndpoint.replace(/\/$/, '')}/v1/traces`;
   const logsEndpoint =
     process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT || `${baseEndpoint.replace(/\/$/, '')}/v1/logs`;
-  const captureConsoleLogs = process.env.OTEL_CAPTURE_CONSOLE_LOGS !== 'false';
-
   const sdk = new NodeSDK({
     resource: new Resource({
       [SEMRESATTRS_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'spares-backend',
@@ -54,71 +78,68 @@ if (otelEnabled) {
       }
     | undefined;
 
-  if (captureConsoleLogs) {
-    const logger = logs.getLogger('console');
-    const consoleRef = {
-      log: console.log.bind(console),
-      info: console.info.bind(console),
-      warn: console.warn.bind(console),
-      error: console.error.bind(console),
-      debug: console.debug.bind(console),
-    };
-    originalConsole = consoleRef;
+  const logger = logs.getLogger('console');
+  const consoleRef = {
+    log: console.log.bind(console),
+    info: console.info.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+    debug: console.debug.bind(console),
+  };
+  originalConsole = consoleRef;
 
-    const formatArgs = (args: unknown[]) =>
-      args
-        .map((arg) => {
-          if (arg instanceof Error) return arg.stack || arg.message;
-          if (typeof arg === 'string') return arg;
-          try {
-            return JSON.stringify(arg);
-          } catch {
-            return String(arg);
-          }
-        })
-        .join(' ');
+  const formatArgs = (args: unknown[]) =>
+    args
+      .map((arg) => {
+        if (arg instanceof Error) return arg.stack || arg.message;
+        if (typeof arg === 'string') return arg;
+        try {
+          return JSON.stringify(arg);
+        } catch {
+          return String(arg);
+        }
+      })
+      .join(' ');
 
-    const emitLog = (severityNumber: SeverityNumber, severityText: string, args: unknown[]) => {
-      logger.emit({
-        severityNumber,
-        severityText,
-        body: formatArgs(args),
-      });
-    };
+  const emitLog = (severityNumber: SeverityNumber, severityText: string, args: unknown[]) => {
+    if (!backendLogCaptureEnabled) return;
+    logger.emit({
+      severityNumber,
+      severityText,
+      body: formatArgs(args),
+    });
+  };
 
-    console.log = (...args: unknown[]) => {
-      consoleRef.log(...args);
-      emitLog(SeverityNumber.INFO, 'INFO', args);
-    };
-    console.info = (...args: unknown[]) => {
-      consoleRef.info(...args);
-      emitLog(SeverityNumber.INFO, 'INFO', args);
-    };
-    console.warn = (...args: unknown[]) => {
-      consoleRef.warn(...args);
-      emitLog(SeverityNumber.WARN, 'WARN', args);
-    };
-    console.error = (...args: unknown[]) => {
-      consoleRef.error(...args);
-      emitLog(SeverityNumber.ERROR, 'ERROR', args);
-    };
-    console.debug = (...args: unknown[]) => {
-      consoleRef.debug(...args);
-      emitLog(SeverityNumber.DEBUG, 'DEBUG', args);
-    };
-  }
+  console.log = (...args: unknown[]) => {
+    consoleRef.log(...args);
+    emitLog(SeverityNumber.INFO, 'INFO', args);
+  };
+  console.info = (...args: unknown[]) => {
+    consoleRef.info(...args);
+    emitLog(SeverityNumber.INFO, 'INFO', args);
+  };
+  console.warn = (...args: unknown[]) => {
+    consoleRef.warn(...args);
+    emitLog(SeverityNumber.WARN, 'WARN', args);
+  };
+  console.error = (...args: unknown[]) => {
+    consoleRef.error(...args);
+    emitLog(SeverityNumber.ERROR, 'ERROR', args);
+  };
+  console.debug = (...args: unknown[]) => {
+    consoleRef.debug(...args);
+    emitLog(SeverityNumber.DEBUG, 'DEBUG', args);
+  };
 
   const shutdown = async () => {
     try {
-      if (captureConsoleLogs) {
-        // Restore original console methods before shutdown.
-        if (originalConsole) {
-          console.log = originalConsole.log;
-          console.info = originalConsole.info;
-          console.warn = originalConsole.warn;
-          console.error = originalConsole.error;
-          console.debug = originalConsole.debug;
-        }
+      // Restore original console methods before shutdown.
+      if (originalConsole) {
+        console.log = originalConsole.log;
+        console.info = originalConsole.info;
+        console.warn = originalConsole.warn;
+        console.error = originalConsole.error;
+        console.debug = originalConsole.debug;
       }
       await sdk.shutdown();
     } catch (error) {

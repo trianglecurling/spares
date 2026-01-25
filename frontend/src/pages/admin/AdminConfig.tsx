@@ -5,6 +5,7 @@ import api from '../../utils/api';
 import Button from '../../components/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhone } from '../../utils/phone';
+import { setFrontendLogCaptureEnabled } from '../../otel';
 
 interface ServerConfig {
   twilioApiKeySid: string | null;
@@ -16,6 +17,8 @@ interface ServerConfig {
   testMode: boolean;
   disableEmail: boolean;
   disableSms: boolean;
+  captureFrontendLogs: boolean;
+  captureBackendLogs: boolean;
   testCurrentTime: string | null;
   notificationDelaySeconds: number;
   updatedAt: string | null;
@@ -40,6 +43,8 @@ export default function AdminConfig() {
     testMode: false,
     disableEmail: false,
     disableSms: false,
+    captureFrontendLogs: true,
+    captureBackendLogs: true,
     testCurrentTime: '',
     notificationDelaySeconds: 180,
   });
@@ -62,6 +67,8 @@ export default function AdminConfig() {
         testMode: response.data.testMode || false,
         disableEmail: response.data.disableEmail || false,
         disableSms: response.data.disableSms || false,
+        captureFrontendLogs: response.data.captureFrontendLogs ?? true,
+        captureBackendLogs: response.data.captureBackendLogs ?? true,
         testCurrentTime: response.data.testCurrentTime || '',
         notificationDelaySeconds: response.data.notificationDelaySeconds || 180,
       });
@@ -109,6 +116,12 @@ export default function AdminConfig() {
       if (formData.disableSms !== config?.disableSms) {
         payload.disableSms = formData.disableSms;
       }
+      if (formData.captureFrontendLogs !== config?.captureFrontendLogs) {
+        payload.captureFrontendLogs = formData.captureFrontendLogs;
+      }
+      if (formData.captureBackendLogs !== config?.captureBackendLogs) {
+        payload.captureBackendLogs = formData.captureBackendLogs;
+      }
       if (formData.testCurrentTime !== (config?.testCurrentTime || '')) {
         payload.testCurrentTime = formData.testCurrentTime || null;
       }
@@ -119,6 +132,7 @@ export default function AdminConfig() {
       await api.patch('/config', payload);
       setMessage({ type: 'success', text: 'Server configuration updated successfully' });
       await loadConfig();
+      setFrontendLogCaptureEnabled(formData.captureFrontendLogs);
       
       // Clear password fields after successful save
       setFormData({
@@ -268,6 +282,56 @@ export default function AdminConfig() {
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
                   When enabled, SMS messages will be printed to the console instead of being sent, regardless of test mode.
+                </p>
+              </div>
+            </div>
+
+            {/* Observability Configuration */}
+            <div className="border-b dark:border-gray-700 pb-6">
+              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                Observability
+              </h2>
+              <div className="space-y-4">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="captureFrontendLogs"
+                    checked={formData.captureFrontendLogs}
+                    onChange={(e) =>
+                      setFormData({ ...formData, captureFrontendLogs: e.target.checked })
+                    }
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <label
+                    htmlFor="captureFrontendLogs"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Capture frontend console logs
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                  When enabled, browser console logs are forwarded to the OpenTelemetry pipeline.
+                </p>
+
+                <div className="flex items-center mt-4">
+                  <input
+                    type="checkbox"
+                    id="captureBackendLogs"
+                    checked={formData.captureBackendLogs}
+                    onChange={(e) =>
+                      setFormData({ ...formData, captureBackendLogs: e.target.checked })
+                    }
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <label
+                    htmlFor="captureBackendLogs"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Capture backend console logs
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                  When enabled, server console logs are forwarded to the OpenTelemetry pipeline.
                 </p>
               </div>
             </div>

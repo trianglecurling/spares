@@ -10,6 +10,7 @@ import { sendSMS } from '../services/sms.js';
 import { getDatabaseConfig, saveDatabaseConfig } from '../db/config.js';
 import { resetDatabaseState, testDatabaseConnection } from '../db/index.js';
 import type { DatabaseConfig } from '../db/config.js';
+import { setBackendLogCaptureEnabled } from '../otel.js';
 
 const updateConfigSchema = z.object({
   twilioApiKeySid: z.string().optional(),
@@ -22,6 +23,8 @@ const updateConfigSchema = z.object({
   testMode: z.boolean().optional(),
   disableEmail: z.boolean().optional(),
   disableSms: z.boolean().optional(),
+  captureFrontendLogs: z.boolean().optional(),
+  captureBackendLogs: z.boolean().optional(),
   testCurrentTime: z.string().nullable().optional(),
   notificationDelaySeconds: z.number().int().min(1).optional(),
 });
@@ -60,6 +63,8 @@ export async function configRoutes(fastify: FastifyInstance) {
         disableSms: false,
         testCurrentTime: null,
         notificationDelaySeconds: 180,
+        captureFrontendLogs: true,
+        captureBackendLogs: true,
         updatedAt: null,
       };
     }
@@ -74,6 +79,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       testMode: config.test_mode === 1,
       disableEmail: config.disable_email === 1,
       disableSms: config.disable_sms === 1,
+      captureFrontendLogs: config.capture_frontend_logs !== 0,
+      captureBackendLogs: config.capture_backend_logs !== 0,
       testCurrentTime: config.test_current_time,
       notificationDelaySeconds: config.notification_delay_seconds ?? 180,
       updatedAt: config.updated_at,
@@ -281,6 +288,12 @@ export async function configRoutes(fastify: FastifyInstance) {
     if (body.disableSms !== undefined) {
       updateData.disable_sms = body.disableSms ? 1 : 0;
     }
+    if (body.captureFrontendLogs !== undefined) {
+      updateData.capture_frontend_logs = body.captureFrontendLogs ? 1 : 0;
+    }
+    if (body.captureBackendLogs !== undefined) {
+      updateData.capture_backend_logs = body.captureBackendLogs ? 1 : 0;
+    }
     if (body.testCurrentTime !== undefined) {
       // Convert string to Date object for PostgreSQL timestamp column
       updateData.test_current_time = body.testCurrentTime ? new Date(body.testCurrentTime) : null;
@@ -314,6 +327,10 @@ export async function configRoutes(fastify: FastifyInstance) {
         const { clearEmailClient } = await import('../services/email.js');
         clearEmailClient();
       }
+
+      if (body.captureBackendLogs !== undefined) {
+        setBackendLogCaptureEnabled(body.captureBackendLogs);
+      }
     }
 
     const updatedConfigs = await db
@@ -334,6 +351,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       testMode: updatedConfig.test_mode === 1,
       disableEmail: updatedConfig.disable_email === 1,
       disableSms: updatedConfig.disable_sms === 1,
+      captureFrontendLogs: updatedConfig.capture_frontend_logs !== 0,
+      captureBackendLogs: updatedConfig.capture_backend_logs !== 0,
       testCurrentTime: updatedConfig.test_current_time,
       notificationDelaySeconds: updatedConfig.notification_delay_seconds ?? 180,
       updatedAt: updatedConfig.updated_at,

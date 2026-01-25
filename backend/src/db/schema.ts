@@ -227,6 +227,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       test_mode INTEGER DEFAULT 0,
       disable_email INTEGER DEFAULT 0,
       disable_sms INTEGER DEFAULT 0,
+      capture_frontend_logs INTEGER DEFAULT 1,
+      capture_backend_logs INTEGER DEFAULT 1,
       test_current_time DATETIME,
       notification_delay_seconds INTEGER DEFAULT 180,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -296,6 +298,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE server_config ADD COLUMN test_mode INTEGER DEFAULT 0', table: 'server_config', column: 'test_mode' },
     { sql: 'ALTER TABLE server_config ADD COLUMN disable_email INTEGER DEFAULT 0', table: 'server_config', column: 'disable_email' },
     { sql: 'ALTER TABLE server_config ADD COLUMN disable_sms INTEGER DEFAULT 0', table: 'server_config', column: 'disable_sms' },
+    { sql: 'ALTER TABLE server_config ADD COLUMN capture_frontend_logs INTEGER DEFAULT 1', table: 'server_config', column: 'capture_frontend_logs' },
+    { sql: 'ALTER TABLE server_config ADD COLUMN capture_backend_logs INTEGER DEFAULT 1', table: 'server_config', column: 'capture_backend_logs' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notifications_sent_at DATETIME', table: 'spare_requests', column: 'notifications_sent_at' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN had_cancellation INTEGER DEFAULT 0', table: 'spare_requests', column: 'had_cancellation' },
     { sql: 'ALTER TABLE server_config ADD COLUMN test_current_time DATETIME', table: 'server_config', column: 'test_current_time' },

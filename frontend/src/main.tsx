@@ -5,15 +5,34 @@ import './index.css';
 import { initOtel, type RuntimeOtelConfig } from './otel';
 
 const loadRuntimeOtelConfig = async (): Promise<RuntimeOtelConfig | undefined> => {
+  let runtimeConfig: RuntimeOtelConfig | undefined;
+
   try {
     const response = await fetch('/otel-config.json', { cache: 'no-store' });
-    if (!response.ok) return undefined;
-    const data = (await response.json()) as RuntimeOtelConfig;
-    if (!data || typeof data !== 'object') return undefined;
-    return data;
+    if (response.ok) {
+      const data = (await response.json()) as RuntimeOtelConfig;
+      if (data && typeof data === 'object') {
+        runtimeConfig = data;
+      }
+    }
   } catch {
-    return undefined;
+    runtimeConfig = undefined;
   }
+
+  try {
+    const response = await fetch('/api/public-config', { cache: 'no-store' });
+    if (response.ok) {
+      const data = (await response.json()) as { captureFrontendLogs?: boolean };
+      if (typeof data?.captureFrontendLogs === 'boolean') {
+        runtimeConfig = runtimeConfig || {};
+        runtimeConfig.captureConsoleLogs = data.captureFrontendLogs;
+      }
+    }
+  } catch {
+    // Ignore public config errors; fall back to runtime config or Vite env.
+  }
+
+  return runtimeConfig;
 };
 
 const startApp = async () => {
