@@ -14,9 +14,7 @@ processors:
 
 exporters:
   otlp:
-    endpoint: observability.tccnc.club:4317
-    tls:
-      insecure: true
+    endpoint: observability.tccnc.club:4431
     headers:
       # Example (Honeycomb): x-honeycomb-team: ${HONEYCOMB_API_KEY}
   logging:
