@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HiChevronDown, HiOutlineClipboardDocument, HiPlus } from 'react-icons/hi2';
 import Layout from '../components/Layout';
-import api from '../utils/api';
+import api, { formatApiError } from '../utils/api';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import NotificationModal from '../components/NotificationModal';
@@ -142,7 +142,7 @@ export default function MyRequests() {
       setPastLoaded(true);
     } catch (error) {
       console.error('Failed to load past requests:', error);
-      setPastError('Failed to load past requests');
+      setPastError(formatApiError(error, 'Failed to load past requests'));
     } finally {
       setPastLoading(false);
     }
@@ -178,7 +178,7 @@ export default function MyRequests() {
       }
     } catch (error) {
       console.error('Failed to cancel request:', error);
-      showAlert('Failed to cancel request', 'error');
+      showAlert(formatApiError(error, 'Failed to cancel request'), 'error');
     }
   };
 
@@ -213,7 +213,7 @@ export default function MyRequests() {
       setReissueMessage('');
     } catch (error) {
       console.error('Failed to re-issue request:', error);
-      showAlert('Failed to re-issue request', 'error');
+      showAlert(formatApiError(error, 'Failed to re-issue request'), 'error');
     } finally {
       setReissuing(false);
     }
@@ -235,7 +235,7 @@ export default function MyRequests() {
       console.error('Failed to load invite modal data:', e);
       setInvitees([]);
       setInvitationStatuses([]);
-      showAlert('Failed to load invitation data', 'error');
+      showAlert(formatApiError(e, 'Failed to load invitation data'), 'error');
     } finally {
       setLoadingInvitations(false);
     }
@@ -256,10 +256,9 @@ export default function MyRequests() {
       setInviteRequest(null);
       setSelectedInviteIds(new Set());
       setInvitationStatuses([]);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to invite more members:', e);
-      const msg = e.response?.data?.error || 'Failed to invite members';
-      showAlert(msg, 'error');
+      showAlert(formatApiError(e, 'Failed to invite members'), 'error');
     } finally {
       setInviting(false);
     }
@@ -286,10 +285,9 @@ export default function MyRequests() {
         showAlert('Converted to public.', 'success');
       }
       await loadRequests();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to make public:', e);
-      const msg = e.response?.data?.error || 'Failed to convert to public';
-      showAlert(msg, 'error');
+      showAlert(formatApiError(e, 'Failed to convert to public'), 'error');
     }
   };
 
@@ -306,7 +304,7 @@ export default function MyRequests() {
       }));
     } catch (error) {
       console.error('Failed to pause notifications:', error);
-      showAlert('Failed to pause notifications', 'error');
+      showAlert(formatApiError(error, 'Failed to pause notifications'), 'error');
     } finally {
       setPausing(null);
     }
@@ -325,7 +323,7 @@ export default function MyRequests() {
       }));
     } catch (error) {
       console.error('Failed to unpause notifications:', error);
-      showAlert('Failed to unpause notifications', 'error');
+      showAlert(formatApiError(error, 'Failed to unpause notifications'), 'error');
     } finally {
       setPausing(null);
     }

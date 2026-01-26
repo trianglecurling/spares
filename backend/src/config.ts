@@ -8,6 +8,7 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   jwtSecret: process.env.JWT_SECRET || 'change-this-secret-key',
   databasePath: process.env.DATABASE_PATH || './data/spares.sqlite',
+  timeZone: process.env.TIME_ZONE || 'America/New_York',
   
   admins: (process.env.SERVER_ADMINS || '').split(',').map(email => email.trim()).filter(Boolean),
   

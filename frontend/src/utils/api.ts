@@ -38,5 +38,24 @@ api.interceptors.response.use(
   }
 );
 
+export const formatApiError = (error: unknown, fallback: string) => {
+  if (axios.isAxiosError(error)) {
+    const serverError = error.response?.data?.error;
+    if (typeof serverError === 'string' && serverError.trim().length > 0) {
+      return `${fallback}: ${serverError}`;
+    }
+    const status = error.response?.status;
+    if (status) {
+      return `${fallback} (status ${status}). Please try again.`;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return `${fallback}: ${error.message}`;
+  }
+
+  return fallback;
+};
+
 export default api;
 

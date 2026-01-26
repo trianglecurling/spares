@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { eq, sql, asc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin } from '../utils/auth.js';
-import { Member, League, LeagueDrawTime } from '../types.js';
+import { Member, League } from '../types.js';
+import { config } from '../config.js';
 
 const createLeagueSchema = z.object({
   name: z.string().min(1),
@@ -33,6 +34,56 @@ function normalizeDateString(value: any): string {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)));
+}
+
+function toDateParts(value: string) {
+  const [year, month, day] = value.split('-').map((part) => parseInt(part, 10));
+  return { year, month, day };
+}
+
+function formatDateString(year: number, month: number, day: number) {
+  return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day
+    .toString()
+    .padStart(2, '0')}`;
+}
+
+function addDays(dateStr: string, days: number) {
+  const { year, month, day } = toDateParts(dateStr);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatDateString(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+function getDayOfWeek(dateStr: string) {
+  const { year, month, day } = toDateParts(dateStr);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+function getTodayDateString(timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === 'year')?.value ?? '0000';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '01';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '01';
+  return `${year}-${month}-${day}`;
+}
+
+function getTimePartsInTimeZone(timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10);
+  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
+  const second = parseInt(parts.find((p) => p.type === 'second')?.value ?? '0', 10);
+  return { hour, minute, second };
 }
 
 export async function leagueRoutes(fastify: FastifyInstance) {
@@ -112,61 +163,41 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const exceptions = new Set(exceptionsRows.map((ex: any) => normalizeDateString(ex.exception_date)));
 
     const games: { date: string; time: string }[] = [];
-    
-    // Parse dates carefully to avoid timezone issues
-    // We assume the date strings are "YYYY-MM-DD" and should be treated as local dates
-    // Or better yet, just work with the string components for comparison?
-    // For date math, using UTC for "midnight" usually works best to avoid DST issues
-    
-    // Create date objects at UTC midnight
-    const startDate = new Date(league.start_date + 'T00:00:00Z');
-    const endDate = new Date(league.end_date + 'T00:00:00Z');
-    
-    const today = new Date();
-    // Set today to UTC midnight for comparison
-    const todayMidnight = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    const timeZone = config.timeZone;
+    const todayDateStr = getTodayDateString(timeZone);
+    const startDateStr = league.start_date > todayDateStr ? league.start_date : todayDateStr;
+    const endDateStr = league.end_date;
 
-    // Find the first game date on or after start date (and today) matching the day of week
-    let currentDate = new Date(Math.max(startDate.getTime(), todayMidnight.getTime()));
-    
-    // Adjust to next occurrence of dayOfWeek
+    // Find the first game date on or after start date matching the day of week
     const targetDay = league.day_of_week; // 0=Sun, 6=Sat
-    const currentDay = currentDate.getUTCDay();
-    let daysUntilTarget = (targetDay - currentDay + 7) % 7;
-    
-    currentDate.setUTCDate(currentDate.getUTCDate() + daysUntilTarget);
+    const startDay = getDayOfWeek(startDateStr);
+    const daysUntilTarget = (targetDay - startDay + 7) % 7;
+    let currentDateStr = addDays(startDateStr, daysUntilTarget);
 
-    // Loop while current date is <= end date
-    // Using <= works correctly if dates are normalized to UTC midnight
-    while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
-
+    while (currentDateStr <= endDateStr) {
       // Skip dates where the league does not run (holiday / off week / etc.)
-      if (exceptions.has(dateStr)) {
-        currentDate.setUTCDate(currentDate.getUTCDate() + 7);
+      if (exceptions.has(currentDateStr)) {
+        currentDateStr = addDays(currentDateStr, 7);
         continue;
       }
-      
+
       for (const dt of drawTimes) {
-        // If the game is today, check if the time has passed
-        // We need to compare current local time vs game time
-        if (currentDate.getTime() === todayMidnight.getTime()) {
-           const [hours, minutes] = dt.draw_time.split(':').map(Number);
-           const gameTime = new Date(); // Current local time
-           gameTime.setHours(hours, minutes, 0, 0);
-           
-           // If game time is in the past (relative to now), skip it
-           if (gameTime < new Date()) continue;
+        // If the game is today, check if the time has passed in the league time zone
+        if (currentDateStr === todayDateStr) {
+          const [hours, minutes] = dt.draw_time.split(':').map(Number);
+          const now = getTimePartsInTimeZone(timeZone);
+          const nowSeconds = now.hour * 3600 + now.minute * 60 + now.second;
+          const gameSeconds = hours * 3600 + minutes * 60;
+          if (nowSeconds > gameSeconds) continue;
         }
 
         games.push({
-          date: dateStr,
+          date: currentDateStr,
           time: dt.draw_time,
         });
       }
-      
-      // Move to next week
-      currentDate.setUTCDate(currentDate.getUTCDate() + 7);
+
+      currentDateStr = addDays(currentDateStr, 7);
     }
 
     return games;

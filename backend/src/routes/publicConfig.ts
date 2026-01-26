@@ -12,6 +12,11 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
       .select({
         disable_sms: schema.serverConfig.disable_sms,
         capture_frontend_logs: schema.serverConfig.capture_frontend_logs,
+        dashboard_alert_title: schema.serverConfig.dashboard_alert_title,
+        dashboard_alert_body: schema.serverConfig.dashboard_alert_body,
+        dashboard_alert_expires_at: schema.serverConfig.dashboard_alert_expires_at,
+        dashboard_alert_variant: schema.serverConfig.dashboard_alert_variant,
+        dashboard_alert_icon: schema.serverConfig.dashboard_alert_icon,
       })
       .from(schema.serverConfig)
       .where(eq(schema.serverConfig.id, 1))
@@ -22,6 +27,11 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
     return {
       disableSms: cfg?.disable_sms === 1,
       captureFrontendLogs: cfg?.capture_frontend_logs !== 0,
+      dashboardAlertTitle: cfg?.dashboard_alert_title || null,
+      dashboardAlertBody: cfg?.dashboard_alert_body || null,
+      dashboardAlertExpiresAt: cfg?.dashboard_alert_expires_at || null,
+      dashboardAlertVariant: cfg?.dashboard_alert_variant || null,
+      dashboardAlertIcon: cfg?.dashboard_alert_icon || null,
     };
   });
 }

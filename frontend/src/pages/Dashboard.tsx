@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { HiOutlineUserPlus, HiOutlineCalendar, HiOutlineInbox } from 'react-icons/hi2';
+import {
+  HiOutlineUserPlus,
+  HiOutlineCalendar,
+  HiOutlineInbox,
+  HiOutlineMegaphone,
+  HiOutlineInformationCircle,
+  HiOutlineExclamationTriangle,
+  HiOutlineCheckCircle,
+  HiOutlineXCircle,
+} from 'react-icons/hi2';
 import axios from 'axios';
 import Layout from '../components/Layout';
-import api from '../utils/api';
+import api, { formatApiError } from '../utils/api';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
 import NotificationModal from '../components/NotificationModal';
@@ -76,9 +85,84 @@ export default function Dashboard() {
     message: string;
     variant: 'success' | 'error';
   }>({ isOpen: false, message: '', variant: 'success' });
+  const [dashboardAlert, setDashboardAlert] = useState<{
+    title?: string;
+    body?: string;
+    variant?: string;
+    icon?: string;
+  } | null>(null);
+
+  const dashboardAlertStyles = (variant?: string) => {
+    switch (variant) {
+      case 'success':
+        return {
+          container: 'border-l-4 border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30',
+          text: 'text-emerald-900 dark:text-emerald-100',
+        };
+      case 'danger':
+        return {
+          container: 'border-l-4 border-rose-500 bg-rose-50 dark:bg-rose-900/30',
+          text: 'text-rose-900 dark:text-rose-100',
+        };
+      case 'warning':
+        return {
+          container: 'border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/30',
+          text: 'text-amber-900 dark:text-amber-100',
+        };
+      default:
+        return {
+          container: 'border-l-4 border-sky-500 bg-sky-50 dark:bg-sky-900/30',
+          text: 'text-sky-900 dark:text-sky-100',
+        };
+    }
+  };
+
+  const renderDashboardAlertIcon = (icon?: string, className?: string) => {
+    const sharedProps = { className: `${className ?? ''} h-6 w-6` };
+    switch (icon) {
+      case 'none':
+        return null;
+      case 'info':
+        return <HiOutlineInformationCircle {...sharedProps} />;
+      case 'warning':
+        return <HiOutlineExclamationTriangle {...sharedProps} />;
+      case 'success':
+        return <HiOutlineCheckCircle {...sharedProps} />;
+      case 'error':
+        return <HiOutlineXCircle {...sharedProps} />;
+      case 'announcement':
+      default:
+        return <HiOutlineMegaphone {...sharedProps} />;
+    }
+  };
 
   useEffect(() => {
     loadAllData();
+  }, []);
+
+  useEffect(() => {
+    const loadDashboardAlert = async () => {
+      try {
+        const response = await api.get('/public-config');
+        const title = (response.data?.dashboardAlertTitle as string | null) || '';
+        const body = (response.data?.dashboardAlertBody as string | null) || '';
+        const variant = (response.data?.dashboardAlertVariant as string | null) || 'info';
+        const icon = (response.data?.dashboardAlertIcon as string | null) || 'announcement';
+        const expiresAtRaw = response.data?.dashboardAlertExpiresAt as string | null | undefined;
+        const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+        const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() : false;
+        if ((title.trim() || body.trim()) && !isExpired) {
+          setDashboardAlert({ title: title.trim(), body: body.trim(), variant, icon });
+        } else {
+          setDashboardAlert(null);
+        }
+
+      } catch (error) {
+        console.error('Failed to load dashboard alert:', error);
+      }
+    };
+
+    loadDashboardAlert();
   }, []);
 
   // Check for requestId in URL and open dialog when data is loaded
@@ -270,7 +354,7 @@ export default function Dashboard() {
       } else {
         setNotification({
           isOpen: true,
-          message: 'Failed to respond. Please try again.',
+          message: formatApiError(error, 'Failed to respond'),
           variant: 'error',
         });
       }
@@ -308,7 +392,7 @@ export default function Dashboard() {
       console.error('Failed to cancel sparing:', error);
       setNotification({
         isOpen: true,
-        message: 'Failed to cancel sparing. Please try again.',
+        message: formatApiError(error, 'Failed to cancel sparing'),
         variant: 'error',
       });
     } finally {
@@ -361,10 +445,11 @@ export default function Dashboard() {
       }
     } catch (error: unknown) {
       console.error('Failed to decline spare request:', error);
-      const msg =
-        (axios.isAxiosError(error) ? (error.response?.data as { error?: string } | undefined)?.error : undefined) ||
-        'Failed to decline. Please try again.';
-      setNotification({ isOpen: true, message: msg, variant: 'error' });
+      setNotification({
+        isOpen: true,
+        message: formatApiError(error, 'Failed to decline'),
+        variant: 'error',
+      });
     } finally {
       setDeclining(false);
     }
@@ -536,6 +621,33 @@ export default function Dashboard() {
             Dashboard
           </h1>
         </div>
+
+        {dashboardAlert && (() => {
+          const styles = dashboardAlertStyles(dashboardAlert.variant);
+          return (
+            <div className={`${styles.container} p-4 rounded shadow-sm`}>
+              <div className="flex items-start gap-3">
+                {dashboardAlert.icon !== 'none' && (
+                  <div className={`${styles.text} mt-0.5`}>
+                    {renderDashboardAlertIcon(dashboardAlert.icon, styles.text)}
+                  </div>
+                )}
+                <div>
+                  {dashboardAlert.title && (
+                    <div className={`text-lg font-semibold ${styles.text}`}>
+                      {dashboardAlert.title}
+                    </div>
+                  )}
+                  {dashboardAlert.body && (
+                    <div className={`text-sm whitespace-pre-line mt-1 ${styles.text}`}>
+                      {dashboardAlert.body}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {!member?.spareOnly && (

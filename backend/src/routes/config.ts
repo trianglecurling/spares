@@ -20,6 +20,17 @@ const updateConfigSchema = z.object({
   azureConnectionString: z.string().optional(),
   azureSenderEmail: z.string().email().optional().nullable(),
   azureSenderDisplayName: z.string().optional(),
+  dashboardAlertTitle: z.string().optional().nullable(),
+  dashboardAlertBody: z.string().optional().nullable(),
+  dashboardAlertExpiresAt: z.string().optional().nullable(),
+  dashboardAlertVariant: z
+    .enum(['info', 'warning', 'success', 'danger'])
+    .optional()
+    .nullable(),
+  dashboardAlertIcon: z
+    .enum(['none', 'info', 'warning', 'announcement', 'success', 'error'])
+    .optional()
+    .nullable(),
   testMode: z.boolean().optional(),
   disableEmail: z.boolean().optional(),
   disableSms: z.boolean().optional(),
@@ -58,6 +69,11 @@ export async function configRoutes(fastify: FastifyInstance) {
         twilioCampaignSid: null,
         azureConnectionString: null,
         azureSenderEmail: null,
+        dashboardAlertTitle: null,
+        dashboardAlertBody: null,
+        dashboardAlertExpiresAt: null,
+        dashboardAlertVariant: null,
+        dashboardAlertIcon: null,
         testMode: false,
         disableEmail: false,
         disableSms: false,
@@ -76,6 +92,11 @@ export async function configRoutes(fastify: FastifyInstance) {
       twilioCampaignSid: config.twilio_campaign_sid,
       azureConnectionString: config.azure_connection_string ? '***' : null, // Mask the connection string
       azureSenderEmail: config.azure_sender_email,
+      dashboardAlertTitle: config.dashboard_alert_title,
+      dashboardAlertBody: config.dashboard_alert_body,
+      dashboardAlertExpiresAt: config.dashboard_alert_expires_at,
+      dashboardAlertVariant: config.dashboard_alert_variant,
+      dashboardAlertIcon: config.dashboard_alert_icon,
       testMode: config.test_mode === 1,
       disableEmail: config.disable_email === 1,
       disableSms: config.disable_sms === 1,
@@ -279,6 +300,23 @@ export async function configRoutes(fastify: FastifyInstance) {
     if (body.azureSenderDisplayName !== undefined) {
       updateData.azure_sender_display_name = body.azureSenderDisplayName || null;
     }
+    if (body.dashboardAlertTitle !== undefined) {
+      updateData.dashboard_alert_title = body.dashboardAlertTitle || null;
+    }
+    if (body.dashboardAlertBody !== undefined) {
+      updateData.dashboard_alert_body = body.dashboardAlertBody || null;
+    }
+    if (body.dashboardAlertExpiresAt !== undefined) {
+      updateData.dashboard_alert_expires_at = body.dashboardAlertExpiresAt
+        ? new Date(body.dashboardAlertExpiresAt)
+        : null;
+    }
+    if (body.dashboardAlertVariant !== undefined) {
+      updateData.dashboard_alert_variant = body.dashboardAlertVariant || null;
+    }
+    if (body.dashboardAlertIcon !== undefined) {
+      updateData.dashboard_alert_icon = body.dashboardAlertIcon || null;
+    }
     if (body.testMode !== undefined) {
       updateData.test_mode = body.testMode ? 1 : 0;
     }
@@ -348,6 +386,11 @@ export async function configRoutes(fastify: FastifyInstance) {
       twilioCampaignSid: updatedConfig.twilio_campaign_sid,
       azureConnectionString: updatedConfig.azure_connection_string ? '***' : null,
       azureSenderEmail: updatedConfig.azure_sender_email,
+      dashboardAlertTitle: updatedConfig.dashboard_alert_title,
+      dashboardAlertBody: updatedConfig.dashboard_alert_body,
+      dashboardAlertExpiresAt: updatedConfig.dashboard_alert_expires_at,
+      dashboardAlertVariant: updatedConfig.dashboard_alert_variant,
+      dashboardAlertIcon: updatedConfig.dashboard_alert_icon,
       testMode: updatedConfig.test_mode === 1,
       disableEmail: updatedConfig.disable_email === 1,
       disableSms: updatedConfig.disable_sms === 1,

@@ -1182,6 +1182,45 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
     const leagueName = league.name;
 
+    let gameYear = 0;
+    let gameMonth = 0;
+    let gameDay = 0;
+
+    if (body.requestType === 'public') {
+      [gameYear, gameMonth, gameDay] = body.gameDate.split('-').map(Number);
+      const gameDateObj = new Date(gameYear, gameMonth - 1, gameDay); // month is 0-indexed
+      const dayOfWeek = gameDateObj.getDay();
+
+      // Validate league exists + matches this date/day
+      if (league.day_of_week !== dayOfWeek) {
+        return reply.code(400).send({ error: 'Selected league does not run on that day' });
+      }
+      // Active range check
+      const inRangeRows = await db
+        .select({ ok: sql<number>`1` })
+        .from(schema.leagues)
+        .where(
+          and(
+            eq(schema.leagues.id, body.leagueId),
+            sql`date(${schema.leagues.start_date}) <= date(${body.gameDate})`,
+            sql`date(${schema.leagues.end_date}) >= date(${body.gameDate})`
+          )
+        )
+        .limit(1);
+      if (inRangeRows.length === 0) {
+        return reply.code(400).send({ error: 'Selected league is not active on that date' });
+      }
+      // Exception date check
+      const exceptionRows = await db
+        .select({ id: schema.leagueExceptions.id })
+        .from(schema.leagueExceptions)
+        .where(and(eq(schema.leagueExceptions.league_id, body.leagueId), eq(schema.leagueExceptions.exception_date, body.gameDate)))
+        .limit(1);
+      if (exceptionRows.length > 0) {
+        return reply.code(400).send({ error: 'Selected league does not run on that date' });
+      }
+    }
+
     // Create the spare request
     const result = await db
       .insert(schema.spareRequests)
@@ -1383,7 +1422,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
     } else {
       // Public requests: check if less than 24 hours before game time
       // Parse date/time as local to avoid timezone issues
-      const [gameYear, gameMonth, gameDay] = body.gameDate.split('-').map(Number);
       const [gameHours, gameMinutes] = body.gameTime.split(':').map(Number);
       const gameDateTime = new Date(gameYear, gameMonth - 1, gameDay, gameHours, gameMinutes);
       const currentTime = await getCurrentTimeAsync();
@@ -1392,38 +1430,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       // Find matching available members for public requests
       // Match based on the selected leagueId (previously inferred by day-of-week, which was too broad)
-      // Parse date string as local date to avoid timezone issues
-      const gameDateObj = new Date(gameYear, gameMonth - 1, gameDay); // month is 0-indexed
-      const dayOfWeek = gameDateObj.getDay();
-
-      // Validate league exists + matches this date/day
-      if (league.day_of_week !== dayOfWeek) {
-        return reply.code(400).send({ error: 'Selected league does not run on that day' });
-      }
-      // Active range check
-      const inRangeRows = await db
-        .select({ ok: sql<number>`1` })
-        .from(schema.leagues)
-        .where(
-          and(
-            eq(schema.leagues.id, body.leagueId),
-            sql`date(${schema.leagues.start_date}) <= date(${body.gameDate})`,
-            sql`date(${schema.leagues.end_date}) >= date(${body.gameDate})`
-          )
-        )
-        .limit(1);
-      if (inRangeRows.length === 0) {
-        return reply.code(400).send({ error: 'Selected league is not active on that date' });
-      }
-      // Exception date check
-      const exceptionRows = await db
-        .select({ id: schema.leagueExceptions.id })
-        .from(schema.leagueExceptions)
-        .where(and(eq(schema.leagueExceptions.league_id, body.leagueId), eq(schema.leagueExceptions.exception_date, body.gameDate)))
-        .limit(1);
-      if (exceptionRows.length > 0) {
-        return reply.code(400).send({ error: 'Selected league does not run on that date' });
-      }
 
       // Get members who are available for this league
       const conditions = [

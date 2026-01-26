@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import Layout from '../components/Layout';
-import api from '../utils/api';
+import api, { formatApiError } from '../utils/api';
 import Button from '../components/Button';
 import { HiChevronDown, HiUser, HiUserGroup } from 'react-icons/hi2';
 import { format } from 'date-fns';
@@ -149,6 +149,7 @@ export default function RequestSpare() {
 
     const loadGames = async () => {
       setLoadingGames(true);
+      setSelectedGameSlot('');
       try {
         const response = await api.get(`/leagues/${selectedLeagueId}/upcoming-games`);
         setUpcomingGames(response.data);
@@ -268,6 +269,14 @@ export default function RequestSpare() {
         setSubmitting(false);
         return;
       }
+      const isSelectedGameSlotValid = upcomingGames.some(
+        (slot) => `${slot.date}|${slot.time}` === selectedGameSlot
+      );
+      if (!isSelectedGameSlotValid) {
+        showAlert('Please select a valid game time for the chosen league.', 'warning');
+        setSubmitting(false);
+        return;
+      }
       if (!selectedLeagueId) {
         showAlert('Please select a league', 'warning');
         setSubmitting(false);
@@ -315,7 +324,7 @@ export default function RequestSpare() {
       navigate('/my-requests');
     } catch (error) {
       console.error('Failed to create spare request:', error);
-      showAlert('Failed to create spare request. Please try again.', 'error');
+      showAlert(formatApiError(error, 'Failed to create spare request'), 'error');
     } finally {
       setSubmitting(false);
     }
