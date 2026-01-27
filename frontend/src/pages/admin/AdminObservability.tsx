@@ -79,7 +79,15 @@ export default function AdminObservability() {
               </Link>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <a
+              href="https://observability.tccnc.club"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+            >
+              Grafana dashboard ↗
+            </a>
             <select
               value={obsRangeDays}
               onChange={(e) => loadObservability(parseInt(e.target.value, 10))}

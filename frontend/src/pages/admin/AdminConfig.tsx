@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import api, { formatApiError } from '../../utils/api';
 import Button from '../../components/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhone } from '../../utils/phone';
+import { setFrontendLogCaptureEnabled } from '../../otel';
 
 interface ServerConfig {
   twilioApiKeySid: string | null;
@@ -13,13 +14,134 @@ interface ServerConfig {
   twilioCampaignSid: string | null;
   azureConnectionString: string | null;
   azureSenderEmail: string | null;
+  dashboardAlertTitle: string | null;
+  dashboardAlertBody: string | null;
+  dashboardAlertExpiresAt: string | null;
+  dashboardAlertVariant: string | null;
+  dashboardAlertIcon: string | null;
   testMode: boolean;
   disableEmail: boolean;
   disableSms: boolean;
+  captureFrontendLogs: boolean;
+  captureBackendLogs: boolean;
   testCurrentTime: string | null;
   notificationDelaySeconds: number;
   updatedAt: string | null;
 }
+
+interface UpdateConfigPayload {
+  twilioApiKeySid?: string | null;
+  twilioApiKeySecret?: string | null;
+  twilioAccountSid?: string | null;
+  twilioCampaignSid?: string | null;
+  azureConnectionString?: string | null;
+  azureSenderEmail?: string | null;
+  dashboardAlertTitle?: string | null;
+  dashboardAlertBody?: string | null;
+  dashboardAlertExpiresAt?: string | null;
+  dashboardAlertVariant?: string | null;
+  dashboardAlertIcon?: string | null;
+  testMode?: boolean;
+  disableEmail?: boolean;
+  disableSms?: boolean;
+  captureFrontendLogs?: boolean;
+  captureBackendLogs?: boolean;
+  testCurrentTime?: string | null;
+  notificationDelaySeconds?: number;
+}
+
+const EASTERN_TIME_ZONE = 'America/New_York';
+
+type DateTimeParts = {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second?: string;
+};
+
+const extractDateTimeParts = (date: Date, timeZone: string, includeSeconds = false): DateTimeParts | null => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: includeSeconds ? '2-digit' : undefined,
+    hour12: false,
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== 'literal') {
+        acc[part.type] = part.value;
+      }
+      return acc;
+    }, {});
+
+  if (!parts.year || !parts.month || !parts.day || !parts.hour || !parts.minute) {
+    return null;
+  }
+  if (includeSeconds && !parts.second) {
+    return null;
+  }
+
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second,
+  };
+};
+
+const formatEasternDateTime = (value?: string | null): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const parts = extractDateTimeParts(date, EASTERN_TIME_ZONE);
+  if (!parts) return '';
+
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+};
+
+const getTimeZoneOffsetMinutes = (date: Date, timeZone: string) => {
+  const parts = extractDateTimeParts(date, timeZone, true);
+  if (!parts || !parts.second) return 0;
+
+  const utcTime = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+
+  return (utcTime - date.getTime()) / 60000;
+};
+
+const parseEasternDateTimeToIso = (value: string): string => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return '';
+
+  const [, year, month, day, hour, minute] = match;
+  const utcGuess = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    0
+  );
+  const offsetMinutes = getTimeZoneOffsetMinutes(new Date(utcGuess), EASTERN_TIME_ZONE);
+  const utcTime = utcGuess - offsetMinutes * 60000;
+
+  return new Date(utcTime).toISOString();
+};
 
 export default function AdminConfig() {
   const { member } = useAuth();
@@ -37,9 +159,16 @@ export default function AdminConfig() {
     twilioCampaignSid: '',
     azureConnectionString: '',
     azureSenderEmail: '',
+    dashboardAlertTitle: '',
+    dashboardAlertBody: '',
+    dashboardAlertExpiresAt: '',
+    dashboardAlertVariant: 'info',
+    dashboardAlertIcon: 'announcement',
     testMode: false,
     disableEmail: false,
     disableSms: false,
+    captureFrontendLogs: true,
+    captureBackendLogs: true,
     testCurrentTime: '',
     notificationDelaySeconds: 180,
   });
@@ -59,9 +188,16 @@ export default function AdminConfig() {
         twilioCampaignSid: response.data.twilioCampaignSid || '',
         azureConnectionString: '', // Never populate the connection string field
         azureSenderEmail: response.data.azureSenderEmail || '',
+        dashboardAlertTitle: response.data.dashboardAlertTitle || '',
+        dashboardAlertBody: response.data.dashboardAlertBody || '',
+        dashboardAlertExpiresAt: response.data.dashboardAlertExpiresAt || '',
+        dashboardAlertVariant: response.data.dashboardAlertVariant || 'info',
+        dashboardAlertIcon: response.data.dashboardAlertIcon || 'announcement',
         testMode: response.data.testMode || false,
         disableEmail: response.data.disableEmail || false,
         disableSms: response.data.disableSms || false,
+        captureFrontendLogs: response.data.captureFrontendLogs ?? true,
+        captureBackendLogs: response.data.captureBackendLogs ?? true,
         testCurrentTime: response.data.testCurrentTime || '',
         notificationDelaySeconds: response.data.notificationDelaySeconds || 180,
       });
@@ -73,13 +209,13 @@ export default function AdminConfig() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setMessage(null);
 
     try {
-      const payload: any = {};
+      const payload: UpdateConfigPayload = {};
       
       // Only include fields that have been changed
       if (formData.twilioApiKeySid !== (config?.twilioApiKeySid || '')) {
@@ -100,6 +236,21 @@ export default function AdminConfig() {
       if (formData.azureSenderEmail !== (config?.azureSenderEmail || '')) {
         payload.azureSenderEmail = formData.azureSenderEmail || null;
       }
+      if (formData.dashboardAlertTitle !== (config?.dashboardAlertTitle || '')) {
+        payload.dashboardAlertTitle = formData.dashboardAlertTitle || null;
+      }
+      if (formData.dashboardAlertBody !== (config?.dashboardAlertBody || '')) {
+        payload.dashboardAlertBody = formData.dashboardAlertBody || null;
+      }
+      if (formData.dashboardAlertExpiresAt !== (config?.dashboardAlertExpiresAt || '')) {
+        payload.dashboardAlertExpiresAt = formData.dashboardAlertExpiresAt || null;
+      }
+      if (formData.dashboardAlertVariant !== (config?.dashboardAlertVariant || '')) {
+        payload.dashboardAlertVariant = formData.dashboardAlertVariant || null;
+      }
+      if (formData.dashboardAlertIcon !== (config?.dashboardAlertIcon || '')) {
+        payload.dashboardAlertIcon = formData.dashboardAlertIcon || null;
+      }
       if (formData.testMode !== config?.testMode) {
         payload.testMode = formData.testMode;
       }
@@ -108,6 +259,12 @@ export default function AdminConfig() {
       }
       if (formData.disableSms !== config?.disableSms) {
         payload.disableSms = formData.disableSms;
+      }
+      if (formData.captureFrontendLogs !== config?.captureFrontendLogs) {
+        payload.captureFrontendLogs = formData.captureFrontendLogs;
+      }
+      if (formData.captureBackendLogs !== config?.captureBackendLogs) {
+        payload.captureBackendLogs = formData.captureBackendLogs;
       }
       if (formData.testCurrentTime !== (config?.testCurrentTime || '')) {
         payload.testCurrentTime = formData.testCurrentTime || null;
@@ -119,6 +276,7 @@ export default function AdminConfig() {
       await api.patch('/config', payload);
       setMessage({ type: 'success', text: 'Server configuration updated successfully' });
       await loadConfig();
+      setFrontendLogCaptureEnabled(formData.captureFrontendLogs);
       
       // Clear password fields after successful save
       setFormData({
@@ -128,7 +286,7 @@ export default function AdminConfig() {
       });
     } catch (error) {
       console.error('Failed to update config:', error);
-      setMessage({ type: 'error', text: 'Failed to update server configuration' });
+      setMessage({ type: 'error', text: formatApiError(error, 'Failed to update server configuration') });
     } finally {
       setSubmitting(false);
     }
@@ -141,9 +299,8 @@ export default function AdminConfig() {
     try {
       const response = await api.post('/config/test-email');
       setMessage({ type: 'success', text: response.data.message || 'Test email sent successfully!' });
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.response?.data?.details || 'Failed to send test email';
-      setMessage({ type: 'error', text: errorMessage });
+    } catch (error: unknown) {
+      setMessage({ type: 'error', text: formatApiError(error, 'Failed to send test email') });
     } finally {
       setTestingEmail(false);
     }
@@ -156,9 +313,8 @@ export default function AdminConfig() {
     try {
       const response = await api.post('/config/test-sms');
       setMessage({ type: 'success', text: response.data.message || 'Test SMS sent successfully!' });
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || error.response?.data?.details || 'Failed to send test SMS';
-      setMessage({ type: 'error', text: errorMessage });
+    } catch (error: unknown) {
+      setMessage({ type: 'error', text: formatApiError(error, 'Failed to send test SMS') });
     } finally {
       setTestingSms(false);
     }
@@ -268,6 +424,148 @@ export default function AdminConfig() {
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
                   When enabled, SMS messages will be printed to the console instead of being sent, regardless of test mode.
+                </p>
+              </div>
+            </div>
+
+            {/* Dashboard Alert Configuration */}
+            <div className="border-b dark:border-gray-700 pb-6">
+              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                Dashboard Alert
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="dashboardAlertTitle" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Alert title
+                  </label>
+                  <input
+                    type="text"
+                    id="dashboardAlertTitle"
+                    value={formData.dashboardAlertTitle}
+                    onChange={(e) => setFormData({ ...formData, dashboardAlertTitle: e.target.value })}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="Monday Leagues Canceled"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="dashboardAlertBody" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Alert message
+                  </label>
+                  <textarea
+                    id="dashboardAlertBody"
+                    value={formData.dashboardAlertBody}
+                    onChange={(e) => setFormData({ ...formData, dashboardAlertBody: e.target.value })}
+                    rows={4}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="Due to the icy road conditions, Monday leagues have been canceled!"
+                  />
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                    Leave both fields empty to hide the alert on the dashboard.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="dashboardAlertExpiresAt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Optional expiration (Eastern Time)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="dashboardAlertExpiresAt"
+                    value={formatEasternDateTime(formData.dashboardAlertExpiresAt)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({
+                        ...formData,
+                        dashboardAlertExpiresAt: value ? parseEasternDateTimeToIso(value) : '',
+                      });
+                    }}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="dashboardAlertVariant" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Alert color
+                    </label>
+                    <select
+                      id="dashboardAlertVariant"
+                      value={formData.dashboardAlertVariant}
+                      onChange={(e) => setFormData({ ...formData, dashboardAlertVariant: e.target.value })}
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="info">Info (blue)</option>
+                      <option value="warning">Warning (amber)</option>
+                      <option value="success">Success (green)</option>
+                      <option value="danger">Danger (red)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="dashboardAlertIcon" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Alert icon
+                    </label>
+                    <select
+                      id="dashboardAlertIcon"
+                      value={formData.dashboardAlertIcon}
+                      onChange={(e) => setFormData({ ...formData, dashboardAlertIcon: e.target.value })}
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="announcement">Announcement</option>
+                      <option value="info">Info</option>
+                      <option value="warning">Warning</option>
+                      <option value="success">Success</option>
+                      <option value="error">Error</option>
+                      <option value="none">No icon</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Observability Configuration */}
+            <div className="border-b dark:border-gray-700 pb-6">
+              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                Observability
+              </h2>
+              <div className="space-y-4">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="captureFrontendLogs"
+                    checked={formData.captureFrontendLogs}
+                    onChange={(e) =>
+                      setFormData({ ...formData, captureFrontendLogs: e.target.checked })
+                    }
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <label
+                    htmlFor="captureFrontendLogs"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Capture frontend console logs
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                  When enabled, browser console logs are forwarded to the OpenTelemetry pipeline.
+                </p>
+
+                <div className="flex items-center mt-4">
+                  <input
+                    type="checkbox"
+                    id="captureBackendLogs"
+                    checked={formData.captureBackendLogs}
+                    onChange={(e) =>
+                      setFormData({ ...formData, captureBackendLogs: e.target.checked })
+                    }
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <label
+                    htmlFor="captureBackendLogs"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Capture backend console logs
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                  When enabled, server console logs are forwarded to the OpenTelemetry pipeline.
                 </p>
               </div>
             </div>

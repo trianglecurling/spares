@@ -1199,10 +1199,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
       // Match based on the selected leagueId (previously inferred by day-of-week, which was too broad)
       // Parse date string as local date to avoid timezone issues
       const gameDateObj = new Date(gameYear, gameMonth - 1, gameDay); // month is 0-indexed
-      dayOfWeek = gameDateObj.getDay();
+      const dayOfWeekValue = gameDateObj.getDay();
+      dayOfWeek = dayOfWeekValue;
 
       // Validate league exists + matches this date/day
-      if (league.day_of_week !== dayOfWeek) {
+      if (league.day_of_week !== dayOfWeekValue) {
         return reply.code(400).send({ error: 'Selected league does not run on that day' });
       }
       // Active range check

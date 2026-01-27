@@ -1,3 +1,4 @@
+import { loadBackendLogCaptureFromDb } from './otel.js';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { config } from './config.js';
@@ -40,6 +41,7 @@ if (isDatabaseConfigured()) {
     await initializeDatabase();
     dbInitialized = true;
     console.log('Database initialized successfully');
+    await loadBackendLogCaptureFromDb();
     
     // Create admin members if none exist
     await ensureAdminMembersExist();
@@ -153,6 +155,7 @@ fastify.addHook('onRequest', async (request, reply) => {
         dbInitialized = true;
         dbInitError = null;
         console.log('Database initialized on first request');
+        await loadBackendLogCaptureFromDb();
         
         // Create admin members if none exist
         await ensureAdminMembersExist();

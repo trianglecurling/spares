@@ -1,0 +1,32 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+        cors:
+          allowed_origins:
+            - http://localhost:5173
+          allowed_headers:
+            - "*"
+
+processors:
+  batch:
+
+exporters:
+  otlp:
+    endpoint: observability.tccnc.club:4431
+    headers:
+      # Example (Honeycomb): x-honeycomb-team: ${HONEYCOMB_API_KEY}
+  logging:
+    loglevel: info
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp, logging]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp, logging]
