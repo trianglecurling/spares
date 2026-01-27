@@ -126,6 +126,164 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_league_exceptions_league_id ON league_exceptions(league_id);
 
+    -- Sheets (club-level)
+    CREATE TABLE IF NOT EXISTS sheets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sheets_is_active ON sheets(is_active);
+    CREATE INDEX IF NOT EXISTS idx_sheets_sort_order ON sheets(sort_order);
+
+    -- League divisions
+    CREATE TABLE IF NOT EXISTS league_divisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      is_default INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_divisions_league_id ON league_divisions(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_divisions_league_id_sort ON league_divisions(league_id, sort_order);
+
+    -- League teams
+    CREATE TABLE IF NOT EXISTS league_teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      division_id INTEGER NOT NULL,
+      name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (division_id) REFERENCES league_divisions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_teams_league_id ON league_teams(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_teams_division_id ON league_teams(division_id);
+
+    -- Team members (rosters)
+    CREATE TABLE IF NOT EXISTS team_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      is_skip INTEGER DEFAULT 0,
+      is_vice INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (team_id) REFERENCES league_teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(team_id, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id);
+    CREATE INDEX IF NOT EXISTS idx_team_members_member_id ON team_members(member_id);
+
+    -- League member roles (league managers)
+    CREATE TABLE IF NOT EXISTS league_member_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      league_id INTEGER,
+      role TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(member_id, league_id, role)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_member_roles_member_id ON league_member_roles(member_id);
+    CREATE INDEX IF NOT EXISTS idx_league_member_roles_league_id ON league_member_roles(league_id);
+
+    -- Sheets (club-level)
+    CREATE TABLE IF NOT EXISTS sheets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sheets_is_active ON sheets(is_active);
+    CREATE INDEX IF NOT EXISTS idx_sheets_sort_order ON sheets(sort_order);
+
+    -- League divisions
+    CREATE TABLE IF NOT EXISTS league_divisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      is_default INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_divisions_league_id ON league_divisions(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_divisions_league_id_sort ON league_divisions(league_id, sort_order);
+
+    -- League teams
+    CREATE TABLE IF NOT EXISTS league_teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      division_id INTEGER NOT NULL,
+      name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (division_id) REFERENCES league_divisions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_teams_league_id ON league_teams(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_teams_division_id ON league_teams(division_id);
+
+    -- Team members (rosters)
+    CREATE TABLE IF NOT EXISTS team_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      is_skip INTEGER DEFAULT 0,
+      is_vice INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (team_id) REFERENCES league_teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(team_id, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id);
+    CREATE INDEX IF NOT EXISTS idx_team_members_member_id ON team_members(member_id);
+
+    -- League member roles (league managers)
+    CREATE TABLE IF NOT EXISTS league_member_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      league_id INTEGER,
+      role TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(member_id, league_id, role)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_member_roles_member_id ON league_member_roles(member_id);
+    CREATE INDEX IF NOT EXISTS idx_league_member_roles_league_id ON league_member_roles(league_id);
+
     -- Member availability for leagues
     CREATE TABLE IF NOT EXISTS member_availability (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -234,6 +392,15 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
 
     -- Insert default row if it doesn't exist
     INSERT OR IGNORE INTO server_config (id) VALUES (1);
+  `);
+
+  // Ensure each league has a default division
+  await execSQL(db, `
+    INSERT INTO league_divisions (league_id, name, sort_order, is_default)
+    SELECT l.id, 'Default', 0, 1
+    FROM leagues l
+    LEFT JOIN league_divisions d ON d.league_id = l.id
+    WHERE d.id IS NULL;
   `);
 
   // Feedback table (support/admin visible)

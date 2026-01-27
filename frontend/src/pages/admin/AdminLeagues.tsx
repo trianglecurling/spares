@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 
@@ -15,11 +17,14 @@ interface League {
   endDate: string;
   drawTimes: string[];
   exceptions: string[];
+  canManage?: boolean;
 }
 
 export default function AdminLeagues() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const { member } = useAuth();
+  const navigate = useNavigate();
   const [leagues, setLeagues] = useState<League[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -273,6 +278,8 @@ export default function AdminLeagues() {
     }));
   };
 
+  const canManageLeagueDetails = Boolean(member?.isAdmin || member?.isLeagueManagerGlobal);
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -281,13 +288,17 @@ export default function AdminLeagues() {
             Manage leagues
           </h1>
           <div className="flex space-x-2">
-            <Button onClick={handleExport} variant="secondary">
-              Export
-            </Button>
-            <Button onClick={() => setIsImportModalOpen(true)} variant="secondary">
-              Import
-            </Button>
-            <Button onClick={() => handleOpenModal()}>Add league</Button>
+            {canManageLeagueDetails && (
+              <>
+                <Button onClick={handleExport} variant="secondary">
+                  Export
+                </Button>
+                <Button onClick={() => setIsImportModalOpen(true)} variant="secondary">
+                  Import
+                </Button>
+                <Button onClick={() => handleOpenModal()}>Add league</Button>
+              </>
+            )}
           </div>
         </div>
 
@@ -332,12 +343,24 @@ export default function AdminLeagues() {
                   </div>
 
                   <div className="flex space-x-2">
-                    <Button onClick={() => handleOpenModal(league)} variant="secondary">
-                      Edit
-                    </Button>
-                    <Button onClick={() => handleDelete(league.id, league.name)} variant="danger">
-                      Delete
-                    </Button>
+                    {(league.canManage ?? canManageLeagueDetails) && (
+                      <Button
+                        onClick={() => navigate(`/admin/leagues/${league.id}/setup`)}
+                        variant="secondary"
+                      >
+                        Manage setup
+                      </Button>
+                    )}
+                    {canManageLeagueDetails && (
+                      <>
+                        <Button onClick={() => handleOpenModal(league)} variant="secondary">
+                          Edit
+                        </Button>
+                        <Button onClick={() => handleDelete(league.id, league.name)} variant="danger">
+                          Delete
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

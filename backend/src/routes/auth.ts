@@ -9,6 +9,7 @@ import {
   isAdmin,
   isServerAdmin,
 } from '../utils/auth.js';
+import { getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
 import { sendAuthCodeEmail } from '../services/email.js';
 import { sendAuthCodeSMS } from '../services/sms.js';
 import { Member } from '../types.js';
@@ -214,6 +215,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: 'Membership expired' });
       }
       const token = generateToken(member as Member);
+      const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
 
       // Best-effort analytics (do not block)
       logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
@@ -228,6 +230,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
           spareOnly: (member as any).spare_only === 1,
           isAdmin: isAdmin(member as Member),
           isServerAdmin: isServerAdmin(member as Member),
+          isLeagueManager: leagueRoleInfo.isGlobal || leagueRoleInfo.leagueIds.length > 0,
+          isLeagueManagerGlobal: leagueRoleInfo.isGlobal,
+          leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
           firstLoginCompleted: member.first_login_completed === 1,
           optedInSms: member.opted_in_sms === 1,
           emailSubscribed: member.email_subscribed === 1,
@@ -306,6 +311,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     }
 
     const token = generateToken(member as Member);
+    const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
 
     // Best-effort analytics (do not block)
     logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
@@ -320,6 +326,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         spareOnly: (member as any).spare_only === 1,
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
+        isLeagueManager: leagueRoleInfo.isGlobal || leagueRoleInfo.leagueIds.length > 0,
+        isLeagueManagerGlobal: leagueRoleInfo.isGlobal,
+        leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
         firstLoginCompleted: member.first_login_completed === 1,
         optedInSms: member.opted_in_sms === 1,
         emailSubscribed: member.email_subscribed === 1,
@@ -337,6 +346,8 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
+    const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
+
     return {
       member: {
         id: member.id,
@@ -346,6 +357,9 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         spareOnly: (member as any).spare_only === 1,
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
+        isLeagueManager: leagueRoleInfo.isGlobal || leagueRoleInfo.leagueIds.length > 0,
+        isLeagueManagerGlobal: leagueRoleInfo.isGlobal,
+        leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
         firstLoginCompleted: member.first_login_completed === 1,
         optedInSms: member.opted_in_sms === 1,
         emailSubscribed: member.email_subscribed === 1,

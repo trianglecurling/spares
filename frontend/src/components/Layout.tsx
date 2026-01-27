@@ -44,13 +44,13 @@ export default function Layout({ children }: LayoutProps) {
     { to: '/members', label: 'Directory' },
   ];
 
-  const adminLinks = member?.isAdmin
-    ? [
-        { to: '/admin/members', label: 'Manage members' },
-        { to: '/admin/leagues', label: 'Leagues' },
-        ...(member.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
-      ]
-    : [];
+  const canManageLeagues = Boolean(member?.isAdmin || member?.isLeagueManager);
+  const adminLinks = [
+    ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
+    ...(canManageLeagues ? [{ to: '/admin/leagues', label: 'Leagues' }] : []),
+    ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Sheets' }] : []),
+    ...(member?.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">

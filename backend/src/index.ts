@@ -6,6 +6,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { publicAuthRoutes, protectedAuthRoutes } from './routes/auth.js';
 import { memberRoutes } from './routes/members.js';
 import { leagueRoutes } from './routes/leagues.js';
+import { leagueSetupRoutes } from './routes/leagueSetup.js';
 import { availabilityRoutes } from './routes/availability.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
@@ -201,6 +202,7 @@ fastify.register(
     await instance.register(protectedAuthRoutes, { prefix: '/api' });
     await instance.register(memberRoutes, { prefix: '/api' });
     await instance.register(leagueRoutes, { prefix: '/api' });
+    await instance.register(leagueSetupRoutes, { prefix: '/api' });
     await instance.register(availabilityRoutes, { prefix: '/api' });
     await instance.register(spareRoutes, { prefix: '/api' });
     await instance.register(configRoutes, { prefix: '/api' });

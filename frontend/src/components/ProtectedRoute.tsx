@@ -5,9 +5,17 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   adminOnly?: boolean;
   serverAdminOnly?: boolean;
+  leagueManagerOnly?: boolean;
+  leagueManagerGlobalOnly?: boolean;
 }
 
-export function ProtectedRoute({ children, adminOnly = false, serverAdminOnly = false }: ProtectedRouteProps) {
+export function ProtectedRoute({
+  children,
+  adminOnly = false,
+  serverAdminOnly = false,
+  leagueManagerOnly = false,
+  leagueManagerGlobalOnly = false,
+}: ProtectedRouteProps) {
   const { member, token, isLoading } = useAuth();
   const location = useLocation();
 
@@ -28,6 +36,14 @@ export function ProtectedRoute({ children, adminOnly = false, serverAdminOnly = 
   }
 
   if (adminOnly && !member.isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (leagueManagerGlobalOnly && !(member.isAdmin || member.isLeagueManagerGlobal)) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (leagueManagerOnly && !(member.isAdmin || member.isLeagueManager)) {
     return <Navigate to="/" replace />;
   }
 

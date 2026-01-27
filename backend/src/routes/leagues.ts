@@ -4,6 +4,7 @@ import { eq, sql, asc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin } from '../utils/auth.js';
 import { Member, League, LeagueDrawTime } from '../types.js';
+import { getLeagueManagerRoleInfo, hasClubLeagueManagerAccess } from '../utils/leagueAccess.js';
 
 const createLeagueSchema = z.object({
   name: z.string().min(1),
@@ -44,6 +45,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
 
     const { db, schema } = getDrizzleDb();
+    const canManageAll = isAdmin(member);
+    const roleInfo = canManageAll ? { isGlobal: true, leagueIds: [] } : await getLeagueManagerRoleInfo(member.id);
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -71,6 +74,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         endDate: league.end_date,
         drawTimes: drawTimes.map((dt: any) => dt.draw_time),
         exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
+        canManage: canManageAll || roleInfo.isGlobal || roleInfo.leagueIds.includes(league.id),
       };
     }));
 
@@ -175,7 +179,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Create league
   fastify.post('/leagues', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !(await hasClubLeagueManagerAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -195,6 +199,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .returning();
 
     const leagueId = result[0].id;
+
+    // Create default division for the league
+    await db.insert(schema.leagueDivisions).values({
+      league_id: leagueId,
+      name: 'Default',
+      sort_order: 0,
+      is_default: 1,
+    });
 
     // Insert draw times
     if (body.drawTimes.length > 0) {
@@ -251,7 +263,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Update league
   fastify.patch('/leagues/:id', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !(await hasClubLeagueManagerAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -354,7 +366,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Delete league
   fastify.delete('/leagues/:id', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !(await hasClubLeagueManagerAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -372,7 +384,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Export leagues
   fastify.get('/leagues/export', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !(await hasClubLeagueManagerAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -424,7 +436,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
   fastify.post('/leagues/import', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !isAdmin(member)) {
+    if (!member || !(await hasClubLeagueManagerAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -481,6 +493,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
           .returning();
 
         leagueId = result[0].id;
+
+        await db.insert(schema.leagueDivisions).values({
+          league_id: leagueId,
+          name: 'Default',
+          sort_order: 0,
+          is_default: 1,
+        });
       }
 
       // Insert draw times

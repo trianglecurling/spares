@@ -10,6 +10,9 @@ interface Member {
   spareOnly?: boolean;
   isAdmin: boolean;
   isServerAdmin?: boolean;
+  isLeagueManager?: boolean;
+  isLeagueManagerGlobal?: boolean;
+  leagueManagerLeagueIds?: number[];
   firstLoginCompleted: boolean;
   optedInSms: boolean;
   emailSubscribed: boolean;

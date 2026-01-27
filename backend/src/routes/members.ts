@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { eq, sql, inArray, and } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin, isInServerAdminsList } from '../utils/auth.js';
+import { getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
 import { Member } from '../types.js';
 import { sendWelcomeEmail } from '../services/email.js';
 import { generateEmailLinkToken } from '../utils/auth.js';
@@ -106,6 +107,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
   fastify.get('/members/me', async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
+    const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
+
     return {
       id: member.id,
       name: member.name,
@@ -115,6 +118,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
       spareOnly: member.spare_only === 1,
       isAdmin: isAdmin(member),
       isServerAdmin: isServerAdmin(member),
+      isLeagueManager: leagueRoleInfo.isGlobal || leagueRoleInfo.leagueIds.length > 0,
+      isLeagueManagerGlobal: leagueRoleInfo.isGlobal,
+      leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
       firstLoginCompleted: member.first_login_completed === 1,
       optedInSms: member.opted_in_sms === 1,
       emailSubscribed: member.email_subscribed === 1,

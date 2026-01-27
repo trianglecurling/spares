@@ -18,6 +18,8 @@ import MembersDirectory from './pages/MembersDirectory';
 import Profile from './pages/Profile';
 import AdminMembers from './pages/admin/AdminMembers';
 import AdminLeagues from './pages/admin/AdminLeagues';
+import AdminSheets from './pages/admin/AdminSheets';
+import AdminLeagueSetup from './pages/admin/AdminLeagueSetup';
 import AdminConfig from './pages/admin/AdminConfig';
 import AdminDatabaseConfig from './pages/admin/AdminDatabaseConfig';
 import Help from './pages/Help';
@@ -161,8 +163,24 @@ function App() {
           <Route
             path="/admin/leagues"
             element={
-              <ProtectedRoute adminOnly>
+              <ProtectedRoute leagueManagerOnly>
                 <AdminLeagues />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/leagues/:leagueId/setup"
+            element={
+              <ProtectedRoute leagueManagerOnly>
+                <AdminLeagueSetup />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/sheets"
+            element={
+              <ProtectedRoute leagueManagerOnly>
+                <AdminSheets />
               </ProtectedRoute>
             }
           />

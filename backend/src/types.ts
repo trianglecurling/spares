@@ -57,6 +57,54 @@ export interface LeagueException {
   exception_date: string;
 }
 
+export interface Sheet {
+  id: number;
+  name: string;
+  sort_order: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeagueDivision {
+  id: number;
+  league_id: number;
+  name: string;
+  sort_order: number;
+  is_default: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeagueTeam {
+  id: number;
+  league_id: number;
+  division_id: number;
+  name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMember {
+  id: number;
+  team_id: number;
+  member_id: number;
+  role: 'lead' | 'second' | 'third' | 'fourth' | 'player1' | 'player2';
+  is_skip: number;
+  is_vice: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeagueMemberRole {
+  id: number;
+  member_id: number;
+  league_id: number | null;
+  role: 'league_manager';
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MemberAvailability {
   id: number;
   member_id: number;
