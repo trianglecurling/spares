@@ -9,6 +9,8 @@ import {
   sendSpareRequestCcCreatedEmail,
   sendSpareRequestCcFilledEmail,
   sendSpareRequestCcCancellationEmail,
+  sendSpareRequestCancelledEmail,
+  sendSpareRequestCancelConfirmationEmail,
   sendSpareResponseEmail,
   sendSpareCancellationEmail,
   sendSpareOfferConfirmationEmail,
@@ -19,10 +21,12 @@ import { generateToken, generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
+import { processAllNotificationsForRequest } from '../services/notificationProcessor.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
   requestedForName: z.string().min(1),
+  requestedForMemberId: z.number().optional(),
   gameDate: z.string(),
   gameTime: z.string(),
   position: z.enum(['lead', 'second', 'vice', 'skip']).optional(),
@@ -30,6 +34,7 @@ const createSpareRequestSchema = z.object({
   requestType: z.enum(['public', 'private']),
   invitedMemberIds: z.array(z.number()).optional(),
   ccMemberIds: z.array(z.number()).max(4).optional(),
+  allowDuplicate: z.boolean().optional(),
 });
 
 const respondToSpareRequestSchema = z.object({
@@ -53,6 +58,31 @@ const reissueSpareRequestSchema = z.object({
 });
 
 export async function spareRoutes(fastify: FastifyInstance) {
+  function normalizeDateString(value: unknown): string {
+    if (value instanceof Date) {
+      return value.toISOString().split('T')[0];
+    }
+    if (typeof value === 'string') {
+      return value.includes('T') ? value.split('T')[0] : value;
+    }
+    return String(value);
+  }
+
+  function normalizeTimeString(value: unknown): string {
+    if (value instanceof Date) {
+      const timePart = value.toISOString().split('T')[1];
+      return timePart ? timePart.slice(0, 5) : '';
+    }
+    if (typeof value === 'string') {
+      if (value.includes('T')) {
+        const timePart = value.split('T')[1] || '';
+        return timePart.slice(0, 5);
+      }
+      return value.length >= 5 ? value.slice(0, 5) : value;
+    }
+    return String(value);
+  }
+
   async function getCcMembersForRequest(requestId: number): Promise<Member[]> {
     const { db, schema } = getDrizzleDb();
     const rows = await db
@@ -107,7 +137,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(
         and(
           eq(schema.spareRequestCcs.member_id, member.id),
-          gte(schema.spareRequests.game_date, today)
+          gte(schema.spareRequests.game_date, today),
+          or(
+            isNull((schema.spareRequests as any).requested_for_member_id),
+            ne((schema.spareRequests as any).requested_for_member_id, member.id)
+          )!
         )
       )
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
@@ -169,6 +203,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
       eq(schema.spareRequests.request_type, 'public'),
       gte(schema.spareRequests.game_date, today),
       ne(schema.spareRequests.requester_id, member.id),
+      or(
+        isNull((schema.spareRequests as any).requested_for_member_id),
+        ne((schema.spareRequests as any).requested_for_member_id, member.id)
+      )!,
     ];
     
     // Filter out skip requests if member can't skip
@@ -209,6 +247,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
       eq(schema.spareRequestInvitations.member_id, member.id),
       gte(schema.spareRequests.game_date, today),
       ne(schema.spareRequests.requester_id, member.id),
+      or(
+        isNull((schema.spareRequests as any).requested_for_member_id),
+        ne((schema.spareRequests as any).requested_for_member_id, member.id)
+      )!,
     ];
     
     // Filter out skip requests if member can't skip
@@ -851,7 +893,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .select({
         id: schema.spareRequests.id,
         league_name: schema.leagues.name,
+        requester_id: schema.spareRequests.requester_id,
         requested_for_name: schema.spareRequests.requested_for_name,
+        requested_for_member_id: (schema.spareRequests as any).requested_for_member_id,
         game_date: schema.spareRequests.game_date,
         game_time: schema.spareRequests.game_time,
         position: schema.spareRequests.position,
@@ -862,6 +906,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         filled_by_email: schema.members.email,
         filled_by_phone: schema.members.phone,
         filled_at: schema.spareRequests.filled_at,
+        cancelled_by_member_id: (schema.spareRequests as any).cancelled_by_member_id,
         notifications_sent_at: schema.spareRequests.notifications_sent_at,
         had_cancellation: schema.spareRequests.had_cancellation,
         created_at: schema.spareRequests.created_at,
@@ -876,7 +921,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .where(
         and(
-          eq(schema.spareRequests.requester_id, member.id),
+          or(
+            eq(schema.spareRequests.requester_id, member.id),
+            eq((schema.spareRequests as any).requested_for_member_id, member.id)
+          )!,
           gte(schema.spareRequests.game_date, today)
         )
       )
@@ -916,6 +964,26 @@ export async function spareRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const requesterIds = Array.from(new Set(requests.map((req: any) => req.requester_id))) as number[];
+    const requesterRows = requesterIds.length > 0
+      ? await db
+          .select({ id: schema.members.id, name: schema.members.name })
+          .from(schema.members)
+          .where(inArray(schema.members.id, requesterIds))
+      : [];
+    const requesterNameMap = new Map(requesterRows.map((row: any) => [row.id, row.name]));
+
+    const cancellerIds = Array.from(
+      new Set(requests.map((req: any) => req.cancelled_by_member_id).filter(Boolean))
+    ) as number[];
+    const cancellerRows = cancellerIds.length > 0
+      ? await db
+          .select({ id: schema.members.id, name: schema.members.name })
+          .from(schema.members)
+          .where(inArray(schema.members.id, cancellerIds))
+      : [];
+    const cancellerNameMap = new Map(cancellerRows.map((row: any) => [row.id, row.name]));
+
     return requests.map((req: any) => {
       const invites = req.request_type === 'private' ? inviteMap.get(req.id) || [] : undefined;
       const declinedCount = invites ? invites.filter((i) => i.status === 'declined').length : 0;
@@ -923,6 +991,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       return {
         id: req.id,
         requestedForName: req.requested_for_name,
+        requestedForMemberId: req.requested_for_member_id,
         gameDate: req.game_date,
         gameTime: req.game_time,
         leagueName: req.league_name || null,
@@ -930,6 +999,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
         message: req.message,
         requestType: req.request_type,
         status: req.status,
+        requesterId: req.requester_id,
+        requesterName: requesterNameMap.get(req.requester_id) || null,
+        cancelledByName: req.cancelled_by_member_id
+          ? cancellerNameMap.get(req.cancelled_by_member_id) || null
+          : null,
         filledByName: req.filled_by_name,
         filledByEmail: req.filled_by_email,
         filledByPhone: req.filled_by_phone,
@@ -961,7 +1035,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const requests = await db
       .select({
         id: schema.spareRequests.id,
+        requester_id: schema.spareRequests.requester_id,
         requested_for_name: schema.spareRequests.requested_for_name,
+        requested_for_member_id: (schema.spareRequests as any).requested_for_member_id,
         game_date: schema.spareRequests.game_date,
         game_time: schema.spareRequests.game_time,
         position: schema.spareRequests.position,
@@ -972,6 +1048,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         filled_by_email: schema.members.email,
         filled_by_phone: schema.members.phone,
         filled_at: schema.spareRequests.filled_at,
+        cancelled_by_member_id: (schema.spareRequests as any).cancelled_by_member_id,
         notifications_sent_at: schema.spareRequests.notifications_sent_at,
         had_cancellation: schema.spareRequests.had_cancellation,
         created_at: schema.spareRequests.created_at,
@@ -985,7 +1062,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .where(
         and(
-          eq(schema.spareRequests.requester_id, member.id),
+          or(
+            eq(schema.spareRequests.requester_id, member.id),
+            eq((schema.spareRequests as any).requested_for_member_id, member.id)
+          )!,
           or(
             sql`${schema.spareRequests.game_date} < ${today}`,
             and(
@@ -997,16 +1077,42 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .orderBy(desc(schema.spareRequests.game_date), desc(schema.spareRequests.game_time));
 
+    const requesterIds = Array.from(new Set(requests.map((req: any) => req.requester_id))) as number[];
+    const requesterRows = requesterIds.length > 0
+      ? await db
+          .select({ id: schema.members.id, name: schema.members.name })
+          .from(schema.members)
+          .where(inArray(schema.members.id, requesterIds))
+      : [];
+    const requesterNameMap = new Map(requesterRows.map((row: any) => [row.id, row.name]));
+
+    const cancellerIds = Array.from(
+      new Set(requests.map((req: any) => req.cancelled_by_member_id).filter(Boolean))
+    ) as number[];
+    const cancellerRows = cancellerIds.length > 0
+      ? await db
+          .select({ id: schema.members.id, name: schema.members.name })
+          .from(schema.members)
+          .where(inArray(schema.members.id, cancellerIds))
+      : [];
+    const cancellerNameMap = new Map(cancellerRows.map((row: any) => [row.id, row.name]));
+
     return requests.map((req: any) => {
       return {
         id: req.id,
         requestedForName: req.requested_for_name,
+        requestedForMemberId: req.requested_for_member_id,
         gameDate: req.game_date,
         gameTime: req.game_time,
         position: req.position,
         message: req.message,
         requestType: req.request_type,
         status: req.status,
+        requesterId: req.requester_id,
+        requesterName: requesterNameMap.get(req.requester_id) || null,
+        cancelledByName: req.cancelled_by_member_id
+          ? cancellerNameMap.get(req.cancelled_by_member_id) || null
+          : null,
         filledByName: req.filled_by_name,
         filledByEmail: req.filled_by_email,
         filledByPhone: req.filled_by_phone,
@@ -1110,6 +1216,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
           // Exclude any requests the user is involved with (requester or sparer)
           ne(schema.spareRequests.requester_id, member.id),
           ne(schema.spareRequests.filled_by_member_id, member.id),
+          or(
+            isNull((schema.spareRequests as any).requested_for_member_id),
+            ne((schema.spareRequests as any).requested_for_member_id, member.id)
+          )!,
           // Also exclude private requests where the user was invited
           sql`NOT EXISTS (
             SELECT 1
@@ -1182,6 +1292,62 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
     const leagueName = league.name;
 
+    const positionValue = body.position ?? null;
+    const messageValue = body.message || null;
+    let requestedForNameValue = body.requestedForName;
+    let requestedForMemberId: number | null = null;
+
+    if (body.requestedForMemberId !== undefined) {
+      const requestedForRows = await db
+        .select({ id: schema.members.id, name: schema.members.name })
+        .from(schema.members)
+        .where(eq(schema.members.id, body.requestedForMemberId))
+        .limit(1);
+
+      const requestedForMember = requestedForRows[0];
+      if (!requestedForMember) {
+        return reply.code(400).send({ error: 'Invalid requested-for member' });
+      }
+
+      requestedForMemberId = requestedForMember.id;
+      requestedForNameValue = requestedForMember.name;
+    }
+
+    // Warn about duplicates based on core fields only.
+    const duplicateMatches = await db
+      .select({
+        id: schema.spareRequests.id,
+        requested_for_name: schema.spareRequests.requested_for_name,
+        game_date: schema.spareRequests.game_date,
+        game_time: schema.spareRequests.game_time,
+      })
+      .from(schema.spareRequests)
+      .where(
+        and(
+          eq(schema.spareRequests.league_id, body.leagueId),
+          eq(schema.spareRequests.requested_for_name, requestedForNameValue),
+          eq(schema.spareRequests.game_date, body.gameDate),
+          eq(schema.spareRequests.game_time, body.gameTime),
+          ne(schema.spareRequests.status, 'cancelled')
+        )
+      )
+      .orderBy(desc(schema.spareRequests.created_at))
+      .limit(1);
+
+    if (!body.allowDuplicate && duplicateMatches.length > 0) {
+      const match = duplicateMatches[0];
+      return reply.send({
+        duplicate: true,
+        existingRequest: {
+          id: match.id,
+          leagueName,
+          requestedForName: match.requested_for_name,
+          gameDate: normalizeDateString(match.game_date),
+          gameTime: normalizeTimeString(match.game_time),
+        },
+      });
+    }
+
     let gameYear = 0;
     let gameMonth = 0;
     let gameDay = 0;
@@ -1227,11 +1393,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .values({
         requester_id: member.id,
         league_id: body.leagueId,
-        requested_for_name: body.requestedForName,
+        requested_for_name: requestedForNameValue,
+        requested_for_member_id: requestedForMemberId,
         game_date: body.gameDate,
         game_time: body.gameTime,
-        position: body.position || null,
-        message: body.message || null,
+        position: positionValue,
+        message: messageValue,
         request_type: body.requestType,
         status: 'open',
         had_cancellation: 0,
@@ -1251,8 +1418,20 @@ export async function spareRoutes(fastify: FastifyInstance) {
       meta: { requestType: body.requestType, leagueId: body.leagueId },
     }).catch(() => {});
 
-    // Store CCs (up to 4, members only, no self)
-    const ccIds = Array.from(new Set((body.ccMemberIds || []).filter((id) => id !== member.id))).slice(0, 4);
+    // Store CCs (up to 4, members only, no self). Always include requested-for member when present.
+    const requestedForCcId =
+      requestedForMemberId && requestedForMemberId !== member.id ? requestedForMemberId : null;
+    const baseCcIds = (body.ccMemberIds || []).filter((id) => id !== member.id);
+    const ccIds: number[] = [];
+    if (requestedForCcId) {
+      ccIds.push(requestedForCcId);
+    }
+    for (const id of baseCcIds) {
+      if (!ccIds.includes(id)) {
+        ccIds.push(id);
+      }
+      if (ccIds.length >= 4) break;
+    }
     if (ccIds.length > 0) {
       const ccMembersExist = await db
         .select({ id: schema.members.id })
@@ -1467,75 +1646,53 @@ export async function spareRoutes(fastify: FastifyInstance) {
       console.log(`[Spare Request] Found ${recipientMembers.length} matching members for league ${body.leagueId}`);
 
       if (isLessThan24Hours) {
-        // Less than 24 hours: send notifications immediately to all matching members
-        for (const recipient of recipientMembers) {
-          if (recipient.email) {
-            const acceptToken = generateEmailLinkToken(recipient);
-            
-            try {
-              await sendOnceWithDeliveryClaim(
-                {
-                  spareRequestId: requestId,
-                  memberId: recipient.id,
-                  notificationGeneration,
-                  channel: 'email',
-                  kind: 'spare_request',
-                },
-                () =>
-                  sendSpareRequestEmail(
-                    recipient.email!,
-                    recipient.name,
-                    member.name,
-                    {
-                      leagueName,
-                      requestedForName: body.requestedForName,
-                      gameDate: body.gameDate,
-                      gameTime: body.gameTime,
-                      position: body.position,
-                      message: body.message,
-                    },
-                    acceptToken,
-                    requestId
-                  )
-              );
-            } catch (error) {
-              console.error('Error sending spare request email:', error);
-            }
-          }
-
-          if (recipient.phone && recipient.opted_in_sms === 1) {
-            try {
-              await sendOnceWithDeliveryClaim(
-                {
-                  spareRequestId: requestId,
-                  memberId: recipient.id,
-                  notificationGeneration,
-                  channel: 'sms',
-                  kind: 'spare_request',
-                },
-                () => sendSpareRequestSMS(recipient.phone!, member.name, body.gameDate, body.gameTime)
-              );
-            } catch (error) {
-              console.error('Error sending spare request SMS:', error);
-            }
-          }
-        }
-
-        // Update notifications_sent_at timestamp
-        if (recipientMembers.length > 0) {
+        // Less than 24 hours: queue notifications for background processing
+        if (recipientMembers.length === 0) {
           await db
             .update(schema.spareRequests)
             .set({
-              notifications_sent_at: await getCurrentTimeAsync(),
               notification_status: 'completed',
+              next_notification_at: null,
             })
             .where(eq(schema.spareRequests.id, requestId));
+
+          return {
+            id: requestId,
+            success: true,
+            notificationsQueued: 0,
+            notificationStatus: 'completed',
+            message: 'No matching members found for this request',
+          };
         }
+
+        const shuffled = [...recipientMembers].sort(() => Math.random() - 0.5);
+        await db.insert(schema.spareRequestNotificationQueue).values(
+          shuffled.map((recipient, index) => ({
+            spare_request_id: requestId,
+            member_id: recipient.id,
+            queue_order: index,
+          }))
+        );
+
+        await db
+          .update(schema.spareRequests)
+          .set({
+            notification_status: 'in_progress',
+            next_notification_at: await getCurrentTimeAsync(),
+            notification_paused: 0,
+          })
+          .where(eq(schema.spareRequests.id, requestId));
+
+        processAllNotificationsForRequest(requestId).catch((error) => {
+          console.error('[Spare Request] Error processing immediate notifications:', error);
+        });
 
         return {
           id: requestId,
           success: true,
-          notificationsSent: recipientMembers.length,
+          notificationsQueued: shuffled.length,
+          notificationStatus: 'in_progress',
+          notificationMode: 'immediate',
         };
       } else {
         // More than 24 hours: set up staggered notification queue
@@ -1592,6 +1749,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           success: true,
           notificationsQueued: shuffled.length,
           notificationStatus: 'in_progress',
+          notificationMode: 'staggered',
         };
       }
     }
@@ -1811,17 +1969,98 @@ export async function spareRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Spare request not found' });
     }
 
-    if (spareRequest.requester_id !== member.id) {
+    const requestedForMemberId = (spareRequest as any).requested_for_member_id as number | null;
+    const canCancel =
+      spareRequest.requester_id === member.id ||
+      (requestedForMemberId !== null && requestedForMemberId === member.id);
+    if (!canCancel) {
       return reply.code(403).send({ error: 'You can only cancel your own requests' });
+    }
+
+    if (spareRequest.status !== 'open') {
+      return reply.code(400).send({ error: 'Only open spare requests can be cancelled' });
     }
 
     await db
       .update(schema.spareRequests)
-      .set({ status: 'cancelled' })
+      .set({
+        status: 'cancelled',
+        cancelled_by_member_id: member.id,
+      })
       .where(eq(schema.spareRequests.id, requestId));
 
     // Best-effort analytics (do not block)
     logEvent({ eventType: 'spare.request.cancelled', memberId: member.id, relatedId: requestId }).catch(() => {});
+
+    // Email confirmations (best-effort)
+    try {
+      // League name (optional; older requests may not have league_id)
+      let leagueName: string | undefined;
+      if ((spareRequest as any).league_id) {
+        const leagueRows = await db
+          .select({ name: schema.leagues.name })
+          .from(schema.leagues)
+          .where(eq(schema.leagues.id, (spareRequest as any).league_id))
+          .limit(1);
+        leagueName = leagueRows[0]?.name || undefined;
+      }
+
+      const requestDetails = {
+        leagueName,
+        requestedForName: spareRequest.requested_for_name,
+        gameDate: spareRequest.game_date,
+        gameTime: spareRequest.game_time,
+        position: spareRequest.position || undefined,
+      };
+
+      // Canceller confirmation
+      if (member.email && (member as any).email_subscribed === 1) {
+        const cancellerToken = generateToken(member);
+        sendSpareRequestCancelConfirmationEmail(
+          member.email,
+          member.name,
+          requestDetails,
+          cancellerToken
+        ).catch((error) => {
+          console.error('Error sending spare request cancellation confirmation email:', error);
+        });
+      }
+
+      const requesters = await db
+        .select()
+        .from(schema.members)
+        .where(eq(schema.members.id, spareRequest.requester_id))
+        .limit(1);
+      const requester = requesters[0] as Member | undefined;
+
+      const ccMembers = await getCcMembersForRequest(requestId);
+
+      const notifyMap = new Map<number, Member>();
+      if (requester?.email && requester.email_subscribed === 1) {
+        notifyMap.set(requester.id, requester);
+      }
+      for (const ccMember of ccMembers) {
+        if (!ccMember.email || (ccMember as any).email_subscribed !== 1) continue;
+        notifyMap.set(ccMember.id, ccMember);
+      }
+      notifyMap.delete(member.id);
+
+      for (const recipient of notifyMap.values()) {
+        if (!recipient.email) continue;
+        const recipientToken = generateToken(recipient);
+        sendSpareRequestCancelledEmail(
+          recipient.email,
+          recipient.name,
+          member.name,
+          requestDetails,
+          recipientToken
+        ).catch((error) => {
+          console.error('Error sending spare request cancelled email:', error);
+        });
+      }
+    } catch (error) {
+      console.error('Error scheduling spare request cancellation emails:', error);
+    }
 
     return { success: true };
   });

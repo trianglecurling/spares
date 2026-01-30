@@ -43,6 +43,110 @@ async function allPrepared(stmt: any, ...params: any[]): Promise<any[]> {
   return result;
 }
 
+async function ensureRequestedForMemberIdColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    const stmt = db.prepare(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'spare_requests'
+    `);
+    const rows = await allPrepared(stmt);
+    const columnNames = new Set(rows.map((row: any) => String(row.column_name)));
+    if (!columnNames.has('requested_for_member_id')) {
+      await execSQL(
+        db,
+        `
+          ALTER TABLE spare_requests
+          ADD COLUMN IF NOT EXISTS requested_for_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL;
+        `
+      );
+    }
+    if (!columnNames.has('cancelled_by_member_id')) {
+      await execSQL(
+        db,
+        `
+          ALTER TABLE spare_requests
+          ADD COLUMN IF NOT EXISTS cancelled_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL;
+        `
+      );
+    }
+    await execSQL(
+      db,
+      `
+        CREATE INDEX IF NOT EXISTS idx_spare_requests_requested_for_member_id
+        ON spare_requests(requested_for_member_id);
+        CREATE INDEX IF NOT EXISTS idx_spare_requests_cancelled_by_member_id
+        ON spare_requests(cancelled_by_member_id);
+      `
+    );
+    return;
+  }
+
+  const stmt = db.prepare(`PRAGMA table_info(spare_requests)`);
+  const columns = await allPrepared(stmt);
+  const columnNames = new Set(columns.map((col: any) => String(col.name)));
+  if (!columnNames.has('requested_for_member_id')) {
+    await execSQL(
+      db,
+      `
+        ALTER TABLE spare_requests
+        ADD COLUMN requested_for_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL;
+      `
+    );
+  }
+  if (!columnNames.has('cancelled_by_member_id')) {
+    await execSQL(
+      db,
+      `
+        ALTER TABLE spare_requests
+        ADD COLUMN cancelled_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL;
+      `
+    );
+  }
+  await execSQL(
+    db,
+    `
+      CREATE INDEX IF NOT EXISTS idx_spare_requests_requested_for_member_id
+      ON spare_requests(requested_for_member_id);
+      CREATE INDEX IF NOT EXISTS idx_spare_requests_cancelled_by_member_id
+      ON spare_requests(cancelled_by_member_id);
+    `
+  );
+}
+
+function ensureRequestedForMemberIdColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(spare_requests)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('requested_for_member_id')) {
+    execSQLSync(
+      db,
+      `
+        ALTER TABLE spare_requests
+        ADD COLUMN requested_for_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL;
+      `
+    );
+  }
+  if (!columnNames.has('cancelled_by_member_id')) {
+    execSQLSync(
+      db,
+      `
+        ALTER TABLE spare_requests
+        ADD COLUMN cancelled_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL;
+      `
+    );
+  }
+  execSQLSync(
+    db,
+    `
+      CREATE INDEX IF NOT EXISTS idx_spare_requests_requested_for_member_id
+      ON spare_requests(requested_for_member_id);
+      CREATE INDEX IF NOT EXISTS idx_spare_requests_cancelled_by_member_id
+      ON spare_requests(cancelled_by_member_id);
+    `
+  );
+}
+
 export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await execSQL(db, `
     -- Members table
@@ -149,6 +253,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       requester_id INTEGER NOT NULL,
       league_id INTEGER,
       requested_for_name TEXT NOT NULL,
+      requested_for_member_id INTEGER,
       game_date DATE NOT NULL,
       game_time TIME NOT NULL,
       position TEXT CHECK(position IN ('lead', 'second', 'vice', 'skip', NULL)),
@@ -156,11 +261,14 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       request_type TEXT NOT NULL CHECK(request_type IN ('public', 'private')),
       status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'filled', 'cancelled')),
       filled_by_member_id INTEGER,
+      cancelled_by_member_id INTEGER,
       filled_at DATETIME,
       notification_generation INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requester_id) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY (requested_for_member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY (cancelled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE SET NULL
     );
@@ -440,6 +548,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_claimed ON spare_request_notification_deliveries(spare_request_id, claimed_at);
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_sent ON spare_request_notification_deliveries(spare_request_id, sent_at);
   `);
+
+  await ensureRequestedForMemberIdColumn(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -554,6 +664,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       requester_id INTEGER NOT NULL,
       league_id INTEGER,
       requested_for_name TEXT NOT NULL,
+      requested_for_member_id INTEGER,
       game_date DATE NOT NULL,
       game_time TIME NOT NULL,
       position TEXT CHECK(position IN ('lead', 'second', 'vice', 'skip', NULL)),
@@ -561,11 +672,14 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       request_type TEXT NOT NULL CHECK(request_type IN ('public', 'private')),
       status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'filled', 'cancelled')),
       filled_by_member_id INTEGER,
+      cancelled_by_member_id INTEGER,
       filled_at DATETIME,
       notification_generation INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requester_id) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY (requested_for_member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY (cancelled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE SET NULL
     );
@@ -805,6 +919,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_claimed ON spare_request_notification_deliveries(spare_request_id, claimed_at);
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_sent ON spare_request_notification_deliveries(spare_request_id, sent_at);
   `);
+
+  ensureRequestedForMemberIdColumnSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

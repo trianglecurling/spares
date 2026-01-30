@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import Layout from '../components/Layout';
 import api, { formatApiError } from '../utils/api';
 import Button from '../components/Button';
@@ -32,6 +33,7 @@ interface GameSlot {
 interface SpareRequestPayload {
   leagueId: number;
   requestedForName: string;
+  requestedForMemberId?: number;
   gameDate: string;
   gameTime: string;
   position?: string;
@@ -39,17 +41,20 @@ interface SpareRequestPayload {
   requestType: 'public' | 'private';
   invitedMemberIds?: number[];
   ccMemberIds?: number[];
+  allowDuplicate?: boolean;
 }
 
 export default function RequestSpare() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
   const navigate = useNavigate();
   const isSpareOnly = Boolean(member?.spareOnly);
   
   // Form State
   const [requestedForMode, setRequestedForMode] = useState<'me' | 'other'>(member?.name ? 'me' : 'other');
   const [otherRequestedForName, setOtherRequestedForName] = useState('');
+  const [otherRequestedForMemberId, setOtherRequestedForMemberId] = useState<number | null>(null);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
   const [selectedGameSlot, setSelectedGameSlot] = useState<string>(''); // combined "date|time"
   const [position, setPosition] = useState('');
@@ -288,6 +293,8 @@ export default function RequestSpare() {
       const payload: SpareRequestPayload = {
         leagueId: Number(selectedLeagueId),
         requestedForName: effectiveRequestedForName,
+        requestedForMemberId:
+          requestedForMode === 'other' ? (otherRequestedForMemberId ?? undefined) : undefined,
         gameDate,
         gameTime,
         position: position || undefined,
@@ -308,11 +315,29 @@ export default function RequestSpare() {
         payload.invitedMemberIds = selectedMembers;
       }
 
-      const response = await api.post('/spares', payload);
+      let response = await api.post('/spares', payload);
+
+      if (response.data.duplicate) {
+        setSubmitting(false);
+        const details = formatDuplicateDetails(response.data.existingRequest);
+        const confirmed = await confirm({
+          title: 'Warning: Duplicate spare request',
+          message: `A duplicate spare request already exists for ${details}. Did you already create this request (or did someone create it for you)? Creating another will result in 2 spare requests.\n\nWould you like to create a duplicate spare request?`,
+          confirmText: 'Create duplicate',
+          cancelText: 'Cancel',
+          variant: 'warning',
+        });
+        if (!confirmed) {
+          return;
+        }
+        setSubmitting(true);
+        response = await api.post('/spares', { ...payload, allowDuplicate: true });
+      }
 
       if (response.data.notificationsQueued !== undefined) {
+        const mode = response.data.notificationMode === 'immediate' ? 'immediately' : 'gradually';
         showAlert(
-          `Spare request created! ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`,
+          `Spare request created! ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent ${mode}.`,
           'success'
         );
       } else {
@@ -393,7 +418,9 @@ export default function RequestSpare() {
       case 'Enter':
         e.preventDefault();
         if (otherHighlightedIndex >= 0 && otherHighlightedIndex < otherFilteredMembers.length) {
-          setOtherRequestedForName(otherFilteredMembers[otherHighlightedIndex].name);
+          const selected = otherFilteredMembers[otherHighlightedIndex];
+          setOtherRequestedForName(selected.name);
+          setOtherRequestedForMemberId(selected.id);
           setRequestedForMode('other');
           setOtherIsDropdownOpen(false);
           setOtherHighlightedIndex(-1);
@@ -494,6 +521,29 @@ export default function RequestSpare() {
     const ampm = hour >= 12 ? 'PM' : 'AM';
     const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
     return `${displayHour}:${minutes} ${ampm}`;
+  };
+
+  const formatDuplicateDetails = (details?: {
+    requestedForName?: string;
+    leagueName?: string;
+    gameDate?: string;
+    gameTime?: string;
+  }) => {
+    if (!details) return 'the same game slot';
+    const parts: string[] = [];
+    if (details.requestedForName) {
+      parts.push(details.requestedForName);
+    }
+    if (details.leagueName) {
+      parts.push(details.leagueName);
+    }
+    if (details.gameDate && details.gameTime) {
+      const date = new Date(`${details.gameDate}T${details.gameTime}`);
+      if (!Number.isNaN(date.getTime())) {
+        parts.push(`${format(date, 'EEEE, MMMM d')} at ${format(date, 'h:mm a')}`);
+      }
+    }
+    return parts.length > 0 ? parts.join(' • ') : 'the same game slot';
   };
 
   const leaguesByDay: Record<number, League[]> = leagues.reduce((acc, league) => {
@@ -750,6 +800,7 @@ export default function RequestSpare() {
                   onChange={() => {
                     setRequestedForMode('me');
                     setOtherIsDropdownOpen(false);
+                    setOtherRequestedForMemberId(null);
                   }}
                   className="mt-0.5"
                 />
@@ -790,6 +841,7 @@ export default function RequestSpare() {
                     onChange={(e) => {
                       const next = e.target.value;
                       setOtherRequestedForName(next);
+                      setOtherRequestedForMemberId(null);
                       // Avoid changing form state just by tabbing into this input.
                       // Only select "Someone else" once the user actually types.
                       if (next.trim().length > 0) {
@@ -824,6 +876,7 @@ export default function RequestSpare() {
                           type="button"
                           onClick={() => {
                             setOtherRequestedForName(m.name);
+                            setOtherRequestedForMemberId(m.id);
                             setRequestedForMode('other');
                             setOtherIsDropdownOpen(false);
                             setOtherHighlightedIndex(-1);
