@@ -39,15 +39,17 @@ export default function Layout({ children }: LayoutProps) {
 
   const navLinks = [
     { to: '/', label: 'Dashboard' },
+    { to: '/leagues', label: 'Leagues' },
     { to: '/availability', label: 'My availability' },
     { to: '/my-requests', label: 'My requests' },
     { to: '/members', label: 'Directory' },
   ];
 
-  const canManageLeagues = Boolean(member?.isAdmin || member?.isLeagueManager);
+  const canManageLeagues = Boolean(
+    member?.isAdmin || member?.isLeagueAdministrator || (member?.leagueManagerLeagueIds?.length ?? 0) > 0
+  );
   const adminLinks = [
     ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
-    ...(canManageLeagues ? [{ to: '/admin/leagues', label: 'Leagues' }] : []),
     ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Sheets' }] : []),
     ...(member?.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
   ];

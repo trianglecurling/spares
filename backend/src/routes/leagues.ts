@@ -2,9 +2,14 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, sql, asc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { isAdmin } from '../utils/auth.js';
+import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
-import { getLeagueManagerRoleInfo, hasClubLeagueManagerAccess } from '../utils/leagueAccess.js';
+import {
+  getLeagueAdministratorRoleInfo,
+  getLeagueManagerRoleInfo,
+  hasClubLeagueAdministratorAccess,
+  hasLeagueManagerAccess,
+} from '../utils/leagueAccess.js';
 import { config } from '../config.js';
 
 const createLeagueSchema = z.object({
@@ -96,8 +101,11 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
 
     const { db, schema } = getDrizzleDb();
-    const canManageAll = isAdmin(member);
-    const roleInfo = canManageAll ? { isGlobal: true, leagueIds: [] } : await getLeagueManagerRoleInfo(member.id);
+    const canManageAll = isAdmin(member) || isServerAdmin(member);
+    const leagueAdminInfo = canManageAll
+      ? { isGlobal: true, leagueIds: [] }
+      : await getLeagueAdministratorRoleInfo(member.id);
+    const leagueManagerInfo = canManageAll ? { leagueIds: [] } : await getLeagueManagerRoleInfo(member.id);
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -125,7 +133,10 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         endDate: league.end_date,
         drawTimes: drawTimes.map((dt: any) => dt.draw_time),
         exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
-        canManage: canManageAll || roleInfo.isGlobal || roleInfo.leagueIds.includes(league.id),
+        canManage:
+          canManageAll ||
+          leagueAdminInfo.isGlobal ||
+          leagueManagerInfo.leagueIds.includes(league.id),
       };
     }));
 
@@ -210,7 +221,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Create league
   fastify.post('/leagues', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !(await hasClubLeagueManagerAccess(member))) {
+    if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -294,12 +305,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Update league
   fastify.patch('/leagues/:id', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !(await hasClubLeagueManagerAccess(member))) {
-      return reply.code(403).send({ error: 'Forbidden' });
+    if (!member) {
+      return reply.code(401).send({ error: 'Unauthorized' });
     }
 
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
+
+    if (!(await hasLeagueManagerAccess(member, leagueId))) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
     const body = updateLeagueSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
@@ -397,7 +412,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Delete league
   fastify.delete('/leagues/:id', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !(await hasClubLeagueManagerAccess(member))) {
+    if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -415,7 +430,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   // Admin: Export leagues
   fastify.get('/leagues/export', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !(await hasClubLeagueManagerAccess(member))) {
+    if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
@@ -467,7 +482,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
   fastify.post('/leagues/import', async (request, reply) => {
     const member = (request as any).member as Member;
-    if (!member || !(await hasClubLeagueManagerAccess(member))) {
+    if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 

@@ -34,6 +34,7 @@ const updateConfigSchema = z.object({
   testMode: z.boolean().optional(),
   disableEmail: z.boolean().optional(),
   disableSms: z.boolean().optional(),
+  frontendOtelEnabled: z.boolean().optional(),
   captureFrontendLogs: z.boolean().optional(),
   captureBackendLogs: z.boolean().optional(),
   testCurrentTime: z.string().nullable().optional(),
@@ -79,6 +80,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         disableSms: false,
         testCurrentTime: null,
         notificationDelaySeconds: 180,
+        frontendOtelEnabled: true,
         captureFrontendLogs: true,
         captureBackendLogs: true,
         updatedAt: null,
@@ -100,6 +102,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       testMode: config.test_mode === 1,
       disableEmail: config.disable_email === 1,
       disableSms: config.disable_sms === 1,
+      frontendOtelEnabled: config.frontend_otel_enabled !== 0,
       captureFrontendLogs: config.capture_frontend_logs !== 0,
       captureBackendLogs: config.capture_backend_logs !== 0,
       testCurrentTime: config.test_current_time,
@@ -326,6 +329,9 @@ export async function configRoutes(fastify: FastifyInstance) {
     if (body.disableSms !== undefined) {
       updateData.disable_sms = body.disableSms ? 1 : 0;
     }
+    if (body.frontendOtelEnabled !== undefined) {
+      updateData.frontend_otel_enabled = body.frontendOtelEnabled ? 1 : 0;
+    }
     if (body.captureFrontendLogs !== undefined) {
       updateData.capture_frontend_logs = body.captureFrontendLogs ? 1 : 0;
     }
@@ -394,6 +400,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       testMode: updatedConfig.test_mode === 1,
       disableEmail: updatedConfig.disable_email === 1,
       disableSms: updatedConfig.disable_sms === 1,
+      frontendOtelEnabled: updatedConfig.frontend_otel_enabled !== 0,
       captureFrontendLogs: updatedConfig.capture_frontend_logs !== 0,
       captureBackendLogs: updatedConfig.capture_backend_logs !== 0,
       testCurrentTime: updatedConfig.test_current_time,

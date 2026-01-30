@@ -205,6 +205,21 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_league_member_roles_member_id ON league_member_roles(member_id);
     CREATE INDEX IF NOT EXISTS idx_league_member_roles_league_id ON league_member_roles(league_id);
 
+    -- League roster (eligible members for team assignments)
+    CREATE TABLE IF NOT EXISTS league_roster (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(league_id, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_roster_league_id ON league_roster(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_roster_member_id ON league_roster(member_id);
+
     -- Sheets (club-level)
     CREATE TABLE IF NOT EXISTS sheets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -390,6 +405,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       test_mode INTEGER DEFAULT 0,
       disable_email INTEGER DEFAULT 0,
       disable_sms INTEGER DEFAULT 0,
+      frontend_otel_enabled INTEGER DEFAULT 1,
       capture_frontend_logs INTEGER DEFAULT 1,
       capture_backend_logs INTEGER DEFAULT 1,
       test_current_time DATETIME,
@@ -475,6 +491,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE server_config ADD COLUMN test_mode INTEGER DEFAULT 0', table: 'server_config', column: 'test_mode' },
     { sql: 'ALTER TABLE server_config ADD COLUMN disable_email INTEGER DEFAULT 0', table: 'server_config', column: 'disable_email' },
     { sql: 'ALTER TABLE server_config ADD COLUMN disable_sms INTEGER DEFAULT 0', table: 'server_config', column: 'disable_sms' },
+    { sql: 'ALTER TABLE server_config ADD COLUMN frontend_otel_enabled INTEGER DEFAULT 1', table: 'server_config', column: 'frontend_otel_enabled' },
     { sql: 'ALTER TABLE server_config ADD COLUMN capture_frontend_logs INTEGER DEFAULT 1', table: 'server_config', column: 'capture_frontend_logs' },
     { sql: 'ALTER TABLE server_config ADD COLUMN capture_backend_logs INTEGER DEFAULT 1', table: 'server_config', column: 'capture_backend_logs' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notifications_sent_at DATETIME', table: 'spare_requests', column: 'notifications_sent_at' },
@@ -804,6 +821,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       test_mode INTEGER DEFAULT 0,
       disable_email INTEGER DEFAULT 0,
       disable_sms INTEGER DEFAULT 0,
+      frontend_otel_enabled INTEGER DEFAULT 1,
       test_current_time DATETIME,
       notification_delay_seconds INTEGER DEFAULT 180,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -878,6 +896,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE server_config ADD COLUMN test_mode INTEGER DEFAULT 0',
     'ALTER TABLE server_config ADD COLUMN disable_email INTEGER DEFAULT 0',
     'ALTER TABLE server_config ADD COLUMN disable_sms INTEGER DEFAULT 0',
+    'ALTER TABLE server_config ADD COLUMN frontend_otel_enabled INTEGER DEFAULT 1',
     'ALTER TABLE spare_requests ADD COLUMN notifications_sent_at DATETIME',
     'ALTER TABLE spare_requests ADD COLUMN had_cancellation INTEGER DEFAULT 0',
     'ALTER TABLE server_config ADD COLUMN test_current_time DATETIME',

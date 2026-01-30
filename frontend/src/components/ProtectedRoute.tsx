@@ -39,11 +39,14 @@ export function ProtectedRoute({
     return <Navigate to="/" replace />;
   }
 
-  if (leagueManagerGlobalOnly && !(member.isAdmin || member.isLeagueManagerGlobal)) {
+  if (leagueManagerGlobalOnly && !(member.isAdmin || member.isLeagueAdministratorGlobal)) {
     return <Navigate to="/" replace />;
   }
 
-  if (leagueManagerOnly && !(member.isAdmin || member.isLeagueManager)) {
+  if (
+    leagueManagerOnly &&
+    !(member.isAdmin || member.isLeagueAdministrator || (member.leagueManagerLeagueIds?.length ?? 0) > 0)
+  ) {
     return <Navigate to="/" replace />;
   }
 

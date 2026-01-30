@@ -139,7 +139,7 @@ export const leagueMemberRolesSqlite = sqliteTable('league_member_roles', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
   league_id: integer('league_id').references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
-  role: text('role').notNull().$type<'league_manager'>(),
+  role: text('role').notNull().$type<'league_manager' | 'league_administrator'>(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -150,6 +150,18 @@ export const leagueMemberRolesSqlite = sqliteTable('league_member_roles', {
     table.league_id,
     table.role
   ),
+}));
+
+export const leagueRosterSqlite = sqliteTable('league_roster', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  leagueIdIdx: index('idx_league_roster_league_id').on(table.league_id),
+  memberIdIdx: index('idx_league_roster_member_id').on(table.member_id),
+  uniqueLeagueMember: uniqueIndex('league_roster_league_id_member_id_unique').on(table.league_id, table.member_id),
 }));
 
 export const memberAvailabilitySqlite = sqliteTable('member_availability', {
@@ -248,6 +260,7 @@ export const serverConfigSqlite = sqliteTable('server_config', {
   test_mode: integer('test_mode').default(0).notNull(),
   disable_email: integer('disable_email').default(0).notNull(),
   disable_sms: integer('disable_sms').default(0).notNull(),
+  frontend_otel_enabled: integer('frontend_otel_enabled').default(1).notNull(),
   capture_frontend_logs: integer('capture_frontend_logs').default(1).notNull(),
   capture_backend_logs: integer('capture_backend_logs').default(1).notNull(),
   test_current_time: text('test_current_time'),
@@ -468,7 +481,7 @@ export const leagueMemberRolesPg = pgTable('league_member_roles', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
   league_id: integerPg('league_id').references(() => leaguesPg.id, { onDelete: 'cascade' }),
-  role: textPg('role').notNull().$type<'league_manager'>(),
+  role: textPg('role').notNull().$type<'league_manager' | 'league_administrator'>(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -479,6 +492,18 @@ export const leagueMemberRolesPg = pgTable('league_member_roles', {
     table.league_id,
     table.role
   ),
+}));
+
+export const leagueRosterPg = pgTable('league_roster', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  leagueIdIdx: indexPg('idx_league_roster_league_id').on(table.league_id),
+  memberIdIdx: indexPg('idx_league_roster_member_id').on(table.member_id),
+  uniqueLeagueMember: uniqueIndexPg('league_roster_league_id_member_id_unique').on(table.league_id, table.member_id),
 }));
 
 export const memberAvailabilityPg = pgTable('member_availability', {
@@ -577,6 +602,7 @@ export const serverConfigPg = pgTable('server_config', {
   test_mode: integerPg('test_mode').default(0).notNull(),
   disable_email: integerPg('disable_email').default(0).notNull(),
   disable_sms: integerPg('disable_sms').default(0).notNull(),
+  frontend_otel_enabled: integerPg('frontend_otel_enabled').default(1).notNull(),
   capture_frontend_logs: integerPg('capture_frontend_logs').default(1).notNull(),
   capture_backend_logs: integerPg('capture_backend_logs').default(1).notNull(),
   test_current_time: timestamp('test_current_time', { withTimezone: false }),
@@ -676,6 +702,7 @@ export const sqliteSchema = {
   leagueTeams: leagueTeamsSqlite,
   teamMembers: teamMembersSqlite,
   leagueMemberRoles: leagueMemberRolesSqlite,
+  leagueRoster: leagueRosterSqlite,
   memberAvailability: memberAvailabilitySqlite,
   spareRequests: spareRequestsSqlite,
   spareRequestInvitations: spareRequestInvitationsSqlite,
@@ -701,6 +728,7 @@ export const pgSchema = {
   leagueTeams: leagueTeamsPg,
   teamMembers: teamMembersPg,
   leagueMemberRoles: leagueMemberRolesPg,
+  leagueRoster: leagueRosterPg,
   memberAvailability: memberAvailabilityPg,
   spareRequests: spareRequestsPg,
   spareRequestInvitations: spareRequestInvitationsPg,

@@ -22,7 +22,14 @@ const loadRuntimeOtelConfig = async (): Promise<RuntimeOtelConfig | undefined> =
   try {
     const response = await fetch('/api/public-config', { cache: 'no-store' });
     if (response.ok) {
-      const data = (await response.json()) as { captureFrontendLogs?: boolean };
+      const data = (await response.json()) as {
+        captureFrontendLogs?: boolean;
+        frontendOtelEnabled?: boolean;
+      };
+      if (typeof data?.frontendOtelEnabled === 'boolean') {
+        runtimeConfig = runtimeConfig || {};
+        runtimeConfig.enabled = data.frontendOtelEnabled;
+      }
       if (typeof data?.captureFrontendLogs === 'boolean') {
         runtimeConfig = runtimeConfig || {};
         runtimeConfig.captureConsoleLogs = data.captureFrontendLogs;

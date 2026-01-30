@@ -1,5 +1,4 @@
-import { and, eq, isNull, or } from 'drizzle-orm';
-import { getDrizzleDb } from '../db/drizzle-db.js';
+import { and, eq, inArray } from 'drizzle-orm';
 import { Member } from '../types.js';
 import { isAdmin, isServerAdmin } from './auth.js';
 
@@ -8,25 +7,37 @@ export interface LeagueManagerRoleInfo {
   leagueIds: number[];
 }
 
-export async function getLeagueManagerRoleInfo(memberId: number): Promise<LeagueManagerRoleInfo> {
+type LeagueRole = 'league_manager' | 'league_administrator';
+
+const LEAGUE_ADMIN_ROLES: LeagueRole[] = ['league_administrator'];
+const LEAGUE_MANAGER_ROLES: LeagueRole[] = ['league_manager'];
+
+async function getLeagueRoleInfo(
+  memberId: number,
+  roles: LeagueRole[],
+  globalRoles: LeagueRole[] = roles
+): Promise<LeagueManagerRoleInfo> {
   try {
     const { db, schema } = getDrizzleDb();
-    const rows = await db
-      .select({ league_id: schema.leagueMemberRoles.league_id })
+    const rows = (await db
+      .select({ league_id: schema.leagueMemberRoles.league_id, role: schema.leagueMemberRoles.role })
       .from(schema.leagueMemberRoles)
       .where(
         and(
           eq(schema.leagueMemberRoles.member_id, memberId),
-          eq(schema.leagueMemberRoles.role, 'league_manager')
+          inArray(schema.leagueMemberRoles.role, roles)
         )
-      );
+      )) as { league_id: number | null; role: LeagueRole }[];
 
-    const validRows = rows.filter((row): row is { league_id: number | null } => Boolean(row));
+    const validRows = rows.filter((row): row is { league_id: number | null; role: LeagueRole } => Boolean(row));
     const leagueIds = validRows
       .map((row) => row.league_id)
       .filter((value): value is number => value !== null && value !== undefined);
 
-    const isGlobal = validRows.some((row) => row.league_id === null || row.league_id === undefined);
+    const globalRoleSet = new Set(globalRoles);
+    const isGlobal = validRows.some(
+      (row) => (row.league_id === null || row.league_id === undefined) && globalRoleSet.has(row.role)
+    );
 
     return { isGlobal, leagueIds };
   } catch {
@@ -35,32 +46,33 @@ export async function getLeagueManagerRoleInfo(memberId: number): Promise<League
   }
 }
 
-export async function hasClubLeagueManagerAccess(member: Member): Promise<boolean> {
+export async function getLeagueManagerRoleInfo(memberId: number): Promise<LeagueManagerRoleInfo> {
+  return getLeagueRoleInfo(memberId, LEAGUE_MANAGER_ROLES, []);
+}
+
+export async function getLeagueAdministratorRoleInfo(memberId: number): Promise<LeagueManagerRoleInfo> {
+  return getLeagueRoleInfo(memberId, LEAGUE_ADMIN_ROLES, LEAGUE_ADMIN_ROLES);
+}
+
+export async function hasClubLeagueAdministratorAccess(member: Member): Promise<boolean> {
   if (isAdmin(member) || isServerAdmin(member)) return true;
-  const roleInfo = await getLeagueManagerRoleInfo(member.id);
+  const roleInfo = await getLeagueAdministratorRoleInfo(member.id);
   return roleInfo.isGlobal;
 }
 
-export async function hasLeagueManagerAccess(member: Member, leagueId: number): Promise<boolean> {
+export async function hasLeagueAdministratorAccess(member: Member, leagueId: number): Promise<boolean> {
   if (isAdmin(member) || isServerAdmin(member)) return true;
-  const roleInfo = await getLeagueManagerRoleInfo(member.id);
-  if (roleInfo.isGlobal) return true;
-  return roleInfo.leagueIds.includes(leagueId);
+  const roleInfo = await getLeagueAdministratorRoleInfo(member.id);
+  return roleInfo.isGlobal;
 }
 
-export async function isLeagueManagerForLeagueId(memberId: number, leagueId: number): Promise<boolean> {
-  const { db, schema } = getDrizzleDb();
-  const rows = await db
-    .select({ id: schema.leagueMemberRoles.id })
-    .from(schema.leagueMemberRoles)
-    .where(
-      and(
-        eq(schema.leagueMemberRoles.member_id, memberId),
-        eq(schema.leagueMemberRoles.role, 'league_manager'),
-        or(eq(schema.leagueMemberRoles.league_id, leagueId), isNull(schema.leagueMemberRoles.league_id))
-      )
-    )
-    .limit(1);
+export async function hasLeagueSetupAccess(member: Member, leagueId: number): Promise<boolean> {
+  if (await hasLeagueAdministratorAccess(member, leagueId)) return true;
+  return hasLeagueManagerAccess(member, leagueId);
+}
 
-  return rows.length > 0;
+export async function hasLeagueManagerAccess(member: Member, leagueId: number): Promise<boolean> {
+  if (await hasLeagueAdministratorAccess(member, leagueId)) return true;
+  const roleInfo = await getLeagueManagerRoleInfo(member.id);
+  return roleInfo.leagueIds.includes(leagueId);
 }

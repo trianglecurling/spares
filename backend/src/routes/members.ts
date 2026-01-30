@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { eq, sql, inArray, and } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin, isInServerAdminsList } from '../utils/auth.js';
-import { getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
+import { getLeagueAdministratorRoleInfo, getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
 import { Member } from '../types.js';
 import { sendWelcomeEmail } from '../services/email.js';
 import { generateEmailLinkToken } from '../utils/auth.js';
@@ -31,6 +31,7 @@ const createMemberSchema = z.object({
   spareOnly: z.boolean().optional(),
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
+  isLeagueAdministrator: z.boolean().optional(),
 });
 
 const updateMemberSchema = z.object({
@@ -41,6 +42,7 @@ const updateMemberSchema = z.object({
   spareOnly: z.boolean().optional(),
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
+  isLeagueAdministrator: z.boolean().optional(),
 });
 
 const bulkDeleteSchema = z.object({
@@ -83,6 +85,30 @@ interface MemberUpdateData {
   updated_at?: ReturnType<typeof sql>;
 }
 
+async function setGlobalLeagueAdministrator(
+  db: ReturnType<typeof getDrizzleDb>['db'],
+  schema: ReturnType<typeof getDrizzleDb>['schema'],
+  memberId: number,
+  enabled: boolean
+) {
+  if (enabled) {
+    await db
+      .insert(schema.leagueMemberRoles)
+      .values({ member_id: memberId, league_id: null, role: 'league_administrator' })
+      .onConflictDoNothing();
+  } else {
+    await db
+      .delete(schema.leagueMemberRoles)
+      .where(
+        and(
+          eq(schema.leagueMemberRoles.member_id, memberId),
+          isNull(schema.leagueMemberRoles.league_id),
+          eq(schema.leagueMemberRoles.role, 'league_administrator')
+        )
+      );
+  }
+}
+
 function normalizeDateString(value: any): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
@@ -108,6 +134,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const member = (request as AuthenticatedRequest).member;
 
     const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
+    const leagueAdminRoleInfo = await getLeagueAdministratorRoleInfo(member.id);
 
     return {
       id: member.id,
@@ -118,9 +145,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
       spareOnly: member.spare_only === 1,
       isAdmin: isAdmin(member),
       isServerAdmin: isServerAdmin(member),
-      isLeagueManager: leagueRoleInfo.isGlobal || leagueRoleInfo.leagueIds.length > 0,
-      isLeagueManagerGlobal: leagueRoleInfo.isGlobal,
       leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
+      isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
+      isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
       firstLoginCompleted: member.first_login_completed === 1,
       optedInSms: member.opted_in_sms === 1,
       emailSubscribed: member.email_subscribed === 1,
@@ -237,6 +264,16 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .orderBy(schema.members.name) as Member[];
 
     const isCurrentUserAdmin = isAdmin(member);
+    const leagueAdminRows = await db
+      .select({ member_id: schema.leagueMemberRoles.member_id })
+      .from(schema.leagueMemberRoles)
+      .where(
+        and(
+          eq(schema.leagueMemberRoles.role, 'league_administrator'),
+          isNull(schema.leagueMemberRoles.league_id)
+        )
+      );
+    const leagueAdminIds = new Set(leagueAdminRows.map((row) => row.member_id));
 
     return members.map((m) => {
       // Basic info always visible
@@ -246,6 +283,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         name: m.name,
         isAdmin: isAdmin(m),
         isServerAdmin: isServerAdmin(m),
+        isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
         isInServerAdminsList: isInServerAdminsList(m),
         emailSubscribed: Boolean(m.email_subscribed === 1),
         optedInSms: Boolean(m.opted_in_sms === 1),
@@ -388,6 +426,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
     const newMember = result[0] as Member;
 
+    if (body.isLeagueAdministrator) {
+      await setGlobalLeagueAdministrator(db, schema, newMember.id, true);
+    }
+
     return {
       id: newMember.id,
       name: newMember.name,
@@ -475,7 +517,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
 
     // Prevent users from changing their own role
-    if (memberId === member.id && (body.isAdmin !== undefined || body.isServerAdmin !== undefined)) {
+    if (
+      memberId === member.id &&
+      (body.isAdmin !== undefined || body.isServerAdmin !== undefined || body.isLeagueAdministrator !== undefined)
+    ) {
       return _reply.code(400).send({ error: 'You cannot change your own role' });
     }
     // Prevent users from changing their own valid-through date
@@ -548,6 +593,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
         .update(schema.members)
         .set(updateData)
         .where(eq(schema.members.id, memberId));
+    }
+
+    if (body.isLeagueAdministrator !== undefined) {
+      await setGlobalLeagueAdministrator(db, schema, memberId, body.isLeagueAdministrator);
     }
 
     const updatedMembers = await db

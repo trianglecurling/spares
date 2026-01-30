@@ -18,6 +18,7 @@ interface Member {
   spareOnly?: boolean;
   isAdmin: boolean;
   isServerAdmin?: boolean;
+  isLeagueAdministratorGlobal?: boolean;
   isInServerAdminsList?: boolean;
   emailSubscribed: boolean;
   optedInSms: boolean;
@@ -51,6 +52,7 @@ export default function AdminMembers() {
     spareOnly: false,
     isAdmin: false,
     isServerAdmin: false,
+    isLeagueAdministrator: false,
     emailVisible: false,
     phoneVisible: false,
   });
@@ -108,6 +110,7 @@ export default function AdminMembers() {
         optedInSms: Boolean(m.optedInSms),
         isAdmin: Boolean(m.isAdmin),
         isServerAdmin: Boolean(m.isServerAdmin),
+        isLeagueAdministratorGlobal: Boolean(m.isLeagueAdministratorGlobal),
         isInServerAdminsList: Boolean(m.isInServerAdminsList),
         firstLoginCompleted: Boolean(m.firstLoginCompleted),
       }));
@@ -141,6 +144,7 @@ export default function AdminMembers() {
         spareOnly: Boolean(member.spareOnly),
         isAdmin: member.isInServerAdminsList ? false : member.isAdmin,
         isServerAdmin: isServerAdmin,
+        isLeagueAdministrator: Boolean(member.isLeagueAdministratorGlobal),
         emailVisible: member.emailVisible,
         phoneVisible: member.phoneVisible,
       });
@@ -154,6 +158,7 @@ export default function AdminMembers() {
         spareOnly: false,
         isAdmin: false,
         isServerAdmin: false,
+        isLeagueAdministrator: false,
         emailVisible: false,
         phoneVisible: false,
       });
@@ -172,6 +177,7 @@ export default function AdminMembers() {
       spareOnly: false,
       isAdmin: false,
       isServerAdmin: false,
+      isLeagueAdministrator: false,
       emailVisible: false,
       phoneVisible: false,
     });
@@ -227,7 +233,13 @@ export default function AdminMembers() {
     ];
 
     const rows = members.map((m) => {
-      const role = m.isServerAdmin ? 'server_admin' : m.isAdmin ? 'admin' : 'member';
+      const role = m.isServerAdmin
+        ? 'server_admin'
+        : m.isAdmin
+          ? 'admin'
+          : m.isLeagueAdministratorGlobal
+            ? 'league_admin'
+            : 'member';
       const expired = isExpired(m.validThrough, m.isAdmin, m.isServerAdmin);
       return [
         m.id,
@@ -299,10 +311,12 @@ export default function AdminMembers() {
           } else {
             updateData.isAdmin = formData.isAdmin;
             updateData.isServerAdmin = formData.isServerAdmin;
+            updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
           }
         } else if (currentMember?.isAdmin && editingMember?.id !== currentMember?.id) {
           // Regular admins can only set isAdmin (and not for themselves)
           updateData.isAdmin = formData.isAdmin;
+          updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
         
         await api.patch(`/members/${editingMember.id}`, updateData);
@@ -319,9 +333,11 @@ export default function AdminMembers() {
         if (currentMember?.isServerAdmin) {
           createData.isAdmin = formData.isAdmin;
           createData.isServerAdmin = formData.isServerAdmin;
+          createData.isLeagueAdministrator = formData.isLeagueAdministrator;
         } else if (currentMember?.isAdmin) {
           // Regular admins can only set isAdmin
           createData.isAdmin = formData.isAdmin;
+          createData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
         
         await api.post('/members', createData);
@@ -698,6 +714,10 @@ export default function AdminMembers() {
                           <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">
                             Admin
                           </span>
+                        ) : member.isLeagueAdministratorGlobal ? (
+                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200">
+                            League admin
+                          </span>
                         ) : null}
                       </div>
                     </td>
@@ -957,8 +977,10 @@ export default function AdminMembers() {
                       type="radio"
                       id="roleRegular"
                       name="role"
-                      checked={!formData.isAdmin && !formData.isServerAdmin}
-                      onChange={() => setFormData({ ...formData, isAdmin: false, isServerAdmin: false })}
+                      checked={!formData.isAdmin && !formData.isServerAdmin && !formData.isLeagueAdministrator}
+                      onChange={() =>
+                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: false })
+                      }
                       className="mr-2"
                     />
                     <label htmlFor="roleRegular" className="text-sm text-gray-700 dark:text-gray-300">
@@ -968,10 +990,27 @@ export default function AdminMembers() {
                   <div className="flex items-center">
                     <input
                       type="radio"
+                      id="roleLeagueAdmin"
+                      name="role"
+                      checked={formData.isLeagueAdministrator && !formData.isAdmin && !formData.isServerAdmin}
+                      onChange={() =>
+                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: true })
+                      }
+                      className="mr-2"
+                    />
+                    <label htmlFor="roleLeagueAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                      League admin
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
                       id="roleAdmin"
                       name="role"
                       checked={formData.isAdmin && !formData.isServerAdmin}
-                      onChange={() => setFormData({ ...formData, isAdmin: true, isServerAdmin: false })}
+                      onChange={() =>
+                        setFormData({ ...formData, isAdmin: true, isServerAdmin: false, isLeagueAdministrator: false })
+                      }
                       className="mr-2"
                     />
                     <label htmlFor="roleAdmin" className="text-sm text-gray-700 dark:text-gray-300">
@@ -984,7 +1023,9 @@ export default function AdminMembers() {
                       id="roleServerAdmin"
                       name="role"
                       checked={formData.isServerAdmin}
-                      onChange={() => setFormData({ ...formData, isAdmin: false, isServerAdmin: true })}
+                      onChange={() =>
+                        setFormData({ ...formData, isAdmin: false, isServerAdmin: true, isLeagueAdministrator: false })
+                      }
                       className="mr-2"
                     />
                     <label htmlFor="roleServerAdmin" className="text-sm text-gray-700 dark:text-gray-300">
@@ -995,17 +1036,31 @@ export default function AdminMembers() {
               )}
             </div>
           ) : currentMember?.isAdmin && !editingMember?.isServerAdmin && editingMember?.id !== currentMember?.id ? (
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="isAdmin"
-                checked={formData.isAdmin}
-                onChange={(e) => setFormData({ ...formData, isAdmin: e.target.checked })}
-                className="mr-2"
-              />
-              <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Administrator
-              </label>
+            <div className="space-y-2">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="isAdmin"
+                  checked={formData.isAdmin}
+                  onChange={(e) => setFormData({ ...formData, isAdmin: e.target.checked })}
+                  className="mr-2"
+                />
+                <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Administrator
+                </label>
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="isLeagueAdministrator"
+                  checked={formData.isLeagueAdministrator}
+                  onChange={(e) => setFormData({ ...formData, isLeagueAdministrator: e.target.checked })}
+                  className="mr-2"
+                />
+                <label htmlFor="isLeagueAdministrator" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  League admin
+                </label>
+              </div>
             </div>
           ) : null}
 

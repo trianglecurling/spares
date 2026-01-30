@@ -100,7 +100,15 @@ export interface LeagueMemberRole {
   id: number;
   member_id: number;
   league_id: number | null;
-  role: 'league_manager';
+  role: 'league_manager' | 'league_administrator';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeagueRosterMember {
+  id: number;
+  league_id: number;
+  member_id: number;
   created_at: string;
   updated_at: string;
 }

@@ -8,9 +8,17 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  contentOverflow?: 'hidden' | 'visible' | 'auto';
 }
 
-export default function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  size = 'md',
+  contentOverflow = 'visible',
+}: ModalProps) {
   const modalRef = useFocusTrap(isOpen);
 
   useEffect(() => {
@@ -40,6 +48,11 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
     xl: 'max-w-4xl',
     full: 'max-w-[95vw]',
   };
+  const contentOverflowClasses = {
+    hidden: 'overflow-hidden',
+    visible: 'overflow-visible',
+    auto: 'overflow-auto',
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -64,7 +77,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
               <HiXMark className="w-6 h-6" />
             </button>
           </div>
-          <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          <div className={`flex-1 ${contentOverflowClasses[contentOverflow]} flex flex-col min-h-0`}>
             {children}
           </div>
         </div>

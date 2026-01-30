@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
@@ -17,9 +17,7 @@ import Unsubscribe from './pages/Unsubscribe';
 import MembersDirectory from './pages/MembersDirectory';
 import Profile from './pages/Profile';
 import AdminMembers from './pages/admin/AdminMembers';
-import AdminLeagues from './pages/admin/AdminLeagues';
 import AdminSheets from './pages/admin/AdminSheets';
-import AdminLeagueSetup from './pages/admin/AdminLeagueSetup';
 import AdminConfig from './pages/admin/AdminConfig';
 import AdminDatabaseConfig from './pages/admin/AdminDatabaseConfig';
 import Help from './pages/Help';
@@ -36,6 +34,18 @@ import Install from './pages/Install';
 import Feedback from './pages/Feedback';
 import AdminFeedback from './pages/admin/AdminFeedback';
 import AdminObservability from './pages/admin/AdminObservability';
+import Leagues from './pages/leagues/Leagues';
+import LeagueDetail from './pages/leagues/LeagueDetail';
+
+function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
+  const { leagueId, tab } = useParams();
+  const targetTab = tab || defaultTab;
+  if (!leagueId) {
+    return <Navigate to="/leagues" replace />;
+  }
+  const targetPath = targetTab ? `/leagues/${leagueId}/${targetTab}` : `/leagues/${leagueId}`;
+  return <Navigate to={targetPath} replace />;
+}
 
 function App() {
   return (
@@ -161,20 +171,37 @@ function App() {
           />
           
           <Route
-            path="/admin/leagues"
+            path="/leagues"
             element={
-              <ProtectedRoute leagueManagerOnly>
-                <AdminLeagues />
+              <ProtectedRoute>
+                <Leagues />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/admin/leagues/:leagueId/setup"
+            path="/leagues/:leagueId"
             element={
-              <ProtectedRoute leagueManagerOnly>
-                <AdminLeagueSetup />
+              <ProtectedRoute>
+                <LeagueDetail />
               </ProtectedRoute>
             }
+          />
+          <Route
+            path="/leagues/:leagueId/:tab"
+            element={
+              <ProtectedRoute>
+                <LeagueDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/admin/leagues" element={<Navigate to="/leagues" replace />} />
+          <Route
+            path="/admin/leagues/:leagueId/setup"
+            element={<LeagueSetupRedirect defaultTab="" />}
+          />
+          <Route
+            path="/admin/leagues/:leagueId/setup/:tab"
+            element={<LeagueSetupRedirect defaultTab="" />}
           />
           <Route
             path="/admin/sheets"

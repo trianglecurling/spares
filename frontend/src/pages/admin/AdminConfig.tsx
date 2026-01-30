@@ -22,6 +22,7 @@ interface ServerConfig {
   testMode: boolean;
   disableEmail: boolean;
   disableSms: boolean;
+  frontendOtelEnabled: boolean;
   captureFrontendLogs: boolean;
   captureBackendLogs: boolean;
   testCurrentTime: string | null;
@@ -44,6 +45,7 @@ interface UpdateConfigPayload {
   testMode?: boolean;
   disableEmail?: boolean;
   disableSms?: boolean;
+  frontendOtelEnabled?: boolean;
   captureFrontendLogs?: boolean;
   captureBackendLogs?: boolean;
   testCurrentTime?: string | null;
@@ -167,6 +169,7 @@ export default function AdminConfig() {
     testMode: false,
     disableEmail: false,
     disableSms: false,
+    frontendOtelEnabled: true,
     captureFrontendLogs: true,
     captureBackendLogs: true,
     testCurrentTime: '',
@@ -196,6 +199,7 @@ export default function AdminConfig() {
         testMode: response.data.testMode || false,
         disableEmail: response.data.disableEmail || false,
         disableSms: response.data.disableSms || false,
+        frontendOtelEnabled: response.data.frontendOtelEnabled ?? true,
         captureFrontendLogs: response.data.captureFrontendLogs ?? true,
         captureBackendLogs: response.data.captureBackendLogs ?? true,
         testCurrentTime: response.data.testCurrentTime || '',
@@ -259,6 +263,9 @@ export default function AdminConfig() {
       }
       if (formData.disableSms !== config?.disableSms) {
         payload.disableSms = formData.disableSms;
+      }
+      if (formData.frontendOtelEnabled !== config?.frontendOtelEnabled) {
+        payload.frontendOtelEnabled = formData.frontendOtelEnabled;
       }
       if (formData.captureFrontendLogs !== config?.captureFrontendLogs) {
         payload.captureFrontendLogs = formData.captureFrontendLogs;
@@ -529,6 +536,27 @@ export default function AdminConfig() {
                 <div className="flex items-center">
                   <input
                     type="checkbox"
+                    id="frontendOtelEnabled"
+                    checked={formData.frontendOtelEnabled}
+                    onChange={(e) =>
+                      setFormData({ ...formData, frontendOtelEnabled: e.target.checked })
+                    }
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <label
+                    htmlFor="frontendOtelEnabled"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Enable frontend OpenTelemetry
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                  When disabled, the frontend will not initialize OpenTelemetry and no traces/logs are sent.
+                </p>
+
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
                     id="captureFrontendLogs"
                     checked={formData.captureFrontendLogs}
                     onChange={(e) =>
@@ -544,7 +572,7 @@ export default function AdminConfig() {
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
-                  When enabled, browser console logs are forwarded to the OpenTelemetry pipeline.
+                  When enabled, browser console logs are forwarded to the OpenTelemetry logs pipeline.
                 </p>
 
                 <div className="flex items-center mt-4">

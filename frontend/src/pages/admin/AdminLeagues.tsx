@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
-import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
@@ -20,9 +19,8 @@ interface League {
   canManage?: boolean;
 }
 
-export default function AdminLeagues() {
+export default function Leagues() {
   const { showAlert } = useAlert();
-  const { confirm } = useConfirm();
   const { member } = useAuth();
   const navigate = useNavigate();
   const [leagues, setLeagues] = useState<League[]>([]);
@@ -162,27 +160,6 @@ export default function AdminLeagues() {
     }
   };
 
-  const handleDelete = async (id: number, name: string) => {
-    const confirmed = await confirm({
-      title: 'Delete league',
-      message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      await api.delete(`/leagues/${id}`);
-      setLeagues(leagues.filter((l) => l.id !== id));
-    } catch (error) {
-      console.error('Failed to delete league:', error);
-      showAlert('Failed to delete league', 'error');
-    }
-  };
-
   const addDrawTime = () => {
     setFormData({
       ...formData,
@@ -278,14 +255,16 @@ export default function AdminLeagues() {
     }));
   };
 
-  const canManageLeagueDetails = Boolean(member?.isAdmin || member?.isLeagueManagerGlobal);
+  const canManageLeagueDetails = Boolean(
+    member?.isAdmin || member?.isServerAdmin || member?.isLeagueAdministratorGlobal
+  );
 
   return (
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Manage leagues
+            Leagues
           </h1>
           <div className="flex space-x-2">
             {canManageLeagueDetails && (
@@ -307,7 +286,9 @@ export default function AdminLeagues() {
         ) : leagues.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
             <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">No leagues configured yet.</p>
-            <Button onClick={() => handleOpenModal()}>Create your first league</Button>
+            {canManageLeagueDetails && (
+              <Button onClick={() => handleOpenModal()}>Create your first league</Button>
+            )}
           </div>
         ) : (
           <div className="grid gap-4">
@@ -315,7 +296,13 @@ export default function AdminLeagues() {
               <div key={league.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">{league.name}</h3>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/leagues/${league.id}`)}
+                      className="text-left text-xl font-semibold mb-2 text-primary-teal hover:underline"
+                    >
+                      {league.name}
+                    </button>
                     <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                       <p>
                         <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
@@ -342,26 +329,6 @@ export default function AdminLeagues() {
                     </div>
                   </div>
 
-                  <div className="flex space-x-2">
-                    {(league.canManage ?? canManageLeagueDetails) && (
-                      <Button
-                        onClick={() => navigate(`/admin/leagues/${league.id}/setup`)}
-                        variant="secondary"
-                      >
-                        Manage setup
-                      </Button>
-                    )}
-                    {canManageLeagueDetails && (
-                      <>
-                        <Button onClick={() => handleOpenModal(league)} variant="secondary">
-                          Edit
-                        </Button>
-                        <Button onClick={() => handleDelete(league.id, league.name)} variant="danger">
-                          Delete
-                        </Button>
-                      </>
-                    )}
-                  </div>
                 </div>
               </div>
             ))}

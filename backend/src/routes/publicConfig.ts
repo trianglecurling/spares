@@ -11,6 +11,7 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
     const rows = await db
       .select({
         disable_sms: schema.serverConfig.disable_sms,
+        frontend_otel_enabled: schema.serverConfig.frontend_otel_enabled,
         capture_frontend_logs: schema.serverConfig.capture_frontend_logs,
         dashboard_alert_title: schema.serverConfig.dashboard_alert_title,
         dashboard_alert_body: schema.serverConfig.dashboard_alert_body,
@@ -26,6 +27,7 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
 
     return {
       disableSms: cfg?.disable_sms === 1,
+      frontendOtelEnabled: cfg?.frontend_otel_enabled !== 0,
       captureFrontendLogs: cfg?.capture_frontend_logs !== 0,
       dashboardAlertTitle: cfg?.dashboard_alert_title || null,
       dashboardAlertBody: cfg?.dashboard_alert_body || null,
