@@ -452,7 +452,7 @@ export async function sendSpareRequestCcCreatedEmail(
     <strong>Time:</strong> ${formattedTime}</p>
     ${leagueLine}
     ${messageText}
-    <p>This email is for your awareness. You can log in to view it on your dashboard under <strong>"Requests I've been CC'd on"</strong>.</p>
+    <p>This email is for your awareness. You can log in to view it on your dashboard.</p>
   `;
 
   await sendEmail(
@@ -554,6 +554,85 @@ export async function sendSpareRequestCcCancellationEmail(
       recipientName: ccName,
     },
     ccToken
+  );
+}
+
+export async function sendSpareRequestCancelledEmail(
+  recipientEmail: string,
+  recipientName: string,
+  cancelledByName: string,
+  requestDetails: {
+    leagueName?: string;
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  recipientToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
+
+  const htmlContent = `
+    <h2>Spare Request Cancelled</h2>
+    <p>Hi ${recipientName},</p>
+    <p><strong>${cancelledByName}</strong> canceled the spare request for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
+  `;
+
+  await sendEmail(
+    {
+      to: recipientEmail,
+      subject: `Spare request cancelled: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
+      htmlContent,
+      recipientName,
+    },
+    recipientToken
+  );
+}
+
+export async function sendSpareRequestCancelConfirmationEmail(
+  cancellerEmail: string,
+  cancellerName: string,
+  requestDetails: {
+    leagueName?: string;
+    requestedForName: string;
+    gameDate: string;
+    gameTime: string;
+    position?: string;
+  },
+  cancellerToken?: string
+): Promise<void> {
+  const positionText = requestDetails.position ? ` (${requestDetails.position})` : '';
+  const formattedDate = formatDateForEmail(requestDetails.gameDate);
+  const formattedTime = formatTimeForEmail(requestDetails.gameTime);
+  const leagueLine = requestDetails.leagueName
+    ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
+    : '';
+
+  const htmlContent = `
+    <h2>Spare Request Cancellation Confirmation</h2>
+    <p>Hi ${cancellerName},</p>
+    <p>This confirms you canceled the spare request for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p><strong>Date:</strong> ${formattedDate}<br>
+    <strong>Time:</strong> ${formattedTime}</p>
+    ${leagueLine}
+  `;
+
+  await sendEmail(
+    {
+      to: cancellerEmail,
+      subject: `Spare request cancellation confirmation: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
+      htmlContent,
+      recipientName: cancellerName,
+    },
+    cancellerToken
   );
 }
 

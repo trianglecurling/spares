@@ -44,6 +44,9 @@ interface SpareRequest {
 interface MySpareRequest {
   id: number;
   requestedForName: string;
+  requestedForMemberId?: number | null;
+  requesterId?: number | null;
+  requesterName?: string | null;
   gameDate: string;
   gameTime: string;
   leagueName?: string | null;
@@ -736,6 +739,12 @@ export default function Dashboard() {
                               at {formatTime(request.gameTime)}
                               {request.leagueName ? <span> • {request.leagueName}</span> : null}
                             </p>
+                          {request.requesterId && request.requesterId !== member?.id && request.requesterName && (
+                            <p>
+                              <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+                              {renderMe(request.requesterName, member?.name)}
+                            </p>
+                          )}
                             {request.message && (
                               <p className="italic mt-2">"{request.message}"</p>
                             )}

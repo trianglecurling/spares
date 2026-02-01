@@ -127,6 +127,7 @@ export interface SpareRequest {
   id: number;
   requester_id: number;
   requested_for_name: string;
+  requested_for_member_id: number | null;
   game_date: string;
   game_time: string;
   position: 'lead' | 'second' | 'vice' | 'skip' | null;
@@ -134,6 +135,7 @@ export interface SpareRequest {
   request_type: 'public' | 'private';
   status: 'open' | 'filled' | 'cancelled';
   filled_by_member_id: number | null;
+  cancelled_by_member_id: number | null;
   filled_at: string | null;
   created_at: string;
   updated_at: string;

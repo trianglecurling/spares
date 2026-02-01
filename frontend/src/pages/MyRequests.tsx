@@ -14,6 +14,10 @@ import { renderMe } from '../utils/me';
 interface MySpareRequest {
   id: number;
   requestedForName: string;
+  requestedForMemberId?: number | null;
+  requesterId?: number | null;
+  requesterName?: string | null;
+  cancelledByName?: string | null;
   gameDate: string;
   gameTime: string;
   position?: string;
@@ -89,7 +93,7 @@ export default function MyRequests() {
   useEffect(() => {
     const loadNotificationStatuses = async () => {
       const openRequests = requests.filter(
-        (r) => r.status === 'open'
+        (r) => r.status === 'open' && r.requesterId === member?.id
       );
 
       if (openRequests.length === 0) {
@@ -163,16 +167,23 @@ export default function MyRequests() {
 
     // Find the request to get details for the success message
     const request = requests.find((r) => r.id === id);
+    const isRequester = request?.requesterId === member?.id;
 
     try {
       await api.post(`/spares/${id}/cancel`);
-      setRequests(requests.map((r) => (r.id === id ? { ...r, status: 'cancelled' } : r)));
+      setRequests(requests.map((r) => (
+        r.id === id
+          ? { ...r, status: 'cancelled', cancelledByName: member?.name || r.cancelledByName }
+          : r
+      )));
       
       // Show success notification
       if (request) {
         setNotification({
           isOpen: true,
-          message: `Your spare request for ${request.requestedForName} has been successfully canceled.`,
+          message: isRequester
+            ? `Your spare request for ${request.requestedForName} has been successfully canceled.`
+            : `The spare request for ${request.requestedForName} has been successfully canceled.`,
           variant: 'success',
         });
       }
@@ -442,6 +453,12 @@ export default function MyRequests() {
                         <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
                         at {formatTime(request.gameTime)}
                       </p>
+                      {request.requesterId && request.requesterId !== member?.id && request.requesterName && (
+                        <p>
+                          <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+                          {renderMe(request.requesterName, member?.name)}
+                        </p>
+                      )}
                       <p>
                         <span className="font-medium dark:text-gray-300">Type:</span>{' '}
                         {request.requestType === 'public' ? 'Public' : 'Private'}
@@ -473,7 +490,7 @@ export default function MyRequests() {
                       {request.message && (
                         <p className="italic mt-2">"{request.message}"</p>
                       )}
-                      {request.status === 'open' && notificationStatuses[request.id] && (
+                      {request.status === 'open' && request.requesterId === member?.id && notificationStatuses[request.id] && (
                         <div className={`mt-3 p-3 rounded-md border ${
                           (() => {
                             const status = notificationStatuses[request.id];
@@ -535,6 +552,10 @@ export default function MyRequests() {
                           const status = notificationStatuses[request.id];
                           const allNotified = status && status.notifiedMembers === status.totalMembers;
                           const isInProgress = status?.notificationStatus === 'in_progress' && !allNotified;
+                          const isRequester = request.requesterId === member?.id;
+                          if (!isRequester) {
+                            return null;
+                          }
                           
                           if (isInProgress) {
                             return status.notificationPaused ? (
@@ -557,7 +578,7 @@ export default function MyRequests() {
                           }
                           return null;
                         })()}
-                        {shouldShowReissueButton(request) && (
+                        {request.requesterId === member?.id && shouldShowReissueButton(request) && (
                           <Button
                             variant="secondary"
                             onClick={() => handleReissueClick(request)}
@@ -565,7 +586,7 @@ export default function MyRequests() {
                             Re-issue
                           </Button>
                         )}
-                        {request.requestType === 'private' && (
+                        {request.requesterId === member?.id && request.requestType === 'private' && (
                           <>
                             <Button
                               variant="secondary"
@@ -581,12 +602,14 @@ export default function MyRequests() {
                             </Button>
                           </>
                         )}
-                        <Button
-                          variant="danger"
-                          onClick={() => handleCancel(request.id)}
-                        >
-                          Cancel
-                        </Button>
+                        {(request.requesterId === member?.id || request.requestedForMemberId === member?.id) && (
+                          <Button
+                            variant="danger"
+                            onClick={() => handleCancel(request.id)}
+                          >
+                            Cancel
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
@@ -616,7 +639,10 @@ export default function MyRequests() {
 
                 {request.status === 'cancelled' && (
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-gray-600 dark:text-gray-400">This request was cancelled</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      This request was cancelled
+                      {request.cancelledByName ? ` by ${renderMe(request.cancelledByName, member?.name)}` : ''}.
+                    </p>
                   </div>
                 )}
               </div>
@@ -688,6 +714,16 @@ export default function MyRequests() {
                             {renderMe(request.requestedForName, member?.name)}
                           </span>
                         </div>
+                        {request.requesterId && request.requesterId !== member?.id && request.requesterName && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Requested by {renderMe(request.requesterName, member?.name)}
+                          </div>
+                        )}
+                        {request.status === 'cancelled' && request.cancelledByName && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Cancelled by {renderMe(request.cancelledByName, member?.name)}
+                          </div>
+                        )}
                         {request.status === 'filled' && request.filledByName && (
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             Filled by {renderMe(request.filledByName, member?.name)}
