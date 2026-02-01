@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { sql } from 'drizzle-orm';
+import type { DatabaseAdapter, PreparedStatement } from './adapter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,7 +44,11 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
   // Import the appropriate schema based on database type
   if (configToUse.type === 'sqlite') {
     const { sqliteSchema } = await import('./drizzle-schema.js');
-    await db.run(sql`PRAGMA foreign_keys = ON`);
+    const sqliteDb = db as unknown as { run: (query: ReturnType<typeof sql>) => Promise<void> | void };
+    const pragmaResult = sqliteDb.run(sql`PRAGMA foreign_keys = ON`);
+    if (pragmaResult instanceof Promise) {
+      await pragmaResult;
+    }
     // Use Drizzle Kit's push for SQLite - but for now, use the old schema creation
     // since it handles migrations better
     const { SQLiteAdapter } = await import('./sqlite-adapter.js');
@@ -69,13 +74,13 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
 
 // Legacy functions - kept for backward compatibility but deprecated
 // All new code should use getDrizzleDb() instead
-export function getDatabase(): any {
+export function getDatabase(): DatabaseAdapter {
   // This is deprecated - use getDrizzleDb() instead
   // But we'll return a mock adapter for any remaining code that needs it
   throw new Error('getDatabase() is deprecated. Use getDrizzleDb() instead.');
 }
 
-export async function getDatabaseAsync(): Promise<any> {
+export async function getDatabaseAsync(): Promise<DatabaseAdapter> {
   // This is deprecated - use getDrizzleDb() instead
   throw new Error('getDatabaseAsync() is deprecated. Use getDrizzleDb() instead.');
 }
@@ -133,7 +138,7 @@ export async function dbPrepareAsync(sql: string) {
 }
 
 // Helper functions to execute queries that work with both sync and async databases
-export async function dbAll(stmt: any, ...params: any[]): Promise<any[]> {
+export async function dbAll<T>(stmt: PreparedStatement<T, T[]>, ...params: unknown[]): Promise<T[]> {
   const result = stmt.all(...params);
   if (result instanceof Promise) {
     return await result;
@@ -141,7 +146,7 @@ export async function dbAll(stmt: any, ...params: any[]): Promise<any[]> {
   return result;
 }
 
-export async function dbGet(stmt: any, ...params: any[]): Promise<any> {
+export async function dbGet<T>(stmt: PreparedStatement<T | null, T[]>, ...params: unknown[]): Promise<T | null> {
   const result = stmt.get(...params);
   if (result instanceof Promise) {
     return await result;
@@ -149,7 +154,10 @@ export async function dbGet(stmt: any, ...params: any[]): Promise<any> {
   return result;
 }
 
-export async function dbRun(stmt: any, ...params: any[]): Promise<{ lastInsertRowid?: number | bigint; changes: number }> {
+export async function dbRun(
+  stmt: PreparedStatement,
+  ...params: unknown[]
+): Promise<{ lastInsertRowid?: number | bigint; changes: number }> {
   const result = stmt.run(...params);
   if (result instanceof Promise) {
     return await result;

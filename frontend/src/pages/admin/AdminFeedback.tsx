@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 
@@ -42,8 +43,10 @@ export default function AdminFeedback() {
       try {
         const res = await api.get('/feedback');
         setRows(res.data || []);
-      } catch (e: any) {
-        const msg = e.response?.data?.error || 'Failed to load feedback';
+      } catch (e: unknown) {
+        const msg = axios.isAxiosError(e)
+          ? e.response?.data?.error || 'Failed to load feedback'
+          : 'Failed to load feedback';
         setError(msg);
       } finally {
         setLoading(false);

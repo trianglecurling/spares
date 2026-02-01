@@ -10,8 +10,23 @@ import { sendOnceWithDeliveryClaim } from './spareRequestDelivery.js';
 let lastDbErrorLogAt = 0;
 const DB_ERROR_LOG_THROTTLE_MS = 30_000;
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === 'string') return maybeMessage;
+    const maybeCause = (error as { cause?: unknown }).cause;
+    if (maybeCause instanceof Error) return maybeCause.message;
+    if (typeof maybeCause === 'object' && maybeCause !== null) {
+      const causeMessage = (maybeCause as { message?: unknown }).message;
+      if (typeof causeMessage === 'string') return causeMessage;
+    }
+  }
+  return '';
+}
+
 function isTransientDbDisconnectError(error: unknown): boolean {
-  const msg = String((error as any)?.cause?.message ?? (error as any)?.message ?? '');
+  const msg = getErrorMessage(error);
   return (
     msg.includes('Connection terminated unexpectedly') ||
     msg.includes('terminating connection') ||
@@ -116,7 +131,7 @@ export async function processNextNotification(): Promise<void> {
         spare_request_id: schema.spareRequestNotificationQueue.spare_request_id,
         member_id: schema.spareRequestNotificationQueue.member_id,
         queue_order: schema.spareRequestNotificationQueue.queue_order,
-        claimed_at: (schema.spareRequestNotificationQueue as any).claimed_at,
+        claimed_at: schema.spareRequestNotificationQueue.claimed_at,
         notified_at: schema.spareRequestNotificationQueue.notified_at,
         id: schema.members.id,
         name: schema.members.name,
@@ -134,8 +149,8 @@ export async function processNextNotification(): Promise<void> {
           eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequest.id),
           isNull(schema.spareRequestNotificationQueue.notified_at),
           or(
-            isNull((schema.spareRequestNotificationQueue as any).claimed_at),
-            lt((schema.spareRequestNotificationQueue as any).claimed_at, claimExpiredBefore)
+            isNull(schema.spareRequestNotificationQueue.claimed_at),
+            lt(schema.spareRequestNotificationQueue.claimed_at, claimExpiredBefore)
           )!
         )
       )
@@ -147,7 +162,7 @@ export async function processNextNotification(): Promise<void> {
       spare_request_id: number;
       member_id: number;
       queue_order: number;
-      claimed_at: any;
+      claimed_at: string | Date | null;
       notified_at: string | null;
       id: number;
       name: string;
@@ -191,8 +206,8 @@ export async function processNextNotification(): Promise<void> {
           eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id),
           isNull(schema.spareRequestNotificationQueue.notified_at),
           or(
-            isNull((schema.spareRequestNotificationQueue as any).claimed_at),
-            lt((schema.spareRequestNotificationQueue as any).claimed_at, claimExpiredBefore)
+            isNull(schema.spareRequestNotificationQueue.claimed_at),
+            lt(schema.spareRequestNotificationQueue.claimed_at, claimExpiredBefore)
           )!
         )
       )
@@ -207,14 +222,14 @@ export async function processNextNotification(): Promise<void> {
     console.log(`[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`);
 
     try {
-      const generation = Number((spareRequest as any).notification_generation ?? 0);
+      const generation = Number(spareRequest.notification_generation ?? 0);
       // League name (optional; older requests may not have league_id)
       let leagueName: string | undefined;
-      if ((spareRequest as any).league_id) {
+      if (spareRequest.league_id) {
         const leagueRows = await db
           .select({ name: schema.leagues.name })
           .from(schema.leagues)
-          .where(eq(schema.leagues.id, (spareRequest as any).league_id))
+          .where(eq(schema.leagues.id, spareRequest.league_id))
           .limit(1);
         leagueName = leagueRows[0]?.name || undefined;
       }
@@ -330,7 +345,7 @@ export async function processNextNotification(): Promise<void> {
       await db
         .update(schema.spareRequests)
         .set({
-          notification_status: 'stopped',
+          notification_status: 'completed',
           next_notification_at: null,
         })
         .where(eq(schema.spareRequests.id, spareRequest.id));
@@ -418,7 +433,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
         await db
           .update(schema.spareRequests)
           .set({
-            notification_status: 'stopped',
+            notification_status: 'completed',
             next_notification_at: null,
           })
           .where(eq(schema.spareRequests.id, spareRequest.id));
@@ -434,7 +449,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
           spare_request_id: schema.spareRequestNotificationQueue.spare_request_id,
           member_id: schema.spareRequestNotificationQueue.member_id,
           queue_order: schema.spareRequestNotificationQueue.queue_order,
-          claimed_at: (schema.spareRequestNotificationQueue as any).claimed_at,
+          claimed_at: schema.spareRequestNotificationQueue.claimed_at,
           notified_at: schema.spareRequestNotificationQueue.notified_at,
           id: schema.members.id,
           name: schema.members.name,
@@ -452,8 +467,8 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
             eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequest.id),
             isNull(schema.spareRequestNotificationQueue.notified_at),
             or(
-              isNull((schema.spareRequestNotificationQueue as any).claimed_at),
-              lt((schema.spareRequestNotificationQueue as any).claimed_at, claimExpiredBefore)
+              isNull(schema.spareRequestNotificationQueue.claimed_at),
+              lt(schema.spareRequestNotificationQueue.claimed_at, claimExpiredBefore)
             )!
           )
         )
@@ -465,7 +480,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
         spare_request_id: number;
         member_id: number;
         queue_order: number;
-        claimed_at: any;
+        claimed_at: string | Date | null;
         notified_at: string | null;
         id: number;
         name: string;
@@ -506,8 +521,8 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
             eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id),
             isNull(schema.spareRequestNotificationQueue.notified_at),
             or(
-              isNull((schema.spareRequestNotificationQueue as any).claimed_at),
-              lt((schema.spareRequestNotificationQueue as any).claimed_at, claimExpiredBefore)
+              isNull(schema.spareRequestNotificationQueue.claimed_at),
+              lt(schema.spareRequestNotificationQueue.claimed_at, claimExpiredBefore)
             )!
           )
         )
@@ -518,7 +533,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
       }
 
       try {
-        const generation = Number((spareRequest as any).notification_generation ?? 0);
+        const generation = Number(spareRequest.notification_generation ?? 0);
         let leagueName: string | undefined;
         if (spareRequest.league_id) {
           const leagueRows = await db

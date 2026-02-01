@@ -1,9 +1,19 @@
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../utils/api';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
+
+type MemberOption = {
+  id: number;
+  name: string;
+};
+
+type LocationState = {
+  from?: { pathname: string };
+};
 
 export default function Login() {
   const [contact, setContact] = useState('');
@@ -11,13 +21,13 @@ export default function Login() {
   const [step, setStep] = useState<'contact' | 'code' | 'select'>('contact');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [multipleMembers, setMultipleMembers] = useState<any[]>([]);
+  const [multipleMembers, setMultipleMembers] = useState<MemberOption[]>([]);
   const [tempToken, setTempToken] = useState('');
   const { login } = useAuth();
   const location = useLocation();
 
   // Get the intended destination from location state
-  const from = (location.state as any)?.from?.pathname || null;
+  const from = (location.state as LocationState | null)?.from?.pathname || null;
 
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,8 +40,9 @@ export default function Login() {
         setMultipleMembers([]);
       }
       setStep('code');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to send code');
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(message || 'Failed to send code');
     } finally {
       setLoading(false);
     }
@@ -52,8 +63,9 @@ export default function Login() {
       } else {
         login(response.data.token, response.data.member, from || undefined);
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Invalid code');
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(message || 'Invalid code');
     } finally {
       setLoading(false);
     }
@@ -69,8 +81,9 @@ export default function Login() {
         tempToken,
       });
       login(response.data.token, response.data.member, from || undefined);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to login');
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(message || 'Failed to login');
     } finally {
       setLoading(false);
     }

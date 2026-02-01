@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import api from '../utils/api';
 import { useAlert } from '../contexts/AlertContext';
 import Button from '../components/Button';
@@ -31,9 +32,9 @@ export default function Install() {
         }
         setChecking(false);
       })
-      .catch((error: any) => {
+      .catch((error: unknown) => {
         // If it's a 503 error, that's expected when DB is not configured
-        if (error.response?.status === 503) {
+        if (axios.isAxiosError(error) && error.response?.status === 503) {
           // Database not configured - this is fine, stay on install page
           setChecking(false);
         } else {
@@ -61,7 +62,19 @@ export default function Install() {
         return;
       }
 
-      const payload: any = {
+      const payload: {
+        databaseType: 'sqlite' | 'postgres';
+        adminEmails: string[];
+        sqlite?: { path: string };
+        postgres?: {
+          host: string;
+          port: number;
+          database: string;
+          username: string;
+          password: string;
+          ssl: boolean;
+        };
+      } = {
         databaseType,
         adminEmails: adminEmailList,
       };
@@ -91,8 +104,9 @@ export default function Install() {
       // Installation successful - reload page to continue
       showAlert('Installation successful! The server will restart. Please refresh the page.', 'success');
       setTimeout(() => window.location.reload(), 2000);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Installation failed. Please check your settings and try again.');
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(message || 'Installation failed. Please check your settings and try again.');
       setLoading(false);
     }
   };

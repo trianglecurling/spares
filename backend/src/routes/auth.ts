@@ -14,7 +14,7 @@ import { sendAuthCodeSMS } from '../services/sms.js';
 import { Member } from '../types.js';
 import { logEvent } from '../services/observability.js';
 
-function normalizeDateString(value: any): string | null {
+function normalizeDateString(value: string | Date | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString().split('T')[0];
@@ -23,7 +23,7 @@ function normalizeDateString(value: any): string | null {
 
 function isMemberExpired(member: Member): boolean {
   if (isAdmin(member) || isServerAdmin(member)) return false;
-  const validThrough = normalizeDateString((member as any).valid_through);
+  const validThrough = normalizeDateString(member.valid_through);
   if (!validThrough) return false;
   const today = new Date().toISOString().split('T')[0];
   return today > validThrough;
@@ -90,7 +90,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         .from(schema.members)
         .where(sql`${schema.members.phone} IS NOT NULL AND ${schema.members.phone} != ''`) as Member[];
 
-      members = candidates.filter((m) => normalizeStoredPhoneDigits10((m as any).phone) === digits10);
+      members = candidates.filter((m) => normalizeStoredPhoneDigits10(m.phone) === digits10);
       authContactToStore = phoneDigits10ToE164(digits10);
     }
 
@@ -100,7 +100,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
 
     // Phone login requires SMS enabled for at least one matching member
     if (!isEmail) {
-      const anySmsEnabled = members.some((m) => (m as any).opted_in_sms === 1);
+      const anySmsEnabled = members.some((m) => m.opted_in_sms === 1);
       if (!anySmsEnabled) {
         return reply.code(400).send({
           error:
@@ -200,7 +200,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         .select()
         .from(schema.members)
         .where(sql`${schema.members.phone} IS NOT NULL AND ${schema.members.phone} != ''`) as Member[];
-      members = candidates.filter((m) => normalizeStoredPhoneDigits10((m as any).phone) === digits10);
+      members = candidates.filter((m) => normalizeStoredPhoneDigits10(m.phone) === digits10);
     }
 
     if (members.length === 0) {
@@ -210,7 +210,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     // If only one member, generate token and return
     if (members.length === 1) {
       const member = members[0];
-      if (isMemberExpired(member as any)) {
+      if (isMemberExpired(member)) {
         return reply.code(403).send({ error: 'Membership expired' });
       }
       const token = generateToken(member as Member);
@@ -225,7 +225,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
           name: member.name,
           email: member.email,
           phone: member.phone,
-          spareOnly: (member as any).spare_only === 1,
+          spareOnly: member.spare_only === 1,
           isAdmin: isAdmin(member as Member),
           isServerAdmin: isServerAdmin(member as Member),
           firstLoginCompleted: member.first_login_completed === 1,
@@ -301,7 +301,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Member not found' });
     }
 
-    if (isMemberExpired(member as any)) {
+    if (isMemberExpired(member)) {
       return reply.code(403).send({ error: 'Membership expired' });
     }
 
@@ -317,7 +317,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         name: member.name,
         email: member.email,
         phone: member.phone,
-        spareOnly: (member as any).spare_only === 1,
+        spareOnly: member.spare_only === 1,
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
         firstLoginCompleted: member.first_login_completed === 1,
@@ -332,7 +332,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
 export async function protectedAuthRoutes(fastify: FastifyInstance) {
   // Verify token (for auto-login)
   fastify.get('/auth/verify', async (request, reply) => {
-    const member = (request as any).member;
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -343,7 +343,7 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         name: member.name,
         email: member.email,
         phone: member.phone,
-        spareOnly: (member as any).spare_only === 1,
+        spareOnly: member.spare_only === 1,
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
         firstLoginCompleted: member.first_login_completed === 1,

@@ -82,7 +82,7 @@ interface MemberUpdateData {
   updated_at?: ReturnType<typeof sql>;
 }
 
-function normalizeDateString(value: any): string | null {
+function normalizeDateString(value: string | Date | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString().split('T')[0];
@@ -93,7 +93,7 @@ function isMemberExpired(member: Member): boolean {
   // Admins/server-admins are always valid
   if (isAdmin(member) || isServerAdmin(member)) return false;
 
-  const validThrough = normalizeDateString((member as any).valid_through);
+  const validThrough = normalizeDateString(member.valid_through);
   if (!validThrough) return false;
 
   // Compare as YYYY-MM-DD to avoid TZ issues. Valid through is inclusive.
@@ -111,7 +111,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: member.name,
       email: member.email,
       phone: member.phone,
-      validThrough: normalizeDateString((member as any).valid_through),
+      validThrough: normalizeDateString(member.valid_through),
       spareOnly: member.spare_only === 1,
       isAdmin: isAdmin(member),
       isServerAdmin: isServerAdmin(member),
@@ -176,7 +176,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: updatedMember.name,
       email: updatedMember.email,
       phone: updatedMember.phone,
-      validThrough: normalizeDateString((updatedMember as any).valid_through),
+      validThrough: normalizeDateString(updatedMember.valid_through),
       spareOnly: updatedMember.spare_only === 1,
       isAdmin: isAdmin(updatedMember),
       isServerAdmin: isServerAdmin(updatedMember),
@@ -254,7 +254,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         response.email = m.email;
         response.phone = m.phone;
         response.createdAt = m.created_at;
-        response.validThrough = normalizeDateString((m as any).valid_through);
+        response.validThrough = normalizeDateString(m.valid_through);
         response.spareOnly = m.spare_only === 1;
       } else {
         // Others see based on privacy settings
@@ -271,7 +271,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const member = (request as AuthenticatedRequest).member;
 
     const { db, schema } = getDrizzleDb();
-    const { leagueId } = directoryQuerySchema.parse((request as any).query || {});
+    const { leagueId } = directoryQuerySchema.parse(request.query ?? {});
 
     // Explicit selection so joins don't create ambiguous column names
     const memberSelect = {
@@ -279,18 +279,18 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: schema.members.name,
       email: schema.members.email,
       phone: schema.members.phone,
-      valid_through: (schema.members as any).valid_through,
-      spare_only: (schema.members as any).spare_only,
-      is_admin: (schema.members as any).is_admin,
-      is_server_admin: (schema.members as any).is_server_admin,
-      opted_in_sms: (schema.members as any).opted_in_sms,
-      email_subscribed: (schema.members as any).email_subscribed,
-      first_login_completed: (schema.members as any).first_login_completed,
-      email_visible: (schema.members as any).email_visible,
-      phone_visible: (schema.members as any).phone_visible,
-      theme_preference: (schema.members as any).theme_preference,
-      created_at: (schema.members as any).created_at,
-      updated_at: (schema.members as any).updated_at,
+      valid_through: schema.members.valid_through,
+      spare_only: schema.members.spare_only,
+      is_admin: schema.members.is_admin,
+      is_server_admin: schema.members.is_server_admin,
+      opted_in_sms: schema.members.opted_in_sms,
+      email_subscribed: schema.members.email_subscribed,
+      first_login_completed: schema.members.first_login_completed,
+      email_visible: schema.members.email_visible,
+      phone_visible: schema.members.phone_visible,
+      theme_preference: schema.members.theme_preference,
+      created_at: schema.members.created_at,
+      updated_at: schema.members.updated_at,
     };
 
     let members: Member[];
@@ -337,7 +337,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         response.email = m.email;
         response.phone = m.phone;
         response.createdAt = m.created_at;
-        response.validThrough = normalizeDateString((m as any).valid_through);
+        response.validThrough = normalizeDateString(m.valid_through);
       } else {
         response.email = m.email_visible === 1 ? m.email : null;
         response.phone = m.phone_visible === 1 ? m.phone : null;
@@ -387,7 +387,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: newMember.name,
       email: newMember.email,
       phone: newMember.phone,
-      validThrough: normalizeDateString((newMember as any).valid_through),
+      validThrough: normalizeDateString(newMember.valid_through),
       spareOnly: newMember.spare_only === 1,
       isAdmin: isAdmin(newMember),
       emailSubscribed: newMember.email_subscribed === 1,
@@ -409,8 +409,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const { db, schema } = getDrizzleDb();
 
     // Use a transaction to ensure atomicity
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const insertedIds = await db.transaction(async (tx: any) => {
+    const insertedIds = await db.transaction(async (tx) => {
       const ids: number[] = [];
       
       for (const memberData of body) {
@@ -557,7 +556,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: updatedMember.name,
       email: updatedMember.email,
       phone: updatedMember.phone,
-      validThrough: normalizeDateString((updatedMember as any).valid_through),
+      validThrough: normalizeDateString(updatedMember.valid_through),
       isAdmin: isAdmin(updatedMember),
       isServerAdmin: isServerAdmin(updatedMember),
       emailSubscribed: updatedMember.email_subscribed === 1,
@@ -655,8 +654,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
 
     // Use a transaction to ensure atomicity
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await db.transaction(async (tx: any) => {
+    await db.transaction(async (tx) => {
       // Delete related data first (cascade should handle most, but be explicit)
       await tx
         .delete(schema.memberAvailability)

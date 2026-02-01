@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import axios from 'axios';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
@@ -8,30 +9,35 @@ import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import { formatPhone } from '../../utils/phone';
 import { HiEllipsisVertical } from 'react-icons/hi2';
-
-interface Member {
-  id: number;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  validThrough?: string | null;
-  spareOnly?: boolean;
-  isAdmin: boolean;
-  isServerAdmin?: boolean;
-  isInServerAdminsList?: boolean;
-  emailSubscribed: boolean;
-  optedInSms: boolean;
-  createdAt: string;
-  emailVisible: boolean;
-  phoneVisible: boolean;
-  firstLoginCompleted: boolean;
-}
+import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
 
 interface ParsedMember {
   name: string;
   email: string;
   phone: string;
 }
+
+type MemberUpdatePayload = {
+  name: string;
+  email?: string;
+  phone?: string;
+  emailVisible: boolean;
+  phoneVisible: boolean;
+  validThrough?: string | null;
+  spareOnly?: boolean;
+  isAdmin?: boolean;
+  isServerAdmin?: boolean;
+};
+
+type MemberCreatePayload = {
+  name: string;
+  email?: string;
+  phone?: string;
+  validThrough: string | null;
+  spareOnly: boolean;
+  isAdmin?: boolean;
+  isServerAdmin?: boolean;
+};
 
 export default function AdminMembers() {
   const { showAlert } = useAlert();
@@ -98,7 +104,7 @@ export default function AdminMembers() {
     try {
       const response = await api.get('/members');
       // Ensure boolean values are properly converted
-      const membersWithBooleans = response.data.map((m: any) => ({
+      const membersWithBooleans = (response.data as Member[]).map((m) => ({
         ...m,
         validThrough: m.validThrough ?? null,
         spareOnly: Boolean(m.spareOnly),
@@ -112,7 +118,7 @@ export default function AdminMembers() {
         firstLoginCompleted: Boolean(m.firstLoginCompleted),
       }));
       // Sort so expired members appear at the end
-      const sorted = membersWithBooleans.sort((a: any, b: any) => {
+      const sorted = membersWithBooleans.sort((a, b) => {
         const aExpired = isExpired(a.validThrough, a.isAdmin, a.isServerAdmin) ? 1 : 0;
         const bExpired = isExpired(b.validThrough, b.isAdmin, b.isServerAdmin) ? 1 : 0;
         if (aExpired !== bExpired) return aExpired - bExpired;
@@ -276,7 +282,7 @@ export default function AdminMembers() {
 
     try {
       if (editingMember) {
-        const updateData: any = {
+        const updateData: MemberUpdatePayload = {
           name: formData.name,
           email: formData.email || undefined,
           phone: formData.phone || undefined,
@@ -307,7 +313,7 @@ export default function AdminMembers() {
         
         await api.patch(`/members/${editingMember.id}`, updateData);
       } else {
-        const createData: any = {
+        const createData: MemberCreatePayload = {
           name: formData.name,
           email: formData.email || undefined,
           phone: formData.phone || undefined,
@@ -575,10 +581,11 @@ export default function AdminMembers() {
         `Welcome emails sent to ${response.data.sent} member${response.data.sent === 1 ? '' : 's'}!`,
         'success'
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to send welcome emails:', error);
-      const errorMessage =
-        error.response?.data?.error || 'Failed to send welcome emails';
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || 'Failed to send welcome emails'
+        : 'Failed to send welcome emails';
       showAlert(errorMessage, 'error');
     }
   };

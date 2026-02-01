@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isServerAdmin } from '../utils/auth.js';
 import { getCurrentDateStringAsync, invalidateTestTimeCache } from '../utils/time.js';
@@ -47,7 +47,7 @@ const observabilityQuerySchema = z.object({
 export async function configRoutes(fastify: FastifyInstance) {
   // Get server configuration (admin only)
   fastify.get('/config', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -110,12 +110,12 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   // Observability metrics (server admin only)
   fastify.get('/config/observability', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { rangeDays } = observabilityQuerySchema.parse((request as any).query || {});
+    const { rangeDays } = observabilityQuerySchema.parse(request.query ?? {});
     const days = rangeDays ?? 30;
 
     const todayStr = await getCurrentDateStringAsync(); // YYYY-MM-DD
@@ -148,7 +148,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(schema.dailyActivity.activity_date);
 
     const dauByDate = new Map<string, number>();
-    for (const row of dauRows as any[]) {
+    for (const row of dauRows) {
       dauByDate.set(String(row.date), Number(row.dau || 0));
     }
 
@@ -164,7 +164,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(sql`DATE(${schema.observabilityEvents.created_at})`, schema.observabilityEvents.event_type);
 
     const eventsByDateType = new Map<string, Map<string, number>>();
-    for (const row of eventRows as any[]) {
+    for (const row of eventRows) {
       const date = String(row.date);
       const type = String(row.eventType);
       const count = Number(row.count || 0);
@@ -183,7 +183,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(sql`DATE(${schema.spareRequests.created_at})`);
 
     const spareCreatedByDate = new Map<string, number>();
-    for (const row of spareCreatedRows as any[]) {
+    for (const row of spareCreatedRows) {
       spareCreatedByDate.set(String(row.date), Number(row.count || 0));
     }
 
@@ -198,7 +198,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(sql`DATE(${schema.spareRequests.filled_at})`);
 
     const spareFilledByDate = new Map<string, number>();
-    for (const row of spareFilledRows as any[]) {
+    for (const row of spareFilledRows) {
       spareFilledByDate.set(String(row.date), Number(row.count || 0));
     }
 
@@ -213,7 +213,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     let totalFillMs = 0;
     let fillCount = 0;
-    for (const row of filledTimingRows as any[]) {
+    for (const row of filledTimingRows) {
       const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(String(row.createdAt));
       const filledAt = row.filledAt instanceof Date ? row.filledAt : new Date(String(row.filledAt));
       const diff = filledAt.getTime() - createdAt.getTime();
@@ -269,7 +269,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   // Update server configuration (admin only)
   fastify.patch('/config', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -277,7 +277,28 @@ export async function configRoutes(fastify: FastifyInstance) {
     const body = updateConfigSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
-    const updateData: any = {};
+    const updateData: Partial<{
+      twilio_api_key_sid: string | null;
+      twilio_api_key_secret: string | null;
+      twilio_account_sid: string | null;
+      twilio_campaign_sid: string | null;
+      azure_connection_string: string | null;
+      azure_sender_email: string | null;
+      azure_sender_display_name: string | null;
+      dashboard_alert_title: string | null;
+      dashboard_alert_body: string | null;
+      dashboard_alert_expires_at: Date | null;
+      dashboard_alert_variant: string | null;
+      dashboard_alert_icon: string | null;
+      test_mode: number;
+      disable_email: number;
+      disable_sms: number;
+      capture_frontend_logs: number;
+      capture_backend_logs: number;
+      test_current_time: Date | null;
+      notification_delay_seconds: number;
+      updated_at: SQL<unknown>;
+    }> = {};
 
     if (body.twilioApiKeySid !== undefined) {
       updateData.twilio_api_key_sid = body.twilioApiKeySid || null;
@@ -404,7 +425,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   // Send test email (admin only)
   fastify.post('/config/test-email', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -427,7 +448,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       });
 
       return { success: true, message: `Test email sent to ${member.email}` };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to send test email:', error);
       return reply.code(500).send({ 
         error: 'Failed to send test email',
@@ -438,7 +459,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   // Send test SMS (admin only)
   fastify.post('/config/test-sms', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -452,7 +473,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       await sendSMS(member.phone, testMessage);
 
       return { success: true, message: `Test SMS sent to ${member.phone}` };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to send test SMS:', error);
       return reply.code(500).send({ 
         error: 'Failed to send test SMS',
@@ -463,7 +484,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   // Get database configuration (admin only)
   fastify.get('/database-config', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -507,7 +528,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/database-config', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -554,10 +575,14 @@ export async function configRoutes(fastify: FastifyInstance) {
     // Test database connection FIRST - before saving anything
     try {
       await testDatabaseConnection(testConfig);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Database connection test failed:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to connect to database. Please check your credentials and try again.';
       return reply.code(400).send({ 
-        error: `Database connection failed: ${error.message || 'Unable to connect to database. Please check your credentials and try again.'}` 
+        error: `Database connection failed: ${message}` 
       });
     }
 
@@ -572,10 +597,11 @@ export async function configRoutes(fastify: FastifyInstance) {
         success: true,
         message: 'Database configuration updated successfully. Please restart the server for changes to take effect.'
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save database configuration:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return reply.code(500).send({ 
-        error: `Failed to save configuration: ${error.message || 'Unknown error'}` 
+        error: `Failed to save configuration: ${message}` 
       });
     }
   });

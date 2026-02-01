@@ -28,12 +28,12 @@ export async function sendOnceWithDeliveryClaim(
   const { db, schema } = getDrizzleDb();
 
   // Defensive: if the table isn't present (partially migrated DB), fail open rather than breaking notifications.
-  if (!(schema as any).spareRequestNotificationDeliveries) {
+  if (!schema.spareRequestNotificationDeliveries) {
     await send();
     return true;
   }
 
-  const deliveries = (schema as any).spareRequestNotificationDeliveries as any;
+  const deliveries = schema.spareRequestNotificationDeliveries;
   const now = await getCurrentTimeAsync();
   const nowDate = now instanceof Date && !isNaN(now.getTime()) ? now : new Date();
   const claimExpiredBefore = new Date(nowDate.getTime() - claimTimeoutMs);

@@ -44,10 +44,11 @@ if (isDatabaseConfigured()) {
     
     // Create admin members if none exist
     await ensureAdminMembersExist();
-  } catch (error: any) {
-    dbInitError = error;
+  } catch (error: unknown) {
+    const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
+    dbInitError = initError;
     console.error('Failed to initialize database:', error);
-    console.error('Error details:', error.message);
+    console.error('Error details:', initError.message);
   }
 }
 
@@ -161,8 +162,9 @@ fastify.addHook('onRequest', async (request, reply) => {
         
         // Allow request to proceed
         return;
-      } catch (error: any) {
-        dbInitError = error;
+      } catch (error: unknown) {
+        const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
+        dbInitError = initError;
         console.error('Failed to initialize database on request:', error);
       }
     }

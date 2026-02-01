@@ -1,36 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import api from '../utils/api';
-
-interface Member {
-  id: number;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  spareOnly?: boolean;
-  isAdmin: boolean;
-  isServerAdmin?: boolean;
-  firstLoginCompleted: boolean;
-  optedInSms: boolean;
-  emailSubscribed: boolean;
-  emailVisible: boolean;
-  phoneVisible: boolean;
-  themePreference?: 'light' | 'dark' | 'system';
-}
+import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 interface AuthContextType {
-  member: Member | null;
+  member: AuthenticatedMember | null;
   token: string | null;
-  login: (token: string, member: Member, redirectTo?: string) => void;
+  login: (token: string, member: AuthenticatedMember, redirectTo?: string) => void;
   logout: () => void;
-  updateMember: (member: Member) => void;
+  updateMember: (member: AuthenticatedMember) => void;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [member, setMember] = useState<Member | null>(null);
+  const [member, setMember] = useState<AuthenticatedMember | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('authToken'));
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
@@ -102,9 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             navigate('/first-login', { replace: true });
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           // If database is not configured (503), don't clear token - just fail silently
-          if (error.response?.status === 503 && error.response?.data?.requiresInstallation) {
+          if (axios.isAxiosError(error) && error.response?.status === 503 && error.response?.data?.requiresInstallation) {
             // Database not configured - don't verify token, but don't clear it either
             // Intentionally silent: user may be on the install flow
           } else {
@@ -120,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     verifyToken();
   }, []);
 
-  const login = (newToken: string, newMember: Member, redirectTo?: string) => {
+  const login = (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => {
     localStorage.setItem('authToken', newToken);
     setToken(newToken);
     setMember(newMember);
@@ -147,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     navigate('/login');
   };
 
-  const updateMember = (updatedMember: Member) => {
+  const updateMember = (updatedMember: AuthenticatedMember) => {
     setMember(updatedMember);
   };
 

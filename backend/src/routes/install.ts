@@ -77,20 +77,25 @@ export async function installRoutes(fastify: FastifyInstance) {
     // Test database connection FIRST - before saving anything
     try {
       await testDatabaseConnection(testConfig);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Database connection test failed:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to connect to database. Please check your credentials and try again.';
       return reply.code(400).send({ 
-        error: `Database connection failed: ${error.message || 'Unable to connect to database. Please check your credentials and try again.'}` 
+        error: `Database connection failed: ${message}` 
       });
     }
 
     // Connection test passed - now save configuration
     try {
       saveDatabaseConfig(testConfig);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save database configuration:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return reply.code(500).send({ 
-        error: `Failed to save configuration: ${error.message || 'Unknown error'}` 
+        error: `Failed to save configuration: ${message}` 
       });
     }
 
@@ -102,11 +107,11 @@ export async function installRoutes(fastify: FastifyInstance) {
       await createAdminMembers(body.adminEmails);
       
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Database schema initialization failed:', error);
       
       // Provide helpful error messages for common PostgreSQL permission issues
-      let errorMessage = error.message || 'Unknown error';
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
       let helpfulHint = '';
       
       if (errorMessage.includes('permission denied') || errorMessage.includes('permission denied for schema')) {
@@ -146,10 +151,11 @@ export async function installRoutes(fastify: FastifyInstance) {
         updated: results.updated,
         total: results.created + results.updated
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to create admin members:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return reply.code(500).send({ 
-        error: `Failed to create admin members: ${error.message || 'Unknown error'}` 
+        error: `Failed to create admin members: ${message}` 
       });
     }
   });

@@ -13,8 +13,23 @@ let lastDbErrorLogAt = 0;
 const DB_ERROR_BACKOFF_MS = 30_000;
 const DB_ERROR_LOG_THROTTLE_MS = 30_000;
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === 'string') return maybeMessage;
+    const maybeCause = (error as { cause?: unknown }).cause;
+    if (maybeCause instanceof Error) return maybeCause.message;
+    if (typeof maybeCause === 'object' && maybeCause !== null) {
+      const causeMessage = (maybeCause as { message?: unknown }).message;
+      if (typeof causeMessage === 'string') return causeMessage;
+    }
+  }
+  return '';
+}
+
 function isTransientDbDisconnectError(error: unknown): boolean {
-  const msg = String((error as any)?.cause?.message ?? (error as any)?.message ?? '');
+  const msg = getErrorMessage(error);
   return (
     msg.includes('Connection terminated unexpectedly') ||
     msg.includes('terminating connection') ||

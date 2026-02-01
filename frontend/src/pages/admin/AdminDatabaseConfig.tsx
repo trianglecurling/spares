@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
@@ -47,7 +48,7 @@ export default function AdminDatabaseConfig() {
           setAdminEmails(config.adminEmails.join(', '));
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to load database config:', error);
       setError('Failed to load current database configuration');
     } finally {
@@ -72,7 +73,19 @@ export default function AdminDatabaseConfig() {
         return;
       }
 
-      const payload: any = {
+      const payload: {
+        databaseType: 'sqlite' | 'postgres';
+        adminEmails: string[];
+        sqlite?: { path: string };
+        postgres?: {
+          host: string;
+          port: number;
+          database: string;
+          username: string;
+          password: string;
+          ssl: boolean;
+        };
+      } = {
         databaseType,
         adminEmails: adminEmailList,
       };
@@ -101,8 +114,9 @@ export default function AdminDatabaseConfig() {
       
       showAlert('Database configuration updated successfully! The server needs to be restarted for changes to take effect. Please restart the server using: sudo systemctl restart spares-production', 'success');
       navigate('/admin/config');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update database configuration. Please check your settings and try again.');
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(message || 'Failed to update database configuration. Please check your settings and try again.');
       setLoading(false);
     }
   };

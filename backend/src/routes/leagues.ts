@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, sql, asc } from 'drizzle-orm';
+import { eq, sql, asc, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
@@ -26,7 +26,7 @@ const updateLeagueSchema = z.object({
   exceptions: z.array(z.string()).optional(),
 });
 
-function normalizeDateString(value: any): string {
+function normalizeDateString(value: string | Date | number): string {
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString().split('T')[0];
   return String(value);
@@ -89,7 +89,7 @@ function getTimePartsInTimeZone(timeZone: string) {
 export async function leagueRoutes(fastify: FastifyInstance) {
   // Get all leagues
   fastify.get('/leagues', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -120,8 +120,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: league.format,
         startDate: league.start_date,
         endDate: league.end_date,
-        drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-        exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
+        drawTimes: drawTimes.map((dt) => dt.draw_time),
+        exceptions: exceptions.map((ex) => normalizeDateString(ex.exception_date)),
       };
     }));
 
@@ -130,7 +130,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
   // Get upcoming games for a league
   fastify.get('/leagues/:id/upcoming-games', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -160,13 +160,15 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .select({ exception_date: schema.leagueExceptions.exception_date })
       .from(schema.leagueExceptions)
       .where(eq(schema.leagueExceptions.league_id, leagueId));
-    const exceptions = new Set(exceptionsRows.map((ex: any) => normalizeDateString(ex.exception_date)));
+    const exceptions = new Set(exceptionsRows.map((ex) => normalizeDateString(ex.exception_date)));
 
     const games: { date: string; time: string }[] = [];
     const timeZone = config.timeZone;
     const todayDateStr = getTodayDateString(timeZone);
-    const startDateStr = league.start_date > todayDateStr ? league.start_date : todayDateStr;
-    const endDateStr = league.end_date;
+    const leagueStartDate = normalizeDateString(league.start_date);
+    const leagueEndDate = normalizeDateString(league.end_date);
+    const startDateStr = leagueStartDate > todayDateStr ? leagueStartDate : todayDateStr;
+    const endDateStr = leagueEndDate;
 
     // Find the first game date on or after start date matching the day of week
     const targetDay = league.day_of_week; // 0=Sun, 6=Sat
@@ -205,7 +207,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
   // Admin: Create league
   fastify.post('/leagues', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -274,14 +276,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: league.format,
       startDate: league.start_date,
       endDate: league.end_date,
-      drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-      exceptions: exceptionRows.map((ex: any) => normalizeDateString(ex.exception_date)),
+      drawTimes: drawTimes.map((dt) => dt.draw_time),
+      exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
     };
   });
 
   // Admin: Update league
   fastify.patch('/leagues/:id', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -291,7 +293,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const body = updateLeagueSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
-    const updateData: any = {};
+    const updateData: Partial<{
+      name: string;
+      day_of_week: number;
+      format: 'teams' | 'doubles';
+      start_date: string;
+      end_date: string;
+      updated_at: SQL<unknown>;
+    }> = {};
 
     if (body.name !== undefined) {
       updateData.name = body.name;
@@ -377,14 +386,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: league.format,
       startDate: league.start_date,
       endDate: league.end_date,
-      drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-      exceptions: exceptionRows.map((ex: any) => normalizeDateString(ex.exception_date)),
+      drawTimes: drawTimes.map((dt) => dt.draw_time),
+      exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
     };
   });
 
   // Admin: Delete league
   fastify.delete('/leagues/:id', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -402,7 +411,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
   // Admin: Export leagues
   fastify.get('/leagues/export', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -432,8 +441,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: league.format,
         startDate: league.start_date,
         endDate: league.end_date,
-        drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-        exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
+        drawTimes: drawTimes.map((dt) => dt.draw_time),
+        exceptions: exceptions.map((ex) => normalizeDateString(ex.exception_date)),
       };
     }));
 
@@ -454,7 +463,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/leagues/import', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }

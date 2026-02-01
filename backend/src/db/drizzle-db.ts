@@ -1,16 +1,59 @@
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
+import { drizzle as drizzlePg, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import Database from 'better-sqlite3';
 import { Pool } from 'pg';
 import { getDatabaseConfig } from './config.js';
 import * as sqliteSchema from './drizzle-schema.js';
 import * as pgSchema from './drizzle-schema.js';
 
-let dbInstance: any = null;
-let schema: any = null;
+type SqliteSchema = {
+  members: typeof sqliteSchema.membersSqlite;
+  authCodes: typeof sqliteSchema.authCodesSqlite;
+  authTokens: typeof sqliteSchema.authTokensSqlite;
+  leagues: typeof sqliteSchema.leaguesSqlite;
+  leagueDrawTimes: typeof sqliteSchema.leagueDrawTimesSqlite;
+  leagueExceptions: typeof sqliteSchema.leagueExceptionsSqlite;
+  memberAvailability: typeof sqliteSchema.memberAvailabilitySqlite;
+  spareRequests: typeof sqliteSchema.spareRequestsSqlite;
+  spareRequestInvitations: typeof sqliteSchema.spareRequestInvitationsSqlite;
+  spareRequestCcs: typeof sqliteSchema.spareRequestCcsSqlite;
+  spareResponses: typeof sqliteSchema.spareResponsesSqlite;
+  serverConfig: typeof sqliteSchema.serverConfigSqlite;
+  spareRequestNotificationQueue: typeof sqliteSchema.spareRequestNotificationQueueSqlite;
+  spareRequestNotificationDeliveries: typeof sqliteSchema.spareRequestNotificationDeliveriesSqlite;
+  feedback: typeof sqliteSchema.feedbackSqlite;
+  observabilityEvents: typeof sqliteSchema.observabilityEventsSqlite;
+  dailyActivity: typeof sqliteSchema.dailyActivitySqlite;
+};
 
-export function getDrizzleDb() {
-  if (dbInstance) {
+type PgSchema = {
+  members: typeof pgSchema.membersPg;
+  authCodes: typeof pgSchema.authCodesPg;
+  authTokens: typeof pgSchema.authTokensPg;
+  leagues: typeof pgSchema.leaguesPg;
+  leagueDrawTimes: typeof pgSchema.leagueDrawTimesPg;
+  leagueExceptions: typeof pgSchema.leagueExceptionsPg;
+  memberAvailability: typeof pgSchema.memberAvailabilityPg;
+  spareRequests: typeof pgSchema.spareRequestsPg;
+  spareRequestInvitations: typeof pgSchema.spareRequestInvitationsPg;
+  spareRequestCcs: typeof pgSchema.spareRequestCcsPg;
+  spareResponses: typeof pgSchema.spareResponsesPg;
+  serverConfig: typeof pgSchema.serverConfigPg;
+  spareRequestNotificationQueue: typeof pgSchema.spareRequestNotificationQueuePg;
+  spareRequestNotificationDeliveries: typeof pgSchema.spareRequestNotificationDeliveriesPg;
+  feedback: typeof pgSchema.feedbackPg;
+  observabilityEvents: typeof pgSchema.observabilityEventsPg;
+  dailyActivity: typeof pgSchema.dailyActivityPg;
+};
+
+type DrizzleDb = NodePgDatabase<PgSchema>;
+type DrizzleSchema = PgSchema;
+
+let dbInstance: DrizzleDb | null = null;
+let schema: DrizzleSchema | null = null;
+
+export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
+  if (dbInstance && schema) {
     return { db: dbInstance, schema };
   }
 
@@ -25,7 +68,7 @@ export function getDrizzleDb() {
     sqlite.pragma('journal_mode = WAL');
     sqlite.pragma('foreign_keys = ON');
     
-    dbInstance = drizzle(sqlite);
+    dbInstance = drizzle(sqlite) as unknown as DrizzleDb;
     schema = {
       members: sqliteSchema.membersSqlite,
       authCodes: sqliteSchema.authCodesSqlite,
@@ -44,7 +87,7 @@ export function getDrizzleDb() {
       feedback: sqliteSchema.feedbackSqlite,
       observabilityEvents: sqliteSchema.observabilityEventsSqlite,
       dailyActivity: sqliteSchema.dailyActivitySqlite,
-    };
+    } as unknown as DrizzleSchema;
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
       throw new Error('PostgreSQL configuration missing');
@@ -78,12 +121,12 @@ export function getDrizzleDb() {
       feedback: pgSchema.feedbackPg,
       observabilityEvents: pgSchema.observabilityEventsPg,
       dailyActivity: pgSchema.dailyActivityPg,
-    };
+    } as DrizzleSchema;
   } else {
-    throw new Error(`Unsupported database type: ${(config as any).type}`);
+    throw new Error(`Unsupported database type: ${config.type}`);
   }
 
-  return { db: dbInstance, schema };
+  return { db: dbInstance!, schema: schema! };
 }
 
 export function resetDrizzleDb() {

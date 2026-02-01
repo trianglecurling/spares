@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { desc, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -20,8 +20,8 @@ const submitFeedbackSchema = z.object({
   pagePath: z.string().optional(),
 });
 
-function isMemberExpired(member: any): boolean {
-  if (!member?.valid_through) return false;
+function isMemberExpired(member: Member): boolean {
+  if (!member.valid_through) return false;
   const validThrough = new Date(member.valid_through);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -29,7 +29,7 @@ function isMemberExpired(member: any): boolean {
   return today > validThrough;
 }
 
-async function getMemberFromOptionalAuth(request: any): Promise<Member | null> {
+async function getMemberFromOptionalAuth(request: FastifyRequest): Promise<Member | null> {
   const authHeader = request.headers?.authorization;
   const token = authHeader?.replace('Bearer ', '');
   if (!token) return null;
@@ -50,7 +50,7 @@ async function getMemberFromOptionalAuth(request: any): Promise<Member | null> {
   return member;
 }
 
-function normalizeTimestamp(value: any): string {
+function normalizeTimestamp(value: string | Date | number | null | undefined): string {
   if (!value) return '';
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString();
@@ -100,9 +100,9 @@ async function getServerAdminRecipients(): Promise<Array<{ email: string; name: 
   const serverAdmins = await db
     .select({ email: schema.members.email, name: schema.members.name })
     .from(schema.members)
-    .where(eq((schema.members as any).is_server_admin, 1));
+    .where(eq(schema.members.is_server_admin, 1));
 
-  for (const m of serverAdmins as any[]) {
+  for (const m of serverAdmins) {
     const normalized = normalizeEmail(m.email);
     if (!normalized) continue;
     recipients.set(normalized, m.name || normalized);
@@ -117,7 +117,7 @@ export async function publicFeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/feedback', async (request, reply) => {
-    const parsed = submitFeedbackSchema.safeParse((request as any).body || {});
+    const parsed = submitFeedbackSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
     }
@@ -194,7 +194,7 @@ export async function publicFeedbackRoutes(fastify: FastifyInstance) {
 
 export async function protectedFeedbackRoutes(fastify: FastifyInstance) {
   fastify.get('/feedback', async (request, reply) => {
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
     if (!isAdmin(member)) return reply.code(403).send({ error: 'Forbidden' });
 
@@ -218,7 +218,7 @@ export async function protectedFeedbackRoutes(fastify: FastifyInstance) {
       .orderBy(desc(schema.feedback.created_at))
       .limit(200);
 
-    return rows.map((r: any) => ({
+    return rows.map((r) => ({
       id: r.id,
       category: r.category,
       body: r.body,

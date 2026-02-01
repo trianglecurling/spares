@@ -1,4 +1,5 @@
 import { DatabaseAdapter } from './adapter.js';
+import type { DatabaseResult, PreparedStatement } from './adapter.js';
 
 // Helper to execute SQL that may be sync or async
 async function execSQL(db: DatabaseAdapter, sql: string): Promise<void> {
@@ -17,7 +18,7 @@ function execSQLSync(db: DatabaseAdapter, sql: string): void {
 }
 
 // Helper to run prepared statement that may be sync or async
-async function runPrepared(stmt: any, ...params: any[]): Promise<{ lastInsertRowid?: number | bigint; changes: number }> {
+async function runPrepared(stmt: PreparedStatement, ...params: unknown[]): Promise<DatabaseResult> {
   const result = stmt.run(...params);
   if (result instanceof Promise) {
     return await result;
@@ -26,7 +27,7 @@ async function runPrepared(stmt: any, ...params: any[]): Promise<{ lastInsertRow
 }
 
 // Helper to get from prepared statement
-async function getPrepared(stmt: any, ...params: any[]): Promise<any> {
+async function getPrepared<T>(stmt: PreparedStatement<T | null, T[]>, ...params: unknown[]): Promise<T | null> {
   const result = stmt.get(...params);
   if (result instanceof Promise) {
     return await result;
@@ -35,7 +36,7 @@ async function getPrepared(stmt: any, ...params: any[]): Promise<any> {
 }
 
 // Helper to get all from prepared statement
-async function allPrepared(stmt: any, ...params: any[]): Promise<any[]> {
+async function allPrepared<T>(stmt: PreparedStatement<T, T[]>, ...params: unknown[]): Promise<T[]> {
   const result = stmt.all(...params);
   if (result instanceof Promise) {
     return await result;
@@ -45,13 +46,13 @@ async function allPrepared(stmt: any, ...params: any[]): Promise<any[]> {
 
 async function ensureRequestedForMemberIdColumn(db: DatabaseAdapter): Promise<void> {
   if (db.isAsync()) {
-    const stmt = db.prepare(`
+    const stmt = db.prepare<{ column_name?: string | null }>(`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_name = 'spare_requests'
     `);
-    const rows = await allPrepared(stmt);
-    const columnNames = new Set(rows.map((row: any) => String(row.column_name)));
+    const rows = await allPrepared<{ column_name?: string | null }>(stmt);
+    const columnNames = new Set(rows.map((row) => String(row.column_name)));
     if (!columnNames.has('requested_for_member_id')) {
       await execSQL(
         db,
@@ -82,9 +83,9 @@ async function ensureRequestedForMemberIdColumn(db: DatabaseAdapter): Promise<vo
     return;
   }
 
-  const stmt = db.prepare(`PRAGMA table_info(spare_requests)`);
-  const columns = await allPrepared(stmt);
-  const columnNames = new Set(columns.map((col: any) => String(col.name)));
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(spare_requests)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
   if (!columnNames.has('requested_for_member_id')) {
     await execSQL(
       db,
@@ -436,9 +437,9 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   for (const migration of migrations) {
     try {
       await execSQL(db, migration.sql);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Check if error is about column already existing
-      const errorMsg = e?.message || '';
+      const errorMsg = e instanceof Error ? e.message : '';
       if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
         // Re-throw if it's not a "column exists" error
         throw e;
@@ -450,7 +451,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   // Indexes that depend on migrated columns (safe on existing DBs)
   try {
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
 
@@ -458,12 +459,15 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   try {
     // Convert existing admins (is_admin=1) to server admins (is_server_admin=1, is_admin=0)
     // This only runs once - check if any members have is_admin=1 and is_server_admin=0
-    const checkStmt = db.prepare("SELECT COUNT(*) as count FROM members WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)");
+    const checkStmt = db.prepare<{ count: number }>(
+      "SELECT COUNT(*) as count FROM members WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)"
+    );
     const result = await getPrepared(checkStmt);
-    if (result && result.count > 0) {
+    const count = Number(result?.count ?? 0);
+    if (count > 0) {
       const migrateStmt = db.prepare('UPDATE members SET is_server_admin = 1, is_admin = 0 WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)');
       await runPrepared(migrateStmt);
-      console.log(`Migrated ${result.count} existing admin(s) to server admin(s)`);
+      console.log(`Migrated ${count} existing admin(s) to server admin(s)`);
     }
   } catch (e) {
     // Ignore migration errors - column might not exist yet or already migrated
@@ -473,7 +477,10 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   // Handle Twilio field migration (SQLite-specific, but safe to run on Postgres)
   try {
     // Check if old columns exist and migrate data
-    const checkStmt = db.prepare("SELECT * FROM server_config WHERE id = 1");
+    const checkStmt = db.prepare<{
+      twilio_account_sid?: string | null;
+      twilio_api_key_sid?: string | null;
+    }>("SELECT * FROM server_config WHERE id = 1");
     const configRow = await getPrepared(checkStmt);
     
     if (configRow) {
@@ -512,8 +519,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   // Migrate notification queue table (add claimed_at if missing)
   try {
     await execSQL(db, 'ALTER TABLE spare_request_notification_queue ADD COLUMN claimed_at DATETIME');
-  } catch (e: any) {
-    const errorMsg = e?.message || '';
+  } catch (e: unknown) {
+    const errorMsg = e instanceof Error ? e.message : '';
     if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
       throw e;
     }
@@ -522,7 +529,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   // Index for claimed_at (after the column exists)
   try {
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_notification_queue_claimed ON spare_request_notification_queue(spare_request_id, claimed_at);');
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
 
@@ -843,9 +850,9 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   for (const migrationSQL of migrations) {
     try {
       execSQLSync(db, migrationSQL);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Ignore "column already exists" errors
-      const errorMsg = e?.message || '';
+      const errorMsg = e instanceof Error ? e.message : '';
       if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
         // Re-throw if it's not a "column exists" error
         throw e;
@@ -883,8 +890,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   // Migrate notification queue table (add claimed_at if missing) - sync
   try {
     execSQLSync(db, 'ALTER TABLE spare_request_notification_queue ADD COLUMN claimed_at DATETIME');
-  } catch (e: any) {
-    const errorMsg = e?.message || '';
+  } catch (e: unknown) {
+    const errorMsg = e instanceof Error ? e.message : '';
     if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
       throw e;
     }
@@ -925,12 +932,15 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   // Migrate existing admins to server admins (sync version)
   try {
     // Convert existing admins (is_admin=1) to server admins (is_server_admin=1, is_admin=0)
-    const checkStmt = db.prepare("SELECT COUNT(*) as count FROM members WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)");
-    const result = checkStmt.get();
-    if (result && (result as any).count > 0) {
+    const checkStmt = db.prepare<{ count: number }>(
+      "SELECT COUNT(*) as count FROM members WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)"
+    );
+    const result = checkStmt.get() as { count?: number } | undefined;
+    const count = Number(result?.count ?? 0);
+    if (count > 0) {
       const migrateStmt = db.prepare('UPDATE members SET is_server_admin = 1, is_admin = 0 WHERE is_admin = 1 AND (is_server_admin = 0 OR is_server_admin IS NULL)');
       migrateStmt.run();
-      console.log(`Migrated ${(result as any).count} existing admin(s) to server admin(s)`);
+      console.log(`Migrated ${count} existing admin(s) to server admin(s)`);
     }
   } catch (e) {
     // Ignore migration errors - column might not exist yet or already migrated
