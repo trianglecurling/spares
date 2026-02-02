@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, and, or, sql, asc, desc, isNull, isNotNull, inArray, gte, ne } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { Member, SpareRequest, League } from '../types.js';
+import { Member, SpareRequest } from '../types.js';
 import {
   sendSpareRequestEmail,
   sendSpareRequestCreatedEmail,
@@ -22,6 +22,21 @@ import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
 import { processAllNotificationsForRequest } from '../services/notificationProcessor.js';
+import {
+  sparesCcResponseSchema,
+  spareCreateResponseSchema,
+  spareFilledUpcomingResponseSchema,
+  spareInviteResponseSchema,
+  spareInvitationsResponseSchema,
+  spareMakePublicResponseSchema,
+  spareMyRequestsPastResponseSchema,
+  spareMyRequestsResponseSchema,
+  spareMySparingResponseSchema,
+  spareNotificationStatusResponseSchema,
+  spareStatusResponseSchema,
+  sparesListResponseSchema,
+  successResponseSchema,
+} from '../api/schemas.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
@@ -57,6 +72,77 @@ const reissueSpareRequestSchema = z.object({
   message: z.string().optional(),
 });
 
+const createSpareRequestBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    leagueId: { type: 'number' },
+    requestedForName: { type: 'string' },
+    requestedForMemberId: { type: 'number' },
+    gameDate: { type: 'string' },
+    gameTime: { type: 'string' },
+    position: { type: 'string', enum: ['lead', 'second', 'vice', 'skip'] },
+    message: { type: 'string' },
+    requestType: { type: 'string', enum: ['public', 'private'] },
+    invitedMemberIds: { type: 'array', items: { type: 'number' } },
+    ccMemberIds: { type: 'array', items: { type: 'number' }, maxItems: 4 },
+    allowDuplicate: { type: 'boolean' },
+  },
+  required: ['leagueId', 'requestedForName', 'gameDate', 'gameTime', 'requestType'],
+} as const;
+
+const commentBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    comment: { type: 'string' },
+  },
+} as const;
+
+const cancelSparingBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    comment: { type: 'string', minLength: 1 },
+  },
+  required: ['comment'],
+} as const;
+
+const inviteMoreBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    memberIds: { type: 'array', items: { type: 'number' }, minItems: 1 },
+  },
+  required: ['memberIds'],
+} as const;
+
+const reissueBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    message: { type: 'string' },
+  },
+} as const;
+
+const idParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' },
+  },
+  required: ['id'],
+} as const;
+
+type SpareRequestDb = SpareRequest & {
+  league_id: number | null;
+  notification_generation: number | null;
+  all_invites_declined_notified: number | null;
+  notification_status: 'in_progress' | 'completed' | 'paused' | null;
+  next_notification_at: string | null;
+  notification_paused: number;
+};
+
 export async function spareRoutes(fastify: FastifyInstance) {
   function normalizeDateString(value: unknown): string {
     if (value instanceof Date) {
@@ -91,20 +177,39 @@ export async function spareRoutes(fastify: FastifyInstance) {
         name: schema.members.name,
         email: schema.members.email,
         phone: schema.members.phone,
+        valid_through: schema.members.valid_through,
+        spare_only: schema.members.spare_only,
         is_admin: schema.members.is_admin,
         is_server_admin: schema.members.is_server_admin,
+        opted_in_sms: schema.members.opted_in_sms,
         email_subscribed: schema.members.email_subscribed,
+        first_login_completed: schema.members.first_login_completed,
+        email_visible: schema.members.email_visible,
+        phone_visible: schema.members.phone_visible,
+        theme_preference: schema.members.theme_preference,
+        created_at: schema.members.created_at,
+        updated_at: schema.members.updated_at,
       })
       .from(schema.spareRequestCcs)
       .innerJoin(schema.members, eq(schema.spareRequestCcs.member_id, schema.members.id))
       .where(eq(schema.spareRequestCcs.spare_request_id, requestId));
 
-    return rows as unknown as Member[];
+    return rows;
   }
 
   // Get spare requests the user was CC'd on (upcoming; includes private requests)
-  fastify.get('/spares/cc', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/cc',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: sparesCcResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -133,14 +238,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .from(schema.spareRequestCcs)
       .innerJoin(schema.spareRequests, eq(schema.spareRequestCcs.spare_request_id, schema.spareRequests.id))
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
+      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
       .where(
         and(
           eq(schema.spareRequestCcs.member_id, member.id),
           gte(schema.spareRequests.game_date, today),
           or(
-            isNull((schema.spareRequests as any).requested_for_member_id),
-            ne((schema.spareRequests as any).requested_for_member_id, member.id)
+            isNull(schema.spareRequests.requested_for_member_id),
+            ne(schema.spareRequests.requested_for_member_id, member.id)
           )!
         )
       )
@@ -148,8 +253,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Resolve filled-by names separately (avoids joining members twice)
     const filledByIds = rowsRaw
-      .map((r: any) => r.filled_by_member_id)
-      .filter((id: any): id is number => id !== null);
+      .map((r) => r.filled_by_member_id)
+      .filter((id): id is number => id !== null);
 
     const filledByMembers = filledByIds.length > 0
       ? await db
@@ -158,9 +263,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .where(inArray(schema.members.id, filledByIds))
       : [];
 
-    const filledByNameMap = new Map(filledByMembers.map((m: any) => [m.id, m.name]));
+    const filledByNameMap = new Map(filledByMembers.map((m) => [m.id, m.name]));
 
-    return rowsRaw.map((req: any) => ({
+    return rowsRaw.map((req) => ({
       id: req.id,
       requesterName: req.requester_name,
       requesterEmail: req.requester_email,
@@ -177,11 +282,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       filledAt: req.filled_at,
       createdAt: req.created_at,
     }));
-  });
+    }
+  );
 
   // Get all public spare requests
-  fastify.get('/spares', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: sparesListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -198,14 +314,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const canSkip = memberAvailability[0]?.can_skip === 1;
     
     // Get all open public spare requests
-    let publicConditions = [
+    const publicConditions = [
       eq(schema.spareRequests.status, 'open'),
       eq(schema.spareRequests.request_type, 'public'),
       gte(schema.spareRequests.game_date, today),
       ne(schema.spareRequests.requester_id, member.id),
       or(
-        isNull((schema.spareRequests as any).requested_for_member_id),
-        ne((schema.spareRequests as any).requested_for_member_id, member.id)
+        isNull(schema.spareRequests.requested_for_member_id),
+        ne(schema.spareRequests.requested_for_member_id, member.id)
       )!,
     ];
     
@@ -236,20 +352,20 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
+      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
       .where(and(...publicConditions))
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
 
     // Get private requests the member was invited to
-    let privateConditions = [
+    const privateConditions = [
       eq(schema.spareRequests.status, 'open'),
       eq(schema.spareRequests.request_type, 'private'),
       eq(schema.spareRequestInvitations.member_id, member.id),
       gte(schema.spareRequests.game_date, today),
       ne(schema.spareRequests.requester_id, member.id),
       or(
-        isNull((schema.spareRequests as any).requested_for_member_id),
-        ne((schema.spareRequests as any).requested_for_member_id, member.id)
+        isNull(schema.spareRequests.requested_for_member_id),
+        ne(schema.spareRequests.requested_for_member_id, member.id)
       )!,
     ];
     
@@ -277,18 +393,20 @@ export async function spareRoutes(fastify: FastifyInstance) {
         message: schema.spareRequests.message,
         request_type: schema.spareRequests.request_type,
         created_at: schema.spareRequests.created_at,
-        invite_declined_at: (schema.spareRequestInvitations as any).declined_at,
+        invite_declined_at: schema.spareRequestInvitations.declined_at,
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
       .innerJoin(schema.spareRequestInvitations, eq(schema.spareRequests.id, schema.spareRequestInvitations.spare_request_id))
-      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
+      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
       .where(and(...privateConditions))
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
 
     const allRequests = [...publicRequests, ...privateRequests];
 
-    return allRequests.map((req: any) => ({
+    return allRequests.map((req) => {
+      const inviteDeclinedAt = 'invite_declined_at' in req ? req.invite_declined_at : null;
+      return {
       id: req.id,
       requesterName: req.requester_name,
       requestedForName: req.requested_for_name,
@@ -298,14 +416,28 @@ export async function spareRoutes(fastify: FastifyInstance) {
       position: req.position,
       message: req.message,
       requestType: req.request_type,
-      inviteStatus: req.request_type === 'private' ? (req.invite_declined_at ? 'declined' : 'pending') : undefined,
+      inviteStatus: req.request_type === 'private' ? (inviteDeclinedAt ? 'declined' : 'pending') : undefined,
       createdAt: req.created_at,
-    }));
-  });
+      };
+    });
+    }
+  );
 
   // Decline a private spare request invitation (invited member only)
-  fastify.post('/spares/:id/decline', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/decline',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: commentBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -322,7 +454,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .from(schema.spareRequests)
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
-    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
     }
@@ -343,7 +475,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         )
       )
       .limit(1);
-    const invite = invites[0] as any;
+    const invite = invites[0];
     if (!invite) {
       return reply.code(403).send({ error: 'You are not invited to this private spare request' });
     }
@@ -365,7 +497,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .from(schema.members)
           .where(eq(schema.members.id, spareRequest.requester_id))
           .limit(1);
-        const requester = requesters[0] as Member | undefined;
+        const requester = requesters[0];
         if (requester?.email && requester.email_subscribed === 1) {
           const requesterToken = generateToken(requester);
           const { sendPrivateInviteDeclinedEmail } = await import('../services/email.js');
@@ -375,14 +507,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
             member.name,
             {
               requestedForName: spareRequest.requested_for_name,
-              gameDate: spareRequest.game_date,
+              gameDate: normalizeDateString(spareRequest.game_date),
               gameTime: spareRequest.game_time,
               position: spareRequest.position || undefined,
             },
             comment,
             requesterToken
-          ).catch((e: any) => {
-            console.error('Error sending private invite declined email:', e);
+          ).catch((error: unknown) => {
+            console.error('Error sending private invite declined email:', error);
           });
         }
       } catch (e) {
@@ -398,11 +530,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(schema.spareRequestInvitations.spare_request_id, requestId),
-            isNull((schema.spareRequestInvitations as any).declined_at)
+            isNull(schema.spareRequestInvitations.declined_at)
           )
         );
       const remainingCount = Number(remaining[0]?.count || 0);
-      if (remainingCount === 0 && (spareRequest as any).all_invites_declined_notified !== 1) {
+      if (remainingCount === 0 && spareRequest.all_invites_declined_notified !== 1) {
         // Mark notified first to reduce dupes
         await db
           .update(schema.spareRequests)
@@ -414,7 +546,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .from(schema.members)
           .where(eq(schema.members.id, spareRequest.requester_id))
           .limit(1);
-        const requester = requesters[0] as Member | undefined;
+        const requester = requesters[0];
         if (requester?.email && requester.email_subscribed === 1) {
           const requesterToken = generateToken(requester);
           const { sendAllPrivateInvitesDeclinedEmail } = await import('../services/email.js');
@@ -423,13 +555,13 @@ export async function spareRoutes(fastify: FastifyInstance) {
             requester.name,
             {
               requestedForName: spareRequest.requested_for_name,
-              gameDate: spareRequest.game_date,
+              gameDate: normalizeDateString(spareRequest.game_date),
               gameTime: spareRequest.game_time,
               position: spareRequest.position || undefined,
             },
             requesterToken
-          ).catch((e: any) => {
-            console.error('Error sending all invites declined email:', e);
+          ).catch((error: unknown) => {
+            console.error('Error sending all invites declined email:', error);
           });
         }
       }
@@ -438,11 +570,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Get invitation statuses for a private spare request (requester only)
-  fastify.get('/spares/:id/invitations', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/:id/invitations',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareInvitationsResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
     const { id } = request.params as { id: string };
@@ -454,7 +598,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .from(schema.spareRequests)
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
-    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
     if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
     if (spareRequest.requester_id !== member.id) return reply.code(403).send({ error: 'Forbidden' });
     if (spareRequest.request_type !== 'private') return reply.code(400).send({ error: 'Not a private request' });
@@ -464,8 +608,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
         member_id: schema.members.id,
         name: schema.members.name,
         email: schema.members.email,
-        declined_at: (schema.spareRequestInvitations as any).declined_at,
-        decline_comment: (schema.spareRequestInvitations as any).decline_comment,
+        declined_at: schema.spareRequestInvitations.declined_at,
+        decline_comment: schema.spareRequestInvitations.decline_comment,
         created_at: schema.spareRequestInvitations.created_at,
       })
       .from(schema.spareRequestInvitations)
@@ -473,7 +617,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequestInvitations.spare_request_id, requestId))
       .orderBy(asc(schema.members.name));
 
-    return rows.map((r: any) => ({
+    return rows.map((r) => ({
       memberId: r.member_id,
       name: r.name,
       email: r.email,
@@ -482,11 +626,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
       declineComment: r.decline_comment || null,
       invitedAt: r.created_at,
     }));
-  });
+    }
+  );
 
   // Get basic status for a spare request (used for email deep-link feedback)
-  fastify.get('/spares/:id/status', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/:id/status',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareStatusResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
     const { id } = request.params as { id: string };
@@ -508,7 +664,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
 
-    const spareRequest = rows[0] as any | undefined;
+    const spareRequest = rows[0];
     if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
 
     // Public requests: any authenticated member can check status.
@@ -547,11 +703,24 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return reply.code(403).send({ error: 'Forbidden' });
-  });
+    }
+  );
 
   // Invite more people to a private spare request (requester only)
-  fastify.post('/spares/:id/invite', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/invite',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: inviteMoreBodySchema,
+        response: {
+          200: spareInviteResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
     const { id } = request.params as { id: string };
@@ -569,7 +738,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .from(schema.spareRequests)
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
-    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
     if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
     if (spareRequest.requester_id !== member.id) return reply.code(403).send({ error: 'Forbidden' });
     if (spareRequest.request_type !== 'private') return reply.code(400).send({ error: 'Only private requests can invite more members' });
@@ -579,22 +748,28 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const invitees = await db
       .select()
       .from(schema.members)
-      .where(inArray(schema.members.id, memberIds)) as Member[];
+      .where(inArray(schema.members.id, memberIds));
     if (invitees.length !== memberIds.length) {
       return reply.code(400).send({ error: 'One or more invited members were not found' });
     }
 
     // Determine which invites are new or were previously declined (need re-notify)
     const existingInvites = await db
-      .select()
+      .select({
+        id: schema.spareRequestInvitations.id,
+        member_id: schema.spareRequestInvitations.member_id,
+        declined_at: schema.spareRequestInvitations.declined_at,
+      })
       .from(schema.spareRequestInvitations)
       .where(
         and(
           eq(schema.spareRequestInvitations.spare_request_id, requestId),
           inArray(schema.spareRequestInvitations.member_id, memberIds)
         )
-      ) as any[];
-    const existingByMemberId = new Map<number, any>(existingInvites.map((i: any) => [i.member_id, i]));
+      );
+    const existingByMemberId = new Map<number, { id: number; member_id: number; declined_at: string | Date | null }>(
+      existingInvites.map((i) => [i.member_id, i])
+    );
 
     const toNotifyIds: number[] = [];
     for (const mId of memberIds) {
@@ -622,7 +797,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .set({ all_invites_declined_notified: 0 })
       .where(eq(schema.spareRequests.id, requestId));
 
-    let inviteNotificationGeneration = Number((spareRequest as any).notification_generation ?? 0);
+    let inviteNotificationGeneration = Number(spareRequest.notification_generation ?? 0);
     if (toNotifyIds.length > 0) {
       // Bump notification_generation so reinvites can send again, while still deduping double-submits.
       await db
@@ -643,13 +818,17 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .from(schema.spareRequestInvitations)
         .innerJoin(schema.members, eq(schema.spareRequestInvitations.member_id, schema.members.id))
         .where(eq(schema.spareRequestInvitations.spare_request_id, requestId));
-      const invitedMemberNames = allInvites.map((r: any) => r.name).sort();
+      const invitedMemberNames = allInvites.map((r) => r.name).sort();
 
       // Get league name (best-effort)
-      const leagueId = (spareRequest as any).league_id;
+      const leagueId = spareRequest.league_id;
       let leagueName: string | undefined;
       if (leagueId) {
-        const leagueRows = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1) as any[];
+        const leagueRows = await db
+          .select({ name: schema.leagues.name })
+          .from(schema.leagues)
+          .where(eq(schema.leagues.id, leagueId))
+          .limit(1);
         leagueName = leagueRows[0]?.name;
       }
 
@@ -673,7 +852,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 {
                   leagueName,
                   requestedForName: spareRequest.requested_for_name,
-                  gameDate: spareRequest.game_date,
+                  gameDate: normalizeDateString(spareRequest.game_date),
                   gameTime: spareRequest.game_time,
                   position: spareRequest.position || undefined,
                   message: spareRequest.message || undefined,
@@ -682,10 +861,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 acceptToken,
                 requestId
               )
-          ).catch((e: any) => console.error('Error sending private invite email:', e));
+          ).catch((error: unknown) => console.error('Error sending private invite email:', error));
         }
 
-        if (recipient.phone && (recipient as any).opted_in_sms === 1) {
+        if (recipient.phone && recipient.opted_in_sms === 1) {
           sendOnceWithDeliveryClaim(
             {
               spareRequestId: requestId,
@@ -694,18 +873,30 @@ export async function spareRoutes(fastify: FastifyInstance) {
               channel: 'sms',
               kind: 'spare_request',
             },
-            () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
-          ).catch((e: any) => console.error('Error sending private invite SMS:', e));
+            () => sendSpareRequestSMS(recipient.phone!, member.name, normalizeDateString(spareRequest.game_date), spareRequest.game_time)
+          ).catch((error: unknown) => console.error('Error sending private invite SMS:', error));
         }
       }
     }
 
     return { success: true, invited: toNotifyIds.length };
-  });
+    }
+  );
 
   // Convert a private spare request to public (requester only; irreversible)
-  fastify.post('/spares/:id/make-public', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/make-public',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareMakePublicResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
     const { id } = request.params as { id: string };
@@ -717,7 +908,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .from(schema.spareRequests)
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
-    const spareRequest = spareRequests[0] as any;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
     if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
     if (spareRequest.requester_id !== member.id) return reply.code(403).send({ error: 'Forbidden' });
     if (spareRequest.request_type !== 'private') return reply.code(400).send({ error: 'Only private requests can be made public' });
@@ -748,13 +939,17 @@ export async function spareRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Cannot make public without a league' });
     }
 
-    const leagueRows = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1) as any[];
+    const leagueRows = await db
+      .select({ name: schema.leagues.name })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, leagueId))
+      .limit(1);
     const league = leagueRows[0];
     if (!league) return reply.code(400).send({ error: 'Invalid league' });
     const leagueName = league.name;
 
     // Parse date/time as local to avoid timezone issues
-    const [gameYear, gameMonth, gameDay] = String(spareRequest.game_date).split('-').map(Number);
+    const [gameYear, gameMonth, gameDay] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
     const [gameHours, gameMinutes] = String(spareRequest.game_time).split(':').map(Number);
     const gameDateTime = new Date(gameYear, gameMonth - 1, gameDay, gameHours, gameMinutes);
     const currentTime = await getCurrentTimeAsync();
@@ -765,7 +960,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     await db.delete(schema.spareRequestNotificationQueue).where(eq(schema.spareRequestNotificationQueue.spare_request_id, requestId));
 
     // Recipient selection (public)
-    const conditions: any[] = [
+    const conditions: Array<ReturnType<typeof sql>> = [
       eq(schema.memberAvailability.league_id, leagueId),
       eq(schema.memberAvailability.available, 1),
       eq(schema.members.email_subscribed, 1),
@@ -781,17 +976,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
         email: schema.members.email,
         phone: schema.members.phone,
         is_admin: schema.members.is_admin,
+        is_server_admin: schema.members.is_server_admin,
+        valid_through: schema.members.valid_through,
+        spare_only: schema.members.spare_only,
         opted_in_sms: schema.members.opted_in_sms,
         email_subscribed: schema.members.email_subscribed,
         first_login_completed: schema.members.first_login_completed,
         email_visible: schema.members.email_visible,
         phone_visible: schema.members.phone_visible,
+        theme_preference: schema.members.theme_preference,
         created_at: schema.members.created_at,
         updated_at: schema.members.updated_at,
       })
       .from(schema.members)
       .innerJoin(schema.memberAvailability, eq(schema.members.id, schema.memberAvailability.member_id))
-      .where(and(...conditions)) as Member[];
+      .where(and(...conditions));
 
     if (isLessThan24Hours) {
       for (const recipient of recipientMembers) {
@@ -813,7 +1012,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 {
                   leagueName,
                   requestedForName: spareRequest.requested_for_name,
-                  gameDate: spareRequest.game_date,
+                  gameDate: normalizeDateString(spareRequest.game_date),
                   gameTime: spareRequest.game_time,
                   position: spareRequest.position || undefined,
                   message: spareRequest.message || undefined,
@@ -821,9 +1020,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 acceptToken,
                 requestId
               )
-          ).catch((e: any) => console.error('Error sending public spare email:', e));
+          ).catch((error: unknown) => console.error('Error sending public spare email:', error));
         }
-        if (recipient.phone && (recipient as any).opted_in_sms === 1) {
+        if (recipient.phone && recipient.opted_in_sms === 1) {
           sendOnceWithDeliveryClaim(
             {
               spareRequestId: requestId,
@@ -832,8 +1031,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
               channel: 'sms',
               kind: 'spare_request',
             },
-            () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
-          ).catch((e: any) => console.error('Error sending public spare SMS:', e));
+            () => sendSpareRequestSMS(recipient.phone!, member.name, normalizeDateString(spareRequest.game_date), spareRequest.game_time)
+          ).catch((error: unknown) => console.error('Error sending public spare SMS:', error));
         }
       }
       if (recipientMembers.length > 0) {
@@ -877,11 +1076,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId));
 
     return { success: true, notificationsQueued: shuffled.length, notificationStatus: 'in_progress' };
-  });
+    }
+  );
 
   // Get member's own spare requests
-  fastify.get('/spares/my-requests', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/my-requests',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareMyRequestsResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -895,7 +1105,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         league_name: schema.leagues.name,
         requester_id: schema.spareRequests.requester_id,
         requested_for_name: schema.spareRequests.requested_for_name,
-        requested_for_member_id: (schema.spareRequests as any).requested_for_member_id,
+        requested_for_member_id: schema.spareRequests.requested_for_member_id,
         game_date: schema.spareRequests.game_date,
         game_time: schema.spareRequests.game_time,
         position: schema.spareRequests.position,
@@ -906,7 +1116,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         filled_by_email: schema.members.email,
         filled_by_phone: schema.members.phone,
         filled_at: schema.spareRequests.filled_at,
-        cancelled_by_member_id: (schema.spareRequests as any).cancelled_by_member_id,
+        cancelled_by_member_id: schema.spareRequests.cancelled_by_member_id,
         notifications_sent_at: schema.spareRequests.notifications_sent_at,
         had_cancellation: schema.spareRequests.had_cancellation,
         created_at: schema.spareRequests.created_at,
@@ -914,7 +1124,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .leftJoin(schema.members, eq(schema.spareRequests.filled_by_member_id, schema.members.id))
-      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
+      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
       .leftJoin(
         schema.spareResponses,
         eq(schema.spareRequests.id, schema.spareResponses.spare_request_id)
@@ -923,7 +1133,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         and(
           or(
             eq(schema.spareRequests.requester_id, member.id),
-            eq((schema.spareRequests as any).requested_for_member_id, member.id)
+            eq(schema.spareRequests.requested_for_member_id, member.id)
           )!,
           gte(schema.spareRequests.game_date, today)
         )
@@ -940,8 +1150,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
       );
 
     const privateRequestIds = requests
-      .filter((r: any) => r.request_type === 'private')
-      .map((r: any) => r.id) as number[];
+      .filter((r) => r.request_type === 'private')
+      .map((r) => r.id);
 
     const inviteMap = new Map<number, { name: string; status: 'pending' | 'declined' }[]>();
     if (privateRequestIds.length > 0) {
@@ -949,14 +1159,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .select({
           request_id: schema.spareRequestInvitations.spare_request_id,
           name: schema.members.name,
-          declined_at: (schema.spareRequestInvitations as any).declined_at,
+          declined_at: schema.spareRequestInvitations.declined_at,
         })
         .from(schema.spareRequestInvitations)
         .innerJoin(schema.members, eq(schema.spareRequestInvitations.member_id, schema.members.id))
         .where(inArray(schema.spareRequestInvitations.spare_request_id, privateRequestIds))
         .orderBy(asc(schema.members.name));
 
-      for (const row of inviteRows as any[]) {
+      for (const row of inviteRows) {
         const reqId = Number(row.request_id);
         const list = inviteMap.get(reqId) || [];
         list.push({ name: String(row.name), status: row.declined_at ? 'declined' : 'pending' });
@@ -964,17 +1174,17 @@ export async function spareRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const requesterIds = Array.from(new Set(requests.map((req: any) => req.requester_id))) as number[];
+    const requesterIds = Array.from(new Set(requests.map((req) => req.requester_id)));
     const requesterRows = requesterIds.length > 0
       ? await db
           .select({ id: schema.members.id, name: schema.members.name })
           .from(schema.members)
           .where(inArray(schema.members.id, requesterIds))
       : [];
-    const requesterNameMap = new Map(requesterRows.map((row: any) => [row.id, row.name]));
+    const requesterNameMap = new Map(requesterRows.map((row) => [row.id, row.name]));
 
     const cancellerIds = Array.from(
-      new Set(requests.map((req: any) => req.cancelled_by_member_id).filter(Boolean))
+      new Set(requests.map((req) => req.cancelled_by_member_id).filter(Boolean))
     ) as number[];
     const cancellerRows = cancellerIds.length > 0
       ? await db
@@ -982,9 +1192,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .from(schema.members)
           .where(inArray(schema.members.id, cancellerIds))
       : [];
-    const cancellerNameMap = new Map(cancellerRows.map((row: any) => [row.id, row.name]));
+    const cancellerNameMap = new Map(cancellerRows.map((row) => [row.id, row.name]));
 
-    return requests.map((req: any) => {
+    return requests.map((req) => {
       const invites = req.request_type === 'private' ? inviteMap.get(req.id) || [] : undefined;
       const declinedCount = invites ? invites.filter((i) => i.status === 'declined').length : 0;
       const pendingCount = invites ? invites.filter((i) => i.status === 'pending').length : 0;
@@ -1018,11 +1228,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
         createdAt: req.created_at,
       };
     });
-  });
+    }
+  );
 
   // Get member's past spare requests (read-only, includes filled or unfilled)
-  fastify.get('/spares/my-requests/past', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/my-requests/past',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareMyRequestsPastResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -1037,7 +1258,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         id: schema.spareRequests.id,
         requester_id: schema.spareRequests.requester_id,
         requested_for_name: schema.spareRequests.requested_for_name,
-        requested_for_member_id: (schema.spareRequests as any).requested_for_member_id,
+        requested_for_member_id: schema.spareRequests.requested_for_member_id,
         game_date: schema.spareRequests.game_date,
         game_time: schema.spareRequests.game_time,
         position: schema.spareRequests.position,
@@ -1048,7 +1269,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         filled_by_email: schema.members.email,
         filled_by_phone: schema.members.phone,
         filled_at: schema.spareRequests.filled_at,
-        cancelled_by_member_id: (schema.spareRequests as any).cancelled_by_member_id,
+        cancelled_by_member_id: schema.spareRequests.cancelled_by_member_id,
         notifications_sent_at: schema.spareRequests.notifications_sent_at,
         had_cancellation: schema.spareRequests.had_cancellation,
         created_at: schema.spareRequests.created_at,
@@ -1064,7 +1285,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         and(
           or(
             eq(schema.spareRequests.requester_id, member.id),
-            eq((schema.spareRequests as any).requested_for_member_id, member.id)
+            eq(schema.spareRequests.requested_for_member_id, member.id)
           )!,
           or(
             sql`${schema.spareRequests.game_date} < ${today}`,
@@ -1077,17 +1298,17 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .orderBy(desc(schema.spareRequests.game_date), desc(schema.spareRequests.game_time));
 
-    const requesterIds = Array.from(new Set(requests.map((req: any) => req.requester_id))) as number[];
+    const requesterIds = Array.from(new Set(requests.map((req) => req.requester_id)));
     const requesterRows = requesterIds.length > 0
       ? await db
           .select({ id: schema.members.id, name: schema.members.name })
           .from(schema.members)
           .where(inArray(schema.members.id, requesterIds))
       : [];
-    const requesterNameMap = new Map(requesterRows.map((row: any) => [row.id, row.name]));
+    const requesterNameMap = new Map(requesterRows.map((row) => [row.id, row.name]));
 
     const cancellerIds = Array.from(
-      new Set(requests.map((req: any) => req.cancelled_by_member_id).filter(Boolean))
+      new Set(requests.map((req) => req.cancelled_by_member_id).filter(Boolean))
     ) as number[];
     const cancellerRows = cancellerIds.length > 0
       ? await db
@@ -1095,9 +1316,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .from(schema.members)
           .where(inArray(schema.members.id, cancellerIds))
       : [];
-    const cancellerNameMap = new Map(cancellerRows.map((row: any) => [row.id, row.name]));
+    const cancellerNameMap = new Map(cancellerRows.map((row) => [row.id, row.name]));
 
-    return requests.map((req: any) => {
+    return requests.map((req) => {
       return {
         id: req.id,
         requestedForName: req.requested_for_name,
@@ -1123,11 +1344,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
         createdAt: req.created_at,
       };
     });
-  });
+    }
+  );
 
   // Get spare requests the user has signed up to fill (upcoming)
-  fastify.get('/spares/my-sparing', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/my-sparing',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareMySparingResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -1152,7 +1384,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
+      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
       .where(
         and(
           eq(schema.spareRequests.filled_by_member_id, member.id),
@@ -1162,7 +1394,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
 
-    return requests.map((req: any) => ({
+    return requests.map((req) => ({
       id: req.id,
       requesterName: req.requester_name,
       requesterEmail: req.requester_email,
@@ -1176,11 +1408,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       requestType: req.request_type,
       createdAt: req.created_at,
     }));
-  });
+    }
+  );
 
   // Get filled spare requests (for expandable section)
-  fastify.get('/spares/filled-upcoming', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/filled-upcoming',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareFilledUpcomingResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -1207,7 +1450,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .from(schema.spareRequests)
       .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq((schema.spareRequests as any).league_id, schema.leagues.id))
+      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
       .where(
         and(
           eq(schema.spareRequests.status, 'filled'),
@@ -1217,8 +1460,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
           ne(schema.spareRequests.requester_id, member.id),
           ne(schema.spareRequests.filled_by_member_id, member.id),
           or(
-            isNull((schema.spareRequests as any).requested_for_member_id),
-            ne((schema.spareRequests as any).requested_for_member_id, member.id)
+            isNull(schema.spareRequests.requested_for_member_id),
+            ne(schema.spareRequests.requested_for_member_id, member.id)
           )!,
           // Also exclude private requests where the user was invited
           sql`NOT EXISTS (
@@ -1233,8 +1476,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
     
     // Get filled_by names separately
     const filledByIds = requestsRaw
-      .map((r: any) => r.filled_by_member_id)
-      .filter((id: any): id is number => id !== null);
+      .map((r) => r.filled_by_member_id)
+      .filter((id): id is number => id !== null);
     
     const filledByMembers = filledByIds.length > 0
       ? await db
@@ -1243,14 +1486,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .where(inArray(schema.members.id, filledByIds))
       : [];
     
-    const filledByNameMap = new Map(filledByMembers.map((m: any) => [m.id, m.name]));
+    const filledByNameMap = new Map(filledByMembers.map((m) => [m.id, m.name]));
     
-    const requests = requestsRaw.map((req: any) => ({
+    const requests = requestsRaw.map((req) => ({
       ...req,
       filled_by_name: req.filled_by_member_id ? filledByNameMap.get(req.filled_by_member_id) || null : null,
     }));
 
-    return requests.map((req: any) => ({
+    return requests.map((req) => ({
       id: req.id,
       requesterName: req.requester_name,
       requestedForName: req.requested_for_name,
@@ -1264,15 +1507,27 @@ export async function spareRoutes(fastify: FastifyInstance) {
       filledAt: req.filled_at,
       createdAt: req.created_at,
     }));
-  });
+    }
+  );
 
   // Create spare request
-  fastify.post('/spares', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares',
+    {
+      schema: {
+        tags: ['spares'],
+        body: createSpareRequestBodySchema,
+        response: {
+          200: spareCreateResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
-    if ((member as any).spare_only === 1) {
+    if (member.spare_only === 1) {
       return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
     }
 
@@ -1285,7 +1540,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .select()
       .from(schema.leagues)
       .where(eq(schema.leagues.id, body.leagueId))
-      .limit(1) as League[];
+      .limit(1);
     const league = leagueRows[0];
     if (!league) {
       return reply.code(400).send({ error: 'Invalid league' });
@@ -1419,7 +1674,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .returning();
 
     const requestId = result[0].id;
-    const notificationGeneration = Number((result[0] as any).notification_generation ?? 1);
+    const notificationGeneration = Number(result[0]?.notification_generation ?? 1);
 
     // Best-effort analytics (do not block)
     logEvent({
@@ -1462,7 +1717,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Send confirmation email to creator + CC recipients (separately, no email-level CC)
     try {
-      if (member.email && (member as any).email_subscribed === 1) {
+      if (member.email && member.email_subscribed === 1) {
         const requesterToken = generateToken(member);
         sendSpareRequestCreatedEmail(
           member.email,
@@ -1485,7 +1740,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         const ccMembers = await db
           .select()
           .from(schema.members)
-          .where(inArray(schema.members.id, ccIds)) as Member[];
+          .where(inArray(schema.members.id, ccIds));
 
         for (const ccMember of ccMembers) {
           if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
@@ -1533,7 +1788,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
             inArray(schema.members.id, body.invitedMemberIds),
             eq(schema.members.email_subscribed, 1)
           )
-        ) as Member[];
+        );
 
       // Get list of all invited member names for the email
       const invitedMemberNames = recipientMembers.map(m => m.name).sort();
@@ -1630,11 +1885,15 @@ export async function spareRoutes(fastify: FastifyInstance) {
           email: schema.members.email,
           phone: schema.members.phone,
           is_admin: schema.members.is_admin,
+          is_server_admin: schema.members.is_server_admin,
+          valid_through: schema.members.valid_through,
+          spare_only: schema.members.spare_only,
           opted_in_sms: schema.members.opted_in_sms,
           email_subscribed: schema.members.email_subscribed,
           first_login_completed: schema.members.first_login_completed,
           email_visible: schema.members.email_visible,
           phone_visible: schema.members.phone_visible,
+          theme_preference: schema.members.theme_preference,
           created_at: schema.members.created_at,
           updated_at: schema.members.updated_at,
         })
@@ -1643,7 +1902,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           schema.memberAvailability,
           eq(schema.members.id, schema.memberAvailability.member_id)
         )
-        .where(and(...conditions)) as Member[];
+        .where(and(...conditions));
       console.log(`[Spare Request] Found ${recipientMembers.length} matching members for league ${body.leagueId}`);
 
       if (isLessThan24Hours) {
@@ -1754,11 +2013,24 @@ export async function spareRoutes(fastify: FastifyInstance) {
         };
       }
     }
-  });
+    }
+  );
 
   // Respond to spare request
-  fastify.post('/spares/:id/respond', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/respond',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: commentBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -1775,7 +2047,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
     
-    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
 
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
@@ -1797,7 +2069,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           )
         )
         .limit(1);
-      const invite = invites[0] as any;
+      const invite = invites[0];
       if (!invite) {
         return reply.code(403).send({ error: 'You are not invited to this private spare request' });
       }
@@ -1848,7 +2120,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         filled_by_member_id: member.id,
         filled_at: await getCurrentTimeAsync(),
         had_cancellation: 0,
-        notification_status: 'stopped',
+        notification_status: 'completed',
         next_notification_at: null,
       })
       .where(eq(schema.spareRequests.id, requestId));
@@ -1863,7 +2135,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.members.id, spareRequest.requester_id))
       .limit(1);
     
-    const requester = requesters[0] as Member;
+    const requester = requesters[0];
 
     // Get CC recipients for this request
     const ccMembers = await getCcMembersForRequest(requestId);
@@ -1880,7 +2152,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         member.name,
         {
           requestedForName: spareRequest.requested_for_name,
-          gameDate: spareRequest.game_date,
+          gameDate: normalizeDateString(spareRequest.game_date),
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
@@ -1900,7 +2172,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requester.name,
         {
           requestedForName: spareRequest.requested_for_name,
-          gameDate: spareRequest.game_date,
+          gameDate: normalizeDateString(spareRequest.game_date),
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
@@ -1912,7 +2184,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     for (const ccMember of ccMembers) {
-      if (!ccMember.email || (ccMember as any).email_subscribed !== 1) continue;
+      if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
       const ccToken = generateToken(ccMember);
       sendSpareRequestCcFilledEmail(
         ccMember.email,
@@ -1921,7 +2193,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         member.name,
         {
           requestedForName: spareRequest.requested_for_name,
-          gameDate: spareRequest.game_date,
+          gameDate: normalizeDateString(spareRequest.game_date),
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
@@ -1937,7 +2209,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       sendSpareFilledSMS(
         requester.phone,
         member.name,
-        spareRequest.game_date,
+        normalizeDateString(spareRequest.game_date),
         spareRequest.game_time
       ).catch((error) => {
         console.error('Error sending spare filled SMS:', error);
@@ -1945,11 +2217,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Cancel spare request
-  fastify.post('/spares/:id/cancel', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/cancel',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -1964,13 +2248,13 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
     
-    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
 
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
     }
 
-    const requestedForMemberId = (spareRequest as any).requested_for_member_id as number | null;
+    const requestedForMemberId = spareRequest.requested_for_member_id;
     const canCancel =
       spareRequest.requester_id === member.id ||
       (requestedForMemberId !== null && requestedForMemberId === member.id);
@@ -1997,11 +2281,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
     try {
       // League name (optional; older requests may not have league_id)
       let leagueName: string | undefined;
-      if ((spareRequest as any).league_id) {
+      if (spareRequest.league_id) {
         const leagueRows = await db
           .select({ name: schema.leagues.name })
           .from(schema.leagues)
-          .where(eq(schema.leagues.id, (spareRequest as any).league_id))
+          .where(eq(schema.leagues.id, spareRequest.league_id))
           .limit(1);
         leagueName = leagueRows[0]?.name || undefined;
       }
@@ -2009,13 +2293,13 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const requestDetails = {
         leagueName,
         requestedForName: spareRequest.requested_for_name,
-        gameDate: spareRequest.game_date,
+        gameDate: normalizeDateString(spareRequest.game_date),
         gameTime: spareRequest.game_time,
         position: spareRequest.position || undefined,
       };
 
       // Canceller confirmation
-      if (member.email && (member as any).email_subscribed === 1) {
+      if (member.email && member.email_subscribed === 1) {
         const cancellerToken = generateToken(member);
         sendSpareRequestCancelConfirmationEmail(
           member.email,
@@ -2032,7 +2316,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .from(schema.members)
         .where(eq(schema.members.id, spareRequest.requester_id))
         .limit(1);
-      const requester = requesters[0] as Member | undefined;
+      const requester = requesters[0];
 
       const ccMembers = await getCcMembersForRequest(requestId);
 
@@ -2041,7 +2325,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         notifyMap.set(requester.id, requester);
       }
       for (const ccMember of ccMembers) {
-        if (!ccMember.email || (ccMember as any).email_subscribed !== 1) continue;
+        if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
         notifyMap.set(ccMember.id, ccMember);
       }
       notifyMap.delete(member.id);
@@ -2064,11 +2348,24 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Cancel sparing (cancel a spare response)
-  fastify.post('/spares/:id/cancel-sparing', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/cancel-sparing',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: cancelSparingBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -2085,7 +2382,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
     
-    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
 
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
@@ -2131,7 +2428,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.members.id, spareRequest.requester_id))
       .limit(1);
     
-    const requester = requesters[0] as Member;
+    const requester = requesters[0];
 
     // Get CC recipients for this request
     const ccMembers = await getCcMembersForRequest(requestId);
@@ -2147,7 +2444,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         member.name,
         {
           requestedForName: spareRequest.requested_for_name,
-          gameDate: spareRequest.game_date,
+          gameDate: normalizeDateString(spareRequest.game_date),
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
@@ -2167,7 +2464,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requester.name,
         {
           requestedForName: spareRequest.requested_for_name,
-          gameDate: spareRequest.game_date,
+          gameDate: normalizeDateString(spareRequest.game_date),
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
@@ -2179,7 +2476,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     for (const ccMember of ccMembers) {
-      if (!ccMember.email || (ccMember as any).email_subscribed !== 1) continue;
+      if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
       const ccToken = generateToken(ccMember);
       sendSpareRequestCcCancellationEmail(
         ccMember.email,
@@ -2188,7 +2485,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         member.name,
         {
           requestedForName: spareRequest.requested_for_name,
-          gameDate: spareRequest.game_date,
+          gameDate: normalizeDateString(spareRequest.game_date),
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
@@ -2204,7 +2501,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       sendSpareCancellationSMS(
         requester.phone,
         member.name,
-        spareRequest.game_date,
+        normalizeDateString(spareRequest.game_date),
         spareRequest.game_time
       ).catch((error) => {
         console.error('Error sending spare cancellation SMS:', error);
@@ -2212,17 +2509,30 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Re-issue spare request (re-send notifications)
-  fastify.post('/spares/:id/reissue', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/reissue',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: reissueBodySchema,
+        response: {
+          200: spareMakePublicResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     console.log(`[Re-issue] ===== RE-ISSUE ENDPOINT CALLED =====`);
-    const member = (request as any).member as Member;
+    const member = request.member;
     if (!member) {
       console.log(`[Re-issue] Unauthorized - no member`);
       return reply.code(401).send({ error: 'Unauthorized' });
     }
-    if ((member as any).spare_only === 1) {
+    if (member.spare_only === 1) {
       return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
     }
 
@@ -2239,7 +2549,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId))
       .limit(1);
     
-    const spareRequest = spareRequests[0] as SpareRequest | undefined;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
 
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
@@ -2300,7 +2610,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .from(schema.spareRequestInvitations)
         .where(eq(schema.spareRequestInvitations.spare_request_id, requestId));
       
-      const invitedIds = invitations.map((inv: any) => inv.member_id);
+      const invitedIds = invitations.map((inv) => inv.member_id);
       
       if (invitedIds.length > 0) {
         recipientMembers = await db
@@ -2311,7 +2621,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
               inArray(schema.members.id, invitedIds),
               eq(schema.members.email_subscribed, 1)
             )
-          ) as Member[];
+        );
       }
 
       // Get list of all invited member names for the email
@@ -2341,7 +2651,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 member.name,
                 {
                   requestedForName: spareRequest.requested_for_name,
-                  gameDate: spareRequest.game_date,
+                  gameDate: normalizeDateString(spareRequest.game_date),
                   gameTime: spareRequest.game_time,
                   position: spareRequest.position || undefined,
                   message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
@@ -2369,7 +2679,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
               channel: 'sms',
               kind: 'spare_request',
             },
-            () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
+            () => sendSpareRequestSMS(recipient.phone!, member.name, normalizeDateString(spareRequest.game_date), spareRequest.game_time)
           ).catch((error) => {
             console.error('Error sending spare request SMS:', error);
           });
@@ -2395,7 +2705,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     } else {
       // Public requests: check if less than 24 hours before game time
       // Parse date/time as local to avoid timezone issues
-      const [reissueYear, reissueMonth, reissueDay] = spareRequest.game_date.split('-').map(Number);
+      const [reissueYear, reissueMonth, reissueDay] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
       const [reissueHours, reissueMinutes] = spareRequest.game_time.split(':').map(Number);
       const gameDateTime = new Date(reissueYear, reissueMonth - 1, reissueDay, reissueHours, reissueMinutes);
       const currentTime = await getCurrentTimeAsync();
@@ -2414,10 +2724,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(schema.leagues.day_of_week, dayOfWeek),
-            sql`date(${schema.leagues.start_date}) <= date(${spareRequest.game_date})`,
-            sql`date(${schema.leagues.end_date}) >= date(${spareRequest.game_date})`
+            sql`date(${schema.leagues.start_date}) <= date(${normalizeDateString(spareRequest.game_date)})`,
+            sql`date(${schema.leagues.end_date}) >= date(${normalizeDateString(spareRequest.game_date)})`
           )
-        ) as League[];
+        );
 
       if (matchingLeagues.length > 0) {
         const leagueIds = matchingLeagues.map((l) => l.id);
@@ -2442,11 +2752,15 @@ export async function spareRoutes(fastify: FastifyInstance) {
             email: schema.members.email,
             phone: schema.members.phone,
             is_admin: schema.members.is_admin,
+            is_server_admin: schema.members.is_server_admin,
+            valid_through: schema.members.valid_through,
+            spare_only: schema.members.spare_only,
             opted_in_sms: schema.members.opted_in_sms,
             email_subscribed: schema.members.email_subscribed,
             first_login_completed: schema.members.first_login_completed,
             email_visible: schema.members.email_visible,
             phone_visible: schema.members.phone_visible,
+            theme_preference: schema.members.theme_preference,
             created_at: schema.members.created_at,
             updated_at: schema.members.updated_at,
           })
@@ -2455,7 +2769,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
             schema.memberAvailability,
             eq(schema.members.id, schema.memberAvailability.member_id)
           )
-          .where(and(...conditions)) as Member[];
+        .where(and(...conditions));
       }
       
       console.log(`[Re-issue] Public request: Found ${recipientMembers.length} recipient members, isLessThan24Hours: ${isLessThan24Hours}`);
@@ -2484,7 +2798,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
                   member.name,
                   {
                     requestedForName: spareRequest.requested_for_name,
-                    gameDate: spareRequest.game_date,
+                    gameDate: normalizeDateString(spareRequest.game_date),
                     gameTime: spareRequest.game_time,
                     position: spareRequest.position || undefined,
                     message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
@@ -2511,7 +2825,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 channel: 'sms',
                 kind: 'spare_request',
               },
-              () => sendSpareRequestSMS(recipient.phone!, member.name, spareRequest.game_date, spareRequest.game_time)
+              () => sendSpareRequestSMS(recipient.phone!, member.name, normalizeDateString(spareRequest.game_date), spareRequest.game_time)
             ).catch((error) => {
               console.error('Error sending spare request SMS:', error);
             });
@@ -2582,11 +2896,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
         };
       }
     }
-  });
+    }
+  );
 
   // Get notification status for a spare request
-  fastify.get('/spares/:id/notification-status', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/spares/:id/notification-status',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareNotificationStatusResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -2607,7 +2933,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .limit(1);
     
-    const spareRequest = spareRequests[0] as any;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
 
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
@@ -2656,7 +2982,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         // For immediate notifications, estimate based on matching members
         // This is an approximation - we can't know the exact count without storing it
         // But we can check how many members would have matched
-        const [year, month, day] = spareRequest.game_date.split('-').map(Number);
+        const [year, month, day] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
         const gameDateObj = new Date(year, month - 1, day);
         const dayOfWeek = gameDateObj.getDay();
 
@@ -2666,10 +2992,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .where(
             and(
               eq(schema.leagues.day_of_week, dayOfWeek),
-              sql`date(${schema.leagues.start_date}) <= date(${spareRequest.game_date})`,
-              sql`date(${schema.leagues.end_date}) >= date(${spareRequest.game_date})`
+              sql`date(${schema.leagues.start_date}) <= date(${normalizeDateString(spareRequest.game_date)})`,
+              sql`date(${schema.leagues.end_date}) >= date(${normalizeDateString(spareRequest.game_date)})`
             )
-          ) as League[];
+        );
 
         if (matchingLeagues.length > 0) {
           const leagueIds = matchingLeagues.map((l) => l.id);
@@ -2710,11 +3036,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
       nextNotificationAt: spareRequest.next_notification_at || null,
       notificationPaused: spareRequest.notification_paused === 1,
     };
-  });
+    }
+  );
 
   // Pause notifications for a spare request
-  fastify.post('/spares/:id/pause-notifications', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/pause-notifications',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -2735,7 +3073,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .limit(1);
     
-    const spareRequest = spareRequests[0] as any;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
 
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
@@ -2756,11 +3094,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId));
 
     return { success: true };
-  });
+    }
+  );
 
   // Unpause notifications for a spare request
-  fastify.post('/spares/:id/unpause-notifications', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/spares/:id/unpause-notifications',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -2781,7 +3131,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       )
       .limit(1);
     
-    const spareRequest = spareRequests[0] as any;
+    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
 
     if (!spareRequest) {
       return reply.code(404).send({ error: 'Spare request not found' });
@@ -2805,6 +3155,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId));
 
     return { success: true };
-  });
+    }
+  );
 }
 

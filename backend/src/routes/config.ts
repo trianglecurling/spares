@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isServerAdmin } from '../utils/auth.js';
 import { getCurrentDateStringAsync, invalidateTestTimeCache } from '../utils/time.js';
@@ -11,6 +11,21 @@ import { getDatabaseConfig, saveDatabaseConfig } from '../db/config.js';
 import { resetDatabaseState, testDatabaseConnection } from '../db/index.js';
 import type { DatabaseConfig } from '../db/config.js';
 import { setBackendLogCaptureEnabled } from '../otel.js';
+import {
+  configResponseSchema,
+  databaseConfigResponseSchema,
+  observabilityResponseSchema,
+  testMessageResponseSchema,
+} from '../api/schemas.js';
+import type {
+  ApiErrorResponse,
+  ConfigResponse,
+  DatabaseConfigBody,
+  DatabaseConfigResponse,
+  ObservabilityResponse,
+  TestMessageResponse,
+  UpdateConfigBody,
+} from '../api/types.js';
 
 const updateConfigSchema = z.object({
   twilioApiKeySid: z.string().optional(),
@@ -45,10 +60,92 @@ const observabilityQuerySchema = z.object({
   rangeDays: z.coerce.number().int().min(1).max(180).optional(),
 });
 
+function normalizeTimestamp(value: string | Date | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+const updateConfigBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    twilioApiKeySid: { type: 'string' },
+    twilioApiKeySecret: { type: 'string' },
+    twilioAccountSid: { type: 'string' },
+    twilioCampaignSid: { type: 'string' },
+    azureConnectionString: { type: 'string' },
+    azureSenderEmail: { type: ['string', 'null'] },
+    azureSenderDisplayName: { type: 'string' },
+    dashboardAlertTitle: { type: ['string', 'null'] },
+    dashboardAlertBody: { type: ['string', 'null'] },
+    dashboardAlertExpiresAt: { type: ['string', 'null'] },
+    dashboardAlertVariant: { type: ['string', 'null'], enum: ['info', 'warning', 'success', 'danger'] },
+    dashboardAlertIcon: { type: ['string', 'null'], enum: ['none', 'info', 'warning', 'announcement', 'success', 'error'] },
+    testMode: { type: 'boolean' },
+    disableEmail: { type: 'boolean' },
+    disableSms: { type: 'boolean' },
+    frontendOtelEnabled: { type: 'boolean' },
+    captureFrontendLogs: { type: 'boolean' },
+    captureBackendLogs: { type: 'boolean' },
+    testCurrentTime: { type: ['string', 'null'] },
+    notificationDelaySeconds: { type: 'number' },
+  },
+} as const;
+
+const observabilityQuerySchemaJson = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    rangeDays: { type: 'number' },
+  },
+} as const;
+
+const databaseConfigBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    databaseType: { type: 'string', enum: ['sqlite', 'postgres'] },
+    sqlite: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        path: { type: 'string' },
+      },
+    },
+    postgres: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        host: { type: 'string' },
+        port: { type: 'number' },
+        database: { type: 'string' },
+        username: { type: 'string' },
+        password: { type: 'string' },
+        ssl: { type: 'boolean' },
+      },
+      required: ['host', 'port', 'database', 'username'],
+    },
+    adminEmails: { type: 'array', items: { type: 'string' }, minItems: 1 },
+  },
+  required: ['databaseType', 'adminEmails'],
+} as const;
+
 export async function configRoutes(fastify: FastifyInstance) {
   // Get server configuration (admin only)
-  fastify.get('/config', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get<{ Reply: ConfigResponse | ApiErrorResponse }>(
+    '/config',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: configResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -87,7 +184,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       };
     }
 
-    return {
+      return {
       twilioApiKeySid: config.twilio_api_key_sid,
       twilioApiKeySecret: config.twilio_api_key_secret ? '***' : null, // Mask the secret
       twilioAccountSid: config.twilio_account_sid,
@@ -96,7 +193,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       azureSenderEmail: config.azure_sender_email,
       dashboardAlertTitle: config.dashboard_alert_title,
       dashboardAlertBody: config.dashboard_alert_body,
-      dashboardAlertExpiresAt: config.dashboard_alert_expires_at,
+      dashboardAlertExpiresAt: normalizeTimestamp(config.dashboard_alert_expires_at),
       dashboardAlertVariant: config.dashboard_alert_variant,
       dashboardAlertIcon: config.dashboard_alert_icon,
       testMode: config.test_mode === 1,
@@ -105,20 +202,32 @@ export async function configRoutes(fastify: FastifyInstance) {
       frontendOtelEnabled: config.frontend_otel_enabled !== 0,
       captureFrontendLogs: config.capture_frontend_logs !== 0,
       captureBackendLogs: config.capture_backend_logs !== 0,
-      testCurrentTime: config.test_current_time,
+      testCurrentTime: normalizeTimestamp(config.test_current_time),
       notificationDelaySeconds: config.notification_delay_seconds ?? 180,
-      updatedAt: config.updated_at,
+      updatedAt: normalizeTimestamp(config.updated_at),
     };
-  });
+    }
+  );
 
   // Observability metrics (server admin only)
-  fastify.get('/config/observability', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get<{ Querystring: { rangeDays?: number }; Reply: ObservabilityResponse | ApiErrorResponse }>(
+    '/config/observability',
+    {
+      schema: {
+        tags: ['config'],
+        querystring: observabilityQuerySchemaJson,
+        response: {
+          200: observabilityResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { rangeDays } = observabilityQuerySchema.parse((request as any).query || {});
+    const { rangeDays } = observabilityQuerySchema.parse(request.query ?? {});
     const days = rangeDays ?? 30;
 
     const todayStr = await getCurrentDateStringAsync(); // YYYY-MM-DD
@@ -151,7 +260,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(schema.dailyActivity.activity_date);
 
     const dauByDate = new Map<string, number>();
-    for (const row of dauRows as any[]) {
+    for (const row of dauRows) {
       dauByDate.set(String(row.date), Number(row.dau || 0));
     }
 
@@ -167,7 +276,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(sql`DATE(${schema.observabilityEvents.created_at})`, schema.observabilityEvents.event_type);
 
     const eventsByDateType = new Map<string, Map<string, number>>();
-    for (const row of eventRows as any[]) {
+    for (const row of eventRows) {
       const date = String(row.date);
       const type = String(row.eventType);
       const count = Number(row.count || 0);
@@ -186,7 +295,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(sql`DATE(${schema.spareRequests.created_at})`);
 
     const spareCreatedByDate = new Map<string, number>();
-    for (const row of spareCreatedRows as any[]) {
+    for (const row of spareCreatedRows) {
       spareCreatedByDate.set(String(row.date), Number(row.count || 0));
     }
 
@@ -201,7 +310,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       .groupBy(sql`DATE(${schema.spareRequests.filled_at})`);
 
     const spareFilledByDate = new Map<string, number>();
-    for (const row of spareFilledRows as any[]) {
+    for (const row of spareFilledRows) {
       spareFilledByDate.set(String(row.date), Number(row.count || 0));
     }
 
@@ -216,7 +325,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     let totalFillMs = 0;
     let fillCount = 0;
-    for (const row of filledTimingRows as any[]) {
+    for (const row of filledTimingRows) {
       const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(String(row.createdAt));
       const filledAt = row.filledAt instanceof Date ? row.filledAt : new Date(String(row.filledAt));
       const diff = filledAt.getTime() - createdAt.getTime();
@@ -251,7 +360,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
     const avg = (arr: number[]) => (arr.length ? Math.round(sum(arr) / arr.length) : 0);
 
-    return {
+      return {
       rangeDays: days,
       startDate: startStr,
       endDate: todayStr,
@@ -268,11 +377,23 @@ export async function configRoutes(fastify: FastifyInstance) {
       },
       series,
     };
-  });
+    }
+  );
 
   // Update server configuration (admin only)
-  fastify.patch('/config', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.patch<{ Body: UpdateConfigBody; Reply: ConfigResponse | ApiErrorResponse }>(
+    '/config',
+    {
+      schema: {
+        tags: ['config'],
+        body: updateConfigBodySchema,
+        response: {
+          200: configResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -280,7 +401,29 @@ export async function configRoutes(fastify: FastifyInstance) {
     const body = updateConfigSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
-    const updateData: any = {};
+    const updateData: Partial<{
+      twilio_api_key_sid: string | null;
+      twilio_api_key_secret: string | null;
+      twilio_account_sid: string | null;
+      twilio_campaign_sid: string | null;
+      azure_connection_string: string | null;
+      azure_sender_email: string | null;
+      azure_sender_display_name: string | null;
+      dashboard_alert_title: string | null;
+      dashboard_alert_body: string | null;
+      dashboard_alert_expires_at: Date | null;
+      dashboard_alert_variant: string | null;
+      dashboard_alert_icon: string | null;
+      test_mode: number;
+      disable_email: number;
+      disable_sms: number;
+      frontend_otel_enabled: number;
+      capture_frontend_logs: number;
+      capture_backend_logs: number;
+      test_current_time: Date | null;
+      notification_delay_seconds: number;
+      updated_at: SQL<unknown>;
+    }> = {};
 
     if (body.twilioApiKeySid !== undefined) {
       updateData.twilio_api_key_sid = body.twilioApiKeySid || null;
@@ -385,7 +528,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     
     const updatedConfig = updatedConfigs[0];
 
-    return {
+      return {
       twilioApiKeySid: updatedConfig.twilio_api_key_sid,
       twilioApiKeySecret: updatedConfig.twilio_api_key_secret ? '***' : null,
       twilioAccountSid: updatedConfig.twilio_account_sid,
@@ -394,7 +537,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       azureSenderEmail: updatedConfig.azure_sender_email,
       dashboardAlertTitle: updatedConfig.dashboard_alert_title,
       dashboardAlertBody: updatedConfig.dashboard_alert_body,
-      dashboardAlertExpiresAt: updatedConfig.dashboard_alert_expires_at,
+      dashboardAlertExpiresAt: normalizeTimestamp(updatedConfig.dashboard_alert_expires_at),
       dashboardAlertVariant: updatedConfig.dashboard_alert_variant,
       dashboardAlertIcon: updatedConfig.dashboard_alert_icon,
       testMode: updatedConfig.test_mode === 1,
@@ -403,15 +546,26 @@ export async function configRoutes(fastify: FastifyInstance) {
       frontendOtelEnabled: updatedConfig.frontend_otel_enabled !== 0,
       captureFrontendLogs: updatedConfig.capture_frontend_logs !== 0,
       captureBackendLogs: updatedConfig.capture_backend_logs !== 0,
-      testCurrentTime: updatedConfig.test_current_time,
+      testCurrentTime: normalizeTimestamp(updatedConfig.test_current_time),
       notificationDelaySeconds: updatedConfig.notification_delay_seconds ?? 180,
-      updatedAt: updatedConfig.updated_at,
+      updatedAt: normalizeTimestamp(updatedConfig.updated_at),
     };
-  });
+    }
+  );
 
   // Send test email (admin only)
-  fastify.post('/config/test-email', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post<{ Reply: TestMessageResponse | ApiErrorResponse }>(
+    '/config/test-email',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: testMessageResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -434,18 +588,29 @@ export async function configRoutes(fastify: FastifyInstance) {
       });
 
       return { success: true, message: `Test email sent to ${member.email}` };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to send test email:', error);
       return reply.code(500).send({ 
         error: 'Failed to send test email',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  });
+    }
+  );
 
   // Send test SMS (admin only)
-  fastify.post('/config/test-sms', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post<{ Reply: TestMessageResponse | ApiErrorResponse }>(
+    '/config/test-sms',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: testMessageResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -459,18 +624,29 @@ export async function configRoutes(fastify: FastifyInstance) {
       await sendSMS(member.phone, testMessage);
 
       return { success: true, message: `Test SMS sent to ${member.phone}` };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to send test SMS:', error);
       return reply.code(500).send({ 
         error: 'Failed to send test SMS',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  });
+    }
+  );
 
   // Get database configuration (admin only)
-  fastify.get('/database-config', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get<{ Reply: DatabaseConfigResponse | ApiErrorResponse }>(
+    '/database-config',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: databaseConfigResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -481,7 +657,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
 
     // Return config without password for security
-    return {
+      return {
       type: config.type,
       sqlite: config.sqlite,
       postgres: config.postgres ? {
@@ -494,7 +670,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       } : undefined,
       adminEmails: config.adminEmails,
     };
-  });
+    }
+  );
 
   // Update database configuration (admin only)
   const updateDatabaseConfigSchema = z.object({
@@ -513,8 +690,19 @@ export async function configRoutes(fastify: FastifyInstance) {
     adminEmails: z.array(z.string().email()).min(1),
   });
 
-  fastify.post('/database-config', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post<{ Body: DatabaseConfigBody; Reply: { success: boolean; message: string } | ApiErrorResponse }>(
+    '/database-config',
+    {
+      schema: {
+        tags: ['config'],
+        body: databaseConfigBodySchema,
+        response: {
+          200: testMessageResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -561,10 +749,14 @@ export async function configRoutes(fastify: FastifyInstance) {
     // Test database connection FIRST - before saving anything
     try {
       await testDatabaseConnection(testConfig);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Database connection test failed:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to connect to database. Please check your credentials and try again.';
       return reply.code(400).send({ 
-        error: `Database connection failed: ${error.message || 'Unable to connect to database. Please check your credentials and try again.'}` 
+        error: `Database connection failed: ${message}` 
       });
     }
 
@@ -579,12 +771,14 @@ export async function configRoutes(fastify: FastifyInstance) {
         success: true,
         message: 'Database configuration updated successfully. Please restart the server for changes to take effect.'
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save database configuration:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return reply.code(500).send({ 
-        error: `Failed to save configuration: ${error.message || 'Unknown error'}` 
+        error: `Failed to save configuration: ${message}` 
       });
     }
-  });
+    }
+  );
 }
 

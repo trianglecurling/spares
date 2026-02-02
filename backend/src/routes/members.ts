@@ -5,6 +5,33 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin, isInServerAdminsList } from '../utils/auth.js';
 import { getLeagueAdministratorRoleInfo, getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
 import { Member } from '../types.js';
+import {
+  bulkCreateResponseSchema,
+  bulkDeleteResponseSchema,
+  bulkSendWelcomeResponseSchema,
+  loginLinkResponseSchema,
+  memberCreateResponseSchema,
+  memberListResponseSchema,
+  memberProfileResponseSchema,
+  memberUpdateResponseSchema,
+  successResponseSchema,
+} from '../api/schemas.js';
+import type {
+  ApiErrorResponse,
+  BulkCreateBody,
+  BulkCreateResponse,
+  BulkDeleteBody,
+  BulkDeleteResponse,
+  BulkSendWelcomeResponse,
+  CreateMemberBody,
+  LoginLinkResponse,
+  MemberCreateResponse,
+  MemberProfileResponse,
+  MemberSummaryResponse,
+  MemberUpdateResponse,
+  UpdateMemberBody,
+  UpdateProfileBody,
+} from '../api/types.js';
 import { sendWelcomeEmail } from '../services/email.js';
 import { generateEmailLinkToken } from '../utils/auth.js';
 import { config } from '../config.js';
@@ -70,6 +97,107 @@ const directoryQuerySchema = z.object({
   leagueId: z.coerce.number().int().positive().optional(),
 });
 
+const updateProfileBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', minLength: 1 },
+    email: { type: 'string' },
+    phone: { type: 'string' },
+    optedInSms: { type: 'boolean' },
+    emailVisible: { type: 'boolean' },
+    phoneVisible: { type: 'boolean' },
+    themePreference: { type: 'string', enum: ['light', 'dark', 'system'] },
+  },
+} as const;
+
+const createMemberBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', minLength: 1 },
+    email: { type: 'string' },
+    phone: { type: 'string' },
+    validThrough: { type: ['string', 'null'] },
+    spareOnly: { type: 'boolean' },
+    isAdmin: { type: 'boolean' },
+    isServerAdmin: { type: 'boolean' },
+  },
+  required: ['name', 'email'],
+} as const;
+
+const updateMemberBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', minLength: 1 },
+    email: { type: 'string' },
+    phone: { type: 'string' },
+    validThrough: { type: ['string', 'null'] },
+    spareOnly: { type: 'boolean' },
+    isAdmin: { type: 'boolean' },
+    isServerAdmin: { type: 'boolean' },
+  },
+} as const;
+
+const bulkDeleteBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ids: { type: 'array', items: { type: 'number' }, minItems: 1 },
+  },
+  required: ['ids'],
+} as const;
+
+const bulkCreateBodySchema = {
+  oneOf: [
+    {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', minLength: 1 },
+          email: { type: 'string' },
+          phone: { type: 'string' },
+        },
+        required: ['name', 'email'],
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        members: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              name: { type: 'string', minLength: 1 },
+              email: { type: 'string' },
+              phone: { type: 'string' },
+            },
+            required: ['name', 'email'],
+          },
+          minItems: 1,
+        },
+        validThrough: { type: ['string', 'null'] },
+        spareOnly: { type: 'boolean' },
+      },
+      required: ['members'],
+    },
+  ],
+} as const;
+
+const directoryQuerySchemaJson = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    leagueId: { type: 'number' },
+  },
+} as const;
+
 interface MemberUpdateData {
   name?: string;
   email?: string;
@@ -109,10 +237,17 @@ async function setGlobalLeagueAdministrator(
   }
 }
 
-function normalizeDateString(value: any): string | null {
+function normalizeDateString(value: string | Date | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString().split('T')[0];
+  return String(value);
+}
+
+function normalizeTimestamp(value: string | Date | number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
   return String(value);
 }
 
@@ -120,7 +255,7 @@ function isMemberExpired(member: Member): boolean {
   // Admins/server-admins are always valid
   if (isAdmin(member) || isServerAdmin(member)) return false;
 
-  const validThrough = normalizeDateString((member as any).valid_through);
+  const validThrough = normalizeDateString(member.valid_through);
   if (!validThrough) return false;
 
   // Compare as YYYY-MM-DD to avoid TZ issues. Valid through is inclusive.
@@ -130,7 +265,17 @@ function isMemberExpired(member: Member): boolean {
 
 export async function memberRoutes(fastify: FastifyInstance) {
   // Get current member profile
-  fastify.get('/members/me', async (request, _reply) => {
+  fastify.get<{ Reply: MemberProfileResponse | ApiErrorResponse }>(
+    '/members/me',
+    {
+      schema: {
+        tags: ['members'],
+        response: {
+          200: memberProfileResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
     const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
@@ -141,7 +286,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: member.name,
       email: member.email,
       phone: member.phone,
-      validThrough: normalizeDateString((member as any).valid_through),
+      validThrough: normalizeDateString(member.valid_through),
       spareOnly: member.spare_only === 1,
       isAdmin: isAdmin(member),
       isServerAdmin: isServerAdmin(member),
@@ -155,10 +300,22 @@ export async function memberRoutes(fastify: FastifyInstance) {
       phoneVisible: member.phone_visible === 1,
       themePreference: member.theme_preference || 'system',
     };
-  });
+    }
+  );
 
   // Update current member profile
-  fastify.patch('/members/me', async (request, _reply) => {
+  fastify.patch<{ Body: UpdateProfileBody; Reply: MemberProfileResponse | ApiErrorResponse }>(
+    '/members/me',
+    {
+      schema: {
+        tags: ['members'],
+        body: updateProfileBodySchema,
+        response: {
+          200: memberProfileResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
     const body = updateProfileSchema.parse(request.body);
@@ -209,7 +366,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: updatedMember.name,
       email: updatedMember.email,
       phone: updatedMember.phone,
-      validThrough: normalizeDateString((updatedMember as any).valid_through),
+      validThrough: normalizeDateString(updatedMember.valid_through),
       spareOnly: updatedMember.spare_only === 1,
       isAdmin: isAdmin(updatedMember),
       isServerAdmin: isServerAdmin(updatedMember),
@@ -220,10 +377,21 @@ export async function memberRoutes(fastify: FastifyInstance) {
       phoneVisible: updatedMember.phone_visible === 1,
       themePreference: updatedMember.theme_preference || 'system',
     };
-  });
+    }
+  );
 
   // Complete first login
-  fastify.post('/members/me/complete-first-login', async (request, _reply) => {
+  fastify.post<{ Reply: { success: boolean } | ApiErrorResponse }>(
+    '/members/me/complete-first-login',
+    {
+      schema: {
+        tags: ['members'],
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
     const { db, schema } = getDrizzleDb();
@@ -233,10 +401,21 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .where(eq(schema.members.id, member.id));
 
     return { success: true };
-  });
+    }
+  );
 
   // Unsubscribe from emails
-  fastify.post('/members/me/unsubscribe', async (request, _reply) => {
+  fastify.post<{ Reply: { success: boolean } | ApiErrorResponse }>(
+    '/members/me/unsubscribe',
+    {
+      schema: {
+        tags: ['members'],
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
     const { db, schema } = getDrizzleDb();
@@ -251,10 +430,21 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .where(eq(schema.memberAvailability.member_id, member.id));
 
     return { success: true };
-  });
+    }
+  );
 
   // Get all members (filtered for non-admins)
-  fastify.get('/members', async (request, _reply) => {
+  fastify.get<{ Reply: MemberSummaryResponse[] | ApiErrorResponse }>(
+    '/members',
+    {
+      schema: {
+        tags: ['members'],
+        response: {
+          200: memberListResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
     const { db, schema } = getDrizzleDb();
@@ -278,7 +468,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     return members.map((m) => {
       // Basic info always visible
       // Ensure proper boolean conversion
-      const response: Record<string, unknown> = {
+      const response: MemberSummaryResponse = {
         id: m.id,
         name: m.name,
         isAdmin: isAdmin(m),
@@ -297,8 +487,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
         // Admins and self see everything
         response.email = m.email;
         response.phone = m.phone;
-        response.createdAt = m.created_at;
-        response.validThrough = normalizeDateString((m as any).valid_through);
+        response.createdAt = normalizeTimestamp(m.created_at);
+        response.validThrough = normalizeDateString(m.valid_through);
         response.spareOnly = m.spare_only === 1;
       } else {
         // Others see based on privacy settings
@@ -308,14 +498,26 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
       return response;
     });
-  });
+    }
+  );
 
   // Directory: active members only (expired members excluded)
-  fastify.get('/members/directory', async (request, _reply) => {
+  fastify.get<{ Querystring: { leagueId?: number }; Reply: MemberSummaryResponse[] | ApiErrorResponse }>(
+    '/members/directory',
+    {
+      schema: {
+        tags: ['members'],
+        querystring: directoryQuerySchemaJson,
+        response: {
+          200: memberListResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
     const { db, schema } = getDrizzleDb();
-    const { leagueId } = directoryQuerySchema.parse((request as any).query || {});
+    const { leagueId } = directoryQuerySchema.parse(request.query ?? {});
 
     // Explicit selection so joins don't create ambiguous column names
     const memberSelect = {
@@ -323,18 +525,18 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: schema.members.name,
       email: schema.members.email,
       phone: schema.members.phone,
-      valid_through: (schema.members as any).valid_through,
-      spare_only: (schema.members as any).spare_only,
-      is_admin: (schema.members as any).is_admin,
-      is_server_admin: (schema.members as any).is_server_admin,
-      opted_in_sms: (schema.members as any).opted_in_sms,
-      email_subscribed: (schema.members as any).email_subscribed,
-      first_login_completed: (schema.members as any).first_login_completed,
-      email_visible: (schema.members as any).email_visible,
-      phone_visible: (schema.members as any).phone_visible,
-      theme_preference: (schema.members as any).theme_preference,
-      created_at: (schema.members as any).created_at,
-      updated_at: (schema.members as any).updated_at,
+      valid_through: schema.members.valid_through,
+      spare_only: schema.members.spare_only,
+      is_admin: schema.members.is_admin,
+      is_server_admin: schema.members.is_server_admin,
+      opted_in_sms: schema.members.opted_in_sms,
+      email_subscribed: schema.members.email_subscribed,
+      first_login_completed: schema.members.first_login_completed,
+      email_visible: schema.members.email_visible,
+      phone_visible: schema.members.phone_visible,
+      theme_preference: schema.members.theme_preference,
+      created_at: schema.members.created_at,
+      updated_at: schema.members.updated_at,
     };
 
     let members: Member[];
@@ -364,7 +566,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const activeMembers = members.filter((m) => !isMemberExpired(m));
 
     return activeMembers.map((m) => {
-      const response: Record<string, unknown> = {
+      const response: MemberSummaryResponse = {
         id: m.id,
         name: m.name,
         isAdmin: isAdmin(m),
@@ -380,8 +582,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
       if (isCurrentUserAdmin || m.id === member.id) {
         response.email = m.email;
         response.phone = m.phone;
-        response.createdAt = m.created_at;
-        response.validThrough = normalizeDateString((m as any).valid_through);
+        response.createdAt = normalizeTimestamp(m.created_at);
+        response.validThrough = normalizeDateString(m.valid_through);
       } else {
         response.email = m.email_visible === 1 ? m.email : null;
         response.phone = m.phone_visible === 1 ? m.phone : null;
@@ -389,10 +591,22 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
       return response;
     });
-  });
+    }
+  );
 
   // Admin: Create member
-  fastify.post('/members', async (request, _reply) => {
+  fastify.post<{ Body: CreateMemberBody; Reply: MemberCreateResponse | ApiErrorResponse }>(
+    '/members',
+    {
+      schema: {
+        tags: ['members'],
+        body: createMemberBodySchema,
+        response: {
+          200: memberCreateResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!member || !isAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
@@ -435,16 +649,28 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: newMember.name,
       email: newMember.email,
       phone: newMember.phone,
-      validThrough: normalizeDateString((newMember as any).valid_through),
+      validThrough: normalizeDateString(newMember.valid_through),
       spareOnly: newMember.spare_only === 1,
       isAdmin: isAdmin(newMember),
       emailSubscribed: newMember.email_subscribed === 1,
       optedInSms: newMember.opted_in_sms === 1,
     };
-  });
+    }
+  );
 
   // Admin: Bulk create members
-  fastify.post('/members/bulk', async (request, _reply) => {
+  fastify.post<{ Body: BulkCreateBody; Reply: BulkCreateResponse | ApiErrorResponse }>(
+    '/members/bulk',
+    {
+      schema: {
+        tags: ['members'],
+        body: bulkCreateBodySchema,
+        response: {
+          200: bulkCreateResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!isAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
@@ -457,8 +683,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const { db, schema } = getDrizzleDb();
 
     // Use a transaction to ensure atomicity
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const insertedIds = await db.transaction(async (tx: any) => {
+    const insertedIds = await db.transaction(async (tx) => {
       const ids: number[] = [];
       
       for (const memberData of body) {
@@ -490,16 +715,39 @@ export async function memberRoutes(fastify: FastifyInstance) {
       count: insertedIds.length,
       ids: insertedIds,
     };
-  });
+      return {
+        success: true,
+        count: insertedIds.length,
+        ids: insertedIds,
+      };
+    }
+  );
 
   // Admin: Update member
-  fastify.patch('/members/:id', async (request, _reply) => {
+  fastify.patch<{ Params: { id: string }; Body: UpdateMemberBody; Reply: MemberUpdateResponse | ApiErrorResponse }>(
+    '/members/:id',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        body: updateMemberBodySchema,
+        response: {
+          200: memberUpdateResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!isAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const memberId = parseInt(id, 10);
     const body = updateMemberSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
@@ -612,22 +860,50 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: updatedMember.name,
       email: updatedMember.email,
       phone: updatedMember.phone,
-      validThrough: normalizeDateString((updatedMember as any).valid_through),
+      validThrough: normalizeDateString(updatedMember.valid_through),
       isAdmin: isAdmin(updatedMember),
       isServerAdmin: isServerAdmin(updatedMember),
       emailSubscribed: updatedMember.email_subscribed === 1,
       optedInSms: updatedMember.opted_in_sms === 1,
     };
-  });
+      return {
+        id: updatedMember.id,
+        name: updatedMember.name,
+        email: updatedMember.email,
+        phone: updatedMember.phone,
+        validThrough: normalizeDateString(updatedMember.valid_through),
+        isAdmin: isAdmin(updatedMember),
+        isServerAdmin: isServerAdmin(updatedMember),
+        emailSubscribed: updatedMember.email_subscribed === 1,
+        optedInSms: updatedMember.opted_in_sms === 1,
+      };
+    }
+  );
 
   // Admin: Delete member
-  fastify.delete('/members/:id', async (request, _reply) => {
+  fastify.delete<{ Params: { id: string }; Reply: { success: boolean } | ApiErrorResponse }>(
+    '/members/:id',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!member || !isAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const memberId = parseInt(id, 10);
 
     // Prevent self-deletion
@@ -669,10 +945,23 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .where(eq(schema.members.id, memberId));
 
     return { success: true };
-  });
+      return { success: true };
+    }
+  );
 
   // Admin: Bulk delete members
-  fastify.post('/members/bulk-delete', async (request, _reply) => {
+  fastify.post<{ Body: BulkDeleteBody; Reply: BulkDeleteResponse | ApiErrorResponse }>(
+    '/members/bulk-delete',
+    {
+      schema: {
+        tags: ['members'],
+        body: bulkDeleteBodySchema,
+        response: {
+          200: bulkDeleteResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!isAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
@@ -710,8 +999,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
 
     // Use a transaction to ensure atomicity
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await db.transaction(async (tx: any) => {
+    await db.transaction(async (tx) => {
       // Delete related data first (cascade should handle most, but be explicit)
       await tx
         .delete(schema.memberAvailability)
@@ -740,16 +1028,34 @@ export async function memberRoutes(fastify: FastifyInstance) {
     });
 
     return { success: true, deletedCount: deletableIds.length };
-  });
+      return { success: true, deletedCount: deletableIds.length };
+    }
+  );
 
   // Server admin only: Get login link for member
-  fastify.get('/members/:id/login-link', async (request, _reply) => {
+  fastify.get<{ Params: { id: string }; Reply: LoginLinkResponse | ApiErrorResponse }>(
+    '/members/:id/login-link',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          200: loginLinkResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!isServerAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const memberId = parseInt(id, 10);
     const { db, schema } = getDrizzleDb();
 
@@ -769,16 +1075,34 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const loginLink = `${config.frontendUrl}?token=${token}`;
 
     return { loginLink };
-  });
+      return { loginLink };
+    }
+  );
 
   // Admin: Send welcome email
-  fastify.post('/members/:id/send-welcome', async (request, _reply) => {
+  fastify.post<{ Params: { id: string }; Reply: { success: boolean } | ApiErrorResponse }>(
+    '/members/:id/send-welcome',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!isAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const memberId = parseInt(id, 10);
     const { db, schema } = getDrizzleDb();
 
@@ -801,10 +1125,23 @@ export async function memberRoutes(fastify: FastifyInstance) {
     });
 
     return { success: true };
-  });
+      return { success: true };
+    }
+  );
 
   // Admin: Bulk send welcome emails
-  fastify.post('/members/bulk-send-welcome', async (request, _reply) => {
+  fastify.post<{ Body: BulkDeleteBody; Reply: BulkSendWelcomeResponse | ApiErrorResponse }>(
+    '/members/bulk-send-welcome',
+    {
+      schema: {
+        tags: ['members'],
+        body: bulkDeleteBodySchema,
+        response: {
+          200: bulkSendWelcomeResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
     if (!isAdmin(member)) {
       return _reply.code(403).send({ error: 'Forbidden' });
@@ -842,6 +1179,11 @@ export async function memberRoutes(fastify: FastifyInstance) {
       success: true,
       sent: targetMembers.length,
     };
-  });
+      return {
+        success: true,
+        sent: targetMembers.length,
+      };
+    }
+  );
 }
 

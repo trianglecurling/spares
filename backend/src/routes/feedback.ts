@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { desc, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -8,6 +8,12 @@ import { config } from '../config.js';
 import { isAdmin, normalizeEmail, verifyToken } from '../utils/auth.js';
 import { createCaptchaChallenge, verifyCaptchaAnswer } from '../utils/captcha.js';
 import { sendEmail } from '../services/email.js';
+import {
+  captchaResponseSchema,
+  feedbackListResponseSchema,
+  feedbackSubmitResponseSchema,
+} from '../api/schemas.js';
+import type { ApiErrorResponse, FeedbackCaptchaResponse, FeedbackEntryResponse, FeedbackSubmitResponse } from '../api/types.js';
 
 const feedbackCategorySchema = z.enum(['suggestion', 'problem', 'question', 'general']);
 
@@ -20,8 +26,22 @@ const submitFeedbackSchema = z.object({
   pagePath: z.string().optional(),
 });
 
-function isMemberExpired(member: any): boolean {
-  if (!member?.valid_through) return false;
+const submitFeedbackBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    category: { type: 'string', enum: ['suggestion', 'problem', 'question', 'general'] },
+    email: { type: 'string' },
+    body: { type: 'string' },
+    captchaToken: { type: 'string' },
+    captchaAnswer: { oneOf: [{ type: 'string' }, { type: 'number' }] },
+    pagePath: { type: 'string' },
+  },
+  required: ['category', 'body'],
+} as const;
+
+function isMemberExpired(member: Member): boolean {
+  if (!member.valid_through) return false;
   const validThrough = new Date(member.valid_through);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -29,7 +49,7 @@ function isMemberExpired(member: any): boolean {
   return today > validThrough;
 }
 
-async function getMemberFromOptionalAuth(request: any): Promise<Member | null> {
+async function getMemberFromOptionalAuth(request: FastifyRequest): Promise<Member | null> {
   const authHeader = request.headers?.authorization;
   const token = authHeader?.replace('Bearer ', '');
   if (!token) return null;
@@ -50,7 +70,7 @@ async function getMemberFromOptionalAuth(request: any): Promise<Member | null> {
   return member;
 }
 
-function normalizeTimestamp(value: any): string {
+function normalizeTimestamp(value: string | Date | number | null | undefined): string {
   if (!value) return '';
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString();
@@ -100,9 +120,9 @@ async function getServerAdminRecipients(): Promise<Array<{ email: string; name: 
   const serverAdmins = await db
     .select({ email: schema.members.email, name: schema.members.name })
     .from(schema.members)
-    .where(eq((schema.members as any).is_server_admin, 1));
+    .where(eq(schema.members.is_server_admin, 1));
 
-  for (const m of serverAdmins as any[]) {
+  for (const m of serverAdmins) {
     const normalized = normalizeEmail(m.email);
     if (!normalized) continue;
     recipients.set(normalized, m.name || normalized);
@@ -112,12 +132,34 @@ async function getServerAdminRecipients(): Promise<Array<{ email: string; name: 
 }
 
 export async function publicFeedbackRoutes(fastify: FastifyInstance) {
-  fastify.get('/feedback/captcha', async () => {
+  fastify.get<{ Reply: FeedbackCaptchaResponse }>(
+    '/feedback/captcha',
+    {
+      schema: {
+        tags: ['feedback'],
+        response: {
+          200: captchaResponseSchema,
+        },
+      },
+    },
+    async () => {
     return createCaptchaChallenge();
-  });
+    }
+  );
 
-  fastify.post('/feedback', async (request, reply) => {
-    const parsed = submitFeedbackSchema.safeParse((request as any).body || {});
+  fastify.post<{ Reply: FeedbackSubmitResponse | ApiErrorResponse }>(
+    '/feedback',
+    {
+      schema: {
+        tags: ['feedback'],
+        body: submitFeedbackBodySchema,
+        response: {
+          200: feedbackSubmitResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const parsed = submitFeedbackSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
     }
@@ -188,13 +230,24 @@ export async function publicFeedbackRoutes(fastify: FastifyInstance) {
       }
     }
 
-    return { ok: true };
-  });
+      return { ok: true };
+    }
+  );
 }
 
 export async function protectedFeedbackRoutes(fastify: FastifyInstance) {
-  fastify.get('/feedback', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get<{ Reply: FeedbackEntryResponse[] | ApiErrorResponse }>(
+    '/feedback',
+    {
+      schema: {
+        tags: ['feedback'],
+        response: {
+          200: feedbackListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
     if (!isAdmin(member)) return reply.code(403).send({ error: 'Forbidden' });
 
@@ -218,7 +271,7 @@ export async function protectedFeedbackRoutes(fastify: FastifyInstance) {
       .orderBy(desc(schema.feedback.created_at))
       .limit(200);
 
-    return rows.map((r: any) => ({
+      return rows.map((r) => ({
       id: r.id,
       category: r.category,
       body: r.body,
@@ -230,6 +283,7 @@ export async function protectedFeedbackRoutes(fastify: FastifyInstance) {
       memberName: r.memberName,
       memberEmail: r.memberEmail,
     }));
-  });
+    }
+  );
 }
 

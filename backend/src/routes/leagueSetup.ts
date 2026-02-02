@@ -3,11 +3,49 @@ import { z } from 'zod';
 import { and, desc, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member } from '../types.js';
+import { successResponseSchema } from '../api/schemas.js';
+import {
+  divisionCreateBodySchema,
+  divisionListResponseSchema,
+  divisionSchema,
+  divisionUpdateBodySchema,
+  managerAddBodySchema,
+  managerAddResponseSchema,
+  managerListResponseSchema,
+  managerSearchResponseSchema,
+  memberSearchResponseSchema,
+  rosterAddBodySchema,
+  rosterAddResponseSchema,
+  rosterBulkBodySchema,
+  rosterBulkResponseSchema,
+  rosterListResponseSchema,
+  rosterSearchResponseSchema,
+  rosterUnassignedResponseSchema,
+  sheetCreateBodySchema,
+  sheetListResponseSchema,
+  sheetSchema,
+  sheetUpdateBodySchema,
+  teamCreateBodySchema,
+  teamListResponseSchema,
+  teamResponseSchema,
+  teamRosterResponseSchema,
+  teamRosterUpdateBodySchema,
+  teamUpdateBodySchema,
+} from '../api/leagueSetupSchemas.js';
 import {
   hasClubLeagueAdministratorAccess,
   hasLeagueAdministratorAccess,
   hasLeagueSetupAccess,
 } from '../utils/leagueAccess.js';
+
+type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
+type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
+type DrizzleTx = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+type SheetRow = DrizzleSchema['sheets']['$inferSelect'];
+type DivisionRow = DrizzleSchema['leagueDivisions']['$inferSelect'];
+type LeagueRosterRow = DrizzleSchema['leagueRoster']['$inferSelect'];
+type TeamRow = DrizzleSchema['leagueTeams']['$inferSelect'];
+type TeamMemberRow = DrizzleSchema['teamMembers']['$inferSelect'];
 
 const sheetCreateSchema = z.object({
   name: z.string().min(1),
@@ -39,6 +77,17 @@ const teamMemberSchema = z.object({
   isSkip: z.boolean().optional(),
   isVice: z.boolean().optional(),
 });
+
+function getAffectedRows(result: unknown): number {
+  if (typeof result !== 'object' || result === null) return 0;
+  if ('changes' in result && typeof (result as { changes?: number }).changes === 'number') {
+    return (result as { changes: number }).changes;
+  }
+  if ('rowCount' in result && typeof (result as { rowCount?: number }).rowCount === 'number') {
+    return (result as { rowCount: number }).rowCount;
+  }
+  return 0;
+}
 
 const teamCreateSchema = z.object({
   name: z.string().optional(),
@@ -76,6 +125,60 @@ const rosterBulkAddSchema = z.object({
 const managerAddSchema = z.object({
   memberId: z.number().int().positive(),
 });
+
+const idParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { id: { type: 'string' } },
+  required: ['id'],
+} as const;
+
+const leagueDivisionParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    leagueId: { type: 'string' },
+    divisionId: { type: 'string' },
+  },
+  required: ['leagueId', 'divisionId'],
+} as const;
+
+const leagueMemberParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' },
+    memberId: { type: 'string' },
+  },
+  required: ['id', 'memberId'],
+} as const;
+
+const teamIdParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { teamId: { type: 'string' } },
+  required: ['teamId'],
+} as const;
+
+const rosterSearchQuerySchemaJson = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    query: { type: 'string' },
+    rosterOnly: { type: 'boolean' },
+  },
+  required: ['query'],
+} as const;
+
+const memberSearchQuerySchemaJson = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    query: { type: 'string' },
+    leagueId: { type: 'number' },
+  },
+  required: ['query'],
+} as const;
 
 type TeamMemberInput = z.infer<typeof teamMemberSchema>;
 
@@ -189,8 +292,8 @@ function computeDefaultTeamName(
 }
 
 async function ensureRosterMembership(
-  tx: any,
-  schema: any,
+  tx: DrizzleTx,
+  schema: DrizzleSchema,
   leagueId: number,
   memberIds: number[]
 ): Promise<void> {
@@ -208,8 +311,18 @@ async function ensureRosterMembership(
 
 export async function leagueSetupRoutes(fastify: FastifyInstance) {
   // Sheets
-  fastify.get('/sheets', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/sheets',
+    {
+      schema: {
+        tags: ['league-setup'],
+        response: {
+          200: sheetListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -220,7 +333,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .from(schema.sheets)
       .orderBy(schema.sheets.sort_order, schema.sheets.name);
 
-    return sheets.map((sheet: any) => ({
+    return sheets.map((sheet: SheetRow) => ({
       id: sheet.id,
       name: sheet.name,
       sortOrder: sheet.sort_order,
@@ -228,10 +341,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       createdAt: sheet.created_at,
       updatedAt: sheet.updated_at,
     }));
-  });
+    }
+  );
 
-  fastify.post('/sheets', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/sheets',
+    {
+      schema: {
+        tags: ['league-setup'],
+        body: sheetCreateBodySchema,
+        response: {
+          200: sheetSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -257,10 +382,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       createdAt: sheet.created_at,
       updatedAt: sheet.updated_at,
     };
-  });
+    }
+  );
 
-  fastify.patch('/sheets/:id', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.patch(
+    '/sheets/:id',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: sheetUpdateBodySchema,
+        response: {
+          200: sheetSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -296,10 +434,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       createdAt: sheet.created_at,
       updatedAt: sheet.updated_at,
     };
-  });
+    }
+  );
 
-  fastify.delete('/sheets/:id', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.delete(
+    '/sheets/:id',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -310,11 +460,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     await db.delete(schema.sheets).where(eq(schema.sheets.id, sheetId));
     return { success: true };
-  });
+    }
+  );
 
   // Divisions
-  fastify.get('/leagues/:id/divisions', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/:id/divisions',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: divisionListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -329,17 +491,30 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .where(eq(schema.leagueDivisions.league_id, leagueId))
       .orderBy(schema.leagueDivisions.name);
 
-    return divisions.map((division: any) => ({
+    return divisions.map((division: DivisionRow) => ({
       id: division.id,
       leagueId: division.league_id,
       name: division.name,
       sortOrder: division.sort_order,
       isDefault: division.is_default === 1,
     }));
-  });
+    }
+  );
 
-  fastify.post('/leagues/:id/divisions', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/leagues/:id/divisions',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: divisionCreateBodySchema,
+        response: {
+          200: divisionSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -368,10 +543,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       sortOrder: division.sort_order,
       isDefault: division.is_default === 1,
     };
-  });
+    }
+  );
 
-  fastify.patch('/leagues/:leagueId/divisions/:divisionId', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.patch(
+    '/leagues/:leagueId/divisions/:divisionId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueDivisionParamsSchema,
+        body: divisionUpdateBodySchema,
+        response: {
+          200: divisionSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { leagueId: leagueIdRaw, divisionId: divisionIdRaw } = request.params as {
       leagueId: string;
       divisionId: string;
@@ -431,10 +619,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       sortOrder: updatedDivision.sort_order,
       isDefault: updatedDivision.is_default === 1,
     };
-  });
+    }
+  );
 
-  fastify.delete('/leagues/:leagueId/divisions/:divisionId', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.delete(
+    '/leagues/:leagueId/divisions/:divisionId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueDivisionParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { leagueId: leagueIdRaw, divisionId: divisionIdRaw } = request.params as {
       leagueId: string;
       divisionId: string;
@@ -472,11 +672,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     await db.delete(schema.leagueDivisions).where(eq(schema.leagueDivisions.id, divisionId));
 
     return { success: true };
-  });
+    }
+  );
 
   // League roster
-  fastify.get('/leagues/:id/roster', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/:id/roster',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: rosterListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -526,10 +738,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         assignedTeamName: assignment?.teamName ?? null,
       };
     });
-  });
+    }
+  );
 
-  fastify.get('/leagues/:id/roster/unassigned', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/:id/roster/unassigned',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: rosterUnassignedResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -566,13 +790,26 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       name: row.name,
       email: row.email,
     }));
-  });
+    }
+  );
 
-  fastify.get('/leagues/:id/roster/search', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/:id/roster/search',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        querystring: rosterSearchQuerySchemaJson,
+        response: {
+          200: rosterSearchResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
-    const { query, rosterOnly } = rosterSearchQuerySchema.parse((request as any).query || {});
+    const { query, rosterOnly } = rosterSearchQuerySchema.parse(request.query ?? {});
 
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -639,10 +876,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       name: row.name,
       email: row.email,
     }));
-  });
+    }
+  );
 
-  fastify.post('/leagues/:id/roster', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/leagues/:id/roster',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: rosterAddBodySchema,
+        response: {
+          200: rosterAddResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -679,10 +929,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .returning();
 
     return { id: result[0].id, leagueId, memberId: body.memberId };
-  });
+    }
+  );
 
-  fastify.post('/leagues/:id/roster/bulk', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/leagues/:id/roster/bulk',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: rosterBulkBodySchema,
+        response: {
+          200: rosterBulkResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -777,10 +1040,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       matchedNames,
       unmatched,
     };
-  });
+    }
+  );
 
-  fastify.delete('/leagues/:id/roster/:memberId', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.delete(
+    '/leagues/:id/roster/:memberId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueMemberParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id, memberId } = request.params as { id: string; memberId: string };
     const leagueId = parseInt(id, 10);
     const memberIdNum = parseInt(memberId, 10);
@@ -807,16 +1082,28 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .delete(schema.leagueRoster)
       .where(and(eq(schema.leagueRoster.league_id, leagueId), eq(schema.leagueRoster.member_id, memberIdNum)));
 
-    if (result.changes === 0) {
+    if (getAffectedRows(result) === 0) {
       return reply.code(404).send({ error: 'Roster member not found.' });
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // League managers
-  fastify.get('/leagues/:id/managers', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/:id/managers',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: managerListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -846,13 +1133,26 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       name: row.name,
       email: row.email,
     }));
-  });
+    }
+  );
 
-  fastify.get('/leagues/:id/managers/search', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/:id/managers/search',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        querystring: rosterSearchQuerySchemaJson,
+        response: {
+          200: managerSearchResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
-    const { query } = rosterSearchQuerySchema.parse((request as any).query || {});
+    const { query } = rosterSearchQuerySchema.parse(request.query ?? {});
 
     if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -891,10 +1191,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       name: row.name,
       email: row.email,
     }));
-  });
+    }
+  );
 
-  fastify.post('/leagues/:id/managers', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/leagues/:id/managers',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: managerAddBodySchema,
+        response: {
+          200: managerAddResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -926,10 +1239,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       leagueId,
       memberId: body.memberId,
     };
-  });
+    }
+  );
 
-  fastify.delete('/leagues/:id/managers/:memberId', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.delete(
+    '/leagues/:id/managers/:memberId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueMemberParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id, memberId } = request.params as { id: string; memberId: string };
     const leagueId = parseInt(id, 10);
     const memberIdNum = parseInt(memberId, 10);
@@ -949,16 +1274,28 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         )
       );
 
-    if (result.changes === 0) {
+    if (getAffectedRows(result) === 0) {
       return reply.code(404).send({ error: 'Manager not found.' });
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Teams and rosters
-  fastify.get('/leagues/:id/teams', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/:id/teams',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: teamListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -1010,7 +1347,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         }[])
       : [];
 
-    const rosterByTeam = new Map<number, any[]>();
+    const rosterByTeam = new Map<
+      number,
+      Array<{ memberId: number; name: string; role: string; isSkip: boolean; isVice: boolean }>
+    >();
     for (const row of rosterRows) {
       const list = rosterByTeam.get(row.team_id) ?? [];
       list.push({
@@ -1031,10 +1371,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       name: team.name,
       roster: rosterByTeam.get(team.id) ?? [],
     }));
-  });
+    }
+  );
 
-  fastify.post('/leagues/:id/teams', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/leagues/:id/teams',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: teamCreateBodySchema,
+        response: {
+          200: teamResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { id } = request.params as { id: string };
     const leagueId = parseInt(id, 10);
 
@@ -1096,7 +1449,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     if (body.members && body.members.length > 0) {
       try {
         const roster = validateRoster(format, body.members);
-        await db.transaction(async (tx: any) => {
+        await db.transaction(async (tx: DrizzleTx) => {
           await tx
             .delete(schema.teamMembers)
             .where(eq(schema.teamMembers.team_id, team.id));
@@ -1154,8 +1507,9 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
             }
           }
         });
-      } catch (error: any) {
-        return reply.code(400).send({ error: error?.message || 'Invalid roster' });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Invalid roster';
+        return reply.code(400).send({ error: message });
       }
     }
 
@@ -1165,10 +1519,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       divisionId: team.division_id,
       name: team.name,
     };
-  });
+    }
+  );
 
-  fastify.patch('/teams/:teamId', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.patch(
+    '/teams/:teamId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: teamIdParamsSchema,
+        body: teamUpdateBodySchema,
+        response: {
+          200: teamResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { teamId } = request.params as { teamId: string };
     const id = parseInt(teamId, 10);
 
@@ -1229,10 +1596,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       divisionId: updatedTeam.division_id,
       name: updatedTeam.name,
     };
-  });
+    }
+  );
 
-  fastify.delete('/teams/:teamId', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.delete(
+    '/teams/:teamId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: teamIdParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { teamId } = request.params as { teamId: string };
     const id = parseInt(teamId, 10);
 
@@ -1254,10 +1633,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     await db.delete(schema.leagueTeams).where(eq(schema.leagueTeams.id, id));
     return { success: true };
-  });
+    }
+  );
 
-  fastify.get('/teams/:teamId/roster', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/teams/:teamId/roster',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: teamIdParamsSchema,
+        response: {
+          200: teamRosterResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -1292,10 +1683,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       isSkip: entry.is_skip === 1,
       isVice: entry.is_vice === 1,
     }));
-  });
+    }
+  );
 
-  fastify.put('/teams/:teamId/roster', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.put(
+    '/teams/:teamId/roster',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: teamIdParamsSchema,
+        body: teamRosterUpdateBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     const { teamId } = request.params as { teamId: string };
     const id = parseInt(teamId, 10);
 
@@ -1327,7 +1731,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       const roster = validateRoster(team.format, body.members);
       const memberIds = roster.map((entry) => entry.memberId);
 
-      await db.transaction(async (tx: any) => {
+      await db.transaction(async (tx: DrizzleTx) => {
         const existingMembers = (await tx
           .select({ id: schema.members.id, name: schema.members.name })
           .from(schema.members)
@@ -1385,21 +1789,34 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           }
         }
       });
-    } catch (error: any) {
-      return reply.code(400).send({ error: error?.message || 'Invalid roster' });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Invalid roster';
+      return reply.code(400).send({ error: message });
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Member search (autocomplete)
-  fastify.get('/members/search', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/members/search',
+    {
+      schema: {
+        tags: ['league-setup'],
+        querystring: memberSearchQuerySchemaJson,
+        response: {
+          200: memberSearchResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const { query, leagueId } = memberSearchQuerySchema.parse((request as any).query || {});
+    const { query, leagueId } = memberSearchQuerySchema.parse(request.query ?? {});
 
     if (leagueId) {
       if (!(await hasLeagueSetupAccess(member, leagueId))) {
@@ -1429,5 +1846,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       name: row.name,
       email: row.email,
     }));
-  });
+    }
+  );
 }

@@ -1,43 +1,40 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import api from '../utils/api';
-
-interface Member {
-  id: number;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  spareOnly?: boolean;
-  isAdmin: boolean;
-  isServerAdmin?: boolean;
-  leagueManagerLeagueIds?: number[];
-  isLeagueAdministrator?: boolean;
-  isLeagueAdministratorGlobal?: boolean;
-  firstLoginCompleted: boolean;
-  optedInSms: boolean;
-  emailSubscribed: boolean;
-  emailVisible: boolean;
-  phoneVisible: boolean;
-  themePreference?: 'light' | 'dark' | 'system';
-}
+import axios from 'axios';
+import { get } from '../api/client';
+import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 interface AuthContextType {
-  member: Member | null;
+  member: AuthenticatedMember | null;
   token: string | null;
-  login: (token: string, member: Member, redirectTo?: string) => void;
+  login: (token: string, member: AuthenticatedMember, redirectTo?: string) => void;
   logout: () => void;
-  updateMember: (member: Member) => void;
+  updateMember: (member: AuthenticatedMember) => void;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [member, setMember] = useState<Member | null>(null);
+  const [member, setMember] = useState<AuthenticatedMember | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('authToken'));
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  const normalizeThemePreference = (
+    value: string | null | undefined
+  ): AuthenticatedMember['themePreference'] => {
+    if (value === 'light' || value === 'dark' || value === 'system') {
+      return value;
+    }
+    return 'system';
+  };
+
+  const normalizeMember = (value: AuthenticatedMember): AuthenticatedMember => ({
+    ...value,
+    themePreference: normalizeThemePreference(value.themePreference),
+  });
 
   useEffect(() => {
     // Check for token in URL (from email links)
@@ -69,13 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (currentToken) {
         try {
-          const response = await api.get('/auth/verify', {
-            headers: { Authorization: `Bearer ${currentToken}` },
-          });
-          setMember(response.data.member);
+          const response = await get('/auth/verify');
+          const normalizedMember = normalizeMember({
+            ...response.member,
+            themePreference: normalizeThemePreference(response.member.themePreference),
+          } as AuthenticatedMember);
+          setMember(normalizedMember);
           
           // Redirect to first login if needed
-          if (!response.data.member.firstLoginCompleted) {
+          if (!response.member.firstLoginCompleted) {
             // Preserve where the user was trying to go so we can return after first-login setup.
             // Special-case spare accept links so we can restore the requestId flow reliably.
             const intendedPath = window.location.pathname + window.location.search;
@@ -105,9 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             navigate('/first-login', { replace: true });
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           // If database is not configured (503), don't clear token - just fail silently
-          if (error.response?.status === 503 && error.response?.data?.requiresInstallation) {
+          if (axios.isAxiosError(error) && error.response?.status === 503 && error.response?.data?.requiresInstallation) {
             // Database not configured - don't verify token, but don't clear it either
             // Intentionally silent: user may be on the install flow
           } else {
@@ -123,10 +122,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     verifyToken();
   }, []);
 
-  const login = (newToken: string, newMember: Member, redirectTo?: string) => {
+  const login = (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => {
     localStorage.setItem('authToken', newToken);
     setToken(newToken);
-    setMember(newMember);
+    setMember(normalizeMember(newMember));
     
     if (!newMember.firstLoginCompleted) {
       try {
@@ -150,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     navigate('/login');
   };
 
-  const updateMember = (updatedMember: Member) => {
+  const updateMember = (updatedMember: AuthenticatedMember) => {
     setMember(updatedMember);
   };
 

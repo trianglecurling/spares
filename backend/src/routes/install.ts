@@ -5,6 +5,18 @@ import { getDatabaseConfig, saveDatabaseConfig, isDatabaseConfigured } from '../
 import { testDatabaseConnection, initializeDatabase } from '../db/index.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { normalizeEmail } from '../utils/auth.js';
+import {
+  installConfigResponseSchema,
+  installCreateAdminResponseSchema,
+  installStatusResponseSchema,
+  successResponseSchema,
+} from '../api/schemas.js';
+import type {
+  ApiErrorResponse,
+  InstallConfigResponse,
+  InstallCreateAdminResponse,
+  InstallStatusResponse,
+} from '../api/types.js';
 
 const installSchema = z.object({
   databaseType: z.enum(['sqlite', 'postgres']),
@@ -22,16 +34,67 @@ const installSchema = z.object({
   adminEmails: z.array(z.string().email()).min(1),
 });
 
+const installBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    databaseType: { type: 'string', enum: ['sqlite', 'postgres'] },
+    sqlite: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        path: { type: 'string' },
+      },
+    },
+    postgres: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        host: { type: 'string' },
+        port: { type: 'number' },
+        database: { type: 'string' },
+        username: { type: 'string' },
+        password: { type: 'string' },
+        ssl: { type: 'boolean' },
+      },
+      required: ['host', 'port', 'database', 'username', 'password'],
+    },
+    adminEmails: { type: 'array', items: { type: 'string' }, minItems: 1 },
+  },
+  required: ['databaseType', 'adminEmails'],
+} as const;
+
 export async function installRoutes(fastify: FastifyInstance) {
   // Check if database is configured
-  fastify.get('/install/status', async () => {
+  fastify.get<{ Reply: InstallStatusResponse }>(
+    '/install/status',
+    {
+      schema: {
+        tags: ['install'],
+        response: {
+          200: installStatusResponseSchema,
+        },
+      },
+    },
+    async () => {
     return {
       configured: isDatabaseConfigured(),
     };
-  });
+    }
+  );
 
   // Get current config (if configured)
-  fastify.get('/install/config', async (request, reply) => {
+  fastify.get<{ Reply: InstallConfigResponse | ApiErrorResponse }>(
+    '/install/config',
+    {
+      schema: {
+        tags: ['install'],
+        response: {
+          200: installConfigResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     if (isDatabaseConfigured()) {
       return reply.code(403).send({ error: 'Database already configured' });
     }
@@ -49,10 +112,22 @@ export async function installRoutes(fastify: FastifyInstance) {
       return safeConfig;
     }
     return null;
-  });
+    }
+  );
 
   // Install/configure database
-  fastify.post('/install', async (request, reply) => {
+  fastify.post<{ Reply: { success: boolean } | ApiErrorResponse }>(
+    '/install',
+    {
+      schema: {
+        tags: ['install'],
+        body: installBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     if (isDatabaseConfigured()) {
       return reply.code(403).send({ error: 'Database already configured' });
     }
@@ -77,20 +152,25 @@ export async function installRoutes(fastify: FastifyInstance) {
     // Test database connection FIRST - before saving anything
     try {
       await testDatabaseConnection(testConfig);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Database connection test failed:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to connect to database. Please check your credentials and try again.';
       return reply.code(400).send({ 
-        error: `Database connection failed: ${error.message || 'Unable to connect to database. Please check your credentials and try again.'}` 
+        error: `Database connection failed: ${message}` 
       });
     }
 
     // Connection test passed - now save configuration
     try {
       saveDatabaseConfig(testConfig);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save database configuration:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return reply.code(500).send({ 
-        error: `Failed to save configuration: ${error.message || 'Unknown error'}` 
+        error: `Failed to save configuration: ${message}` 
       });
     }
 
@@ -102,11 +182,11 @@ export async function installRoutes(fastify: FastifyInstance) {
       await createAdminMembers(body.adminEmails);
       
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Database schema initialization failed:', error);
       
       // Provide helpful error messages for common PostgreSQL permission issues
-      let errorMessage = error.message || 'Unknown error';
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
       let helpfulHint = '';
       
       if (errorMessage.includes('permission denied') || errorMessage.includes('permission denied for schema')) {
@@ -125,10 +205,21 @@ export async function installRoutes(fastify: FastifyInstance) {
         error: `Schema initialization failed: ${errorMessage}.${helpfulHint} You may need to fix your database permissions and try again, or delete the configuration file and start over.` 
       });
     }
-  });
+    }
+  );
 
   // Create admin members from config (useful if installation was done before this feature)
-  fastify.post('/install/create-admin-members', async (request, reply) => {
+  fastify.post<{ Reply: InstallCreateAdminResponse | ApiErrorResponse }>(
+    '/install/create-admin-members',
+    {
+      schema: {
+        tags: ['install'],
+        response: {
+          200: installCreateAdminResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     if (!isDatabaseConfigured()) {
       return reply.code(400).send({ error: 'Database not configured' });
     }
@@ -146,13 +237,15 @@ export async function installRoutes(fastify: FastifyInstance) {
         updated: results.updated,
         total: results.created + results.updated
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to create admin members:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return reply.code(500).send({ 
-        error: `Failed to create admin members: ${error.message || 'Unknown error'}` 
+        error: `Failed to create admin members: ${message}` 
       });
     }
-  });
+    }
+  );
 }
 
 // Helper function to create admin members

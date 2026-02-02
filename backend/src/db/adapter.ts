@@ -2,16 +2,16 @@
 
 export interface DatabaseAdapter {
   exec(sql: string): Promise<void> | void;
-  prepare(sql: string): PreparedStatement;
+  prepare<TGet = unknown, TAll = TGet[]>(sql: string): PreparedStatement<TGet, TAll>;
   close(): void | Promise<void>;
   transaction<T>(fn: () => T | Promise<T>): T | Promise<T>;
   isAsync(): boolean;
 }
 
-export interface PreparedStatement {
-  run(...params: any[]): Promise<{ lastInsertRowid?: number | bigint; changes: number }> | { lastInsertRowid?: number | bigint; changes: number };
-  get(...params: any[]): Promise<any> | any;
-  all(...params: any[]): Promise<any[]> | any[];
+export interface PreparedStatement<TGet = unknown, TAll = TGet[]> {
+  run(...params: unknown[]): Promise<DatabaseResult> | DatabaseResult;
+  get(...params: unknown[]): Promise<TGet> | TGet;
+  all(...params: unknown[]): Promise<TAll> | TAll;
 }
 
 export interface DatabaseResult {

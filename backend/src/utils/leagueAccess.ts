@@ -1,4 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
+import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member } from '../types.js';
 import { isAdmin, isServerAdmin } from './auth.js';
 

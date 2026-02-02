@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import { del, get, patch, post, put } from '../../api/client';
+import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -369,20 +370,20 @@ export default function LeagueDetail() {
   }, []);
 
   const loadRoster = async () => {
-    const rosterResponse = await api.get(`/leagues/${numericLeagueId}/roster`);
-    setRosterMembers(rosterResponse.data);
+    const rosterResponse = await get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) });
+    setRosterMembers(rosterResponse);
   };
 
   const loadManagers = async () => {
-    const managersResponse = await api.get(`/leagues/${numericLeagueId}/managers`);
-    setManagers(managersResponse.data);
+    const managersResponse = await get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) });
+    setManagers(managersResponse);
   };
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const leaguesResponse = await api.get('/leagues');
-      const currentLeague = leaguesResponse.data.find((l: League) => l.id === numericLeagueId);
+      const leaguesResponse = await get('/leagues');
+      const currentLeague = leaguesResponse.find((l: League) => l.id === numericLeagueId);
       if (!currentLeague) {
         showAlert('League not found', 'error');
         navigate('/leagues');
@@ -391,19 +392,19 @@ export default function LeagueDetail() {
       setLeague(currentLeague);
 
       const [divisionsResponse, teamsResponse, rosterResponse, managersResponse] = await Promise.all([
-        api.get(`/leagues/${numericLeagueId}/divisions`),
-        api.get(`/leagues/${numericLeagueId}/teams`),
-        api.get(`/leagues/${numericLeagueId}/roster`),
-        api.get(`/leagues/${numericLeagueId}/managers`),
+        get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
       ]);
 
-      setDivisions(divisionsResponse.data);
-      setTeams(teamsResponse.data);
-      setRosterMembers(rosterResponse.data);
-      setManagers(managersResponse.data);
-    } catch (error) {
+      setDivisions(divisionsResponse);
+      setTeams(teamsResponse);
+      setRosterMembers(rosterResponse);
+      setManagers(managersResponse);
+    } catch (error: unknown) {
       console.error('Failed to load league setup data:', error);
-      showAlert('Failed to load league setup data', 'error');
+      showAlert(formatApiError(error, 'Failed to load league setup data'), 'error');
     } finally {
       setLoading(false);
     }
@@ -442,16 +443,19 @@ export default function LeagueDetail() {
       };
 
       if (editingDivision) {
-        await api.patch(`/leagues/${numericLeagueId}/divisions/${editingDivision.id}`, payload);
+        await patch('/leagues/{leagueId}/divisions/{divisionId}', payload, {
+          leagueId: String(numericLeagueId),
+          divisionId: String(editingDivision.id),
+        });
       } else {
-        await api.post(`/leagues/${numericLeagueId}/divisions`, payload);
+        await post('/leagues/{id}/divisions', payload, { id: String(numericLeagueId) });
       }
 
       await loadAll();
       handleCloseDivisionModal();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save division:', error);
-      showAlert(error.response?.data?.error || 'Failed to save division', 'error');
+      showAlert(formatApiError(error, 'Failed to save division'), 'error');
     } finally {
       setDivisionSubmitting(false);
     }
@@ -468,11 +472,14 @@ export default function LeagueDetail() {
     if (!confirmed) return;
 
     try {
-      await api.delete(`/leagues/${numericLeagueId}/divisions/${division.id}`);
+      await del('/leagues/{leagueId}/divisions/{divisionId}', undefined, {
+        leagueId: String(numericLeagueId),
+        divisionId: String(division.id),
+      });
       setDivisions((prev) => prev.filter((d) => d.id !== division.id));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to delete division:', error);
-      showAlert(error.response?.data?.error || 'Failed to delete division', 'error');
+      showAlert(formatApiError(error, 'Failed to delete division'), 'error');
     }
   };
 
@@ -641,12 +648,12 @@ export default function LeagueDetail() {
         exceptions: uniqueExceptions,
       };
 
-      await api.patch(`/leagues/${numericLeagueId}`, payload);
+      await patch('/leagues/{id}', payload, { id: String(numericLeagueId) });
       setLeague((prev) => (prev ? { ...prev, ...payload } : prev));
       setEditLeagueModalOpen(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to update league:', error);
-      showAlert(error.response?.data?.error || 'Failed to update league', 'error');
+      showAlert(formatApiError(error, 'Failed to update league'), 'error');
     } finally {
       setLeagueSubmitting(false);
     }
@@ -665,13 +672,15 @@ export default function LeagueDetail() {
     const handle = window.setTimeout(async () => {
       setRosterSearchLoading(true);
       try {
-        const response = await api.get(`/leagues/${numericLeagueId}/roster/search`, {
-          params: { query },
-        });
-        setRosterSearchResults(response.data);
-      } catch (error: any) {
+        const response = await get(
+          '/leagues/{id}/roster/search',
+          { query },
+          { id: String(numericLeagueId) }
+        );
+        setRosterSearchResults(response);
+      } catch (error: unknown) {
         console.error('Failed to search roster candidates:', error);
-        showAlert(error.response?.data?.error || 'Failed to search members', 'error');
+        showAlert(formatApiError(error, 'Failed to search members'), 'error');
       } finally {
         setRosterSearchLoading(false);
       }
@@ -682,24 +691,27 @@ export default function LeagueDetail() {
 
   const handleAddToRoster = async (candidate: MemberSearchResult) => {
     try {
-      await api.post(`/leagues/${numericLeagueId}/roster`, { memberId: candidate.id });
+      await post('/leagues/{id}/roster', { memberId: candidate.id }, { id: String(numericLeagueId) });
       await loadRoster();
       setRosterSearchResults([]);
       setRosterSearchQuery('');
       setRosterDropdownOpen(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to add roster member:', error);
-      showAlert(error.response?.data?.error || 'Failed to add to roster', 'error');
+      showAlert(formatApiError(error, 'Failed to add to roster'), 'error');
     }
   };
 
   const handleRemoveRosterMember = async (rosterMember: LeagueRosterMember) => {
     try {
-      await api.delete(`/leagues/${numericLeagueId}/roster/${rosterMember.memberId}`);
+      await del('/leagues/{id}/roster/{memberId}', undefined, {
+        id: String(numericLeagueId),
+        memberId: String(rosterMember.memberId),
+      });
       await loadRoster();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to remove roster member:', error);
-      showAlert(error.response?.data?.error || 'Failed to remove roster member', 'error');
+      showAlert(formatApiError(error, 'Failed to remove roster member'), 'error');
     }
   };
 
@@ -734,10 +746,10 @@ export default function LeagueDetail() {
 
     setBulkRosterSubmitting(true);
     try {
-      const response = await api.post(`/leagues/${numericLeagueId}/roster/bulk`, { names });
-      setBulkRosterResult(response.data);
-      setBulkRosterMatchedNames(response.data.matchedNames || []);
-      setBulkRosterUnmatched(response.data.unmatched || []);
+      const response = await post('/leagues/{id}/roster/bulk', { names }, { id: String(numericLeagueId) });
+      setBulkRosterResult(response);
+      setBulkRosterMatchedNames(response.matchedNames || []);
+      setBulkRosterUnmatched(response.unmatched || []);
       setBulkRosterSelection(null);
       setBulkRosterQuery('');
       setBulkRosterResults([]);
@@ -745,9 +757,9 @@ export default function LeagueDetail() {
       setBulkRosterDropdownOpen(false);
       setBulkRosterHighlightedIndex(-1);
       await loadRoster();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to bulk add roster members:', error);
-      showAlert(error.response?.data?.error || 'Failed to bulk add roster members', 'error');
+      showAlert(formatApiError(error, 'Failed to bulk add roster members'), 'error');
     } finally {
       setBulkRosterSubmitting(false);
     }
@@ -771,13 +783,15 @@ export default function LeagueDetail() {
     bulkRosterSearchTimeout.current = window.setTimeout(async () => {
       setBulkRosterLoading(true);
       try {
-        const response = await api.get(`/leagues/${numericLeagueId}/roster/search`, {
-          params: { query: value.trim() },
-        });
-        setBulkRosterResults(response.data.filter((result: MemberSearchResult) => !rosterMemberIds.has(result.id)));
-      } catch (error: any) {
+        const response = await get(
+          '/leagues/{id}/roster/search',
+          { query: value.trim() },
+          { id: String(numericLeagueId) }
+        );
+        setBulkRosterResults(response.filter((result: MemberSearchResult) => !rosterMemberIds.has(result.id)));
+      } catch (error: unknown) {
         console.error('Failed to search members:', error);
-        showAlert(error.response?.data?.error || 'Failed to search members', 'error');
+        showAlert(formatApiError(error, 'Failed to search members'), 'error');
       } finally {
         setBulkRosterLoading(false);
       }
@@ -832,7 +846,7 @@ export default function LeagueDetail() {
 
     setBulkRosterSubmitting(true);
     try {
-      await api.post(`/leagues/${numericLeagueId}/roster`, { memberId: bulkRosterSelection.id });
+      await post('/leagues/{id}/roster', { memberId: bulkRosterSelection.id }, { id: String(numericLeagueId) });
       await loadRoster();
       setBulkRosterUnmatched((prev) => prev.slice(1));
       setBulkRosterSelection(null);
@@ -840,9 +854,9 @@ export default function LeagueDetail() {
       setBulkRosterResults([]);
       setBulkRosterDropdownOpen(false);
       setBulkRosterHighlightedIndex(-1);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to add selected roster member:', error);
-      showAlert(error.response?.data?.error || 'Failed to add roster member', 'error');
+      showAlert(formatApiError(error, 'Failed to add roster member'), 'error');
     } finally {
       setBulkRosterSubmitting(false);
     }
@@ -871,13 +885,15 @@ export default function LeagueDetail() {
     const handle = window.setTimeout(async () => {
       setManagerSearchLoading(true);
       try {
-        const response = await api.get(`/leagues/${numericLeagueId}/managers/search`, {
-          params: { query },
-        });
-        setManagerSearchResults(response.data);
-      } catch (error: any) {
+        const response = await get(
+          '/leagues/{id}/managers/search',
+          { query },
+          { id: String(numericLeagueId) }
+        );
+        setManagerSearchResults(response);
+      } catch (error: unknown) {
         console.error('Failed to search managers:', error);
-        showAlert(error.response?.data?.error || 'Failed to search members', 'error');
+        showAlert(formatApiError(error, 'Failed to search members'), 'error');
       } finally {
         setManagerSearchLoading(false);
       }
@@ -888,24 +904,27 @@ export default function LeagueDetail() {
 
   const handleAddManager = async (candidate: MemberSearchResult) => {
     try {
-      await api.post(`/leagues/${numericLeagueId}/managers`, { memberId: candidate.id });
+      await post('/leagues/{id}/managers', { memberId: candidate.id }, { id: String(numericLeagueId) });
       await loadManagers();
       setManagerSearchResults([]);
       setManagerSearchQuery('');
       setManagerDropdownOpen(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to add manager:', error);
-      showAlert(error.response?.data?.error || 'Failed to add manager', 'error');
+      showAlert(formatApiError(error, 'Failed to add manager'), 'error');
     }
   };
 
   const handleRemoveManager = async (managerEntry: LeagueManager) => {
     try {
-      await api.delete(`/leagues/${numericLeagueId}/managers/${managerEntry.memberId}`);
+      await del('/leagues/{id}/managers/{memberId}', undefined, {
+        id: String(numericLeagueId),
+        memberId: String(managerEntry.memberId),
+      });
       await loadManagers();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to remove manager:', error);
-      showAlert(error.response?.data?.error || 'Failed to remove manager', 'error');
+      showAlert(formatApiError(error, 'Failed to remove manager'), 'error');
     }
   };
 
@@ -1241,30 +1260,38 @@ export default function LeagueDetail() {
       };
 
       if (editingTeam) {
-        await api.patch(`/teams/${editingTeam.id}`, {
-          name: teamForm.name || undefined,
-          divisionId: teamForm.divisionId || undefined,
-        });
+        await patch(
+          '/teams/{teamId}',
+          {
+            name: teamForm.name || undefined,
+            divisionId: teamForm.divisionId || undefined,
+          },
+          { teamId: String(editingTeam.id) }
+        );
 
         if (rosterPayload.length > 0) {
-          await api.put(`/teams/${editingTeam.id}/roster`, {
-            members: rosterPayload.map((member) => ({
-              memberId: member.memberId,
-              role: member.role,
-              isSkip: member.isSkip,
-              isVice: member.isVice,
-            })),
-          });
+          await put(
+            '/teams/{teamId}/roster',
+            {
+              members: rosterPayload.map((member) => ({
+                memberId: member.memberId,
+                role: member.role,
+                isSkip: member.isSkip,
+                isVice: member.isVice,
+              })),
+            },
+            { teamId: String(editingTeam.id) }
+          );
         }
       } else {
-        await api.post(`/leagues/${numericLeagueId}/teams`, payload);
+        await post('/leagues/{id}/teams', payload, { id: String(numericLeagueId) });
       }
 
       await loadAll();
       handleCloseTeamModal();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save team:', error);
-      showAlert(error.response?.data?.error || 'Failed to save team', 'error');
+      showAlert(formatApiError(error, 'Failed to save team'), 'error');
     } finally {
       setTeamSubmitting(false);
     }
@@ -1281,12 +1308,12 @@ export default function LeagueDetail() {
     if (!confirmed) return;
 
     try {
-      await api.delete(`/teams/${team.id}`);
+      await del('/teams/{teamId}', undefined, { teamId: String(team.id) });
       setTeams((prev) => prev.filter((t) => t.id !== team.id));
       await loadRoster();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to delete team:', error);
-      showAlert(error.response?.data?.error || 'Failed to delete team', 'error');
+      showAlert(formatApiError(error, 'Failed to delete team'), 'error');
     }
   };
 

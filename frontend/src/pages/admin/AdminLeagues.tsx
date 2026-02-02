@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
@@ -216,9 +217,11 @@ export default function Leagues() {
       setIsImportModalOpen(false);
       setImportJson('');
       await loadLeagues();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to import leagues:', error);
-      const errorMessage = error.response?.data?.error || 'Failed to import leagues';
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || 'Failed to import leagues'
+        : 'Failed to import leagues';
       showAlert(errorMessage, 'error');
     } finally {
       setImporting(false);

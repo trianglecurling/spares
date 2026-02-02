@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import { del, get, patch, post } from '../../api/client';
+import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import Button from '../../components/Button';
@@ -11,8 +12,8 @@ interface Sheet {
   name: string;
   sortOrder: number;
   isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export default function AdminSheets() {
@@ -35,8 +36,8 @@ export default function AdminSheets() {
 
   const loadSheets = async () => {
     try {
-      const response = await api.get('/sheets');
-      setSheets(response.data);
+      const response = await get('/sheets');
+      setSheets(response);
     } catch (error) {
       console.error('Failed to load sheets:', error);
       showAlert('Failed to load sheets', 'error');
@@ -86,16 +87,16 @@ export default function AdminSheets() {
       };
 
       if (editingSheet) {
-        await api.patch(`/sheets/${editingSheet.id}`, payload);
+        await patch('/sheets/{id}', payload, { id: String(editingSheet.id) });
       } else {
-        await api.post('/sheets', payload);
+        await post('/sheets', payload);
       }
 
       await loadSheets();
       handleCloseModal();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save sheet:', error);
-      showAlert(error.response?.data?.error || 'Failed to save sheet', 'error');
+      showAlert(formatApiError(error, 'Failed to save sheet'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -112,11 +113,11 @@ export default function AdminSheets() {
     if (!confirmed) return;
 
     try {
-      await api.delete(`/sheets/${sheet.id}`);
+      await del('/sheets/{id}', undefined, { id: String(sheet.id) });
       setSheets((prev) => prev.filter((s) => s.id !== sheet.id));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to delete sheet:', error);
-      showAlert(error.response?.data?.error || 'Failed to delete sheet', 'error');
+      showAlert(formatApiError(error, 'Failed to delete sheet'), 'error');
     }
   };
 

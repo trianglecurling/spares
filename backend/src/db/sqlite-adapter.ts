@@ -14,18 +14,18 @@ export class SQLiteAdapter implements DatabaseAdapter {
     this.db.exec(sql);
   }
 
-  prepare(sql: string): PreparedStatement {
+  prepare<TGet = unknown, TAll = TGet[]>(sql: string): PreparedStatement<TGet, TAll> {
     const stmt = this.db.prepare(sql);
     return {
-      run: (...params: any[]) => {
+      run: (...params: unknown[]) => {
         const result = stmt.run(...params);
         return {
           lastInsertRowid: result.lastInsertRowid,
           changes: result.changes,
         };
       },
-      get: (...params: any[]) => stmt.get(...params),
-      all: (...params: any[]) => stmt.all(...params),
+      get: (...params: unknown[]) => stmt.get(...params) as TGet,
+      all: (...params: unknown[]) => stmt.all(...params) as TAll,
     };
   }
 

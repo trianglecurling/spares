@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import api from '../utils/api';
 import Button from '../components/Button';
 
@@ -24,8 +25,9 @@ export default function Unsubscribe() {
       }
 
       setConfirmed(true);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to unsubscribe. Please try again.');
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(message || 'Failed to unsubscribe. Please try again.');
     } finally {
       setLoading(false);
     }

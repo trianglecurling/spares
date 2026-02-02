@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, QueryResult } from 'pg';
 import { DatabaseAdapter, PreparedStatement } from './adapter.js';
 
 export class PostgresAdapter implements DatabaseAdapter {
@@ -28,12 +28,12 @@ export class PostgresAdapter implements DatabaseAdapter {
     await this.pool.query(pgSql);
   }
 
-  prepare(sql: string): PreparedStatement {
+  prepare<TGet = unknown, TAll = TGet[]>(sql: string): PreparedStatement<TGet, TAll> {
     // Convert SQLite syntax to PostgreSQL
     const pgSql = this.convertSQLiteToPostgres(sql);
     
     return {
-      run: async (...params: any[]) => {
+      run: async (...params: unknown[]) => {
         // Convert ? placeholders to $1, $2, etc. and get the converted SQL
         const { convertedSql } = this.convertParameters(pgSql, params.length);
         
@@ -53,15 +53,15 @@ export class PostgresAdapter implements DatabaseAdapter {
           changes: result.rowCount || 0,
         };
       },
-      get: async (...params: any[]) => {
+      get: async (...params: unknown[]) => {
         const { convertedSql } = this.convertParameters(pgSql, params.length);
         const result = await this.pool.query(convertedSql, params);
-        return result.rows[0] || null;
+        return (result.rows[0] ?? null) as TGet;
       },
-      all: async (...params: any[]) => {
+      all: async (...params: unknown[]) => {
         const { convertedSql } = this.convertParameters(pgSql, params.length);
         const result = await this.pool.query(convertedSql, params);
-        return result.rows;
+        return result.rows as TAll;
       },
     };
   }
@@ -154,14 +154,14 @@ export class PostgresAdapter implements DatabaseAdapter {
   }
 
   // Helper to execute raw SQL (for schema creation)
-  async query(sql: string, params?: any[]): Promise<any> {
+  async query(sql: string, params?: unknown[]): Promise<QueryResult<Record<string, unknown>>> {
     const pgSql = this.convertSQLiteToPostgres(sql);
     if (params && params.length > 0) {
       const { convertedSql, paramMapping } = this.convertParameters(pgSql, params.length);
       const mappedParams = paramMapping.map(i => params[i]);
-      return this.pool.query(convertedSql, mappedParams);
+      return this.pool.query(convertedSql, mappedParams as unknown[]);
     }
-    return this.pool.query(pgSql, params);
+    return this.pool.query(pgSql, params as unknown[]);
   }
 }
 

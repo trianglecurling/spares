@@ -1,9 +1,17 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, sql, asc } from 'drizzle-orm';
+import { eq, sql, asc, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
+import {
+  leagueExportResponseSchema,
+  leagueImportResponseSchema,
+  leagueListResponseSchema,
+  leagueResponseSchema,
+  successResponseSchema,
+  upcomingGamesResponseSchema,
+} from '../api/schemas.js';
 import {
   getLeagueAdministratorRoleInfo,
   getLeagueManagerRoleInfo,
@@ -32,7 +40,7 @@ const updateLeagueSchema = z.object({
   exceptions: z.array(z.string()).optional(),
 });
 
-function normalizeDateString(value: any): string {
+function normalizeDateString(value: string | Date | number): string {
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString().split('T')[0];
   return String(value);
@@ -94,8 +102,18 @@ function getTimePartsInTimeZone(timeZone: string) {
 
 export async function leagueRoutes(fastify: FastifyInstance) {
   // Get all leagues
-  fastify.get('/leagues', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues',
+    {
+      schema: {
+        tags: ['leagues'],
+        response: {
+          200: leagueListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -103,9 +121,11 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const { db, schema } = getDrizzleDb();
     const canManageAll = isAdmin(member) || isServerAdmin(member);
     const leagueAdminInfo = canManageAll
-      ? { isGlobal: true, leagueIds: [] }
+      ? { isGlobal: true, leagueIds: [] as number[] }
       : await getLeagueAdministratorRoleInfo(member.id);
-    const leagueManagerInfo = canManageAll ? { leagueIds: [] } : await getLeagueManagerRoleInfo(member.id);
+    const leagueManagerInfo = canManageAll
+      ? { leagueIds: [] as number[] }
+      : await getLeagueManagerRoleInfo(member.id);
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -131,8 +151,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: league.format,
         startDate: league.start_date,
         endDate: league.end_date,
-        drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-        exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
+        drawTimes: drawTimes.map((dt) => dt.draw_time),
+        exceptions: exceptions.map((ex) => normalizeDateString(ex.exception_date)),
         canManage:
           canManageAll ||
           leagueAdminInfo.isGlobal ||
@@ -141,16 +161,35 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }));
 
     return result;
-  });
+    }
+  );
 
   // Get upcoming games for a league
-  fastify.get('/leagues/:id/upcoming-games', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get<{ Params: { id: string } }>(
+    '/leagues/:id/upcoming-games',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: upcomingGamesResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const leagueId = parseInt(id, 10);
     const { db, schema } = getDrizzleDb();
 
@@ -175,13 +214,15 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .select({ exception_date: schema.leagueExceptions.exception_date })
       .from(schema.leagueExceptions)
       .where(eq(schema.leagueExceptions.league_id, leagueId));
-    const exceptions = new Set(exceptionsRows.map((ex: any) => normalizeDateString(ex.exception_date)));
+    const exceptions = new Set(exceptionsRows.map((ex) => normalizeDateString(ex.exception_date)));
 
     const games: { date: string; time: string }[] = [];
     const timeZone = config.timeZone;
     const todayDateStr = getTodayDateString(timeZone);
-    const startDateStr = league.start_date > todayDateStr ? league.start_date : todayDateStr;
-    const endDateStr = league.end_date;
+    const leagueStartDate = normalizeDateString(league.start_date);
+    const leagueEndDate = normalizeDateString(league.end_date);
+    const startDateStr = leagueStartDate > todayDateStr ? leagueStartDate : todayDateStr;
+    const endDateStr = leagueEndDate;
 
     // Find the first game date on or after start date matching the day of week
     const targetDay = league.day_of_week; // 0=Sun, 6=Sat
@@ -216,11 +257,36 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
 
     return games;
-  });
+    }
+  );
 
   // Admin: Create league
-  fastify.post('/leagues', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/leagues',
+    {
+      schema: {
+        tags: ['leagues'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1 },
+            dayOfWeek: { type: 'number' },
+            format: { type: 'string', enum: ['teams', 'doubles'] },
+            startDate: { type: 'string' },
+            endDate: { type: 'string' },
+            drawTimes: { type: 'array', items: { type: 'string' } },
+            exceptions: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes'],
+        },
+        response: {
+          200: leagueResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -297,19 +363,51 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: league.format,
       startDate: league.start_date,
       endDate: league.end_date,
-      drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-      exceptions: exceptionRows.map((ex: any) => normalizeDateString(ex.exception_date)),
+      drawTimes: drawTimes.map((dt) => dt.draw_time),
+      exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
     };
-  });
+    }
+  );
 
   // Admin: Update league
-  fastify.patch('/leagues/:id', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.patch<{ Params: { id: string } }>(
+    '/leagues/:id',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1 },
+            dayOfWeek: { type: 'number' },
+            format: { type: 'string', enum: ['teams', 'doubles'] },
+            startDate: { type: 'string' },
+            endDate: { type: 'string' },
+            drawTimes: { type: 'array', items: { type: 'string' } },
+            exceptions: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        response: {
+          200: leagueResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const leagueId = parseInt(id, 10);
 
     if (!(await hasLeagueManagerAccess(member, leagueId))) {
@@ -318,7 +416,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const body = updateLeagueSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
-    const updateData: any = {};
+    const updateData: Partial<{
+      name: string;
+      day_of_week: number;
+      format: 'teams' | 'doubles';
+      start_date: string;
+      end_date: string;
+      updated_at: SQL<unknown>;
+    }> = {};
 
     if (body.name !== undefined) {
       updateData.name = body.name;
@@ -404,19 +509,38 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: league.format,
       startDate: league.start_date,
       endDate: league.end_date,
-      drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-      exceptions: exceptionRows.map((ex: any) => normalizeDateString(ex.exception_date)),
+      drawTimes: drawTimes.map((dt) => dt.draw_time),
+      exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
     };
-  });
+    }
+  );
 
   // Admin: Delete league
-  fastify.delete('/leagues/:id', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.delete<{ Params: { id: string } }>(
+    '/leagues/:id',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const leagueId = parseInt(id, 10);
     const { db, schema } = getDrizzleDb();
 
@@ -424,12 +548,23 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .delete(schema.leagues)
       .where(eq(schema.leagues.id, leagueId));
 
-    return { success: true };
-  });
+      return { success: true };
+    }
+  );
 
   // Admin: Export leagues
-  fastify.get('/leagues/export', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.get(
+    '/leagues/export',
+    {
+      schema: {
+        tags: ['leagues'],
+        response: {
+          200: leagueExportResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -459,13 +594,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: league.format,
         startDate: league.start_date,
         endDate: league.end_date,
-        drawTimes: drawTimes.map((dt: any) => dt.draw_time),
-        exceptions: exceptions.map((ex: any) => normalizeDateString(ex.exception_date)),
+        drawTimes: drawTimes.map((dt) => dt.draw_time),
+        exceptions: exceptions.map((ex) => normalizeDateString(ex.exception_date)),
       };
     }));
 
     return { leagues: result };
-  });
+    }
+  );
 
   // Admin: Import leagues
   const importLeaguesSchema = z.object({
@@ -480,8 +616,42 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     })),
   });
 
-  fastify.post('/leagues/import', async (request, reply) => {
-    const member = (request as any).member as Member;
+  fastify.post(
+    '/leagues/import',
+    {
+      schema: {
+        tags: ['leagues'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            leagues: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  name: { type: 'string', minLength: 1 },
+                  dayOfWeek: { type: 'number' },
+                  format: { type: 'string', enum: ['teams', 'doubles'] },
+                  startDate: { type: 'string' },
+                  endDate: { type: 'string' },
+                  drawTimes: { type: 'array', items: { type: 'string' } },
+                  exceptions: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes'],
+              },
+            },
+          },
+          required: ['leagues'],
+        },
+        response: {
+          200: leagueImportResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = request.member;
     if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
@@ -586,5 +756,6 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       imported: importedLeagues.length,
       leagues: importedLeagues,
     };
-  });
+    }
+  );
 }

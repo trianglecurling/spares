@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { recordDailyActivity } from '../services/observability.js';
 
-function normalizeDateString(value: any): string | null {
+function normalizeDateString(value: string | Date | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString().split('T')[0];
@@ -17,7 +17,7 @@ function isMemberExpired(member: Member): boolean {
   // Admins/server-admins are always valid
   if (isAdmin(member) || isServerAdmin(member)) return false;
 
-  const validThrough = normalizeDateString((member as any).valid_through);
+  const validThrough = normalizeDateString(member.valid_through);
   if (!validThrough) return false;
 
   // Compare as YYYY-MM-DD (UTC) to avoid TZ issues. Valid through is inclusive.
@@ -27,7 +27,12 @@ function isMemberExpired(member: Member): boolean {
 
 export async function authMiddleware(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization;
-  const tokenFromQuery = (request.query as any)?.token;
+  const tokenFromQuery = (() => {
+    if (request.query && typeof request.query === 'object' && 'token' in request.query) {
+      return (request.query as { token?: string }).token;
+    }
+    return undefined;
+  })();
 
   const token = authHeader?.replace('Bearer ', '') || tokenFromQuery;
 
@@ -57,7 +62,7 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
     return reply.code(403).send({ error: 'Membership expired' });
   }
 
-  (request as any).member = member;
+  request.member = member;
 
   // Best-effort DAU tracking (do not block request)
   recordDailyActivity(member.id).catch(() => {});

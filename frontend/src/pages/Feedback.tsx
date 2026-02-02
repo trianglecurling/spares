@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import api from '../utils/api';
 import Footer from '../components/Footer';
 import HelpHeader from '../components/HelpHeader';
@@ -91,8 +92,10 @@ export default function Feedback() {
       if (!isLoggedIn) {
         await loadCaptcha();
       }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || 'Failed to submit feedback';
+    } catch (error: unknown) {
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || 'Failed to submit feedback'
+        : 'Failed to submit feedback';
       setMessage({ type: 'error', text: errorMessage });
       if (!isLoggedIn) {
         // If captcha failed/expired, refresh it for a smoother retry

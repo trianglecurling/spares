@@ -240,7 +240,8 @@ export default function MyRequests() {
         api.get('/members/directory'),
         api.get(`/spares/${request.id}/invitations`),
       ]);
-      setInvitees((dirRes.data || []).map((m: any) => ({ id: m.id, name: m.name })));
+      const directoryMembers = (dirRes.data as Array<{ id: number; name: string }> | undefined) || [];
+      setInvitees(directoryMembers.map((m) => ({ id: m.id, name: m.name })));
       setInvitationStatuses(invitesRes.data || []);
     } catch (e) {
       console.error('Failed to load invite modal data:', e);

@@ -1,6 +1,8 @@
 import { loadBackendLogCaptureFromDb } from './otel.js';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import { config } from './config.js';
 import { initializeDatabase, resetDatabaseState, getDatabaseAsync } from './db/index.js';
 import { authMiddleware } from './middleware/auth.js';
@@ -27,6 +29,19 @@ await fastify.register(cors, {
   credentials: true,
 });
 
+await fastify.register(swagger, {
+  openapi: {
+    info: {
+      title: 'Triangle Curling Spares API',
+      version: '1.0.0',
+    },
+  },
+});
+
+await fastify.register(swaggerUi, {
+  routePrefix: '/docs',
+});
+
 // Install routes (always available)
 fastify.register(installRoutes, { prefix: '/api' });
 
@@ -45,10 +60,11 @@ if (isDatabaseConfigured()) {
     
     // Create admin members if none exist
     await ensureAdminMembersExist();
-  } catch (error: any) {
-    dbInitError = error;
+  } catch (error: unknown) {
+    const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
+    dbInitError = initError;
     console.error('Failed to initialize database:', error);
-    console.error('Error details:', error.message);
+    console.error('Error details:', initError.message);
   }
 }
 
@@ -162,8 +178,9 @@ fastify.addHook('onRequest', async (request, reply) => {
         
         // Allow request to proceed
         return;
-      } catch (error: any) {
-        dbInitError = error;
+      } catch (error: unknown) {
+        const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
+        dbInitError = initError;
         console.error('Failed to initialize database on request:', error);
       }
     }

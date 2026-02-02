@@ -1,9 +1,11 @@
+type DbDate = string | Date;
+
 export interface Member {
   id: number;
   name: string;
   email: string | null;
   phone: string | null;
-  valid_through: string | null;
+  valid_through: DbDate | null;
   spare_only: number;
   is_admin: number;
   is_server_admin: number;
@@ -13,8 +15,8 @@ export interface Member {
   email_visible: number;
   phone_visible: number;
   theme_preference: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: DbDate;
+  updated_at: DbDate;
 }
 
 export interface AuthCode {
@@ -39,10 +41,10 @@ export interface League {
   name: string;
   day_of_week: number;
   format: 'teams' | 'doubles';
-  start_date: string;
-  end_date: string;
-  created_at: string;
-  updated_at: string;
+  start_date: DbDate;
+  end_date: DbDate;
+  created_at: DbDate;
+  updated_at: DbDate;
 }
 
 export interface LeagueDrawTime {
@@ -54,7 +56,7 @@ export interface LeagueDrawTime {
 export interface LeagueException {
   id: number;
   league_id: number;
-  exception_date: string;
+  exception_date: DbDate;
 }
 
 export interface Sheet {
@@ -119,8 +121,8 @@ export interface MemberAvailability {
   league_id: number;
   available: number;
   can_skip: number;
-  created_at: string;
-  updated_at: string;
+  created_at: DbDate;
+  updated_at: DbDate;
 }
 
 export interface SpareRequest {
@@ -128,7 +130,7 @@ export interface SpareRequest {
   requester_id: number;
   requested_for_name: string;
   requested_for_member_id: number | null;
-  game_date: string;
+  game_date: DbDate;
   game_time: string;
   position: 'lead' | 'second' | 'vice' | 'skip' | null;
   message: string | null;
@@ -136,16 +138,16 @@ export interface SpareRequest {
   status: 'open' | 'filled' | 'cancelled';
   filled_by_member_id: number | null;
   cancelled_by_member_id: number | null;
-  filled_at: string | null;
-  created_at: string;
-  updated_at: string;
+  filled_at: DbDate | null;
+  created_at: DbDate;
+  updated_at: DbDate;
 }
 
 export interface SpareRequestInvitation {
   id: number;
   spare_request_id: number;
   member_id: number;
-  created_at: string;
+  created_at: DbDate;
 }
 
 export interface SpareResponse {
@@ -153,7 +155,7 @@ export interface SpareResponse {
   spare_request_id: number;
   member_id: number;
   comment: string | null;
-  created_at: string;
+  created_at: DbDate;
 }
 
 export interface JWTPayload {
@@ -161,4 +163,42 @@ export interface JWTPayload {
   email: string | null;
   phone: string | null;
   isAdmin: boolean;
+}
+
+export interface AuthenticatedMember {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  spareOnly: boolean;
+  isAdmin: boolean;
+  isServerAdmin: boolean;
+  leagueManagerLeagueIds: number[];
+  isLeagueAdministrator: boolean;
+  isLeagueAdministratorGlobal: boolean;
+  firstLoginCompleted: boolean;
+  optedInSms: boolean;
+  emailSubscribed: boolean;
+  emailVisible: boolean;
+  phoneVisible: boolean;
+  themePreference: 'light' | 'dark' | 'system';
+}
+
+export interface MemberSummary {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  validThrough?: string | null;
+  spareOnly?: boolean;
+  isAdmin: boolean;
+  isServerAdmin?: boolean;
+  isLeagueAdministratorGlobal?: boolean;
+  isInServerAdminsList?: boolean;
+  emailSubscribed: boolean;
+  optedInSms: boolean;
+  createdAt: string;
+  emailVisible: boolean;
+  phoneVisible: boolean;
+  firstLoginCompleted: boolean;
 }
