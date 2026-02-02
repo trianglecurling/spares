@@ -12,6 +12,16 @@ import {
 import { sendAuthCodeEmail } from '../services/email.js';
 import { sendAuthCodeSMS } from '../services/sms.js';
 import { Member } from '../types.js';
+import type { AuthenticatedMember } from '../types.js';
+import type {
+  ApiErrorResponse,
+  AuthRequestCodeBody,
+  AuthRequestCodeResponse,
+  AuthSelectMemberBody,
+  AuthVerifyCodeBody,
+  AuthVerifyCodeResponse,
+  AuthVerifyTokenResponse,
+} from '../api/types.js';
 import { logEvent } from '../services/observability.js';
 
 function normalizeDateString(value: string | Date | number | null | undefined): string | null {
@@ -59,10 +69,139 @@ const selectMemberSchema = z.object({
   tempToken: z.string(),
 });
 
+const authMemberResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+    email: { type: ['string', 'null'] },
+    phone: { type: ['string', 'null'] },
+    spareOnly: { type: 'boolean' },
+    isAdmin: { type: 'boolean' },
+    isServerAdmin: { type: 'boolean' },
+    firstLoginCompleted: { type: 'boolean' },
+    optedInSms: { type: 'boolean' },
+    emailSubscribed: { type: 'boolean' },
+    emailVisible: { type: 'boolean' },
+    phoneVisible: { type: 'boolean' },
+    themePreference: { type: 'string' },
+  },
+  required: [
+    'id',
+    'name',
+    'email',
+    'phone',
+    'spareOnly',
+    'isAdmin',
+    'isServerAdmin',
+    'firstLoginCompleted',
+    'optedInSms',
+    'emailSubscribed',
+    'emailVisible',
+    'phoneVisible',
+    'themePreference',
+  ],
+} as const;
+
+const authRequestCodeBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    contact: { type: 'string', minLength: 1 },
+  },
+  required: ['contact'],
+} as const;
+
+const authRequestCodeResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    success: { type: 'boolean' },
+    multipleMembers: { type: 'boolean' },
+  },
+  required: ['success', 'multipleMembers'],
+} as const;
+
+const authVerifyCodeBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    contact: { type: 'string', minLength: 1 },
+    code: { type: 'string', minLength: 6, maxLength: 6 },
+  },
+  required: ['contact', 'code'],
+} as const;
+
+const authVerifyCodeResponseSchema = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        requiresSelection: { type: 'boolean', enum: [true] },
+        tempToken: { type: 'string' },
+        members: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'number' },
+              name: { type: 'string' },
+            },
+            required: ['id', 'name'],
+          },
+        },
+      },
+      required: ['requiresSelection', 'tempToken', 'members'],
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        token: { type: 'string' },
+        member: authMemberResponseSchema,
+      },
+      required: ['token', 'member'],
+    },
+  ],
+} as const;
+
+const authSelectMemberBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    memberId: { type: 'number' },
+    tempToken: { type: 'string' },
+  },
+  required: ['memberId', 'tempToken'],
+} as const;
+
+const authVerifyTokenResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    member: authMemberResponseSchema,
+  },
+  required: ['member'],
+} as const;
+
 export async function publicAuthRoutes(fastify: FastifyInstance) {
   // Request auth code
-  fastify.post('/auth/request-code', async (request, reply) => {
-    const body = requestCodeSchema.parse(request.body);
+  fastify.post<{ Body: AuthRequestCodeBody; Reply: AuthRequestCodeResponse | ApiErrorResponse }>(
+    '/auth/request-code',
+    {
+      schema: {
+        tags: ['auth'],
+        body: authRequestCodeBodySchema,
+        response: {
+          200: authRequestCodeResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = requestCodeSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
     // Determine if it's email or phone
@@ -139,12 +278,24 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       });
     }
 
-    return { success: true, multipleMembers: members.length > 1 };
-  });
+      return { success: true, multipleMembers: members.length > 1 };
+    }
+  );
 
   // Verify auth code
-  fastify.post('/auth/verify-code', async (request, reply) => {
-    const body = verifyCodeSchema.parse(request.body);
+  fastify.post<{ Body: AuthVerifyCodeBody; Reply: AuthVerifyCodeResponse<AuthenticatedMember> | ApiErrorResponse }>(
+    '/auth/verify-code',
+    {
+      schema: {
+        tags: ['auth'],
+        body: authVerifyCodeBodySchema,
+        response: {
+          200: authVerifyCodeResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = verifyCodeSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
     const isEmail = body.contact.includes('@');
@@ -231,7 +382,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
           firstLoginCompleted: member.first_login_completed === 1,
           optedInSms: member.opted_in_sms === 1,
           emailSubscribed: member.email_subscribed === 1,
-          themePreference: member.theme_preference || 'system',
+          emailVisible: member.email_visible === 1,
+          phoneVisible: member.phone_visible === 1,
+          themePreference:
+            member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
+              ? member.theme_preference
+              : 'system',
         },
       };
     }
@@ -245,7 +401,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       used: 0,
     });
 
-    return {
+      return {
       requiresSelection: true,
       tempToken,
       members: members.map((m: Member) => ({
@@ -253,11 +409,23 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         name: m.name,
       })),
     };
-  });
+    }
+  );
 
   // Select member (when multiple members share contact)
-  fastify.post('/auth/select-member', async (request, reply) => {
-    const body = selectMemberSchema.parse(request.body);
+  fastify.post<{ Body: AuthSelectMemberBody; Reply: AuthVerifyCodeResponse<AuthenticatedMember> | ApiErrorResponse }>(
+    '/auth/select-member',
+    {
+      schema: {
+        tags: ['auth'],
+        body: authSelectMemberBodySchema,
+        response: {
+          200: authVerifyCodeResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = selectMemberSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
     // Verify temp token
@@ -310,7 +478,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     // Best-effort analytics (do not block)
     logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
-    return {
+      return {
       token,
       member: {
         id: member.id,
@@ -323,21 +491,37 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         firstLoginCompleted: member.first_login_completed === 1,
         optedInSms: member.opted_in_sms === 1,
         emailSubscribed: member.email_subscribed === 1,
-        themePreference: member.theme_preference || 'system',
+        emailVisible: member.email_visible === 1,
+        phoneVisible: member.phone_visible === 1,
+        themePreference:
+          member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
+            ? member.theme_preference
+            : 'system',
       },
-    };
-  });
+      };
+    }
+  );
 }
 
 export async function protectedAuthRoutes(fastify: FastifyInstance) {
   // Verify token (for auto-login)
-  fastify.get('/auth/verify', async (request, reply) => {
+  fastify.get<{ Reply: AuthVerifyTokenResponse<AuthenticatedMember> | ApiErrorResponse }>(
+    '/auth/verify',
+    {
+      schema: {
+        tags: ['auth'],
+        response: {
+          200: authVerifyTokenResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    return {
+      return {
       member: {
         id: member.id,
         name: member.name,
@@ -349,8 +533,14 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         firstLoginCompleted: member.first_login_completed === 1,
         optedInSms: member.opted_in_sms === 1,
         emailSubscribed: member.email_subscribed === 1,
-        themePreference: member.theme_preference || 'system',
+        emailVisible: member.email_visible === 1,
+        phoneVisible: member.phone_visible === 1,
+        themePreference:
+          member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
+            ? member.theme_preference
+            : 'system',
       },
-    };
-  });
+      };
+    }
+  );
 }

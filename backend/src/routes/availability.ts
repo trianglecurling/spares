@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { eq, and, sql, asc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member, MemberAvailability } from '../types.js';
+import {
+  availabilityMembersResponseSchema,
+  availabilityResponseSchema,
+  memberAvailabilityResponseSchema,
+  successResponseSchema,
+} from '../api/schemas.js';
 
 const setAvailabilitySchema = z.object({
   leagueId: z.number(),
@@ -15,7 +21,17 @@ const setCanSkipSchema = z.object({
 
 export async function availabilityRoutes(fastify: FastifyInstance) {
   // Get current member's availability
-  fastify.get('/availability', async (request, reply) => {
+  fastify.get(
+    '/availability',
+    {
+      schema: {
+        tags: ['availability'],
+        response: {
+          200: availabilityResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -37,10 +53,30 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
         available: a.available === 1,
       })),
     };
-  });
+    }
+  );
 
   // Set availability for a league
-  fastify.post('/availability/league', async (request, reply) => {
+  fastify.post(
+    '/availability/league',
+    {
+      schema: {
+        tags: ['availability'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            leagueId: { type: 'number' },
+            available: { type: 'boolean' },
+          },
+          required: ['leagueId', 'available'],
+        },
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -93,10 +129,29 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Set can skip preference
-  fastify.post('/availability/can-skip', async (request, reply) => {
+  fastify.post(
+    '/availability/can-skip',
+    {
+      schema: {
+        tags: ['availability'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            canSkip: { type: 'boolean' },
+          },
+          required: ['canSkip'],
+        },
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -140,16 +195,35 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Get a specific member's availability
-  fastify.get('/members/:memberId/availability', async (request, reply) => {
+  fastify.get<{ Params: { memberId: string } }>(
+    '/members/:memberId/availability',
+    {
+      schema: {
+        tags: ['availability'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            memberId: { type: 'string' },
+          },
+          required: ['memberId'],
+        },
+        response: {
+          200: memberAvailabilityResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const { memberId } = request.params as { memberId: string };
+    const { memberId } = request.params;
     const targetMemberId = parseInt(memberId, 10);
     const { db, schema } = getDrizzleDb();
 
@@ -186,18 +260,44 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
       canSkip,
       availableLeagues,
     };
-  });
+    }
+  );
 
   // Get members available for a specific league
-  fastify.get('/availability/league/:leagueId/members', async (request, reply) => {
+  fastify.get<{ Params: { leagueId: string }; Querystring: { position?: string } }>(
+    '/availability/league/:leagueId/members',
+    {
+      schema: {
+        tags: ['availability'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            leagueId: { type: 'string' },
+          },
+          required: ['leagueId'],
+        },
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            position: { type: 'string' },
+          },
+        },
+        response: {
+          200: availabilityMembersResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const { leagueId } = request.params as { leagueId: string };
+    const { leagueId } = request.params;
     const leagueIdNum = parseInt(leagueId, 10);
-    const { position } = request.query as { position?: string };
+    const { position } = request.query;
     const { db, schema } = getDrizzleDb();
 
     // Build where conditions
@@ -231,6 +331,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
       name: m.name,
       email: m.email,
     }));
-  });
+    }
+  );
 }
 

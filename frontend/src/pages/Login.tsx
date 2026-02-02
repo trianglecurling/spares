@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../utils/api';
+import { post } from '../api/client';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
+import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 type MemberOption = {
   id: number;
@@ -14,6 +15,27 @@ type MemberOption = {
 type LocationState = {
   from?: { pathname: string };
 };
+
+const normalizeThemePreference = (
+  value: string | null | undefined
+): AuthenticatedMember['themePreference'] => {
+  if (value === 'light' || value === 'dark' || value === 'system') {
+    return value;
+  }
+  return 'system';
+};
+
+const normalizeMember = (value: AuthenticatedMember): AuthenticatedMember => ({
+  ...value,
+  themePreference: normalizeThemePreference(value.themePreference),
+});
+
+const isSelectionResponse = (
+  value: unknown
+): value is { requiresSelection: true; tempToken: string; members: MemberOption[] } =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as { requiresSelection?: boolean }).requiresSelection === true;
 
 export default function Login() {
   const [contact, setContact] = useState('');
@@ -35,8 +57,8 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/request-code', { contact });
-      if (response.data.multipleMembers) {
+      const response = await post('/auth/request-code', { contact });
+      if (response.multipleMembers) {
         setMultipleMembers([]);
       }
       setStep('code');
@@ -54,14 +76,18 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/verify-code', { contact, code });
+      const response = await post('/auth/verify-code', { contact, code });
 
-      if (response.data.requiresSelection) {
-        setMultipleMembers(response.data.members);
-        setTempToken(response.data.tempToken);
+      if (isSelectionResponse(response)) {
+        setMultipleMembers(response.members);
+        setTempToken(response.tempToken);
         setStep('select');
       } else {
-        login(response.data.token, response.data.member, from || undefined);
+        const member = normalizeMember({
+          ...response.member,
+          themePreference: normalizeThemePreference(response.member.themePreference),
+        } as AuthenticatedMember);
+        login(response.token, member, from || undefined);
       }
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
@@ -76,11 +102,21 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/select-member', {
+      const response = await post('/auth/select-member', {
         memberId,
         tempToken,
       });
-      login(response.data.token, response.data.member, from || undefined);
+      if (isSelectionResponse(response)) {
+        setMultipleMembers(response.members);
+        setTempToken(response.tempToken);
+        setStep('select');
+      } else {
+        const member = normalizeMember({
+          ...response.member,
+          themePreference: normalizeThemePreference(response.member.themePreference),
+        } as AuthenticatedMember);
+        login(response.token, member, from || undefined);
+      }
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
       setError(message || 'Failed to login');

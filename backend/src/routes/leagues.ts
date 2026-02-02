@@ -4,6 +4,14 @@ import { eq, sql, asc, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
+import {
+  leagueExportResponseSchema,
+  leagueImportResponseSchema,
+  leagueListResponseSchema,
+  leagueResponseSchema,
+  successResponseSchema,
+  upcomingGamesResponseSchema,
+} from '../api/schemas.js';
 import { config } from '../config.js';
 
 const createLeagueSchema = z.object({
@@ -88,7 +96,17 @@ function getTimePartsInTimeZone(timeZone: string) {
 
 export async function leagueRoutes(fastify: FastifyInstance) {
   // Get all leagues
-  fastify.get('/leagues', async (request, reply) => {
+  fastify.get(
+    '/leagues',
+    {
+      schema: {
+        tags: ['leagues'],
+        response: {
+          200: leagueListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -126,16 +144,35 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }));
 
     return result;
-  });
+    }
+  );
 
   // Get upcoming games for a league
-  fastify.get('/leagues/:id/upcoming-games', async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>(
+    '/leagues/:id/upcoming-games',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: upcomingGamesResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const leagueId = parseInt(id, 10);
     const { db, schema } = getDrizzleDb();
 
@@ -203,10 +240,35 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
 
     return games;
-  });
+    }
+  );
 
   // Admin: Create league
-  fastify.post('/leagues', async (request, reply) => {
+  fastify.post(
+    '/leagues',
+    {
+      schema: {
+        tags: ['leagues'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1 },
+            dayOfWeek: { type: 'number' },
+            format: { type: 'string', enum: ['teams', 'doubles'] },
+            startDate: { type: 'string' },
+            endDate: { type: 'string' },
+            drawTimes: { type: 'array', items: { type: 'string' } },
+            exceptions: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes'],
+        },
+        response: {
+          200: leagueResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -279,16 +341,48 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       drawTimes: drawTimes.map((dt) => dt.draw_time),
       exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
     };
-  });
+    }
+  );
 
   // Admin: Update league
-  fastify.patch('/leagues/:id', async (request, reply) => {
+  fastify.patch<{ Params: { id: string } }>(
+    '/leagues/:id',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1 },
+            dayOfWeek: { type: 'number' },
+            format: { type: 'string', enum: ['teams', 'doubles'] },
+            startDate: { type: 'string' },
+            endDate: { type: 'string' },
+            drawTimes: { type: 'array', items: { type: 'string' } },
+            exceptions: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        response: {
+          200: leagueResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const leagueId = parseInt(id, 10);
     const body = updateLeagueSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
@@ -389,16 +483,35 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       drawTimes: drawTimes.map((dt) => dt.draw_time),
       exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
     };
-  });
+    }
+  );
 
   // Admin: Delete league
-  fastify.delete('/leagues/:id', async (request, reply) => {
+  fastify.delete<{ Params: { id: string } }>(
+    '/leagues/:id',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const { id } = request.params as { id: string };
+    const { id } = request.params;
     const leagueId = parseInt(id, 10);
     const { db, schema } = getDrizzleDb();
 
@@ -406,11 +519,22 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .delete(schema.leagues)
       .where(eq(schema.leagues.id, leagueId));
 
-    return { success: true };
-  });
+      return { success: true };
+    }
+  );
 
   // Admin: Export leagues
-  fastify.get('/leagues/export', async (request, reply) => {
+  fastify.get(
+    '/leagues/export',
+    {
+      schema: {
+        tags: ['leagues'],
+        response: {
+          200: leagueExportResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -447,7 +571,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }));
 
     return { leagues: result };
-  });
+    }
+  );
 
   // Admin: Import leagues
   const importLeaguesSchema = z.object({
@@ -462,7 +587,41 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     })),
   });
 
-  fastify.post('/leagues/import', async (request, reply) => {
+  fastify.post(
+    '/leagues/import',
+    {
+      schema: {
+        tags: ['leagues'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            leagues: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  name: { type: 'string', minLength: 1 },
+                  dayOfWeek: { type: 'number' },
+                  format: { type: 'string', enum: ['teams', 'doubles'] },
+                  startDate: { type: 'string' },
+                  endDate: { type: 'string' },
+                  drawTimes: { type: 'array', items: { type: 'string' } },
+                  exceptions: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes'],
+              },
+            },
+          },
+          required: ['leagues'],
+        },
+        response: {
+          200: leagueImportResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -561,5 +720,6 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       imported: importedLeagues.length,
       leagues: importedLeagues,
     };
-  });
+    }
+  );
 }

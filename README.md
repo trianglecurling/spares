@@ -78,6 +78,18 @@ Run both frontend and backend in development mode:
 npm run dev
 ```
 
+### API Types and OpenAPI
+
+The backend emits an OpenAPI schema which is used to generate typed frontend API types.
+
+Generate the OpenAPI schema and TypeScript types:
+
+```bash
+npm run openapi:generate
+```
+
+The generated types live at `frontend/src/api/generated/types.ts`.
+
 Or run them separately:
 
 ```bash

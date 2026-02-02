@@ -11,6 +11,21 @@ import { getDatabaseConfig, saveDatabaseConfig } from '../db/config.js';
 import { resetDatabaseState, testDatabaseConnection } from '../db/index.js';
 import type { DatabaseConfig } from '../db/config.js';
 import { setBackendLogCaptureEnabled } from '../otel.js';
+import {
+  configResponseSchema,
+  databaseConfigResponseSchema,
+  observabilityResponseSchema,
+  testMessageResponseSchema,
+} from '../api/schemas.js';
+import type {
+  ApiErrorResponse,
+  ConfigResponse,
+  DatabaseConfigBody,
+  DatabaseConfigResponse,
+  ObservabilityResponse,
+  TestMessageResponse,
+  UpdateConfigBody,
+} from '../api/types.js';
 
 const updateConfigSchema = z.object({
   twilioApiKeySid: z.string().optional(),
@@ -44,9 +59,90 @@ const observabilityQuerySchema = z.object({
   rangeDays: z.coerce.number().int().min(1).max(180).optional(),
 });
 
+function normalizeTimestamp(value: string | Date | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+const updateConfigBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    twilioApiKeySid: { type: 'string' },
+    twilioApiKeySecret: { type: 'string' },
+    twilioAccountSid: { type: 'string' },
+    twilioCampaignSid: { type: 'string' },
+    azureConnectionString: { type: 'string' },
+    azureSenderEmail: { type: ['string', 'null'] },
+    azureSenderDisplayName: { type: 'string' },
+    dashboardAlertTitle: { type: ['string', 'null'] },
+    dashboardAlertBody: { type: ['string', 'null'] },
+    dashboardAlertExpiresAt: { type: ['string', 'null'] },
+    dashboardAlertVariant: { type: ['string', 'null'], enum: ['info', 'warning', 'success', 'danger'] },
+    dashboardAlertIcon: { type: ['string', 'null'], enum: ['none', 'info', 'warning', 'announcement', 'success', 'error'] },
+    testMode: { type: 'boolean' },
+    disableEmail: { type: 'boolean' },
+    disableSms: { type: 'boolean' },
+    captureFrontendLogs: { type: 'boolean' },
+    captureBackendLogs: { type: 'boolean' },
+    testCurrentTime: { type: ['string', 'null'] },
+    notificationDelaySeconds: { type: 'number' },
+  },
+} as const;
+
+const observabilityQuerySchemaJson = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    rangeDays: { type: 'number' },
+  },
+} as const;
+
+const databaseConfigBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    databaseType: { type: 'string', enum: ['sqlite', 'postgres'] },
+    sqlite: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        path: { type: 'string' },
+      },
+    },
+    postgres: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        host: { type: 'string' },
+        port: { type: 'number' },
+        database: { type: 'string' },
+        username: { type: 'string' },
+        password: { type: 'string' },
+        ssl: { type: 'boolean' },
+      },
+      required: ['host', 'port', 'database', 'username'],
+    },
+    adminEmails: { type: 'array', items: { type: 'string' }, minItems: 1 },
+  },
+  required: ['databaseType', 'adminEmails'],
+} as const;
+
 export async function configRoutes(fastify: FastifyInstance) {
   // Get server configuration (admin only)
-  fastify.get('/config', async (request, reply) => {
+  fastify.get<{ Reply: ConfigResponse | ApiErrorResponse }>(
+    '/config',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: configResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -85,7 +181,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       };
     }
 
-    return {
+      return {
       twilioApiKeySid: config.twilio_api_key_sid,
       twilioApiKeySecret: config.twilio_api_key_secret ? '***' : null, // Mask the secret
       twilioAccountSid: config.twilio_account_sid,
@@ -94,7 +190,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       azureSenderEmail: config.azure_sender_email,
       dashboardAlertTitle: config.dashboard_alert_title,
       dashboardAlertBody: config.dashboard_alert_body,
-      dashboardAlertExpiresAt: config.dashboard_alert_expires_at,
+      dashboardAlertExpiresAt: normalizeTimestamp(config.dashboard_alert_expires_at),
       dashboardAlertVariant: config.dashboard_alert_variant,
       dashboardAlertIcon: config.dashboard_alert_icon,
       testMode: config.test_mode === 1,
@@ -102,14 +198,26 @@ export async function configRoutes(fastify: FastifyInstance) {
       disableSms: config.disable_sms === 1,
       captureFrontendLogs: config.capture_frontend_logs !== 0,
       captureBackendLogs: config.capture_backend_logs !== 0,
-      testCurrentTime: config.test_current_time,
+      testCurrentTime: normalizeTimestamp(config.test_current_time),
       notificationDelaySeconds: config.notification_delay_seconds ?? 180,
-      updatedAt: config.updated_at,
+      updatedAt: normalizeTimestamp(config.updated_at),
     };
-  });
+    }
+  );
 
   // Observability metrics (server admin only)
-  fastify.get('/config/observability', async (request, reply) => {
+  fastify.get<{ Querystring: { rangeDays?: number }; Reply: ObservabilityResponse | ApiErrorResponse }>(
+    '/config/observability',
+    {
+      schema: {
+        tags: ['config'],
+        querystring: observabilityQuerySchemaJson,
+        response: {
+          200: observabilityResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -248,7 +356,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
     const avg = (arr: number[]) => (arr.length ? Math.round(sum(arr) / arr.length) : 0);
 
-    return {
+      return {
       rangeDays: days,
       startDate: startStr,
       endDate: todayStr,
@@ -265,10 +373,22 @@ export async function configRoutes(fastify: FastifyInstance) {
       },
       series,
     };
-  });
+    }
+  );
 
   // Update server configuration (admin only)
-  fastify.patch('/config', async (request, reply) => {
+  fastify.patch<{ Body: UpdateConfigBody; Reply: ConfigResponse | ApiErrorResponse }>(
+    '/config',
+    {
+      schema: {
+        tags: ['config'],
+        body: updateConfigBodySchema,
+        response: {
+          200: configResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -400,7 +520,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     
     const updatedConfig = updatedConfigs[0];
 
-    return {
+      return {
       twilioApiKeySid: updatedConfig.twilio_api_key_sid,
       twilioApiKeySecret: updatedConfig.twilio_api_key_secret ? '***' : null,
       twilioAccountSid: updatedConfig.twilio_account_sid,
@@ -409,7 +529,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       azureSenderEmail: updatedConfig.azure_sender_email,
       dashboardAlertTitle: updatedConfig.dashboard_alert_title,
       dashboardAlertBody: updatedConfig.dashboard_alert_body,
-      dashboardAlertExpiresAt: updatedConfig.dashboard_alert_expires_at,
+      dashboardAlertExpiresAt: normalizeTimestamp(updatedConfig.dashboard_alert_expires_at),
       dashboardAlertVariant: updatedConfig.dashboard_alert_variant,
       dashboardAlertIcon: updatedConfig.dashboard_alert_icon,
       testMode: updatedConfig.test_mode === 1,
@@ -417,14 +537,25 @@ export async function configRoutes(fastify: FastifyInstance) {
       disableSms: updatedConfig.disable_sms === 1,
       captureFrontendLogs: updatedConfig.capture_frontend_logs !== 0,
       captureBackendLogs: updatedConfig.capture_backend_logs !== 0,
-      testCurrentTime: updatedConfig.test_current_time,
+      testCurrentTime: normalizeTimestamp(updatedConfig.test_current_time),
       notificationDelaySeconds: updatedConfig.notification_delay_seconds ?? 180,
-      updatedAt: updatedConfig.updated_at,
+      updatedAt: normalizeTimestamp(updatedConfig.updated_at),
     };
-  });
+    }
+  );
 
   // Send test email (admin only)
-  fastify.post('/config/test-email', async (request, reply) => {
+  fastify.post<{ Reply: TestMessageResponse | ApiErrorResponse }>(
+    '/config/test-email',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: testMessageResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -455,10 +586,21 @@ export async function configRoutes(fastify: FastifyInstance) {
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  });
+    }
+  );
 
   // Send test SMS (admin only)
-  fastify.post('/config/test-sms', async (request, reply) => {
+  fastify.post<{ Reply: TestMessageResponse | ApiErrorResponse }>(
+    '/config/test-sms',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: testMessageResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -480,10 +622,21 @@ export async function configRoutes(fastify: FastifyInstance) {
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  });
+    }
+  );
 
   // Get database configuration (admin only)
-  fastify.get('/database-config', async (request, reply) => {
+  fastify.get<{ Reply: DatabaseConfigResponse | ApiErrorResponse }>(
+    '/database-config',
+    {
+      schema: {
+        tags: ['config'],
+        response: {
+          200: databaseConfigResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -495,7 +648,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
 
     // Return config without password for security
-    return {
+      return {
       type: config.type,
       sqlite: config.sqlite,
       postgres: config.postgres ? {
@@ -508,7 +661,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       } : undefined,
       adminEmails: config.adminEmails,
     };
-  });
+    }
+  );
 
   // Update database configuration (admin only)
   const updateDatabaseConfigSchema = z.object({
@@ -527,7 +681,18 @@ export async function configRoutes(fastify: FastifyInstance) {
     adminEmails: z.array(z.string().email()).min(1),
   });
 
-  fastify.post('/database-config', async (request, reply) => {
+  fastify.post<{ Body: DatabaseConfigBody; Reply: { success: boolean; message: string } | ApiErrorResponse }>(
+    '/database-config',
+    {
+      schema: {
+        tags: ['config'],
+        body: databaseConfigBodySchema,
+        response: {
+          200: testMessageResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member || !isServerAdmin(member)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -604,6 +769,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         error: `Failed to save configuration: ${message}` 
       });
     }
-  });
+    }
+  );
 }
 

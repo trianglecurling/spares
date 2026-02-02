@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, and, or, sql, asc, desc, isNull, isNotNull, inArray, gte, ne } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { Member, SpareRequest, League } from '../types.js';
+import { Member, SpareRequest } from '../types.js';
 import {
   sendSpareRequestEmail,
   sendSpareRequestCreatedEmail,
@@ -22,6 +22,21 @@ import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
 import { processAllNotificationsForRequest } from '../services/notificationProcessor.js';
+import {
+  sparesCcResponseSchema,
+  spareCreateResponseSchema,
+  spareFilledUpcomingResponseSchema,
+  spareInviteResponseSchema,
+  spareInvitationsResponseSchema,
+  spareMakePublicResponseSchema,
+  spareMyRequestsPastResponseSchema,
+  spareMyRequestsResponseSchema,
+  spareMySparingResponseSchema,
+  spareNotificationStatusResponseSchema,
+  spareStatusResponseSchema,
+  sparesListResponseSchema,
+  successResponseSchema,
+} from '../api/schemas.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
@@ -56,6 +71,68 @@ const inviteMoreSchema = z.object({
 const reissueSpareRequestSchema = z.object({
   message: z.string().optional(),
 });
+
+const createSpareRequestBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    leagueId: { type: 'number' },
+    requestedForName: { type: 'string' },
+    requestedForMemberId: { type: 'number' },
+    gameDate: { type: 'string' },
+    gameTime: { type: 'string' },
+    position: { type: 'string', enum: ['lead', 'second', 'vice', 'skip'] },
+    message: { type: 'string' },
+    requestType: { type: 'string', enum: ['public', 'private'] },
+    invitedMemberIds: { type: 'array', items: { type: 'number' } },
+    ccMemberIds: { type: 'array', items: { type: 'number' }, maxItems: 4 },
+    allowDuplicate: { type: 'boolean' },
+  },
+  required: ['leagueId', 'requestedForName', 'gameDate', 'gameTime', 'requestType'],
+} as const;
+
+const commentBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    comment: { type: 'string' },
+  },
+} as const;
+
+const cancelSparingBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    comment: { type: 'string', minLength: 1 },
+  },
+  required: ['comment'],
+} as const;
+
+const inviteMoreBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    memberIds: { type: 'array', items: { type: 'number' }, minItems: 1 },
+  },
+  required: ['memberIds'],
+} as const;
+
+const reissueBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    message: { type: 'string' },
+  },
+} as const;
+
+const idParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' },
+  },
+  required: ['id'],
+} as const;
 
 type SpareRequestDb = SpareRequest & {
   league_id: number | null;
@@ -121,7 +198,17 @@ export async function spareRoutes(fastify: FastifyInstance) {
   }
 
   // Get spare requests the user was CC'd on (upcoming; includes private requests)
-  fastify.get('/spares/cc', async (request, reply) => {
+  fastify.get(
+    '/spares/cc',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: sparesCcResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -195,10 +282,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
       filledAt: req.filled_at,
       createdAt: req.created_at,
     }));
-  });
+    }
+  );
 
   // Get all public spare requests
-  fastify.get('/spares', async (request, reply) => {
+  fastify.get(
+    '/spares',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: sparesListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -322,10 +420,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
       createdAt: req.created_at,
       };
     });
-  });
+    }
+  );
 
   // Decline a private spare request invitation (invited member only)
-  fastify.post('/spares/:id/decline', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/decline',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: commentBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -459,10 +570,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Get invitation statuses for a private spare request (requester only)
-  fastify.get('/spares/:id/invitations', async (request, reply) => {
+  fastify.get(
+    '/spares/:id/invitations',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareInvitationsResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
@@ -503,10 +626,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       declineComment: r.decline_comment || null,
       invitedAt: r.created_at,
     }));
-  });
+    }
+  );
 
   // Get basic status for a spare request (used for email deep-link feedback)
-  fastify.get('/spares/:id/status', async (request, reply) => {
+  fastify.get(
+    '/spares/:id/status',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareStatusResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
@@ -568,10 +703,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return reply.code(403).send({ error: 'Forbidden' });
-  });
+    }
+  );
 
   // Invite more people to a private spare request (requester only)
-  fastify.post('/spares/:id/invite', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/invite',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: inviteMoreBodySchema,
+        response: {
+          200: spareInviteResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
@@ -732,10 +880,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true, invited: toNotifyIds.length };
-  });
+    }
+  );
 
   // Convert a private spare request to public (requester only; irreversible)
-  fastify.post('/spares/:id/make-public', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/make-public',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareMakePublicResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
@@ -916,10 +1076,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId));
 
     return { success: true, notificationsQueued: shuffled.length, notificationStatus: 'in_progress' };
-  });
+    }
+  );
 
   // Get member's own spare requests
-  fastify.get('/spares/my-requests', async (request, reply) => {
+  fastify.get(
+    '/spares/my-requests',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareMyRequestsResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -1057,10 +1228,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
         createdAt: req.created_at,
       };
     });
-  });
+    }
+  );
 
   // Get member's past spare requests (read-only, includes filled or unfilled)
-  fastify.get('/spares/my-requests/past', async (request, reply) => {
+  fastify.get(
+    '/spares/my-requests/past',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareMyRequestsPastResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -1162,10 +1344,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
         createdAt: req.created_at,
       };
     });
-  });
+    }
+  );
 
   // Get spare requests the user has signed up to fill (upcoming)
-  fastify.get('/spares/my-sparing', async (request, reply) => {
+  fastify.get(
+    '/spares/my-sparing',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareMySparingResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -1215,10 +1408,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
       requestType: req.request_type,
       createdAt: req.created_at,
     }));
-  });
+    }
+  );
 
   // Get filled spare requests (for expandable section)
-  fastify.get('/spares/filled-upcoming', async (request, reply) => {
+  fastify.get(
+    '/spares/filled-upcoming',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareFilledUpcomingResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -1303,10 +1507,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       filledAt: req.filled_at,
       createdAt: req.created_at,
     }));
-  });
+    }
+  );
 
   // Create spare request
-  fastify.post('/spares', async (request, reply) => {
+  fastify.post(
+    '/spares',
+    {
+      schema: {
+        tags: ['spares'],
+        body: createSpareRequestBodySchema,
+        response: {
+          200: spareCreateResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -1796,10 +2012,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
         };
       }
     }
-  });
+    }
+  );
 
   // Respond to spare request
-  fastify.post('/spares/:id/respond', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/respond',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: commentBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -1987,10 +2216,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Cancel spare request
-  fastify.post('/spares/:id/cancel', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/cancel',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -2106,10 +2347,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Cancel sparing (cancel a spare response)
-  fastify.post('/spares/:id/cancel-sparing', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/cancel-sparing',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: cancelSparingBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -2254,10 +2508,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+    }
+  );
 
   // Re-issue spare request (re-send notifications)
-  fastify.post('/spares/:id/reissue', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/reissue',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        body: reissueBodySchema,
+        response: {
+          200: spareMakePublicResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     console.log(`[Re-issue] ===== RE-ISSUE ENDPOINT CALLED =====`);
     const member = request.member;
     if (!member) {
@@ -2628,10 +2895,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
         };
       }
     }
-  });
+    }
+  );
 
   // Get notification status for a spare request
-  fastify.get('/spares/:id/notification-status', async (request, reply) => {
+  fastify.get(
+    '/spares/:id/notification-status',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: spareNotificationStatusResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -2756,10 +3035,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       nextNotificationAt: spareRequest.next_notification_at || null,
       notificationPaused: spareRequest.notification_paused === 1,
     };
-  });
+    }
+  );
 
   // Pause notifications for a spare request
-  fastify.post('/spares/:id/pause-notifications', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/pause-notifications',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -2802,10 +3093,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId));
 
     return { success: true };
-  });
+    }
+  );
 
   // Unpause notifications for a spare request
-  fastify.post('/spares/:id/unpause-notifications', async (request, reply) => {
+  fastify.post(
+    '/spares/:id/unpause-notifications',
+    {
+      schema: {
+        tags: ['spares'],
+        params: idParamsSchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
@@ -2851,6 +3154,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .where(eq(schema.spareRequests.id, requestId));
 
     return { success: true };
-  });
+    }
+  );
 }
 

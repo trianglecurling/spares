@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import api from '../utils/api';
+import { get } from '../api/client';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 interface AuthContextType {
@@ -21,6 +21,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  const normalizeThemePreference = (
+    value: string | null | undefined
+  ): AuthenticatedMember['themePreference'] => {
+    if (value === 'light' || value === 'dark' || value === 'system') {
+      return value;
+    }
+    return 'system';
+  };
+
+  const normalizeMember = (value: AuthenticatedMember): AuthenticatedMember => ({
+    ...value,
+    themePreference: normalizeThemePreference(value.themePreference),
+  });
 
   useEffect(() => {
     // Check for token in URL (from email links)
@@ -52,13 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (currentToken) {
         try {
-          const response = await api.get('/auth/verify', {
-            headers: { Authorization: `Bearer ${currentToken}` },
-          });
-          setMember(response.data.member);
+          const response = await get('/auth/verify');
+          const normalizedMember = normalizeMember({
+            ...response.member,
+            themePreference: normalizeThemePreference(response.member.themePreference),
+          } as AuthenticatedMember);
+          setMember(normalizedMember);
           
           // Redirect to first login if needed
-          if (!response.data.member.firstLoginCompleted) {
+          if (!response.member.firstLoginCompleted) {
             // Preserve where the user was trying to go so we can return after first-login setup.
             // Special-case spare accept links so we can restore the requestId flow reliably.
             const intendedPath = window.location.pathname + window.location.search;
@@ -109,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => {
     localStorage.setItem('authToken', newToken);
     setToken(newToken);
-    setMember(newMember);
+    setMember(normalizeMember(newMember));
     
     if (!newMember.firstLoginCompleted) {
       try {

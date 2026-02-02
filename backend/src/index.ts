@@ -1,6 +1,8 @@
 import { loadBackendLogCaptureFromDb } from './otel.js';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import { config } from './config.js';
 import { initializeDatabase, resetDatabaseState, getDatabaseAsync } from './db/index.js';
 import { authMiddleware } from './middleware/auth.js';
@@ -24,6 +26,19 @@ const fastify = Fastify({
 await fastify.register(cors, {
   origin: config.frontendUrl,
   credentials: true,
+});
+
+await fastify.register(swagger, {
+  openapi: {
+    info: {
+      title: 'Triangle Curling Spares API',
+      version: '1.0.0',
+    },
+  },
+});
+
+await fastify.register(swaggerUi, {
+  routePrefix: '/docs',
 });
 
 // Install routes (always available)
