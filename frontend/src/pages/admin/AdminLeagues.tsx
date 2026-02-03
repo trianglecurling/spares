@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import { del, get, patch, post } from '../../api/client';
+import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import Button from '../../components/Button';
@@ -47,10 +47,11 @@ export default function AdminLeagues() {
 
   const loadLeagues = async () => {
     try {
-      const response = await api.get('/leagues');
-      setLeagues(response.data);
-    } catch (error) {
+      const response = await get('/leagues');
+      setLeagues(response);
+    } catch (error: unknown) {
       console.error('Failed to load leagues:', error);
+      showAlert(formatApiError(error, 'Failed to load leagues'), 'error');
     } finally {
       setLoading(false);
     }
@@ -143,16 +144,16 @@ export default function AdminLeagues() {
       };
 
       if (editingLeague) {
-        await api.patch(`/leagues/${editingLeague.id}`, payload);
+        await patch('/leagues/{id}', payload, { id: String(editingLeague.id) });
       } else {
-        await api.post('/leagues', payload);
+        await post('/leagues', payload);
       }
 
       await loadLeagues();
       handleCloseModal();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to save league:', error);
-      showAlert('Failed to save league', 'error');
+      showAlert(formatApiError(error, 'Failed to save league'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -171,11 +172,11 @@ export default function AdminLeagues() {
     }
 
     try {
-      await api.delete(`/leagues/${id}`);
+      await del('/leagues/{id}', undefined, { id: String(id) });
       setLeagues(leagues.filter((l) => l.id !== id));
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to delete league:', error);
-      showAlert('Failed to delete league', 'error');
+      showAlert(formatApiError(error, 'Failed to delete league'), 'error');
     }
   };
 
@@ -201,15 +202,15 @@ export default function AdminLeagues() {
 
   const handleExport = async () => {
     try {
-      const response = await api.get('/leagues/export');
-      const jsonString = JSON.stringify(response.data, null, 2);
+      const response = await get('/leagues/export');
+      const jsonString = JSON.stringify(response, null, 2);
       
       // Copy to clipboard
       await navigator.clipboard.writeText(jsonString);
       showAlert('Leagues exported and copied to clipboard!', 'success');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to export leagues:', error);
-      showAlert('Failed to export leagues', 'error');
+      showAlert(formatApiError(error, 'Failed to export leagues'), 'error');
     }
   };
 
@@ -230,17 +231,14 @@ export default function AdminLeagues() {
         return;
       }
 
-      const response = await api.post('/leagues/import', data);
-      showAlert(`Successfully imported ${response.data.imported} league(s)!`, 'success');
+      const response = await post('/leagues/import', data);
+      showAlert(`Successfully imported ${response.imported} league(s)!`, 'success');
       setIsImportModalOpen(false);
       setImportJson('');
       await loadLeagues();
     } catch (error: unknown) {
       console.error('Failed to import leagues:', error);
-      const errorMessage = axios.isAxiosError(error)
-        ? error.response?.data?.error || 'Failed to import leagues'
-        : 'Failed to import leagues';
-      showAlert(errorMessage, 'error');
+      showAlert(formatApiError(error, 'Failed to import leagues'), 'error');
     } finally {
       setImporting(false);
     }

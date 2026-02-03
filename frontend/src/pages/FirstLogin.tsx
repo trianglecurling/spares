@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HiOutlineInformationCircle } from 'react-icons/hi2';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../utils/api';
+import { get, patch, post } from '../api/client';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
 
@@ -19,6 +19,11 @@ export default function FirstLogin() {
   const [loading, setLoading] = useState(false);
   const [smsDisabled, setSmsDisabled] = useState<boolean | null>(null);
 
+  const normalizeThemePreference = (value?: string | null): 'light' | 'dark' | 'system' => {
+    if (value === 'light' || value === 'dark' || value === 'system') return value;
+    return 'system';
+  };
+
   // If someone manually hits /first-login after they've already completed it, send them home.
   // Important: do NOT auto-redirect on completion, because handleComplete decides where to go.
   useEffect(() => {
@@ -30,9 +35,9 @@ export default function FirstLogin() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await api.get('/public-config');
-        setSmsDisabled(!!res.data?.disableSms);
-        if (res.data?.disableSms) {
+        const res = await get('/public-config');
+        setSmsDisabled(!!res?.disableSms);
+        if (res?.disableSms) {
           setOptedInSms(false);
         }
       } catch {
@@ -48,7 +53,7 @@ export default function FirstLogin() {
     setLoading(true);
 
     try {
-      const response = await api.patch('/members/me', {
+      const response = await patch('/members/me', {
         name,
         email,
         phone: phone || undefined,
@@ -57,7 +62,7 @@ export default function FirstLogin() {
         phoneVisible,
       });
 
-      updateMember(response.data);
+      updateMember({ ...response, themePreference: normalizeThemePreference(response.themePreference) });
       setStep(2);
     } catch (error) {
       console.error('Failed to update profile:', error);
@@ -70,7 +75,7 @@ export default function FirstLogin() {
     setLoading(true);
 
     try {
-      await api.post('/members/me/complete-first-login');
+      await post('/members/me/complete-first-login', undefined);
       updateMember({ ...member!, firstLoginCompleted: true });
 
       // 1) If the user came from a spare accept link, go back to the dashboard with requestId

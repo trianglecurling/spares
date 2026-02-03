@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
-import api from '../utils/api';
+import { get, post } from '../api/client';
+import { formatApiError } from '../utils/api';
 import Footer from '../components/Footer';
 import HelpHeader from '../components/HelpHeader';
 import Button from '../components/Button';
@@ -44,9 +44,9 @@ export default function Feedback() {
   const loadCaptcha = async () => {
     setLoadingCaptcha(true);
     try {
-      const res = await api.get('/feedback/captcha');
-      setCaptchaQuestion(res.data.question);
-      setCaptchaToken(res.data.token);
+      const res = await get('/feedback/captcha');
+      setCaptchaQuestion(res.question);
+      setCaptchaToken(res.token);
       setCaptchaAnswer('');
     } catch (e) {
       console.error('Failed to load CAPTCHA:', e);
@@ -77,7 +77,7 @@ export default function Feedback() {
     setMessage(null);
 
     try {
-      await api.post('/feedback', {
+      await post('/feedback', {
         category,
         email: isLoggedIn ? undefined : email || undefined,
         body,
@@ -93,10 +93,7 @@ export default function Feedback() {
         await loadCaptcha();
       }
     } catch (error: unknown) {
-      const errorMessage = axios.isAxiosError(error)
-        ? error.response?.data?.error || 'Failed to submit feedback'
-        : 'Failed to submit feedback';
-      setMessage({ type: 'error', text: errorMessage });
+      setMessage({ type: 'error', text: formatApiError(error, 'Failed to submit feedback') });
       if (!isLoggedIn) {
         // If captcha failed/expired, refresh it for a smoother retry
         await loadCaptcha();

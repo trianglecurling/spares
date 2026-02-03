@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HiChevronDown, HiOutlineClipboardDocument, HiPlus } from 'react-icons/hi2';
 import Layout from '../components/Layout';
-import api, { formatApiError } from '../utils/api';
+import { get, post } from '../api/client';
+import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import NotificationModal from '../components/NotificationModal';
@@ -20,16 +21,16 @@ interface MySpareRequest {
   cancelledByName?: string | null;
   gameDate: string;
   gameTime: string;
-  position?: string;
-  message?: string;
+  position?: string | null;
+  message?: string | null;
   requestType: string;
   status: string;
-  filledByName?: string;
-  filledAt?: string;
-  sparerComment?: string;
-  notificationsSentAt?: string;
+  filledByName?: string | null;
+  filledAt?: string | null;
+  sparerComment?: string | null;
+  notificationsSentAt?: string | null;
   hadCancellation?: boolean;
-  invites?: { name: string; status: 'pending' | 'declined' }[];
+  invites?: { name: string; status: 'pending' | 'declined' | string }[];
   inviteCounts?: { total: number; pending: number; declined: number };
   createdAt: string;
 }
@@ -42,7 +43,7 @@ interface DirectoryMember {
 interface InvitationStatusRow {
   memberId: number;
   name: string;
-  status: 'pending' | 'declined';
+  status: 'pending' | 'declined' | string;
   declinedAt: string | null;
   declineComment: string | null;
   invitedAt: string;
@@ -102,9 +103,9 @@ export default function MyRequests() {
 
       try {
         const statusPromises = openRequests.map((req) =>
-          api.get(`/spares/${req.id}/notification-status`).then((res) => ({
+          get('/spares/{id}/notification-status', undefined, { id: String(req.id) }).then((res) => ({
             id: req.id,
-            status: res.data,
+            status: res,
           }))
         );
 
@@ -128,8 +129,8 @@ export default function MyRequests() {
 
   const loadRequests = async () => {
     try {
-      const response = await api.get('/spares/my-requests');
-      setRequests(response.data);
+      const response = await get('/spares/my-requests');
+      setRequests(response);
     } catch (error) {
       console.error('Failed to load requests:', error);
     } finally {
@@ -141,8 +142,8 @@ export default function MyRequests() {
     setPastError(null);
     setPastLoading(true);
     try {
-      const response = await api.get('/spares/my-requests/past');
-      setPastRequests(response.data);
+      const response = await get('/spares/my-requests/past');
+      setPastRequests(response);
       setPastLoaded(true);
     } catch (error) {
       console.error('Failed to load past requests:', error);
@@ -170,7 +171,7 @@ export default function MyRequests() {
     const isRequester = request?.requesterId === member?.id;
 
     try {
-      await api.post(`/spares/${id}/cancel`);
+      await post('/spares/{id}/cancel', undefined, { id: String(id) });
       setRequests(requests.map((r) => (
         r.id === id
           ? { ...r, status: 'cancelled', cancelledByName: member?.name || r.cancelledByName }
@@ -203,18 +204,20 @@ export default function MyRequests() {
 
     setReissuing(true);
     try {
-      const response = await api.post(`/spares/${reissueRequest.id}/reissue`, {
-        message: reissueMessage || undefined,
-      });
+      const response = await post(
+        '/spares/{id}/reissue',
+        { message: reissueMessage || undefined },
+        { id: String(reissueRequest.id) }
+      );
       
-      if (response.data.notificationsQueued !== undefined) {
+      if (response.notificationsQueued !== undefined) {
         showAlert(
-          `Re-issued spare request. ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`,
+          `Re-issued spare request. ${response.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`,
           'success'
         );
       } else {
         showAlert(
-          `Re-issued spare request. ${response.data.notificationsSent || 0} notification(s) sent.`,
+          `Re-issued spare request. ${response.notificationsSent || 0} notification(s) sent.`,
           'success'
         );
       }
@@ -237,12 +240,12 @@ export default function MyRequests() {
     setLoadingInvitations(true);
     try {
       const [dirRes, invitesRes] = await Promise.all([
-        api.get('/members/directory'),
-        api.get(`/spares/${request.id}/invitations`),
+        get('/members/directory'),
+        get('/spares/{id}/invitations', undefined, { id: String(request.id) }),
       ]);
-      const directoryMembers = (dirRes.data as Array<{ id: number; name: string }> | undefined) || [];
+      const directoryMembers = (dirRes as Array<{ id: number; name: string }> | undefined) || [];
       setInvitees(directoryMembers.map((m) => ({ id: m.id, name: m.name })));
-      setInvitationStatuses(invitesRes.data || []);
+      setInvitationStatuses(invitesRes || []);
     } catch (e) {
       console.error('Failed to load invite modal data:', e);
       setInvitees([]);
@@ -262,7 +265,7 @@ export default function MyRequests() {
     }
     setInviting(true);
     try {
-      await api.post(`/spares/${inviteRequest.id}/invite`, { memberIds: ids });
+      await post('/spares/{id}/invite', { memberIds: ids }, { id: String(inviteRequest.id) });
       showAlert(`Invited ${ids.length} member(s).`, 'success');
       await loadRequests();
       setInviteRequest(null);
@@ -288,11 +291,11 @@ export default function MyRequests() {
     if (!confirmed) return;
 
     try {
-      const res = await api.post(`/spares/${request.id}/make-public`);
-      if (res.data?.notificationsQueued !== undefined) {
-        showAlert(`Converted to public. ${res.data.notificationsQueued} notification(s) queued.`, 'success');
-      } else if (res.data?.notificationsSent !== undefined) {
-        showAlert(`Converted to public. ${res.data.notificationsSent} notification(s) sent.`, 'success');
+      const res = await post('/spares/{id}/make-public', undefined, { id: String(request.id) });
+      if (res?.notificationsQueued !== undefined) {
+        showAlert(`Converted to public. ${res.notificationsQueued} notification(s) queued.`, 'success');
+      } else if (res?.notificationsSent !== undefined) {
+        showAlert(`Converted to public. ${res.notificationsSent} notification(s) sent.`, 'success');
       } else {
         showAlert('Converted to public.', 'success');
       }
@@ -306,13 +309,13 @@ export default function MyRequests() {
   const handlePauseNotifications = async (id: number) => {
     setPausing(id);
     try {
-      await api.post(`/spares/${id}/pause-notifications`);
+      await post('/spares/{id}/pause-notifications', undefined, { id: String(id) });
       await loadRequests();
       // Reload notification statuses
-      const statusResponse = await api.get(`/spares/${id}/notification-status`);
+      const statusResponse = await get('/spares/{id}/notification-status', undefined, { id: String(id) });
       setNotificationStatuses(prev => ({
         ...prev,
-        [id]: statusResponse.data,
+        [id]: statusResponse,
       }));
     } catch (error) {
       console.error('Failed to pause notifications:', error);
@@ -325,13 +328,13 @@ export default function MyRequests() {
   const handleUnpauseNotifications = async (id: number) => {
     setPausing(id);
     try {
-      await api.post(`/spares/${id}/unpause-notifications`);
+      await post('/spares/{id}/unpause-notifications', undefined, { id: String(id) });
       await loadRequests();
       // Reload notification statuses
-      const statusResponse = await api.get(`/spares/${id}/notification-status`);
+      const statusResponse = await get('/spares/{id}/notification-status', undefined, { id: String(id) });
       setNotificationStatuses(prev => ({
         ...prev,
-        [id]: statusResponse.data,
+        [id]: statusResponse,
       }));
     } catch (error) {
       console.error('Failed to unpause notifications:', error);

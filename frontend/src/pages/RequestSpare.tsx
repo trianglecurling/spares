@@ -4,7 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import Layout from '../components/Layout';
-import api, { formatApiError } from '../utils/api';
+import { get, post } from '../api/client';
+import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
 import { HiChevronDown, HiUser, HiUserGroup } from 'react-icons/hi2';
 import { format } from 'date-fns';
@@ -12,7 +13,7 @@ import { format } from 'date-fns';
 interface Member {
   id: number;
   name: string;
-  email: string | null;
+  email?: string | null;
 }
 
 interface League {
@@ -30,13 +31,15 @@ interface GameSlot {
   time: string;
 }
 
+type PositionOption = 'lead' | 'second' | 'vice' | 'skip' | '';
+
 interface SpareRequestPayload {
   leagueId: number;
   requestedForName: string;
   requestedForMemberId?: number;
   gameDate: string;
   gameTime: string;
-  position?: string;
+  position?: Exclude<PositionOption, ''>;
   message?: string;
   requestType: 'public' | 'private';
   invitedMemberIds?: number[];
@@ -57,7 +60,7 @@ export default function RequestSpare() {
   const [otherRequestedForMemberId, setOtherRequestedForMemberId] = useState<number | null>(null);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
   const [selectedGameSlot, setSelectedGameSlot] = useState<string>(''); // combined "date|time"
-  const [position, setPosition] = useState('');
+  const [position, setPosition] = useState<PositionOption>('');
   const [message, setMessage] = useState('');
   const [requestType, setRequestType] = useState<'public' | 'private'>('public');
   const [ccMemberIds, setCcMemberIds] = useState<number[]>([]);
@@ -129,12 +132,9 @@ export default function RequestSpare() {
     const initData = async () => {
       setLoading(true);
       try {
-        const [membersRes, leaguesRes] = await Promise.all([
-          api.get('/members'),
-          api.get('/leagues')
-        ]);
-        setMembers(membersRes.data.filter((m: Member) => m.id !== member?.id));
-        setLeagues(leaguesRes.data);
+        const [membersRes, leaguesRes] = await Promise.all([get('/members'), get('/leagues')]);
+        setMembers(membersRes.filter((m: Member) => m.id !== member?.id));
+        setLeagues(leaguesRes);
       } catch (error) {
         console.error('Failed to load data:', error);
       } finally {
@@ -156,8 +156,10 @@ export default function RequestSpare() {
       setLoadingGames(true);
       setSelectedGameSlot('');
       try {
-        const response = await api.get(`/leagues/${selectedLeagueId}/upcoming-games`);
-        setUpcomingGames(response.data);
+        const response = await get('/leagues/{id}/upcoming-games', undefined, {
+          id: String(selectedLeagueId),
+        });
+        setUpcomingGames(response);
       } catch (error) {
         console.error('Failed to load upcoming games:', error);
       } finally {
@@ -178,9 +180,12 @@ export default function RequestSpare() {
     const loadAvailableMembers = async () => {
       setLoadingAvailableMembers(true);
       try {
-        const url = `/availability/league/${selectedLeagueId}/members${position ? `?position=${position}` : ''}`;
-        const response = await api.get(url);
-        setAvailableMembers(response.data);
+        const response = await get(
+          '/availability/league/{leagueId}/members',
+          position ? { position } : undefined,
+          { leagueId: String(selectedLeagueId) }
+        );
+        setAvailableMembers(response);
       } catch (error) {
         console.error('Failed to load available members:', error);
       } finally {
@@ -315,11 +320,14 @@ export default function RequestSpare() {
         payload.invitedMemberIds = selectedMembers;
       }
 
-      let response = await api.post('/spares', payload);
+      let response = await post('/spares', payload);
 
-      if (response.data.duplicate) {
+      if ('duplicate' in response && response.duplicate) {
         setSubmitting(false);
-        const details = formatDuplicateDetails(response.data.existingRequest);
+        const details = formatDuplicateDetails({
+          ...response.existingRequest,
+          leagueName: response.existingRequest.leagueName ?? undefined,
+        });
         const confirmed = await confirm({
           title: 'Warning: Duplicate spare request',
           message: `A duplicate spare request already exists for ${details}. Did you already create this request (or did someone create it for you)? Creating another will result in 2 spare requests.\n\nWould you like to create a duplicate spare request?`,
@@ -331,18 +339,18 @@ export default function RequestSpare() {
           return;
         }
         setSubmitting(true);
-        response = await api.post('/spares', { ...payload, allowDuplicate: true });
+        response = await post('/spares', { ...payload, allowDuplicate: true });
       }
 
-      if (response.data.notificationsQueued !== undefined) {
-        const mode = response.data.notificationMode === 'immediate' ? 'immediately' : 'gradually';
+      if ('notificationsQueued' in response && response.notificationsQueued !== undefined) {
+        const mode = response.notificationMode === 'immediate' ? 'immediately' : 'gradually';
         showAlert(
-          `Spare request created! ${response.data.notificationsQueued} notification(s) queued. Notifications will be sent ${mode}.`,
+          `Spare request created! ${response.notificationsQueued} notification(s) queued. Notifications will be sent ${mode}.`,
           'success'
         );
       } else {
         showAlert(
-          `Spare request created! ${response.data.notificationsSent || 0} notification(s) sent.`,
+          `Spare request created! ${'notificationsSent' in response ? response.notificationsSent || 0 : 0} notification(s) sent.`,
           'success'
         );
       }
@@ -1090,7 +1098,7 @@ export default function RequestSpare() {
                 ref={positionRef}
                 id="position"
                 value={position}
-                onChange={(e) => setPosition(e.target.value)}
+                onChange={(e) => setPosition(e.target.value as PositionOption)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
               >
                 <option value="">Any position</option>

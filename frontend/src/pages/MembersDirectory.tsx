@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
-import api from '../utils/api';
+import { get } from '../api/client';
 import { formatPhone } from '../utils/phone';
 import Modal from '../components/Modal';
 import { HiCheckCircle } from 'react-icons/hi2';
@@ -8,10 +8,10 @@ import { HiCheckCircle } from 'react-icons/hi2';
 interface Member {
   id: number;
   name: string;
-  email: string | null;
-  phone: string | null;
+  email?: string | null;
+  phone?: string | null;
   isAdmin: boolean;
-  isServerAdmin?: boolean;
+  isServerAdmin: boolean;
   emailVisible: boolean;
   phoneVisible: boolean;
   firstLoginCompleted: boolean;
@@ -51,8 +51,8 @@ export default function MembersDirectory() {
 
   const loadLeagues = async () => {
     try {
-      const response = await api.get('/leagues');
-      setLeagues(response.data || []);
+      const response = await get('/leagues');
+      setLeagues(response || []);
     } catch (error) {
       console.error('Failed to load leagues:', error);
       setLeagues([]);
@@ -62,9 +62,8 @@ export default function MembersDirectory() {
   const loadMembers = async (leagueId?: number) => {
     setLoading(true);
     try {
-      const url = leagueId ? `/members/directory?leagueId=${leagueId}` : '/members/directory';
-      const response = await api.get(url);
-      setMembers(response.data);
+      const response = await get('/members/directory', leagueId ? { leagueId } : undefined);
+      setMembers(response);
     } catch (error) {
       console.error('Failed to load members:', error);
     } finally {
@@ -80,8 +79,10 @@ export default function MembersDirectory() {
     setSelectedMember(member);
     setLoadingAvailability(true);
     try {
-      const response = await api.get(`/members/${member.id}/availability`);
-      setMemberAvailability(response.data);
+      const response = await get('/members/{memberId}/availability', undefined, {
+        memberId: String(member.id),
+      });
+      setMemberAvailability(response);
     } catch (error) {
       console.error('Failed to load member availability:', error);
       setMemberAvailability({ canSkip: false, availableLeagues: [] });

@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
-import api, { formatApiError } from '../../utils/api';
+import { get, patch, post } from '../../api/client';
+import { formatApiError } from '../../utils/api';
 import Button from '../../components/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhone } from '../../utils/phone';
@@ -30,23 +31,23 @@ interface ServerConfig {
 }
 
 interface UpdateConfigPayload {
-  twilioApiKeySid?: string | null;
-  twilioApiKeySecret?: string | null;
-  twilioAccountSid?: string | null;
-  twilioCampaignSid?: string | null;
-  azureConnectionString?: string | null;
-  azureSenderEmail?: string | null;
-  dashboardAlertTitle?: string | null;
-  dashboardAlertBody?: string | null;
-  dashboardAlertExpiresAt?: string | null;
-  dashboardAlertVariant?: string | null;
-  dashboardAlertIcon?: string | null;
+  twilioApiKeySid?: string;
+  twilioApiKeySecret?: string;
+  twilioAccountSid?: string;
+  twilioCampaignSid?: string;
+  azureConnectionString?: string;
+  azureSenderEmail?: string;
+  dashboardAlertTitle?: string;
+  dashboardAlertBody?: string;
+  dashboardAlertExpiresAt?: string;
+  dashboardAlertVariant?: 'info' | 'warning' | 'success' | 'danger';
+  dashboardAlertIcon?: 'info' | 'warning' | 'success' | 'none' | 'announcement' | 'error';
   testMode?: boolean;
   disableEmail?: boolean;
   disableSms?: boolean;
   captureFrontendLogs?: boolean;
   captureBackendLogs?: boolean;
-  testCurrentTime?: string | null;
+  testCurrentTime?: string;
   notificationDelaySeconds?: number;
 }
 
@@ -179,27 +180,27 @@ export default function AdminConfig() {
 
   const loadConfig = async () => {
     try {
-      const response = await api.get('/config');
-      setConfig(response.data);
+      const response = await get('/config');
+      setConfig(response);
       setFormData({
-        twilioApiKeySid: response.data.twilioApiKeySid || '',
+        twilioApiKeySid: response.twilioApiKeySid || '',
         twilioApiKeySecret: '', // Never populate the secret field
-        twilioAccountSid: response.data.twilioAccountSid || '',
-        twilioCampaignSid: response.data.twilioCampaignSid || '',
+        twilioAccountSid: response.twilioAccountSid || '',
+        twilioCampaignSid: response.twilioCampaignSid || '',
         azureConnectionString: '', // Never populate the connection string field
-        azureSenderEmail: response.data.azureSenderEmail || '',
-        dashboardAlertTitle: response.data.dashboardAlertTitle || '',
-        dashboardAlertBody: response.data.dashboardAlertBody || '',
-        dashboardAlertExpiresAt: response.data.dashboardAlertExpiresAt || '',
-        dashboardAlertVariant: response.data.dashboardAlertVariant || 'info',
-        dashboardAlertIcon: response.data.dashboardAlertIcon || 'announcement',
-        testMode: response.data.testMode || false,
-        disableEmail: response.data.disableEmail || false,
-        disableSms: response.data.disableSms || false,
-        captureFrontendLogs: response.data.captureFrontendLogs ?? true,
-        captureBackendLogs: response.data.captureBackendLogs ?? true,
-        testCurrentTime: response.data.testCurrentTime || '',
-        notificationDelaySeconds: response.data.notificationDelaySeconds || 180,
+        azureSenderEmail: response.azureSenderEmail || '',
+        dashboardAlertTitle: response.dashboardAlertTitle || '',
+        dashboardAlertBody: response.dashboardAlertBody || '',
+        dashboardAlertExpiresAt: response.dashboardAlertExpiresAt || '',
+        dashboardAlertVariant: response.dashboardAlertVariant || 'info',
+        dashboardAlertIcon: response.dashboardAlertIcon || 'announcement',
+        testMode: response.testMode || false,
+        disableEmail: response.disableEmail || false,
+        disableSms: response.disableSms || false,
+        captureFrontendLogs: response.captureFrontendLogs ?? true,
+        captureBackendLogs: response.captureBackendLogs ?? true,
+        testCurrentTime: response.testCurrentTime || '',
+        notificationDelaySeconds: response.notificationDelaySeconds || 180,
       });
     } catch (error) {
       console.error('Failed to load config:', error);
@@ -219,37 +220,43 @@ export default function AdminConfig() {
       
       // Only include fields that have been changed
       if (formData.twilioApiKeySid !== (config?.twilioApiKeySid || '')) {
-        payload.twilioApiKeySid = formData.twilioApiKeySid || null;
+        payload.twilioApiKeySid = formData.twilioApiKeySid || undefined;
       }
       if (formData.twilioApiKeySecret) {
         payload.twilioApiKeySecret = formData.twilioApiKeySecret;
       }
       if (formData.twilioAccountSid !== (config?.twilioAccountSid || '')) {
-        payload.twilioAccountSid = formData.twilioAccountSid || null;
+        payload.twilioAccountSid = formData.twilioAccountSid || undefined;
       }
       if (formData.twilioCampaignSid !== (config?.twilioCampaignSid || '')) {
-        payload.twilioCampaignSid = formData.twilioCampaignSid || null;
+        payload.twilioCampaignSid = formData.twilioCampaignSid || undefined;
       }
       if (formData.azureConnectionString) {
         payload.azureConnectionString = formData.azureConnectionString;
       }
       if (formData.azureSenderEmail !== (config?.azureSenderEmail || '')) {
-        payload.azureSenderEmail = formData.azureSenderEmail || null;
+        payload.azureSenderEmail = formData.azureSenderEmail || undefined;
       }
       if (formData.dashboardAlertTitle !== (config?.dashboardAlertTitle || '')) {
-        payload.dashboardAlertTitle = formData.dashboardAlertTitle || null;
+        payload.dashboardAlertTitle = formData.dashboardAlertTitle || undefined;
       }
       if (formData.dashboardAlertBody !== (config?.dashboardAlertBody || '')) {
-        payload.dashboardAlertBody = formData.dashboardAlertBody || null;
+        payload.dashboardAlertBody = formData.dashboardAlertBody || undefined;
       }
       if (formData.dashboardAlertExpiresAt !== (config?.dashboardAlertExpiresAt || '')) {
-        payload.dashboardAlertExpiresAt = formData.dashboardAlertExpiresAt || null;
+        payload.dashboardAlertExpiresAt = formData.dashboardAlertExpiresAt || undefined;
       }
       if (formData.dashboardAlertVariant !== (config?.dashboardAlertVariant || '')) {
-        payload.dashboardAlertVariant = formData.dashboardAlertVariant || null;
+        const allowedVariants = ['info', 'warning', 'success', 'danger'] as const;
+        payload.dashboardAlertVariant = allowedVariants.includes(formData.dashboardAlertVariant as (typeof allowedVariants)[number])
+          ? (formData.dashboardAlertVariant as (typeof allowedVariants)[number])
+          : undefined;
       }
       if (formData.dashboardAlertIcon !== (config?.dashboardAlertIcon || '')) {
-        payload.dashboardAlertIcon = formData.dashboardAlertIcon || null;
+        const allowedIcons = ['info', 'warning', 'success', 'none', 'announcement', 'error'] as const;
+        payload.dashboardAlertIcon = allowedIcons.includes(formData.dashboardAlertIcon as (typeof allowedIcons)[number])
+          ? (formData.dashboardAlertIcon as (typeof allowedIcons)[number])
+          : undefined;
       }
       if (formData.testMode !== config?.testMode) {
         payload.testMode = formData.testMode;
@@ -267,13 +274,13 @@ export default function AdminConfig() {
         payload.captureBackendLogs = formData.captureBackendLogs;
       }
       if (formData.testCurrentTime !== (config?.testCurrentTime || '')) {
-        payload.testCurrentTime = formData.testCurrentTime || null;
+        payload.testCurrentTime = formData.testCurrentTime || undefined;
       }
       if (formData.notificationDelaySeconds !== (config?.notificationDelaySeconds || 180)) {
         payload.notificationDelaySeconds = formData.notificationDelaySeconds;
       }
 
-      await api.patch('/config', payload);
+      await patch('/config', payload);
       setMessage({ type: 'success', text: 'Server configuration updated successfully' });
       await loadConfig();
       setFrontendLogCaptureEnabled(formData.captureFrontendLogs);
@@ -297,8 +304,8 @@ export default function AdminConfig() {
     setMessage(null);
 
     try {
-      const response = await api.post('/config/test-email');
-      setMessage({ type: 'success', text: response.data.message || 'Test email sent successfully!' });
+      const response = await post('/config/test-email', undefined);
+      setMessage({ type: 'success', text: response.message || 'Test email sent successfully!' });
     } catch (error: unknown) {
       setMessage({ type: 'error', text: formatApiError(error, 'Failed to send test email') });
     } finally {
@@ -311,8 +318,8 @@ export default function AdminConfig() {
     setMessage(null);
 
     try {
-      const response = await api.post('/config/test-sms');
-      setMessage({ type: 'success', text: response.data.message || 'Test SMS sent successfully!' });
+      const response = await post('/config/test-sms', undefined);
+      setMessage({ type: 'success', text: response.message || 'Test SMS sent successfully!' });
     } catch (error: unknown) {
       setMessage({ type: 'error', text: formatApiError(error, 'Failed to send test SMS') });
     } finally {

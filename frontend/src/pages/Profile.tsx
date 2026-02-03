@@ -2,7 +2,7 @@ import { useEffect, useState, FormEvent } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import api from '../utils/api';
+import { get, patch } from '../api/client';
 import Button from '../components/Button';
 
 export default function Profile() {
@@ -20,12 +20,17 @@ export default function Profile() {
   });
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const normalizeThemePreference = (value?: string | null): 'light' | 'dark' | 'system' => {
+    if (value === 'light' || value === 'dark' || value === 'system') return value;
+    return 'system';
+  };
+
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await api.get('/public-config');
-        setSmsDisabled(!!res.data?.disableSms);
-        if (res.data?.disableSms) {
+        const res = await get('/public-config');
+        setSmsDisabled(!!res?.disableSms);
+        if (res?.disableSms) {
           setFormData((prev) => ({ ...prev, optedInSms: false }));
         }
       } catch {
@@ -41,7 +46,7 @@ export default function Profile() {
     setMessage(null);
 
     try {
-      const response = await api.patch('/members/me', {
+      const response = await patch('/members/me', {
         name: formData.name,
         email: formData.email,
         phone: formData.phone || undefined,
@@ -50,7 +55,7 @@ export default function Profile() {
         phoneVisible: formData.phoneVisible,
       });
 
-      updateMember(response.data);
+      updateMember({ ...response, themePreference: normalizeThemePreference(response.themePreference) });
       setMessage({ type: 'success', text: 'Profile updated successfully' });
     } catch (error) {
       console.error('Failed to update profile:', error);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import axios from 'axios';
-import api from '../utils/api';
+import { post } from '../api/client';
+import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
 
 export default function Unsubscribe() {
@@ -17,17 +17,16 @@ export default function Unsubscribe() {
 
     try {
       if (token) {
-        await api.post('/members/me/unsubscribe', {}, {
+        await post('/members/me/unsubscribe', undefined, undefined, {
           headers: { Authorization: `Bearer ${token}` },
         });
       } else {
-        await api.post('/members/me/unsubscribe');
+        await post('/members/me/unsubscribe', undefined);
       }
 
       setConfirmed(true);
     } catch (err: unknown) {
-      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
-      setError(message || 'Failed to unsubscribe. Please try again.');
+      setError(formatApiError(err, 'Failed to unsubscribe. Please try again.'));
     } finally {
       setLoading(false);
     }

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import axios from 'axios';
+import { get, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
 import Button from '../../components/Button';
 
@@ -28,8 +28,7 @@ export default function AdminDatabaseConfig() {
 
   const loadCurrentConfig = async () => {
     try {
-      const response = await api.get('/database-config');
-      const config = response.data;
+      const config = await get('/database-config');
       
       if (config) {
         setDatabaseType(config.type);
@@ -110,7 +109,7 @@ export default function AdminDatabaseConfig() {
         };
       }
 
-      await api.post('/database-config', payload);
+      await post('/database-config', payload);
       
       showAlert('Database configuration updated successfully! The server needs to be restarted for changes to take effect. Please restart the server using: sudo systemctl restart spares-production', 'success');
       navigate('/admin/config');
