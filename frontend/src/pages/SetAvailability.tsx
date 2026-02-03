@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
-import api from '../utils/api';
+import { get, post } from '../api/client';
 
 interface League {
   id: number;
@@ -29,14 +29,11 @@ export default function SetAvailability() {
 
   const loadData = async () => {
     try {
-      const [leaguesRes, availabilityRes] = await Promise.all([
-        api.get('/leagues'),
-        api.get('/availability'),
-      ]);
+      const [leaguesRes, availabilityRes] = await Promise.all([get('/leagues'), get('/availability')]);
 
-      setLeagues(leaguesRes.data);
-      setAvailability(availabilityRes.data.leagues);
-      setCanSkip(availabilityRes.data.canSkip);
+      setLeagues(leaguesRes);
+      setAvailability(availabilityRes.leagues);
+      setCanSkip(availabilityRes.canSkip);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -60,7 +57,7 @@ export default function SetAvailability() {
     });
 
     try {
-      await api.post('/availability/league', {
+      await post('/availability/league', {
         leagueId,
         available: newValue,
       });
@@ -80,7 +77,7 @@ export default function SetAvailability() {
     setCanSkip(newValue);
 
     try {
-      await api.post('/availability/can-skip', { canSkip: newValue });
+      await post('/availability/can-skip', { canSkip: newValue });
     } catch (error) {
       console.error('Failed to update can skip:', error);
       // Revert on error

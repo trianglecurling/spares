@@ -12,7 +12,8 @@ import {
 } from 'react-icons/hi2';
 import axios from 'axios';
 import Layout from '../components/Layout';
-import api, { formatApiError } from '../utils/api';
+import { get, post } from '../api/client';
+import { formatApiError } from '../utils/api';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
 import NotificationModal from '../components/NotificationModal';
@@ -25,20 +26,20 @@ import { renderMe } from '../utils/me';
 interface SpareRequest {
   id: number;
   requesterName: string;
-  requesterEmail?: string;
-  requesterPhone?: string;
+  requesterEmail?: string | null;
+  requesterPhone?: string | null;
   requestedForName: string;
   gameDate: string;
   gameTime: string;
   leagueName?: string | null;
-  position?: string;
-  message?: string;
+  position?: string | null;
+  message?: string | null;
   requestType: string;
-  inviteStatus?: 'pending' | 'declined';
+  inviteStatus?: 'pending' | 'declined' | string;
   createdAt: string;
-  filledByName?: string;
+  filledByName?: string | null;
   status?: string;
-  filledAt?: string;
+  filledAt?: string | null;
 }
 
 interface MySpareRequest {
@@ -50,15 +51,15 @@ interface MySpareRequest {
   gameDate: string;
   gameTime: string;
   leagueName?: string | null;
-  position?: string;
-  message?: string;
+  position?: string | null;
+  message?: string | null;
   requestType: string;
   status: string;
-  filledByName?: string;
-  filledByEmail?: string;
-  filledByPhone?: string;
-  filledAt?: string;
-  sparerComment?: string;
+  filledByName?: string | null;
+  filledByEmail?: string | null;
+  filledByPhone?: string | null;
+  filledAt?: string | null;
+  sparerComment?: string | null;
 }
 
 export default function Dashboard() {
@@ -146,12 +147,12 @@ export default function Dashboard() {
   useEffect(() => {
     const loadDashboardAlert = async () => {
       try {
-        const response = await api.get('/public-config');
-        const title = (response.data?.dashboardAlertTitle as string | null) || '';
-        const body = (response.data?.dashboardAlertBody as string | null) || '';
-        const variant = (response.data?.dashboardAlertVariant as string | null) || 'info';
-        const icon = (response.data?.dashboardAlertIcon as string | null) || 'announcement';
-        const expiresAtRaw = response.data?.dashboardAlertExpiresAt as string | null | undefined;
+        const response = await get('/public-config');
+        const title = response?.dashboardAlertTitle || '';
+        const body = response?.dashboardAlertBody || '';
+        const variant = response?.dashboardAlertVariant || 'info';
+        const icon = response?.dashboardAlertIcon || 'announcement';
+        const expiresAtRaw = response?.dashboardAlertExpiresAt || null;
         const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
         const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() : false;
         if ((title.trim() || body.trim()) && !isExpired) {
@@ -196,8 +197,8 @@ export default function Dashboard() {
         // Ask the backend for the status so we can show a specific message.
         (async () => {
           try {
-            const res = await api.get(`/spares/${requestId}/status`);
-            const status = (res.data?.status as string | undefined) || 'unknown';
+            const res = await get('/spares/{id}/status', undefined, { id: String(requestId) });
+            const status = res?.status || 'unknown';
 
             const message =
               status === 'filled'
@@ -255,18 +256,18 @@ export default function Dashboard() {
   const loadAllData = async () => {
     try {
       const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes] = await Promise.all([
-        api.get('/spares'),
-        api.get('/spares/my-sparing'),
-        api.get('/spares/filled-upcoming'),
-        api.get('/spares/cc'),
-        api.get('/spares/my-requests'),
+        get('/spares'),
+        get('/spares/my-sparing'),
+        get('/spares/filled-upcoming'),
+        get('/spares/cc'),
+        get('/spares/my-requests'),
       ]);
-      setOpenRequests(openRes.data);
-      setMySparing(mySparingRes.data);
-      setFilledRequests(filledRes.data);
-      setCcRequests(ccRes.data || []);
+      setOpenRequests(openRes);
+      setMySparing(mySparingRes);
+      setFilledRequests(filledRes);
+      setCcRequests(ccRes || []);
       // Filter out cancelled requests - only show open and filled
-      setMyRequests(myRequestsRes.data.filter((r: MySpareRequest) => r.status !== 'cancelled'));
+      setMyRequests(myRequestsRes.filter((r: MySpareRequest) => r.status !== 'cancelled'));
     } catch (error) {
       console.error('Failed to load spare requests:', error);
     } finally {
@@ -289,9 +290,7 @@ export default function Dashboard() {
 
     setSubmitting(true);
     try {
-      await api.post(`/spares/${selectedRequest.id}/respond`, {
-        comment: comment.trim() || undefined,
-      });
+      await post('/spares/{id}/respond', { comment: comment.trim() || undefined }, { id: String(selectedRequest.id) });
 
       // Reload all data
       await loadAllData();
@@ -376,9 +375,11 @@ export default function Dashboard() {
 
     setCanceling(true);
     try {
-      await api.post(`/spares/${cancelRequest.id}/cancel-sparing`, {
-        comment: cancelComment,
-      });
+      await post(
+        '/spares/{id}/cancel-sparing',
+        { comment: cancelComment },
+        { id: String(cancelRequest.id) }
+      );
 
       // Reload all data
       await loadAllData();
@@ -412,9 +413,11 @@ export default function Dashboard() {
 
     setDeclining(true);
     try {
-      await api.post(`/spares/${declineRequest.id}/decline`, {
-        comment: declineComment.trim() || undefined,
-      });
+      await post(
+        '/spares/{id}/decline',
+        { comment: declineComment.trim() || undefined },
+        { id: String(declineRequest.id) }
+      );
 
       await loadAllData();
       setDeclineRequest(null);

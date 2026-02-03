@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import { get } from '../../api/client';
 import Button from '../../components/Button';
 
 interface ObservabilityTotals {
@@ -47,8 +47,8 @@ export default function AdminObservability() {
   const loadObservability = async (rangeDays: number) => {
     setObsLoading(true);
     try {
-      const response = await api.get(`/config/observability?rangeDays=${rangeDays}`);
-      setObservability(response.data);
+      const response = await get('/config/observability', { rangeDays });
+      setObservability(response);
       setObsRangeDays(rangeDays);
     } catch (error) {
       console.error('Failed to load observability:', error);

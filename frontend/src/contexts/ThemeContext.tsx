@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useAuth } from './AuthContext';
-import api from '../utils/api';
+import { patch } from '../api/client';
 
 type Theme = 'light' | 'dark' | 'system';
 type ResolvedTheme = 'light' | 'dark';
@@ -100,10 +100,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Save to backend if user is logged in
     if (member) {
       try {
-        const response = await api.patch('/members/me', {
+        const response = await patch('/members/me', {
           themePreference: newTheme,
         });
-        updateMember(response.data);
+        updateMember({
+          ...response,
+          themePreference: isTheme(response.themePreference) ? response.themePreference : 'system',
+        });
       } catch (error) {
         console.error('Failed to update theme preference:', error);
       }

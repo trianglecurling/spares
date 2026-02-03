@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import api from '../utils/api';
+import { get, post } from '../api/client';
 import { useAlert } from '../contexts/AlertContext';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
@@ -25,9 +25,9 @@ export default function Install() {
 
   useEffect(() => {
     // Check if already configured
-    api.get('/install/status')
-      .then(response => {
-        if (response.data.configured) {
+    get('/install/status')
+      .then((response) => {
+        if (response.configured) {
           navigate('/');
         }
         setChecking(false);
@@ -99,7 +99,7 @@ export default function Install() {
         };
       }
 
-      await api.post('/install', payload);
+      await post('/install', payload);
       
       // Installation successful - reload page to continue
       showAlert('Installation successful! The server will restart. Please refresh the page.', 'success');

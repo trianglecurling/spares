@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import { get } from '../../api/client';
+import { formatApiError } from '../../utils/api';
 
 type FeedbackRow = {
   id: number;
-  category: 'suggestion' | 'problem' | 'question' | 'general';
+  category: 'suggestion' | 'problem' | 'question' | 'general' | string;
   body: string;
-  email: string | null;
-  memberId: number | null;
-  pagePath: string | null;
-  userAgent: string | null;
+  email?: string | null;
+  memberId?: number | null;
+  pagePath?: string | null;
+  userAgent?: string | null;
   createdAt: string;
-  memberName: string | null;
-  memberEmail: string | null;
+  memberName?: string | null;
+  memberEmail?: string | null;
 };
 
 function categoryLabel(value: FeedbackRow['category']): string {
@@ -41,13 +41,10 @@ export default function AdminFeedback() {
       setLoading(true);
       setError(null);
       try {
-        const res = await api.get('/feedback');
-        setRows(res.data || []);
+        const res = await get('/feedback');
+        setRows(res || []);
       } catch (e: unknown) {
-        const msg = axios.isAxiosError(e)
-          ? e.response?.data?.error || 'Failed to load feedback'
-          : 'Failed to load feedback';
-        setError(msg);
+        setError(formatApiError(e, 'Failed to load feedback'));
       } finally {
         setLoading(false);
       }

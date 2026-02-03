@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../utils/api';
-import { post } from '../api/client';
+import { get, post } from '../api/client';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
@@ -56,10 +55,10 @@ export default function Login() {
   useEffect(() => {
     let isActive = true;
 
-    api.get('/install/status')
+    get('/install/status')
       .then((response) => {
         if (!isActive) return;
-        if (response.data?.configured === false) {
+        if (response.configured === false) {
           navigate('/install', { replace: true });
         }
       })

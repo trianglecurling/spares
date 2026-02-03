@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import Layout from '../../components/Layout';
-import api from '../../utils/api';
+import { del, get, patch, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -32,7 +32,7 @@ type MemberUpdatePayload = {
 
 type MemberCreatePayload = {
   name: string;
-  email?: string;
+  email: string;
   phone?: string;
   validThrough: string | null;
   spareOnly: boolean;
@@ -105,9 +105,9 @@ export default function AdminMembers() {
 
   const loadMembers = async () => {
     try {
-      const response = await api.get('/members');
+      const response = await get('/members');
       // Ensure boolean values are properly converted
-      const membersWithBooleans = (response.data as Member[]).map((m) => ({
+      const membersWithBooleans = (response as Member[]).map((m) => ({
         ...m,
         validThrough: m.validThrough ?? null,
         spareOnly: Boolean(m.spareOnly),
@@ -326,11 +326,11 @@ export default function AdminMembers() {
           updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
         
-        await api.patch(`/members/${editingMember.id}`, updateData);
+        await patch('/members/{id}', updateData, { id: String(editingMember.id) });
       } else {
         const createData: MemberCreatePayload = {
           name: formData.name,
-          email: formData.email || undefined,
+          email: formData.email,
           phone: formData.phone || undefined,
           validThrough: formData.validThrough ? formData.validThrough : null,
           spareOnly: Boolean(formData.spareOnly),
@@ -347,7 +347,7 @@ export default function AdminMembers() {
           createData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
         
-        await api.post('/members', createData);
+        await post('/members', createData);
       }
 
       await loadMembers();
@@ -379,7 +379,7 @@ export default function AdminMembers() {
     }
 
     try {
-      await api.delete(`/members/${id}`);
+      await del('/members/{id}', undefined, { id: String(id) });
       setMembers(members.filter((m) => m.id !== id));
       setSelectedMemberIds(selectedMemberIds.filter((i) => i !== id));
     } catch (error) {
@@ -401,7 +401,7 @@ export default function AdminMembers() {
     }
 
     try {
-      await api.post(`/members/${id}/send-welcome`);
+      await post('/members/{id}/send-welcome', undefined, { id: String(id) });
       showAlert('Welcome email sent!', 'success');
     } catch (error) {
       console.error('Failed to send welcome email:', error);
@@ -411,8 +411,8 @@ export default function AdminMembers() {
 
   const handleCopyLoginLink = async (id: number, name: string) => {
     try {
-      const response = await api.get(`/members/${id}/login-link`);
-      const loginLink = response.data.loginLink;
+      const response = await get('/members/{id}/login-link', undefined, { id: String(id) });
+      const loginLink = response.loginLink;
       
       await navigator.clipboard.writeText(loginLink);
       showAlert(`Login link copied for ${name}!`, 'success');
@@ -480,7 +480,7 @@ export default function AdminMembers() {
   const handleBulkSubmit = async () => {
     setSubmitting(true);
     try {
-      await api.post('/members/bulk', {
+      await post('/members/bulk', {
         members: parsedMembers,
         validThrough: bulkValidThrough ? bulkValidThrough : null,
         spareOnly: bulkSpareOnly,
@@ -555,7 +555,7 @@ export default function AdminMembers() {
 
     setLoading(true);
     try {
-      await api.post('/members/bulk-delete', { ids: idsToDelete });
+      await post('/members/bulk-delete', { ids: idsToDelete });
       await loadMembers();
       setSelectedMemberIds([]);
     } catch (error) {
@@ -591,11 +591,11 @@ export default function AdminMembers() {
     }
 
     try {
-      const response = await api.post('/members/bulk-send-welcome', {
+      const response = await post('/members/bulk-send-welcome', {
         ids: selectedMemberIds,
       });
       showAlert(
-        `Welcome emails sent to ${response.data.sent} member${response.data.sent === 1 ? '' : 's'}!`,
+        `Welcome emails sent to ${response.sent} member${response.sent === 1 ? '' : 's'}!`,
         'success'
       );
     } catch (error: unknown) {
