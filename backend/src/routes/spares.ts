@@ -42,6 +42,7 @@ const createSpareRequestSchema = z.object({
   leagueId: z.number(),
   requestedForName: z.string().min(1),
   requestedForMemberId: z.number().optional(),
+  gameId: z.number().optional(),
   gameDate: z.string(),
   gameTime: z.string(),
   position: z.enum(['lead', 'second', 'vice', 'skip']).optional(),
@@ -79,6 +80,7 @@ const createSpareRequestBodySchema = {
     leagueId: { type: 'number' },
     requestedForName: { type: 'string' },
     requestedForMemberId: { type: 'number' },
+    gameId: { type: 'number' },
     gameDate: { type: 'string' },
     gameTime: { type: 'string' },
     position: { type: 'string', enum: ['lead', 'second', 'vice', 'skip'] },
@@ -1547,6 +1549,48 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
     const leagueName = league.name;
 
+    let gameIdValue: number | null = null;
+    let gameDateValue = body.gameDate;
+    let gameTimeValue = body.gameTime;
+
+    if (body.gameId !== undefined) {
+      const gameRows = await db
+        .select({
+          id: schema.games.id,
+          league_id: schema.games.league_id,
+          game_date: schema.games.game_date,
+          game_time: schema.games.game_time,
+          status: schema.games.status,
+        })
+        .from(schema.games)
+        .where(eq(schema.games.id, body.gameId))
+        .limit(1);
+
+      const game = gameRows[0];
+      if (!game) {
+        return reply.code(400).send({ error: 'Invalid game selection.' });
+      }
+      if (game.league_id !== body.leagueId) {
+        return reply.code(400).send({ error: 'Selected game does not belong to that league.' });
+      }
+      if (game.status !== 'scheduled' || !game.game_date || !game.game_time) {
+        return reply.code(400).send({ error: 'Selected game is not scheduled.' });
+      }
+
+      const normalizedGameDate = normalizeDateString(game.game_date);
+      const normalizedGameTime = normalizeTimeString(game.game_time);
+      if (body.gameDate && body.gameDate !== normalizedGameDate) {
+        return reply.code(400).send({ error: 'Game date does not match the selected game.' });
+      }
+      if (body.gameTime && body.gameTime !== normalizedGameTime) {
+        return reply.code(400).send({ error: 'Game time does not match the selected game.' });
+      }
+
+      gameIdValue = game.id;
+      gameDateValue = normalizedGameDate;
+      gameTimeValue = normalizedGameTime;
+    }
+
     let recipientMembers: Member[] = [];
     let isLessThan24Hours = false;
     let dayOfWeek: number | null = null;
@@ -1585,8 +1629,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
         and(
           eq(schema.spareRequests.league_id, body.leagueId),
           eq(schema.spareRequests.requested_for_name, requestedForNameValue),
-          eq(schema.spareRequests.game_date, body.gameDate),
-          eq(schema.spareRequests.game_time, body.gameTime),
+          eq(schema.spareRequests.game_date, gameDateValue),
+          eq(schema.spareRequests.game_time, gameTimeValue),
           ne(schema.spareRequests.status, 'cancelled')
         )
       )
@@ -1610,8 +1654,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (body.requestType === 'public') {
       // Public requests: check if less than 24 hours before game time
       // Parse date/time as local to avoid timezone issues
-      const [gameYear, gameMonth, gameDay] = body.gameDate.split('-').map(Number);
-      const [gameHours, gameMinutes] = body.gameTime.split(':').map(Number);
+      const [gameYear, gameMonth, gameDay] = gameDateValue.split('-').map(Number);
+      const [gameHours, gameMinutes] = gameTimeValue.split(':').map(Number);
       const gameDateTime = new Date(gameYear, gameMonth - 1, gameDay, gameHours, gameMinutes);
       const currentTime = await getCurrentTimeAsync();
       const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
@@ -1634,8 +1678,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(schema.leagues.id, body.leagueId),
-            sql`date(${schema.leagues.start_date}) <= date(${body.gameDate})`,
-            sql`date(${schema.leagues.end_date}) >= date(${body.gameDate})`
+            sql`date(${schema.leagues.start_date}) <= date(${gameDateValue})`,
+            sql`date(${schema.leagues.end_date}) >= date(${gameDateValue})`
           )
         )
         .limit(1);
@@ -1646,7 +1690,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const exceptionRows = await db
         .select({ id: schema.leagueExceptions.id })
         .from(schema.leagueExceptions)
-        .where(and(eq(schema.leagueExceptions.league_id, body.leagueId), eq(schema.leagueExceptions.exception_date, body.gameDate)))
+        .where(and(eq(schema.leagueExceptions.league_id, body.leagueId), eq(schema.leagueExceptions.exception_date, gameDateValue)))
         .limit(1);
       if (exceptionRows.length > 0) {
         return reply.code(400).send({ error: 'Selected league does not run on that date' });
@@ -1659,10 +1703,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .values({
         requester_id: member.id,
         league_id: body.leagueId,
+        game_id: gameIdValue,
         requested_for_name: requestedForNameValue,
         requested_for_member_id: requestedForMemberId,
-        game_date: body.gameDate,
-        game_time: body.gameTime,
+        game_date: gameDateValue,
+        game_time: gameTimeValue,
         position: positionValue,
         message: messageValue,
         request_type: body.requestType,
@@ -1725,8 +1770,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
           {
             leagueName,
             requestedForName: body.requestedForName,
-            gameDate: body.gameDate,
-            gameTime: body.gameTime,
+            gameDate: gameDateValue,
+            gameTime: gameTimeValue,
             position: body.position,
             message: body.message,
           },
@@ -1752,8 +1797,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
             {
               leagueName,
               requestedForName: body.requestedForName,
-              gameDate: body.gameDate,
-              gameTime: body.gameTime,
+              gameDate: gameDateValue,
+              gameTime: gameTimeValue,
               position: body.position,
               message: body.message,
             },
@@ -1815,8 +1860,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 {
                   leagueName,
                   requestedForName: body.requestedForName,
-                  gameDate: body.gameDate,
-                  gameTime: body.gameTime,
+                  gameDate: gameDateValue,
+                  gameTime: gameTimeValue,
                   position: body.position,
                   message: body.message,
                   invitedMemberNames: invitedMemberNames,
@@ -1839,7 +1884,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
               channel: 'sms',
               kind: 'spare_request',
             },
-            () => sendSpareRequestSMS(recipient.phone!, member.name, body.gameDate, body.gameTime)
+            () => sendSpareRequestSMS(recipient.phone!, member.name, gameDateValue, gameTimeValue)
           ).catch((error) => {
             console.error('Error sending spare request SMS:', error);
           });

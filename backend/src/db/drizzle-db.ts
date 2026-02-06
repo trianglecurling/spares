@@ -14,8 +14,11 @@ type SqliteSchema = {
   leagueDrawTimes: typeof sqliteSchema.leagueDrawTimesSqlite;
   leagueExceptions: typeof sqliteSchema.leagueExceptionsSqlite;
   sheets: typeof sqliteSchema.sheetsSqlite;
+  leagueExtraDraws: typeof sqliteSchema.leagueExtraDrawsSqlite;
+  drawSheetAvailability: typeof sqliteSchema.drawSheetAvailabilitySqlite;
   leagueDivisions: typeof sqliteSchema.leagueDivisionsSqlite;
   leagueTeams: typeof sqliteSchema.leagueTeamsSqlite;
+  games: typeof sqliteSchema.gamesSqlite;
   teamMembers: typeof sqliteSchema.teamMembersSqlite;
   leagueMemberRoles: typeof sqliteSchema.leagueMemberRolesSqlite;
   leagueRoster: typeof sqliteSchema.leagueRosterSqlite;
@@ -40,8 +43,11 @@ type PgSchema = {
   leagueDrawTimes: typeof pgSchema.leagueDrawTimesPg;
   leagueExceptions: typeof pgSchema.leagueExceptionsPg;
   sheets: typeof pgSchema.sheetsPg;
+  leagueExtraDraws: typeof pgSchema.leagueExtraDrawsPg;
+  drawSheetAvailability: typeof pgSchema.drawSheetAvailabilityPg;
   leagueDivisions: typeof pgSchema.leagueDivisionsPg;
   leagueTeams: typeof pgSchema.leagueTeamsPg;
+  games: typeof pgSchema.gamesPg;
   teamMembers: typeof pgSchema.teamMembersPg;
   leagueMemberRoles: typeof pgSchema.leagueMemberRolesPg;
   leagueRoster: typeof pgSchema.leagueRosterPg;
@@ -89,8 +95,11 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       leagueDrawTimes: sqliteSchema.leagueDrawTimesSqlite,
       leagueExceptions: sqliteSchema.leagueExceptionsSqlite,
       sheets: sqliteSchema.sheetsSqlite,
+      leagueExtraDraws: sqliteSchema.leagueExtraDrawsSqlite,
+      drawSheetAvailability: sqliteSchema.drawSheetAvailabilitySqlite,
       leagueDivisions: sqliteSchema.leagueDivisionsSqlite,
       leagueTeams: sqliteSchema.leagueTeamsSqlite,
+      games: sqliteSchema.gamesSqlite,
       teamMembers: sqliteSchema.teamMembersSqlite,
       leagueMemberRoles: sqliteSchema.leagueMemberRolesSqlite,
       leagueRoster: sqliteSchema.leagueRosterSqlite,
@@ -129,8 +138,11 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       leagueDrawTimes: pgSchema.leagueDrawTimesPg,
       leagueExceptions: pgSchema.leagueExceptionsPg,
       sheets: pgSchema.sheetsPg,
+      leagueExtraDraws: pgSchema.leagueExtraDrawsPg,
+      drawSheetAvailability: pgSchema.drawSheetAvailabilityPg,
       leagueDivisions: pgSchema.leagueDivisionsPg,
       leagueTeams: pgSchema.leagueTeamsPg,
+      games: pgSchema.gamesPg,
       teamMembers: pgSchema.teamMembersPg,
       leagueMemberRoles: pgSchema.leagueMemberRolesPg,
       leagueRoster: pgSchema.leagueRosterPg,

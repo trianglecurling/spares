@@ -2527,6 +2527,433 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leagues/{id}/games": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    startDate?: string;
+                    endDate?: string;
+                    includeUnscheduled?: boolean;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            leagueId: number;
+                            team1Id: number;
+                            team2Id: number;
+                            team1Name: null | string;
+                            team2Name: null | string;
+                            gameDate: null | string;
+                            gameTime: null | string;
+                            sheetId: null | number;
+                            sheetName: null | string;
+                            /** @enum {string} */
+                            status: "scheduled" | "unscheduled";
+                            createdAt: null | string;
+                            updatedAt: null | string;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        team1Id: number;
+                        team2Id: number;
+                        gameDate?: string;
+                        gameTime?: string;
+                        sheetId?: number;
+                        /** @enum {string} */
+                        status?: "scheduled" | "unscheduled";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            leagueId: number;
+                            team1Id: number;
+                            team2Id: number;
+                            team1Name: null | string;
+                            team2Name: null | string;
+                            gameDate: null | string;
+                            gameTime: null | string;
+                            sheetId: null | number;
+                            sheetName: null | string;
+                            /** @enum {string} */
+                            status: "scheduled" | "unscheduled";
+                            createdAt: null | string;
+                            updatedAt: null | string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{gameId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    gameId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    gameId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        team1Id?: number;
+                        team2Id?: number;
+                        gameDate?: string | null;
+                        gameTime?: string | null;
+                        sheetId?: number | null;
+                        /** @enum {string} */
+                        status?: "scheduled" | "unscheduled";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            leagueId: number;
+                            team1Id: number;
+                            team2Id: number;
+                            team1Name: null | string;
+                            team2Name: null | string;
+                            gameDate: null | string;
+                            gameTime: null | string;
+                            sheetId: null | number;
+                            sheetName: null | string;
+                            /** @enum {string} */
+                            status: "scheduled" | "unscheduled";
+                            createdAt: null | string;
+                            updatedAt: null | string;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/leagues/{id}/draw-slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    startDate?: string;
+                    endDate?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            date: string;
+                            time: string;
+                            isExtra: boolean;
+                            extraDrawId: null | number;
+                            sheets: {
+                                id: number;
+                                name: string;
+                                isAvailable: boolean;
+                            }[];
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/extra-draws": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        date: string;
+                        time: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            leagueId: number;
+                            date: string;
+                            time: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{leagueId}/extra-draws/{drawId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                    drawId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/draws/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        date: string;
+                        time: string;
+                        sheets: {
+                            sheetId: number;
+                            isAvailable: boolean;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/me/upcoming-games": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            leagueId: number;
+                            leagueName: string;
+                            team1Id: number;
+                            team2Id: number;
+                            team1Name: null | string;
+                            team2Name: null | string;
+                            gameDate: null | string;
+                            gameTime: null | string;
+                            sheetId: null | number;
+                            sheetName: null | string;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/availability": {
         parameters: {
             query?: never;
@@ -2846,6 +3273,7 @@ export interface paths {
                         leagueId: number;
                         requestedForName: string;
                         requestedForMemberId?: number;
+                        gameId?: number;
                         gameDate: string;
                         gameTime: string;
                         /** @enum {string} */

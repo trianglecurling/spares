@@ -87,6 +87,38 @@ export interface LeagueTeam {
   updated_at: string;
 }
 
+export interface Game {
+  id: number;
+  league_id: number;
+  team1_id: number;
+  team2_id: number;
+  game_date: DbDate | null;
+  game_time: string | null;
+  sheet_id: number | null;
+  status: 'scheduled' | 'unscheduled';
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
+export interface LeagueExtraDraw {
+  id: number;
+  league_id: number;
+  draw_date: DbDate;
+  draw_time: string;
+  created_at: DbDate;
+}
+
+export interface DrawSheetAvailability {
+  id: number;
+  league_id: number;
+  draw_date: DbDate;
+  draw_time: string;
+  sheet_id: number;
+  is_available: number;
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
 export interface TeamMember {
   id: number;
   team_id: number;
@@ -128,6 +160,8 @@ export interface MemberAvailability {
 export interface SpareRequest {
   id: number;
   requester_id: number;
+  league_id: number | null;
+  game_id: number | null;
   requested_for_name: string;
   requested_for_member_id: number | null;
   game_date: DbDate;

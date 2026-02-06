@@ -8,6 +8,8 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import LeagueTabs from '../../components/LeagueTabs';
+import LeagueSchedule from './LeagueSchedule';
+import LeagueSheets from './LeagueSheets';
 import Modal from '../../components/Modal';
 
 interface League {
@@ -95,7 +97,7 @@ function createDoublesRecord<T>(value: T) {
   }, {} as Record<DoublesRole, T>);
 }
 
-const leagueParamTabs = ['teams', 'roster', 'divisions', 'managers'] as const;
+const leagueParamTabs = ['schedule', 'sheets', 'teams', 'roster', 'divisions', 'managers'] as const;
 type LeagueParamTab = (typeof leagueParamTabs)[number];
 type LeagueSetupTab = 'overview' | LeagueParamTab;
 
@@ -152,6 +154,11 @@ export default function LeagueDetail() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+  const defaultDivisionId = useMemo(() => {
+    const explicitDefault = divisions.find((division) => division.isDefault);
+    if (explicitDefault) return explicitDefault.id;
+    return divisions[0]?.id ?? 0;
+  }, [divisions]);
   const normalizedTab = useMemo<LeagueSetupTab>(() => {
     if (tab && leagueParamTabs.includes(tab as LeagueParamTab)) {
       return tab as LeagueSetupTab;
@@ -531,7 +538,7 @@ export default function LeagueDetail() {
       setEditingTeam(null);
       setTeamForm({
         name: '',
-        divisionId: divisions[0]?.id || 0,
+        divisionId: defaultDivisionId,
       });
       if (league.format === 'teams') {
         setRoleMembers(createRoleRecord<MemberSearchResult | null>(null));
@@ -570,6 +577,13 @@ export default function LeagueDetail() {
     setFocusedDoublesRole(null);
     setTeamFormOpen(false);
   };
+
+  useEffect(() => {
+    if (!teamFormOpen || editingTeam) return;
+    if (teamForm.divisionId === 0 && defaultDivisionId) {
+      setTeamForm((prev) => ({ ...prev, divisionId: defaultDivisionId }));
+    }
+  }, [teamFormOpen, editingTeam, teamForm.divisionId, defaultDivisionId]);
 
   const handleOpenLeagueEdit = () => {
     if (!league) return;
@@ -1327,6 +1341,13 @@ export default function LeagueDetail() {
     return map;
   }, [teams]);
 
+  const memberTeamIds = useMemo(() => {
+    if (!member?.id) return [];
+    return teams
+      .filter((team) => team.roster.some((entry) => entry.memberId === member.id))
+      .map((team) => team.id);
+  }, [teams, member?.id]);
+
   const sortedDivisions = useMemo(() => {
     return divisions.slice().sort((a, b) => a.name.localeCompare(b.name));
   }, [divisions]);
@@ -1334,6 +1355,44 @@ export default function LeagueDetail() {
   const sortedTeams = useMemo(() => {
     return teams.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [teams]);
+
+  const teamRosterDisplay = (team: Team) => {
+    if (team.roster.length === 0) {
+      return <span className="ml-2">No roster set</span>;
+    }
+    if (league?.format === 'doubles') {
+      return (
+        <ul className="mt-2 space-y-1">
+          {team.roster.map((member) => (
+            <li key={member.memberId}>{member.name}</li>
+          ))}
+        </ul>
+      );
+    }
+
+    const rosterByRole = new Map<TeamRole, RosterMember>();
+    team.roster.forEach((member) => {
+      if (member.role === 'lead' || member.role === 'second' || member.role === 'third' || member.role === 'fourth') {
+        rosterByRole.set(member.role, member);
+      }
+    });
+    const orderedRoles: TeamRole[] = ['fourth', 'third', 'second', 'lead'];
+
+    return (
+      <ul className="mt-2 space-y-1">
+        {orderedRoles.map((role) => {
+          const entry = rosterByRole.get(role);
+          const suffix = entry?.isSkip ? '*' : entry?.isVice ? '**' : '';
+          return (
+            <li key={role}>
+              {roleLabels[role]}: {entry?.name || 'Unassigned'}
+              {suffix}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
 
   if (loading) {
     return (
@@ -1368,7 +1427,7 @@ export default function LeagueDetail() {
           </Button>
         </div>
 
-        {leagueId && <LeagueTabs leagueId={leagueId} />}
+        {leagueId && <LeagueTabs leagueId={leagueId} showSheetsTab={canManageSetup} />}
 
         {normalizedTab === 'overview' && (
           <div className="space-y-6">
@@ -1465,6 +1524,25 @@ export default function LeagueDetail() {
               )}
             </div>
           </div>
+        )}
+
+        {normalizedTab === 'schedule' && (
+          <LeagueSchedule
+            leagueId={numericLeagueId}
+            teams={teams}
+            canManage={canManageSetup}
+            memberTeamIds={memberTeamIds}
+          />
+        )}
+
+        {normalizedTab === 'sheets' && (
+          canManageSetup ? (
+            <LeagueSheets leagueId={numericLeagueId} />
+          ) : (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              You do not have access to manage sheets.
+            </div>
+          )
         )}
 
         {normalizedTab === 'divisions' && (
@@ -1818,20 +1896,7 @@ export default function LeagueDetail() {
                                 </h3>
                                 <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
                                   <div>
-                                    <span className="font-medium dark:text-gray-300">Roster:</span>
-                                    {team.roster.length === 0 ? (
-                                      <span className="ml-2">No roster set</span>
-                                    ) : (
-                                      <ul className="mt-2 space-y-1">
-                                        {team.roster.map((member) => (
-                                          <li key={member.memberId}>
-                                            {member.name} — {roleLabels[member.role]}
-                                            {member.isSkip ? ' (Skip)' : ''}
-                                            {member.isVice ? ' (Vice)' : ''}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
+                                    {teamRosterDisplay(team)}
                                   </div>
                                 </div>
                               </div>
@@ -1853,6 +1918,11 @@ export default function LeagueDetail() {
                     </div>
                   );
                 })}
+                {league.format === 'teams' && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    * Skip · ** Vice
+                  </div>
+                )}
               </div>
             )}
           </div>

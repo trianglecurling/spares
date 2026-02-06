@@ -4,6 +4,7 @@ import { publicAuthRoutes, protectedAuthRoutes } from './routes/auth.js';
 import { memberRoutes } from './routes/members.js';
 import { leagueRoutes } from './routes/leagues.js';
 import { leagueSetupRoutes } from './routes/leagueSetup.js';
+import { gameRoutes } from './routes/games.js';
 import { availabilityRoutes } from './routes/availability.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
@@ -40,6 +41,7 @@ async function buildOpenApi(): Promise<void> {
   await fastify.register(memberRoutes, { prefix: '/api' });
   await fastify.register(leagueRoutes, { prefix: '/api' });
   await fastify.register(leagueSetupRoutes, { prefix: '/api' });
+  await fastify.register(gameRoutes, { prefix: '/api' });
   await fastify.register(availabilityRoutes, { prefix: '/api' });
   await fastify.register(spareRoutes, { prefix: '/api' });
   await fastify.register(configRoutes, { prefix: '/api' });

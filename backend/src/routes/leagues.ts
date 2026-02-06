@@ -73,6 +73,28 @@ function getDayOfWeek(dateStr: string) {
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
+function computeLeagueDrawDates(
+  startDateStr: string,
+  endDateStr: string,
+  dayOfWeek: number,
+  exceptions: Set<string>
+): string[] {
+  if (!startDateStr || !endDateStr) return [];
+  if (startDateStr > endDateStr) return [];
+  const dates: string[] = [];
+  const startDay = getDayOfWeek(startDateStr);
+  const daysUntilTarget = (dayOfWeek - startDay + 7) % 7;
+  let currentDateStr = addDays(startDateStr, daysUntilTarget);
+
+  while (currentDateStr <= endDateStr) {
+    if (!exceptions.has(currentDateStr)) {
+      dates.push(currentDateStr);
+    }
+    currentDateStr = addDays(currentDateStr, 7);
+  }
+  return dates;
+}
+
 function getTodayDateString(timeZone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -451,6 +473,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
     // Update draw times if provided
     if (body.drawTimes !== undefined) {
+      const existingTimes = await db
+        .select({ draw_time: schema.leagueDrawTimes.draw_time })
+        .from(schema.leagueDrawTimes)
+        .where(eq(schema.leagueDrawTimes.league_id, leagueId));
+      const previousTimes = existingTimes.map((dt) => dt.draw_time);
+      const nextTimes = body.drawTimes;
+      const removedTimes = previousTimes.filter((time) => !nextTimes.includes(time));
+
       await db
         .delete(schema.leagueDrawTimes)
         .where(eq(schema.leagueDrawTimes.league_id, leagueId));
@@ -462,6 +492,59 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             draw_time: drawTime,
           }))
         );
+      }
+
+      if (removedTimes.length > 0) {
+        const exceptionsRows = await db
+          .select({ exception_date: schema.leagueExceptions.exception_date })
+          .from(schema.leagueExceptions)
+          .where(eq(schema.leagueExceptions.league_id, leagueId));
+        const exceptions = new Set(exceptionsRows.map((ex) => normalizeDateString(ex.exception_date)));
+        const startDateStr = normalizeDateString(body.startDate ?? league.start_date);
+        const endDateStr = normalizeDateString(body.endDate ?? league.end_date);
+        const dayOfWeek = body.dayOfWeek ?? league.day_of_week;
+        const drawDates = computeLeagueDrawDates(startDateStr, endDateStr, dayOfWeek, exceptions);
+
+        if (drawDates.length > 0) {
+          const extraDrawRows = await db
+            .select({
+              draw_date: schema.leagueExtraDraws.draw_date,
+              draw_time: schema.leagueExtraDraws.draw_time,
+            })
+            .from(schema.leagueExtraDraws)
+            .where(eq(schema.leagueExtraDraws.league_id, leagueId));
+          const extraDrawKeys = new Set(
+            extraDrawRows.map((row) => `${normalizeDateString(row.draw_date)}|${row.draw_time}`)
+          );
+
+          const pairsToUnschedule: Array<{ date: string; time: string }> = [];
+          for (const date of drawDates) {
+            for (const time of removedTimes) {
+              if (!extraDrawKeys.has(`${date}|${time}`)) {
+                pairsToUnschedule.push({ date, time });
+              }
+            }
+          }
+
+          for (const pair of pairsToUnschedule) {
+            await db
+              .update(schema.games)
+              .set({
+                game_date: null,
+                game_time: null,
+                sheet_id: null,
+                status: 'unscheduled',
+                updated_at: sql`CURRENT_TIMESTAMP`,
+              })
+              .where(
+                and(
+                  eq(schema.games.league_id, leagueId),
+                  eq(schema.games.game_date, pair.date),
+                  eq(schema.games.game_time, pair.time)
+                )
+              );
+          }
+        }
       }
     }
 

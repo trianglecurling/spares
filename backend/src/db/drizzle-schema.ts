@@ -94,6 +94,43 @@ export const sheetsSqlite = sqliteTable('sheets', {
   sortIdx: index('idx_sheets_sort_order').on(table.sort_order),
 }));
 
+export const leagueExtraDrawsSqlite = sqliteTable('league_extra_draws', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  draw_date: text('draw_date').notNull(), // YYYY-MM-DD
+  draw_time: text('draw_time').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  leagueIdIdx: index('idx_league_extra_draws_league_id').on(table.league_id),
+  dateTimeIdx: index('idx_league_extra_draws_date_time').on(table.league_id, table.draw_date, table.draw_time),
+  uniqueDraw: uniqueIndex('league_extra_draws_league_id_date_time_unique').on(
+    table.league_id,
+    table.draw_date,
+    table.draw_time
+  ),
+}));
+
+export const drawSheetAvailabilitySqlite = sqliteTable('draw_sheet_availability', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  draw_date: text('draw_date').notNull(),
+  draw_time: text('draw_time').notNull(),
+  sheet_id: integer('sheet_id').notNull().references(() => sheetsSqlite.id, { onDelete: 'cascade' }),
+  is_available: integer('is_available').default(1).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  leagueIdIdx: index('idx_draw_sheet_availability_league_id').on(table.league_id),
+  drawIdx: index('idx_draw_sheet_availability_draw').on(table.league_id, table.draw_date, table.draw_time),
+  sheetIdx: index('idx_draw_sheet_availability_sheet_id').on(table.sheet_id),
+  uniqueDrawSheet: uniqueIndex('draw_sheet_availability_unique').on(
+    table.league_id,
+    table.draw_date,
+    table.draw_time,
+    table.sheet_id
+  ),
+}));
+
 export const leagueDivisionsSqlite = sqliteTable('league_divisions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
@@ -118,6 +155,26 @@ export const leagueTeamsSqlite = sqliteTable('league_teams', {
 }, (table) => ({
   leagueIdIdx: index('idx_league_teams_league_id').on(table.league_id),
   divisionIdIdx: index('idx_league_teams_division_id').on(table.division_id),
+}));
+
+export const gamesSqlite = sqliteTable('games', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  team1_id: integer('team1_id').notNull().references(() => leagueTeamsSqlite.id, { onDelete: 'restrict' }),
+  team2_id: integer('team2_id').notNull().references(() => leagueTeamsSqlite.id, { onDelete: 'restrict' }),
+  game_date: text('game_date'),
+  game_time: text('game_time'),
+  sheet_id: integer('sheet_id').references(() => sheetsSqlite.id, { onDelete: 'set null' }),
+  status: text('status').default('unscheduled').notNull().$type<'scheduled' | 'unscheduled'>(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  leagueIdIdx: index('idx_games_league_id').on(table.league_id),
+  team1Idx: index('idx_games_team1_id').on(table.team1_id),
+  team2Idx: index('idx_games_team2_id').on(table.team2_id),
+  sheetIdx: index('idx_games_sheet_id').on(table.sheet_id),
+  leagueScheduleIdx: index('idx_games_league_date_time').on(table.league_id, table.game_date, table.game_time),
+  sheetScheduleIdx: uniqueIndex('games_sheet_date_time_unique').on(table.sheet_id, table.game_date, table.game_time),
 }));
 
 export const teamMembersSqlite = sqliteTable('team_members', {
@@ -182,6 +239,7 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   requester_id: integer('requester_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
   league_id: integer('league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  game_id: integer('game_id').references(() => gamesSqlite.id, { onDelete: 'set null' }),
   requested_for_name: text('requested_for_name').notNull(),
   requested_for_member_id: integer('requested_for_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   game_date: text('game_date').notNull(),
@@ -207,6 +265,7 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   requestedForMemberIdIdx: index('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
   cancelledByMemberIdIdx: index('idx_spare_requests_cancelled_by_member_id').on(table.cancelled_by_member_id),
   leagueIdIdx: index('idx_spare_requests_league_id').on(table.league_id),
+  gameIdIdx: index('idx_spare_requests_game_id').on(table.game_id),
   gameDateIdx: index('idx_spare_requests_game_date').on(table.game_date),
   statusIdx: index('idx_spare_requests_status').on(table.status),
 }));
@@ -440,6 +499,43 @@ export const sheetsPg = pgTable('sheets', {
   sortIdx: indexPg('idx_sheets_sort_order').on(table.sort_order),
 }));
 
+export const leagueExtraDrawsPg = pgTable('league_extra_draws', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  draw_date: date('draw_date').notNull(),
+  draw_time: time('draw_time').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  leagueIdIdx: indexPg('idx_league_extra_draws_league_id').on(table.league_id),
+  dateTimeIdx: indexPg('idx_league_extra_draws_date_time').on(table.league_id, table.draw_date, table.draw_time),
+  uniqueDraw: uniqueIndexPg('league_extra_draws_league_id_date_time_unique').on(
+    table.league_id,
+    table.draw_date,
+    table.draw_time
+  ),
+}));
+
+export const drawSheetAvailabilityPg = pgTable('draw_sheet_availability', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  draw_date: date('draw_date').notNull(),
+  draw_time: time('draw_time').notNull(),
+  sheet_id: integerPg('sheet_id').notNull().references(() => sheetsPg.id, { onDelete: 'cascade' }),
+  is_available: integerPg('is_available').default(1).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  leagueIdIdx: indexPg('idx_draw_sheet_availability_league_id').on(table.league_id),
+  drawIdx: indexPg('idx_draw_sheet_availability_draw').on(table.league_id, table.draw_date, table.draw_time),
+  sheetIdx: indexPg('idx_draw_sheet_availability_sheet_id').on(table.sheet_id),
+  uniqueDrawSheet: uniqueIndexPg('draw_sheet_availability_unique').on(
+    table.league_id,
+    table.draw_date,
+    table.draw_time,
+    table.sheet_id
+  ),
+}));
+
 export const leagueDivisionsPg = pgTable('league_divisions', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
@@ -464,6 +560,26 @@ export const leagueTeamsPg = pgTable('league_teams', {
 }, (table) => ({
   leagueIdIdx: indexPg('idx_league_teams_league_id').on(table.league_id),
   divisionIdIdx: indexPg('idx_league_teams_division_id').on(table.division_id),
+}));
+
+export const gamesPg = pgTable('games', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  team1_id: integerPg('team1_id').notNull().references(() => leagueTeamsPg.id, { onDelete: 'restrict' }),
+  team2_id: integerPg('team2_id').notNull().references(() => leagueTeamsPg.id, { onDelete: 'restrict' }),
+  game_date: date('game_date'),
+  game_time: time('game_time'),
+  sheet_id: integerPg('sheet_id').references(() => sheetsPg.id, { onDelete: 'set null' }),
+  status: textPg('status').default('unscheduled').notNull().$type<'scheduled' | 'unscheduled'>(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  leagueIdIdx: indexPg('idx_games_league_id').on(table.league_id),
+  team1Idx: indexPg('idx_games_team1_id').on(table.team1_id),
+  team2Idx: indexPg('idx_games_team2_id').on(table.team2_id),
+  sheetIdx: indexPg('idx_games_sheet_id').on(table.sheet_id),
+  leagueScheduleIdx: indexPg('idx_games_league_date_time').on(table.league_id, table.game_date, table.game_time),
+  sheetScheduleIdx: uniqueIndexPg('games_sheet_date_time_unique').on(table.sheet_id, table.game_date, table.game_time),
 }));
 
 export const teamMembersPg = pgTable('team_members', {
@@ -528,6 +644,7 @@ export const spareRequestsPg = pgTable('spare_requests', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   requester_id: integerPg('requester_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
   league_id: integerPg('league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  game_id: integerPg('game_id').references(() => gamesPg.id, { onDelete: 'set null' }),
   requested_for_name: textPg('requested_for_name').notNull(),
   requested_for_member_id: integerPg('requested_for_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   game_date: date('game_date').notNull(),
@@ -553,6 +670,7 @@ export const spareRequestsPg = pgTable('spare_requests', {
   requestedForMemberIdIdx: indexPg('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
   cancelledByMemberIdIdx: indexPg('idx_spare_requests_cancelled_by_member_id').on(table.cancelled_by_member_id),
   leagueIdIdx: indexPg('idx_spare_requests_league_id').on(table.league_id),
+  gameIdIdx: indexPg('idx_spare_requests_game_id').on(table.game_id),
   gameDateIdx: indexPg('idx_spare_requests_game_date').on(table.game_date),
   statusIdx: indexPg('idx_spare_requests_status').on(table.status),
 }));
@@ -706,8 +824,11 @@ export const sqliteSchema = {
   leagueDrawTimes: leagueDrawTimesSqlite,
   leagueExceptions: leagueExceptionsSqlite,
   sheets: sheetsSqlite,
+  leagueExtraDraws: leagueExtraDrawsSqlite,
+  drawSheetAvailability: drawSheetAvailabilitySqlite,
   leagueDivisions: leagueDivisionsSqlite,
   leagueTeams: leagueTeamsSqlite,
+  games: gamesSqlite,
   teamMembers: teamMembersSqlite,
   leagueMemberRoles: leagueMemberRolesSqlite,
   leagueRoster: leagueRosterSqlite,
@@ -732,8 +853,11 @@ export const pgSchema = {
   leagueDrawTimes: leagueDrawTimesPg,
   leagueExceptions: leagueExceptionsPg,
   sheets: sheetsPg,
+  leagueExtraDraws: leagueExtraDrawsPg,
+  drawSheetAvailability: drawSheetAvailabilityPg,
   leagueDivisions: leagueDivisionsPg,
   leagueTeams: leagueTeamsPg,
+  games: gamesPg,
   teamMembers: teamMembersPg,
   leagueMemberRoles: leagueMemberRolesPg,
   leagueRoster: leagueRosterPg,

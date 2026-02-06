@@ -4370,6 +4370,876 @@
         }
       }
     },
+    "/leagues/{id}/games": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "startDate",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "endDate",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "includeUnscheduled",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "leagueId": {
+                        "type": "number"
+                      },
+                      "team1Id": {
+                        "type": "number"
+                      },
+                      "team2Id": {
+                        "type": "number"
+                      },
+                      "team1Name": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "team2Name": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "gameDate": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "gameTime": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "sheetId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "sheetName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "scheduled",
+                          "unscheduled"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "updatedAt": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "leagueId",
+                      "team1Id",
+                      "team2Id",
+                      "team1Name",
+                      "team2Name",
+                      "gameDate",
+                      "gameTime",
+                      "sheetId",
+                      "sheetName",
+                      "status",
+                      "createdAt",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "team1Id": {
+                    "type": "number"
+                  },
+                  "team2Id": {
+                    "type": "number"
+                  },
+                  "gameDate": {
+                    "type": "string"
+                  },
+                  "gameTime": {
+                    "type": "string"
+                  },
+                  "sheetId": {
+                    "type": "number"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "scheduled",
+                      "unscheduled"
+                    ]
+                  }
+                },
+                "required": [
+                  "team1Id",
+                  "team2Id"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "leagueId": {
+                      "type": "number"
+                    },
+                    "team1Id": {
+                      "type": "number"
+                    },
+                    "team2Id": {
+                      "type": "number"
+                    },
+                    "team1Name": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "team2Name": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "gameDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "gameTime": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "sheetId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "sheetName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "scheduled",
+                        "unscheduled"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "leagueId",
+                    "team1Id",
+                    "team2Id",
+                    "team1Name",
+                    "team2Name",
+                    "gameDate",
+                    "gameTime",
+                    "sheetId",
+                    "sheetName",
+                    "status",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/games/{gameId}": {
+      "patch": {
+        "tags": [
+          "games"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "team1Id": {
+                    "type": "number"
+                  },
+                  "team2Id": {
+                    "type": "number"
+                  },
+                  "gameDate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "gameTime": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "sheetId": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "scheduled",
+                      "unscheduled"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "leagueId": {
+                      "type": "number"
+                    },
+                    "team1Id": {
+                      "type": "number"
+                    },
+                    "team2Id": {
+                      "type": "number"
+                    },
+                    "team1Name": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "team2Name": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "gameDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "gameTime": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "sheetId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "sheetName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "scheduled",
+                        "unscheduled"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "leagueId",
+                    "team1Id",
+                    "team2Id",
+                    "team1Name",
+                    "team2Name",
+                    "gameDate",
+                    "gameTime",
+                    "sheetId",
+                    "sheetName",
+                    "status",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/draw-slots": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "startDate",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "endDate",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "date": {
+                        "type": "string"
+                      },
+                      "time": {
+                        "type": "string"
+                      },
+                      "isExtra": {
+                        "type": "boolean"
+                      },
+                      "extraDrawId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "sheets": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "type": "number"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "isAvailable": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "isAvailable"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "date",
+                      "time",
+                      "isExtra",
+                      "extraDrawId",
+                      "sheets"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/extra-draws": {
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "date",
+                  "time"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "leagueId": {
+                      "type": "number"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "time": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "leagueId",
+                    "date",
+                    "time"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/extra-draws/{drawId}": {
+      "delete": {
+        "tags": [
+          "games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "drawId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/draws/availability": {
+      "put": {
+        "tags": [
+          "games"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "sheets": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "sheetId": {
+                          "type": "number"
+                        },
+                        "isAvailable": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "sheetId",
+                        "isAvailable"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "date",
+                  "time",
+                  "sheets"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/me/upcoming-games": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "leagueId": {
+                        "type": "number"
+                      },
+                      "leagueName": {
+                        "type": "string"
+                      },
+                      "team1Id": {
+                        "type": "number"
+                      },
+                      "team2Id": {
+                        "type": "number"
+                      },
+                      "team1Name": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "team2Name": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "gameDate": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "gameTime": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "sheetId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "sheetName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "leagueId",
+                      "leagueName",
+                      "team1Id",
+                      "team2Id",
+                      "team1Name",
+                      "team2Name",
+                      "gameDate",
+                      "gameTime",
+                      "sheetId",
+                      "sheetName"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/availability": {
       "get": {
         "tags": [
@@ -4842,6 +5712,9 @@
                     "type": "string"
                   },
                   "requestedForMemberId": {
+                    "type": "number"
+                  },
+                  "gameId": {
                     "type": "number"
                   },
                   "gameDate": {

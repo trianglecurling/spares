@@ -115,6 +115,55 @@ async function ensureRequestedForMemberIdColumn(db: DatabaseAdapter): Promise<vo
   );
 }
 
+async function ensureGameIdColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    const stmt = db.prepare<{ column_name?: string | null }>(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'spare_requests'
+    `);
+    const rows = await allPrepared<{ column_name?: string | null }>(stmt);
+    const columnNames = new Set(rows.map((row) => String(row.column_name)));
+    if (!columnNames.has('game_id')) {
+      await execSQL(
+        db,
+        `
+          ALTER TABLE spare_requests
+          ADD COLUMN IF NOT EXISTS game_id INTEGER REFERENCES games(id) ON DELETE SET NULL;
+        `
+      );
+    }
+    await execSQL(
+      db,
+      `
+        CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id
+        ON spare_requests(game_id);
+      `
+    );
+    return;
+  }
+
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(spare_requests)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('game_id')) {
+    await execSQL(
+      db,
+      `
+        ALTER TABLE spare_requests
+        ADD COLUMN game_id INTEGER REFERENCES games(id) ON DELETE SET NULL;
+      `
+    );
+  }
+  await execSQL(
+    db,
+    `
+      CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id
+      ON spare_requests(game_id);
+    `
+  );
+}
+
 function ensureRequestedForMemberIdColumnSync(db: DatabaseAdapter): void {
   const stmt = db.prepare(`PRAGMA table_info(spare_requests)`);
   const columns = stmt.all() as { name?: string }[];
@@ -144,6 +193,28 @@ function ensureRequestedForMemberIdColumnSync(db: DatabaseAdapter): void {
       ON spare_requests(requested_for_member_id);
       CREATE INDEX IF NOT EXISTS idx_spare_requests_cancelled_by_member_id
       ON spare_requests(cancelled_by_member_id);
+    `
+  );
+}
+
+function ensureGameIdColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(spare_requests)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('game_id')) {
+    execSQLSync(
+      db,
+      `
+        ALTER TABLE spare_requests
+        ADD COLUMN game_id INTEGER REFERENCES games(id) ON DELETE SET NULL;
+      `
+    );
+  }
+  execSQLSync(
+    db,
+    `
+      CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id
+      ON spare_requests(game_id);
     `
   );
 }
@@ -231,6 +302,34 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_league_exceptions_league_id ON league_exceptions(league_id);
 
+    -- League extra draws (one-off draw dates/times)
+    CREATE TABLE IF NOT EXISTS league_extra_draws (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      draw_date DATE NOT NULL,
+      draw_time TIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, draw_date, draw_time)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_league_id ON league_extra_draws(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_date_time ON league_extra_draws(league_id, draw_date, draw_time);
+
+    -- League extra draws (one-off draw dates/times)
+    CREATE TABLE IF NOT EXISTS league_extra_draws (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      draw_date DATE NOT NULL,
+      draw_time TIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, draw_date, draw_time)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_league_id ON league_extra_draws(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_date_time ON league_extra_draws(league_id, draw_date, draw_time);
+
     -- Sheets (club-level)
     CREATE TABLE IF NOT EXISTS sheets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -244,6 +343,25 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_sheets_is_active ON sheets(is_active);
     CREATE INDEX IF NOT EXISTS idx_sheets_sort_order ON sheets(sort_order);
+
+    -- Draw sheet availability overrides
+    CREATE TABLE IF NOT EXISTS draw_sheet_availability (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      draw_date DATE NOT NULL,
+      draw_time TIME NOT NULL,
+      sheet_id INTEGER NOT NULL,
+      is_available INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (sheet_id) REFERENCES sheets(id) ON DELETE CASCADE,
+      UNIQUE(league_id, draw_date, draw_time, sheet_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_league_id ON draw_sheet_availability(league_id);
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_draw ON draw_sheet_availability(league_id, draw_date, draw_time);
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_sheet_id ON draw_sheet_availability(sheet_id);
 
     -- League divisions
     CREATE TABLE IF NOT EXISTS league_divisions (
@@ -275,6 +393,31 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_league_teams_league_id ON league_teams(league_id);
     CREATE INDEX IF NOT EXISTS idx_league_teams_division_id ON league_teams(division_id);
+
+    -- Games
+    CREATE TABLE IF NOT EXISTS games (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      team1_id INTEGER NOT NULL,
+      team2_id INTEGER NOT NULL,
+      game_date DATE,
+      game_time TIME,
+      sheet_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'unscheduled' CHECK(status IN ('scheduled', 'unscheduled')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (team1_id) REFERENCES league_teams(id) ON DELETE RESTRICT,
+      FOREIGN KEY (team2_id) REFERENCES league_teams(id) ON DELETE RESTRICT,
+      FOREIGN KEY (sheet_id) REFERENCES sheets(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_games_league_id ON games(league_id);
+    CREATE INDEX IF NOT EXISTS idx_games_team1_id ON games(team1_id);
+    CREATE INDEX IF NOT EXISTS idx_games_team2_id ON games(team2_id);
+    CREATE INDEX IF NOT EXISTS idx_games_sheet_id ON games(sheet_id);
+    CREATE INDEX IF NOT EXISTS idx_games_league_date_time ON games(league_id, game_date, game_time);
+    CREATE UNIQUE INDEX IF NOT EXISTS games_sheet_date_time_unique ON games(sheet_id, game_date, game_time);
 
     -- Team members (rosters)
     CREATE TABLE IF NOT EXISTS team_members (
@@ -421,11 +564,31 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_member_availability_member_id ON member_availability(member_id);
     CREATE INDEX IF NOT EXISTS idx_member_availability_league_id ON member_availability(league_id);
 
+    -- Draw sheet availability overrides
+    CREATE TABLE IF NOT EXISTS draw_sheet_availability (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      draw_date DATE NOT NULL,
+      draw_time TIME NOT NULL,
+      sheet_id INTEGER NOT NULL,
+      is_available INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (sheet_id) REFERENCES sheets(id) ON DELETE CASCADE,
+      UNIQUE(league_id, draw_date, draw_time, sheet_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_league_id ON draw_sheet_availability(league_id);
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_draw ON draw_sheet_availability(league_id, draw_date, draw_time);
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_sheet_id ON draw_sheet_availability(sheet_id);
+
     -- Spare requests
     CREATE TABLE IF NOT EXISTS spare_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       requester_id INTEGER NOT NULL,
       league_id INTEGER,
+      game_id INTEGER,
       requested_for_name TEXT NOT NULL,
       requested_for_member_id INTEGER,
       game_date DATE NOT NULL,
@@ -444,6 +607,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       FOREIGN KEY (requested_for_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (cancelled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE SET NULL,
       FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE SET NULL
     );
 
@@ -612,6 +776,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0', table: 'spare_requests', column: 'notification_paused' },
     { sql: 'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'', table: 'members', column: 'theme_preference' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN league_id INTEGER', table: 'spare_requests', column: 'league_id' },
+    { sql: 'ALTER TABLE spare_requests ADD COLUMN game_id INTEGER REFERENCES games(id) ON DELETE SET NULL', table: 'spare_requests', column: 'game_id' },
     { sql: 'ALTER TABLE spare_request_invitations ADD COLUMN declined_at DATETIME', table: 'spare_request_invitations', column: 'declined_at' },
     { sql: 'ALTER TABLE spare_request_invitations ADD COLUMN decline_comment TEXT', table: 'spare_request_invitations', column: 'decline_comment' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0', table: 'spare_requests', column: 'all_invites_declined_notified' },
@@ -635,6 +800,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   // Indexes that depend on migrated columns (safe on existing DBs)
   try {
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id ON spare_requests(game_id);');
   } catch (e: unknown) {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
@@ -741,6 +907,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   `);
 
   await ensureRequestedForMemberIdColumn(db);
+  await ensureGameIdColumn(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -832,6 +999,158 @@ export function createSchemaSync(db: DatabaseAdapter): void {
 
     CREATE INDEX IF NOT EXISTS idx_league_exceptions_league_id ON league_exceptions(league_id);
 
+    -- League extra draws (one-off draw dates/times)
+    CREATE TABLE IF NOT EXISTS league_extra_draws (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      draw_date DATE NOT NULL,
+      draw_time TIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, draw_date, draw_time)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_league_id ON league_extra_draws(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_date_time ON league_extra_draws(league_id, draw_date, draw_time);
+
+    -- Sheets (club-level)
+    CREATE TABLE IF NOT EXISTS sheets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sheets_is_active ON sheets(is_active);
+    CREATE INDEX IF NOT EXISTS idx_sheets_sort_order ON sheets(sort_order);
+
+    -- Draw sheet availability overrides
+    CREATE TABLE IF NOT EXISTS draw_sheet_availability (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      draw_date DATE NOT NULL,
+      draw_time TIME NOT NULL,
+      sheet_id INTEGER NOT NULL,
+      is_available INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (sheet_id) REFERENCES sheets(id) ON DELETE CASCADE,
+      UNIQUE(league_id, draw_date, draw_time, sheet_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_league_id ON draw_sheet_availability(league_id);
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_draw ON draw_sheet_availability(league_id, draw_date, draw_time);
+    CREATE INDEX IF NOT EXISTS idx_draw_sheet_availability_sheet_id ON draw_sheet_availability(sheet_id);
+
+    -- League divisions
+    CREATE TABLE IF NOT EXISTS league_divisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      is_default INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(league_id, name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_divisions_league_id ON league_divisions(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_divisions_league_id_sort ON league_divisions(league_id, sort_order);
+
+    -- League teams
+    CREATE TABLE IF NOT EXISTS league_teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      division_id INTEGER NOT NULL,
+      name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (division_id) REFERENCES league_divisions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_teams_league_id ON league_teams(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_teams_division_id ON league_teams(division_id);
+
+    -- Games
+    CREATE TABLE IF NOT EXISTS games (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      team1_id INTEGER NOT NULL,
+      team2_id INTEGER NOT NULL,
+      game_date DATE,
+      game_time TIME,
+      sheet_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'unscheduled' CHECK(status IN ('scheduled', 'unscheduled')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (team1_id) REFERENCES league_teams(id) ON DELETE RESTRICT,
+      FOREIGN KEY (team2_id) REFERENCES league_teams(id) ON DELETE RESTRICT,
+      FOREIGN KEY (sheet_id) REFERENCES sheets(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_games_league_id ON games(league_id);
+    CREATE INDEX IF NOT EXISTS idx_games_team1_id ON games(team1_id);
+    CREATE INDEX IF NOT EXISTS idx_games_team2_id ON games(team2_id);
+    CREATE INDEX IF NOT EXISTS idx_games_sheet_id ON games(sheet_id);
+    CREATE INDEX IF NOT EXISTS idx_games_league_date_time ON games(league_id, game_date, game_time);
+    CREATE UNIQUE INDEX IF NOT EXISTS games_sheet_date_time_unique ON games(sheet_id, game_date, game_time);
+
+    -- Team members (rosters)
+    CREATE TABLE IF NOT EXISTS team_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      is_skip INTEGER DEFAULT 0,
+      is_vice INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (team_id) REFERENCES league_teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(team_id, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id);
+    CREATE INDEX IF NOT EXISTS idx_team_members_member_id ON team_members(member_id);
+
+    -- League member roles (league managers)
+    CREATE TABLE IF NOT EXISTS league_member_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      league_id INTEGER,
+      role TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      UNIQUE(member_id, league_id, role)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_member_roles_member_id ON league_member_roles(member_id);
+    CREATE INDEX IF NOT EXISTS idx_league_member_roles_league_id ON league_member_roles(league_id);
+
+    -- League roster (eligible members for team assignments)
+    CREATE TABLE IF NOT EXISTS league_roster (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      member_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      UNIQUE(league_id, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_league_roster_league_id ON league_roster(league_id);
+    CREATE INDEX IF NOT EXISTS idx_league_roster_member_id ON league_roster(member_id);
+
     -- Member availability for leagues
     CREATE TABLE IF NOT EXISTS member_availability (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -854,6 +1173,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       requester_id INTEGER NOT NULL,
       league_id INTEGER,
+      game_id INTEGER,
       requested_for_name TEXT NOT NULL,
       requested_for_member_id INTEGER,
       game_date DATE NOT NULL,
@@ -872,6 +1192,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       FOREIGN KEY (requested_for_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (cancelled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
       FOREIGN KEY (filled_by_member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE SET NULL,
       FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE SET NULL
     );
 
@@ -1027,6 +1348,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0',
     'ALTER TABLE members ADD COLUMN theme_preference TEXT DEFAULT \'system\'',
     'ALTER TABLE spare_requests ADD COLUMN league_id INTEGER',
+    'ALTER TABLE spare_requests ADD COLUMN game_id INTEGER REFERENCES games(id) ON DELETE SET NULL',
     'ALTER TABLE spare_request_invitations ADD COLUMN declined_at DATETIME',
     'ALTER TABLE spare_request_invitations ADD COLUMN decline_comment TEXT',
     'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0',
@@ -1049,6 +1371,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   // Indexes that depend on migrated columns (safe on existing DBs)
   try {
     execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
+    execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id ON spare_requests(game_id);');
   } catch {
     // ignore
   }
@@ -1114,6 +1437,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   `);
 
   ensureRequestedForMemberIdColumnSync(db);
+  ensureGameIdColumnSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

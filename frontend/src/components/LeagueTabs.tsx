@@ -2,23 +2,28 @@ import { Link, useLocation } from 'react-router-dom';
 
 interface LeagueTabsProps {
   leagueId: string;
+  showSheetsTab?: boolean;
 }
 
 const leagueTabs = [
   { label: 'Overview', path: '' },
+  { label: 'Schedule', path: 'schedule' },
+  { label: 'Sheets', path: 'sheets', requiresManager: true },
   { label: 'Teams', path: 'teams' },
   { label: 'Roster', path: 'roster' },
   { label: 'Divisions', path: 'divisions' },
   { label: 'League managers', path: 'managers' },
 ];
 
-export default function LeagueTabs({ leagueId }: LeagueTabsProps) {
+export default function LeagueTabs({ leagueId, showSheetsTab = false }: LeagueTabsProps) {
   const location = useLocation();
   const basePath = `/leagues/${leagueId}`;
 
   return (
     <div className="flex flex-wrap gap-2">
-      {leagueTabs.map((tab) => {
+      {leagueTabs
+        .filter((tab) => (tab.requiresManager ? showSheetsTab : true))
+        .map((tab) => {
         const to = tab.path ? `${basePath}/${tab.path}` : basePath;
         const isActive = location.pathname === to;
         return (
