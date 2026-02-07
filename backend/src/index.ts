@@ -11,6 +11,8 @@ import { memberRoutes } from './routes/members.js';
 import { leagueRoutes } from './routes/leagues.js';
 import { leagueSetupRoutes } from './routes/leagueSetup.js';
 import { gameRoutes } from './routes/games.js';
+import { resultsRoutes } from './routes/results.js';
+import { schedulingRoutes } from './routes/scheduling.js';
 import { availabilityRoutes } from './routes/availability.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
@@ -225,6 +227,8 @@ fastify.register(
     await instance.register(leagueRoutes, { prefix: '/api' });
     await instance.register(leagueSetupRoutes, { prefix: '/api' });
     await instance.register(gameRoutes, { prefix: '/api' });
+    await instance.register(resultsRoutes, { prefix: '/api' });
+    await instance.register(schedulingRoutes, { prefix: '/api' });
     await instance.register(availabilityRoutes, { prefix: '/api' });
     await instance.register(spareRoutes, { prefix: '/api' });
     await instance.register(configRoutes, { prefix: '/api' });

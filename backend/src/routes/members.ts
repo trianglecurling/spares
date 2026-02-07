@@ -565,12 +565,24 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const isCurrentUserAdmin = isAdmin(member);
     const activeMembers = members.filter((m) => !isMemberExpired(m));
 
+    const leagueAdminRows = await db
+      .select({ member_id: schema.leagueMemberRoles.member_id })
+      .from(schema.leagueMemberRoles)
+      .where(
+        and(
+          eq(schema.leagueMemberRoles.role, 'league_administrator'),
+          isNull(schema.leagueMemberRoles.league_id)
+        )
+      );
+    const leagueAdminIds = new Set(leagueAdminRows.map((row) => row.member_id));
+
     return activeMembers.map((m) => {
       const response: MemberSummaryResponse = {
         id: m.id,
         name: m.name,
         isAdmin: isAdmin(m),
         isServerAdmin: isServerAdmin(m),
+        isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
         isInServerAdminsList: isInServerAdminsList(m),
         emailSubscribed: Boolean(m.email_subscribed === 1),
         optedInSms: Boolean(m.opted_in_sms === 1),

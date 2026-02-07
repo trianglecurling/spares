@@ -47,6 +47,39 @@ type LeagueRosterRow = DrizzleSchema['leagueRoster']['$inferSelect'];
 type TeamRow = DrizzleSchema['leagueTeams']['$inferSelect'];
 type TeamMemberRow = DrizzleSchema['teamMembers']['$inferSelect'];
 
+/** YYYY-MM-DD for today (UTC date). Used to exclude expired members from add/search. */
+function todayDateString(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+/** Condition: member is not expired (valid_through is null or >= today). */
+function memberNotExpiredCondition(schema: DrizzleSchema, today: string) {
+  return or(
+    sql`${schema.members.valid_through} IS NULL`,
+    sql`${schema.members.valid_through} >= ${today}`
+  );
+}
+
+/** Returns true if the member is expired (valid_through set and in the past). */
+async function isMemberExpired(
+  db: DrizzleDb,
+  schema: DrizzleSchema,
+  memberId: number,
+  today?: string
+): Promise<boolean> {
+  const todayStr = today ?? todayDateString();
+  const rows = await db
+    .select({ valid_through: schema.members.valid_through })
+    .from(schema.members)
+    .where(eq(schema.members.id, memberId))
+    .limit(1);
+  if (rows.length === 0) return false;
+  const vt = rows[0].valid_through;
+  if (vt == null) return false;
+  const vtStr = typeof vt === 'string' ? vt : (vt as Date).toISOString().split('T')[0];
+  return todayStr > vtStr;
+}
+
 const sheetCreateSchema = z.object({
   name: z.string().min(1),
   sortOrder: z.number().int().optional(),
@@ -825,6 +858,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     const search = `%${query.toLowerCase()}%`;
     const { db, schema } = getDrizzleDb();
+    const today = todayDateString();
 
     if (rosterOnly) {
       const rows = (await db
@@ -834,6 +868,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(schema.leagueRoster.league_id, leagueId),
+            memberNotExpiredCondition(schema, today),
             or(
               sql`LOWER(${schema.members.name}) LIKE ${search}`,
               sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -862,6 +897,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .where(
         and(
           rosterIdSet.length > 0 ? notInArray(schema.members.id, rosterIdSet) : sql`1=1`,
+          memberNotExpiredCondition(schema, today),
           or(
             sql`LOWER(${schema.members.name}) LIKE ${search}`,
             sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -923,6 +959,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Member not found.' });
     }
 
+    if (await isMemberExpired(db, schema, body.memberId)) {
+      return reply.code(400).send({ error: 'Cannot add an expired member to the roster.' });
+    }
+
     const result = await db
       .insert(schema.leagueRoster)
       .values({ league_id: leagueId, member_id: body.memberId })
@@ -962,12 +1002,18 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     const normalizedNames = rawNames.map((name) => name.toLowerCase());
     const uniqueNormalized = Array.from(new Set(normalizedNames));
     const { db, schema } = getDrizzleDb();
+    const today = todayDateString();
 
     const lowerName = sql<string>`LOWER(${schema.members.name})`;
     const exactRows = (await db
       .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email, lowerName })
       .from(schema.members)
-      .where(inArray(lowerName, uniqueNormalized))
+      .where(
+        and(
+          memberNotExpiredCondition(schema, today),
+          inArray(lowerName, uniqueNormalized)
+        )
+      )
       .orderBy(schema.members.name)) as {
       id: number;
       name: string;
@@ -1010,6 +1056,11 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     const toInsert = uniqueMatchedIds.filter((id) => !existingIds.has(id));
     if (toInsert.length > 0) {
+      for (const memberId of toInsert) {
+        if (await isMemberExpired(db, schema, memberId, today)) {
+          return reply.code(400).send({ error: 'One or more matched members are expired and cannot be added to the roster.' });
+        }
+      }
       await db
         .insert(schema.leagueRoster)
         .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
@@ -1023,9 +1074,12 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
         .from(schema.members)
         .where(
-          or(
-            sql`LOWER(${schema.members.name}) LIKE ${search}`,
-            sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+          and(
+            memberNotExpiredCondition(schema, today),
+            or(
+              sql`LOWER(${schema.members.name}) LIKE ${search}`,
+              sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+            )
           )
         )
         .orderBy(schema.members.name)
@@ -1160,6 +1214,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     const search = `%${query.toLowerCase()}%`;
     const { db, schema } = getDrizzleDb();
+    const today = todayDateString();
     const existingManagerRows = (await db
       .select({ member_id: schema.leagueMemberRoles.member_id })
       .from(schema.leagueMemberRoles)
@@ -1177,6 +1232,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .where(
         and(
           existingIds.length > 0 ? notInArray(schema.members.id, existingIds) : sql`1=1`,
+          memberNotExpiredCondition(schema, today),
           or(
             sql`LOWER(${schema.members.name}) LIKE ${search}`,
             sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -1226,6 +1282,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     if (memberRows.length === 0) {
       return reply.code(404).send({ error: 'Member not found.' });
+    }
+
+    if (await isMemberExpired(db, schema, body.memberId)) {
+      return reply.code(400).send({ error: 'Cannot add an expired member as a league manager.' });
     }
 
     const result = await db
@@ -1449,12 +1509,17 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     if (body.members && body.members.length > 0) {
       try {
         const roster = validateRoster(format, body.members);
+        const memberIds = roster.map((entry) => entry.memberId);
+        for (const memberId of memberIds) {
+          if (await isMemberExpired(db, schema, memberId)) {
+            return reply.code(400).send({ error: 'One or more roster members are expired and cannot be added to a team.' });
+          }
+        }
         await db.transaction(async (tx: DrizzleTx) => {
           await tx
             .delete(schema.teamMembers)
             .where(eq(schema.teamMembers.team_id, team.id));
 
-          const memberIds = roster.map((entry) => entry.memberId);
           const existingMembers = (await tx
             .select({ id: schema.members.id, name: schema.members.name })
             .from(schema.members)
@@ -1731,6 +1796,12 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       const roster = validateRoster(team.format, body.members);
       const memberIds = roster.map((entry) => entry.memberId);
 
+      for (const memberId of memberIds) {
+        if (await isMemberExpired(db, schema, memberId)) {
+          return reply.code(400).send({ error: 'One or more roster members are expired and cannot be added to a team.' });
+        }
+      }
+
       await db.transaction(async (tx: DrizzleTx) => {
         const existingMembers = (await tx
           .select({ id: schema.members.id, name: schema.members.name })
@@ -1828,14 +1899,18 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     const search = `%${query.toLowerCase()}%`;
     const { db, schema } = getDrizzleDb();
+    const today = todayDateString();
 
     const rows = (await db
       .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
       .from(schema.members)
       .where(
-        or(
-          sql`LOWER(${schema.members.name}) LIKE ${search}`,
-          sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+        and(
+          memberNotExpiredCondition(schema, today),
+          or(
+            sql`LOWER(${schema.members.name}) LIKE ${search}`,
+            sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+          )
         )
       )
       .orderBy(schema.members.name, desc(schema.members.id))

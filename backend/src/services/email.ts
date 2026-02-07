@@ -840,3 +840,70 @@ export async function sendWelcomeEmail(
   );
 }
 
+export interface ByeRequestEntry {
+  drawDate: string;
+  drawTime: string;
+  priority: number;
+}
+
+export async function sendByeRequestsConfirmationEmail(
+  to: string,
+  recipientName: string,
+  leagueName: string,
+  teamName: string,
+  requests: ByeRequestEntry[],
+  updatedByName: string
+): Promise<void> {
+  const sorted = [...requests].sort((a, b) => {
+    const dateCmp = a.drawDate.localeCompare(b.drawDate);
+    if (dateCmp !== 0) return dateCmp;
+    return a.drawTime.localeCompare(b.drawTime);
+  });
+
+  const rows =
+    sorted.length === 0
+      ? '<p><em>No bye priorities submitted.</em></p>'
+      : `
+    <table style="border-collapse: collapse; width: 100%; margin-top: 12px;">
+      <thead>
+        <tr style="background: #f5f5f5;">
+          <th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Date</th>
+          <th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Time</th>
+          <th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Bye priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted
+          .map(
+            (r) => `
+          <tr>
+            <td style="padding: 8px; border: 1px solid #ddd;">${formatDateForEmail(r.drawDate)}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${formatTimeForEmail(r.drawTime)}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${r.priority}</td>
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `;
+
+  const htmlContent = `
+    <h2>Bye requests updated</h2>
+    <p>Hi ${recipientName},</p>
+    <p>Your team's bye requests for <strong>${leagueName}</strong> have been updated.</p>
+    <p><strong>Updated by:</strong> ${updatedByName}</p>
+    <p><strong>Team:</strong> ${teamName}</p>
+    <p><strong>Bye priorities (schedule):</strong></p>
+    ${rows}
+    <p>Lower priority numbers are preferred byes (1 = highest preference). These will be considered when the league schedule is generated.</p>
+  `;
+
+  await sendEmail({
+    to,
+    subject: `Bye requests updated – ${leagueName} (${teamName})`,
+    htmlContent,
+    recipientName: recipientName || to,
+  });
+}
+

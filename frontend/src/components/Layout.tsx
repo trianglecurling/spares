@@ -14,7 +14,8 @@ export default function Layout({ children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const isActive = (path: string) => location.pathname === path;
+  const isNavLinkActive = (to: string, matchPrefix?: boolean) =>
+    matchPrefix ? location.pathname === to || location.pathname.startsWith(`${to}/`) : location.pathname === to;
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -39,7 +40,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const navLinks = [
     { to: '/', label: 'Dashboard' },
-    { to: '/leagues', label: 'Leagues' },
+    { to: '/leagues', label: 'Leagues', matchPrefix: true },
     { to: '/availability', label: 'My availability' },
     { to: '/my-requests', label: 'My requests' },
     { to: '/members', label: 'Directory' },
@@ -79,7 +80,7 @@ export default function Layout({ children }: LayoutProps) {
                     key={link.to}
                     to={link.to}
                     className={`px-3 py-2 rounded-md text-sm font-medium ${
-                      isActive(link.to)
+                      isNavLinkActive(link.to, link.matchPrefix)
                         ? 'bg-primary-teal text-white'
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
@@ -93,7 +94,7 @@ export default function Layout({ children }: LayoutProps) {
                     key={link.to}
                     to={link.to}
                     className={`px-3 py-2 rounded-md text-sm font-medium ${
-                      isActive(link.to)
+                      isNavLinkActive(link.to, link.matchPrefix)
                         ? 'bg-primary-teal text-white'
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
@@ -146,7 +147,7 @@ export default function Layout({ children }: LayoutProps) {
                     to={link.to}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`block px-3 py-2 rounded-md text-base font-medium ${
-                      isActive(link.to)
+                      isNavLinkActive(link.to, link.matchPrefix)
                         ? 'bg-primary-teal text-white'
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
@@ -161,7 +162,7 @@ export default function Layout({ children }: LayoutProps) {
                     to={link.to}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`block px-3 py-2 rounded-md text-base font-medium ${
-                      isActive(link.to)
+                      isNavLinkActive(link.to, link.matchPrefix)
                         ? 'bg-primary-teal text-white'
                         : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}

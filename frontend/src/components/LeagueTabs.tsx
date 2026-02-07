@@ -8,7 +8,9 @@ interface LeagueTabsProps {
 const leagueTabs = [
   { label: 'Overview', path: '' },
   { label: 'Schedule', path: 'schedule' },
+  { label: 'Standings', path: 'standings' },
   { label: 'Sheets', path: 'sheets', requiresManager: true },
+  { label: 'Schedule generation', path: 'schedule-generation', requiresManager: true },
   { label: 'Teams', path: 'teams' },
   { label: 'Roster', path: 'roster' },
   { label: 'Divisions', path: 'divisions' },

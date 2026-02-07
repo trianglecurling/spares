@@ -9,6 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import LeagueTabs from '../../components/LeagueTabs';
 import LeagueSchedule from './LeagueSchedule';
+import LeagueScheduleGeneration from './LeagueScheduleGeneration';
+import LeagueStandings from './LeagueStandings';
 import LeagueSheets from './LeagueSheets';
 import Modal from '../../components/Modal';
 
@@ -97,7 +99,7 @@ function createDoublesRecord<T>(value: T) {
   }, {} as Record<DoublesRole, T>);
 }
 
-const leagueParamTabs = ['schedule', 'sheets', 'teams', 'roster', 'divisions', 'managers'] as const;
+const leagueParamTabs = ['schedule', 'standings', 'sheets', 'schedule-generation', 'teams', 'roster', 'divisions', 'managers'] as const;
 type LeagueParamTab = (typeof leagueParamTabs)[number];
 type LeagueSetupTab = 'overview' | LeagueParamTab;
 
@@ -166,6 +168,14 @@ export default function LeagueDetail() {
     return 'overview';
   }, [tab]);
   const [loading, setLoading] = useState(true);
+  const [leagueSettings, setLeagueSettings] = useState<{ collectByeRequests: boolean } | null>(null);
+
+  const [byeRequestsModalOpen, setByeRequestsModalOpen] = useState(false);
+  const [byeRequestsTeamId, setByeRequestsTeamId] = useState<number | null>(null);
+  const [byeDrawSlots, setByeDrawSlots] = useState<Array<{ date: string; time: string; isExtra: boolean }>>([]);
+  const [byePriorities, setByePriorities] = useState<Record<string, number>>({});
+  const [byeRequestsLoading, setByeRequestsLoading] = useState(false);
+  const [byeRequestsSaving, setByeRequestsSaving] = useState(false);
 
   const [editLeagueModalOpen, setEditLeagueModalOpen] = useState(false);
   const [leagueForm, setLeagueForm] = useState({
@@ -233,6 +243,12 @@ export default function LeagueDetail() {
     divisionId: 0,
   });
   const [teamSubmitting, setTeamSubmitting] = useState(false);
+  const [selectedTeamStats, setSelectedTeamStats] = useState<{
+    gamesPlayed: number;
+    wins: number;
+    losses: number;
+    ties: number;
+  } | null>(null);
   const teamFormRef = useRef<HTMLDivElement | null>(null);
   const [teamFormOpen, setTeamFormOpen] = useState(false);
 
@@ -386,6 +402,97 @@ export default function LeagueDetail() {
     setManagers(managersResponse);
   };
 
+  const getUntyped = get as (
+    path: string,
+    query?: unknown,
+    pathParams?: Record<string, string>
+  ) => Promise<unknown>;
+  const putUntyped = put as (
+    path: string,
+    body: unknown,
+    pathParams?: Record<string, string>
+  ) => Promise<unknown>;
+
+  const loadByeRequestsData = async (teamId: number) => {
+    setByeRequestsLoading(true);
+    try {
+      const [slotsRes, byesRes] = await Promise.all([
+        getUntyped('/leagues/{id}/draw-slots', undefined, { id: String(numericLeagueId) }),
+        getUntyped('/leagues/{leagueId}/teams/{teamId}/bye-requests', undefined, {
+          leagueId: String(numericLeagueId),
+          teamId: String(teamId),
+        }),
+      ]);
+      const slots = (slotsRes ?? []) as Array<{ date: string; time: string; isExtra: boolean }>;
+      setByeDrawSlots(slots.map((s) => ({ date: s.date, time: s.time, isExtra: s.isExtra ?? false })));
+      const byes = (byesRes ?? []) as Array<{ drawDate: string; drawTime: string; priority: number }>;
+      const prio: Record<string, number> = {};
+      byes.forEach((b) => {
+        const key = `${b.drawDate}|${b.drawTime}`;
+        prio[key] = b.priority;
+      });
+      setByePriorities(prio);
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to load draw slots or bye requests'), 'error');
+    } finally {
+      setByeRequestsLoading(false);
+    }
+  };
+
+  const handleOpenByeRequestsModal = async () => {
+    const firstTeamId = memberTeamIds[0] ?? null;
+    setByeRequestsTeamId(firstTeamId);
+    setByeRequestsModalOpen(true);
+    setByePriorities({});
+    if (firstTeamId != null) {
+      await loadByeRequestsData(firstTeamId);
+    } else {
+      setByeDrawSlots([]);
+    }
+  };
+
+  const handleCloseByeRequestsModal = () => {
+    setByeRequestsModalOpen(false);
+    setByeRequestsTeamId(null);
+    setByeDrawSlots([]);
+    setByePriorities({});
+  };
+
+  const handleByeRequestsTeamChange = async (teamId: number) => {
+    setByeRequestsTeamId(teamId);
+    await loadByeRequestsData(teamId);
+  };
+
+  const handleByeRequestsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (byeRequestsTeamId == null) return;
+    const requests = byeDrawSlots
+      .filter((slot) => {
+        const key = `${slot.date}|${slot.time}`;
+        const p = byePriorities[key];
+        return p != null && Number.isInteger(p) && p >= 1;
+      })
+      .map((slot) => ({
+        drawDate: slot.date,
+        drawTime: slot.time,
+        priority: Number(byePriorities[`${slot.date}|${slot.time}`]),
+      }));
+    setByeRequestsSaving(true);
+    try {
+      await putUntyped(
+        '/leagues/{leagueId}/teams/{teamId}/bye-requests',
+        { requests },
+        { leagueId: String(numericLeagueId), teamId: String(byeRequestsTeamId) }
+      );
+      showAlert('Bye requests saved. A confirmation email has been sent to your team.', 'success');
+      handleCloseByeRequestsModal();
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to save bye requests'), 'error');
+    } finally {
+      setByeRequestsSaving(false);
+    }
+  };
+
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -398,17 +505,27 @@ export default function LeagueDetail() {
       }
       setLeague(currentLeague);
 
-      const [divisionsResponse, teamsResponse, rosterResponse, managersResponse] = await Promise.all([
+      const [divisionsResponse, teamsResponse, rosterResponse, managersResponse, settingsResponse] = await Promise.all([
         get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
+        (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<{ collectByeRequests?: boolean }>)(
+          '/leagues/{id}/settings',
+          undefined,
+          { id: String(numericLeagueId) }
+        ),
       ]);
 
       setDivisions(divisionsResponse);
       setTeams(teamsResponse);
       setRosterMembers(rosterResponse);
       setManagers(managersResponse);
+      setLeagueSettings(
+        settingsResponse?.collectByeRequests !== undefined
+          ? { collectByeRequests: settingsResponse.collectByeRequests }
+          : null
+      );
     } catch (error: unknown) {
       console.error('Failed to load league setup data:', error);
       showAlert(formatApiError(error, 'Failed to load league setup data'), 'error');
@@ -885,6 +1002,23 @@ export default function LeagueDetail() {
     setBulkRosterDropdownOpen(false);
     setBulkRosterHighlightedIndex(-1);
   };
+
+  useEffect(() => {
+    if (!selectedTeam) {
+      setSelectedTeamStats(null);
+      return;
+    }
+    (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
+      '/teams/{teamId}/stats',
+      undefined,
+      { teamId: String(selectedTeam.id) }
+    )
+      .then((res: unknown) => {
+        const data = res as { gamesPlayed: number; wins: number; losses: number; ties: number };
+        setSelectedTeamStats(data);
+      })
+      .catch(() => setSelectedTeamStats(null));
+  }, [selectedTeam]);
 
   useEffect(() => {
     const query = managerSearchQuery.trim();
@@ -1454,16 +1588,28 @@ export default function LeagueDetail() {
                 </div>
                 <div>
                   <span className="font-medium dark:text-gray-300">Season:</span>{' '}
-                  {formatDateDisplay(league.startDate)} - {formatDateDisplay(league.endDate)}
+                  {formatDateDisplay(league.startDate)} – {formatDateDisplay(league.endDate)}
                 </div>
                 {league.exceptions?.length > 0 && (
                   <div>
                     <span className="font-medium dark:text-gray-300">Exceptions:</span>{' '}
-                    {league.exceptions.length} date(s)
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {league.exceptions.map((d) => formatDateDisplay(d)).join(', ')}
+                    </span>
                   </div>
                 )}
               </div>
             </div>
+
+            {memberTeamIds.length > 0 && leagueSettings?.collectByeRequests && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Bye requests</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Submit your team&apos;s bye preferences for the draw schedule.
+                </p>
+                <Button onClick={handleOpenByeRequestsModal}>Submit bye requests</Button>
+              </div>
+            )}
 
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -1532,7 +1678,27 @@ export default function LeagueDetail() {
             teams={teams}
             canManage={canManageSetup}
             memberTeamIds={memberTeamIds}
+            leagueFormat={league.format}
           />
+        )}
+
+        {normalizedTab === 'standings' && (
+          <LeagueStandings leagueId={numericLeagueId} canManage={canManageSetup} />
+        )}
+
+        {normalizedTab === 'schedule-generation' && (
+          canManageSetup ? (
+            <LeagueScheduleGeneration
+              leagueId={numericLeagueId}
+              divisions={divisions}
+              teams={teams}
+              canManage={canManageSetup}
+            />
+          ) : (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              You do not have access to schedule generation.
+            </div>
+          )
         )}
 
         {normalizedTab === 'sheets' && (
@@ -2391,23 +2557,115 @@ export default function LeagueDetail() {
       <Modal
         isOpen={Boolean(selectedTeam)}
         onClose={() => setSelectedTeam(null)}
-        title={selectedTeam?.name || 'Team roster'}
+        title={selectedTeam?.name ?? 'Team roster'}
       >
         {selectedTeam ? (
-          selectedTeam.roster.length === 0 ? (
-            <div className="text-sm text-gray-600 dark:text-gray-400">No roster set.</div>
-          ) : (
-            <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-              {selectedTeam.roster.map((member) => (
-                <li key={member.memberId}>
-                  {member.name} — {roleLabels[member.role]}
-                  {member.isSkip ? ' (Skip)' : ''}
-                  {member.isVice ? ' (Vice)' : ''}
-                </li>
-              ))}
-            </ul>
-          )
+          <div className="space-y-4">
+            {selectedTeamStats != null && (
+              <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 pb-3">
+                <span>GP: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.gamesPlayed}</strong></span>
+                <span>W: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.wins}</strong></span>
+                <span>L: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.losses}</strong></span>
+                <span>T: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.ties}</strong></span>
+              </div>
+            )}
+            {selectedTeam.roster.length === 0 ? (
+              <div className="text-sm text-gray-600 dark:text-gray-400">No roster set.</div>
+            ) : (
+              <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                {selectedTeam.roster.map((member) => (
+                  <li key={member.memberId}>
+                    {member.name} — {roleLabels[member.role]}
+                    {member.isSkip ? ' (Skip)' : ''}
+                    {member.isVice ? ' (Vice)' : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        isOpen={byeRequestsModalOpen}
+        onClose={handleCloseByeRequestsModal}
+        title="Submit bye requests"
+      >
+        <form onSubmit={handleByeRequestsSubmit} className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Assign a priority to any draw date you want as a bye. Lower number = higher preference (1 = most preferred). Leave blank for no preference. Priorities can be duplicated.
+          </p>
+          {memberTeamIds.length > 1 && (
+            <div>
+              <label htmlFor="bye-requests-team" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Team
+              </label>
+              <select
+                id="bye-requests-team"
+                value={byeRequestsTeamId ?? ''}
+                onChange={(e) => handleByeRequestsTeamChange(Number(e.target.value))}
+                className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+              >
+                {teams
+                  .filter((t) => memberTeamIds.includes(t.id))
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name ?? `Team ${t.id}`}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+          {byeRequestsLoading ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400">Loading draw schedule…</div>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {byeDrawSlots.map((slot) => {
+                const key = `${slot.date}|${slot.time}`;
+                const value = byePriorities[key];
+                return (
+                  <div key={key} className="flex items-center gap-3 text-sm">
+                    <span className="flex-1 text-gray-700 dark:text-gray-300">
+                      {formatDateDisplay(slot.date)} · {formatTime(slot.time)}
+                      {slot.isExtra && (
+                        <span className="ml-1 text-amber-600 dark:text-amber-400">(extra)</span>
+                      )}
+                    </span>
+                    <label className="sr-only" htmlFor={`bye-priority-${key}`}>
+                      Priority for {slot.date} {slot.time}
+                    </label>
+                    <input
+                      id={`bye-priority-${key}`}
+                      type="number"
+                      min={1}
+                      placeholder="—"
+                      value={value === undefined || value === 0 ? '' : value}
+                      onChange={(e) => {
+                        const v = e.target.value.trim();
+                        setByePriorities((prev) => ({
+                          ...prev,
+                          [key]: v === '' ? 0 : parseInt(v, 10) || 0,
+                        }));
+                      }}
+                      className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-gray-900 dark:text-gray-100 text-right"
+                    />
+                  </div>
+                );
+              })}
+              {byeDrawSlots.length === 0 && !byeRequestsLoading && (
+                <div className="text-sm text-gray-500 dark:text-gray-400">No draw slots for this league.</div>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={handleCloseByeRequestsModal}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={byeRequestsSaving || byeRequestsLoading}>
+              {byeRequestsSaving ? 'Saving…' : 'Save bye requests'}
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal

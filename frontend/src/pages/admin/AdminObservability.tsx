@@ -196,7 +196,7 @@ export default function AdminObservability() {
               </div>
 
               <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                Date range: {observability.startDate} → {observability.endDate} · Members total: {observability.totals.membersTotal}
+                Date range: {observability.startDate} – {observability.endDate} · Members total: {observability.totals.membersTotal}
               </div>
             </>
           )}

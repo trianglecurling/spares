@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { del, get, patch, post } from '../../api/client';
+import { del, get, patch, post, put } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -24,6 +24,9 @@ interface Game {
   sheetId: number | null;
   sheetName: string | null;
   status: 'scheduled' | 'unscheduled';
+  hasResult?: boolean;
+  team1Results?: number[];
+  team2Results?: number[];
 }
 
 interface DrawSlot {
@@ -46,6 +49,7 @@ interface LeagueScheduleProps {
   teams: Team[];
   canManage: boolean;
   memberTeamIds: number[];
+  leagueFormat: 'teams' | 'doubles';
 }
 
 const formatDateDisplay = (dateString: string) => {
@@ -66,7 +70,24 @@ const formatTime = (time: string) => {
   return `${displayHour}:${minutes} ${ampm}`;
 };
 
-export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamIds }: LeagueScheduleProps) {
+function isGameInPast(game: Game): boolean {
+  if (!game.gameDate) return false;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return game.gameDate < todayStr;
+}
+
+const roleLabels: Record<string, string> = {
+  lead: 'Lead',
+  second: 'Second',
+  third: 'Third',
+  fourth: 'Fourth',
+  player1: 'Player 1',
+  player2: 'Player 2',
+};
+const teamRoleOrder = ['fourth', 'third', 'second', 'lead'] as const;
+
+export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamIds, leagueFormat }: LeagueScheduleProps) {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const [games, setGames] = useState<Game[]>([]);
@@ -94,6 +115,22 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
 
   const [addingDrawTime, setAddingDrawTime] = useState(false);
   const [showMineOnly, setShowMineOnly] = useState(false);
+
+  const [detailsGame, setDetailsGame] = useState<Game | null>(null);
+  const [detailsLineups, setDetailsLineups] = useState<{
+    team1Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null; isSkip?: boolean; isVice?: boolean }>;
+    team2Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null; isSkip?: boolean; isVice?: boolean }>;
+  } | null>(null);
+  const [loadingDetailsLineups, setLoadingDetailsLineups] = useState(false);
+
+  const [resultForm, setResultForm] = useState<{ team1Values: number[]; team2Values: number[] }>({
+    team1Values: [0],
+    team2Values: [0],
+  });
+  const [resultLabels, setResultLabels] = useState<string[]>([]);
+  const [savingResult, setSavingResult] = useState(false);
+  const [editTab, setEditTab] = useState<'details' | 'results' | null>(null);
+  const [loadingEditData, setLoadingEditData] = useState(false);
 
   const selectedDrawKey = useMemo(() => {
     if (!gameForm.gameDate || !gameForm.gameTime) return '';
@@ -228,8 +265,12 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
   const loadGames = async () => {
     setLoadingGames(true);
     try {
-      const response = await get('/leagues/{id}/games', undefined, { id: String(leagueId) });
-      setGames(response);
+      const response = await (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
+        '/leagues/{id}/games/with-results',
+        undefined,
+        { id: String(leagueId) }
+      );
+      setGames(response as Game[]);
     } catch (error: unknown) {
       console.error('Failed to load games:', error);
       showAlert(formatApiError(error, 'Failed to load games'), 'error');
@@ -269,6 +310,7 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
   const openGameModal = (game?: Game) => {
     if (game) {
       setEditingGame(game);
+      setEditTab(isGameInPast(game) ? 'results' : 'details');
       setGameForm({
         team1Id: String(game.team1Id),
         team2Id: String(game.team2Id),
@@ -279,8 +321,33 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
       });
       setAddingDrawTime(false);
       setExtraDrawForm({ date: '', time: '' });
+      setResultForm({ team1Values: [0], team2Values: [0] });
+      setResultLabels([]);
+      setLoadingEditData(true);
+      setGameModalOpen(true);
+      const getUntyped = get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>;
+      Promise.all([
+        getUntyped('/games/{gameId}/results', undefined, { gameId: String(game.id) }),
+        getUntyped('/leagues/{id}/settings', undefined, { id: String(leagueId) }),
+      ])
+        .then(([resultsRes, settingsRes]) => {
+          const results = resultsRes as { team1Results: Array<{ resultOrder: number; value: number }>; team2Results: Array<{ resultOrder: number; value: number }> };
+          const settings = settingsRes as { resultLabels: string[] | null };
+          setResultLabels(settings?.resultLabels ?? []);
+          const len = Math.max(results?.team1Results?.length ?? 0, results?.team2Results?.length ?? 0, 1);
+          const t1 = Array.from({ length: len }, (_, i) => results?.team1Results?.find((r) => r.resultOrder === i)?.value ?? 0);
+          const t2 = Array.from({ length: len }, (_, i) => results?.team2Results?.find((r) => r.resultOrder === i)?.value ?? 0);
+          setResultForm({ team1Values: t1, team2Values: t2 });
+        })
+        .catch(() => {
+          setResultForm({ team1Values: [0], team2Values: [0] });
+          setResultLabels([]);
+        })
+        .finally(() => setLoadingEditData(false));
     } else {
       setEditingGame(null);
+      setEditTab(null);
+      setLoadingEditData(false);
       setGameForm({
         team1Id: '',
         team2Id: '',
@@ -291,13 +358,35 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
       });
       setAddingDrawTime(false);
       setExtraDrawForm({ date: '', time: '' });
+      setResultForm({ team1Values: [0], team2Values: [0] });
+      setResultLabels([]);
+      setGameModalOpen(true);
     }
-    setGameModalOpen(true);
+  };
+
+  const openGameDetails = async (game: Game) => {
+    setDetailsGame(game);
+    setDetailsLineups(null);
+    setLoadingDetailsLineups(true);
+    try {
+      const res = await (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
+        '/games/{gameId}/lineups',
+        undefined,
+        { gameId: String(game.id) }
+      ) as { team1Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null }>; team2Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null }> };
+      setDetailsLineups({ team1Lineup: res.team1Lineup, team2Lineup: res.team2Lineup });
+    } catch {
+      setDetailsLineups({ team1Lineup: [], team2Lineup: [] });
+    } finally {
+      setLoadingDetailsLineups(false);
+    }
   };
 
   const closeGameModal = () => {
     setGameModalOpen(false);
     setEditingGame(null);
+    setEditTab(null);
+    setLoadingEditData(false);
   };
 
   const handleSaveGame = async (event: React.FormEvent) => {
@@ -360,6 +449,29 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
 
       if (editingGame) {
         await patch('/games/{gameId}', payload, { gameId: String(editingGame.id) });
+        setSavingResult(true);
+        try {
+          await saveResultForGame(editingGame.id);
+          setGames((prev) =>
+            prev.map((g) =>
+              g.id === editingGame.id
+                ? {
+                    ...g,
+                    ...payload,
+                    hasResult: true,
+                    team1Results: resultForm.team1Values,
+                    team2Results: resultForm.team2Values,
+                  }
+                : g
+            )
+          );
+        } catch (err) {
+          showAlert(formatApiError(err, 'Failed to save result'), 'error');
+        } finally {
+          setSavingResult(false);
+        }
+        closeGameModal();
+        return;
       } else {
         await post('/leagues/{id}/games', payload, { id: String(leagueId) });
       }
@@ -408,6 +520,37 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
     }
   };
 
+  const saveResultForGame = async (gameId: number) => {
+    (put as (path: string, body: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
+      '/games/{gameId}/results',
+      {
+        team1Results: resultForm.team1Values.map((value, resultOrder) => ({ resultOrder, value })),
+        team2Results: resultForm.team2Values.map((value, resultOrder) => ({ resultOrder, value })),
+      },
+      { gameId: String(gameId) }
+    );
+  };
+
+  const formatResultSummary = (game: Game) => {
+    if (!game.hasResult || !game.team1Results?.length) return null;
+    const t1 = game.team1Results;
+    const t2 = game.team2Results ?? [];
+    if (t1.length === 1 && t2.length <= 1) return `${t1[0]} - ${t2[0] ?? 0}`;
+    return `${t1.join(' - ')} vs ${t2.join(' - ')}`;
+  };
+
+  const getWinnerTeamId = (game: Game): number | null => {
+    if (!game.hasResult || !game.team1Results?.length) return null;
+    const t1 = game.team1Results;
+    const t2 = game.team2Results ?? [];
+    for (let i = 0; i < Math.max(t1.length, t2.length); i++) {
+      const v1 = t1[i] ?? 0;
+      const v2 = t2[i] ?? 0;
+      if (v1 > v2) return game.team1Id;
+      if (v2 > v1) return game.team2Id;
+    }
+    return null;
+  };
 
   if (loadingDraws || loadingGames) {
     return <div className="text-sm text-gray-500 dark:text-gray-400">Loading schedule...</div>;
@@ -478,22 +621,49 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                       </span>
                     ) : (
                       <div className="space-y-1">
-                        {(gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? []).map((game) => (
-                          <div key={game.id} className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                              {game.sheetName || 'Sheet TBD'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => openGameModal(game)}
-                              className={`font-medium ${
-                                canManage ? 'text-primary-teal hover:underline' : 'text-gray-800 dark:text-gray-100'
-                              }`}
-                            >
-                              {teamLabelById.get(game.team1Id)} vs {teamLabelById.get(game.team2Id)}
-                            </button>
-                          </div>
-                        ))}
+                        {(gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? []).map((game) => {
+                          const winnerId = getWinnerTeamId(game);
+                          const t1Label = teamLabelById.get(game.team1Id);
+                          const t2Label = teamLabelById.get(game.team2Id);
+                          return (
+                            <div key={game.id} className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                {game.sheetName || 'Sheet TBD'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => openGameDetails(game)}
+                                className="font-medium text-gray-800 dark:text-gray-100 hover:text-primary-teal hover:underline"
+                              >
+                                <span className={winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''}>
+                                  {t1Label}
+                                </span>
+                                {' vs '}
+                                <span className={winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''}>
+                                  {t2Label}
+                                </span>
+                              </button>
+                              {formatResultSummary(game) && (
+                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                  ({formatResultSummary(game)})
+                                </span>
+                              )}
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
+                                  className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                                  title="Edit game"
+                                  aria-label="Edit game"
+                                >
+                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -525,50 +695,88 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
             <div className="text-sm text-gray-500 dark:text-gray-400">No unscheduled games.</div>
           ) : (
             <div className="space-y-2">
-            {unscheduledGames.map((game) => (
+            {unscheduledGames.map((game) => {
+                const winnerId = getWinnerTeamId(game);
+                const t1Label = teamLabelById.get(game.team1Id);
+                const t2Label = teamLabelById.get(game.team2Id);
+                return (
                 <div
                   key={game.id}
                   className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 px-3 py-2"
                 >
-                <button
-                  type="button"
-                  onClick={() => openGameModal(game)}
-                  className={`text-sm font-medium ${
-                    canManage ? 'text-primary-teal hover:underline' : 'text-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  {teamLabelById.get(game.team1Id)} vs {teamLabelById.get(game.team2Id)}
-                </button>
-                  <div className="flex gap-2">
-                    <Button onClick={() => handleDeleteGame(game)} variant="danger">
-                      Delete
-                    </Button>
-                  </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openGameDetails(game)}
+                    className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-teal hover:underline"
+                  >
+                    <span className={winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''}>
+                      {t1Label}
+                    </span>
+                    {' vs '}
+                    <span className={winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''}>
+                      {t2Label}
+                    </span>
+                  </button>
+                  {formatResultSummary(game) && (
+                    <span className="text-sm text-gray-500 dark:text-gray-400">({formatResultSummary(game)})</span>
+                  )}
+                  {canManage && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
+                        className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                        title="Edit game"
+                        aria-label="Edit game"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <Button onClick={() => handleDeleteGame(game)} variant="danger">
+                        Delete
+                      </Button>
+                    </>
+                  )}
                 </div>
-              ))}
+                </div>
+              );
+              })}
               {invalidScheduledGames.map((game) => (
                 <div
                   key={`orphan-${game.id}`}
                   className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-600/70 dark:bg-amber-900/20 dark:text-amber-100"
                 >
-                  <div className="text-sm">
+                  <div className="text-sm flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => openGameModal(game)}
-                      className={`font-medium ${
-                        canManage ? 'text-amber-800 hover:underline dark:text-amber-100' : 'text-amber-900'
-                      }`}
+                      onClick={() => openGameDetails(game)}
+                      className="font-medium text-amber-800 hover:underline dark:text-amber-100"
                     >
                       {teamLabelById.get(game.team1Id)} vs {teamLabelById.get(game.team2Id)}
                     </button>
-                    <span className="ml-2 text-xs text-amber-700 dark:text-amber-200">
+                    <span className="text-xs text-amber-700 dark:text-amber-200">
                       Orphaned draw time
                     </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => handleDeleteGame(game)} variant="danger">
-                      Delete
-                    </Button>
+                    {canManage && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
+                          className="rounded p-1 text-amber-600 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-800"
+                          title="Edit game"
+                          aria-label="Edit game"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <Button onClick={() => handleDeleteGame(game)} variant="danger">
+                          Delete
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -583,6 +791,35 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
         title={editingGame ? 'Edit game' : 'Add game'}
       >
         <form onSubmit={handleSaveGame} className="space-y-4">
+          {editingGame && (
+            <div className="flex border-b border-gray-200 dark:border-gray-700 -mx-4 px-4">
+              <button
+                type="button"
+                onClick={() => setEditTab('details')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  editTab === 'details'
+                    ? 'border-primary-teal text-primary-teal'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                Game details
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('results')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  editTab === 'results'
+                    ? 'border-primary-teal text-primary-teal'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                Results
+              </button>
+            </div>
+          )}
+
+          {(!editingGame || editTab === 'details') && (
+            <div className="space-y-4">
           <div className="flex items-center gap-2">
             <input
               id="unscheduled"
@@ -809,6 +1046,78 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
               ))}
             </select>
           </div>
+            </div>
+          )}
+
+          {editingGame && editTab === 'results' && (
+            <div className="space-y-3">
+              {loadingEditData ? (
+                <div className="flex items-center justify-center py-8 text-gray-500 dark:text-gray-400">
+                  <span className="text-sm">Loading result…</span>
+                </div>
+              ) : (
+                <>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Enter a single point value for each team. Add tiebreakers (e.g. ends, total score) if needed.
+              </p>
+              {resultForm.team1Values.map((_, i) => (
+                <div key={i} className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      {teamLabelById.get(editingGame.team1Id)} — {resultLabels[i] ?? (i === 0 ? 'Points' : `Tiebreaker ${i + 1}`)}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={resultForm.team1Values[i] ?? 0}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10) || 0;
+                        setResultForm((prev) => {
+                          const next = [...prev.team1Values];
+                          next[i] = v;
+                          return { ...prev, team1Values: next };
+                        });
+                      }}
+                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      {teamLabelById.get(editingGame.team2Id)} — {resultLabels[i] ?? (i === 0 ? 'Points' : `Tiebreaker ${i + 1}`)}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={resultForm.team2Values[i] ?? 0}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10) || 0;
+                        setResultForm((prev) => {
+                          const next = [...prev.team2Values];
+                          next[i] = v;
+                          return { ...prev, team2Values: next };
+                        });
+                      }}
+                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() =>
+                  setResultForm((prev) => ({
+                    team1Values: [...prev.team1Values, 0],
+                    team2Values: [...prev.team2Values, 0],
+                  }))
+                }
+                className="text-sm text-primary-teal hover:underline"
+              >
+                {resultForm.team1Values.length === 1 ? 'Add first tiebreaker' : 'Add another tiebreaker'}
+              </button>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-3">
             {editingGame && (
@@ -826,6 +1135,7 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                 type="submit"
                 disabled={
                   savingGame ||
+                  savingResult ||
                   !gameForm.team1Id ||
                   !gameForm.team2Id ||
                   (gameForm.status === 'scheduled' &&
@@ -835,7 +1145,7 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                 }
                 className="flex-1"
               >
-                {savingGame ? 'Saving...' : 'Save'}
+                {savingGame || savingResult ? 'Saving...' : 'Save'}
               </Button>
               <Button type="button" variant="secondary" onClick={closeGameModal} className="flex-1">
                 Cancel
@@ -843,6 +1153,142 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
             </div>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={detailsGame != null}
+        onClose={() => { setDetailsGame(null); setDetailsLineups(null); }}
+        title={detailsGame ? `${teamLabelById.get(detailsGame.team1Id)} vs ${teamLabelById.get(detailsGame.team2Id)}` : 'Game details'}
+      >
+        {detailsGame && (
+          <div className="space-y-4">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {detailsGame.gameDate && detailsGame.gameTime ? (
+                <>
+                  {formatDateDisplay(detailsGame.gameDate)} · {formatTime(detailsGame.gameTime)}
+                  {detailsGame.sheetName && ` · ${detailsGame.sheetName}`}
+                </>
+              ) : (
+                'Unscheduled'
+              )}
+            </div>
+            {detailsGame.hasResult && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Result:</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  {(() => {
+                    const winnerId = getWinnerTeamId(detailsGame);
+                    const t1 = teamLabelById.get(detailsGame.team1Id);
+                    const t2 = teamLabelById.get(detailsGame.team2Id);
+                    return (
+                      <>
+                        <span className={winnerId === detailsGame.team1Id ? 'font-semibold text-primary-teal' : ''}>{t1}</span>
+                        {' '}
+                        {formatResultSummary(detailsGame)}
+                        {' '}
+                        <span className={winnerId === detailsGame.team2Id ? 'font-semibold text-primary-teal' : ''}>{t2}</span>
+                      </>
+                    );
+                  })()}
+                </span>
+              </div>
+            )}
+            <div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Lineups</div>
+              {loadingDetailsLineups ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+              ) : detailsLineups ? (
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">{teamLabelById.get(detailsGame.team1Id)}</div>
+                    <ul className={leagueFormat === 'teams' ? 'mt-2 space-y-1' : 'list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-0.5'}>
+                      {detailsLineups.team1Lineup.length === 0 ? (
+                        <li className="text-gray-400">No roster</li>
+                      ) : leagueFormat === 'teams' ? (
+                        teamRoleOrder.map((role) => {
+                          const entry = detailsLineups.team1Lineup.find((e) => e.role === role);
+                          const suffix = entry?.isSkip ? '*' : entry?.isVice ? '**' : '';
+                          return (
+                            <li key={role} className="text-sm text-gray-600 dark:text-gray-400">
+                              {roleLabels[role] ?? role}: {entry?.memberName ?? 'Unassigned'}
+                              {suffix}
+                              {entry?.isSpare && entry?.sparingForMemberName && (
+                                <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                              )}
+                            </li>
+                          );
+                        })
+                      ) : (
+                        detailsLineups.team1Lineup.map((entry, i) => (
+                          <li key={i} className="text-sm text-gray-600 dark:text-gray-400">
+                            {entry.memberName}
+                            {entry.isSpare && entry.sparingForMemberName && (
+                              <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                            )}
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">{teamLabelById.get(detailsGame.team2Id)}</div>
+                    <ul className={leagueFormat === 'teams' ? 'mt-2 space-y-1' : 'list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-0.5'}>
+                      {detailsLineups.team2Lineup.length === 0 ? (
+                        <li className="text-gray-400">No roster</li>
+                      ) : leagueFormat === 'teams' ? (
+                        teamRoleOrder.map((role) => {
+                          const entry = detailsLineups.team2Lineup.find((e) => e.role === role);
+                          const suffix = entry?.isSkip ? '*' : entry?.isVice ? '**' : '';
+                          return (
+                            <li key={role} className="text-sm text-gray-600 dark:text-gray-400">
+                              {roleLabels[role] ?? role}: {entry?.memberName ?? 'Unassigned'}
+                              {suffix}
+                              {entry?.isSpare && entry?.sparingForMemberName && (
+                                <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                              )}
+                            </li>
+                          );
+                        })
+                      ) : (
+                        detailsLineups.team2Lineup.map((entry, i) => (
+                          <li key={i} className="text-sm text-gray-600 dark:text-gray-400">
+                            {entry.memberName}
+                            {entry.isSpare && entry.sparingForMemberName && (
+                              <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                            )}
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                  {leagueFormat === 'teams' && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      * Skip · ** Vice
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400">No lineup data.</div>
+              )}
+            </div>
+            {canManage && (
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    const gameToEdit = detailsGame;
+                    setDetailsGame(null);
+                    setDetailsLineups(null);
+                    if (gameToEdit) openGameModal(gameToEdit);
+                  }}
+                >
+                  Edit game
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
     </div>

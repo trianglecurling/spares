@@ -164,7 +164,7 @@ export default function Leagues() {
     }
   };
 
-  const handleDelete = async (id: number, name: string) => {
+  const _handleDelete = async (id: number, name: string) => {
     const confirmed = await confirm({
       title: 'Delete league',
       message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
@@ -340,7 +340,7 @@ export default function Leagues() {
                       </p>
                       <p>
                         <span className="font-medium dark:text-gray-300">Season:</span>{' '}
-                        {formatDateDisplay(league.startDate)} -{' '}
+                        {formatDateDisplay(league.startDate)} –{' '}
                         {formatDateDisplay(league.endDate)}
                       </p>
                       {league.exceptions?.length > 0 && (

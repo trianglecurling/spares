@@ -19,6 +19,10 @@ type SqliteSchema = {
   leagueDivisions: typeof sqliteSchema.leagueDivisionsSqlite;
   leagueTeams: typeof sqliteSchema.leagueTeamsSqlite;
   games: typeof sqliteSchema.gamesSqlite;
+  leagueSettings: typeof sqliteSchema.leagueSettingsSqlite;
+  teamByeRequests: typeof sqliteSchema.teamByeRequestsSqlite;
+  gameResults: typeof sqliteSchema.gameResultsSqlite;
+  gameLineups: typeof sqliteSchema.gameLineupsSqlite;
   teamMembers: typeof sqliteSchema.teamMembersSqlite;
   leagueMemberRoles: typeof sqliteSchema.leagueMemberRolesSqlite;
   leagueRoster: typeof sqliteSchema.leagueRosterSqlite;
@@ -48,6 +52,10 @@ type PgSchema = {
   leagueDivisions: typeof pgSchema.leagueDivisionsPg;
   leagueTeams: typeof pgSchema.leagueTeamsPg;
   games: typeof pgSchema.gamesPg;
+  leagueSettings: typeof pgSchema.leagueSettingsPg;
+  teamByeRequests: typeof pgSchema.teamByeRequestsPg;
+  gameResults: typeof pgSchema.gameResultsPg;
+  gameLineups: typeof pgSchema.gameLineupsPg;
   teamMembers: typeof pgSchema.teamMembersPg;
   leagueMemberRoles: typeof pgSchema.leagueMemberRolesPg;
   leagueRoster: typeof pgSchema.leagueRosterPg;
@@ -100,6 +108,10 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       leagueDivisions: sqliteSchema.leagueDivisionsSqlite,
       leagueTeams: sqliteSchema.leagueTeamsSqlite,
       games: sqliteSchema.gamesSqlite,
+      leagueSettings: sqliteSchema.leagueSettingsSqlite,
+      teamByeRequests: sqliteSchema.teamByeRequestsSqlite,
+      gameResults: sqliteSchema.gameResultsSqlite,
+      gameLineups: sqliteSchema.gameLineupsSqlite,
       teamMembers: sqliteSchema.teamMembersSqlite,
       leagueMemberRoles: sqliteSchema.leagueMemberRolesSqlite,
       leagueRoster: sqliteSchema.leagueRosterSqlite,
@@ -143,6 +155,10 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       leagueDivisions: pgSchema.leagueDivisionsPg,
       leagueTeams: pgSchema.leagueTeamsPg,
       games: pgSchema.gamesPg,
+      leagueSettings: pgSchema.leagueSettingsPg,
+      teamByeRequests: pgSchema.teamByeRequestsPg,
+      gameResults: pgSchema.gameResultsPg,
+      gameLineups: pgSchema.gameLineupsPg,
       teamMembers: pgSchema.teamMembersPg,
       leagueMemberRoles: pgSchema.leagueMemberRolesPg,
       leagueRoster: pgSchema.leagueRosterPg,

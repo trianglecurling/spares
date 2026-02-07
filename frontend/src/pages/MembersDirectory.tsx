@@ -63,9 +63,10 @@ export default function MembersDirectory() {
     setLoading(true);
     try {
       const response = await get('/members/directory', leagueId ? { leagueId } : undefined);
-      setMembers(response);
+      setMembers(Array.isArray(response) ? response : []);
     } catch (error) {
       console.error('Failed to load members:', error);
+      setMembers([]);
     } finally {
       setLoading(false);
     }
@@ -216,7 +217,9 @@ export default function MembersDirectory() {
                   {filteredMembers.length === 0 && (
                     <tr>
                       <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                        No members found matching "{filter}"
+                        {members.length === 0
+                          ? 'No members in the directory.'
+                          : `No members found matching "${filter}"`}
                       </td>
                     </tr>
                   )}

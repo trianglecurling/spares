@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, sql, asc, type SQL } from 'drizzle-orm';
+import { and, eq, sql, asc, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
@@ -438,6 +438,17 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const body = updateLeagueSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
+    const existingLeagueRows = await db
+      .select({
+        start_date: schema.leagues.start_date,
+        end_date: schema.leagues.end_date,
+        day_of_week: schema.leagues.day_of_week,
+      })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, leagueId))
+      .limit(1);
+    const existingLeague = existingLeagueRows[0];
+
     const updateData: Partial<{
       name: string;
       day_of_week: number;
@@ -500,9 +511,9 @@ export async function leagueRoutes(fastify: FastifyInstance) {
           .from(schema.leagueExceptions)
           .where(eq(schema.leagueExceptions.league_id, leagueId));
         const exceptions = new Set(exceptionsRows.map((ex) => normalizeDateString(ex.exception_date)));
-        const startDateStr = normalizeDateString(body.startDate ?? league.start_date);
-        const endDateStr = normalizeDateString(body.endDate ?? league.end_date);
-        const dayOfWeek = body.dayOfWeek ?? league.day_of_week;
+        const startDateStr = normalizeDateString(body.startDate ?? existingLeague?.start_date ?? '');
+        const endDateStr = normalizeDateString(body.endDate ?? existingLeague?.end_date ?? '');
+        const dayOfWeek = body.dayOfWeek ?? existingLeague?.day_of_week ?? 0;
         const drawDates = computeLeagueDrawDates(startDateStr, endDateStr, dayOfWeek, exceptions);
 
         if (drawDates.length > 0) {
