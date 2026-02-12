@@ -16,7 +16,10 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:add-disable-columns": "node add-columns.js"
+    "db:add-disable-columns": "node add-columns.js",
+    "db:seed-test-members": "tsx src/scripts/seed-test-members.ts",
+    "db:generate-teams": "tsx src/scripts/generate-teams.ts",
+    "db:seed-bye-requests": "tsx src/scripts/seed-bye-requests.ts"
   },
   "dependencies": {
     "@azure/communication-email": "^1.0.0",
@@ -39,6 +42,7 @@
     "fastify": "^4.25.2",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.16.3",
+    "rrule": "^2.8.1",
     "twilio": "^4.20.0",
     "zod": "^3.22.4"
   },

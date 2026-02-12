@@ -842,7 +842,6 @@ export async function sendWelcomeEmail(
 
 export interface ByeRequestEntry {
   drawDate: string;
-  drawTime: string;
   priority: number;
 }
 
@@ -854,11 +853,7 @@ export async function sendByeRequestsConfirmationEmail(
   requests: ByeRequestEntry[],
   updatedByName: string
 ): Promise<void> {
-  const sorted = [...requests].sort((a, b) => {
-    const dateCmp = a.drawDate.localeCompare(b.drawDate);
-    if (dateCmp !== 0) return dateCmp;
-    return a.drawTime.localeCompare(b.drawTime);
-  });
+  const sorted = [...requests].sort((a, b) => a.drawDate.localeCompare(b.drawDate));
 
   const rows =
     sorted.length === 0
@@ -868,7 +863,6 @@ export async function sendByeRequestsConfirmationEmail(
       <thead>
         <tr style="background: #f5f5f5;">
           <th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Date</th>
-          <th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Time</th>
           <th style="text-align: left; padding: 8px; border: 1px solid #ddd;">Bye priority</th>
         </tr>
       </thead>
@@ -878,7 +872,6 @@ export async function sendByeRequestsConfirmationEmail(
             (r) => `
           <tr>
             <td style="padding: 8px; border: 1px solid #ddd;">${formatDateForEmail(r.drawDate)}</td>
-            <td style="padding: 8px; border: 1px solid #ddd;">${formatTimeForEmail(r.drawTime)}</td>
             <td style="padding: 8px; border: 1px solid #ddd;">${r.priority}</td>
           </tr>
         `

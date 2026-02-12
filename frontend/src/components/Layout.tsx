@@ -2,24 +2,101 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Footer from './Footer';
-import { HiBars3, HiXMark } from 'react-icons/hi2';
+import { get } from '../api/client';
+import { HiBars3, HiChevronDown, HiXMark } from 'react-icons/hi2';
 
 interface LayoutProps {
   children: React.ReactNode;
+  /** When true, main content uses full width (no max-w constraint) - for Calendar etc. */
+  fullWidth?: boolean;
 }
 
-export default function Layout({ children }: LayoutProps) {
+interface League {
+  id: number;
+  name: string;
+  dayOfWeek: number;
+  format: 'teams' | 'doubles';
+  startDate: string;
+  endDate: string;
+  drawTimes: string[];
+  exceptions: string[];
+}
+
+const navLinkClass = (active: boolean) =>
+  `px-3 py-2 rounded-md text-sm font-medium ${
+    active
+      ? 'bg-primary-teal text-white'
+      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+  }`;
+
+const navLinkClassMobile = (active: boolean) =>
+  `block px-3 py-2 rounded-md text-base font-medium ${
+    active
+      ? 'bg-primary-teal text-white'
+      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+  }`;
+
+export default function Layout({ children, fullWidth }: LayoutProps) {
   const { member, logout } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [leaguesDropdownOpen, setLeaguesDropdownOpen] = useState(false);
+  const [sparesDropdownOpen, setSparesDropdownOpen] = useState(false);
+  const [adminDropdownOpen, setAdminDropdownOpen] = useState(false);
+  const [mobileLeaguesExpanded, setMobileLeaguesExpanded] = useState(false);
+  const [mobileSparesExpanded, setMobileSparesExpanded] = useState(false);
+  const [mobileAdminExpanded, setMobileAdminExpanded] = useState(false);
+  const [leagues, setLeagues] = useState<League[]>([]);
+  const [leaguesLoading, setLeaguesLoading] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isNavLinkActive = (to: string, matchPrefix?: boolean) =>
     matchPrefix ? location.pathname === to || location.pathname.startsWith(`${to}/`) : location.pathname === to;
 
+  const isLeaguesActive = isNavLinkActive('/leagues', true);
+  const isSparesActive =
+    isNavLinkActive('/availability') || isNavLinkActive('/my-requests') || location.pathname.startsWith('/request-spare');
+  const isAdminActive =
+    isNavLinkActive('/admin/members') ||
+    isNavLinkActive('/admin/sheets') ||
+    isNavLinkActive('/admin/config');
+
+  const canManageLeagues = Boolean(
+    member?.isAdmin || member?.isLeagueAdministrator || (member?.leagueManagerLeagueIds?.length ?? 0) > 0
+  );
+  const adminLinks = [
+    ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
+    ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Manage sheets' }] : []),
+    ...(member?.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
+  ];
+  const hasAdminLinks = adminLinks.length > 0;
+
+  // Fetch leagues for dropdown
+  useEffect(() => {
+    let cancelled = false;
+    setLeaguesLoading(true);
+    get('/leagues')
+      .then((data) => {
+        if (!cancelled) {
+          setLeagues(data as League[]);
+          setLeaguesLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLeaguesLoading(false);
+        // Ignore - leagues dropdown will show "View all" only
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Close mobile menu when route changes
   useEffect(() => {
     setMobileMenuOpen(false);
+    setMobileLeaguesExpanded(false);
+    setMobileSparesExpanded(false);
+    setMobileAdminExpanded(false);
   }, [location.pathname]);
 
   // Close mobile menu when clicking outside
@@ -27,33 +104,52 @@ export default function Layout({ children }: LayoutProps) {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMobileMenuOpen(false);
+        setLeaguesDropdownOpen(false);
+        setSparesDropdownOpen(false);
+        setAdminDropdownOpen(false);
       }
     };
 
-    if (mobileMenuOpen) {
+    if (mobileMenuOpen || leaguesDropdownOpen || sparesDropdownOpen || adminDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  }, [mobileMenuOpen]);
+  }, [mobileMenuOpen, leaguesDropdownOpen, sparesDropdownOpen, adminDropdownOpen]);
 
-  const navLinks = [
-    { to: '/', label: 'Dashboard' },
-    { to: '/leagues', label: 'Leagues', matchPrefix: true },
-    { to: '/availability', label: 'My availability' },
-    { to: '/my-requests', label: 'My requests' },
-    { to: '/members', label: 'Directory' },
-  ];
+  const closeDropdowns = () => {
+    setLeaguesDropdownOpen(false);
+    setSparesDropdownOpen(false);
+    setAdminDropdownOpen(false);
+  };
 
-  const canManageLeagues = Boolean(
-    member?.isAdmin || member?.isLeagueAdministrator || (member?.leagueManagerLeagueIds?.length ?? 0) > 0
+  const MobileDropdownSection = ({
+    label,
+    expanded,
+    onToggle,
+    active,
+    children,
+  }: {
+    label: string;
+    expanded: boolean;
+    onToggle: () => void;
+    active: boolean;
+    children: React.ReactNode;
+  }) => (
+    <div>
+      <button
+        onClick={onToggle}
+        className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium ${
+          active ? 'bg-primary-teal text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+        }`}
+      >
+        {label}
+        <HiChevronDown className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && <div className="pl-4 mt-1 space-y-1">{children}</div>}
+    </div>
   );
-  const adminLinks = [
-    ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
-    ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Sheets' }] : []),
-    ...(member?.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
@@ -72,44 +168,145 @@ export default function Layout({ children }: LayoutProps) {
                   Spare Management
                 </span>
               </Link>
-              
+
               {/* Desktop Navigation */}
-              <div className="hidden md:flex space-x-4">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    className={`px-3 py-2 rounded-md text-sm font-medium ${
-                      isNavLinkActive(link.to, link.matchPrefix)
-                        ? 'bg-primary-teal text-white'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
+              <div className="hidden md:flex items-center space-x-1">
+                {/* Dashboard */}
+                <Link to="/" className={navLinkClass(location.pathname === '/')}>
+                  Dashboard
+                </Link>
+
+                {/* Leagues dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setLeaguesDropdownOpen(!leaguesDropdownOpen);
+                      setSparesDropdownOpen(false);
+                      setAdminDropdownOpen(false);
+                    }}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isLeaguesActive)}`}
                   >
-                    {link.label}
-                  </Link>
-                ))}
-                
-                {adminLinks.map((link) => (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    className={`px-3 py-2 rounded-md text-sm font-medium ${
-                      isNavLinkActive(link.to, link.matchPrefix)
-                        ? 'bg-primary-teal text-white'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
+                    Leagues
+                    <HiChevronDown className={`w-4 h-4 transition-transform ${leaguesDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {leaguesDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
+                      <Link
+                        to="/leagues"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        View all
+                      </Link>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                      {leaguesLoading ? (
+                        <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          Loading leagues…
+                        </div>
+                      ) : (
+                        leagues.map((league) => (
+                          <Link
+                            key={league.id}
+                            to={`/leagues/${league.id}`}
+                            onClick={closeDropdowns}
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            {league.name}
+                          </Link>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Spares dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setSparesDropdownOpen(!sparesDropdownOpen);
+                      setLeaguesDropdownOpen(false);
+                      setAdminDropdownOpen(false);
+                    }}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isSparesActive)}`}
                   >
-                    {link.label}
-                  </Link>
-                ))}
+                    Spares
+                    <HiChevronDown className={`w-4 h-4 transition-transform ${sparesDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {sparesDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
+                      <Link
+                        to="/availability"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        My availability
+                      </Link>
+                      <Link
+                        to="/my-requests"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        My requests
+                      </Link>
+                      <Link
+                        to="/request-spare"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Request a spare
+                      </Link>
+                    </div>
+                  )}
+                </div>
+
+                {/* Directory */}
+                <Link to="/members" className={navLinkClass(isNavLinkActive('/members'))}>
+                  Directory
+                </Link>
+
+                {/* Calendar */}
+                <Link to="/calendar" className={navLinkClass(isNavLinkActive('/calendar'))}>
+                  Calendar
+                </Link>
+
+                {/* Admin dropdown - only when user has admin links */}
+                {hasAdminLinks && (
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setAdminDropdownOpen(!adminDropdownOpen);
+                        setLeaguesDropdownOpen(false);
+                        setSparesDropdownOpen(false);
+                      }}
+                      className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isAdminActive)}`}
+                    >
+                      Admin
+                      <HiChevronDown className={`w-4 h-4 transition-transform ${adminDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {adminDropdownOpen && (
+                      <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
+                        {adminLinks.map((link) => (
+                          <Link
+                            key={link.to}
+                            to={link.to}
+                            onClick={closeDropdowns}
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            {link.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               {/* Desktop User Menu */}
               <div className="hidden md:flex items-center space-x-4">
-                <Link 
-                  to="/profile" 
+                <Link
+                  to="/profile"
                   className="text-sm text-gray-700 dark:text-gray-300 hover:text-primary-teal font-medium"
                 >
                   {member?.name}
@@ -141,36 +338,110 @@ export default function Layout({ children }: LayoutProps) {
           {mobileMenuOpen && (
             <div className="md:hidden border-t border-gray-200 dark:border-gray-700 py-4">
               <div className="space-y-1">
-                {navLinks.map((link) => (
+                <Link
+                  to="/"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={navLinkClassMobile(location.pathname === '/')}
+                >
+                  Dashboard
+                </Link>
+
+                <MobileDropdownSection
+                  label="Leagues"
+                  expanded={mobileLeaguesExpanded}
+                  onToggle={() => setMobileLeaguesExpanded(!mobileLeaguesExpanded)}
+                  active={isLeaguesActive}
+                >
                   <Link
-                    key={link.to}
-                    to={link.to}
+                    to="/leagues"
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`block px-3 py-2 rounded-md text-base font-medium ${
-                      isNavLinkActive(link.to, link.matchPrefix)
-                        ? 'bg-primary-teal text-white'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
-                    {link.label}
+                    View all
                   </Link>
-                ))}
-                
-                {adminLinks.map((link) => (
+                  {leaguesLoading ? (
+                    <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                      Loading leagues…
+                    </div>
+                  ) : (
+                    leagues.map((league) => (
+                      <Link
+                        key={league.id}
+                        to={`/leagues/${league.id}`}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        {league.name}
+                      </Link>
+                    ))
+                  )}
+                </MobileDropdownSection>
+
+                <MobileDropdownSection
+                  label="Spares"
+                  expanded={mobileSparesExpanded}
+                  onToggle={() => setMobileSparesExpanded(!mobileSparesExpanded)}
+                  active={isSparesActive}
+                >
                   <Link
-                    key={link.to}
-                    to={link.to}
+                    to="/availability"
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`block px-3 py-2 rounded-md text-base font-medium ${
-                      isNavLinkActive(link.to, link.matchPrefix)
-                        ? 'bg-primary-teal text-white'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
-                    {link.label}
+                    My availability
                   </Link>
-                ))}
-                
+                  <Link
+                    to="/my-requests"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    My requests
+                  </Link>
+                  <Link
+                    to="/request-spare"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Request a spare
+                  </Link>
+                </MobileDropdownSection>
+
+                <Link
+                  to="/members"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={navLinkClassMobile(isNavLinkActive('/members'))}
+                >
+                  Directory
+                </Link>
+
+                <Link
+                  to="/calendar"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={navLinkClassMobile(isNavLinkActive('/calendar'))}
+                >
+                  Calendar
+                </Link>
+
+                {hasAdminLinks && (
+                  <MobileDropdownSection
+                    label="Admin"
+                    expanded={mobileAdminExpanded}
+                    onToggle={() => setMobileAdminExpanded(!mobileAdminExpanded)}
+                    active={isAdminActive}
+                  >
+                    {adminLinks.map((link) => (
+                      <Link
+                        key={link.to}
+                        to={link.to}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
+                  </MobileDropdownSection>
+                )}
+
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
                   <Link
                     to="/profile"
@@ -194,8 +465,12 @@ export default function Layout({ children }: LayoutProps) {
           )}
         </div>
       </nav>
-      
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+
+      <main
+        className={`mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full min-h-0 ${
+          fullWidth ? 'max-w-full flex flex-col overflow-hidden' : 'max-w-7xl'
+        }`}
+      >
         {children}
       </main>
 

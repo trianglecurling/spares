@@ -1696,7 +1696,16 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
-    await db.delete(schema.leagueTeams).where(eq(schema.leagueTeams.id, id));
+    await db.transaction(async (tx) => {
+      // Delete games that reference this team (foreign key is RESTRICT, not CASCADE)
+      await tx.delete(schema.games).where(
+        or(
+          eq(schema.games.team1_id, id),
+          eq(schema.games.team2_id, id),
+        ),
+      );
+      await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.id, id));
+    });
     return { success: true };
     }
   );
@@ -1922,5 +1931,170 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       email: row.email,
     }));
     }
+  );
+
+  // ── Maintenance endpoints ──────────────────────────────────────────
+
+  const leagueIdMaintenanceParamsSchema = {
+    type: 'object' as const,
+    properties: { id: { type: 'string' as const } },
+    required: ['id'] as const,
+  };
+
+  // Clear games
+  fastify.delete(
+    '/leagues/:id/maintenance/games',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueIdMaintenanceParamsSchema,
+        response: { 200: successResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const leagueId = parseInt((request.params as { id: string }).id, 10);
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const { db, schema } = getDrizzleDb();
+      await db.transaction(async (tx) => {
+        await tx.delete(schema.games).where(eq(schema.games.league_id, leagueId));
+      });
+      return { success: true };
+    },
+  );
+
+  // Clear teams (also clears games, team_members, bye requests via cascade)
+  fastify.delete(
+    '/leagues/:id/maintenance/teams',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueIdMaintenanceParamsSchema,
+        response: { 200: successResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const leagueId = parseInt((request.params as { id: string }).id, 10);
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const { db, schema } = getDrizzleDb();
+      await db.transaction(async (tx) => {
+        // games reference teams with RESTRICT, so delete games first
+        await tx.delete(schema.games).where(eq(schema.games.league_id, leagueId));
+        await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.league_id, leagueId));
+      });
+      return { success: true };
+    },
+  );
+
+  // Clear roster (also clears games, teams, team_members)
+  fastify.delete(
+    '/leagues/:id/maintenance/roster',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueIdMaintenanceParamsSchema,
+        response: { 200: successResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const leagueId = parseInt((request.params as { id: string }).id, 10);
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const { db, schema } = getDrizzleDb();
+      await db.transaction(async (tx) => {
+        await tx.delete(schema.games).where(eq(schema.games.league_id, leagueId));
+        await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.league_id, leagueId));
+        await tx.delete(schema.leagueRoster).where(eq(schema.leagueRoster.league_id, leagueId));
+      });
+      return { success: true };
+    },
+  );
+
+  // Clear bye requests
+  fastify.delete(
+    '/leagues/:id/maintenance/bye-requests',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueIdMaintenanceParamsSchema,
+        response: { 200: successResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const leagueId = parseInt((request.params as { id: string }).id, 10);
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const { db, schema } = getDrizzleDb();
+      const teamIds = await db
+        .select({ id: schema.leagueTeams.id })
+        .from(schema.leagueTeams)
+        .where(eq(schema.leagueTeams.league_id, leagueId));
+
+      if (teamIds.length > 0) {
+        await db.delete(schema.teamByeRequests).where(
+          inArray(schema.teamByeRequests.team_id, teamIds.map((t) => t.id)),
+        );
+      }
+      return { success: true };
+    },
+  );
+
+  // Clear divisions (also clears games, teams)
+  fastify.delete(
+    '/leagues/:id/maintenance/divisions',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueIdMaintenanceParamsSchema,
+        response: { 200: successResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const leagueId = parseInt((request.params as { id: string }).id, 10);
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const { db, schema } = getDrizzleDb();
+      await db.transaction(async (tx) => {
+        await tx.delete(schema.games).where(eq(schema.games.league_id, leagueId));
+        await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.league_id, leagueId));
+        await tx.delete(schema.leagueDivisions).where(eq(schema.leagueDivisions.league_id, leagueId));
+      });
+      return { success: true };
+    },
+  );
+
+  // Clear sheet availability
+  fastify.delete(
+    '/leagues/:id/maintenance/sheet-availability',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueIdMaintenanceParamsSchema,
+        response: { 200: successResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const leagueId = parseInt((request.params as { id: string }).id, 10);
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const { db, schema } = getDrizzleDb();
+      await db.delete(schema.drawSheetAvailability).where(
+        eq(schema.drawSheetAvailability.league_id, leagueId),
+      );
+      return { success: true };
+    },
   );
 }

@@ -433,6 +433,9 @@
                             "isServerAdmin": {
                               "type": "boolean"
                             },
+                            "isCalendarAdmin": {
+                              "type": "boolean"
+                            },
                             "leagueManagerLeagueIds": {
                               "type": "array",
                               "items": {
@@ -472,6 +475,7 @@
                             "spareOnly",
                             "isAdmin",
                             "isServerAdmin",
+                            "isCalendarAdmin",
                             "leagueManagerLeagueIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
@@ -609,6 +613,9 @@
                             "isServerAdmin": {
                               "type": "boolean"
                             },
+                            "isCalendarAdmin": {
+                              "type": "boolean"
+                            },
                             "leagueManagerLeagueIds": {
                               "type": "array",
                               "items": {
@@ -648,6 +655,7 @@
                             "spareOnly",
                             "isAdmin",
                             "isServerAdmin",
+                            "isCalendarAdmin",
                             "leagueManagerLeagueIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
@@ -718,6 +726,9 @@
                         "isServerAdmin": {
                           "type": "boolean"
                         },
+                        "isCalendarAdmin": {
+                          "type": "boolean"
+                        },
                         "leagueManagerLeagueIds": {
                           "type": "array",
                           "items": {
@@ -757,6 +768,7 @@
                         "spareOnly",
                         "isAdmin",
                         "isServerAdmin",
+                        "isCalendarAdmin",
                         "leagueManagerLeagueIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
@@ -1438,6 +1450,12 @@
                   },
                   "isServerAdmin": {
                     "type": "boolean"
+                  },
+                  "isCalendarAdmin": {
+                    "type": "boolean"
+                  },
+                  "isLeagueAdministrator": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -1770,6 +1788,9 @@
                     "type": "boolean"
                   },
                   "isServerAdmin": {
+                    "type": "boolean"
+                  },
+                  "isCalendarAdmin": {
                     "type": "boolean"
                   }
                 }
@@ -4370,6 +4391,234 @@
         }
       }
     },
+    "/leagues/{id}/maintenance/games": {
+      "delete": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/maintenance/teams": {
+      "delete": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/maintenance/roster": {
+      "delete": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/maintenance/bye-requests": {
+      "delete": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/maintenance/divisions": {
+      "delete": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/maintenance/sheet-availability": {
+      "delete": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/leagues/{id}/games": {
       "get": {
         "tags": [
@@ -4655,6 +4904,175 @@
                     "createdAt",
                     "updatedAt"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/games/bulk": {
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "games": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "team1Id": {
+                          "type": "number"
+                        },
+                        "team2Id": {
+                          "type": "number"
+                        },
+                        "gameDate": {
+                          "type": "string"
+                        },
+                        "gameTime": {
+                          "type": "string"
+                        },
+                        "sheetId": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "scheduled",
+                            "unscheduled"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "team1Id",
+                        "team2Id"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "games"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "leagueId": {
+                        "type": "number"
+                      },
+                      "team1Id": {
+                        "type": "number"
+                      },
+                      "team2Id": {
+                        "type": "number"
+                      },
+                      "team1Name": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "team2Name": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "gameDate": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "gameTime": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "sheetId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "sheetName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "scheduled",
+                          "unscheduled"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "updatedAt": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "leagueId",
+                      "team1Id",
+                      "team2Id",
+                      "team1Name",
+                      "team2Name",
+                      "gameDate",
+                      "gameTime",
+                      "sheetId",
+                      "sheetName",
+                      "status",
+                      "createdAt",
+                      "updatedAt"
+                    ]
+                  }
                 }
               }
             }
@@ -5217,6 +5635,18 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "opponentName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "opponentTeamId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "required": [
@@ -5230,7 +5660,9 @@
                       "gameDate",
                       "gameTime",
                       "sheetId",
-                      "sheetName"
+                      "sheetName",
+                      "opponentName",
+                      "opponentTeamId"
                     ]
                   }
                 }

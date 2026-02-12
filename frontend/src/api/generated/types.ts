@@ -280,6 +280,7 @@ export interface paths {
                                 spareOnly: boolean;
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
+                                isCalendarAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
@@ -350,6 +351,7 @@ export interface paths {
                                 spareOnly: boolean;
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
+                                isCalendarAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
@@ -402,6 +404,7 @@ export interface paths {
                                 spareOnly: boolean;
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
+                                isCalendarAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
@@ -819,6 +822,8 @@ export interface paths {
                         spareOnly?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
+                        isCalendarAdmin?: boolean;
+                        isLeagueAdministrator?: boolean;
                     };
                 };
             };
@@ -1014,6 +1019,7 @@ export interface paths {
                         spareOnly?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
+                        isCalendarAdmin?: boolean;
                     };
                 };
             };
@@ -2527,6 +2533,240 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leagues/{id}/maintenance/games": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/maintenance/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/maintenance/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/maintenance/bye-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/maintenance/divisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/maintenance/sheet-availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/leagues/{id}/games": {
         parameters: {
             query?: never;
@@ -2621,6 +2861,72 @@ export interface paths {
                             createdAt: null | string;
                             updatedAt: null | string;
                         };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/games/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        games: {
+                            team1Id: number;
+                            team2Id: number;
+                            gameDate?: string;
+                            gameTime?: string;
+                            sheetId?: number;
+                            /** @enum {string} */
+                            status?: "scheduled" | "unscheduled";
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            leagueId: number;
+                            team1Id: number;
+                            team2Id: number;
+                            team1Name: null | string;
+                            team2Name: null | string;
+                            gameDate: null | string;
+                            gameTime: null | string;
+                            sheetId: null | number;
+                            sheetName: null | string;
+                            /** @enum {string} */
+                            status: "scheduled" | "unscheduled";
+                            createdAt: null | string;
+                            updatedAt: null | string;
+                        }[];
                     };
                 };
             };
@@ -2941,6 +3247,8 @@ export interface paths {
                             gameTime: null | string;
                             sheetId: null | number;
                             sheetName: null | string;
+                            opponentName: null | string;
+                            opponentTeamId: null | number;
                         }[];
                     };
                 };

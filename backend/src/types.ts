@@ -9,6 +9,7 @@ export interface Member {
   spare_only: number;
   is_admin: number;
   is_server_admin: number;
+  is_calendar_admin?: number;
   opted_in_sms: number;
   email_subscribed: number;
   first_login_completed: number;
@@ -207,6 +208,7 @@ export interface AuthenticatedMember {
   spareOnly: boolean;
   isAdmin: boolean;
   isServerAdmin: boolean;
+  isCalendarAdmin: boolean;
   leagueManagerLeagueIds: number[];
   isLeagueAdministrator: boolean;
   isLeagueAdministratorGlobal: boolean;
@@ -227,6 +229,7 @@ export interface MemberSummary {
   spareOnly?: boolean;
   isAdmin: boolean;
   isServerAdmin?: boolean;
+  isCalendarAdmin?: boolean;
   isLeagueAdministratorGlobal?: boolean;
   isInServerAdminsList?: boolean;
   emailSubscribed: boolean;

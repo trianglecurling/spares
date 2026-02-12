@@ -385,6 +385,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       league_id INTEGER NOT NULL,
       division_id INTEGER NOT NULL,
       name TEXT,
+      prefer_late_draw INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
@@ -438,7 +439,6 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       team_id INTEGER NOT NULL,
       draw_date TEXT NOT NULL,
-      draw_time TEXT NOT NULL,
       priority INTEGER NOT NULL,
       note TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -446,7 +446,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       FOREIGN KEY (team_id) REFERENCES league_teams(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_team_bye_requests_team_id ON team_bye_requests(team_id);
-    CREATE INDEX IF NOT EXISTS idx_team_bye_requests_draw ON team_bye_requests(draw_date, draw_time);
+    CREATE INDEX IF NOT EXISTS idx_team_bye_requests_draw_date ON team_bye_requests(draw_date);
 
     -- Game results (tiebreaker values per team per game)
     CREATE TABLE IF NOT EXISTS game_results (
@@ -570,6 +570,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       league_id INTEGER NOT NULL,
       division_id INTEGER NOT NULL,
       name TEXT,
+      prefer_late_draw INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
@@ -848,19 +849,22 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0', table: 'spare_requests', column: 'all_invites_declined_notified' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_generation INTEGER DEFAULT 0', table: 'spare_requests', column: 'notification_generation' },
     { sql: 'ALTER TABLE league_settings ADD COLUMN collect_bye_requests INTEGER DEFAULT 1', table: 'league_settings', column: 'collect_bye_requests' },
+    { sql: 'ALTER TABLE team_bye_requests DROP COLUMN draw_time', table: 'team_bye_requests', column: '_drop_draw_time' },
+    { sql: 'ALTER TABLE league_teams ADD COLUMN prefer_late_draw INTEGER DEFAULT 0', table: 'league_teams', column: 'prefer_late_draw' },
+    { sql: 'ALTER TABLE members ADD COLUMN is_calendar_admin INTEGER DEFAULT 0', table: 'members', column: 'is_calendar_admin' },
   ];
 
   for (const migration of migrations) {
     try {
       await execSQL(db, migration.sql);
     } catch (e: unknown) {
-      // Check if error is about column already existing
+      // Check if error is about column already existing or already dropped
       const errorMsg = e instanceof Error ? e.message : '';
-      if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
-        // Re-throw if it's not a "column exists" error
+      if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR') && !errorMsg.includes('does not exist') && !errorMsg.includes('no such column')) {
+        // Re-throw if it's not a known benign error
         throw e;
       }
-      // Otherwise ignore - column already exists
+      // Otherwise ignore - column already exists or already dropped
     }
   }
 
@@ -870,6 +874,14 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id ON spare_requests(game_id);');
   } catch (e: unknown) {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
+  }
+
+  // Replace old compound index with date-only index after draw_time column removal
+  try {
+    await execSQL(db, 'DROP INDEX IF EXISTS idx_team_bye_requests_draw;');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_team_bye_requests_draw_date ON team_bye_requests(draw_date);');
+  } catch (e: unknown) {
+    // Ignore - index may not exist or already replaced
   }
 
   // Migrate existing admins to server admins
@@ -971,6 +983,47 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_member ON spare_request_notification_deliveries(member_id);
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_claimed ON spare_request_notification_deliveries(spare_request_id, claimed_at);
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_sent ON spare_request_notification_deliveries(spare_request_id, sent_at);
+  `);
+
+  // Calendar events (direct entries by Calendar Admin, Admin, or Server Admin)
+  await execSQL(db, `
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL DEFAULT 'direct' CHECK(source IN ('direct')),
+      type_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      all_day INTEGER NOT NULL DEFAULT 0,
+      recurrence_rule TEXT,
+      parent_event_id INTEGER REFERENCES calendar_events(id) ON DELETE CASCADE,
+      recurrence_date TEXT,
+      created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_start_dt ON calendar_events(start_dt);
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_parent_id ON calendar_events(parent_event_id);
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_recurrence_date ON calendar_events(parent_event_id, recurrence_date);
+
+    CREATE TABLE IF NOT EXISTS calendar_event_locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+      location_type TEXT NOT NULL CHECK(location_type IN ('sheet', 'warm-room', 'exterior', 'offsite', 'virtual')),
+      sheet_id INTEGER REFERENCES sheets(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_event_locations_event_id ON calendar_event_locations(event_id);
+
+    CREATE TABLE IF NOT EXISTS calendar_event_exceptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+      exception_date TEXT NOT NULL,
+      UNIQUE(parent_event_id, exception_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_event_exceptions_parent_id ON calendar_event_exceptions(parent_event_id);
   `);
 
   await ensureRequestedForMemberIdColumn(db);
@@ -1135,6 +1188,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       league_id INTEGER NOT NULL,
       division_id INTEGER NOT NULL,
       name TEXT,
+      prefer_late_draw INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
@@ -1188,7 +1242,6 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       team_id INTEGER NOT NULL,
       draw_date TEXT NOT NULL,
-      draw_time TEXT NOT NULL,
       priority INTEGER NOT NULL,
       note TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1196,7 +1249,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       FOREIGN KEY (team_id) REFERENCES league_teams(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_team_bye_requests_team_id ON team_bye_requests(team_id);
-    CREATE INDEX IF NOT EXISTS idx_team_bye_requests_draw ON team_bye_requests(draw_date, draw_time);
+    CREATE INDEX IF NOT EXISTS idx_team_bye_requests_draw_date ON team_bye_requests(draw_date);
 
     -- Game results (tiebreaker values per team per game)
     CREATE TABLE IF NOT EXISTS game_results (
@@ -1487,16 +1540,19 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE spare_requests ADD COLUMN all_invites_declined_notified INTEGER DEFAULT 0',
     'ALTER TABLE spare_requests ADD COLUMN notification_generation INTEGER DEFAULT 0',
     'ALTER TABLE league_settings ADD COLUMN collect_bye_requests INTEGER DEFAULT 1',
+    'ALTER TABLE team_bye_requests DROP COLUMN draw_time',
+    'ALTER TABLE league_teams ADD COLUMN prefer_late_draw INTEGER DEFAULT 0',
+    'ALTER TABLE members ADD COLUMN is_calendar_admin INTEGER DEFAULT 0',
   ];
 
   for (const migrationSQL of migrations) {
     try {
       execSQLSync(db, migrationSQL);
     } catch (e: unknown) {
-      // Ignore "column already exists" errors
+      // Ignore "column already exists" errors or "no such column" for DROP
       const errorMsg = e instanceof Error ? e.message : '';
-      if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR')) {
-        // Re-throw if it's not a "column exists" error
+      if (!errorMsg.includes('duplicate') && !errorMsg.includes('already exists') && !errorMsg.includes('SQLITE_ERROR') && !errorMsg.includes('no such column')) {
+        // Re-throw if it's not a "column exists" or "no such column" error
         throw e;
       }
     }
@@ -1506,6 +1562,14 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   try {
     execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
     execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id ON spare_requests(game_id);');
+  } catch {
+    // ignore
+  }
+
+  // Replace old compound index with date-only index after draw_time column removal
+  try {
+    execSQLSync(db, 'DROP INDEX IF EXISTS idx_team_bye_requests_draw;');
+    execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_team_bye_requests_draw_date ON team_bye_requests(draw_date);');
   } catch {
     // ignore
   }
@@ -1568,6 +1632,47 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_member ON spare_request_notification_deliveries(member_id);
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_claimed ON spare_request_notification_deliveries(spare_request_id, claimed_at);
     CREATE INDEX IF NOT EXISTS idx_spare_request_notification_deliveries_sent ON spare_request_notification_deliveries(spare_request_id, sent_at);
+  `);
+
+  // Calendar events
+  execSQLSync(db, `
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL DEFAULT 'direct' CHECK(source IN ('direct')),
+      type_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      all_day INTEGER NOT NULL DEFAULT 0,
+      recurrence_rule TEXT,
+      parent_event_id INTEGER REFERENCES calendar_events(id) ON DELETE CASCADE,
+      recurrence_date TEXT,
+      created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_start_dt ON calendar_events(start_dt);
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_parent_id ON calendar_events(parent_event_id);
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_recurrence_date ON calendar_events(parent_event_id, recurrence_date);
+
+    CREATE TABLE IF NOT EXISTS calendar_event_locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+      location_type TEXT NOT NULL CHECK(location_type IN ('sheet', 'warm-room', 'exterior', 'offsite', 'virtual')),
+      sheet_id INTEGER REFERENCES sheets(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_event_locations_event_id ON calendar_event_locations(event_id);
+
+    CREATE TABLE IF NOT EXISTS calendar_event_exceptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+      exception_date TEXT NOT NULL,
+      UNIQUE(parent_event_id, exception_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_event_exceptions_parent_id ON calendar_event_exceptions(parent_event_id);
   `);
 
   ensureRequestedForMemberIdColumnSync(db);

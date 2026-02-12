@@ -139,6 +139,31 @@ export const drawAvailabilityUpdateBodySchema = {
   required: ['date', 'time', 'sheets'],
 } as const;
 
+export const gameBulkCreateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    games: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          team1Id: { type: 'number' },
+          team2Id: { type: 'number' },
+          gameDate: { type: 'string' },
+          gameTime: { type: 'string' },
+          sheetId: { type: 'number' },
+          status: { type: 'string', enum: ['scheduled', 'unscheduled'] },
+        },
+        required: ['team1Id', 'team2Id'],
+      },
+      minItems: 1,
+    },
+  },
+  required: ['games'],
+} as const;
+
 export const memberUpcomingGameSchema = {
   type: 'object',
   additionalProperties: false,
@@ -154,6 +179,8 @@ export const memberUpcomingGameSchema = {
     gameTime: { type: ['string', 'null'] },
     sheetId: { type: ['number', 'null'] },
     sheetName: { type: ['string', 'null'] },
+    opponentName: { type: ['string', 'null'] },
+    opponentTeamId: { type: ['number', 'null'] },
   },
   required: [
     'id',
@@ -167,6 +194,8 @@ export const memberUpcomingGameSchema = {
     'gameTime',
     'sheetId',
     'sheetName',
+    'opponentName',
+    'opponentTeamId',
   ],
 } as const;
 

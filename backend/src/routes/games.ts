@@ -19,6 +19,7 @@ import {
   drawSlotListResponseSchema,
   extraDrawCreateBodySchema,
   extraDrawResponseSchema,
+  gameBulkCreateBodySchema,
   gameCreateBodySchema,
   gameListResponseSchema,
   gameSchema,
@@ -47,6 +48,21 @@ const gameUpdateSchema = z.object({
   gameTime: z.string().optional().nullable(),
   sheetId: z.number().int().positive().optional().nullable(),
   status: z.enum(['scheduled', 'unscheduled']).optional(),
+});
+
+const gameBulkCreateSchema = z.object({
+  games: z
+    .array(
+      z.object({
+        team1Id: z.number().int().positive(),
+        team2Id: z.number().int().positive(),
+        gameDate: z.string().optional().nullable(),
+        gameTime: z.string().optional().nullable(),
+        sheetId: z.number().int().positive().optional().nullable(),
+        status: z.enum(['scheduled', 'unscheduled']).optional(),
+      })
+    )
+    .min(1),
 });
 
 const drawSlotQuerySchema = z.object({
@@ -654,6 +670,172 @@ export async function gameRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // Bulk create games
+  fastify.post(
+    '/leagues/:id/games/bulk',
+    {
+      schema: {
+        tags: ['games'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        body: gameBulkCreateBodySchema,
+        response: {
+          200: gameListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+      if (!(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const body = gameBulkCreateSchema.parse(request.body);
+
+      // Validate: no self-matchups
+      for (let i = 0; i < body.games.length; i++) {
+        const g = body.games[i];
+        if (g.team1Id === g.team2Id) {
+          return reply.code(400).send({ error: `Game ${i + 1}: teams must be different.` });
+        }
+      }
+
+      const { db, schema } = getDrizzleDb();
+
+      // Validate: all teams belong to the league
+      const allTeamIds = Array.from(
+        new Set(body.games.flatMap((g) => [g.team1Id, g.team2Id]))
+      );
+      try {
+        await ensureTeamsBelongToLeague(db, schema, leagueId, allTeamIds);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Invalid teams.';
+        return reply.code(400).send({ error: message });
+      }
+
+      // Prepare rows and validate scheduled games
+      const rows: Array<{
+        league_id: number;
+        team1_id: number;
+        team2_id: number;
+        game_date: string | null;
+        game_time: string | null;
+        sheet_id: number | null;
+        status: 'scheduled' | 'unscheduled';
+      }> = [];
+
+      // Track within-batch conflicts
+      const batchSlots = new Set<string>(); // "date|time|sheetId"
+      const batchTeamTimes = new Map<string, Set<number>>(); // "date|time" -> team ids
+
+      for (let i = 0; i < body.games.length; i++) {
+        const g = body.games[i];
+        const hasScheduleFields =
+          g.gameDate !== undefined || g.gameTime !== undefined || g.sheetId !== undefined;
+        const status = g.status ?? (hasScheduleFields ? 'scheduled' : 'unscheduled');
+
+        let gameDate: string | null = g.gameDate ?? null;
+        let gameTime: string | null = g.gameTime ?? null;
+        let sheetId: number | null = g.sheetId ?? null;
+
+        if (status === 'unscheduled') {
+          gameDate = null;
+          gameTime = null;
+          sheetId = null;
+        }
+
+        if (status === 'scheduled') {
+          if (!gameDate || !gameTime || !sheetId) {
+            return reply.code(400).send({ error: `Game ${i + 1}: scheduled games require date, time, and sheet.` });
+          }
+
+          // Within-batch sheet conflict
+          const slotKey = `${gameDate}|${gameTime}|${sheetId}`;
+          if (batchSlots.has(slotKey)) {
+            return reply.code(400).send({ error: `Game ${i + 1}: duplicate sheet/time assignment within batch.` });
+          }
+          batchSlots.add(slotKey);
+
+          // Within-batch team-time conflict
+          const timeKey = `${gameDate}|${gameTime}`;
+          if (!batchTeamTimes.has(timeKey)) batchTeamTimes.set(timeKey, new Set());
+          const teamsAtTime = batchTeamTimes.get(timeKey)!;
+          if (teamsAtTime.has(g.team1Id) || teamsAtTime.has(g.team2Id)) {
+            return reply.code(400).send({ error: `Game ${i + 1}: team already has a game at this time in the batch.` });
+          }
+          teamsAtTime.add(g.team1Id);
+          teamsAtTime.add(g.team2Id);
+
+          // Validate against existing games in the database
+          try {
+            await ensureSheetAvailable(db, schema, leagueId, gameDate, gameTime, sheetId);
+            await ensureTeamsAvailable(db, schema, gameDate, gameTime, [g.team1Id, g.team2Id]);
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Invalid schedule.';
+            return reply.code(400).send({ error: `Game ${i + 1}: ${message}` });
+          }
+        } else if (hasScheduleFields) {
+          return reply.code(400).send({ error: `Game ${i + 1}: unscheduled games cannot include date/time/sheet.` });
+        }
+
+        rows.push({
+          league_id: leagueId,
+          team1_id: g.team1Id,
+          team2_id: g.team2Id,
+          game_date: gameDate,
+          game_time: gameTime,
+          sheet_id: sheetId,
+          status,
+        });
+      }
+
+      // Insert all games in a transaction
+      const insertedIds: number[] = [];
+      await db.transaction(async (tx) => {
+        for (const row of rows) {
+          const inserted = await tx
+            .insert(schema.games)
+            .values(row)
+            .returning({ id: schema.games.id });
+          insertedIds.push(inserted[0].id);
+        }
+      });
+
+      // Load all created games with team names
+      const allGames = await db
+        .select({
+          id: schema.games.id,
+          league_id: schema.games.league_id,
+          team1_id: schema.games.team1_id,
+          team2_id: schema.games.team2_id,
+          game_date: schema.games.game_date,
+          game_time: schema.games.game_time,
+          sheet_id: schema.games.sheet_id,
+          status: schema.games.status,
+          created_at: schema.games.created_at,
+          updated_at: schema.games.updated_at,
+          sheet_name: schema.sheets.name,
+        })
+        .from(schema.games)
+        .leftJoin(schema.sheets, eq(schema.games.sheet_id, schema.sheets.id))
+        .where(inArray(schema.games.id, insertedIds))
+        .orderBy(asc(schema.games.game_date), asc(schema.games.game_time), asc(schema.games.id));
+
+      const teamNames = await loadTeamNames(db, schema, allTeamIds);
+      return allGames.map((row) => buildGameResponse(row, teamNames));
+    }
+  );
+
   // Update game
   fastify.patch(
     '/games/:gameId',
@@ -1133,6 +1315,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
       }
 
       const today = await getCurrentDateStringAsync();
+      const endDate = addDays(today, 6); // 7 days total: today + 6 more
       const rows = await db
         .select({
           id: schema.games.id,
@@ -1152,26 +1335,34 @@ export async function gameRoutes(fastify: FastifyInstance) {
           and(
             eq(schema.games.status, 'scheduled'),
             or(inArray(schema.games.team1_id, teamIds), inArray(schema.games.team2_id, teamIds)),
-            gte(schema.games.game_date, today)
+            gte(schema.games.game_date, today),
+            lte(schema.games.game_date, endDate)
           )
         )
         .orderBy(asc(schema.games.game_date), asc(schema.games.game_time), asc(schema.games.id));
 
       const gameTeamIds = Array.from(new Set(rows.flatMap((row) => [row.team1_id, row.team2_id])));
       const teamNames = await loadTeamNames(db, schema, gameTeamIds);
-      return rows.map((row) => ({
-        id: row.id,
-        leagueId: row.league_id,
-        leagueName: row.league_name,
-        team1Id: row.team1_id,
-        team2Id: row.team2_id,
-        team1Name: teamNames.get(row.team1_id) ?? null,
-        team2Name: teamNames.get(row.team2_id) ?? null,
-        gameDate: row.game_date ? formatDateValue(row.game_date) : null,
-        gameTime: row.game_time ? formatTimeValue(row.game_time) : null,
-        sheetId: row.sheet_id,
-        sheetName: row.sheet_name,
-      }));
+      return rows.map((row) => {
+        const team1InMyTeams = teamIds.includes(row.team1_id);
+        const opponentTeamId = team1InMyTeams ? row.team2_id : row.team1_id;
+        const opponentName = teamNames.get(opponentTeamId) ?? null;
+        return {
+          id: row.id,
+          leagueId: row.league_id,
+          leagueName: row.league_name,
+          team1Id: row.team1_id,
+          team2Id: row.team2_id,
+          team1Name: teamNames.get(row.team1_id) ?? null,
+          team2Name: teamNames.get(row.team2_id) ?? null,
+          gameDate: row.game_date ? formatDateValue(row.game_date) : null,
+          gameTime: row.game_time ? formatTimeValue(row.game_time) : null,
+          sheetId: row.sheet_id,
+          sheetName: row.sheet_name,
+          opponentName,
+          opponentTeamId,
+        };
+      });
     }
   );
 }

@@ -62,7 +62,7 @@ export default function FirstLogin() {
         phoneVisible,
       });
 
-      updateMember({ ...response, themePreference: normalizeThemePreference(response.themePreference) });
+      updateMember({ ...member!, ...response, themePreference: normalizeThemePreference(response.themePreference) } as import('../../../backend/src/types').AuthenticatedMember);
       setStep(2);
     } catch (error) {
       console.error('Failed to update profile:', error);
@@ -76,7 +76,7 @@ export default function FirstLogin() {
 
     try {
       await post('/members/me/complete-first-login', undefined);
-      updateMember({ ...member!, firstLoginCompleted: true });
+      updateMember({ ...member!, firstLoginCompleted: true } as import('../../../backend/src/types').AuthenticatedMember);
 
       // 1) If the user came from a spare accept link, go back to the dashboard with requestId
       // so the accept popup opens.

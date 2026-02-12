@@ -50,11 +50,26 @@
         - number of games per team (by default, this will be the number of teams in the division minus 1)
       - To the extent possible, teams should play on each sheet roughly an equal number of times.
       - To the extent possible, teams should be assigned as "Team 1" and as "Team 2" roughly an equal number of times.
+      - If a league has multiple draw times, to the extent possible, teams should play each draw time a roughly equal number of times.
       - If there are not enough game slots to complete the round robin strategy, schedule a partial round robin (i.e. teams will not necessarily play every other team). The user will have the option to leave the rest of the games as "unscheduled" or simply not generate them at all.
       - If there are more game slots than we need for a full round robin, leave those slots with no games scheduled.
     - Automatic game generation does not include tournament-style playoff games; those games can be entered manually by the league manager.
     - The generated game schedule should be previewed to the user so they can review before saving it.
     - The automatic game generation should also be able to take in prioritized bye requests from each team. This means that we will need a way for a team member to specify their bye priorities prior to schedule generation. To the extent possible, we should honor the highest priority bye requests from each team.
+
+    When generating a schedule, use the following prioritized list of constraints (most important comes first):
+    1. Satisfy the number of games/completing the round robin.
+    2. No team can play twice in the same week.
+    3. The number of draws used should be ceiling(total games / number of sheets)
+    4. There should be no more than one empty sheet for any given draw. The total number of empty sheets across all draws should be less than the number of sheets (otherwise, it means we could have used fewer draws by more efficient use of sheets).
+    5. If the league has 2 draws (one early, one late), for any team that chooses "Prefer late draw", avoid assigning them to the early draw.
+    6. Satisfy each team's top bye request (if multiple dates are specified with highest priority, choose any).
+    7. Satisfy equal play among all draw times
+    8. Satisfy each team's 2nd choice bye request.
+    9. Satisfy equal play among all the sheets.
+    10. Avoid granting a team back-to-back bye weeks (unless specifically requested).
+    11. Satisfy each team's additional bye requests.
+    12. Satisfy being "Team 1" and "Team 2" and equal number of times.
 
 11. League participant dashboard experience
     - Because this is a relatively large scope expansion, I'm thinking we should have 2 tabs below the CTA buttons on the dashboard - "Leagues" and "Sparing". When on the sparing tab, we show all the sparing details that we show currently. When on the leagues tab, we should see a heading for each league that the user is part of, followed by details about upcoming games. League participants should be able to view their upcoming games. They should be able to see who they are playing and what sheet they are on. Participants should be able to easily request a spare for an upcoming game - we would automatically fill in the league and draw, for example.

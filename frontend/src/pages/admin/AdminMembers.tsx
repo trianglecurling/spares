@@ -27,6 +27,7 @@ type MemberUpdatePayload = {
   spareOnly?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
+  isCalendarAdmin?: boolean;
   isLeagueAdministrator?: boolean;
 };
 
@@ -38,6 +39,7 @@ type MemberCreatePayload = {
   spareOnly: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
+  isCalendarAdmin?: boolean;
   isLeagueAdministrator?: boolean;
 };
 
@@ -59,6 +61,7 @@ export default function AdminMembers() {
     spareOnly: false,
     isAdmin: false,
     isServerAdmin: false,
+    isCalendarAdmin: false,
     isLeagueAdministrator: false,
     emailVisible: false,
     phoneVisible: false,
@@ -117,6 +120,7 @@ export default function AdminMembers() {
         optedInSms: Boolean(m.optedInSms),
         isAdmin: Boolean(m.isAdmin),
         isServerAdmin: Boolean(m.isServerAdmin),
+        isCalendarAdmin: Boolean((m as { isCalendarAdmin?: boolean }).isCalendarAdmin),
         isLeagueAdministratorGlobal: Boolean(m.isLeagueAdministratorGlobal),
         isInServerAdminsList: Boolean(m.isInServerAdminsList),
         firstLoginCompleted: Boolean(m.firstLoginCompleted),
@@ -151,6 +155,7 @@ export default function AdminMembers() {
         spareOnly: Boolean(member.spareOnly),
         isAdmin: member.isInServerAdminsList ? false : member.isAdmin,
         isServerAdmin: isServerAdmin,
+        isCalendarAdmin: Boolean((member as { isCalendarAdmin?: boolean }).isCalendarAdmin),
         isLeagueAdministrator: Boolean(member.isLeagueAdministratorGlobal),
         emailVisible: member.emailVisible,
         phoneVisible: member.phoneVisible,
@@ -165,6 +170,7 @@ export default function AdminMembers() {
         spareOnly: false,
         isAdmin: false,
         isServerAdmin: false,
+        isCalendarAdmin: false,
         isLeagueAdministrator: false,
         emailVisible: false,
         phoneVisible: false,
@@ -184,6 +190,7 @@ export default function AdminMembers() {
       spareOnly: false,
       isAdmin: false,
       isServerAdmin: false,
+      isCalendarAdmin: false,
       isLeagueAdministrator: false,
       emailVisible: false,
       phoneVisible: false,
@@ -318,11 +325,13 @@ export default function AdminMembers() {
           } else {
             updateData.isAdmin = formData.isAdmin;
             updateData.isServerAdmin = formData.isServerAdmin;
+            updateData.isCalendarAdmin = formData.isCalendarAdmin;
             updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
           }
         } else if (currentMember?.isAdmin && editingMember?.id !== currentMember?.id) {
-          // Regular admins can only set isAdmin (and not for themselves)
+          // Regular admins can set isAdmin, isCalendarAdmin, isLeagueAdministrator (and not for themselves)
           updateData.isAdmin = formData.isAdmin;
+          updateData.isCalendarAdmin = formData.isCalendarAdmin;
           updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
         
@@ -340,10 +349,12 @@ export default function AdminMembers() {
         if (currentMember?.isServerAdmin) {
           createData.isAdmin = formData.isAdmin;
           createData.isServerAdmin = formData.isServerAdmin;
+          createData.isCalendarAdmin = formData.isCalendarAdmin;
           createData.isLeagueAdministrator = formData.isLeagueAdministrator;
         } else if (currentMember?.isAdmin) {
-          // Regular admins can only set isAdmin
+          // Regular admins can set isAdmin, isCalendarAdmin, isLeagueAdministrator
           createData.isAdmin = formData.isAdmin;
+          createData.isCalendarAdmin = formData.isCalendarAdmin;
           createData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
         
@@ -985,9 +996,9 @@ export default function AdminMembers() {
                       type="radio"
                       id="roleRegular"
                       name="role"
-                      checked={!formData.isAdmin && !formData.isServerAdmin && !formData.isLeagueAdministrator}
+                      checked={!formData.isAdmin && !formData.isServerAdmin && !formData.isLeagueAdministrator && !formData.isCalendarAdmin}
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: false })
+                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: false, isCalendarAdmin: false })
                       }
                       className="mr-2"
                     />
@@ -1000,9 +1011,9 @@ export default function AdminMembers() {
                       type="radio"
                       id="roleLeagueAdmin"
                       name="role"
-                      checked={formData.isLeagueAdministrator && !formData.isAdmin && !formData.isServerAdmin}
+                      checked={formData.isLeagueAdministrator && !formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin}
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: true })
+                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: true, isCalendarAdmin: false })
                       }
                       className="mr-2"
                     />
@@ -1013,11 +1024,26 @@ export default function AdminMembers() {
                   <div className="flex items-center">
                     <input
                       type="radio"
+                      id="roleCalendarAdmin"
+                      name="role"
+                      checked={formData.isCalendarAdmin && !formData.isAdmin && !formData.isServerAdmin && !formData.isLeagueAdministrator}
+                      onChange={() =>
+                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: false, isCalendarAdmin: true })
+                      }
+                      className="mr-2"
+                    />
+                    <label htmlFor="roleCalendarAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                      Calendar admin
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
                       id="roleAdmin"
                       name="role"
-                      checked={formData.isAdmin && !formData.isServerAdmin}
+                      checked={formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin}
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: true, isServerAdmin: false, isLeagueAdministrator: false })
+                        setFormData({ ...formData, isAdmin: true, isServerAdmin: false, isLeagueAdministrator: false, isCalendarAdmin: false })
                       }
                       className="mr-2"
                     />
@@ -1032,7 +1058,7 @@ export default function AdminMembers() {
                       name="role"
                       checked={formData.isServerAdmin}
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: false, isServerAdmin: true, isLeagueAdministrator: false })
+                        setFormData({ ...formData, isAdmin: false, isServerAdmin: true, isLeagueAdministrator: false, isCalendarAdmin: false })
                       }
                       className="mr-2"
                     />

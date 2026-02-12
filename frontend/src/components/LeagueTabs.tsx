@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 interface LeagueTabsProps {
   leagueId: string;
   showSheetsTab?: boolean;
+  showMaintenanceTab?: boolean;
 }
 
 const leagueTabs = [
@@ -15,16 +16,21 @@ const leagueTabs = [
   { label: 'Roster', path: 'roster' },
   { label: 'Divisions', path: 'divisions' },
   { label: 'League managers', path: 'managers' },
+  { label: 'Maintenance', path: 'maintenance', requiresAdmin: true },
 ];
 
-export default function LeagueTabs({ leagueId, showSheetsTab = false }: LeagueTabsProps) {
+export default function LeagueTabs({ leagueId, showSheetsTab = false, showMaintenanceTab = false }: LeagueTabsProps) {
   const location = useLocation();
   const basePath = `/leagues/${leagueId}`;
 
   return (
     <div className="flex flex-wrap gap-2">
       {leagueTabs
-        .filter((tab) => (tab.requiresManager ? showSheetsTab : true))
+        .filter((tab) => {
+          if (tab.requiresManager) return showSheetsTab;
+          if (tab.requiresAdmin) return showMaintenanceTab;
+          return true;
+        })
         .map((tab) => {
         const to = tab.path ? `${basePath}/${tab.path}` : basePath;
         const isActive = location.pathname === to;

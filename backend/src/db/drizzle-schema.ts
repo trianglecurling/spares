@@ -17,6 +17,7 @@ export const membersSqlite = sqliteTable('members', {
   spare_only: integer('spare_only').default(0).notNull(),
   is_admin: integer('is_admin').default(0).notNull(),
   is_server_admin: integer('is_server_admin').default(0).notNull(),
+  is_calendar_admin: integer('is_calendar_admin').default(0).notNull(),
   opted_in_sms: integer('opted_in_sms').default(0).notNull(),
   email_subscribed: integer('email_subscribed').default(1).notNull(),
   first_login_completed: integer('first_login_completed').default(0).notNull(),
@@ -150,6 +151,7 @@ export const leagueTeamsSqlite = sqliteTable('league_teams', {
   league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
   division_id: integer('division_id').notNull().references(() => leagueDivisionsSqlite.id, { onDelete: 'cascade' }),
   name: text('name'),
+  prefer_late_draw: integer('prefer_late_draw').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -194,14 +196,13 @@ export const teamByeRequestsSqlite = sqliteTable('team_bye_requests', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   team_id: integer('team_id').notNull().references(() => leagueTeamsSqlite.id, { onDelete: 'cascade' }),
   draw_date: text('draw_date').notNull(),
-  draw_time: text('draw_time').notNull(),
   priority: integer('priority').notNull(),
   note: text('note'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   teamIdIdx: index('idx_team_bye_requests_team_id').on(table.team_id),
-  drawIdx: index('idx_team_bye_requests_draw').on(table.draw_date, table.draw_time),
+  drawDateIdx: index('idx_team_bye_requests_draw_date').on(table.draw_date),
 }));
 
 export const gameResultsSqlite = sqliteTable('game_results', {
@@ -470,6 +471,45 @@ export const dailyActivitySqlite = sqliteTable('daily_activity', {
   memberIdIdx: index('idx_daily_activity_member_id').on(table.member_id),
 }));
 
+// Calendar events (direct entries)
+export const calendarEventsSqlite = sqliteTable('calendar_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  source: text('source').default('direct').notNull().$type<'direct'>(),
+  type_id: text('type_id').notNull(),
+  title: text('title').notNull(),
+  start_dt: text('start_dt').notNull(),
+  end_dt: text('end_dt').notNull(),
+  all_day: integer('all_day').default(0).notNull(),
+  recurrence_rule: text('recurrence_rule'),
+  parent_event_id: integer('parent_event_id'),
+  recurrence_date: text('recurrence_date'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  startDtIdx: index('idx_calendar_events_start_dt').on(table.start_dt),
+  parentIdIdx: index('idx_calendar_events_parent_id').on(table.parent_event_id),
+  recurrenceIdx: index('idx_calendar_events_recurrence_date').on(table.parent_event_id, table.recurrence_date),
+}));
+
+export const calendarEventLocationsSqlite = sqliteTable('calendar_event_locations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => calendarEventsSqlite.id, { onDelete: 'cascade' }),
+  location_type: text('location_type').notNull().$type<'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual'>(),
+  sheet_id: integer('sheet_id').references(() => sheetsSqlite.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  eventIdIdx: index('idx_calendar_event_locations_event_id').on(table.event_id),
+}));
+
+export const calendarEventExceptionsSqlite = sqliteTable('calendar_event_exceptions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  parent_event_id: integer('parent_event_id').notNull().references(() => calendarEventsSqlite.id, { onDelete: 'cascade' }),
+  exception_date: text('exception_date').notNull(),
+}, (table) => ({
+  parentIdIdx: index('idx_calendar_event_exceptions_parent_id').on(table.parent_event_id),
+  uniqueParentDate: uniqueIndex('calendar_event_exceptions_parent_date_unique').on(table.parent_event_id, table.exception_date),
+}));
+
 // ========== PostgreSQL Schema ==========
 export const membersPg = pgTable('members', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -480,6 +520,7 @@ export const membersPg = pgTable('members', {
   spare_only: integerPg('spare_only').default(0).notNull(),
   is_admin: integerPg('is_admin').default(0).notNull(),
   is_server_admin: integerPg('is_server_admin').default(0).notNull(),
+  is_calendar_admin: integerPg('is_calendar_admin').default(0).notNull(),
   opted_in_sms: integerPg('opted_in_sms').default(0).notNull(),
   email_subscribed: integerPg('email_subscribed').default(1).notNull(),
   first_login_completed: integerPg('first_login_completed').default(0).notNull(),
@@ -613,6 +654,7 @@ export const leagueTeamsPg = pgTable('league_teams', {
   league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
   division_id: integerPg('division_id').notNull().references(() => leagueDivisionsPg.id, { onDelete: 'cascade' }),
   name: textPg('name'),
+  prefer_late_draw: integerPg('prefer_late_draw').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -657,14 +699,13 @@ export const teamByeRequestsPg = pgTable('team_bye_requests', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   team_id: integerPg('team_id').notNull().references(() => leagueTeamsPg.id, { onDelete: 'cascade' }),
   draw_date: date('draw_date').notNull(),
-  draw_time: time('draw_time').notNull(),
   priority: integerPg('priority').notNull(),
   note: textPg('note'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   teamIdIdx: indexPg('idx_team_bye_requests_team_id').on(table.team_id),
-  drawIdx: indexPg('idx_team_bye_requests_draw').on(table.draw_date, table.draw_time),
+  drawDateIdx: indexPg('idx_team_bye_requests_draw_date').on(table.draw_date),
 }));
 
 export const gameResultsPg = pgTable('game_results', {
@@ -931,6 +972,44 @@ export const dailyActivityPg = pgTable('daily_activity', {
   memberIdIdx: indexPg('idx_daily_activity_member_id').on(table.member_id),
 }));
 
+export const calendarEventsPg = pgTable('calendar_events', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  source: textPg('source').default('direct').notNull().$type<'direct'>(),
+  type_id: textPg('type_id').notNull(),
+  title: textPg('title').notNull(),
+  start_dt: textPg('start_dt').notNull(),
+  end_dt: textPg('end_dt').notNull(),
+  all_day: integerPg('all_day').default(0).notNull(),
+  recurrence_rule: textPg('recurrence_rule'),
+  parent_event_id: integerPg('parent_event_id'),
+  recurrence_date: textPg('recurrence_date'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  startDtIdx: indexPg('idx_calendar_events_start_dt').on(table.start_dt),
+  parentIdIdx: indexPg('idx_calendar_events_parent_id').on(table.parent_event_id),
+  recurrenceIdx: indexPg('idx_calendar_events_recurrence_date').on(table.parent_event_id, table.recurrence_date),
+}));
+
+export const calendarEventLocationsPg = pgTable('calendar_event_locations', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => calendarEventsPg.id, { onDelete: 'cascade' }),
+  location_type: textPg('location_type').notNull().$type<'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual'>(),
+  sheet_id: integerPg('sheet_id').references(() => sheetsPg.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  eventIdIdx: indexPg('idx_calendar_event_locations_event_id').on(table.event_id),
+}));
+
+export const calendarEventExceptionsPg = pgTable('calendar_event_exceptions', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  parent_event_id: integerPg('parent_event_id').notNull().references(() => calendarEventsPg.id, { onDelete: 'cascade' }),
+  exception_date: textPg('exception_date').notNull(),
+}, (table) => ({
+  parentIdIdx: indexPg('idx_calendar_event_exceptions_parent_id').on(table.parent_event_id),
+  uniqueParentDate: uniqueIndexPg('calendar_event_exceptions_parent_date_unique').on(table.parent_event_id, table.exception_date),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -963,6 +1042,9 @@ export const sqliteSchema = {
   feedback: feedbackSqlite,
   observabilityEvents: observabilityEventsSqlite,
   dailyActivity: dailyActivitySqlite,
+  calendarEvents: calendarEventsSqlite,
+  calendarEventLocations: calendarEventLocationsSqlite,
+  calendarEventExceptions: calendarEventExceptionsSqlite,
 };
 
 export const pgSchema = {
@@ -996,4 +1078,7 @@ export const pgSchema = {
   feedback: feedbackPg,
   observabilityEvents: observabilityEventsPg,
   dailyActivity: dailyActivityPg,
+  calendarEvents: calendarEventsPg,
+  calendarEventLocations: calendarEventLocationsPg,
+  calendarEventExceptions: calendarEventExceptionsPg,
 };

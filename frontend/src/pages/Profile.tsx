@@ -55,7 +55,7 @@ export default function Profile() {
         phoneVisible: formData.phoneVisible,
       });
 
-      updateMember({ ...response, themePreference: normalizeThemePreference(response.themePreference) });
+      updateMember({ ...member!, ...response, themePreference: normalizeThemePreference(response.themePreference) } as import('../../../backend/src/types').AuthenticatedMember);
       setMessage({ type: 'success', text: 'Profile updated successfully' });
     } catch (error) {
       console.error('Failed to update profile:', error);

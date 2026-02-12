@@ -37,6 +37,9 @@ type SqliteSchema = {
   feedback: typeof sqliteSchema.feedbackSqlite;
   observabilityEvents: typeof sqliteSchema.observabilityEventsSqlite;
   dailyActivity: typeof sqliteSchema.dailyActivitySqlite;
+  calendarEvents: typeof sqliteSchema.calendarEventsSqlite;
+  calendarEventLocations: typeof sqliteSchema.calendarEventLocationsSqlite;
+  calendarEventExceptions: typeof sqliteSchema.calendarEventExceptionsSqlite;
 };
 
 type PgSchema = {
@@ -70,6 +73,9 @@ type PgSchema = {
   feedback: typeof pgSchema.feedbackPg;
   observabilityEvents: typeof pgSchema.observabilityEventsPg;
   dailyActivity: typeof pgSchema.dailyActivityPg;
+  calendarEvents: typeof pgSchema.calendarEventsPg;
+  calendarEventLocations: typeof pgSchema.calendarEventLocationsPg;
+  calendarEventExceptions: typeof pgSchema.calendarEventExceptionsPg;
 };
 
 type DrizzleDb = NodePgDatabase<PgSchema>;
@@ -126,6 +132,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       feedback: sqliteSchema.feedbackSqlite,
       observabilityEvents: sqliteSchema.observabilityEventsSqlite,
       dailyActivity: sqliteSchema.dailyActivitySqlite,
+      calendarEvents: sqliteSchema.calendarEventsSqlite,
+      calendarEventLocations: sqliteSchema.calendarEventLocationsSqlite,
+      calendarEventExceptions: sqliteSchema.calendarEventExceptionsSqlite,
     } as unknown as DrizzleSchema;
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
@@ -173,6 +182,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       feedback: pgSchema.feedbackPg,
       observabilityEvents: pgSchema.observabilityEventsPg,
       dailyActivity: pgSchema.dailyActivityPg,
+      calendarEvents: pgSchema.calendarEventsPg,
+      calendarEventLocations: pgSchema.calendarEventLocationsPg,
+      calendarEventExceptions: pgSchema.calendarEventExceptionsPg,
     } as DrizzleSchema;
   } else {
     throw new Error(`Unsupported database type: ${config.type}`);

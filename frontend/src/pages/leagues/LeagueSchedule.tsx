@@ -594,98 +594,162 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
 
         {drawSlots.length === 0 ? (
           <div className="text-sm text-gray-500 dark:text-gray-400">No draws configured yet.</div>
-        ) : (
-          <div className="space-y-3">
-            {drawSlots.map((draw) => {
-              return (
-                <div
-                  key={`${draw.date}-${draw.time}`}
-                  className="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                        {formatDateDisplay(draw.date)} · {formatTime(draw.time)}
-                        {draw.isExtra && (
-                          <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-                            Extra
-                          </span>
-                        )}
+        ) : (() => {
+          // Group draw slots by date
+          const drawsByDate = new Map<string, DrawSlot[]>();
+          for (const draw of drawSlots) {
+            const list = drawsByDate.get(draw.date) ?? [];
+            list.push(draw);
+            drawsByDate.set(draw.date, list);
+          }
+          const sortedDates = [...drawsByDate.keys()].sort();
+
+          return (
+            <div className="space-y-6">
+              {sortedDates.map((date) => {
+                const dateDraws = drawsByDate.get(date) ?? [];
+
+                // Determine which teams play on ANY draw this date
+                const teamsPlayingThisDate = new Set<number>();
+                for (const draw of dateDraws) {
+                  const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                  for (const game of drawGames) {
+                    teamsPlayingThisDate.add(game.team1Id);
+                    teamsPlayingThisDate.add(game.team2Id);
+                  }
+                }
+                // Teams on bye = teams not playing any draw this date
+                const byeTeams = teams
+                  .filter((team) => !teamsPlayingThisDate.has(team.id))
+                  .sort((a, b) => {
+                    const nameA = a.name || `Team ${a.id}`;
+                    const nameB = b.name || `Team ${b.id}`;
+                    return nameA.localeCompare(nameB);
+                  });
+
+                // When "Show my games": if my teams don't play this date, show a single "Bye week" card
+                const myTeamsPlayThisDate = showMineOnly && memberTeamIds.length > 0
+                  ? dateDraws.some((draw) => {
+                      const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                      return drawGames.some((g) => memberTeamIds.includes(g.team1Id) || memberTeamIds.includes(g.team2Id));
+                    })
+                  : true;
+
+                if (showMineOnly && memberTeamIds.length > 0 && !myTeamsPlayThisDate) {
+                  return (
+                    <div key={date}>
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        {formatDateDisplay(date)}
+                      </h3>
+                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Bye week</span>
                       </div>
                     </div>
-                  </div>
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
-                    {(gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? []).length === 0 ? (
-                      <span className="text-gray-500 dark:text-gray-400">
-                        {showMineOnly ? 'No games scheduled for your teams.' : 'No games scheduled.'}
-                      </span>
-                    ) : (
-                      <div className="space-y-1">
-                        {(gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? []).map((game) => {
-                          const winnerId = getWinnerTeamId(game);
-                          const t1Label = teamLabelById.get(game.team1Id);
-                          const t2Label = teamLabelById.get(game.team2Id);
-                          return (
-                            <div key={game.id} className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                                {game.sheetName || 'Sheet TBD'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => openGameDetails(game)}
-                                className="font-medium text-gray-800 dark:text-gray-100 hover:text-primary-teal hover:underline"
-                              >
-                                <span className={winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''}>
-                                  {t1Label}
+                  );
+                }
+
+                // When "Show my games", only show draw cards that have at least one game for the user's teams
+                const drawsToShow = showMineOnly && memberTeamIds.length > 0
+                  ? dateDraws.filter((draw) => {
+                      const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                      return drawGames.some((g) => memberTeamIds.includes(g.team1Id) || memberTeamIds.includes(g.team2Id));
+                    })
+                  : dateDraws;
+
+                return (
+                  <div key={date}>
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      {formatDateDisplay(date)}
+                    </h3>
+                    <div className="space-y-3">
+                      {drawsToShow.map((draw) => {
+                        const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                        return (
+                          <div
+                            key={`${draw.date}-${draw.time}`}
+                            className="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                                  {formatTime(draw.time)}
+                                  {draw.isExtra && (
+                                    <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                                      Extra
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-sm text-gray-700 dark:text-gray-300">
+                              {drawGames.length === 0 ? (
+                                <span className="text-gray-500 dark:text-gray-400">
+                                  No games scheduled.
                                 </span>
-                                {' vs '}
-                                <span className={winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''}>
-                                  {t2Label}
-                                </span>
-                              </button>
-                              {formatResultSummary(game) && (
-                                <span className="text-sm text-gray-500 dark:text-gray-400">
-                                  ({formatResultSummary(game)})
-                                </span>
-                              )}
-                              {canManage && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
-                                  className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                                  title="Edit game"
-                                  aria-label="Edit game"
-                                >
-                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                  </svg>
-                                </button>
+                              ) : (
+                                <div className="space-y-1">
+                                  {drawGames.map((game) => {
+                                    const winnerId = getWinnerTeamId(game);
+                                    const t1Label = teamLabelById.get(game.team1Id);
+                                    const t2Label = teamLabelById.get(game.team2Id);
+                                    return (
+                                      <div key={game.id} className="flex flex-wrap items-center gap-2">
+                                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                          {game.sheetName || 'Sheet TBD'}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => openGameDetails(game)}
+                                          className="font-medium text-gray-800 dark:text-gray-100 hover:text-primary-teal hover:underline"
+                                        >
+                                          <span className={winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''}>
+                                            {t1Label}
+                                          </span>
+                                          {' vs '}
+                                          <span className={winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''}>
+                                            {t2Label}
+                                          </span>
+                                        </button>
+                                        {formatResultSummary(game) && (
+                                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                                            ({formatResultSummary(game)})
+                                          </span>
+                                        )}
+                                        {canManage && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
+                                            className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                                            title="Edit game"
+                                            aria-label="Edit game"
+                                          >
+                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                            </svg>
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
                             </div>
-                          );
-                        })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!showMineOnly && byeTeams.length > 0 && (
+                      <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        <span className="font-medium text-gray-600 dark:text-gray-300">Bye:</span>{' '}
+                        {byeTeams.map((team) => team.name || `Team ${team.id}`).join(', ')}
                       </div>
                     )}
                   </div>
-                  {!showMineOnly && (() => {
-                    const scheduledTeamIds = new Set<number>();
-                    (gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? []).forEach((game) => {
-                      scheduledTeamIds.add(game.team1Id);
-                      scheduledTeamIds.add(game.team2Id);
-                    });
-                    const byeTeams = teams.filter((team) => !scheduledTeamIds.has(team.id));
-                    if (byeTeams.length === 0) return null;
-                    return (
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Bye: {byeTeams.map((team) => team.name || `Team ${team.id}`).join(', ')}
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          );
+        })()}
       </section>
 
       {canManage && (

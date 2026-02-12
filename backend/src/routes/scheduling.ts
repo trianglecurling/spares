@@ -4,10 +4,12 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { hasLeagueSetupAccess } from '../utils/leagueAccess.js';
 import {
+  leagueByeRequestsResponseSchema,
   teamByeRequestCreateBodySchema,
   teamByeRequestListResponseSchema,
   teamByeRequestsReplaceBodySchema,
   teamByeRequestUpdateBodySchema,
+  teamByeRequestsWithPreferenceResponseSchema,
 } from '../api/schedulingSchemas.js';
 import { successResponseSchema } from '../api/schemas.js';
 import { sendByeRequestsConfirmationEmail } from '../services/email.js';
@@ -19,27 +21,15 @@ function formatDateValue(value: unknown): string {
   return typeof value === 'string' ? value : String(value ?? '');
 }
 
-function formatTimeValue(value: unknown): string {
-  if (value instanceof Date) {
-    return value.toISOString().split('T')[1]?.slice(0, 5) ?? '';
-  }
-  if (typeof value === 'string') {
-    return value.length >= 5 ? value.slice(0, 5) : value;
-  }
-  return String(value ?? '');
-}
-
 const byeRequestCreateSchema = z.object({
   teamId: z.number().int().positive(),
   drawDate: z.string().min(1),
-  drawTime: z.string().min(1),
   priority: z.number().int().min(1),
   note: z.string().optional().nullable(),
 });
 
 const byeRequestUpdateSchema = z.object({
   drawDate: z.string().min(1).optional(),
-  drawTime: z.string().min(1).optional(),
   priority: z.number().int().min(1).optional(),
   note: z.string().optional().nullable(),
 });
@@ -48,10 +38,10 @@ const teamByeRequestsReplaceSchema = z.object({
   requests: z.array(
     z.object({
       drawDate: z.string().min(1),
-      drawTime: z.string().min(1),
       priority: z.number().int().min(1),
     })
   ),
+  preferLateDraw: z.boolean().optional(),
 });
 
 async function isMemberOnTeam(
@@ -84,7 +74,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
           required: ['id'],
         },
         response: {
-          200: teamByeRequestListResponseSchema,
+          200: leagueByeRequestsResponseSchema,
         },
       },
     },
@@ -98,13 +88,18 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: 'Forbidden' });
       }
 
-      const teamIds = await db
-        .select({ id: schema.leagueTeams.id })
+      const teamRows = await db
+        .select({ id: schema.leagueTeams.id, prefer_late_draw: schema.leagueTeams.prefer_late_draw })
         .from(schema.leagueTeams)
         .where(eq(schema.leagueTeams.league_id, leagueId));
-      const ids = teamIds.map((r) => r.id);
+      const ids = teamRows.map((r) => r.id);
+      const preferLateDrawByTeam: Record<number, boolean> = {};
+      for (const row of teamRows) {
+        preferLateDrawByTeam[row.id] = Boolean(row.prefer_late_draw);
+      }
+
       if (ids.length === 0) {
-        return [];
+        return { requests: [], preferLateDrawByTeam: {} };
       }
 
       const rows = await db
@@ -112,7 +107,6 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
           id: schema.teamByeRequests.id,
           team_id: schema.teamByeRequests.team_id,
           draw_date: schema.teamByeRequests.draw_date,
-          draw_time: schema.teamByeRequests.draw_time,
           priority: schema.teamByeRequests.priority,
           note: schema.teamByeRequests.note,
           created_at: schema.teamByeRequests.created_at,
@@ -122,19 +116,20 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
         .from(schema.teamByeRequests)
         .innerJoin(schema.leagueTeams, eq(schema.teamByeRequests.team_id, schema.leagueTeams.id))
         .where(inArray(schema.teamByeRequests.team_id, ids))
-        .orderBy(asc(schema.teamByeRequests.draw_date), asc(schema.teamByeRequests.draw_time), asc(schema.teamByeRequests.priority));
+        .orderBy(asc(schema.teamByeRequests.draw_date), asc(schema.teamByeRequests.priority));
 
-      return rows.map((row) => ({
+      const requests = rows.map((row) => ({
         id: row.id,
         teamId: row.team_id,
         teamName: row.team_name ?? null,
         drawDate: formatDateValue(row.draw_date),
-        drawTime: formatTimeValue(row.draw_time),
         priority: row.priority,
         note: row.note ?? null,
         createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
         updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
       }));
+
+      return { requests, preferLateDrawByTeam };
     }
   );
 
@@ -178,7 +173,6 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
       await db.insert(schema.teamByeRequests).values({
         team_id: body.teamId,
         draw_date: body.drawDate,
-        draw_time: body.drawTime,
         priority: body.priority,
         note: body.note ?? null,
       });
@@ -239,7 +233,6 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
 
       const updateValues: Record<string, unknown> = {};
       if (body.drawDate !== undefined) updateValues.draw_date = body.drawDate;
-      if (body.drawTime !== undefined) updateValues.draw_time = body.drawTime;
       if (body.priority !== undefined) updateValues.priority = body.priority;
       if (body.note !== undefined) updateValues.note = body.note;
       if (Object.keys(updateValues).length > 0) {
@@ -317,7 +310,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
           required: ['leagueId', 'teamId'],
         },
         response: {
-          200: teamByeRequestListResponseSchema,
+          200: teamByeRequestsWithPreferenceResponseSchema,
         },
       },
     },
@@ -334,7 +327,12 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
       const teamId = parseInt(teamIdRaw, 10);
 
       const teamRow = await db
-        .select({ id: schema.leagueTeams.id, league_id: schema.leagueTeams.league_id, name: schema.leagueTeams.name })
+        .select({
+          id: schema.leagueTeams.id,
+          league_id: schema.leagueTeams.league_id,
+          name: schema.leagueTeams.name,
+          prefer_late_draw: schema.leagueTeams.prefer_late_draw,
+        })
         .from(schema.leagueTeams)
         .where(eq(schema.leagueTeams.id, teamId))
         .limit(1);
@@ -353,7 +351,6 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
           id: schema.teamByeRequests.id,
           team_id: schema.teamByeRequests.team_id,
           draw_date: schema.teamByeRequests.draw_date,
-          draw_time: schema.teamByeRequests.draw_time,
           priority: schema.teamByeRequests.priority,
           note: schema.teamByeRequests.note,
           created_at: schema.teamByeRequests.created_at,
@@ -363,19 +360,21 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
         .from(schema.teamByeRequests)
         .innerJoin(schema.leagueTeams, eq(schema.teamByeRequests.team_id, schema.leagueTeams.id))
         .where(eq(schema.teamByeRequests.team_id, teamId))
-        .orderBy(asc(schema.teamByeRequests.draw_date), asc(schema.teamByeRequests.draw_time), asc(schema.teamByeRequests.priority));
+        .orderBy(asc(schema.teamByeRequests.draw_date), asc(schema.teamByeRequests.priority));
 
-      return rows.map((row) => ({
+      const byeRequests = rows.map((row) => ({
         id: row.id,
         teamId: row.team_id,
         teamName: row.team_name ?? null,
         drawDate: formatDateValue(row.draw_date),
-        drawTime: formatTimeValue(row.draw_time),
         priority: row.priority,
         note: row.note ?? null,
         createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
         updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
       }));
+
+      const preferLateDraw = Boolean(teamRow[0].prefer_late_draw);
+      return { byeRequests, preferLateDraw };
     }
   );
 
@@ -442,15 +441,20 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
         await db.insert(schema.teamByeRequests).values({
           team_id: teamId,
           draw_date: r.drawDate,
-          draw_time: r.drawTime,
           priority: r.priority,
           note: null,
         });
       }
 
+      if (body.preferLateDraw !== undefined) {
+        await db
+          .update(schema.leagueTeams)
+          .set({ prefer_late_draw: body.preferLateDraw ? 1 : 0 })
+          .where(eq(schema.leagueTeams.id, teamId));
+      }
+
       const requestsForEmail = body.requests.map((r) => ({
         drawDate: r.drawDate,
-        drawTime: r.drawTime,
         priority: r.priority,
       }));
 

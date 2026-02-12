@@ -36,6 +36,7 @@ import AdminFeedback from './pages/admin/AdminFeedback';
 import AdminObservability from './pages/admin/AdminObservability';
 import Leagues from './pages/leagues/Leagues';
 import LeagueDetail from './pages/leagues/LeagueDetail';
+import Calendar from './pages/Calendar';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -148,6 +149,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <MembersDirectory />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/calendar"
+            element={
+              <ProtectedRoute>
+                <Calendar />
               </ProtectedRoute>
             }
           />

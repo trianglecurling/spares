@@ -41,6 +41,21 @@ const toBoolean = (value: boolean | string | undefined, fallback: boolean) => {
   return fallback;
 };
 
+const isLocalhost = () => {
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  return host === 'localhost' || host === '127.0.0.1' || host === '';
+};
+
+const isRemoteUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return host !== 'localhost' && host !== '127.0.0.1';
+  } catch {
+    return false;
+  }
+};
+
 export const initOtel = (runtimeConfig?: RuntimeOtelConfig) => {
   const otelEnabled = toBoolean(
     runtimeConfig?.enabled,
@@ -53,6 +68,10 @@ export const initOtel = (runtimeConfig?: RuntimeOtelConfig) => {
     runtimeConfig?.exporterOtlpEndpoint ||
     import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT ||
     'http://localhost:4318/v1/traces';
+
+  // Skip when running on localhost with a remote collector; these requests fail with CORS.
+  if (isLocalhost() && isRemoteUrl(otlpEndpoint)) return;
+
   const logsEndpoint =
     runtimeConfig?.exporterOtlpLogsEndpoint ||
     import.meta.env.VITE_OTEL_EXPORTER_OTLP_LOGS_ENDPOINT ||

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
-import { del, get, patch, post } from '../../api/client';
+import { get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
-import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
@@ -23,7 +22,6 @@ interface League {
 
 export default function Leagues() {
   const { showAlert } = useAlert();
-  const { confirm } = useConfirm();
   const { member } = useAuth();
   const navigate = useNavigate();
   const [leagues, setLeagues] = useState<League[]>([]);
@@ -164,26 +162,6 @@ export default function Leagues() {
     }
   };
 
-  const _handleDelete = async (id: number, name: string) => {
-    const confirmed = await confirm({
-      title: 'Delete league',
-      message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      await del('/leagues/{id}', undefined, { id: String(id) });
-      setLeagues(leagues.filter((l) => l.id !== id));
-    } catch (error: unknown) {
-      console.error('Failed to delete league:', error);
-      showAlert(formatApiError(error, 'Failed to delete league'), 'error');
-    }
-  };
   const addDrawTime = () => {
     setFormData({
       ...formData,

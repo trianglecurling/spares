@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   HiOutlineUserPlus,
   HiOutlineCalendar,
+  HiOutlineCalendarDays,
   HiOutlineInbox,
   HiOutlineMegaphone,
   HiOutlineInformationCircle,
@@ -62,6 +63,26 @@ interface MySpareRequest {
   sparerComment?: string | null;
 }
 
+interface UpcomingGame {
+  id: number;
+  leagueId: number;
+  leagueName: string;
+  gameDate: string | null;
+  gameTime: string | null;
+  sheetName: string | null;
+  opponentName: string | null;
+  opponentTeamId: number | null;
+}
+
+const roleLabels: Record<string, string> = {
+  lead: 'Lead',
+  second: 'Second',
+  third: 'Third',
+  fourth: 'Fourth',
+  player1: 'Player 1',
+  player2: 'Player 2',
+};
+
 export default function Dashboard() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
@@ -73,6 +94,7 @@ export default function Dashboard() {
   const [filledRequests, setFilledRequests] = useState<SpareRequest[]>([]);
   const [ccRequests, setCcRequests] = useState<SpareRequest[]>([]);
   const [myRequests, setMyRequests] = useState<MySpareRequest[]>([]);
+  const [upcomingGames, setUpcomingGames] = useState<UpcomingGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilled, setShowFilled] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SpareRequest | null>(null);
@@ -95,6 +117,14 @@ export default function Dashboard() {
     variant?: string;
     icon?: string;
   } | null>(null);
+  const [opponentRosterModal, setOpponentRosterModal] = useState<{
+    teamId: number;
+    teamName: string;
+  } | null>(null);
+  const [opponentRoster, setOpponentRoster] = useState<
+    Array<{ memberId: number; name: string; role: string; isSkip: boolean; isVice: boolean }>
+  >([]);
+  const [opponentRosterLoading, setOpponentRosterLoading] = useState(false);
 
   const dashboardAlertStyles = (variant?: string) => {
     switch (variant) {
@@ -168,6 +198,16 @@ export default function Dashboard() {
 
     loadDashboardAlert();
   }, []);
+
+  useEffect(() => {
+    if (!opponentRosterModal) return;
+    setOpponentRosterLoading(true);
+    setOpponentRoster([]);
+    get('/teams/{teamId}/roster', undefined, { teamId: String(opponentRosterModal.teamId) })
+      .then((roster) => setOpponentRoster(roster as Array<{ memberId: number; name: string; role: string; isSkip: boolean; isVice: boolean }>))
+      .catch(() => setOpponentRoster([]))
+      .finally(() => setOpponentRosterLoading(false));
+  }, [opponentRosterModal]);
 
   // Check for requestId in URL and open dialog when data is loaded
   useEffect(() => {
@@ -255,12 +295,13 @@ export default function Dashboard() {
 
   const loadAllData = async () => {
     try {
-      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes] = await Promise.all([
+      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes, upcomingGamesRes] = await Promise.all([
         get('/spares'),
         get('/spares/my-sparing'),
         get('/spares/filled-upcoming'),
         get('/spares/cc'),
         get('/spares/my-requests'),
+        get('/members/me/upcoming-games').catch(() => []),
       ]);
       setOpenRequests(openRes);
       setMySparing(mySparingRes);
@@ -268,6 +309,7 @@ export default function Dashboard() {
       setCcRequests(ccRes || []);
       // Filter out cancelled requests - only show open and filled
       setMyRequests(myRequestsRes.filter((r: MySpareRequest) => r.status !== 'cancelled'));
+      setUpcomingGames(upcomingGamesRes || []);
     } catch (error) {
       console.error('Failed to load spare requests:', error);
     } finally {
@@ -483,6 +525,12 @@ export default function Dashboard() {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
+  const formatDayOfWeek = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString('en-US', { weekday: 'long' });
+  };
+
   const filledBadge = (
     <span className="px-2 py-1 rounded text-sm font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">
       Filled
@@ -685,6 +733,61 @@ export default function Dashboard() {
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : (
           <div className="space-y-6">
+            {/* My Upcoming Games */}
+            {upcomingGames.length > 0 && (
+              <div>
+                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                  My upcoming games
+                </h2>
+                <div className="space-y-3">
+                  {upcomingGames.map((game) => (
+                    <div
+                      key={game.id}
+                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+                    >
+                      <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                        <HiOutlineCalendarDays className="w-5 h-5 text-primary-teal shrinking-0" />
+                        <span className="font-medium">
+                          {game.gameDate ? formatDayOfWeek(game.gameDate) : '—'}
+                        </span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {game.gameTime ? formatTime(game.gameTime) : '—'}
+                        </span>
+                      </div>
+                      <span className="text-gray-600 dark:text-gray-400">
+                        Sheet {game.sheetName ?? '—'}
+                      </span>
+                      <span className="text-gray-600 dark:text-gray-400">
+                        vs{' '}
+                        {game.opponentTeamId && game.opponentName ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpponentRosterModal({
+                                teamId: game.opponentTeamId!,
+                                teamName: game.opponentName!,
+                              })
+                            }
+                            className="text-primary-teal hover:underline font-medium"
+                          >
+                            {game.opponentName}
+                          </button>
+                        ) : (
+                          game.opponentName ?? 'TBD'
+                        )}
+                      </span>
+                      <Link
+                        to={`/leagues/${game.leagueId}/schedule`}
+                        className="text-sm text-primary-teal hover:underline ml-auto"
+                      >
+                        {game.leagueName}
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* My Upcoming Sparing */}
             {mySparing.length > 0 && (
               <div>
@@ -988,6 +1091,32 @@ export default function Dashboard() {
                 Cancel
               </Button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!opponentRosterModal}
+        onClose={() => setOpponentRosterModal(null)}
+        title={opponentRosterModal ? `${opponentRosterModal.teamName} — Roster` : 'Team roster'}
+      >
+        {opponentRosterModal && (
+          <div className="space-y-4">
+            {opponentRosterLoading ? (
+              <div className="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+            ) : opponentRoster.length === 0 ? (
+              <div className="text-sm text-gray-600 dark:text-gray-400">No roster set.</div>
+            ) : (
+              <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                {opponentRoster.map((member) => (
+                  <li key={member.memberId}>
+                    {member.name} — {roleLabels[member.role] ?? member.role}
+                    {member.isSkip ? ' (Skip)' : ''}
+                    {member.isVice ? ' (Vice)' : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </Modal>

@@ -60,6 +60,11 @@ export function isAdmin(member: Member): boolean {
   return false;
 }
 
+export function isCalendarAdmin(member: Member): boolean {
+  if (member.is_calendar_admin === 1) return true;
+  return isAdmin(member);
+}
+
 export function isServerAdmin(member: Member): boolean {
   // Check database flag
   if (member.is_server_admin === 1) return true;

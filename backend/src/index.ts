@@ -16,6 +16,7 @@ import { schedulingRoutes } from './routes/scheduling.js';
 import { availabilityRoutes } from './routes/availability.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
+import { calendarRoutes } from './routes/calendar.js';
 import { installRoutes } from './routes/install.js';
 import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
 import { publicConfigRoutes } from './routes/publicConfig.js';
@@ -232,6 +233,7 @@ fastify.register(
     await instance.register(availabilityRoutes, { prefix: '/api' });
     await instance.register(spareRoutes, { prefix: '/api' });
     await instance.register(configRoutes, { prefix: '/api' });
+    await instance.register(calendarRoutes, { prefix: '/api' });
     await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
   }
 );

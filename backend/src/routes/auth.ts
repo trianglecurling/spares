@@ -8,6 +8,7 @@ import {
   normalizeEmail,
   isAdmin,
   isServerAdmin,
+  isCalendarAdmin,
 } from '../utils/auth.js';
 import { getLeagueAdministratorRoleInfo, getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
 import { sendAuthCodeEmail } from '../services/email.js';
@@ -81,6 +82,7 @@ const authMemberResponseSchema = {
     spareOnly: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
+    isCalendarAdmin: { type: 'boolean' },
     leagueManagerLeagueIds: { type: 'array', items: { type: 'number' } },
     isLeagueAdministrator: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
@@ -99,6 +101,7 @@ const authMemberResponseSchema = {
     'spareOnly',
     'isAdmin',
     'isServerAdmin',
+    'isCalendarAdmin',
     'leagueManagerLeagueIds',
     'isLeagueAdministrator',
     'isLeagueAdministratorGlobal',
@@ -388,6 +391,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
           spareOnly: member.spare_only === 1,
           isAdmin: isAdmin(member as Member),
           isServerAdmin: isServerAdmin(member as Member),
+          isCalendarAdmin: isCalendarAdmin(member as Member),
           leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
           isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
           isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
@@ -502,6 +506,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         spareOnly: member.spare_only === 1,
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
+        isCalendarAdmin: isCalendarAdmin(member),
         leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
         isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
         isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
@@ -550,6 +555,7 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         spareOnly: member.spare_only === 1,
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
+        isCalendarAdmin: isCalendarAdmin(member),
         leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
         isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
         isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,

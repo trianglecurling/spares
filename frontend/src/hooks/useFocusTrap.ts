@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 
+let isRedirectingFocus = false;
+
 export function useFocusTrap(isOpen: boolean) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
@@ -12,6 +14,8 @@ export function useFocusTrap(isOpen: boolean) {
 
     const container = containerRef.current;
     if (!container) return;
+
+    container.setAttribute('data-focus-trap', '');
 
     // Get all focusable elements within the modal
     const getFocusableElements = (): HTMLElement[] => {
@@ -67,9 +71,19 @@ export function useFocusTrap(isOpen: boolean) {
 
     // Prevent focus from leaving the modal
     const handleFocus = (e: FocusEvent) => {
+      if (isRedirectingFocus) return;
       if (!container.contains(e.target as Node)) {
+        // Focus moved to another focus trap (e.g. nested modal) - don't fight it
+        const otherTrap = (e.target as Element)?.closest?.('[data-focus-trap]');
+        if (otherTrap && otherTrap !== container) {
+          return;
+        }
+        isRedirectingFocus = true;
         e.preventDefault();
         firstElement?.focus();
+        setTimeout(() => {
+          isRedirectingFocus = false;
+        }, 0);
       }
     };
 
