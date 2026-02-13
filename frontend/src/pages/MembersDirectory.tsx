@@ -101,9 +101,7 @@ export default function MembersDirectory() {
     <Layout>
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Member directory
-          </h1>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Member directory</h1>
           <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
             <div className="w-full sm:w-72">
               <select
@@ -183,7 +181,10 @@ export default function MembersDirectory() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {member.email ? (
-                          <a href={`mailto:${member.email}`} className="text-primary-teal hover:underline">
+                          <a
+                            href={`mailto:${member.email}`}
+                            className="text-primary-teal hover:underline"
+                          >
                             {member.email}
                           </a>
                         ) : (
@@ -192,7 +193,10 @@ export default function MembersDirectory() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {member.phone ? (
-                          <a href={`tel:${member.phone.replace(/\D/g, '')}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
+                          <a
+                            href={`tel:${member.phone.replace(/\D/g, '')}`}
+                            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                          >
                             {formatPhone(member.phone)}
                           </a>
                         ) : (
@@ -216,7 +220,10 @@ export default function MembersDirectory() {
                   ))}
                   {filteredMembers.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                      <td
+                        colSpan={4}
+                        className="px-6 py-8 text-center text-gray-500 dark:text-gray-400"
+                      >
                         {members.length === 0
                           ? 'No members in the directory.'
                           : `No members found matching "${filter}"`}
@@ -250,7 +257,10 @@ export default function MembersDirectory() {
                   {selectedMember.email && (
                     <div>
                       <span className="font-medium text-gray-700 dark:text-gray-300">Email:</span>{' '}
-                      <a href={`mailto:${selectedMember.email}`} className="text-primary-teal hover:underline">
+                      <a
+                        href={`mailto:${selectedMember.email}`}
+                        className="text-primary-teal hover:underline"
+                      >
                         {selectedMember.email}
                       </a>
                     </div>
@@ -258,7 +268,10 @@ export default function MembersDirectory() {
                   {selectedMember.phone && (
                     <div>
                       <span className="font-medium text-gray-700 dark:text-gray-300">Phone:</span>{' '}
-                      <a href={`tel:${selectedMember.phone.replace(/\D/g, '')}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
+                      <a
+                        href={`tel:${selectedMember.phone.replace(/\D/g, '')}`}
+                        className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                      >
                         {formatPhone(selectedMember.phone)}
                       </a>
                     </div>
@@ -290,7 +303,9 @@ export default function MembersDirectory() {
                   <div className="space-y-4">
                     {memberAvailability.availableLeagues.length > 0 ? (
                       <div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Available for these leagues:</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                          Available for these leagues:
+                        </p>
                         <ul className="space-y-2">
                           {memberAvailability.availableLeagues.map((league) => (
                             <li key={league.leagueId} className="flex items-center">
@@ -304,18 +319,28 @@ export default function MembersDirectory() {
                     ) : (
                       <p className="text-gray-500 dark:text-gray-400">No availability set.</p>
                     )}
-                    
+
                     <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                       <p className="text-sm">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Comfortable as skip:</span>{' '}
-                        <span className={memberAvailability.canSkip ? 'text-green-600 dark:text-green-400 font-medium' : 'text-gray-600 dark:text-gray-400'}>
+                        <span className="font-medium text-gray-700 dark:text-gray-300">
+                          Comfortable as skip:
+                        </span>{' '}
+                        <span
+                          className={
+                            memberAvailability.canSkip
+                              ? 'text-green-600 dark:text-green-400 font-medium'
+                              : 'text-gray-600 dark:text-gray-400'
+                          }
+                        >
                           {memberAvailability.canSkip ? 'Yes' : 'No'}
                         </span>
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-gray-500 dark:text-gray-400">Unable to load availability.</div>
+                  <div className="text-gray-500 dark:text-gray-400">
+                    Unable to load availability.
+                  </div>
                 )}
               </div>
             </div>
@@ -325,4 +350,3 @@ export default function MembersDirectory() {
     </Layout>
   );
 }
-

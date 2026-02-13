@@ -72,10 +72,8 @@ export default function ConfirmDialog({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4">
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-        />
-        
+        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" />
+
         <div
           ref={modalRef}
           className="relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl max-w-md w-full p-6"
@@ -84,16 +82,14 @@ export default function ConfirmDialog({
             <div className={`flex-shrink-0 ${styles.iconBg} rounded-full p-2`}>
               <HiExclamationTriangle className={`w-6 h-6 ${styles.iconColor}`} />
             </div>
-            
+
             <div className="ml-4 flex-1">
               {title && (
-                <h3 className={`text-lg font-semibold mb-2 ${styles.titleColor}`}>
-                  {title}
-                </h3>
+                <h3 className={`text-lg font-semibold mb-2 ${styles.titleColor}`}>{title}</h3>
               )}
               <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{message}</p>
             </div>
-            
+
             <button
               onClick={onCancel}
               className="ml-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
@@ -101,18 +97,12 @@ export default function ConfirmDialog({
               <HiXMark className="w-5 h-5" />
             </button>
           </div>
-          
+
           <div className="mt-6 flex justify-between space-x-3">
-            <Button
-              variant={styles.buttonVariant}
-              onClick={onConfirm}
-            >
+            <Button variant={styles.buttonVariant} onClick={onConfirm}>
               {confirmText}
             </Button>
-            <Button
-              variant="secondary"
-              onClick={onCancel}
-            >
+            <Button variant="secondary" onClick={onCancel}>
               {cancelText}
             </Button>
           </div>
@@ -121,4 +111,3 @@ export default function ConfirmDialog({
     </div>
   );
 }
-

@@ -2,7 +2,11 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import AlertDialog from '../components/AlertDialog';
 
 interface AlertContextType {
-  showAlert: (message: string, variant?: 'info' | 'success' | 'warning' | 'error', title?: string) => void;
+  showAlert: (
+    message: string,
+    variant?: 'info' | 'success' | 'warning' | 'error',
+    title?: string
+  ) => void;
 }
 
 const AlertContext = createContext<AlertContextType | undefined>(undefined);
@@ -14,13 +18,16 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
     title?: string;
   } | null>(null);
 
-  const showAlert = useCallback((
-    message: string,
-    variant: 'info' | 'success' | 'warning' | 'error' = 'info',
-    title?: string
-  ) => {
-    setAlert({ message, variant, title });
-  }, []);
+  const showAlert = useCallback(
+    (
+      message: string,
+      variant: 'info' | 'success' | 'warning' | 'error' = 'info',
+      title?: string
+    ) => {
+      setAlert({ message, variant, title });
+    },
+    []
+  );
 
   const closeAlert = useCallback(() => {
     setAlert(null);
@@ -49,12 +56,3 @@ export function useAlert() {
   }
   return context;
 }
-
-
-
-
-
-
-
-
-

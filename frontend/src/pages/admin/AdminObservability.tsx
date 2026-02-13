@@ -67,9 +67,7 @@ export default function AdminObservability() {
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-              Observability
-            </h1>
+            <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Observability</h1>
             <div className="mt-1">
               <Link
                 to="/admin/config"
@@ -131,11 +129,14 @@ export default function AdminObservability() {
                     {observability.totals.emailsToday}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">
-                    sent: {observability.totals.emailsSentToday}, logged: {observability.totals.emailsLoggedToday}
+                    sent: {observability.totals.emailsSentToday}, logged:{' '}
+                    {observability.totals.emailsLoggedToday}
                   </div>
                 </div>
                 <div className="p-4 rounded border border-gray-200 dark:border-gray-700">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Spare requests (today)</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Spare requests (today)
+                  </div>
                   <div className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
                     {observability.totals.spareRequestsCreatedToday}
                   </div>
@@ -146,7 +147,9 @@ export default function AdminObservability() {
                 <div className="p-4 rounded border border-gray-200 dark:border-gray-700">
                   <div className="text-sm text-gray-500 dark:text-gray-400">Avg time-to-fill</div>
                   <div className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
-                    {observability.totals.avgTimeToFillMinutes === null ? '—' : `${observability.totals.avgTimeToFillMinutes}m`}
+                    {observability.totals.avgTimeToFillMinutes === null
+                      ? '—'
+                      : `${observability.totals.avgTimeToFillMinutes}m`}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">for fills in range</div>
                 </div>
@@ -196,7 +199,8 @@ export default function AdminObservability() {
               </div>
 
               <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                Date range: {observability.startDate} – {observability.endDate} · Members total: {observability.totals.membersTotal}
+                Date range: {observability.startDate} – {observability.endDate} · Members total:{' '}
+                {observability.totals.membersTotal}
               </div>
             </>
           )}
@@ -211,4 +215,3 @@ export default function AdminObservability() {
     </Layout>
   );
 }
-

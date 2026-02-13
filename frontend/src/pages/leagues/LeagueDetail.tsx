@@ -87,20 +87,36 @@ const teamRoles: TeamRole[] = ['lead', 'second', 'third', 'fourth'];
 const doublesRoles: DoublesRole[] = ['player1', 'player2'];
 
 function createRoleRecord<T>(value: T) {
-  return teamRoles.reduce((acc, role) => {
-    acc[role] = value;
-    return acc;
-  }, {} as Record<TeamRole, T>);
+  return teamRoles.reduce(
+    (acc, role) => {
+      acc[role] = value;
+      return acc;
+    },
+    {} as Record<TeamRole, T>
+  );
 }
 
 function createDoublesRecord<T>(value: T) {
-  return doublesRoles.reduce((acc, role) => {
-    acc[role] = value;
-    return acc;
-  }, {} as Record<DoublesRole, T>);
+  return doublesRoles.reduce(
+    (acc, role) => {
+      acc[role] = value;
+      return acc;
+    },
+    {} as Record<DoublesRole, T>
+  );
 }
 
-const leagueParamTabs = ['schedule', 'standings', 'sheets', 'schedule-generation', 'teams', 'roster', 'divisions', 'managers', 'maintenance'] as const;
+const leagueParamTabs = [
+  'schedule',
+  'standings',
+  'sheets',
+  'schedule-generation',
+  'teams',
+  'roster',
+  'divisions',
+  'managers',
+  'maintenance',
+] as const;
 type LeagueParamTab = (typeof leagueParamTabs)[number];
 type LeagueSetupTab = 'overview' | LeagueParamTab;
 
@@ -169,7 +185,9 @@ export default function LeagueDetail() {
     return 'overview';
   }, [tab]);
   const [loading, setLoading] = useState(true);
-  const [leagueSettings, setLeagueSettings] = useState<{ collectByeRequests: boolean } | null>(null);
+  const [leagueSettings, setLeagueSettings] = useState<{ collectByeRequests: boolean } | null>(
+    null
+  );
 
   const [byeRequestsModalOpen, setByeRequestsModalOpen] = useState(false);
   const [byeRequestsTeamId, setByeRequestsTeamId] = useState<number | null>(null);
@@ -259,27 +277,35 @@ export default function LeagueDetail() {
     createRoleRecord(null)
   );
   const [roleQueries, setRoleQueries] = useState<Record<TeamRole, string>>(createRoleRecord(''));
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState<Record<TeamRole, boolean>>(createRoleRecord(false));
-  const [roleHighlightedIndex, setRoleHighlightedIndex] = useState<Record<TeamRole, number>>(createRoleRecord(-1));
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState<Record<TeamRole, boolean>>(
+    createRoleRecord(false)
+  );
+  const [roleHighlightedIndex, setRoleHighlightedIndex] = useState<Record<TeamRole, number>>(
+    createRoleRecord(-1)
+  );
   const roleDropdownRefs = useRef<Record<TeamRole, HTMLDivElement | null>>(createRoleRecord(null));
   const roleInputRefs = useRef<Record<TeamRole, HTMLInputElement | null>>(createRoleRecord(null));
   const [skipRole, setSkipRole] = useState<TeamRole>('fourth');
   const [viceRole, setViceRole] = useState<TeamRole>('third');
   const [focusedRole, setFocusedRole] = useState<TeamRole | null>(null);
-  const [doublesMembers, setDoublesMembers] = useState<Record<DoublesRole, MemberSearchResult | null>>(
-    createDoublesRecord(null)
-  );
+  const [doublesMembers, setDoublesMembers] = useState<
+    Record<DoublesRole, MemberSearchResult | null>
+  >(createDoublesRecord(null));
   const [doublesQueries, setDoublesQueries] = useState<Record<DoublesRole, string>>(
     createDoublesRecord('')
   );
   const [doublesDropdownOpen, setDoublesDropdownOpen] = useState<Record<DoublesRole, boolean>>(
     createDoublesRecord(false)
   );
-  const [doublesHighlightedIndex, setDoublesHighlightedIndex] = useState<Record<DoublesRole, number>>(
-    createDoublesRecord(-1)
+  const [doublesHighlightedIndex, setDoublesHighlightedIndex] = useState<
+    Record<DoublesRole, number>
+  >(createDoublesRecord(-1));
+  const doublesDropdownRefs = useRef<Record<DoublesRole, HTMLDivElement | null>>(
+    createDoublesRecord(null)
   );
-  const doublesDropdownRefs = useRef<Record<DoublesRole, HTMLDivElement | null>>(createDoublesRecord(null));
-  const doublesInputRefs = useRef<Record<DoublesRole, HTMLInputElement | null>>(createDoublesRecord(null));
+  const doublesInputRefs = useRef<Record<DoublesRole, HTMLInputElement | null>>(
+    createDoublesRecord(null)
+  );
   const [focusedDoublesRole, setFocusedDoublesRole] = useState<DoublesRole | null>(null);
 
   const numericLeagueId = useMemo(() => parseInt(leagueId || '', 10), [leagueId]);
@@ -308,10 +334,7 @@ export default function LeagueDetail() {
     return { hasGlobalLeagueAdmin, isLeagueManagerForLeague };
   }, [member, numericLeagueId]);
 
-  const canManageRoster = useMemo(
-    () => leagueAccess.hasGlobalLeagueAdmin,
-    [leagueAccess]
-  );
+  const canManageRoster = useMemo(() => leagueAccess.hasGlobalLeagueAdmin, [leagueAccess]);
   const canEditLeagueInfo = useMemo(
     () => leagueAccess.hasGlobalLeagueAdmin || leagueAccess.isLeagueManagerForLeague,
     [leagueAccess]
@@ -396,12 +419,16 @@ export default function LeagueDetail() {
   }, []);
 
   const loadRoster = async () => {
-    const rosterResponse = await get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) });
+    const rosterResponse = await get('/leagues/{id}/roster', undefined, {
+      id: String(numericLeagueId),
+    });
     setRosterMembers(rosterResponse);
   };
 
   const loadManagers = async () => {
-    const managersResponse = await get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) });
+    const managersResponse = await get('/leagues/{id}/managers', undefined, {
+      id: String(numericLeagueId),
+    });
     setManagers(managersResponse);
   };
 
@@ -431,7 +458,10 @@ export default function LeagueDetail() {
       const dates = [...new Set(slots.map((s) => s.date))].sort();
       setByeDrawDates(dates);
       setHasTwoDraws(new Set(slots.map((s) => s.time)).size >= 2);
-      const data = byesRes as { byeRequests?: Array<{ drawDate: string; priority: number }>; preferLateDraw?: boolean } | null;
+      const data = byesRes as {
+        byeRequests?: Array<{ drawDate: string; priority: number }>;
+        preferLateDraw?: boolean;
+      } | null;
       const byes = data?.byeRequests ?? [];
       const prio: Record<string, number> = {};
       byes.forEach((b) => {
@@ -487,11 +517,10 @@ export default function LeagueDetail() {
     const body = hasTwoDraws ? { requests, preferLateDraw } : { requests };
     setByeRequestsSaving(true);
     try {
-      await putUntyped(
-        '/leagues/{leagueId}/teams/{teamId}/bye-requests',
-        body,
-        { leagueId: String(numericLeagueId), teamId: String(byeRequestsTeamId) }
-      );
+      await putUntyped('/leagues/{leagueId}/teams/{teamId}/bye-requests', body, {
+        leagueId: String(numericLeagueId),
+        teamId: String(byeRequestsTeamId),
+      });
       showAlert('Bye requests saved. A confirmation email has been sent to your team.', 'success');
       handleCloseByeRequestsModal();
     } catch (error: unknown) {
@@ -513,17 +542,20 @@ export default function LeagueDetail() {
       }
       setLeague(currentLeague);
 
-      const [divisionsResponse, teamsResponse, rosterResponse, managersResponse, settingsResponse] = await Promise.all([
-        get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
-        get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
-        get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
-        get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
-        (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<{ collectByeRequests?: boolean }>)(
-          '/leagues/{id}/settings',
-          undefined,
-          { id: String(numericLeagueId) }
-        ),
-      ]);
+      const [divisionsResponse, teamsResponse, rosterResponse, managersResponse, settingsResponse] =
+        await Promise.all([
+          get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
+          get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
+          get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
+          get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
+          (
+            get as (
+              path: string,
+              query?: unknown,
+              pathParams?: Record<string, string>
+            ) => Promise<{ collectByeRequests?: boolean }>
+          )('/leagues/{id}/settings', undefined, { id: String(numericLeagueId) }),
+        ]);
 
       setDivisions(divisionsResponse);
       setTeams(teamsResponse);
@@ -760,7 +792,9 @@ export default function LeagueDetail() {
   const availableExceptionDates = allLeagueDates.filter((d) => !leagueForm.exceptions.includes(d));
 
   useEffect(() => {
-    const valid = new Set(computeLeagueDates(leagueForm.startDate, leagueForm.endDate, leagueForm.dayOfWeek));
+    const valid = new Set(
+      computeLeagueDates(leagueForm.startDate, leagueForm.endDate, leagueForm.dayOfWeek)
+    );
     if (leagueForm.exceptions.some((d) => !valid.has(d))) {
       setLeagueForm((prev) => ({
         ...prev,
@@ -830,7 +864,11 @@ export default function LeagueDetail() {
 
   const handleAddToRoster = async (candidate: MemberSearchResult) => {
     try {
-      await post('/leagues/{id}/roster', { memberId: candidate.id }, { id: String(numericLeagueId) });
+      await post(
+        '/leagues/{id}/roster',
+        { memberId: candidate.id },
+        { id: String(numericLeagueId) }
+      );
       await loadRoster();
       setRosterSearchResults([]);
       setRosterSearchQuery('');
@@ -885,7 +923,11 @@ export default function LeagueDetail() {
 
     setBulkRosterSubmitting(true);
     try {
-      const response = await post('/leagues/{id}/roster/bulk', { names }, { id: String(numericLeagueId) });
+      const response = await post(
+        '/leagues/{id}/roster/bulk',
+        { names },
+        { id: String(numericLeagueId) }
+      );
       setBulkRosterResult(response);
       setBulkRosterMatchedNames(response.matchedNames || []);
       setBulkRosterUnmatched(response.unmatched || []);
@@ -927,7 +969,9 @@ export default function LeagueDetail() {
           { query: value.trim() },
           { id: String(numericLeagueId) }
         );
-        setBulkRosterResults(response.filter((result: MemberSearchResult) => !rosterMemberIds.has(result.id)));
+        setBulkRosterResults(
+          response.filter((result: MemberSearchResult) => !rosterMemberIds.has(result.id))
+        );
       } catch (error: unknown) {
         console.error('Failed to search members:', error);
         showAlert(formatApiError(error, 'Failed to search members'), 'error');
@@ -960,7 +1004,10 @@ export default function LeagueDetail() {
         break;
       case 'Enter':
         event.preventDefault();
-        if (bulkRosterHighlightedIndex >= 0 && bulkRosterHighlightedIndex < bulkRosterResults.length) {
+        if (
+          bulkRosterHighlightedIndex >= 0 &&
+          bulkRosterHighlightedIndex < bulkRosterResults.length
+        ) {
           handleSelectBulkRosterCandidate(bulkRosterResults[bulkRosterHighlightedIndex]);
         }
         break;
@@ -985,7 +1032,11 @@ export default function LeagueDetail() {
 
     setBulkRosterSubmitting(true);
     try {
-      await post('/leagues/{id}/roster', { memberId: bulkRosterSelection.id }, { id: String(numericLeagueId) });
+      await post(
+        '/leagues/{id}/roster',
+        { memberId: bulkRosterSelection.id },
+        { id: String(numericLeagueId) }
+      );
       await loadRoster();
       setBulkRosterUnmatched((prev) => prev.slice(1));
       setBulkRosterSelection(null);
@@ -1016,11 +1067,13 @@ export default function LeagueDetail() {
       setSelectedTeamStats(null);
       return;
     }
-    (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
-      '/teams/{teamId}/stats',
-      undefined,
-      { teamId: String(selectedTeam.id) }
-    )
+    (
+      get as (
+        path: string,
+        query?: unknown,
+        pathParams?: Record<string, string>
+      ) => Promise<unknown>
+    )('/teams/{teamId}/stats', undefined, { teamId: String(selectedTeam.id) })
       .then((res: unknown) => {
         const data = res as { gamesPlayed: number; wins: number; losses: number; ties: number };
         setSelectedTeamStats(data);
@@ -1060,7 +1113,11 @@ export default function LeagueDetail() {
 
   const handleAddManager = async (candidate: MemberSearchResult) => {
     try {
-      await post('/leagues/{id}/managers', { memberId: candidate.id }, { id: String(numericLeagueId) });
+      await post(
+        '/leagues/{id}/managers',
+        { memberId: candidate.id },
+        { id: String(numericLeagueId) }
+      );
       await loadManagers();
       setManagerSearchResults([]);
       setManagerSearchQuery('');
@@ -1212,7 +1269,10 @@ export default function LeagueDetail() {
         break;
       case 'Enter':
         event.preventDefault();
-        if (roleHighlightedIndex[role] >= 0 && roleHighlightedIndex[role] < availableResults.length) {
+        if (
+          roleHighlightedIndex[role] >= 0 &&
+          roleHighlightedIndex[role] < availableResults.length
+        ) {
           handleSelectRoleMember(role, availableResults[roleHighlightedIndex[role]]);
         }
         break;
@@ -1243,7 +1303,10 @@ export default function LeagueDetail() {
   };
 
   const handleSelectDoublesMember = (role: DoublesRole, selected: MemberSearchResult) => {
-    if (selectedDoublesMemberIds.includes(selected.id) && doublesMembers[role]?.id !== selected.id) {
+    if (
+      selectedDoublesMemberIds.includes(selected.id) &&
+      doublesMembers[role]?.id !== selected.id
+    ) {
       showAlert('Member is already selected for another role.', 'warning');
       return;
     }
@@ -1274,7 +1337,10 @@ export default function LeagueDetail() {
     }
   };
 
-  const handleDoublesKeyDown = (role: DoublesRole, event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleDoublesKeyDown = (
+    role: DoublesRole,
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) => {
     const availableResults = getAvailableDoublesResults(role);
     if (!doublesDropdownOpen[role] || availableResults.length === 0) return;
 
@@ -1295,7 +1361,10 @@ export default function LeagueDetail() {
         break;
       case 'Enter':
         event.preventDefault();
-        if (doublesHighlightedIndex[role] >= 0 && doublesHighlightedIndex[role] < availableResults.length) {
+        if (
+          doublesHighlightedIndex[role] >= 0 &&
+          doublesHighlightedIndex[role] < availableResults.length
+        ) {
           handleSelectDoublesMember(role, availableResults[doublesHighlightedIndex[role]]);
         }
         break;
@@ -1395,8 +1464,7 @@ export default function LeagueDetail() {
 
     setTeamSubmitting(true);
     try {
-      const rosterPayload =
-        league.format === 'teams' ? buildTeamRoster() : buildDoublesRoster();
+      const rosterPayload = league.format === 'teams' ? buildTeamRoster() : buildDoublesRoster();
       if (rosterPayload === null) {
         setTeamSubmitting(false);
         return;
@@ -1405,14 +1473,15 @@ export default function LeagueDetail() {
       const payload = {
         name: teamForm.name || undefined,
         divisionId: teamForm.divisionId || undefined,
-        members: rosterPayload.length > 0
-          ? rosterPayload.map((member) => ({
-              memberId: member.memberId,
-              role: member.role,
-              isSkip: member.isSkip,
-              isVice: member.isVice,
-            }))
-          : undefined,
+        members:
+          rosterPayload.length > 0
+            ? rosterPayload.map((member) => ({
+                memberId: member.memberId,
+                role: member.role,
+                isSkip: member.isSkip,
+                isVice: member.isVice,
+              }))
+            : undefined,
       };
 
       if (editingTeam) {
@@ -1514,7 +1583,12 @@ export default function LeagueDetail() {
 
     const rosterByRole = new Map<TeamRole, RosterMember>();
     team.roster.forEach((member) => {
-      if (member.role === 'lead' || member.role === 'second' || member.role === 'third' || member.role === 'fourth') {
+      if (
+        member.role === 'lead' ||
+        member.role === 'second' ||
+        member.role === 'third' ||
+        member.role === 'fourth'
+      ) {
         rosterByRole.set(member.role, member);
       }
     });
@@ -1557,25 +1631,29 @@ export default function LeagueDetail() {
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-              {league.name}
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              League details
-            </p>
+            <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">{league.name}</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400">League details</p>
           </div>
           <Button variant="secondary" onClick={() => navigate('/leagues')}>
             Back to leagues
           </Button>
         </div>
 
-        {leagueId && <LeagueTabs leagueId={leagueId} showSheetsTab={canManageSetup} showMaintenanceTab={canManageSetup} />}
+        {leagueId && (
+          <LeagueTabs
+            leagueId={leagueId}
+            showSheetsTab={canManageSetup}
+            showMaintenanceTab={canManageSetup}
+          />
+        )}
 
         {normalizedTab === 'overview' && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">League info</h2>
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  League info
+                </h2>
                 {canEditLeagueInfo && (
                   <Button onClick={handleOpenLeagueEdit} variant="secondary">
                     Edit league info
@@ -1584,7 +1662,8 @@ export default function LeagueDetail() {
               </div>
               <div className="grid gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <div>
-                  <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
+                  <span className="font-medium dark:text-gray-300">Day:</span>{' '}
+                  {getDayName(league.dayOfWeek)}
                 </div>
                 <div>
                   <span className="font-medium dark:text-gray-300">Draw times:</span>{' '}
@@ -1611,7 +1690,9 @@ export default function LeagueDetail() {
 
             {memberTeamIds.length > 0 && leagueSettings?.collectByeRequests && (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Bye requests</h2>
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  Bye requests
+                </h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Submit your team&apos;s bye preferences for the draw schedule.
                 </p>
@@ -1694,8 +1775,8 @@ export default function LeagueDetail() {
           <LeagueStandings leagueId={numericLeagueId} canManage={canManageSetup} />
         )}
 
-        {normalizedTab === 'schedule-generation' && (
-          canManageSetup ? (
+        {normalizedTab === 'schedule-generation' &&
+          (canManageSetup ? (
             <LeagueScheduleGeneration
               leagueId={numericLeagueId}
               divisions={divisions}
@@ -1706,18 +1787,16 @@ export default function LeagueDetail() {
             <div className="text-sm text-gray-500 dark:text-gray-400">
               You do not have access to schedule generation.
             </div>
-          )
-        )}
+          ))}
 
-        {normalizedTab === 'sheets' && (
-          canManageSetup ? (
+        {normalizedTab === 'sheets' &&
+          (canManageSetup ? (
             <LeagueSheets leagueId={numericLeagueId} />
           ) : (
             <div className="text-sm text-gray-500 dark:text-gray-400">
               You do not have access to manage sheets.
             </div>
-          )
-        )}
+          ))}
 
         {normalizedTab === 'divisions' && (
           <div className="space-y-4">
@@ -1736,31 +1815,37 @@ export default function LeagueDetail() {
               </div>
             ) : (
               <div className="grid gap-4">
-          {divisions
-            .slice()
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((division) => (
-                  <div key={division.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">
-                          {division.name}
-                        </h3>
-                      </div>
+                {divisions
+                  .slice()
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((division) => (
+                    <div
+                      key={division.id}
+                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">
+                            {division.name}
+                          </h3>
+                        </div>
 
-                {canManageSetup && (
-                  <div className="flex space-x-2">
-                    <Button onClick={() => handleOpenDivisionModal(division)} variant="secondary">
-                      Edit
-                    </Button>
-                    <Button onClick={() => handleDeleteDivision(division)} variant="danger">
-                      Delete
-                    </Button>
-                  </div>
-                )}
+                        {canManageSetup && (
+                          <div className="flex space-x-2">
+                            <Button
+                              onClick={() => handleOpenDivisionModal(division)}
+                              variant="secondary"
+                            >
+                              Edit
+                            </Button>
+                            <Button onClick={() => handleDeleteDivision(division)} variant="danger">
+                              Delete
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-          ))}
+                  ))}
               </div>
             )}
           </div>
@@ -1769,277 +1854,311 @@ export default function LeagueDetail() {
         {normalizedTab === 'teams' && (
           <div className="space-y-4">
             {canManageSetup && (
-              <div ref={teamFormRef} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                    {editingTeam ? 'Edit team' : 'Add team'}
-                  </h2>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Build team rosters from the league roster.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setTeamFormOpen((prev) => !prev)}
-                  >
-                    {teamFormOpen ? 'Hide team builder' : editingTeam ? 'Show edit form' : 'Add team'}
-                  </Button>
-                  {editingTeam && (
-                    <Button type="button" variant="secondary" onClick={handleCloseTeamModal}>
-                      Cancel edit
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {teamFormOpen && (
-                <form onSubmit={handleTeamSubmit} className="space-y-4">
-                <div>
-                  <label htmlFor="teamNameInline" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Team name
-                  </label>
-                  <input
-                    type="text"
-                    id="teamNameInline"
-                    value={teamForm.name}
-                    onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
-                  />
-                </div>
-
-                {divisions.length > 1 && (
+              <div
+                ref={teamFormRef}
+                className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4"
+              >
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                   <div>
-                    <label htmlFor="teamDivisionInline" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Division
-                    </label>
-                    <select
-                      id="teamDivisionInline"
-                      value={teamForm.divisionId}
-                      onChange={(e) => setTeamForm({ ...teamForm, divisionId: parseInt(e.target.value, 10) })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
-                    >
-                      {divisions.map((division) => (
-                        <option key={division.id} value={division.id}>
-                          {division.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Roster</h3>
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                      {editingTeam ? 'Edit team' : 'Add team'}
+                    </h2>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {league.format === 'doubles'
-                        ? 'Add Player 1 and Player 2.'
-                        : 'Add lead, third, fourth (and optional second), then pick skip and vice.'}
+                      Build team rosters from the league roster.
                     </p>
                   </div>
-
-                  {league.format === 'teams' ? (
-                    <div className="space-y-4">
-                      {teamRoles.map((role) => {
-                        const availableResults = getAvailableRoleResults(role);
-                        return (
-                          <div key={role} className="space-y-2">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <label className="text-xs text-gray-500 dark:text-gray-400">
-                                {roleLabels[role]}
-                              </label>
-                          <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
-                            <label className="flex items-center gap-1">
-                              <input
-                                type="radio"
-                                name="viceRole"
-                                value={role}
-                                checked={viceRole === role}
-                                onChange={() => {
-                                  setViceRole(role);
-                                  if (skipRole === role) {
-                                    setSkipRole(getFallbackRole(role));
-                                  }
-                                }}
-                                disabled={!roleMembers[role]}
-                                className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
-                              />
-                              Vice
-                            </label>
-                                <label className="flex items-center gap-1">
-                                  <input
-                                    type="radio"
-                                    name="skipRole"
-                                    value={role}
-                                    checked={skipRole === role}
-                                    onChange={() => {
-                                      setSkipRole(role);
-                                      if (viceRole === role) {
-                                        setViceRole(getFallbackRole(role));
-                                      }
-                                    }}
-                                    disabled={!roleMembers[role]}
-                                    className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
-                                  />
-                                  Skip
-                                </label>
-                              </div>
-                            </div>
-                            <div className="relative" ref={(el) => (roleDropdownRefs.current[role] = el)}>
-                              <input
-                                ref={(el) => (roleInputRefs.current[role] = el)}
-                                type="text"
-                                value={roleQueries[role]}
-                                onChange={(e) => {
-                                  const nextValue = e.target.value;
-                                  setRoleQueries((prev) => ({ ...prev, [role]: nextValue }));
-                                  if (roleMembers[role] && nextValue !== roleMembers[role]?.name) {
-                                    setRoleMembers((prev) => ({ ...prev, [role]: null }));
-                                  }
-                                  setRoleDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                }}
-                                onFocus={() => {
-                                  setFocusedRole(role);
-                                  setRoleDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                }}
-                                onBlur={() => handleRoleBlur(role)}
-                                onKeyDown={(e) => handleRoleKeyDown(role, e)}
-                                placeholder={`Select ${roleLabels[role].toLowerCase()}`}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
-                              />
-                              {focusedRole === role && roleDropdownOpen[role] && (
-                                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                  {availableResults.length === 0 ? (
-                                    <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No members found</div>
-                                  ) : (
-                                    availableResults.map((result, index) => (
-                                      <button
-                                        type="button"
-                                        key={result.id}
-                                        onMouseDown={(event) => event.preventDefault()}
-                                        onClick={() => handleSelectRoleMember(role, result)}
-                                        className={`w-full text-left px-3 py-2 text-sm ${
-                                          index === roleHighlightedIndex[role]
-                                            ? 'bg-gray-100 dark:bg-gray-700'
-                                            : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                                        }`}
-                                      >
-                                        <div className="font-medium text-gray-800 dark:text-gray-200">{result.name}</div>
-                                        {result.email && (
-                                          <div className="text-xs text-gray-500 dark:text-gray-400">{result.email}</div>
-                                        )}
-                                      </button>
-                                    ))
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {rosterMembers.length === 0 && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          Add members to the league roster before assigning teams.
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {doublesRoles.map((role) => {
-                        const availableResults = getAvailableDoublesResults(role);
-                        return (
-                          <div key={role} className="space-y-2">
-                            <label className="text-xs text-gray-500 dark:text-gray-400">
-                              {roleLabels[role]}
-                            </label>
-                            <div className="relative" ref={(el) => (doublesDropdownRefs.current[role] = el)}>
-                              <input
-                                ref={(el) => (doublesInputRefs.current[role] = el)}
-                                type="text"
-                                value={doublesQueries[role]}
-                                onChange={(e) => {
-                                  const nextValue = e.target.value;
-                                  setDoublesQueries((prev) => ({ ...prev, [role]: nextValue }));
-                                  if (doublesMembers[role] && nextValue !== doublesMembers[role]?.name) {
-                                    setDoublesMembers((prev) => ({ ...prev, [role]: null }));
-                                  }
-                                  setDoublesDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                }}
-                                onFocus={() => {
-                                  setFocusedDoublesRole(role);
-                                  setDoublesDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                }}
-                                onBlur={() => handleDoublesBlur(role)}
-                                onKeyDown={(e) => handleDoublesKeyDown(role, e)}
-                                placeholder={`Select ${roleLabels[role].toLowerCase()}`}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
-                              />
-                              {focusedDoublesRole === role &&
-                                doublesDropdownOpen[role] && (
-                                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                    {availableResults.length === 0 ? (
-                                      <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                                        No members found
-                                      </div>
-                                    ) : (
-                                      availableResults.map((result, index) => (
-                                        <button
-                                          type="button"
-                                          key={result.id}
-                                          onMouseDown={(event) => event.preventDefault()}
-                                          onClick={() => handleSelectDoublesMember(role, result)}
-                                          className={`w-full text-left px-3 py-2 text-sm ${
-                                            index === doublesHighlightedIndex[role]
-                                              ? 'bg-gray-100 dark:bg-gray-700'
-                                              : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                                          }`}
-                                        >
-                                          <div className="font-medium text-gray-800 dark:text-gray-200">
-                                            {result.name}
-                                          </div>
-                                          {result.email && (
-                                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                                              {result.email}
-                                            </div>
-                                          )}
-                                        </button>
-                                      ))
-                                    )}
-                                  </div>
-                                )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {rosterMembers.length === 0 && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          Add members to the league roster before assigning teams.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex space-x-3">
-                  <Button type="submit" disabled={teamSubmitting} className="flex-1">
-                    {teamSubmitting ? 'Saving...' : editingTeam ? 'Save team' : 'Create team'}
-                  </Button>
-                  {editingTeam && (
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={handleCloseTeamModal}
-                      disabled={teamSubmitting}
-                      className="flex-1"
+                      onClick={() => setTeamFormOpen((prev) => !prev)}
                     >
-                      Cancel
+                      {teamFormOpen
+                        ? 'Hide team builder'
+                        : editingTeam
+                          ? 'Show edit form'
+                          : 'Add team'}
                     </Button>
-                  )}
+                    {editingTeam && (
+                      <Button type="button" variant="secondary" onClick={handleCloseTeamModal}>
+                        Cancel edit
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </form>
-              )}
+
+                {teamFormOpen && (
+                  <form onSubmit={handleTeamSubmit} className="space-y-4">
+                    <div>
+                      <label
+                        htmlFor="teamNameInline"
+                        className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      >
+                        Team name
+                      </label>
+                      <input
+                        type="text"
+                        id="teamNameInline"
+                        value={teamForm.name}
+                        onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                      />
+                    </div>
+
+                    {divisions.length > 1 && (
+                      <div>
+                        <label
+                          htmlFor="teamDivisionInline"
+                          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                        >
+                          Division
+                        </label>
+                        <select
+                          id="teamDivisionInline"
+                          value={teamForm.divisionId}
+                          onChange={(e) =>
+                            setTeamForm({ ...teamForm, divisionId: parseInt(e.target.value, 10) })
+                          }
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                        >
+                          {divisions.map((division) => (
+                            <option key={division.id} value={division.id}>
+                              {division.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Roster
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {league.format === 'doubles'
+                            ? 'Add Player 1 and Player 2.'
+                            : 'Add lead, third, fourth (and optional second), then pick skip and vice.'}
+                        </p>
+                      </div>
+
+                      {league.format === 'teams' ? (
+                        <div className="space-y-4">
+                          {teamRoles.map((role) => {
+                            const availableResults = getAvailableRoleResults(role);
+                            return (
+                              <div key={role} className="space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                                    {roleLabels[role]}
+                                  </label>
+                                  <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+                                    <label className="flex items-center gap-1">
+                                      <input
+                                        type="radio"
+                                        name="viceRole"
+                                        value={role}
+                                        checked={viceRole === role}
+                                        onChange={() => {
+                                          setViceRole(role);
+                                          if (skipRole === role) {
+                                            setSkipRole(getFallbackRole(role));
+                                          }
+                                        }}
+                                        disabled={!roleMembers[role]}
+                                        className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
+                                      />
+                                      Vice
+                                    </label>
+                                    <label className="flex items-center gap-1">
+                                      <input
+                                        type="radio"
+                                        name="skipRole"
+                                        value={role}
+                                        checked={skipRole === role}
+                                        onChange={() => {
+                                          setSkipRole(role);
+                                          if (viceRole === role) {
+                                            setViceRole(getFallbackRole(role));
+                                          }
+                                        }}
+                                        disabled={!roleMembers[role]}
+                                        className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
+                                      />
+                                      Skip
+                                    </label>
+                                  </div>
+                                </div>
+                                <div
+                                  className="relative"
+                                  ref={(el) => (roleDropdownRefs.current[role] = el)}
+                                >
+                                  <input
+                                    ref={(el) => (roleInputRefs.current[role] = el)}
+                                    type="text"
+                                    value={roleQueries[role]}
+                                    onChange={(e) => {
+                                      const nextValue = e.target.value;
+                                      setRoleQueries((prev) => ({ ...prev, [role]: nextValue }));
+                                      if (
+                                        roleMembers[role] &&
+                                        nextValue !== roleMembers[role]?.name
+                                      ) {
+                                        setRoleMembers((prev) => ({ ...prev, [role]: null }));
+                                      }
+                                      setRoleDropdownOpen((prev) => ({ ...prev, [role]: true }));
+                                    }}
+                                    onFocus={() => {
+                                      setFocusedRole(role);
+                                      setRoleDropdownOpen((prev) => ({ ...prev, [role]: true }));
+                                    }}
+                                    onBlur={() => handleRoleBlur(role)}
+                                    onKeyDown={(e) => handleRoleKeyDown(role, e)}
+                                    placeholder={`Select ${roleLabels[role].toLowerCase()}`}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                                  />
+                                  {focusedRole === role && roleDropdownOpen[role] && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
+                                      {availableResults.length === 0 ? (
+                                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                          No members found
+                                        </div>
+                                      ) : (
+                                        availableResults.map((result, index) => (
+                                          <button
+                                            type="button"
+                                            key={result.id}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => handleSelectRoleMember(role, result)}
+                                            className={`w-full text-left px-3 py-2 text-sm ${
+                                              index === roleHighlightedIndex[role]
+                                                ? 'bg-gray-100 dark:bg-gray-700'
+                                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                                            }`}
+                                          >
+                                            <div className="font-medium text-gray-800 dark:text-gray-200">
+                                              {result.name}
+                                            </div>
+                                            {result.email && (
+                                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                {result.email}
+                                              </div>
+                                            )}
+                                          </button>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {rosterMembers.length === 0 && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Add members to the league roster before assigning teams.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {doublesRoles.map((role) => {
+                            const availableResults = getAvailableDoublesResults(role);
+                            return (
+                              <div key={role} className="space-y-2">
+                                <label className="text-xs text-gray-500 dark:text-gray-400">
+                                  {roleLabels[role]}
+                                </label>
+                                <div
+                                  className="relative"
+                                  ref={(el) => (doublesDropdownRefs.current[role] = el)}
+                                >
+                                  <input
+                                    ref={(el) => (doublesInputRefs.current[role] = el)}
+                                    type="text"
+                                    value={doublesQueries[role]}
+                                    onChange={(e) => {
+                                      const nextValue = e.target.value;
+                                      setDoublesQueries((prev) => ({ ...prev, [role]: nextValue }));
+                                      if (
+                                        doublesMembers[role] &&
+                                        nextValue !== doublesMembers[role]?.name
+                                      ) {
+                                        setDoublesMembers((prev) => ({ ...prev, [role]: null }));
+                                      }
+                                      setDoublesDropdownOpen((prev) => ({ ...prev, [role]: true }));
+                                    }}
+                                    onFocus={() => {
+                                      setFocusedDoublesRole(role);
+                                      setDoublesDropdownOpen((prev) => ({ ...prev, [role]: true }));
+                                    }}
+                                    onBlur={() => handleDoublesBlur(role)}
+                                    onKeyDown={(e) => handleDoublesKeyDown(role, e)}
+                                    placeholder={`Select ${roleLabels[role].toLowerCase()}`}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                                  />
+                                  {focusedDoublesRole === role && doublesDropdownOpen[role] && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
+                                      {availableResults.length === 0 ? (
+                                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                          No members found
+                                        </div>
+                                      ) : (
+                                        availableResults.map((result, index) => (
+                                          <button
+                                            type="button"
+                                            key={result.id}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => handleSelectDoublesMember(role, result)}
+                                            className={`w-full text-left px-3 py-2 text-sm ${
+                                              index === doublesHighlightedIndex[role]
+                                                ? 'bg-gray-100 dark:bg-gray-700'
+                                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                                            }`}
+                                          >
+                                            <div className="font-medium text-gray-800 dark:text-gray-200">
+                                              {result.name}
+                                            </div>
+                                            {result.email && (
+                                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                {result.email}
+                                              </div>
+                                            )}
+                                          </button>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {rosterMembers.length === 0 && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Add members to the league roster before assigning teams.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex space-x-3">
+                      <Button type="submit" disabled={teamSubmitting} className="flex-1">
+                        {teamSubmitting ? 'Saving...' : editingTeam ? 'Save team' : 'Create team'}
+                      </Button>
+                      {editingTeam && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={handleCloseTeamModal}
+                          disabled={teamSubmitting}
+                          className="flex-1"
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  </form>
+                )}
               </div>
             )}
 
@@ -2062,22 +2181,26 @@ export default function LeagueDetail() {
                       </h2>
                       <div className="grid gap-4">
                         {divisionTeams.map((team) => (
-                          <div key={team.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                          <div
+                            key={team.id}
+                            className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                          >
                             <div className="flex justify-between items-start gap-4">
                               <div className="flex-1">
                                 <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">
                                   {team.name || 'Unnamed team'}
                                 </h3>
                                 <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
-                                  <div>
-                                    {teamRosterDisplay(team)}
-                                  </div>
+                                  <div>{teamRosterDisplay(team)}</div>
                                 </div>
                               </div>
 
                               {canManageSetup && (
                                 <div className="flex space-x-2">
-                                  <Button onClick={() => handleOpenTeamModal(team)} variant="secondary">
+                                  <Button
+                                    onClick={() => handleOpenTeamModal(team)}
+                                    variant="secondary"
+                                  >
                                     Edit
                                   </Button>
                                   <Button onClick={() => handleDeleteTeam(team)} variant="danger">
@@ -2093,9 +2216,7 @@ export default function LeagueDetail() {
                   );
                 })}
                 {league.format === 'teams' && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    * Skip · ** Vice
-                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">* Skip · ** Vice</div>
                 )}
               </div>
             )}
@@ -2107,7 +2228,9 @@ export default function LeagueDetail() {
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-2">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">League managers</h2>
+                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                    League managers
+                  </h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     Managers can edit league details except the roster.
                   </p>
@@ -2131,9 +2254,13 @@ export default function LeagueDetail() {
                       className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded-md p-3"
                     >
                       <div>
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{entry.name}</div>
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                          {entry.name}
+                        </div>
                         {entry.email && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{entry.email}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {entry.email}
+                          </div>
                         )}
                       </div>
                       {canEditManagers && (
@@ -2150,53 +2277,63 @@ export default function LeagueDetail() {
             {canEditManagers && (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Add league manager</h3>
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Add league manager
+                  </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Search any member to add as a league manager.
                   </p>
                 </div>
-              <div className="relative" ref={managerDropdownRef}>
-                <input
-                  ref={managerInputRef}
-                  type="text"
-                  value={managerSearchQuery}
-                  onChange={(e) => {
-                    setManagerSearchQuery(e.target.value);
-                    setManagerDropdownOpen(true);
-                  }}
-                  onFocus={() => setManagerDropdownOpen(true)}
-                  onKeyDown={handleManagerKeyDown}
-                  placeholder="Search members by name or email"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
-                />
-                {managerDropdownOpen && managerSearchQuery.trim().length >= 2 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                    {managerSearchLoading ? (
-                      <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">Searching...</div>
-                    ) : managerSearchResults.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No members found</div>
-                    ) : (
-                      managerSearchResults.map((result, index) => (
-                        <button
-                          type="button"
-                          key={result.id}
-                          onClick={() => handleAddManager(result)}
-                          className={`w-full text-left px-3 py-2 text-sm ${
-                            index === managerHighlightedIndex
-                              ? 'bg-gray-100 dark:bg-gray-700'
-                              : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                          }`}
-                        >
-                          <div className="font-medium text-gray-800 dark:text-gray-200">{result.name}</div>
-                          {result.email && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{result.email}</div>
-                          )}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+                <div className="relative" ref={managerDropdownRef}>
+                  <input
+                    ref={managerInputRef}
+                    type="text"
+                    value={managerSearchQuery}
+                    onChange={(e) => {
+                      setManagerSearchQuery(e.target.value);
+                      setManagerDropdownOpen(true);
+                    }}
+                    onFocus={() => setManagerDropdownOpen(true)}
+                    onKeyDown={handleManagerKeyDown}
+                    placeholder="Search members by name or email"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                  />
+                  {managerDropdownOpen && managerSearchQuery.trim().length >= 2 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                      {managerSearchLoading ? (
+                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          Searching...
+                        </div>
+                      ) : managerSearchResults.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          No members found
+                        </div>
+                      ) : (
+                        managerSearchResults.map((result, index) => (
+                          <button
+                            type="button"
+                            key={result.id}
+                            onClick={() => handleAddManager(result)}
+                            className={`w-full text-left px-3 py-2 text-sm ${
+                              index === managerHighlightedIndex
+                                ? 'bg-gray-100 dark:bg-gray-700'
+                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                            }`}
+                          >
+                            <div className="font-medium text-gray-800 dark:text-gray-200">
+                              {result.name}
+                            </div>
+                            {result.email && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {result.email}
+                              </div>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -2211,7 +2348,9 @@ export default function LeagueDetail() {
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-2">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">League roster</h2>
+                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                    League roster
+                  </h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     Members eligible for team assignments.
                   </p>
@@ -2227,7 +2366,9 @@ export default function LeagueDetail() {
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Add members to roster</h3>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Add members to roster
+                    </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Search the full member list and add them to this league roster.
                     </p>
@@ -2253,9 +2394,13 @@ export default function LeagueDetail() {
                   {rosterDropdownOpen && rosterSearchQuery.trim().length >= 2 && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
                       {rosterSearchLoading ? (
-                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">Searching...</div>
+                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          Searching...
+                        </div>
                       ) : rosterSearchResults.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No members found</div>
+                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          No members found
+                        </div>
                       ) : (
                         rosterSearchResults.map((result, index) => (
                           <button
@@ -2268,9 +2413,13 @@ export default function LeagueDetail() {
                                 : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                             }`}
                           >
-                            <div className="font-medium text-gray-800 dark:text-gray-200">{result.name}</div>
+                            <div className="font-medium text-gray-800 dark:text-gray-200">
+                              {result.name}
+                            </div>
                             {result.email && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">{result.email}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {result.email}
+                              </div>
                             )}
                           </button>
                         ))
@@ -2294,9 +2443,13 @@ export default function LeagueDetail() {
                       className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded-md p-3"
                     >
                       <div>
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{entry.name}</div>
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                          {entry.name}
+                        </div>
                         {entry.email && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{entry.email}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {entry.email}
+                          </div>
                         )}
                       </div>
                       <div className="flex items-center gap-3">
@@ -2335,34 +2488,37 @@ export default function LeagueDetail() {
           title={editingDivision ? 'Edit division' : 'Add division'}
         >
           <form onSubmit={handleDivisionSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="divisionName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Division name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              id="divisionName"
-              value={divisionForm.name}
-              onChange={(e) => setDivisionForm({ ...divisionForm, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
-              required
-            />
-          </div>
+            <div>
+              <label
+                htmlFor="divisionName"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
+                Division name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="divisionName"
+                value={divisionForm.name}
+                onChange={(e) => setDivisionForm({ ...divisionForm, name: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                required
+              />
+            </div>
 
-          <div className="flex space-x-3">
-            <Button type="submit" disabled={divisionSubmitting} className="flex-1">
-              {divisionSubmitting ? 'Saving...' : 'Save'}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleCloseDivisionModal}
-              disabled={divisionSubmitting}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-          </div>
+            <div className="flex space-x-3">
+              <Button type="submit" disabled={divisionSubmitting} className="flex-1">
+                {divisionSubmitting ? 'Saving...' : 'Save'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleCloseDivisionModal}
+                disabled={divisionSubmitting}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </div>
           </form>
         </Modal>
       )}
@@ -2375,7 +2531,10 @@ export default function LeagueDetail() {
         >
           <form onSubmit={handleLeagueSubmit} className="space-y-4">
             <div>
-              <label htmlFor="leagueName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="leagueName"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 League name <span className="text-red-500">*</span>
               </label>
               <input
@@ -2389,13 +2548,18 @@ export default function LeagueDetail() {
             </div>
 
             <div>
-              <label htmlFor="leagueDayOfWeek" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="leagueDayOfWeek"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Day of week <span className="text-red-500">*</span>
               </label>
               <select
                 id="leagueDayOfWeek"
                 value={leagueForm.dayOfWeek}
-                onChange={(e) => setLeagueForm({ ...leagueForm, dayOfWeek: parseInt(e.target.value, 10) })}
+                onChange={(e) =>
+                  setLeagueForm({ ...leagueForm, dayOfWeek: parseInt(e.target.value, 10) })
+                }
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 required
               >
@@ -2435,7 +2599,10 @@ export default function LeagueDetail() {
             </div>
 
             <div>
-              <label htmlFor="leagueStartDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="leagueStartDate"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Season start date <span className="text-red-500">*</span>
               </label>
               <input
@@ -2449,7 +2616,10 @@ export default function LeagueDetail() {
             </div>
 
             <div>
-              <label htmlFor="leagueEndDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="leagueEndDate"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Season end date <span className="text-red-500">*</span>
               </label>
               <input
@@ -2463,13 +2633,18 @@ export default function LeagueDetail() {
             </div>
 
             <div>
-              <label htmlFor="leagueFormat" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="leagueFormat"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Format <span className="text-red-500">*</span>
               </label>
               <select
                 id="leagueFormat"
                 value={leagueForm.format}
-                onChange={(e) => setLeagueForm({ ...leagueForm, format: e.target.value as League['format'] })}
+                onChange={(e) =>
+                  setLeagueForm({ ...leagueForm, format: e.target.value as League['format'] })
+                }
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 required
               >
@@ -2487,7 +2662,9 @@ export default function LeagueDetail() {
                   <div className="space-y-1">
                     {leagueForm.exceptions.map((dateStr) => (
                       <div key={dateStr} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-700 dark:text-gray-300">{formatDateDisplay(dateStr)}</span>
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {formatDateDisplay(dateStr)}
+                        </span>
                         <button
                           type="button"
                           className="text-red-600 hover:text-red-800"
@@ -2534,14 +2711,22 @@ export default function LeagueDetail() {
                     >
                       Add
                     </Button>
-                    <Button type="button" variant="secondary" onClick={() => setShowExceptionPicker(false)}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setShowExceptionPicker(false)}
+                    >
                       Cancel
                     </Button>
                   </div>
                 )}
 
                 {!showExceptionPicker && availableExceptionDates.length > 0 && (
-                  <Button type="button" variant="secondary" onClick={() => setShowExceptionPicker(true)}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowExceptionPicker(true)}
+                  >
                     Add exception
                   </Button>
                 )}
@@ -2575,10 +2760,30 @@ export default function LeagueDetail() {
           <div className="space-y-4">
             {selectedTeamStats != null && (
               <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 pb-3">
-                <span>GP: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.gamesPlayed}</strong></span>
-                <span>W: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.wins}</strong></span>
-                <span>L: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.losses}</strong></span>
-                <span>T: <strong className="text-gray-800 dark:text-gray-200">{selectedTeamStats.ties}</strong></span>
+                <span>
+                  GP:{' '}
+                  <strong className="text-gray-800 dark:text-gray-200">
+                    {selectedTeamStats.gamesPlayed}
+                  </strong>
+                </span>
+                <span>
+                  W:{' '}
+                  <strong className="text-gray-800 dark:text-gray-200">
+                    {selectedTeamStats.wins}
+                  </strong>
+                </span>
+                <span>
+                  L:{' '}
+                  <strong className="text-gray-800 dark:text-gray-200">
+                    {selectedTeamStats.losses}
+                  </strong>
+                </span>
+                <span>
+                  T:{' '}
+                  <strong className="text-gray-800 dark:text-gray-200">
+                    {selectedTeamStats.ties}
+                  </strong>
+                </span>
               </div>
             )}
             {selectedTeam.roster.length === 0 ? (
@@ -2605,11 +2810,15 @@ export default function LeagueDetail() {
       >
         <form onSubmit={handleByeRequestsSubmit} className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Assign a priority to any draw date you want as a bye. Lower number = higher preference (1 = most preferred). Leave blank for no preference. Priorities can be duplicated.
+            Assign a priority to any draw date you want as a bye. Lower number = higher preference
+            (1 = most preferred). Leave blank for no preference. Priorities can be duplicated.
           </p>
           {memberTeamIds.length > 1 && (
             <div>
-              <label htmlFor="bye-requests-team" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label
+                htmlFor="bye-requests-team"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >
                 Team
               </label>
               <select
@@ -2672,7 +2881,9 @@ export default function LeagueDetail() {
                 );
               })}
               {byeDrawDates.length === 0 && !byeRequestsLoading && (
-                <div className="text-sm text-gray-500 dark:text-gray-400">No draw dates for this league.</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  No draw dates for this league.
+                </div>
               )}
             </div>
           )}
@@ -2696,7 +2907,10 @@ export default function LeagueDetail() {
         <form onSubmit={handleBulkRosterSubmit} className="space-y-4">
           {!bulkRosterResult && (
             <div>
-              <label htmlFor="bulkRosterNames" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="bulkRosterNames"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Paste names (one per line)
               </label>
               <textarea
@@ -2713,9 +2927,10 @@ export default function LeagueDetail() {
           {bulkRosterResult && (
             <div className="space-y-3">
               <div className="text-sm text-gray-700 dark:text-gray-300">
-                Added: <span className="font-medium">{bulkRosterResult.addedCount}</span> · Already on roster:{' '}
-                <span className="font-medium">{bulkRosterResult.alreadyOnRosterCount}</span> · Unmatched:{' '}
-                <span className="font-medium">{bulkRosterUnmatched.length}</span>
+                Added: <span className="font-medium">{bulkRosterResult.addedCount}</span> · Already
+                on roster:{' '}
+                <span className="font-medium">{bulkRosterResult.alreadyOnRosterCount}</span> ·
+                Unmatched: <span className="font-medium">{bulkRosterUnmatched.length}</span>
               </div>
 
               <div>
@@ -2738,14 +2953,17 @@ export default function LeagueDetail() {
                   Resolve unmatched names
                 </div>
                 {bulkRosterUnmatched.length === 0 ? (
-                  <div className="text-sm text-gray-500 dark:text-gray-400">All unmatched names resolved.</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    All unmatched names resolved.
+                  </div>
                 ) : (
                   <div className="border border-gray-200 dark:border-gray-700 rounded-md p-3 space-y-2">
                     <div className="text-sm text-gray-700 dark:text-gray-300">
                       <span className="font-medium">{bulkRosterUnmatched[0].name}</span>
                     </div>
-                    {bulkRosterUnmatched[0].candidates.filter((candidate) => !rosterMemberIds.has(candidate.id))
-                      .length > 0 && (
+                    {bulkRosterUnmatched[0].candidates.filter(
+                      (candidate) => !rosterMemberIds.has(candidate.id)
+                    ).length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {bulkRosterUnmatched[0].candidates
                           .filter((candidate) => !rosterMemberIds.has(candidate.id))
@@ -2753,7 +2971,9 @@ export default function LeagueDetail() {
                             <Button
                               key={candidate.id}
                               type="button"
-                              variant={bulkRosterSelection?.id === candidate.id ? 'primary' : 'secondary'}
+                              variant={
+                                bulkRosterSelection?.id === candidate.id ? 'primary' : 'secondary'
+                              }
                               onClick={() => handleSelectBulkRosterCandidate(candidate)}
                             >
                               {candidate.name}
@@ -2774,9 +2994,13 @@ export default function LeagueDetail() {
                       {bulkRosterDropdownOpen && bulkRosterQuery.trim().length >= 2 && (
                         <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
                           {bulkRosterLoading ? (
-                            <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">Searching...</div>
+                            <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              Searching...
+                            </div>
                           ) : bulkRosterResults.length === 0 ? (
-                            <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No members found</div>
+                            <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              No members found
+                            </div>
                           ) : (
                             bulkRosterResults.map((result, resultIndex) => (
                               <button
@@ -2789,9 +3013,13 @@ export default function LeagueDetail() {
                                     : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                                 }`}
                               >
-                                <div className="font-medium text-gray-800 dark:text-gray-200">{result.name}</div>
+                                <div className="font-medium text-gray-800 dark:text-gray-200">
+                                  {result.name}
+                                </div>
                                 {result.email && (
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">{result.email}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    {result.email}
+                                  </div>
                                 )}
                               </button>
                             ))
@@ -2813,13 +3041,27 @@ export default function LeagueDetail() {
           <div className="flex space-x-3">
             {bulkRosterResult ? (
               <>
-                <Button type="button" onClick={handleBulkRosterResolve} disabled={bulkRosterSubmitting || bulkRosterUnmatched.length === 0}>
+                <Button
+                  type="button"
+                  onClick={handleBulkRosterResolve}
+                  disabled={bulkRosterSubmitting || bulkRosterUnmatched.length === 0}
+                >
                   Resolve
                 </Button>
-                <Button type="button" variant="secondary" onClick={handleBulkRosterSkip} disabled={bulkRosterUnmatched.length === 0}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleBulkRosterSkip}
+                  disabled={bulkRosterUnmatched.length === 0}
+                >
                   Skip
                 </Button>
-                <Button type="button" variant="secondary" onClick={handleCloseBulkRosterModal} className="ml-auto">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleCloseBulkRosterModal}
+                  className="ml-auto"
+                >
                   Close
                 </Button>
               </>
@@ -2828,7 +3070,12 @@ export default function LeagueDetail() {
                 <Button type="submit" disabled={bulkRosterSubmitting} className="flex-1">
                   {bulkRosterSubmitting ? 'Processing...' : 'Match names'}
                 </Button>
-                <Button type="button" variant="secondary" onClick={handleCloseBulkRosterModal} className="flex-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleCloseBulkRosterModal}
+                  className="flex-1"
+                >
                   Close
                 </Button>
               </>

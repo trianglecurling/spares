@@ -50,8 +50,8 @@ export default function EmailSMS() {
                       Types of Notifications
                     </h2>
                     <p className="mb-4">
-                      The system sends various notifications to keep you informed about spare requests. 
-                      You can control which types you receive in your profile settings.
+                      The system sends various notifications to keep you informed about spare
+                      requests. You can control which types you receive in your profile settings.
                     </p>
                   </section>
 
@@ -63,9 +63,14 @@ export default function EmailSMS() {
                       When You Receive a Request
                     </h3>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Email:</strong> Sent to all members who match the request</li>
-                      <li><strong>SMS:</strong> Sent if you've opted in to SMS notifications</li>
-                      <li><strong>Content includes:</strong>
+                      <li>
+                        <strong>Email:</strong> Sent to all members who match the request
+                      </li>
+                      <li>
+                        <strong>SMS:</strong> Sent if you've opted in to SMS notifications
+                      </li>
+                      <li>
+                        <strong>Content includes:</strong>
                         <ul className="list-disc list-inside ml-6 mt-2 space-y-1">
                           <li>Who needs the spare</li>
                           <li>Date and time of the game</li>
@@ -86,9 +91,14 @@ export default function EmailSMS() {
                       When Someone Signs Up for Your Request
                     </h3>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Email:</strong> Sent immediately when someone signs up</li>
-                      <li><strong>SMS:</strong> Sent if you've opted in to SMS notifications</li>
-                      <li><strong>Content includes:</strong>
+                      <li>
+                        <strong>Email:</strong> Sent immediately when someone signs up
+                      </li>
+                      <li>
+                        <strong>SMS:</strong> Sent if you've opted in to SMS notifications
+                      </li>
+                      <li>
+                        <strong>Content includes:</strong>
                         <ul className="list-disc list-inside ml-6 mt-2 space-y-1">
                           <li>Who signed up to fill your spare</li>
                           <li>Game details</li>
@@ -101,9 +111,14 @@ export default function EmailSMS() {
                       When Someone Cancels Their Spare Offer
                     </h3>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Email:</strong> Sent if someone who signed up cancels</li>
-                      <li><strong>SMS:</strong> Sent if you've opted in to SMS notifications</li>
-                      <li><strong>Content includes:</strong>
+                      <li>
+                        <strong>Email:</strong> Sent if someone who signed up cancels
+                      </li>
+                      <li>
+                        <strong>SMS:</strong> Sent if you've opted in to SMS notifications
+                      </li>
+                      <li>
+                        <strong>Content includes:</strong>
                         <ul className="list-disc list-inside ml-6 mt-2 space-y-1">
                           <li>Who canceled</li>
                           <li>Their cancellation comment</li>
@@ -118,10 +133,18 @@ export default function EmailSMS() {
                       Login Codes
                     </h2>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Email:</strong> Sent when you request a login code via email</li>
-                      <li><strong>SMS:</strong> Sent when you request a login code via phone</li>
-                      <li><strong>Content:</strong> A 6-digit code that expires after a short time</li>
-                      <li><strong>Security:</strong> Codes are single-use and time-limited</li>
+                      <li>
+                        <strong>Email:</strong> Sent when you request a login code via email
+                      </li>
+                      <li>
+                        <strong>SMS:</strong> Sent when you request a login code via phone
+                      </li>
+                      <li>
+                        <strong>Content:</strong> A 6-digit code that expires after a short time
+                      </li>
+                      <li>
+                        <strong>Security:</strong> Codes are single-use and time-limited
+                      </li>
                     </ul>
                   </section>
 
@@ -133,10 +156,21 @@ export default function EmailSMS() {
                       You can control your notification preferences in your profile:
                     </p>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Email notifications:</strong> Always enabled (required for account functionality)</li>
-                      <li><strong>SMS notifications:</strong> Opt in/out in your profile settings</li>
-                      <li><strong>Unsubscribe:</strong> Use the unsubscribe link in any email to effectively be removed from all spare lists</li>
-                      <li><strong>Note:</strong> You'll still receive login codes and important account notifications</li>
+                      <li>
+                        <strong>Email notifications:</strong> Always enabled (required for account
+                        functionality)
+                      </li>
+                      <li>
+                        <strong>SMS notifications:</strong> Opt in/out in your profile settings
+                      </li>
+                      <li>
+                        <strong>Unsubscribe:</strong> Use the unsubscribe link in any email to
+                        effectively be removed from all spare lists
+                      </li>
+                      <li>
+                        <strong>Note:</strong> You'll still receive login codes and important
+                        account notifications
+                      </li>
                     </ul>
                   </section>
 
@@ -144,9 +178,7 @@ export default function EmailSMS() {
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Email Links
                     </h2>
-                    <p className="mb-3">
-                      Emails include secure links that:
-                    </p>
+                    <p className="mb-3">Emails include secure links that:</p>
                     <ul className="list-disc list-inside space-y-2">
                       <li>Allow you to accept spare requests directly from your email</li>
                       <li>Are personalized and secure - don't share them with others</li>

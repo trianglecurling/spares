@@ -56,14 +56,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Verify existing token
     const verifyToken = async () => {
       const currentToken = urlToken || token;
-      
+
       // Skip verification if we're on the install page
       const currentPath = window.location.pathname;
       if (currentPath.startsWith('/install')) {
         setIsLoading(false);
         return;
       }
-      
+
       if (currentToken) {
         try {
           const response = await get('/auth/verify');
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             themePreference: normalizeThemePreference(response.member.themePreference),
           } as AuthenticatedMember);
           setMember(normalizedMember);
-          
+
           // Redirect to first login if needed
           if (!response.member.firstLoginCompleted) {
             // Preserve where the user was trying to go so we can return after first-login setup.
@@ -106,7 +106,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (error: unknown) {
           // If database is not configured (503), don't clear token - just fail silently
-          if (axios.isAxiosError(error) && error.response?.status === 503 && error.response?.data?.requiresInstallation) {
+          if (
+            axios.isAxiosError(error) &&
+            error.response?.status === 503 &&
+            error.response?.data?.requiresInstallation
+          ) {
             // Database not configured - don't verify token, but don't clear it either
             // Intentionally silent: user may be on the install flow
           } else {
@@ -126,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('authToken', newToken);
     setToken(newToken);
     setMember(normalizeMember(newMember));
-    
+
     if (!newMember.firstLoginCompleted) {
       try {
         if (redirectTo) {

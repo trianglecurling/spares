@@ -22,7 +22,8 @@ export default function RequestSpareConfirm() {
             Did you check with who&apos;s on bye?
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-3">
-            Before requesting a spare, please check with the players in your league who are on bye for that game! If you need help, contact your league coordinator.
+            Before requesting a spare, please check with the players in your league who are on bye
+            for that game! If you need help, contact your league coordinator.
           </p>
 
           <div className="mt-6 flex flex-col sm:flex-row sm:justify-end gap-3">
@@ -38,4 +39,3 @@ export default function RequestSpareConfirm() {
     </Layout>
   );
 }
-

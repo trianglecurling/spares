@@ -53,7 +53,9 @@ export default function Feedback() {
       setCaptchaQuestion(null);
       setCaptchaToken(null);
       // Don't clear any existing submit message; only show an error if there isn't one.
-      setMessage((prev) => prev ?? { type: 'error', text: 'Failed to load CAPTCHA. Please try again.' });
+      setMessage(
+        (prev) => prev ?? { type: 'error', text: 'Failed to load CAPTCHA. Please try again.' }
+      );
     } finally {
       setLoadingCaptcha(false);
     }
@@ -185,7 +187,12 @@ export default function Feedback() {
                     <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       CAPTCHA
                     </div>
-                    <Button type="button" variant="secondary" onClick={loadCaptcha} disabled={loadingCaptcha}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={loadCaptcha}
+                      disabled={loadingCaptcha}
+                    >
                       {loadingCaptcha ? 'Loading…' : 'New question'}
                     </Button>
                   </div>
@@ -218,4 +225,3 @@ export default function Feedback() {
     </div>
   );
 }
-

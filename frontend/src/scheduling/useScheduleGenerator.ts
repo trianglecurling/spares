@@ -40,10 +40,7 @@ export function useScheduleGenerator(): UseScheduleGeneratorReturn {
     setResult(null);
     setError(null);
 
-    const worker = new Worker(
-      new URL('./worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     workerRef.current = worker;
 
     worker.addEventListener('message', (event: MessageEvent<WorkerOutMessage>) => {

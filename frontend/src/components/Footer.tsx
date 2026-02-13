@@ -13,8 +13,8 @@ export default function Footer({ simple = false }: FooterProps) {
         <div className="flex flex-col md:flex-row justify-between items-center text-sm text-gray-500 dark:text-gray-400 space-y-4 md:space-y-0">
           <div className="flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-6">
             <span>&copy; {year} Triangle Curling Club</span>
-            <a 
-              href="https://trianglecurling.com" 
+            <a
+              href="https://trianglecurling.com"
               className="hover:text-primary-teal transition-colors"
             >
               trianglecurling.com
@@ -22,31 +22,25 @@ export default function Footer({ simple = false }: FooterProps) {
           </div>
 
           <div className="flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-6">
-            <Link 
-              to="/help" 
-              className="hover:text-primary-teal transition-colors"
-            >
+            <Link to="/help" className="hover:text-primary-teal transition-colors">
               Help
             </Link>
-            <a 
-              href="https://links.tccnc.club/privacy" 
-              target="_blank" 
+            <a
+              href="https://links.tccnc.club/privacy"
+              target="_blank"
               rel="noopener noreferrer"
               className="hover:text-primary-teal transition-colors"
             >
               Privacy Policy
             </a>
-            <Link
-              to="/feedback"
-              className="hover:text-primary-teal transition-colors"
-            >
+            <Link to="/feedback" className="hover:text-primary-teal transition-colors">
               Report Issues
             </Link>
             {!simple && (
               <>
-                <a 
-                  href="https://links.tccnc.club/leagues" 
-                  target="_blank" 
+                <a
+                  href="https://links.tccnc.club/leagues"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-primary-teal transition-colors"
                 >
@@ -60,4 +54,3 @@ export default function Footer({ simple = false }: FooterProps) {
     </footer>
   );
 }
-

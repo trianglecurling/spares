@@ -15,8 +15,8 @@ export default function HelpHeader() {
             >
               Triangle Curling
             </Link>
-            <Link 
-              to="/help" 
+            <Link
+              to="/help"
               className="text-gray-700 dark:text-gray-300 hover:text-primary-teal transition-colors"
             >
               Help
@@ -24,15 +24,15 @@ export default function HelpHeader() {
           </div>
           <div className="flex items-center">
             {member ? (
-              <Link 
-                to="/" 
+              <Link
+                to="/"
                 className="text-gray-700 dark:text-gray-300 hover:text-primary-teal transition-colors"
               >
                 Dashboard
               </Link>
             ) : (
-              <Link 
-                to="/login" 
+              <Link
+                to="/login"
                 className="text-gray-700 dark:text-gray-300 hover:text-primary-teal transition-colors"
               >
                 Login
@@ -44,4 +44,3 @@ export default function HelpHeader() {
     </nav>
   );
 }
-

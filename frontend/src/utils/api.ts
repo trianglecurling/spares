@@ -60,4 +60,3 @@ export const formatApiError = (error: unknown, fallback: string) => {
 };
 
 export default api;
-

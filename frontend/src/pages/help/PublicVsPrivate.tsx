@@ -50,21 +50,47 @@ export default function PublicVsPrivate() {
                       Public Requests
                     </h2>
                     <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-                      <p className="font-semibold text-blue-900 dark:text-blue-200 mb-2">Best for:</p>
-                      <p className="text-blue-800 dark:text-blue-300">When you want to reach as many potential spares as possible</p>
+                      <p className="font-semibold text-blue-900 dark:text-blue-200 mb-2">
+                        Best for:
+                      </p>
+                      <p className="text-blue-800 dark:text-blue-300">
+                        When you want to reach as many potential spares as possible
+                      </p>
                     </div>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Visibility:</strong> All members can see it on their dashboard immediately</li>
-                      <li><strong>Notifications:</strong> 
+                      <li>
+                        <strong>Visibility:</strong> All members can see it on their dashboard
+                        immediately
+                      </li>
+                      <li>
+                        <strong>Notifications:</strong>
                         <ul className="list-disc list-inside ml-6 mt-2 space-y-1">
-                          <li>If less than 24 hours before game time: All matching members are notified immediately</li>
-                          <li>If more than 24 hours before game time: Notifications are sent gradually, one member at a time, every few minutes</li>
+                          <li>
+                            If less than 24 hours before game time: All matching members are
+                            notified immediately
+                          </li>
+                          <li>
+                            If more than 24 hours before game time: Notifications are sent
+                            gradually, one member at a time, every few minutes
+                          </li>
                         </ul>
                       </li>
-                      <li><strong>Notifications:</strong> Only members who have set their availability for the relevant league will receive email/SMS notifications</li>
-                      <li><strong>Skip position:</strong> If requesting a skip, only members comfortable skipping will receive notifications</li>
-                      <li><strong>Visibility:</strong> All members can see all public requests on their dashboard, regardless of availability</li>
-                      <li><strong>Control:</strong> You can pause notifications if needed, then unpause to resume</li>
+                      <li>
+                        <strong>Notifications:</strong> Only members who have set their availability
+                        for the relevant league will receive email/SMS notifications
+                      </li>
+                      <li>
+                        <strong>Skip position:</strong> If requesting a skip, only members
+                        comfortable skipping will receive notifications
+                      </li>
+                      <li>
+                        <strong>Visibility:</strong> All members can see all public requests on
+                        their dashboard, regardless of availability
+                      </li>
+                      <li>
+                        <strong>Control:</strong> You can pause notifications if needed, then
+                        unpause to resume
+                      </li>
                     </ul>
                   </section>
 
@@ -73,15 +99,34 @@ export default function PublicVsPrivate() {
                       Private Requests
                     </h2>
                     <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
-                      <p className="font-semibold text-green-900 dark:text-green-200 mb-2">Best for:</p>
-                      <p className="text-green-800 dark:text-green-300">When you have specific members in mind or want to limit who sees your request</p>
+                      <p className="font-semibold text-green-900 dark:text-green-200 mb-2">
+                        Best for:
+                      </p>
+                      <p className="text-green-800 dark:text-green-300">
+                        When you have specific members in mind or want to limit who sees your
+                        request
+                      </p>
                     </div>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Visibility:</strong> Only visible to the specific members you invite</li>
-                      <li><strong>Notifications:</strong> All invited members receive email and SMS notifications immediately</li>
-                      <li><strong>Selection:</strong> You choose exactly which members to invite using the member search</li>
-                      <li><strong>Privacy:</strong> Other members won't see the request on their dashboard</li>
-                      <li><strong>Email list:</strong> Invited members can see who else was invited in the notification email</li>
+                      <li>
+                        <strong>Visibility:</strong> Only visible to the specific members you invite
+                      </li>
+                      <li>
+                        <strong>Notifications:</strong> All invited members receive email and SMS
+                        notifications immediately
+                      </li>
+                      <li>
+                        <strong>Selection:</strong> You choose exactly which members to invite using
+                        the member search
+                      </li>
+                      <li>
+                        <strong>Privacy:</strong> Other members won't see the request on their
+                        dashboard
+                      </li>
+                      <li>
+                        <strong>Email list:</strong> Invited members can see who else was invited in
+                        the notification email
+                      </li>
                     </ul>
                   </section>
 
@@ -91,7 +136,9 @@ export default function PublicVsPrivate() {
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h3 className="font-semibold mb-2 text-[#121033] dark:text-gray-100">Use Public When:</h3>
+                        <h3 className="font-semibold mb-2 text-[#121033] dark:text-gray-100">
+                          Use Public When:
+                        </h3>
                         <ul className="list-disc list-inside space-y-1 text-sm">
                           <li>You need a spare and don't have specific people in mind</li>
                           <li>You want maximum visibility</li>
@@ -99,7 +146,9 @@ export default function PublicVsPrivate() {
                         </ul>
                       </div>
                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h3 className="font-semibold mb-2 text-[#121033] dark:text-gray-100">Use Private When:</h3>
+                        <h3 className="font-semibold mb-2 text-[#121033] dark:text-gray-100">
+                          Use Private When:
+                        </h3>
                         <ul className="list-disc list-inside space-y-1 text-sm">
                           <li>You have specific members you want to ask</li>
                           <li>You want to keep the request private</li>
@@ -113,8 +162,9 @@ export default function PublicVsPrivate() {
                       Switching Between Types
                     </h2>
                     <p className="mb-3">
-                      You can't change a request from public to private (or vice versa) after it's created. 
-                      If you need to change the type, you'll need to cancel the existing request and create a new one.
+                      You can't change a request from public to private (or vice versa) after it's
+                      created. If you need to change the type, you'll need to cancel the existing
+                      request and create a new one.
                     </p>
                   </section>
                 </div>

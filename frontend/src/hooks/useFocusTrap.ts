@@ -28,13 +28,11 @@ export function useFocusTrap(isOpen: boolean) {
         '[tabindex]:not([tabindex="-1"])',
       ].join(', ');
 
-      return Array.from(container.querySelectorAll<HTMLElement>(selector)).filter(
-        (el) => {
-          // Filter out elements that are not visible
-          const style = window.getComputedStyle(el);
-          return style.display !== 'none' && style.visibility !== 'hidden';
-        }
-      );
+      return Array.from(container.querySelectorAll<HTMLElement>(selector)).filter((el) => {
+        // Filter out elements that are not visible
+        const style = window.getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+      });
     };
 
     const focusableElements = getFocusableElements();
@@ -93,7 +91,7 @@ export function useFocusTrap(isOpen: boolean) {
     return () => {
       document.removeEventListener('keydown', handleTabKey);
       document.removeEventListener('focusin', handleFocus);
-      
+
       // Restore focus to the previously focused element
       if (previousActiveElementRef.current) {
         previousActiveElementRef.current.focus();
@@ -103,12 +101,3 @@ export function useFocusTrap(isOpen: boolean) {
 
   return containerRef;
 }
-
-
-
-
-
-
-
-
-

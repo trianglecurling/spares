@@ -26,7 +26,8 @@ const actions: MaintenanceAction[] = [
     description: 'Delete all scheduled and unscheduled games for this league.',
     endpoint: 'maintenance/games',
     confirmTitle: 'Clear all games',
-    confirmMessage: 'Are you sure you want to delete all games for this league? This cannot be undone.',
+    confirmMessage:
+      'Are you sure you want to delete all games for this league? This cannot be undone.',
   },
   {
     key: 'teams',
@@ -34,7 +35,8 @@ const actions: MaintenanceAction[] = [
     description: 'Delete all teams, their rosters, and bye requests.',
     endpoint: 'maintenance/teams',
     confirmTitle: 'Clear all teams',
-    confirmMessage: 'Are you sure you want to delete all teams for this league? This will also delete all games, team rosters, and bye requests. This cannot be undone.',
+    confirmMessage:
+      'Are you sure you want to delete all teams for this league? This will also delete all games, team rosters, and bye requests. This cannot be undone.',
     alsoClears: ['games', 'bye requests', 'team rosters'],
   },
   {
@@ -43,7 +45,8 @@ const actions: MaintenanceAction[] = [
     description: 'Remove all members from the league roster.',
     endpoint: 'maintenance/roster',
     confirmTitle: 'Clear league roster',
-    confirmMessage: 'Are you sure you want to clear the entire league roster? This will also delete all games, teams, team rosters, and bye requests. This cannot be undone.',
+    confirmMessage:
+      'Are you sure you want to clear the entire league roster? This will also delete all games, teams, team rosters, and bye requests. This cannot be undone.',
     alsoClears: ['games', 'teams', 'bye requests', 'team rosters'],
   },
   {
@@ -52,7 +55,8 @@ const actions: MaintenanceAction[] = [
     description: 'Delete all bye requests for every team in this league.',
     endpoint: 'maintenance/bye-requests',
     confirmTitle: 'Clear all bye requests',
-    confirmMessage: 'Are you sure you want to delete all bye requests for this league? This cannot be undone.',
+    confirmMessage:
+      'Are you sure you want to delete all bye requests for this league? This cannot be undone.',
   },
   {
     key: 'divisions',
@@ -60,7 +64,8 @@ const actions: MaintenanceAction[] = [
     description: 'Delete all divisions, along with their teams and games.',
     endpoint: 'maintenance/divisions',
     confirmTitle: 'Clear all divisions',
-    confirmMessage: 'Are you sure you want to delete all divisions for this league? This will also delete all games, teams, team rosters, and bye requests. This cannot be undone.',
+    confirmMessage:
+      'Are you sure you want to delete all divisions for this league? This will also delete all games, teams, team rosters, and bye requests. This cannot be undone.',
     alsoClears: ['games', 'teams', 'bye requests', 'team rosters'],
   },
   {
@@ -69,7 +74,8 @@ const actions: MaintenanceAction[] = [
     description: 'Delete all sheet availability overrides for this league.',
     endpoint: 'maintenance/sheet-availability',
     confirmTitle: 'Clear sheet availability',
-    confirmMessage: 'Are you sure you want to delete all sheet availability data for this league? This cannot be undone.',
+    confirmMessage:
+      'Are you sure you want to delete all sheet availability data for this league? This cannot be undone.',
   },
 ];
 

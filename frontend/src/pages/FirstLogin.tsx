@@ -62,7 +62,11 @@ export default function FirstLogin() {
         phoneVisible,
       });
 
-      updateMember({ ...member!, ...response, themePreference: normalizeThemePreference(response.themePreference) } as import('../../../backend/src/types').AuthenticatedMember);
+      updateMember({
+        ...member!,
+        ...response,
+        themePreference: normalizeThemePreference(response.themePreference),
+      } as import('../../../backend/src/types').AuthenticatedMember);
       setStep(2);
     } catch (error) {
       console.error('Failed to update profile:', error);
@@ -76,7 +80,10 @@ export default function FirstLogin() {
 
     try {
       await post('/members/me/complete-first-login', undefined);
-      updateMember({ ...member!, firstLoginCompleted: true } as import('../../../backend/src/types').AuthenticatedMember);
+      updateMember({
+        ...member!,
+        firstLoginCompleted: true,
+      } as import('../../../backend/src/types').AuthenticatedMember);
 
       // 1) If the user came from a spare accept link, go back to the dashboard with requestId
       // so the accept popup opens.
@@ -129,14 +136,15 @@ export default function FirstLogin() {
             <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
               Welcome to Triangle Curling Spares!
             </h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-8">
-              Let's get your profile set up.
-            </p>
+            <p className="text-gray-600 dark:text-gray-400 mb-8">Let's get your profile set up.</p>
 
             {step === 1 && (
               <form onSubmit={handleUpdateProfile} className="space-y-6">
                 <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="name"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Your name <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -154,7 +162,10 @@ export default function FirstLogin() {
                 </div>
 
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="email"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Email address <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -166,7 +177,7 @@ export default function FirstLogin() {
                     placeholder="your.email@example.com"
                     required
                   />
-                  
+
                   <div className="mt-2 flex items-start">
                     <input
                       type="checkbox"
@@ -175,14 +186,20 @@ export default function FirstLogin() {
                       onChange={(e) => setEmailVisible(e.target.checked)}
                       className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                     />
-                    <label htmlFor="emailVisible" className="text-sm text-gray-600 dark:text-gray-400">
+                    <label
+                      htmlFor="emailVisible"
+                      className="text-sm text-gray-600 dark:text-gray-400"
+                    >
                       Make my email address visible to other club members in the directory
                     </label>
                   </div>
                 </div>
 
                 <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="phone"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Phone number
                   </label>
                   <input
@@ -202,7 +219,10 @@ export default function FirstLogin() {
                       onChange={(e) => setPhoneVisible(e.target.checked)}
                       className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                     />
-                    <label htmlFor="phoneVisible" className="text-sm text-gray-600 dark:text-gray-400">
+                    <label
+                      htmlFor="phoneVisible"
+                      className="text-sm text-gray-600 dark:text-gray-400"
+                    >
                       Make my phone number visible to other club members in the directory
                     </label>
                   </div>
@@ -212,7 +232,8 @@ export default function FirstLogin() {
                   <div className="flex items-start">
                     <HiOutlineInformationCircle className="w-5 h-5 text-primary-teal mt-0.5 mr-3 flex-shrink-0" />
                     <p className="text-sm text-gray-600 dark:text-gray-300">
-                      Your email address and phone number will be made visible to anyone you are sparing for and anyone who is sparing for you.
+                      Your email address and phone number will be made visible to anyone you are
+                      sparing for and anyone who is sparing for you.
                     </p>
                   </div>
                 </div>
@@ -227,11 +248,16 @@ export default function FirstLogin() {
                         onChange={(e) => setOptedInSms(e.target.checked)}
                         className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                       />
-                      <label htmlFor="optedInSms" className="text-sm text-gray-700 dark:text-gray-200">
+                      <label
+                        htmlFor="optedInSms"
+                        className="text-sm text-gray-700 dark:text-gray-200"
+                      >
                         <span className="font-medium">Opt in to text messages</span>
                         <p className="text-gray-600 dark:text-gray-400 mt-1">
                           Receive text message notifications when new spare requests match your
-                          availability and when someone has responded to your request. You can change this later. Message and data rates may apply. Reply STOP to any message to unsubscribe.
+                          availability and when someone has responded to your request. You can
+                          change this later. Message and data rates may apply. Reply STOP to any
+                          message to unsubscribe.
                         </p>
                       </label>
                     </div>
@@ -253,11 +279,15 @@ export default function FirstLogin() {
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400">
                     {(() => {
-                      const pendingRequestId = sessionStorage.getItem('pendingSpareAcceptRequestId');
+                      const pendingRequestId = sessionStorage.getItem(
+                        'pendingSpareAcceptRequestId'
+                      );
                       if (pendingRequestId) {
                         return "Next we'll take you back to confirm the spare request you were invited to.";
                       }
-                      const pendingDeclineId = sessionStorage.getItem('pendingSpareDeclineRequestId');
+                      const pendingDeclineId = sessionStorage.getItem(
+                        'pendingSpareDeclineRequestId'
+                      );
                       if (pendingDeclineId) {
                         return "Next we'll take you back to decline the spare request you were invited to.";
                       }
@@ -267,20 +297,26 @@ export default function FirstLogin() {
                 </div>
 
                 <Button onClick={handleComplete} disabled={loading} className="w-full">
-                  {loading ? 'Loading...' : (() => {
-                    const pendingRequestId = sessionStorage.getItem('pendingSpareAcceptRequestId');
-                    if (pendingRequestId) return 'Continue to spare request';
-                    const pendingDeclineId = sessionStorage.getItem('pendingSpareDeclineRequestId');
-                    if (pendingDeclineId) return 'Continue to decline spare request';
-                    return 'Set my availability';
-                  })()}
+                  {loading
+                    ? 'Loading...'
+                    : (() => {
+                        const pendingRequestId = sessionStorage.getItem(
+                          'pendingSpareAcceptRequestId'
+                        );
+                        if (pendingRequestId) return 'Continue to spare request';
+                        const pendingDeclineId = sessionStorage.getItem(
+                          'pendingSpareDeclineRequestId'
+                        );
+                        if (pendingDeclineId) return 'Continue to decline spare request';
+                        return 'Set my availability';
+                      })()}
                 </Button>
               </div>
             )}
           </div>
         </div>
       </div>
-      
+
       <Footer simple />
     </div>
   );

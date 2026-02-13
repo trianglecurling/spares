@@ -50,8 +50,9 @@ export default function Notifications() {
                       How Notifications Work
                     </h2>
                     <p className="mb-4">
-                      The system automatically sends notifications to help match spare requests with available members. 
-                      The process differs depending on whether the request is public or private, and how soon the game is.
+                      The system automatically sends notifications to help match spare requests with
+                      available members. The process differs depending on whether the request is
+                      public or private, and how soon the game is.
                     </p>
                   </section>
 
@@ -59,7 +60,7 @@ export default function Notifications() {
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Public Request Notifications
                     </h2>
-                    
+
                     <h3 className="text-xl font-semibold mb-3 mt-4 text-[#121033] dark:text-gray-100">
                       Less Than 24 Hours Before Game Time
                     </h3>
@@ -80,10 +81,16 @@ export default function Notifications() {
                       <li>The system creates a list of all matching members</li>
                       <li>The list is randomly shuffled to ensure fairness</li>
                       <li>Notifications are sent one member at a time</li>
-                      <li>After each notification, the system waits a few minutes (configurable by administrators)</li>
+                      <li>
+                        After each notification, the system waits a few minutes (configurable by
+                        administrators)
+                      </li>
                       <li>If someone signs up, notifications stop automatically</li>
                       <li>If no one signs up, the next member in the list is notified</li>
-                      <li>This continues until either someone signs up or all members have been notified</li>
+                      <li>
+                        This continues until either someone signs up or all members have been
+                        notified
+                      </li>
                     </ol>
                   </section>
 
@@ -107,10 +114,20 @@ export default function Notifications() {
                       On the "My requests" page, you can see the status of notifications:
                     </p>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>"Notifications in progress... X of Y members notified":</strong> Shows real-time progress for staggered notifications</li>
-                      <li><strong>"All notifications sent. X members notified":</strong> All notifications have been sent</li>
-                      <li><strong>"Notifications stopped":</strong> Request was filled or cancelled</li>
-                      <li><strong>"(Paused)":</strong> Notifications are temporarily paused</li>
+                      <li>
+                        <strong>"Notifications in progress... X of Y members notified":</strong>{' '}
+                        Shows real-time progress for staggered notifications
+                      </li>
+                      <li>
+                        <strong>"All notifications sent. X members notified":</strong> All
+                        notifications have been sent
+                      </li>
+                      <li>
+                        <strong>"Notifications stopped":</strong> Request was filled or cancelled
+                      </li>
+                      <li>
+                        <strong>"(Paused)":</strong> Notifications are temporarily paused
+                      </li>
                     </ul>
                   </section>
 
@@ -138,11 +155,18 @@ export default function Notifications() {
                       You can re-issue a request to send notifications again in two situations:
                     </p>
                     <ol className="list-decimal list-inside space-y-2">
-                      <li><strong>After 72 hours:</strong> If it's been more than 72 hours since notifications were last sent</li>
-                      <li><strong>After a cancellation:</strong> If someone signed up and then canceled their spare offer</li>
+                      <li>
+                        <strong>After 72 hours:</strong> If it's been more than 72 hours since
+                        notifications were last sent
+                      </li>
+                      <li>
+                        <strong>After a cancellation:</strong> If someone signed up and then
+                        canceled their spare offer
+                      </li>
                     </ol>
                     <p className="mt-4">
-                      When re-issuing, you can update your message, and the notification process starts fresh.
+                      When re-issuing, you can update your message, and the notification process
+                      starts fresh.
                     </p>
                   </section>
                 </div>

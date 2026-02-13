@@ -4,14 +4,46 @@ import HelpHeader from '../components/HelpHeader';
 
 const helpSections = [
   { path: '/help/quick-start', title: 'Quick Start', description: 'Get started in minutes' },
-  { path: '/help/requesting-spare', title: 'Requesting a Spare', description: 'How to request a spare for your game' },
-  { path: '/help/responding', title: 'Responding to Requests', description: 'How to sign up as a spare' },
-  { path: '/help/public-vs-private', title: 'Public vs Private Requests', description: 'Understanding request types' },
-  { path: '/help/notifications', title: 'Notification Process', description: 'How notifications work' },
-  { path: '/help/authentication', title: 'Authentication & Login', description: 'How to log in and manage your account' },
-  { path: '/help/email-sms', title: 'Email & SMS Notifications', description: 'What messages you\'ll receive' },
-  { path: '/help/availability', title: 'Setting Availability', description: 'How to set when you\'re available' },
-  { path: '/help/managing-requests', title: 'Managing Your Requests', description: 'Cancel, re-issue, and more' },
+  {
+    path: '/help/requesting-spare',
+    title: 'Requesting a Spare',
+    description: 'How to request a spare for your game',
+  },
+  {
+    path: '/help/responding',
+    title: 'Responding to Requests',
+    description: 'How to sign up as a spare',
+  },
+  {
+    path: '/help/public-vs-private',
+    title: 'Public vs Private Requests',
+    description: 'Understanding request types',
+  },
+  {
+    path: '/help/notifications',
+    title: 'Notification Process',
+    description: 'How notifications work',
+  },
+  {
+    path: '/help/authentication',
+    title: 'Authentication & Login',
+    description: 'How to log in and manage your account',
+  },
+  {
+    path: '/help/email-sms',
+    title: 'Email & SMS Notifications',
+    description: "What messages you'll receive",
+  },
+  {
+    path: '/help/availability',
+    title: 'Setting Availability',
+    description: "How to set when you're available",
+  },
+  {
+    path: '/help/managing-requests',
+    title: 'Managing Your Requests',
+    description: 'Cancel, re-issue, and more',
+  },
 ];
 
 export { helpSections };
@@ -57,8 +89,8 @@ export default function Help() {
                   Help & Documentation
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400 mb-8">
-                  Welcome to the Triangle Curling Spare Management System help center. 
-                  Use the navigation menu to find information about specific features.
+                  Welcome to the Triangle Curling Spare Management System help center. Use the
+                  navigation menu to find information about specific features.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -71,7 +103,9 @@ export default function Help() {
                       <h3 className="text-lg font-semibold mb-2 text-[#121033] dark:text-gray-100">
                         {section.title}
                       </h3>
-                      <p className="text-gray-600 dark:text-gray-400 text-sm">{section.description}</p>
+                      <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        {section.description}
+                      </p>
                     </Link>
                   ))}
                 </div>
@@ -84,4 +118,3 @@ export default function Help() {
     </div>
   );
 }
-

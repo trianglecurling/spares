@@ -87,7 +87,13 @@ const roleLabels: Record<string, string> = {
 };
 const teamRoleOrder = ['fourth', 'third', 'second', 'lead'] as const;
 
-export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamIds, leagueFormat }: LeagueScheduleProps) {
+export default function LeagueSchedule({
+  leagueId,
+  teams,
+  canManage,
+  memberTeamIds,
+  leagueFormat,
+}: LeagueScheduleProps) {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const [games, setGames] = useState<Game[]>([]);
@@ -118,8 +124,22 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
 
   const [detailsGame, setDetailsGame] = useState<Game | null>(null);
   const [detailsLineups, setDetailsLineups] = useState<{
-    team1Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null; isSkip?: boolean; isVice?: boolean }>;
-    team2Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null; isSkip?: boolean; isVice?: boolean }>;
+    team1Lineup: Array<{
+      memberName: string;
+      role: string;
+      isSpare: boolean;
+      sparingForMemberName: string | null;
+      isSkip?: boolean;
+      isVice?: boolean;
+    }>;
+    team2Lineup: Array<{
+      memberName: string;
+      role: string;
+      isSpare: boolean;
+      sparingForMemberName: string | null;
+      isSkip?: boolean;
+      isVice?: boolean;
+    }>;
   } | null>(null);
   const [loadingDetailsLineups, setLoadingDetailsLineups] = useState(false);
 
@@ -265,11 +285,13 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
   const loadGames = async () => {
     setLoadingGames(true);
     try {
-      const response = await (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
-        '/leagues/{id}/games/with-results',
-        undefined,
-        { id: String(leagueId) }
-      );
+      const response = await (
+        get as (
+          path: string,
+          query?: unknown,
+          pathParams?: Record<string, string>
+        ) => Promise<unknown>
+      )('/leagues/{id}/games/with-results', undefined, { id: String(leagueId) });
       setGames(response as Game[]);
     } catch (error: unknown) {
       console.error('Failed to load games:', error);
@@ -325,18 +347,35 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
       setResultLabels([]);
       setLoadingEditData(true);
       setGameModalOpen(true);
-      const getUntyped = get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>;
+      const getUntyped = get as (
+        path: string,
+        query?: unknown,
+        pathParams?: Record<string, string>
+      ) => Promise<unknown>;
       Promise.all([
         getUntyped('/games/{gameId}/results', undefined, { gameId: String(game.id) }),
         getUntyped('/leagues/{id}/settings', undefined, { id: String(leagueId) }),
       ])
         .then(([resultsRes, settingsRes]) => {
-          const results = resultsRes as { team1Results: Array<{ resultOrder: number; value: number }>; team2Results: Array<{ resultOrder: number; value: number }> };
+          const results = resultsRes as {
+            team1Results: Array<{ resultOrder: number; value: number }>;
+            team2Results: Array<{ resultOrder: number; value: number }>;
+          };
           const settings = settingsRes as { resultLabels: string[] | null };
           setResultLabels(settings?.resultLabels ?? []);
-          const len = Math.max(results?.team1Results?.length ?? 0, results?.team2Results?.length ?? 0, 1);
-          const t1 = Array.from({ length: len }, (_, i) => results?.team1Results?.find((r) => r.resultOrder === i)?.value ?? 0);
-          const t2 = Array.from({ length: len }, (_, i) => results?.team2Results?.find((r) => r.resultOrder === i)?.value ?? 0);
+          const len = Math.max(
+            results?.team1Results?.length ?? 0,
+            results?.team2Results?.length ?? 0,
+            1
+          );
+          const t1 = Array.from(
+            { length: len },
+            (_, i) => results?.team1Results?.find((r) => r.resultOrder === i)?.value ?? 0
+          );
+          const t2 = Array.from(
+            { length: len },
+            (_, i) => results?.team2Results?.find((r) => r.resultOrder === i)?.value ?? 0
+          );
           setResultForm({ team1Values: t1, team2Values: t2 });
         })
         .catch(() => {
@@ -369,11 +408,26 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
     setDetailsLineups(null);
     setLoadingDetailsLineups(true);
     try {
-      const res = await (get as (path: string, query?: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
-        '/games/{gameId}/lineups',
-        undefined,
-        { gameId: String(game.id) }
-      ) as { team1Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null }>; team2Lineup: Array<{ memberName: string; role: string; isSpare: boolean; sparingForMemberName: string | null }> };
+      const res = (await (
+        get as (
+          path: string,
+          query?: unknown,
+          pathParams?: Record<string, string>
+        ) => Promise<unknown>
+      )('/games/{gameId}/lineups', undefined, { gameId: String(game.id) })) as {
+        team1Lineup: Array<{
+          memberName: string;
+          role: string;
+          isSpare: boolean;
+          sparingForMemberName: string | null;
+        }>;
+        team2Lineup: Array<{
+          memberName: string;
+          role: string;
+          isSpare: boolean;
+          sparingForMemberName: string | null;
+        }>;
+      };
       setDetailsLineups({ team1Lineup: res.team1Lineup, team2Lineup: res.team2Lineup });
     } catch {
       setDetailsLineups({ team1Lineup: [], team2Lineup: [] });
@@ -439,7 +493,9 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
     setSavingGame(true);
     try {
       if (isScheduled && addingDrawTime) {
-        const extraDraw = await post('/leagues/{id}/extra-draws', extraDrawForm, { id: String(leagueId) });
+        const extraDraw = await post('/leagues/{id}/extra-draws', extraDrawForm, {
+          id: String(leagueId),
+        });
         createdExtraDrawId = extraDraw.id;
         gameDate = extraDrawForm.date;
         gameTime = extraDrawForm.time;
@@ -594,218 +650,281 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
 
         {drawSlots.length === 0 ? (
           <div className="text-sm text-gray-500 dark:text-gray-400">No draws configured yet.</div>
-        ) : (() => {
-          // Group draw slots by date
-          const drawsByDate = new Map<string, DrawSlot[]>();
-          for (const draw of drawSlots) {
-            const list = drawsByDate.get(draw.date) ?? [];
-            list.push(draw);
-            drawsByDate.set(draw.date, list);
-          }
-          const sortedDates = [...drawsByDate.keys()].sort();
+        ) : (
+          (() => {
+            // Group draw slots by date
+            const drawsByDate = new Map<string, DrawSlot[]>();
+            for (const draw of drawSlots) {
+              const list = drawsByDate.get(draw.date) ?? [];
+              list.push(draw);
+              drawsByDate.set(draw.date, list);
+            }
+            const sortedDates = [...drawsByDate.keys()].sort();
 
-          return (
-            <div className="space-y-6">
-              {sortedDates.map((date) => {
-                const dateDraws = drawsByDate.get(date) ?? [];
+            return (
+              <div className="space-y-6">
+                {sortedDates.map((date) => {
+                  const dateDraws = drawsByDate.get(date) ?? [];
 
-                // Determine which teams play on ANY draw this date
-                const teamsPlayingThisDate = new Set<number>();
-                for (const draw of dateDraws) {
-                  const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
-                  for (const game of drawGames) {
-                    teamsPlayingThisDate.add(game.team1Id);
-                    teamsPlayingThisDate.add(game.team2Id);
+                  // Determine which teams play on ANY draw this date
+                  const teamsPlayingThisDate = new Set<number>();
+                  for (const draw of dateDraws) {
+                    const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                    for (const game of drawGames) {
+                      teamsPlayingThisDate.add(game.team1Id);
+                      teamsPlayingThisDate.add(game.team2Id);
+                    }
                   }
-                }
-                // Teams on bye = teams not playing any draw this date
-                const byeTeams = teams
-                  .filter((team) => !teamsPlayingThisDate.has(team.id))
-                  .sort((a, b) => {
-                    const nameA = a.name || `Team ${a.id}`;
-                    const nameB = b.name || `Team ${b.id}`;
-                    return nameA.localeCompare(nameB);
-                  });
+                  // Teams on bye = teams not playing any draw this date
+                  const byeTeams = teams
+                    .filter((team) => !teamsPlayingThisDate.has(team.id))
+                    .sort((a, b) => {
+                      const nameA = a.name || `Team ${a.id}`;
+                      const nameB = b.name || `Team ${b.id}`;
+                      return nameA.localeCompare(nameB);
+                    });
 
-                // When "Show my games": if my teams don't play this date, show a single "Bye week" card
-                const myTeamsPlayThisDate = showMineOnly && memberTeamIds.length > 0
-                  ? dateDraws.some((draw) => {
-                      const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
-                      return drawGames.some((g) => memberTeamIds.includes(g.team1Id) || memberTeamIds.includes(g.team2Id));
-                    })
-                  : true;
+                  // When "Show my games": if my teams don't play this date, show a single "Bye week" card
+                  const myTeamsPlayThisDate =
+                    showMineOnly && memberTeamIds.length > 0
+                      ? dateDraws.some((draw) => {
+                          const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                          return drawGames.some(
+                            (g) =>
+                              memberTeamIds.includes(g.team1Id) || memberTeamIds.includes(g.team2Id)
+                          );
+                        })
+                      : true;
 
-                if (showMineOnly && memberTeamIds.length > 0 && !myTeamsPlayThisDate) {
+                  if (showMineOnly && memberTeamIds.length > 0 && !myTeamsPlayThisDate) {
+                    return (
+                      <div key={date}>
+                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          {formatDateDisplay(date)}
+                        </h3>
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Bye week</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // When "Show my games", only show draw cards that have at least one game for the user's teams
+                  const drawsToShow =
+                    showMineOnly && memberTeamIds.length > 0
+                      ? dateDraws.filter((draw) => {
+                          const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                          return drawGames.some(
+                            (g) =>
+                              memberTeamIds.includes(g.team1Id) || memberTeamIds.includes(g.team2Id)
+                          );
+                        })
+                      : dateDraws;
+
                   return (
                     <div key={date}>
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                         {formatDateDisplay(date)}
                       </h3>
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">Bye week</span>
-                      </div>
-                    </div>
-                  );
-                }
-
-                // When "Show my games", only show draw cards that have at least one game for the user's teams
-                const drawsToShow = showMineOnly && memberTeamIds.length > 0
-                  ? dateDraws.filter((draw) => {
-                      const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
-                      return drawGames.some((g) => memberTeamIds.includes(g.team1Id) || memberTeamIds.includes(g.team2Id));
-                    })
-                  : dateDraws;
-
-                return (
-                  <div key={date}>
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                      {formatDateDisplay(date)}
-                    </h3>
-                    <div className="space-y-3">
-                      {drawsToShow.map((draw) => {
-                        const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
-                        return (
-                          <div
-                            key={`${draw.date}-${draw.time}`}
-                            className="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div>
-                                <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                  {formatTime(draw.time)}
-                                  {draw.isExtra && (
-                                    <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-                                      Extra
-                                    </span>
-                                  )}
+                      <div className="space-y-3">
+                        {drawsToShow.map((draw) => {
+                          const drawGames = gamesByDrawKey.get(`${draw.date}|${draw.time}`) ?? [];
+                          return (
+                            <div
+                              key={`${draw.date}-${draw.time}`}
+                              className="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                                    {formatTime(draw.time)}
+                                    {draw.isExtra && (
+                                      <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                                        Extra
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            <div className="text-sm text-gray-700 dark:text-gray-300">
-                              {drawGames.length === 0 ? (
-                                <span className="text-gray-500 dark:text-gray-400">
-                                  No games scheduled.
-                                </span>
-                              ) : (
-                                <div className="space-y-1">
-                                  {drawGames.map((game) => {
-                                    const winnerId = getWinnerTeamId(game);
-                                    const t1Label = teamLabelById.get(game.team1Id);
-                                    const t2Label = teamLabelById.get(game.team2Id);
-                                    return (
-                                      <div key={game.id} className="flex flex-wrap items-center gap-2">
-                                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                                          {game.sheetName || 'Sheet TBD'}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => openGameDetails(game)}
-                                          className="font-medium text-gray-800 dark:text-gray-100 hover:text-primary-teal hover:underline"
+                              <div className="text-sm text-gray-700 dark:text-gray-300">
+                                {drawGames.length === 0 ? (
+                                  <span className="text-gray-500 dark:text-gray-400">
+                                    No games scheduled.
+                                  </span>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {drawGames.map((game) => {
+                                      const winnerId = getWinnerTeamId(game);
+                                      const t1Label = teamLabelById.get(game.team1Id);
+                                      const t2Label = teamLabelById.get(game.team2Id);
+                                      return (
+                                        <div
+                                          key={game.id}
+                                          className="flex flex-wrap items-center gap-2"
                                         >
-                                          <span className={winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''}>
-                                            {t1Label}
+                                          <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                            {game.sheetName || 'Sheet TBD'}
                                           </span>
-                                          {' vs '}
-                                          <span className={winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''}>
-                                            {t2Label}
-                                          </span>
-                                        </button>
-                                        {formatResultSummary(game) && (
-                                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                                            ({formatResultSummary(game)})
-                                          </span>
-                                        )}
-                                        {canManage && (
                                           <button
                                             type="button"
-                                            onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
-                                            className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                                            title="Edit game"
-                                            aria-label="Edit game"
+                                            onClick={() => openGameDetails(game)}
+                                            className="font-medium text-gray-800 dark:text-gray-100 hover:text-primary-teal hover:underline"
                                           >
-                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                            </svg>
+                                            <span
+                                              className={
+                                                winnerId === game.team1Id
+                                                  ? 'font-semibold text-primary-teal'
+                                                  : ''
+                                              }
+                                            >
+                                              {t1Label}
+                                            </span>
+                                            {' vs '}
+                                            <span
+                                              className={
+                                                winnerId === game.team2Id
+                                                  ? 'font-semibold text-primary-teal'
+                                                  : ''
+                                              }
+                                            >
+                                              {t2Label}
+                                            </span>
                                           </button>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                                          {formatResultSummary(game) && (
+                                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                                              ({formatResultSummary(game)})
+                                            </span>
+                                          )}
+                                          {canManage && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                openGameModal(game);
+                                              }}
+                                              className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                                              title="Edit game"
+                                              aria-label="Edit game"
+                                            >
+                                              <svg
+                                                className="h-4 w-4"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                              >
+                                                <path
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                  strokeWidth={2}
+                                                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                                />
+                                              </svg>
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {!showMineOnly && byeTeams.length > 0 && (
-                      <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                        <span className="font-medium text-gray-600 dark:text-gray-300">Bye:</span>{' '}
-                        {byeTeams.map((team) => team.name || `Team ${team.id}`).join(', ')}
+                          );
+                        })}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
+                      {!showMineOnly && byeTeams.length > 0 && (
+                        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                          <span className="font-medium text-gray-600 dark:text-gray-300">Bye:</span>{' '}
+                          {byeTeams.map((team) => team.name || `Team ${team.id}`).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()
+        )}
       </section>
 
       {canManage && (
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Unscheduled games</h3>
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Unscheduled games
+          </h3>
           {unscheduledGames.length === 0 && invalidScheduledGames.length === 0 ? (
             <div className="text-sm text-gray-500 dark:text-gray-400">No unscheduled games.</div>
           ) : (
             <div className="space-y-2">
-            {unscheduledGames.map((game) => {
+              {unscheduledGames.map((game) => {
                 const winnerId = getWinnerTeamId(game);
                 const t1Label = teamLabelById.get(game.team1Id);
                 const t2Label = teamLabelById.get(game.team2Id);
                 return (
-                <div
-                  key={game.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 px-3 py-2"
-                >
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openGameDetails(game)}
-                    className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-teal hover:underline"
+                  <div
+                    key={game.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 px-3 py-2"
                   >
-                    <span className={winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''}>
-                      {t1Label}
-                    </span>
-                    {' vs '}
-                    <span className={winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''}>
-                      {t2Label}
-                    </span>
-                  </button>
-                  {formatResultSummary(game) && (
-                    <span className="text-sm text-gray-500 dark:text-gray-400">({formatResultSummary(game)})</span>
-                  )}
-                  {canManage && (
-                    <>
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
-                        className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                        title="Edit game"
-                        aria-label="Edit game"
+                        onClick={() => openGameDetails(game)}
+                        className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-teal hover:underline"
                       >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
+                        <span
+                          className={
+                            winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''
+                          }
+                        >
+                          {t1Label}
+                        </span>
+                        {' vs '}
+                        <span
+                          className={
+                            winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''
+                          }
+                        >
+                          {t2Label}
+                        </span>
                       </button>
-                      <Button onClick={() => handleDeleteGame(game)} variant="danger">
-                        Delete
-                      </Button>
-                    </>
-                  )}
-                </div>
-                </div>
-              );
+                      {formatResultSummary(game) && (
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          ({formatResultSummary(game)})
+                        </span>
+                      )}
+                      {canManage && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openGameModal(game);
+                            }}
+                            className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                            title="Edit game"
+                            aria-label="Edit game"
+                          >
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
+                            </svg>
+                          </button>
+                          <Button onClick={() => handleDeleteGame(game)} variant="danger">
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
               })}
               {invalidScheduledGames.map((game) => (
                 <div
@@ -827,13 +946,26 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                       <>
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); openGameModal(game); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openGameModal(game);
+                          }}
                           className="rounded p-1 text-amber-600 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-800"
                           title="Edit game"
                           aria-label="Edit game"
                         >
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                            />
                           </svg>
                         </button>
                         <Button onClick={() => handleDeleteGame(game)} variant="danger">
@@ -884,232 +1016,251 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
 
           {(!editingGame || editTab === 'details') && (
             <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <input
-              id="unscheduled"
-              type="checkbox"
-              checked={gameForm.status === 'unscheduled'}
-              onChange={(event) =>
-                setGameForm((prev) => ({
-                  ...prev,
-                  status: event.target.checked ? 'unscheduled' : 'scheduled',
-                  ...(event.target.checked ? { gameDate: '', gameTime: '', sheetId: '' } : {}),
-                }))
-              }
-              className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
-            />
-            <label htmlFor="unscheduled" className="text-sm text-gray-700 dark:text-gray-300">
-              Unscheduled game
-            </label>
-          </div>
-
-          {gameForm.status !== 'unscheduled' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Draw time
-                </label>
-                <select
-                  value={addingDrawTime ? '__add__' : selectedDrawKey}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (value === '__add__') {
-                      setAddingDrawTime(true);
-                      setGameForm((prev) => ({
-                        ...prev,
-                        gameDate: '',
-                        gameTime: '',
-                        sheetId: '',
-                      }));
-                      return;
-                    }
-                    const [date, time] = value.split('|');
-                    setAddingDrawTime(false);
-                    setExtraDrawForm({ date: '', time: '' });
-                    const drawTeamIds = new Set<number>();
-                    games.forEach((game) => {
-                      if (editingGame && game.id === editingGame.id) return;
-                      if (game.status !== 'scheduled' || !game.gameDate || !game.gameTime) return;
-                      const key = `${game.gameDate}|${game.gameTime}`;
-                      if (key !== `${date}|${time}`) return;
-                      drawTeamIds.add(game.team1Id);
-                      drawTeamIds.add(game.team2Id);
-                    });
+              <div className="flex items-center gap-2">
+                <input
+                  id="unscheduled"
+                  type="checkbox"
+                  checked={gameForm.status === 'unscheduled'}
+                  onChange={(event) =>
                     setGameForm((prev) => ({
                       ...prev,
-                      gameDate: date || '',
-                      gameTime: time || '',
-                      sheetId: '',
-                      team1Id: drawTeamIds.has(Number(prev.team1Id)) ? '' : prev.team1Id,
-                      team2Id: drawTeamIds.has(Number(prev.team2Id)) ? '' : prev.team2Id,
-                    }));
-                  }}
+                      status: event.target.checked ? 'unscheduled' : 'scheduled',
+                      ...(event.target.checked ? { gameDate: '', gameTime: '', sheetId: '' } : {}),
+                    }))
+                  }
+                  className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
+                />
+                <label htmlFor="unscheduled" className="text-sm text-gray-700 dark:text-gray-300">
+                  Unscheduled game
+                </label>
+              </div>
+
+              {gameForm.status !== 'unscheduled' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Draw time
+                    </label>
+                    <select
+                      value={addingDrawTime ? '__add__' : selectedDrawKey}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value === '__add__') {
+                          setAddingDrawTime(true);
+                          setGameForm((prev) => ({
+                            ...prev,
+                            gameDate: '',
+                            gameTime: '',
+                            sheetId: '',
+                          }));
+                          return;
+                        }
+                        const [date, time] = value.split('|');
+                        setAddingDrawTime(false);
+                        setExtraDrawForm({ date: '', time: '' });
+                        const drawTeamIds = new Set<number>();
+                        games.forEach((game) => {
+                          if (editingGame && game.id === editingGame.id) return;
+                          if (game.status !== 'scheduled' || !game.gameDate || !game.gameTime)
+                            return;
+                          const key = `${game.gameDate}|${game.gameTime}`;
+                          if (key !== `${date}|${time}`) return;
+                          drawTeamIds.add(game.team1Id);
+                          drawTeamIds.add(game.team2Id);
+                        });
+                        setGameForm((prev) => ({
+                          ...prev,
+                          gameDate: date || '',
+                          gameTime: time || '',
+                          sheetId: '',
+                          team1Id: drawTeamIds.has(Number(prev.team1Id)) ? '' : prev.team1Id,
+                          team2Id: drawTeamIds.has(Number(prev.team2Id)) ? '' : prev.team2Id,
+                        }));
+                      }}
+                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                    >
+                      <option value="">Select draw time</option>
+                      {drawSlots.map((slot) => (
+                        <option
+                          key={`${slot.date}|${slot.time}`}
+                          value={`${slot.date}|${slot.time}`}
+                        >
+                          {formatDateDisplay(slot.date)} · {formatTime(slot.time)}
+                          {slot.isExtra ? ' (Extra)' : ''}
+                        </option>
+                      ))}
+                      <option value="__add__">Add draw time</option>
+                    </select>
+                  </div>
+
+                  {addingDrawTime && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          New draw date
+                        </label>
+                        <input
+                          type="date"
+                          value={extraDrawForm.date}
+                          onChange={(event) =>
+                            setExtraDrawForm({ ...extraDrawForm, date: event.target.value })
+                          }
+                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          New draw time
+                        </label>
+                        <input
+                          type="time"
+                          value={extraDrawForm.time}
+                          onChange={(event) =>
+                            setExtraDrawForm({ ...extraDrawForm, time: event.target.value })
+                          }
+                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {!addingDrawTime && selectedDrawKey && availableSheetsForDrawCount === 0 && (
+                    <div className="text-sm text-amber-700 dark:text-amber-200">
+                      There are no available sheets during the selected draw time.
+                    </div>
+                  )}
+
+                  {!addingDrawTime && selectedDrawKey && availableTeamsForDrawCount < 2 && (
+                    <div className="text-sm text-amber-700 dark:text-amber-200">
+                      Not enough teams are available for a game. Are they already scheduled during
+                      this draw?
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Sheet
+                    </label>
+                    {addingDrawTime ? (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {sheets.map((sheet) => (
+                          <label
+                            key={sheet.id}
+                            className="flex items-center gap-2 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm"
+                          >
+                            <input
+                              type="radio"
+                              name="sheet"
+                              value={sheet.id}
+                              checked={gameForm.sheetId === String(sheet.id)}
+                              onChange={(event) =>
+                                setGameForm({ ...gameForm, sheetId: event.target.value })
+                              }
+                              className="text-primary-teal focus:ring-primary-teal"
+                            />
+                            {sheet.name}
+                          </label>
+                        ))}
+                      </div>
+                    ) : !selectedDrawSlot ? (
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        Select a draw time to see sheet options.
+                      </div>
+                    ) : (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {selectedDrawSlot.sheets.map((sheet) => {
+                          const sheetKey = `${selectedDrawSlot.date}|${selectedDrawSlot.time}|${sheet.id}`;
+                          const hasGameOnSheet = games.some((game) => {
+                            if (editingGame && game.id === editingGame.id) return false;
+                            if (
+                              game.status !== 'scheduled' ||
+                              !game.gameDate ||
+                              !game.gameTime ||
+                              !game.sheetId
+                            )
+                              return false;
+                            return `${game.gameDate}|${game.gameTime}|${game.sheetId}` === sheetKey;
+                          });
+                          const isDisabled = hasGameOnSheet || !sheet.isAvailable;
+                          return (
+                            <label
+                              key={sheet.id}
+                              className={`flex items-center gap-2 rounded border px-3 py-2 text-sm ${
+                                isDisabled
+                                  ? 'border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-800/60'
+                                  : 'border-gray-200 dark:border-gray-700'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="sheet"
+                                value={sheet.id}
+                                checked={gameForm.sheetId === String(sheet.id)}
+                                onChange={(event) =>
+                                  setGameForm({ ...gameForm, sheetId: event.target.value })
+                                }
+                                disabled={isDisabled}
+                                className="text-primary-teal focus:ring-primary-teal"
+                              />
+                              {sheet.name}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Team 1
+                </label>
+                <select
+                  value={gameForm.team1Id}
+                  onChange={(event) =>
+                    setGameForm((prev) => ({
+                      ...prev,
+                      team1Id: event.target.value,
+                      team2Id: prev.team2Id === event.target.value ? '' : prev.team2Id,
+                    }))
+                  }
                   className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                  required
                 >
-                  <option value="">Select draw time</option>
-                  {drawSlots.map((slot) => (
-                    <option key={`${slot.date}|${slot.time}`} value={`${slot.date}|${slot.time}`}>
-                      {formatDateDisplay(slot.date)} · {formatTime(slot.time)}
-                      {slot.isExtra ? ' (Extra)' : ''}
+                  <option value="">Select team</option>
+                  {filteredTeam1Options.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.label}
                     </option>
                   ))}
-                  <option value="__add__">Add draw time</option>
                 </select>
               </div>
 
-              {addingDrawTime && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      New draw date
-                    </label>
-                    <input
-                      type="date"
-                      value={extraDrawForm.date}
-                      onChange={(event) => setExtraDrawForm({ ...extraDrawForm, date: event.target.value })}
-                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      New draw time
-                    </label>
-                    <input
-                      type="time"
-                      value={extraDrawForm.time}
-                      onChange={(event) => setExtraDrawForm({ ...extraDrawForm, time: event.target.value })}
-                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {!addingDrawTime && selectedDrawKey && availableSheetsForDrawCount === 0 && (
-                <div className="text-sm text-amber-700 dark:text-amber-200">
-                  There are no available sheets during the selected draw time.
-                </div>
-              )}
-
-              {!addingDrawTime && selectedDrawKey && availableTeamsForDrawCount < 2 && (
-                <div className="text-sm text-amber-700 dark:text-amber-200">
-                  Not enough teams are available for a game. Are they already scheduled during this draw?
-                </div>
-              )}
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Sheet
+                  Team 2
                 </label>
-                {addingDrawTime ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {sheets.map((sheet) => (
-                      <label
-                        key={sheet.id}
-                        className="flex items-center gap-2 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm"
-                      >
-                        <input
-                          type="radio"
-                          name="sheet"
-                          value={sheet.id}
-                          checked={gameForm.sheetId === String(sheet.id)}
-                          onChange={(event) => setGameForm({ ...gameForm, sheetId: event.target.value })}
-                          className="text-primary-teal focus:ring-primary-teal"
-                        />
-                        {sheet.name}
-                      </label>
-                    ))}
-                  </div>
-                ) : !selectedDrawSlot ? (
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Select a draw time to see sheet options.
-                  </div>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {selectedDrawSlot.sheets.map((sheet) => {
-                      const sheetKey = `${selectedDrawSlot.date}|${selectedDrawSlot.time}|${sheet.id}`;
-                      const hasGameOnSheet = games.some((game) => {
-                        if (editingGame && game.id === editingGame.id) return false;
-                        if (game.status !== 'scheduled' || !game.gameDate || !game.gameTime || !game.sheetId) return false;
-                        return `${game.gameDate}|${game.gameTime}|${game.sheetId}` === sheetKey;
-                      });
-                      const isDisabled = hasGameOnSheet || !sheet.isAvailable;
-                      return (
-                        <label
-                          key={sheet.id}
-                          className={`flex items-center gap-2 rounded border px-3 py-2 text-sm ${
-                            isDisabled
-                              ? 'border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-800/60'
-                              : 'border-gray-200 dark:border-gray-700'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="sheet"
-                            value={sheet.id}
-                            checked={gameForm.sheetId === String(sheet.id)}
-                            onChange={(event) => setGameForm({ ...gameForm, sheetId: event.target.value })}
-                            disabled={isDisabled}
-                            className="text-primary-teal focus:ring-primary-teal"
-                          />
-                          {sheet.name}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
+                <select
+                  value={gameForm.team2Id}
+                  onChange={(event) =>
+                    setGameForm((prev) => ({
+                      ...prev,
+                      team2Id: event.target.value,
+                      team1Id: prev.team1Id === event.target.value ? '' : prev.team1Id,
+                    }))
+                  }
+                  className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                  required
+                >
+                  <option value="">Select team</option>
+                  {filteredTeam2Options.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Team 1
-            </label>
-            <select
-              value={gameForm.team1Id}
-              onChange={(event) =>
-                setGameForm((prev) => ({
-                  ...prev,
-                  team1Id: event.target.value,
-                  team2Id: prev.team2Id === event.target.value ? '' : prev.team2Id,
-                }))
-              }
-              className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
-              required
-            >
-              <option value="">Select team</option>
-              {filteredTeam1Options.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Team 2
-            </label>
-            <select
-              value={gameForm.team2Id}
-              onChange={(event) =>
-                setGameForm((prev) => ({
-                  ...prev,
-                  team2Id: event.target.value,
-                  team1Id: prev.team1Id === event.target.value ? '' : prev.team1Id,
-                }))
-              }
-              className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
-              required
-            >
-              <option value="">Select team</option>
-              {filteredTeam2Options.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.label}
-                </option>
-              ))}
-            </select>
-          </div>
             </div>
           )}
 
@@ -1121,63 +1272,68 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                 </div>
               ) : (
                 <>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Enter a single point value for each team. Add tiebreakers (e.g. ends, total score) if needed.
-              </p>
-              {resultForm.team1Values.map((_, i) => (
-                <div key={i} className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      {teamLabelById.get(editingGame.team1Id)} — {resultLabels[i] ?? (i === 0 ? 'Points' : `Tiebreaker ${i + 1}`)}
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={resultForm.team1Values[i] ?? 0}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value, 10) || 0;
-                        setResultForm((prev) => {
-                          const next = [...prev.team1Values];
-                          next[i] = v;
-                          return { ...prev, team1Values: next };
-                        });
-                      }}
-                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      {teamLabelById.get(editingGame.team2Id)} — {resultLabels[i] ?? (i === 0 ? 'Points' : `Tiebreaker ${i + 1}`)}
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={resultForm.team2Values[i] ?? 0}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value, 10) || 0;
-                        setResultForm((prev) => {
-                          const next = [...prev.team2Values];
-                          next[i] = v;
-                          return { ...prev, team2Values: next };
-                        });
-                      }}
-                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() =>
-                  setResultForm((prev) => ({
-                    team1Values: [...prev.team1Values, 0],
-                    team2Values: [...prev.team2Values, 0],
-                  }))
-                }
-                className="text-sm text-primary-teal hover:underline"
-              >
-                {resultForm.team1Values.length === 1 ? 'Add first tiebreaker' : 'Add another tiebreaker'}
-              </button>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Enter a single point value for each team. Add tiebreakers (e.g. ends, total
+                    score) if needed.
+                  </p>
+                  {resultForm.team1Values.map((_, i) => (
+                    <div key={i} className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          {teamLabelById.get(editingGame.team1Id)} —{' '}
+                          {resultLabels[i] ?? (i === 0 ? 'Points' : `Tiebreaker ${i + 1}`)}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={resultForm.team1Values[i] ?? 0}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10) || 0;
+                            setResultForm((prev) => {
+                              const next = [...prev.team1Values];
+                              next[i] = v;
+                              return { ...prev, team1Values: next };
+                            });
+                          }}
+                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          {teamLabelById.get(editingGame.team2Id)} —{' '}
+                          {resultLabels[i] ?? (i === 0 ? 'Points' : `Tiebreaker ${i + 1}`)}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={resultForm.team2Values[i] ?? 0}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10) || 0;
+                            setResultForm((prev) => {
+                              const next = [...prev.team2Values];
+                              next[i] = v;
+                              return { ...prev, team2Values: next };
+                            });
+                          }}
+                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setResultForm((prev) => ({
+                        team1Values: [...prev.team1Values, 0],
+                        team2Values: [...prev.team2Values, 0],
+                      }))
+                    }
+                    className="text-sm text-primary-teal hover:underline"
+                  >
+                    {resultForm.team1Values.length === 1
+                      ? 'Add first tiebreaker'
+                      : 'Add another tiebreaker'}
+                  </button>
                 </>
               )}
             </div>
@@ -1221,8 +1377,15 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
 
       <Modal
         isOpen={detailsGame != null}
-        onClose={() => { setDetailsGame(null); setDetailsLineups(null); }}
-        title={detailsGame ? `${teamLabelById.get(detailsGame.team1Id)} vs ${teamLabelById.get(detailsGame.team2Id)}` : 'Game details'}
+        onClose={() => {
+          setDetailsGame(null);
+          setDetailsLineups(null);
+        }}
+        title={
+          detailsGame
+            ? `${teamLabelById.get(detailsGame.team1Id)} vs ${teamLabelById.get(detailsGame.team2Id)}`
+            : 'Game details'
+        }
       >
         {detailsGame && (
           <div className="space-y-4">
@@ -1238,7 +1401,9 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
             </div>
             {detailsGame.hasResult && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Result:</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  Result:
+                </span>
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   {(() => {
                     const winnerId = getWinnerTeamId(detailsGame);
@@ -1246,11 +1411,25 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                     const t2 = teamLabelById.get(detailsGame.team2Id);
                     return (
                       <>
-                        <span className={winnerId === detailsGame.team1Id ? 'font-semibold text-primary-teal' : ''}>{t1}</span>
-                        {' '}
-                        {formatResultSummary(detailsGame)}
-                        {' '}
-                        <span className={winnerId === detailsGame.team2Id ? 'font-semibold text-primary-teal' : ''}>{t2}</span>
+                        <span
+                          className={
+                            winnerId === detailsGame.team1Id
+                              ? 'font-semibold text-primary-teal'
+                              : ''
+                          }
+                        >
+                          {t1}
+                        </span>{' '}
+                        {formatResultSummary(detailsGame)}{' '}
+                        <span
+                          className={
+                            winnerId === detailsGame.team2Id
+                              ? 'font-semibold text-primary-teal'
+                              : ''
+                          }
+                        >
+                          {t2}
+                        </span>
                       </>
                     );
                   })()}
@@ -1258,14 +1437,24 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
               </div>
             )}
             <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Lineups</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Lineups
+              </div>
               {loadingDetailsLineups ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
               ) : detailsLineups ? (
                 <div className="space-y-3">
                   <div>
-                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">{teamLabelById.get(detailsGame.team1Id)}</div>
-                    <ul className={leagueFormat === 'teams' ? 'mt-2 space-y-1' : 'list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-0.5'}>
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                      {teamLabelById.get(detailsGame.team1Id)}
+                    </div>
+                    <ul
+                      className={
+                        leagueFormat === 'teams'
+                          ? 'mt-2 space-y-1'
+                          : 'list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-0.5'
+                      }
+                    >
                       {detailsLineups.team1Lineup.length === 0 ? (
                         <li className="text-gray-400">No roster</li>
                       ) : leagueFormat === 'teams' ? (
@@ -1277,7 +1466,10 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                               {roleLabels[role] ?? role}: {entry?.memberName ?? 'Unassigned'}
                               {suffix}
                               {entry?.isSpare && entry?.sparingForMemberName && (
-                                <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                                <span className="text-gray-500">
+                                  {' '}
+                                  (sparing for {entry.sparingForMemberName})
+                                </span>
                               )}
                             </li>
                           );
@@ -1287,7 +1479,10 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                           <li key={i} className="text-sm text-gray-600 dark:text-gray-400">
                             {entry.memberName}
                             {entry.isSpare && entry.sparingForMemberName && (
-                              <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                              <span className="text-gray-500">
+                                {' '}
+                                (sparing for {entry.sparingForMemberName})
+                              </span>
                             )}
                           </li>
                         ))
@@ -1295,8 +1490,16 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                     </ul>
                   </div>
                   <div>
-                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">{teamLabelById.get(detailsGame.team2Id)}</div>
-                    <ul className={leagueFormat === 'teams' ? 'mt-2 space-y-1' : 'list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-0.5'}>
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                      {teamLabelById.get(detailsGame.team2Id)}
+                    </div>
+                    <ul
+                      className={
+                        leagueFormat === 'teams'
+                          ? 'mt-2 space-y-1'
+                          : 'list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-0.5'
+                      }
+                    >
                       {detailsLineups.team2Lineup.length === 0 ? (
                         <li className="text-gray-400">No roster</li>
                       ) : leagueFormat === 'teams' ? (
@@ -1308,7 +1511,10 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                               {roleLabels[role] ?? role}: {entry?.memberName ?? 'Unassigned'}
                               {suffix}
                               {entry?.isSpare && entry?.sparingForMemberName && (
-                                <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                                <span className="text-gray-500">
+                                  {' '}
+                                  (sparing for {entry.sparingForMemberName})
+                                </span>
                               )}
                             </li>
                           );
@@ -1318,7 +1524,10 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                           <li key={i} className="text-sm text-gray-600 dark:text-gray-400">
                             {entry.memberName}
                             {entry.isSpare && entry.sparingForMemberName && (
-                              <span className="text-gray-500"> (sparing for {entry.sparingForMemberName})</span>
+                              <span className="text-gray-500">
+                                {' '}
+                                (sparing for {entry.sparingForMemberName})
+                              </span>
                             )}
                           </li>
                         ))
@@ -1326,9 +1535,7 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
                     </ul>
                   </div>
                   {leagueFormat === 'teams' && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      * Skip · ** Vice
-                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">* Skip · ** Vice</div>
                   )}
                 </div>
               ) : (
@@ -1354,7 +1561,6 @@ export default function LeagueSchedule({ leagueId, teams, canManage, memberTeamI
           </div>
         )}
       </Modal>
-
     </div>
   );
 }

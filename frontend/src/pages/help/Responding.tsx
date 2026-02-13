@@ -51,13 +51,15 @@ export default function Responding() {
                     </h2>
                     <ol className="list-decimal list-inside space-y-3">
                       <li>
-                        <strong>View spare requests</strong> on your dashboard - all public requests are visible to everyone
+                        <strong>View spare requests</strong> on your dashboard - all public requests
+                        are visible to everyone
                       </li>
                       <li>
                         <strong>Click "Sign Up"</strong> on any request you're available for
                       </li>
                       <li>
-                        <strong>Optionally add a comment</strong> with any relevant information (e.g., "I can arrive 15 minutes early")
+                        <strong>Optionally add a comment</strong> with any relevant information
+                        (e.g., "I can arrive 15 minutes early")
                       </li>
                       <li>
                         <strong>Confirm</strong> - the requester will be notified immediately
@@ -70,7 +72,9 @@ export default function Responding() {
                       What Happens When You Sign Up?
                     </h2>
                     <ul className="list-disc list-inside space-y-2">
-                      <li>The request is marked as "filled" and removed from other members' dashboards</li>
+                      <li>
+                        The request is marked as "filled" and removed from other members' dashboards
+                      </li>
                       <li>The requester receives an email and SMS notification</li>
                       <li>Your comment (if provided) is visible to the requester</li>
                       <li>The request appears in your "My upcoming sparing" section</li>
@@ -81,9 +85,7 @@ export default function Responding() {
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Canceling Your Spare Offer
                     </h2>
-                    <p className="mb-3">
-                      If you need to cancel after signing up:
-                    </p>
+                    <p className="mb-3">If you need to cancel after signing up:</p>
                     <ol className="list-decimal list-inside space-y-2">
                       <li>Go to "My upcoming sparing" on your dashboard</li>
                       <li>Click "Cancel sparing" on the request</li>
@@ -97,20 +99,37 @@ export default function Responding() {
                       Which Requests Can You See?
                     </h2>
                     <p className="mb-3">
-                      All public spare requests are visible to everyone on their dashboard, regardless of availability:
+                      All public spare requests are visible to everyone on their dashboard,
+                      regardless of availability:
                     </p>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Public requests:</strong> All members can see all public requests on their dashboard</li>
-                      <li><strong>Private requests:</strong> Only visible if you were specifically invited</li>
-                      <li><strong>Future games only:</strong> Past games are automatically filtered out</li>
+                      <li>
+                        <strong>Public requests:</strong> All members can see all public requests on
+                        their dashboard
+                      </li>
+                      <li>
+                        <strong>Private requests:</strong> Only visible if you were specifically
+                        invited
+                      </li>
+                      <li>
+                        <strong>Future games only:</strong> Past games are automatically filtered
+                        out
+                      </li>
                     </ul>
                     <p className="mt-3 mb-3">
-                      <strong>Note:</strong> While all public requests are visible, your availability settings determine:
+                      <strong>Note:</strong> While all public requests are visible, your
+                      availability settings determine:
                     </p>
                     <ul className="list-disc list-inside space-y-2">
                       <li>Which requests you receive email/SMS notifications about</li>
-                      <li>Which requests you can respond to (you can only sign up if your availability matches)</li>
-                      <li>For skip position requests: You can only respond if you've indicated you're comfortable playing skip</li>
+                      <li>
+                        Which requests you can respond to (you can only sign up if your availability
+                        matches)
+                      </li>
+                      <li>
+                        For skip position requests: You can only respond if you've indicated you're
+                        comfortable playing skip
+                      </li>
                     </ul>
                   </section>
 
@@ -119,10 +138,21 @@ export default function Responding() {
                       Tips
                     </h2>
                     <ul className="list-disc list-inside space-y-2">
-                      <li>Sign up as soon as you know you're available - others may be looking too</li>
-                      <li>Include helpful comments when signing up (e.g., arrival time, experience level)</li>
-                      <li>If you need to cancel, do so as early as possible to give the requester time to find another spare</li>
-                      <li>Keep your availability up to date so you receive notifications for relevant requests</li>
+                      <li>
+                        Sign up as soon as you know you're available - others may be looking too
+                      </li>
+                      <li>
+                        Include helpful comments when signing up (e.g., arrival time, experience
+                        level)
+                      </li>
+                      <li>
+                        If you need to cancel, do so as early as possible to give the requester time
+                        to find another spare
+                      </li>
+                      <li>
+                        Keep your availability up to date so you receive notifications for relevant
+                        requests
+                      </li>
                     </ul>
                   </section>
                 </div>

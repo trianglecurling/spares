@@ -45,11 +45,14 @@ export function ProtectedRoute({
 
   if (
     leagueManagerOnly &&
-    !(member.isAdmin || member.isLeagueAdministrator || (member.leagueManagerLeagueIds?.length ?? 0) > 0)
+    !(
+      member.isAdmin ||
+      member.isLeagueAdministrator ||
+      (member.leagueManagerLeagueIds?.length ?? 0) > 0
+    )
   ) {
     return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
 }
-

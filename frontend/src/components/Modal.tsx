@@ -61,15 +61,13 @@ export default function Modal({
           className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
           onClick={onClose}
         />
-        
+
         <div
           ref={modalRef}
           className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl ${sizeClasses[size]} w-full p-4 sm:p-6 max-h-[95vh] flex flex-col`}
         >
           <div className="flex justify-between items-center mb-4 flex-shrink-0">
-            <h3 className="text-lg font-semibold text-[#121033] dark:text-gray-100">
-              {title}
-            </h3>
+            <h3 className="text-lg font-semibold text-[#121033] dark:text-gray-100">{title}</h3>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
@@ -77,7 +75,9 @@ export default function Modal({
               <HiXMark className="w-6 h-6" />
             </button>
           </div>
-          <div className={`flex-1 ${contentOverflowClasses[contentOverflow]} flex flex-col min-h-0`}>
+          <div
+            className={`flex-1 ${contentOverflowClasses[contentOverflow]} flex flex-col min-h-0`}
+          >
             {children}
           </div>
         </div>
@@ -85,4 +85,3 @@ export default function Modal({
     </div>
   );
 }
-

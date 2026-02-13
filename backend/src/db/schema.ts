@@ -852,6 +852,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE team_bye_requests DROP COLUMN draw_time', table: 'team_bye_requests', column: '_drop_draw_time' },
     { sql: 'ALTER TABLE league_teams ADD COLUMN prefer_late_draw INTEGER DEFAULT 0', table: 'league_teams', column: 'prefer_late_draw' },
     { sql: 'ALTER TABLE members ADD COLUMN is_calendar_admin INTEGER DEFAULT 0', table: 'members', column: 'is_calendar_admin' },
+    { sql: 'ALTER TABLE calendar_events ADD COLUMN description TEXT', table: 'calendar_events', column: 'description' },
   ];
 
   for (const migration of migrations) {
@@ -1543,6 +1544,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE team_bye_requests DROP COLUMN draw_time',
     'ALTER TABLE league_teams ADD COLUMN prefer_late_draw INTEGER DEFAULT 0',
     'ALTER TABLE members ADD COLUMN is_calendar_admin INTEGER DEFAULT 0',
+    'ALTER TABLE calendar_events ADD COLUMN description TEXT',
   ];
 
   for (const migrationSQL of migrations) {

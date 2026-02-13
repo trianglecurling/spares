@@ -155,8 +155,14 @@ export default function LeagueScheduleGeneration({
   const [byeTeamEditLoading, setByeTeamEditLoading] = useState(false);
   const [byeTeamEditSaving, setByeTeamEditSaving] = useState(false);
 
-  const { generate, isGenerating, progress, result, error: genError, reset: resetGenerator } =
-    useScheduleGenerator();
+  const {
+    generate,
+    isGenerating,
+    progress,
+    result,
+    error: genError,
+    reset: resetGenerator,
+  } = useScheduleGenerator();
   const [committing, setCommitting] = useState(false);
   const [includeUnscheduled, setIncludeUnscheduled] = useState(false);
   /** 0 = no optimization, 100 = 5 minutes of iterations */
@@ -184,7 +190,7 @@ export default function LeagueScheduleGeneration({
 
   const teamNameMap = useMemo(
     () => new Map(teams.map((t) => [t.id, t.name ?? `Team ${t.id}`])),
-    [teams],
+    [teams]
   );
 
   /** All unique sheet objects across draw slots, sorted by id. */
@@ -210,7 +216,10 @@ export default function LeagueScheduleGeneration({
       const response = await getUntyped('/leagues/{id}/bye-requests', undefined, {
         id: String(leagueId),
       });
-      const data = response as { requests?: TeamByeRequest[]; preferLateDrawByTeam?: Record<number, boolean> } | null;
+      const data = response as {
+        requests?: TeamByeRequest[];
+        preferLateDrawByTeam?: Record<number, boolean>;
+      } | null;
       if (data && Array.isArray(data.requests)) {
         setByeRequests(data.requests);
         setPreferLateDrawByTeam(data.preferLateDrawByTeam ?? {});
@@ -242,7 +251,9 @@ export default function LeagueScheduleGeneration({
   const loadLeagueSettings = async () => {
     setLoadingSettings(true);
     try {
-      const res = await getUntyped('/leagues/{id}/settings', undefined, { id: String(leagueId) }) as { collectByeRequests?: boolean };
+      const res = (await getUntyped('/leagues/{id}/settings', undefined, {
+        id: String(leagueId),
+      })) as { collectByeRequests?: boolean };
       setCollectByeRequests(res?.collectByeRequests ?? true);
     } catch {
       setCollectByeRequests(true);
@@ -254,9 +265,13 @@ export default function LeagueScheduleGeneration({
   const loadExistingGames = async () => {
     setLoadingGames(true);
     try {
-      const response = await getUntyped('/leagues/{id}/games', { includeUnscheduled: true }, {
-        id: String(leagueId),
-      });
+      const response = await getUntyped(
+        '/leagues/{id}/games',
+        { includeUnscheduled: true },
+        {
+          id: String(leagueId),
+        }
+      );
       setExistingGames((response ?? []) as ExistingGame[]);
     } catch (error: unknown) {
       showAlert(formatApiError(error, 'Failed to load existing games'), 'error');
@@ -267,9 +282,7 @@ export default function LeagueScheduleGeneration({
 
   /** Set of "date|time" keys for draw slots that already have scheduled games. */
   const occupiedSlotKeys = new Set(
-    existingGames
-      .filter((g) => g.gameDate && g.gameTime)
-      .map((g) => `${g.gameDate}|${g.gameTime}`),
+    existingGames.filter((g) => g.gameDate && g.gameTime).map((g) => `${g.gameDate}|${g.gameTime}`)
   );
 
   useEffect(() => {
@@ -316,10 +329,7 @@ export default function LeagueScheduleGeneration({
   }, [drawSlots]);
 
   /** League has 2+ draw times (e.g. early and late draw). */
-  const hasTwoDraws = useMemo(
-    () => new Set(drawSlots.map((s) => s.time)).size >= 2,
-    [drawSlots],
-  );
+  const hasTwoDraws = useMemo(() => new Set(drawSlots.map((s) => s.time)).size >= 2, [drawSlots]);
 
   const openTeamByeEditModal = async (teamId: number) => {
     setEditingByeTeamId(teamId);
@@ -327,11 +337,18 @@ export default function LeagueScheduleGeneration({
     setPreferLateDraw(false);
     setByeTeamEditLoading(true);
     try {
-      const byesRes = await getUntyped('/leagues/{leagueId}/teams/{teamId}/bye-requests', undefined, {
-        leagueId: String(leagueId),
-        teamId: String(teamId),
-      });
-      const data = byesRes as { byeRequests?: Array<{ drawDate: string; priority: number }>; preferLateDraw?: boolean } | null;
+      const byesRes = await getUntyped(
+        '/leagues/{leagueId}/teams/{teamId}/bye-requests',
+        undefined,
+        {
+          leagueId: String(leagueId),
+          teamId: String(teamId),
+        }
+      );
+      const data = byesRes as {
+        byeRequests?: Array<{ drawDate: string; priority: number }>;
+        preferLateDraw?: boolean;
+      } | null;
       const byes = data?.byeRequests ?? [];
       const prio: Record<string, number> = {};
       byes.forEach((b) => {
@@ -373,11 +390,10 @@ export default function LeagueScheduleGeneration({
         body: unknown,
         pathParams?: Record<string, string>
       ) => Promise<unknown>;
-      await putUntyped(
-        '/leagues/{leagueId}/teams/{teamId}/bye-requests',
-        body,
-        { leagueId: String(leagueId), teamId: String(editingByeTeamId) }
-      );
+      await putUntyped('/leagues/{leagueId}/teams/{teamId}/bye-requests', body, {
+        leagueId: String(leagueId),
+        teamId: String(editingByeTeamId),
+      });
       showAlert('Bye requests saved.', 'success');
       await loadByeRequests();
       closeTeamByeEditModal();
@@ -433,7 +449,15 @@ export default function LeagueScheduleGeneration({
     }
     setHardConstraints((prev) => [
       ...prev,
-      { type: 'matchup', localId: nextConstraintLocalId(), team1Id, team2Id, drawDate, drawTime, sheetId },
+      {
+        type: 'matchup',
+        localId: nextConstraintLocalId(),
+        team1Id,
+        team2Id,
+        drawDate,
+        drawTime,
+        sheetId,
+      },
     ]);
     setConstraintModalOpen(false);
   };
@@ -460,10 +484,7 @@ export default function LeagueScheduleGeneration({
         const [d, t] = k.split('|');
         return `${formatDateDisplay(d)} ${formatTime(t)}`;
       });
-      showAlert(
-        `Cannot use draw slots that already have games: ${labels.join(', ')}`,
-        'warning',
-      );
+      showAlert(`Cannot use draw slots that already have games: ${labels.join(', ')}`, 'warning');
       return;
     }
     const next: RoundRobinStrategy = {
@@ -475,9 +496,7 @@ export default function LeagueScheduleGeneration({
       drawSlotKeys: strategyForm.drawSlotKeys,
     };
     if (editingStrategy) {
-      setStrategies((prev) =>
-        prev.map((s) => (s.localId === editingStrategy.localId ? next : s))
-      );
+      setStrategies((prev) => prev.map((s) => (s.localId === editingStrategy.localId ? next : s)));
     } else {
       setStrategies((prev) => [...prev, next]);
     }
@@ -588,7 +607,7 @@ export default function LeagueScheduleGeneration({
       await postUntyped(
         '/leagues/{id}/games/bulk',
         { games: gamesToCommit },
-        { id: String(leagueId) },
+        { id: String(leagueId) }
       );
       showAlert(`${gamesToCommit.length} games saved.`, 'success');
       resetGenerator();
@@ -604,8 +623,16 @@ export default function LeagueScheduleGeneration({
     if (!canManage) return;
     setSavingCollectByeRequests(true);
     try {
-      const putUntyped = put as (path: string, body: unknown, pathParams?: Record<string, string>) => Promise<unknown>;
-      await putUntyped('/leagues/{id}/settings', { collectByeRequests: checked }, { id: String(leagueId) });
+      const putUntyped = put as (
+        path: string,
+        body: unknown,
+        pathParams?: Record<string, string>
+      ) => Promise<unknown>;
+      await putUntyped(
+        '/leagues/{id}/settings',
+        { collectByeRequests: checked },
+        { id: String(leagueId) }
+      );
       setCollectByeRequests(checked);
     } catch (error: unknown) {
       showAlert(formatApiError(error, 'Failed to update setting'), 'error');
@@ -618,7 +645,9 @@ export default function LeagueScheduleGeneration({
 
   if (loading) {
     return (
-      <div className="text-sm text-gray-500 dark:text-gray-400">Loading schedule generation settings…</div>
+      <div className="text-sm text-gray-500 dark:text-gray-400">
+        Loading schedule generation settings…
+      </div>
     );
   }
 
@@ -626,7 +655,9 @@ export default function LeagueScheduleGeneration({
     <div className="space-y-8">
       {canManage && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Bye request collection</h2>
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            Bye request collection
+          </h2>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -635,9 +666,7 @@ export default function LeagueScheduleGeneration({
               disabled={savingCollectByeRequests}
               onClick={() => handleCollectByeRequestsToggle(!collectByeRequests)}
               className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
-                collectByeRequests
-                  ? 'bg-primary-teal'
-                  : 'bg-gray-200 dark:bg-gray-600'
+                collectByeRequests ? 'bg-primary-teal' : 'bg-gray-200 dark:bg-gray-600'
               } ${savingCollectByeRequests ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <span
@@ -655,16 +684,15 @@ export default function LeagueScheduleGeneration({
             )}
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            When enabled, league members will see an &quot;Update bye requests&quot; button on the league Overview.
+            When enabled, league members will see an &quot;Update bye requests&quot; button on the
+            league Overview.
           </p>
         </section>
       )}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            Rounds
-          </h2>
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Rounds</h2>
           {canManage && (
             <Button onClick={() => openStrategyModal()} variant="secondary">
               Add round
@@ -672,12 +700,14 @@ export default function LeagueScheduleGeneration({
           )}
         </div>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Rounds are applied in priority order (lower number first). Each round defines how many times each pair
-          of teams plays and whether games are within one division (intra) or across divisions (cross).
+          Rounds are applied in priority order (lower number first). Each round defines how many
+          times each pair of teams plays and whether games are within one division (intra) or across
+          divisions (cross).
         </p>
         {strategies.length === 0 ? (
           <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-            No strategies configured. Add one to define how many games per team and intra/cross division.
+            No strategies configured. Add one to define how many games per team and intra/cross
+            division.
           </div>
         ) : (
           <ul className="space-y-2">
@@ -690,7 +720,9 @@ export default function LeagueScheduleGeneration({
                   className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3"
                 >
                   <div>
-                    <span className="font-medium text-gray-800 dark:text-gray-200">Priority {s.priority}</span>
+                    <span className="font-medium text-gray-800 dark:text-gray-200">
+                      Priority {s.priority}
+                    </span>
                     <span className="mx-2 text-gray-400">·</span>
                     <span className="text-gray-600 dark:text-gray-300">
                       {s.isIntraDivision
@@ -698,9 +730,17 @@ export default function LeagueScheduleGeneration({
                         : 'Cross-division'}
                     </span>
                     <span className="mx-2 text-gray-400">·</span>
-                    <span className="text-gray-600 dark:text-gray-300">{s.gamesPerTeam === 1 ? 'Single RR' : s.gamesPerTeam === 2 ? 'Double RR' : `${s.gamesPerTeam}x RR`}</span>
+                    <span className="text-gray-600 dark:text-gray-300">
+                      {s.gamesPerTeam === 1
+                        ? 'Single RR'
+                        : s.gamesPerTeam === 2
+                          ? 'Double RR'
+                          : `${s.gamesPerTeam}x RR`}
+                    </span>
                     <span className="mx-2 text-gray-400">·</span>
-                    <span className="text-gray-600 dark:text-gray-300">{s.drawSlotKeys.length} {s.drawSlotKeys.length === 1 ? 'draw' : 'draws'}</span>
+                    <span className="text-gray-600 dark:text-gray-300">
+                      {s.drawSlotKeys.length} {s.drawSlotKeys.length === 1 ? 'draw' : 'draws'}
+                    </span>
                   </div>
                   {canManage && (
                     <div className="flex gap-2">
@@ -725,7 +765,8 @@ export default function LeagueScheduleGeneration({
           </summary>
           <div className="px-4 pb-4 pt-0 space-y-4 border-t border-gray-200 dark:border-gray-700">
             <p className="text-sm text-gray-600 dark:text-gray-400 pt-3">
-              Teams can request specific draw times as byes. Lower priority number means higher preference (1 = highest). Edit per team to set or change bye priorities.
+              Teams can request specific draw times as byes. Lower priority number means higher
+              preference (1 = highest). Edit per team to set or change bye priorities.
             </p>
             {teams.length === 0 ? (
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-6 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -757,11 +798,15 @@ export default function LeagueScheduleGeneration({
                             {team.name ?? `Team ${team.id}`}
                           </span>
                           <span className="mx-2 text-gray-400">·</span>
-                          <span className="text-gray-600 dark:text-gray-300">{team.divisionName}</span>
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {team.divisionName}
+                          </span>
                           <span className="mx-2 text-gray-400">·</span>
                           <span className="text-gray-500 dark:text-gray-400">{summary}</span>
                           {prefersLate && (
-                            <span className="ml-2 text-gray-500 dark:text-gray-400">· Prefers late draw</span>
+                            <span className="ml-2 text-gray-500 dark:text-gray-400">
+                              · Prefers late draw
+                            </span>
                           )}
                         </div>
                         {canManage && (
@@ -786,7 +831,9 @@ export default function LeagueScheduleGeneration({
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Hard constraints</h2>
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                Hard constraints
+              </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                 Require specific outcomes in the generated schedule.
               </p>
@@ -808,15 +855,22 @@ export default function LeagueScheduleGeneration({
                     {c.type === 'bye' ? (
                       <>
                         <span className="font-medium">Bye week:</span>{' '}
-                        {teams.find((t) => t.id === c.teamId)?.name ?? `Team ${c.teamId}`} on {formatDateDisplay(c.drawDate)}
+                        {teams.find((t) => t.id === c.teamId)?.name ?? `Team ${c.teamId}`} on{' '}
+                        {formatDateDisplay(c.drawDate)}
                       </>
                     ) : (
                       <>
                         <span className="font-medium">Match-up:</span>{' '}
                         {teams.find((t) => t.id === c.team1Id)?.name ?? `Team ${c.team1Id}`} vs{' '}
-                        {teams.find((t) => t.id === c.team2Id)?.name ?? `Team ${c.team2Id}`} at {formatDateDisplay(c.drawDate)} {formatTime(c.drawTime)}
+                        {teams.find((t) => t.id === c.team2Id)?.name ?? `Team ${c.team2Id}`} at{' '}
+                        {formatDateDisplay(c.drawDate)} {formatTime(c.drawTime)}
                         {c.sheetId != null && (
-                          <> · {drawSlots.flatMap((d) => d.sheets).find((s) => s.id === c.sheetId)?.name ?? `Sheet ${c.sheetId}`}</>
+                          <>
+                            {' '}
+                            ·{' '}
+                            {drawSlots.flatMap((d) => d.sheets).find((s) => s.id === c.sheetId)
+                              ?.name ?? `Sheet ${c.sheetId}`}
+                          </>
                         )}
                       </>
                     )}
@@ -863,10 +917,14 @@ export default function LeagueScheduleGeneration({
             {hardConstraintForm.type === 'bye' ? (
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Team</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Team
+                  </label>
                   <select
                     value={hardConstraintForm.teamId}
-                    onChange={(e) => setHardConstraintForm((f) => ({ ...f, teamId: e.target.value }))}
+                    onChange={(e) =>
+                      setHardConstraintForm((f) => ({ ...f, teamId: e.target.value }))
+                    }
                     className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
                   >
                     <option value="">Select team</option>
@@ -881,10 +939,14 @@ export default function LeagueScheduleGeneration({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bye date</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Bye date
+                  </label>
                   <select
                     value={hardConstraintForm.drawDate}
-                    onChange={(e) => setHardConstraintForm((f) => ({ ...f, drawDate: e.target.value }))}
+                    onChange={(e) =>
+                      setHardConstraintForm((f) => ({ ...f, drawDate: e.target.value }))
+                    }
                     className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
                   >
                     <option value="">Select date</option>
@@ -900,10 +962,14 @@ export default function LeagueScheduleGeneration({
               <div className="space-y-3">
                 <div className="flex flex-wrap gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Team 1</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Team 1
+                    </label>
                     <select
                       value={hardConstraintForm.team1Id}
-                      onChange={(e) => setHardConstraintForm((f) => ({ ...f, team1Id: e.target.value }))}
+                      onChange={(e) =>
+                        setHardConstraintForm((f) => ({ ...f, team1Id: e.target.value }))
+                      }
                       className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
                     >
                       <option value="">Select team</option>
@@ -918,10 +984,14 @@ export default function LeagueScheduleGeneration({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Team 2</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Team 2
+                    </label>
                     <select
                       value={hardConstraintForm.team2Id}
-                      onChange={(e) => setHardConstraintForm((f) => ({ ...f, team2Id: e.target.value }))}
+                      onChange={(e) =>
+                        setHardConstraintForm((f) => ({ ...f, team2Id: e.target.value }))
+                      }
                       className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
                     >
                       <option value="">Select team</option>
@@ -938,7 +1008,9 @@ export default function LeagueScheduleGeneration({
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Draw</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Draw
+                    </label>
                     <select
                       value={
                         hardConstraintForm.drawDate && hardConstraintForm.drawTime
@@ -948,11 +1020,21 @@ export default function LeagueScheduleGeneration({
                       onChange={(e) => {
                         const v = e.target.value;
                         if (!v) {
-                          setHardConstraintForm((f) => ({ ...f, drawDate: '', drawTime: '', sheetId: '' }));
+                          setHardConstraintForm((f) => ({
+                            ...f,
+                            drawDate: '',
+                            drawTime: '',
+                            sheetId: '',
+                          }));
                           return;
                         }
                         const [date, time] = v.split('|');
-                        setHardConstraintForm((f) => ({ ...f, drawDate: date ?? '', drawTime: time ?? '', sheetId: '' }));
+                        setHardConstraintForm((f) => ({
+                          ...f,
+                          drawDate: date ?? '',
+                          drawTime: time ?? '',
+                          sheetId: '',
+                        }));
                       }}
                       className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[180px]"
                     >
@@ -964,7 +1046,10 @@ export default function LeagueScheduleGeneration({
                           return d !== 0 ? d : (a.time ?? '').localeCompare(b.time ?? '');
                         })
                         .map((slot) => (
-                          <option key={`${slot.date}|${slot.time}`} value={`${slot.date}|${slot.time}`}>
+                          <option
+                            key={`${slot.date}|${slot.time}`}
+                            value={`${slot.date}|${slot.time}`}
+                          >
                             {formatDateDisplay(slot.date)} {formatTime(slot.time)}
                           </option>
                         ))}
@@ -972,15 +1057,21 @@ export default function LeagueScheduleGeneration({
                   </div>
                   {(() => {
                     const slot = drawSlots.find(
-                      (s) => s.date === hardConstraintForm.drawDate && s.time === hardConstraintForm.drawTime
+                      (s) =>
+                        s.date === hardConstraintForm.drawDate &&
+                        s.time === hardConstraintForm.drawTime
                     );
                     const sheets = slot?.sheets ?? [];
                     return (
                       <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Sheet (optional)</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                          Sheet (optional)
+                        </label>
                         <select
                           value={hardConstraintForm.sheetId}
-                          onChange={(e) => setHardConstraintForm((f) => ({ ...f, sheetId: e.target.value }))}
+                          onChange={(e) =>
+                            setHardConstraintForm((f) => ({ ...f, sheetId: e.target.value }))
+                          }
                           disabled={sheets.length === 0}
                           className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[120px]"
                         >
@@ -998,11 +1089,17 @@ export default function LeagueScheduleGeneration({
               </div>
             )}
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" onClick={() => setConstraintModalOpen(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setConstraintModalOpen(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" variant="primary">
-                {hardConstraintForm.type === 'bye' ? 'Add bye constraint' : 'Add match-up constraint'}
+                {hardConstraintForm.type === 'bye'
+                  ? 'Add bye constraint'
+                  : 'Add match-up constraint'}
               </Button>
             </div>
           </form>
@@ -1011,32 +1108,37 @@ export default function LeagueScheduleGeneration({
 
       {canManage && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Generate schedule</h2>
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            Generate schedule
+          </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Use the strategies and bye requests above, then generate a schedule preview. You can review and commit or
-            adjust before saving.
+            Use the strategies and bye requests above, then generate a schedule preview. You can
+            review and commit or adjust before saving.
           </p>
           <div className="space-y-2">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Optimization
                 <span className="ml-2 font-normal text-gray-500 dark:text-gray-400">
-                {optimizationLevel === 0
-                  ? 'None (0 iterations)'
-                  : (() => {
-                      const totalSeconds = Math.round((optimizationLevel / 100) * 5 * 60);
-                      if (totalSeconds >= 60) {
-                        const mins = Math.floor(totalSeconds / 60);
-                        const secs = totalSeconds % 60;
-                        return secs > 0 ? `${mins}m ${secs}s` : `${mins} minute${mins !== 1 ? 's' : ''}`;
-                      }
-                      return `${totalSeconds}s`;
-                    })()}
-              </span>
-            </label>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-              Decide how much time to spend optimizing the schedule. This specifies how long it will take to generate your schedule.
-            </p>
+                  {optimizationLevel === 0
+                    ? 'None (0 iterations)'
+                    : (() => {
+                        const totalSeconds = Math.round((optimizationLevel / 100) * 5 * 60);
+                        if (totalSeconds >= 60) {
+                          const mins = Math.floor(totalSeconds / 60);
+                          const secs = totalSeconds % 60;
+                          return secs > 0
+                            ? `${mins}m ${secs}s`
+                            : `${mins} minute${mins !== 1 ? 's' : ''}`;
+                        }
+                        return `${totalSeconds}s`;
+                      })()}
+                </span>
+              </label>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                Decide how much time to spend optimizing the schedule. This specifies how long it
+                will take to generate your schedule.
+              </p>
             </div>
             <input
               type="range"
@@ -1110,159 +1212,179 @@ export default function LeagueScheduleGeneration({
 
               {/* Summary line */}
               <div className="text-sm text-gray-700 dark:text-gray-300">
-                <span className="font-medium">{result.games.length}</span> scheduled game{result.games.length !== 1 ? 's' : ''}
+                <span className="font-medium">{result.games.length}</span> scheduled game
+                {result.games.length !== 1 ? 's' : ''}
                 {result.unschedulable.length > 0 && (
                   <span>
-                    , <span className="font-medium text-amber-600 dark:text-amber-400">{result.unschedulable.length}</span> unschedulable
+                    ,{' '}
+                    <span className="font-medium text-amber-600 dark:text-amber-400">
+                      {result.unschedulable.length}
+                    </span>{' '}
+                    unschedulable
                   </span>
                 )}
               </div>
 
               {/* Schedule grid */}
-              {result.games.length > 0 && (() => {
-                // Group games by draw (date|time)
-                const gamesByDraw = new Map<string, typeof result.games>();
-                for (const g of result.games) {
-                  const dk = `${g.gameDate}|${g.gameTime}`;
-                  const list = gamesByDraw.get(dk) ?? [];
-                  list.push(g);
-                  gamesByDraw.set(dk, list);
-                }
-                // Sort draws chronologically
-                const drawKeys = [...gamesByDraw.keys()].sort();
-                // Build bye lookup for highlighting (keyed by date)
-                const byeByDate = new Map<string, Set<number>>();
-                for (const b of byeRequests) {
-                  const s = byeByDate.get(b.drawDate) ?? new Set();
-                  s.add(b.teamId);
-                  byeByDate.set(b.drawDate, s);
-                }
-                // Group draw keys by date (week)
-                const drawKeysByDate = new Map<string, string[]>();
-                for (const dk of drawKeys) {
-                  const [date] = dk.split('|');
-                  const list = drawKeysByDate.get(date) ?? [];
-                  list.push(dk);
-                  drawKeysByDate.set(date, list);
-                }
-                const sortedDates = [...drawKeysByDate.keys()].sort();
-
-                // Build set of all team ids involved in the schedule
-                const allTeamIds = new Set<number>();
-                for (const g of result.games) {
-                  allTeamIds.add(g.team1Id);
-                  allTeamIds.add(g.team2Id);
-                }
-
-                return sortedDates.map((date, dateIdx) => {
-                  const dateDrawKeys = drawKeysByDate.get(date) ?? [];
-
-                  // Determine which teams play on this date (any draw)
-                  const teamsPlayingThisDate = new Set<number>();
-                  for (const dk of dateDrawKeys) {
-                    const games = gamesByDraw.get(dk) ?? [];
-                    for (const g of games) {
-                      teamsPlayingThisDate.add(g.team1Id);
-                      teamsPlayingThisDate.add(g.team2Id);
-                    }
+              {result.games.length > 0 &&
+                (() => {
+                  // Group games by draw (date|time)
+                  const gamesByDraw = new Map<string, typeof result.games>();
+                  for (const g of result.games) {
+                    const dk = `${g.gameDate}|${g.gameTime}`;
+                    const list = gamesByDraw.get(dk) ?? [];
+                    list.push(g);
+                    gamesByDraw.set(dk, list);
                   }
-                  // Teams on bye = teams not playing any draw this date
-                  const byeTeamIds = [...allTeamIds].filter((id) => !teamsPlayingThisDate.has(id));
-                  byeTeamIds.sort((a, b) => {
-                    const nameA = teamNameMap.get(a) ?? '';
-                    const nameB = teamNameMap.get(b) ?? '';
-                    return nameA.localeCompare(nameB);
-                  });
+                  // Sort draws chronologically
+                  const drawKeys = [...gamesByDraw.keys()].sort();
+                  // Build bye lookup for highlighting (keyed by date)
+                  const byeByDate = new Map<string, Set<number>>();
+                  for (const b of byeRequests) {
+                    const s = byeByDate.get(b.drawDate) ?? new Set();
+                    s.add(b.teamId);
+                    byeByDate.set(b.drawDate, s);
+                  }
+                  // Group draw keys by date (week)
+                  const drawKeysByDate = new Map<string, string[]>();
+                  for (const dk of drawKeys) {
+                    const [date] = dk.split('|');
+                    const list = drawKeysByDate.get(date) ?? [];
+                    list.push(dk);
+                    drawKeysByDate.set(date, list);
+                  }
+                  const sortedDates = [...drawKeysByDate.keys()].sort();
 
-                  return (
-                    <div key={date} className={dateIdx > 0 ? 'mt-6' : ''}>
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        {formatDateDisplay(date)}
-                      </h4>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm border-collapse">
-                          <thead>
-                            <tr>
-                              <th className="sticky left-0 z-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">
-                                Draw
-                              </th>
-                              {allSheets.map((sheet) => (
-                                <th
-                                  key={sheet.id}
-                                  className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium bg-gray-50 dark:bg-gray-900"
-                                >
-                                  {sheet.name}
+                  // Build set of all team ids involved in the schedule
+                  const allTeamIds = new Set<number>();
+                  for (const g of result.games) {
+                    allTeamIds.add(g.team1Id);
+                    allTeamIds.add(g.team2Id);
+                  }
+
+                  return sortedDates.map((date, dateIdx) => {
+                    const dateDrawKeys = drawKeysByDate.get(date) ?? [];
+
+                    // Determine which teams play on this date (any draw)
+                    const teamsPlayingThisDate = new Set<number>();
+                    for (const dk of dateDrawKeys) {
+                      const games = gamesByDraw.get(dk) ?? [];
+                      for (const g of games) {
+                        teamsPlayingThisDate.add(g.team1Id);
+                        teamsPlayingThisDate.add(g.team2Id);
+                      }
+                    }
+                    // Teams on bye = teams not playing any draw this date
+                    const byeTeamIds = [...allTeamIds].filter(
+                      (id) => !teamsPlayingThisDate.has(id)
+                    );
+                    byeTeamIds.sort((a, b) => {
+                      const nameA = teamNameMap.get(a) ?? '';
+                      const nameB = teamNameMap.get(b) ?? '';
+                      return nameA.localeCompare(nameB);
+                    });
+
+                    return (
+                      <div key={date} className={dateIdx > 0 ? 'mt-6' : ''}>
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          {formatDateDisplay(date)}
+                        </h4>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm border-collapse">
+                            <thead>
+                              <tr>
+                                <th className="sticky left-0 z-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">
+                                  Draw
                                 </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {dateDrawKeys.map((dk) => {
-                              const [, time] = dk.split('|');
-                              const games = gamesByDraw.get(dk) ?? [];
-                              const gameBySheet = new Map<number, (typeof result.games)[number]>();
-                              for (const g of games) {
-                                gameBySheet.set(g.sheetId, g);
-                              }
-                              const byeTeamsForDate = byeByDate.get(date);
-                              return (
-                                <tr key={dk}>
-                                  <td className="sticky left-0 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
-                                    {formatTime(time)}
-                                  </td>
-                                  {allSheets.map((sheet) => {
-                                    const game = gameBySheet.get(sheet.id);
-                                    if (!game) {
+                                {allSheets.map((sheet) => (
+                                  <th
+                                    key={sheet.id}
+                                    className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium bg-gray-50 dark:bg-gray-900"
+                                  >
+                                    {sheet.name}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {dateDrawKeys.map((dk) => {
+                                const [, time] = dk.split('|');
+                                const games = gamesByDraw.get(dk) ?? [];
+                                const gameBySheet = new Map<
+                                  number,
+                                  (typeof result.games)[number]
+                                >();
+                                for (const g of games) {
+                                  gameBySheet.set(g.sheetId, g);
+                                }
+                                const byeTeamsForDate = byeByDate.get(date);
+                                return (
+                                  <tr key={dk}>
+                                    <td className="sticky left-0 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+                                      {formatTime(time)}
+                                    </td>
+                                    {allSheets.map((sheet) => {
+                                      const game = gameBySheet.get(sheet.id);
+                                      if (!game) {
+                                        return (
+                                          <td
+                                            key={sheet.id}
+                                            className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-400 dark:text-gray-600"
+                                          >
+                                            —
+                                          </td>
+                                        );
+                                      }
+                                      const hasByeConflict =
+                                        byeTeamsForDate &&
+                                        (byeTeamsForDate.has(game.team1Id) ||
+                                          byeTeamsForDate.has(game.team2Id));
                                       return (
                                         <td
                                           key={sheet.id}
-                                          className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-400 dark:text-gray-600"
+                                          className={`border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-sm ${
+                                            hasByeConflict
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300'
+                                              : 'text-gray-800 dark:text-gray-200'
+                                          }`}
                                         >
-                                          —
+                                          <div className="whitespace-nowrap">
+                                            {teamNameMap.get(game.team1Id) ?? `#${game.team1Id}`}
+                                          </div>
+                                          <div className="text-xs text-gray-400 dark:text-gray-500">
+                                            vs
+                                          </div>
+                                          <div className="whitespace-nowrap">
+                                            {teamNameMap.get(game.team2Id) ?? `#${game.team2Id}`}
+                                          </div>
                                         </td>
                                       );
-                                    }
-                                    const hasByeConflict = byeTeamsForDate && (byeTeamsForDate.has(game.team1Id) || byeTeamsForDate.has(game.team2Id));
-                                    return (
-                                      <td
-                                        key={sheet.id}
-                                        className={`border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-sm ${
-                                          hasByeConflict
-                                            ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300'
-                                            : 'text-gray-800 dark:text-gray-200'
-                                        }`}
-                                      >
-                                        <div className="whitespace-nowrap">
-                                          {teamNameMap.get(game.team1Id) ?? `#${game.team1Id}`}
-                                        </div>
-                                        <div className="text-xs text-gray-400 dark:text-gray-500">vs</div>
-                                        <div className="whitespace-nowrap">
-                                          {teamNameMap.get(game.team2Id) ?? `#${game.team2Id}`}
-                                        </div>
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      {byeTeamIds.length > 0 && (
-                        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                          <span className="font-medium text-gray-600 dark:text-gray-300">Bye:</span>{' '}
-                          {byeTeamIds.map((id) => teamNameMap.get(id) ?? `#${id}`).join(', ')}
+                                    })}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
+                        {byeTeamIds.length > 0 && (
+                          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                            <span className="font-medium text-gray-600 dark:text-gray-300">
+                              Bye:
+                            </span>{' '}
+                            {byeTeamIds.map((id) => teamNameMap.get(id) ?? `#${id}`).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
 
               {/* Unschedulable matchups */}
               {result.unschedulable.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Unschedulable matchups</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Unschedulable matchups
+                  </h3>
                   <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                     {result.unschedulable.map((u, i) => (
                       <li key={i}>
@@ -1294,13 +1416,27 @@ export default function LeagueScheduleGeneration({
                     <table className="min-w-full text-sm border-collapse">
                       <thead>
                         <tr className="bg-gray-50 dark:bg-gray-900">
-                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">Team</th>
-                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">Games</th>
-                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">As T1</th>
-                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">As T2</th>
-                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">Draw times</th>
-                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">Sheets</th>
-                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">Bye conflicts</th>
+                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">
+                            Team
+                          </th>
+                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">
+                            Games
+                          </th>
+                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">
+                            As T1
+                          </th>
+                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">
+                            As T2
+                          </th>
+                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">
+                            Draw times
+                          </th>
+                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-gray-700 dark:text-gray-300 font-medium">
+                            Sheets
+                          </th>
+                          <th className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center text-gray-700 dark:text-gray-300 font-medium">
+                            Bye conflicts
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1324,8 +1460,12 @@ export default function LeagueScheduleGeneration({
                                 return `${sheet?.name ?? `#${sid}`}: ${c}`;
                               })
                               .join(', ');
-                            const highByeConflicts = ts.byeConflicts.filter((c) => c.priority <= 2).length;
-                            const lowByeConflicts = ts.byeConflicts.filter((c) => c.priority > 2).length;
+                            const highByeConflicts = ts.byeConflicts.filter(
+                              (c) => c.priority <= 2
+                            ).length;
+                            const lowByeConflicts = ts.byeConflicts.filter(
+                              (c) => c.priority > 2
+                            ).length;
                             return (
                               <tr key={ts.teamId}>
                                 <td className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-gray-800 dark:text-gray-200 font-medium whitespace-nowrap">
@@ -1348,11 +1488,15 @@ export default function LeagueScheduleGeneration({
                                 </td>
                                 <td className="border border-gray-200 dark:border-gray-700 px-3 py-2 text-center">
                                   {highByeConflicts > 0 && (
-                                    <span className="text-red-600 dark:text-red-400 font-medium">{highByeConflicts}</span>
+                                    <span className="text-red-600 dark:text-red-400 font-medium">
+                                      {highByeConflicts}
+                                    </span>
                                   )}
                                   {highByeConflicts > 0 && lowByeConflicts > 0 && ' / '}
                                   {lowByeConflicts > 0 && (
-                                    <span className="text-amber-600 dark:text-amber-400">{lowByeConflicts}</span>
+                                    <span className="text-amber-600 dark:text-amber-400">
+                                      {lowByeConflicts}
+                                    </span>
                                   )}
                                   {highByeConflicts === 0 && lowByeConflicts === 0 && (
                                     <span className="text-gray-400 dark:text-gray-500">0</span>
@@ -1406,7 +1550,12 @@ export default function LeagueScheduleGeneration({
                 type="number"
                 min={0}
                 value={strategyForm.priority}
-                onChange={(e) => setStrategyForm((prev) => ({ ...prev, priority: parseInt(e.target.value, 10) || 0 }))}
+                onChange={(e) =>
+                  setStrategyForm((prev) => ({
+                    ...prev,
+                    priority: parseInt(e.target.value, 10) || 0,
+                  }))
+                }
                 className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
               />
             </div>
@@ -1426,10 +1575,14 @@ export default function LeagueScheduleGeneration({
             </div>
             {strategyForm.isIntraDivision && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Division</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Division
+                </label>
                 <select
                   value={strategyForm.divisionId}
-                  onChange={(e) => setStrategyForm((prev) => ({ ...prev, divisionId: e.target.value }))}
+                  onChange={(e) =>
+                    setStrategyForm((prev) => ({ ...prev, divisionId: e.target.value }))
+                  }
                   className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
                 >
                   <option value="">Select division</option>
@@ -1446,14 +1599,18 @@ export default function LeagueScheduleGeneration({
                 Games per opponent
               </label>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                How many times each pair of teams plays each other. 1 = single round robin, 2 = double, etc.
+                How many times each pair of teams plays each other. 1 = single round robin, 2 =
+                double, etc.
               </p>
               <input
                 type="number"
                 min={1}
                 value={strategyForm.gamesPerTeam}
                 onChange={(e) =>
-                  setStrategyForm((prev) => ({ ...prev, gamesPerTeam: parseInt(e.target.value, 10) || 1 }))
+                  setStrategyForm((prev) => ({
+                    ...prev,
+                    gamesPerTeam: parseInt(e.target.value, 10) || 1,
+                  }))
                 }
                 className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
               />
@@ -1469,7 +1626,9 @@ export default function LeagueScheduleGeneration({
                     const selectableKeys = drawSlots
                       .map((s) => `${s.date}|${s.time}`)
                       .filter((k) => !occupiedSlotKeys.has(k));
-                    const allSelected = selectableKeys.every((k) => strategyForm.drawSlotKeys.includes(k));
+                    const allSelected = selectableKeys.every((k) =>
+                      strategyForm.drawSlotKeys.includes(k)
+                    );
                     setStrategyForm((prev) => ({
                       ...prev,
                       drawSlotKeys: allSelected ? [] : selectableKeys,
@@ -1494,7 +1653,9 @@ export default function LeagueScheduleGeneration({
                     <label
                       key={key}
                       className={`flex items-center gap-2 text-sm px-1 py-0.5 rounded ${
-                        occupied ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'
+                        occupied
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'
                       }`}
                     >
                       <input
@@ -1516,13 +1677,17 @@ export default function LeagueScheduleGeneration({
                         )}
                       </span>
                       {occupied && (
-                        <span className="ml-auto text-xs text-red-500 dark:text-red-400">has games</span>
+                        <span className="ml-auto text-xs text-red-500 dark:text-red-400">
+                          has games
+                        </span>
                       )}
                     </label>
                   );
                 })}
                 {drawSlots.length === 0 && (
-                  <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">No draw slots available.</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                    No draw slots available.
+                  </div>
                 )}
               </div>
             </div>
@@ -1530,9 +1695,7 @@ export default function LeagueScheduleGeneration({
               <Button type="button" variant="secondary" onClick={() => setStrategyModalOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">
-                {editingStrategy ? 'Update' : 'Add'}
-              </Button>
+              <Button type="submit">{editingStrategy ? 'Update' : 'Add'}</Button>
             </div>
           </form>
         </Modal>
@@ -1546,7 +1709,8 @@ export default function LeagueScheduleGeneration({
         >
           <form onSubmit={handleSaveTeamByeRequests} className="space-y-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Assign a priority to any draw date you want as a bye. Lower number = higher preference (1 = most preferred). Leave blank for no preference.
+              Assign a priority to any draw date you want as a bye. Lower number = higher preference
+              (1 = most preferred). Leave blank for no preference.
             </p>
             {byeTeamEditLoading ? (
               <div className="text-sm text-gray-500 dark:text-gray-400">Loading draw schedule…</div>
@@ -1592,7 +1756,9 @@ export default function LeagueScheduleGeneration({
                   );
                 })}
                 {uniqueDrawDates.length === 0 && !byeTeamEditLoading && (
-                  <div className="text-sm text-gray-500 dark:text-gray-400">No draw dates for this league.</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    No draw dates for this league.
+                  </div>
                 )}
               </div>
             )}

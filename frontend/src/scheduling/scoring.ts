@@ -8,12 +8,12 @@ import type { GeneratedGame, ScheduleByeRequest, TeamStats } from './types';
 // Remaining constraints are weighted soft constraints:
 
 export const WEIGHT_DRAW_FILL_BALANCE = 15_000; // #4: even fill across active draws
-export const WEIGHT_BYE_PRIORITY_1 = 10_000;    // #5: top bye request (priority 1)
-export const WEIGHT_DRAW_TIME_BALANCE = 5_000;  // #6: draw time balance
-export const WEIGHT_BYE_PRIORITY_2 = 1_000;     // #7: 2nd choice bye (priority 2)
-export const WEIGHT_SHEET_BALANCE = 500;         // #8: sheet balance
-export const WEIGHT_BYE_PRIORITY_LOW = 100;      // #9: additional byes (priority 3+)
-export const WEIGHT_POSITION_BALANCE = 50;       // #10: team 1/2 balance
+export const WEIGHT_BYE_PRIORITY_1 = 10_000; // #5: top bye request (priority 1)
+export const WEIGHT_DRAW_TIME_BALANCE = 5_000; // #6: draw time balance
+export const WEIGHT_BYE_PRIORITY_2 = 1_000; // #7: 2nd choice bye (priority 2)
+export const WEIGHT_SHEET_BALANCE = 500; // #8: sheet balance
+export const WEIGHT_BYE_PRIORITY_LOW = 100; // #9: additional byes (priority 3+)
+export const WEIGHT_POSITION_BALANCE = 50; // #10: team 1/2 balance
 
 // SA compactness weights – constraints #3 & #4 rank above all soft constraints
 export const WEIGHT_COMPACTNESS_EXTRA_DRAW = 100_000;
@@ -29,7 +29,7 @@ export const WEIGHT_COMPACTNESS_EXCESS_EMPTIES = 30_000;
  */
 export function byePenalty(
   game: GeneratedGame,
-  byeRequestsByDate: Map<string, ScheduleByeRequest[]>,
+  byeRequestsByDate: Map<string, ScheduleByeRequest[]>
 ): number {
   const requests = byeRequestsByDate.get(game.gameDate);
   if (!requests) return 0;
@@ -62,9 +62,7 @@ function variance(values: number[]): number {
 /**
  * Build a bye-request lookup map keyed by date.
  */
-export function buildByeMap(
-  byeRequests: ScheduleByeRequest[],
-): Map<string, ScheduleByeRequest[]> {
+export function buildByeMap(byeRequests: ScheduleByeRequest[]): Map<string, ScheduleByeRequest[]> {
   const map = new Map<string, ScheduleByeRequest[]>();
   for (const req of byeRequests) {
     const list = map.get(req.drawDate) ?? [];
@@ -80,7 +78,7 @@ export function buildByeMap(
 export function computeTeamStats(
   games: GeneratedGame[],
   teamIds: number[],
-  byeRequestsByDate: Map<string, ScheduleByeRequest[]>,
+  byeRequestsByDate: Map<string, ScheduleByeRequest[]>
 ): TeamStats[] {
   const statsMap = new Map<number, TeamStats>();
 
@@ -135,7 +133,7 @@ export function computeTeamStats(
 export function totalScheduleScore(
   games: GeneratedGame[],
   teamIds: number[],
-  byeRequestsByDate: Map<string, ScheduleByeRequest[]>,
+  byeRequestsByDate: Map<string, ScheduleByeRequest[]>
 ): number {
   let score = 0;
 
@@ -175,7 +173,7 @@ export function totalScheduleScore(
 export function compactnessScore(
   games: GeneratedGame[],
   drawCapacities: Map<string, number>,
-  numSheets: number,
+  numSheets: number
 ): number {
   if (games.length === 0) return 0;
 

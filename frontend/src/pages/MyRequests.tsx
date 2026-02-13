@@ -78,7 +78,9 @@ export default function MyRequests() {
   const [inviting, setInviting] = useState(false);
   const [invitationStatuses, setInvitationStatuses] = useState<InvitationStatusRow[]>([]);
   const [loadingInvitations, setLoadingInvitations] = useState(false);
-  const [notificationStatuses, setNotificationStatuses] = useState<Record<number, NotificationStatus>>({});
+  const [notificationStatuses, setNotificationStatuses] = useState<
+    Record<number, NotificationStatus>
+  >({});
   const [pausing, setPausing] = useState<number | null>(null);
   const [notification, setNotification] = useState<{
     isOpen: boolean;
@@ -103,10 +105,12 @@ export default function MyRequests() {
 
       try {
         const statusPromises = openRequests.map((req) =>
-          get('/spares/{id}/notification-status', undefined, { id: String(req.id) }).then((res) => ({
-            id: req.id,
-            status: res,
-          }))
+          get('/spares/{id}/notification-status', undefined, { id: String(req.id) }).then(
+            (res) => ({
+              id: req.id,
+              status: res,
+            })
+          )
         );
 
         const results = await Promise.all(statusPromises);
@@ -172,12 +176,14 @@ export default function MyRequests() {
 
     try {
       await post('/spares/{id}/cancel', undefined, { id: String(id) });
-      setRequests(requests.map((r) => (
-        r.id === id
-          ? { ...r, status: 'cancelled', cancelledByName: member?.name || r.cancelledByName }
-          : r
-      )));
-      
+      setRequests(
+        requests.map((r) =>
+          r.id === id
+            ? { ...r, status: 'cancelled', cancelledByName: member?.name || r.cancelledByName }
+            : r
+        )
+      );
+
       // Show success notification
       if (request) {
         setNotification({
@@ -209,7 +215,7 @@ export default function MyRequests() {
         { message: reissueMessage || undefined },
         { id: String(reissueRequest.id) }
       );
-      
+
       if (response.notificationsQueued !== undefined) {
         showAlert(
           `Re-issued spare request. ${response.notificationsQueued} notification(s) queued. Notifications will be sent gradually.`,
@@ -221,7 +227,7 @@ export default function MyRequests() {
           'success'
         );
       }
-      
+
       await loadRequests();
       setReissueRequest(null);
       setReissueMessage('');
@@ -293,7 +299,10 @@ export default function MyRequests() {
     try {
       const res = await post('/spares/{id}/make-public', undefined, { id: String(request.id) });
       if (res?.notificationsQueued !== undefined) {
-        showAlert(`Converted to public. ${res.notificationsQueued} notification(s) queued.`, 'success');
+        showAlert(
+          `Converted to public. ${res.notificationsQueued} notification(s) queued.`,
+          'success'
+        );
       } else if (res?.notificationsSent !== undefined) {
         showAlert(`Converted to public. ${res.notificationsSent} notification(s) sent.`, 'success');
       } else {
@@ -312,8 +321,10 @@ export default function MyRequests() {
       await post('/spares/{id}/pause-notifications', undefined, { id: String(id) });
       await loadRequests();
       // Reload notification statuses
-      const statusResponse = await get('/spares/{id}/notification-status', undefined, { id: String(id) });
-      setNotificationStatuses(prev => ({
+      const statusResponse = await get('/spares/{id}/notification-status', undefined, {
+        id: String(id),
+      });
+      setNotificationStatuses((prev) => ({
         ...prev,
         [id]: statusResponse,
       }));
@@ -331,8 +342,10 @@ export default function MyRequests() {
       await post('/spares/{id}/unpause-notifications', undefined, { id: String(id) });
       await loadRequests();
       // Reload notification statuses
-      const statusResponse = await get('/spares/{id}/notification-status', undefined, { id: String(id) });
-      setNotificationStatuses(prev => ({
+      const statusResponse = await get('/spares/{id}/notification-status', undefined, {
+        id: String(id),
+      });
+      setNotificationStatuses((prev) => ({
         ...prev,
         [id]: statusResponse,
       }));
@@ -359,7 +372,7 @@ export default function MyRequests() {
       const lastSent = new Date(request.notificationsSentAt);
       const now = new Date();
       const hoursSinceLastSent = (now.getTime() - lastSent.getTime()) / (1000 * 60 * 60);
-      
+
       if (hoursSinceLastSent >= 72) {
         return true;
       }
@@ -396,7 +409,9 @@ export default function MyRequests() {
     };
 
     return (
-      <span className={`px-2 py-1 rounded text-sm font-medium ${colors[status as keyof typeof colors]}`}>
+      <span
+        className={`px-2 py-1 rounded text-sm font-medium ${colors[status as keyof typeof colors]}`}
+      >
         {status === 'open' ? 'Unfilled' : status.charAt(0).toUpperCase() + status.slice(1)}
       </span>
     );
@@ -454,98 +469,108 @@ export default function MyRequests() {
 
                     <div className="text-gray-600 dark:text-gray-400 space-y-1">
                       <p>
-                        <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
-                        at {formatTime(request.gameTime)}
+                        <span className="font-medium dark:text-gray-300">When:</span>{' '}
+                        {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
                       </p>
-                      {request.requesterId && request.requesterId !== member?.id && request.requesterName && (
-                        <p>
-                          <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
-                          {renderMe(request.requesterName, member?.name)}
-                        </p>
-                      )}
+                      {request.requesterId &&
+                        request.requesterId !== member?.id &&
+                        request.requesterName && (
+                          <p>
+                            <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+                            {renderMe(request.requesterName, member?.name)}
+                          </p>
+                        )}
                       <p>
                         <span className="font-medium dark:text-gray-300">Type:</span>{' '}
                         {request.requestType === 'public' ? 'Public' : 'Private'}
                       </p>
-                      {request.status === 'open' && request.requestType === 'private' && request.inviteCounts && (
-                        <div className="mt-1">
-                          <p className="text-sm text-gray-700 dark:text-gray-300">
-                            <span className="font-medium">Invites:</span>{' '}
-                            {request.inviteCounts.pending} pending, {request.inviteCounts.declined} declined
-                          </p>
-                          {request.invites && request.invites.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {request.invites.map((i) => (
-                                <span
-                                  key={`${request.id}-${i.name}`}
-                                  className={`px-2 py-1 rounded text-xs font-medium ${
-                                    i.status === 'declined'
-                                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
-                                      : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'
-                                  }`}
-                                >
-                                  {i.name} • {i.status}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {request.message && (
-                        <p className="italic mt-2">"{request.message}"</p>
-                      )}
-                      {request.status === 'open' && request.requesterId === member?.id && notificationStatuses[request.id] && (
-                        <div className={`mt-3 p-3 rounded-md border ${
-                          (() => {
-                            const status = notificationStatuses[request.id];
-                            const allNotified = status.notifiedMembers === status.totalMembers;
-                            if (status.notificationStatus === 'completed' || allNotified) {
-                              return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-                            }
-                            if (status.notificationStatus === 'stopped') {
-                              return 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700';
-                            }
-                            return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
-                          })()
-                        }`}>
-                          {(() => {
-                            const status = notificationStatuses[request.id];
-                            const allNotified = status.notifiedMembers === status.totalMembers;
-                            
-                            // If all members are notified, show completed message even if status is 'in_progress'
-                            if (status.notificationStatus === 'completed' || allNotified) {
-                              return (
-                                <p className="text-sm text-green-800 dark:text-green-300">
-                                  <span className="font-medium">All notifications sent.</span>{' '}
-                                  {status.totalMembers} members notified.
-                                </p>
-                              );
-                            }
-                            
-                            if (status.notificationStatus === 'in_progress') {
-                              return (
-                                <p className="text-sm text-blue-800 dark:text-blue-300">
-                                  <span className="font-medium">Notifications in progress...</span>{' '}
-                                  {status.notifiedMembers} of {status.totalMembers} members notified.
-                                  {status.notificationPaused && (
-                                    <span className="ml-2 font-semibold text-orange-600 dark:text-orange-400">(Paused)</span>
-                                  )}
-                                </p>
-                              );
-                            }
-                            
-                            if (status.notificationStatus === 'stopped') {
-                              return (
-                                <p className="text-sm text-gray-600 dark:text-gray-400">
-                                  Notifications stopped (request filled or cancelled).
-                                </p>
-                              );
-                            }
-                            
-                            return null;
-                          })()}
-                        </div>
-                      )}
+                      {request.status === 'open' &&
+                        request.requestType === 'private' &&
+                        request.inviteCounts && (
+                          <div className="mt-1">
+                            <p className="text-sm text-gray-700 dark:text-gray-300">
+                              <span className="font-medium">Invites:</span>{' '}
+                              {request.inviteCounts.pending} pending,{' '}
+                              {request.inviteCounts.declined} declined
+                            </p>
+                            {request.invites && request.invites.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {request.invites.map((i) => (
+                                  <span
+                                    key={`${request.id}-${i.name}`}
+                                    className={`px-2 py-1 rounded text-xs font-medium ${
+                                      i.status === 'declined'
+                                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
+                                        : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'
+                                    }`}
+                                  >
+                                    {i.name} • {i.status}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      {request.message && <p className="italic mt-2">"{request.message}"</p>}
+                      {request.status === 'open' &&
+                        request.requesterId === member?.id &&
+                        notificationStatuses[request.id] && (
+                          <div
+                            className={`mt-3 p-3 rounded-md border ${(() => {
+                              const status = notificationStatuses[request.id];
+                              const allNotified = status.notifiedMembers === status.totalMembers;
+                              if (status.notificationStatus === 'completed' || allNotified) {
+                                return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
+                              }
+                              if (status.notificationStatus === 'stopped') {
+                                return 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700';
+                              }
+                              return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
+                            })()}`}
+                          >
+                            {(() => {
+                              const status = notificationStatuses[request.id];
+                              const allNotified = status.notifiedMembers === status.totalMembers;
+
+                              // If all members are notified, show completed message even if status is 'in_progress'
+                              if (status.notificationStatus === 'completed' || allNotified) {
+                                return (
+                                  <p className="text-sm text-green-800 dark:text-green-300">
+                                    <span className="font-medium">All notifications sent.</span>{' '}
+                                    {status.totalMembers} members notified.
+                                  </p>
+                                );
+                              }
+
+                              if (status.notificationStatus === 'in_progress') {
+                                return (
+                                  <p className="text-sm text-blue-800 dark:text-blue-300">
+                                    <span className="font-medium">
+                                      Notifications in progress...
+                                    </span>{' '}
+                                    {status.notifiedMembers} of {status.totalMembers} members
+                                    notified.
+                                    {status.notificationPaused && (
+                                      <span className="ml-2 font-semibold text-orange-600 dark:text-orange-400">
+                                        (Paused)
+                                      </span>
+                                    )}
+                                  </p>
+                                );
+                              }
+
+                              if (status.notificationStatus === 'stopped') {
+                                return (
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                                    Notifications stopped (request filled or cancelled).
+                                  </p>
+                                );
+                              }
+
+                              return null;
+                            })()}
+                          </div>
+                        )}
                     </div>
                   </div>
 
@@ -554,13 +579,15 @@ export default function MyRequests() {
                       <>
                         {(() => {
                           const status = notificationStatuses[request.id];
-                          const allNotified = status && status.notifiedMembers === status.totalMembers;
-                          const isInProgress = status?.notificationStatus === 'in_progress' && !allNotified;
+                          const allNotified =
+                            status && status.notifiedMembers === status.totalMembers;
+                          const isInProgress =
+                            status?.notificationStatus === 'in_progress' && !allNotified;
                           const isRequester = request.requesterId === member?.id;
                           if (!isRequester) {
                             return null;
                           }
-                          
+
                           if (isInProgress) {
                             return status.notificationPaused ? (
                               <Button
@@ -583,34 +610,24 @@ export default function MyRequests() {
                           return null;
                         })()}
                         {request.requesterId === member?.id && shouldShowReissueButton(request) && (
-                          <Button
-                            variant="secondary"
-                            onClick={() => handleReissueClick(request)}
-                          >
+                          <Button variant="secondary" onClick={() => handleReissueClick(request)}>
                             Re-issue
                           </Button>
                         )}
-                        {request.requesterId === member?.id && request.requestType === 'private' && (
-                          <>
-                            <Button
-                              variant="secondary"
-                              onClick={() => openInviteModal(request)}
-                            >
-                              Invite more
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              onClick={() => handleMakePublic(request)}
-                            >
-                              Make public
-                            </Button>
-                          </>
-                        )}
-                        {(request.requesterId === member?.id || request.requestedForMemberId === member?.id) && (
-                          <Button
-                            variant="danger"
-                            onClick={() => handleCancel(request.id)}
-                          >
+                        {request.requesterId === member?.id &&
+                          request.requestType === 'private' && (
+                            <>
+                              <Button variant="secondary" onClick={() => openInviteModal(request)}>
+                                Invite more
+                              </Button>
+                              <Button variant="secondary" onClick={() => handleMakePublic(request)}>
+                                Make public
+                              </Button>
+                            </>
+                          )}
+                        {(request.requesterId === member?.id ||
+                          request.requestedForMemberId === member?.id) && (
+                          <Button variant="danger" onClick={() => handleCancel(request.id)}>
                             Cancel
                           </Button>
                         )}
@@ -635,7 +652,9 @@ export default function MyRequests() {
                         <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Message from {renderMe(request.filledByName, member?.name)}:
                         </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 italic">"{request.sparerComment}"</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 italic">
+                          "{request.sparerComment}"
+                        </p>
                       </div>
                     )}
                   </div>
@@ -645,7 +664,10 @@ export default function MyRequests() {
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-gray-600 dark:text-gray-400">
                       This request was cancelled
-                      {request.cancelledByName ? ` by ${renderMe(request.cancelledByName, member?.name)}` : ''}.
+                      {request.cancelledByName
+                        ? ` by ${renderMe(request.cancelledByName, member?.name)}`
+                        : ''}
+                      .
                     </p>
                   </div>
                 )}
@@ -680,7 +702,9 @@ export default function MyRequests() {
           {pastExpanded && (
             <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4">
               {pastLoading ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400">Loading past requests...</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  Loading past requests...
+                </div>
               ) : pastError ? (
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm text-red-600 dark:text-red-400">{pastError}</div>
@@ -718,11 +742,13 @@ export default function MyRequests() {
                             {renderMe(request.requestedForName, member?.name)}
                           </span>
                         </div>
-                        {request.requesterId && request.requesterId !== member?.id && request.requesterName && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Requested by {renderMe(request.requesterName, member?.name)}
-                          </div>
-                        )}
+                        {request.requesterId &&
+                          request.requesterId !== member?.id &&
+                          request.requesterName && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                              Requested by {renderMe(request.requesterName, member?.name)}
+                            </div>
+                          )}
                         {request.status === 'cancelled' && request.cancelledByName && (
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             Cancelled by {renderMe(request.cancelledByName, member?.name)}
@@ -758,12 +784,16 @@ export default function MyRequests() {
         {reissueRequest && (
           <div className="space-y-4">
             <p className="text-gray-700 dark:text-gray-300">
-              You're about to re-send notifications for your spare request for <strong>{reissueRequest.requestedForName}</strong> on{' '}
+              You're about to re-send notifications for your spare request for{' '}
+              <strong>{reissueRequest.requestedForName}</strong> on{' '}
               {formatDate(reissueRequest.gameDate)} at {formatTime(reissueRequest.gameTime)}.
             </p>
 
             <div>
-              <label htmlFor="reissueMessage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="reissueMessage"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Message (optional)
               </label>
               <textarea
@@ -780,11 +810,7 @@ export default function MyRequests() {
             </div>
 
             <div className="flex space-x-3">
-              <Button
-                onClick={handleReissue}
-                disabled={reissuing}
-                className="flex-1"
-              >
+              <Button onClick={handleReissue} disabled={reissuing} className="flex-1">
                 {reissuing ? 'Re-issuing...' : 'Confirm & Re-issue'}
               </Button>
               <Button
@@ -817,7 +843,8 @@ export default function MyRequests() {
         {inviteRequest && (
           <div className="space-y-4">
             <p className="text-gray-700 dark:text-gray-300">
-              Invite more members to your private spare request for <strong>{renderMe(inviteRequest.requestedForName, member?.name)}</strong>.
+              Invite more members to your private spare request for{' '}
+              <strong>{renderMe(inviteRequest.requestedForName, member?.name)}</strong>.
             </p>
 
             {loadingInvitations ? (
@@ -829,7 +856,9 @@ export default function MyRequests() {
                     Current invites
                   </div>
                   {invitationStatuses.length === 0 ? (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">No invites found.</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      No invites found.
+                    </div>
                   ) : (
                     <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                       {invitationStatuses.map((i) => (
@@ -869,7 +898,9 @@ export default function MyRequests() {
                         <label
                           key={m.id}
                           className={`flex items-center gap-3 px-4 py-2 border-b border-gray-100 dark:border-gray-700 ${
-                            alreadyInvited ? 'opacity-60' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                            alreadyInvited
+                              ? 'opacity-60'
+                              : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
                           }`}
                         >
                           <input
@@ -885,7 +916,9 @@ export default function MyRequests() {
                           />
                           <span className="text-sm text-gray-800 dark:text-gray-100">{m.name}</span>
                           {alreadyInvited && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">(already invited)</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              (already invited)
+                            </span>
                           )}
                         </label>
                       );
@@ -930,4 +963,3 @@ export default function MyRequests() {
     </Layout>
   );
 }
-

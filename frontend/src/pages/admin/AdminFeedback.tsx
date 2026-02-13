@@ -101,9 +101,7 @@ export default function AdminFeedback() {
                         {categoryLabel(r.category)}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                        <div className="font-medium">
-                          {r.memberName || r.email || 'Anonymous'}
-                        </div>
+                        <div className="font-medium">{r.memberName || r.email || 'Anonymous'}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           {r.memberEmail || (r.memberId ? `Member #${r.memberId}` : null)}
                         </div>
@@ -127,4 +125,3 @@ export default function AdminFeedback() {
     </Layout>
   );
 }
-

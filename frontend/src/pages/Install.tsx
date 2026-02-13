@@ -53,7 +53,7 @@ export default function Install() {
     try {
       const adminEmailList = adminEmails
         .split(',')
-        .map(email => email.trim())
+        .map((email) => email.trim())
         .filter(Boolean);
 
       if (adminEmailList.length === 0) {
@@ -100,9 +100,12 @@ export default function Install() {
       }
 
       await post('/install', payload);
-      
+
       // Installation successful - reload page to continue
-      showAlert('Installation successful! The server will restart. Please refresh the page.', 'success');
+      showAlert(
+        'Installation successful! The server will restart. Please refresh the page.',
+        'success'
+      );
       setTimeout(() => window.location.reload(), 2000);
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
@@ -113,11 +116,11 @@ export default function Install() {
 
   if (checking) {
     return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
         <HelpHeader />
         <div className="flex-grow flex items-center justify-center">
           <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-400">Checking installation status...</p>
+            <p className="text-gray-600 dark:text-gray-400">Checking installation status...</p>
           </div>
         </div>
         <Footer />
@@ -135,7 +138,8 @@ export default function Install() {
               Database Installation
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-8">
-              Configure your database connection and administrator accounts to complete the installation.
+              Configure your database connection and administrator accounts to complete the
+              installation.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -290,7 +294,8 @@ export default function Install() {
                   required
                 />
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Enter email addresses separated by commas. These users will have administrator privileges.
+                  Enter email addresses separated by commas. These users will have administrator
+                  privileges.
                 </p>
               </div>
 
@@ -301,10 +306,7 @@ export default function Install() {
               )}
 
               <div className="flex justify-end">
-                <Button
-                  type="submit"
-                  disabled={loading}
-                >
+                <Button type="submit" disabled={loading}>
                   {loading ? 'Installing...' : 'Complete Installation'}
                 </Button>
               </div>
@@ -316,4 +318,3 @@ export default function Install() {
     </div>
   );
 }
-

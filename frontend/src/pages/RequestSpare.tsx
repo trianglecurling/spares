@@ -53,9 +53,11 @@ export default function RequestSpare() {
   const { confirm } = useConfirm();
   const navigate = useNavigate();
   const isSpareOnly = Boolean(member?.spareOnly);
-  
+
   // Form State
-  const [requestedForMode, setRequestedForMode] = useState<'me' | 'other'>(member?.name ? 'me' : 'other');
+  const [requestedForMode, setRequestedForMode] = useState<'me' | 'other'>(
+    member?.name ? 'me' : 'other'
+  );
   const [otherRequestedForName, setOtherRequestedForName] = useState('');
   const [otherRequestedForMemberId, setOtherRequestedForMemberId] = useState<number | null>(null);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
@@ -69,14 +71,14 @@ export default function RequestSpare() {
   const [showPosition, setShowPosition] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
   const [showCc, setShowCc] = useState(false);
-  
+
   // Data State
   const [members, setMembers] = useState<Member[]>([]);
   const [leagues, setLeagues] = useState<League[]>([]);
   const [upcomingGames, setUpcomingGames] = useState<GameSlot[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
   const [availableMembers, setAvailableMembers] = useState<Member[]>([]);
-  
+
   // UI State
   const [loading, setLoading] = useState(false);
   const [loadingGames, setLoadingGames] = useState(false);
@@ -264,9 +266,7 @@ export default function RequestSpare() {
 
     try {
       const effectiveRequestedForName =
-        requestedForMode === 'me'
-          ? (member?.name || '').trim()
-          : otherRequestedForName.trim();
+        requestedForMode === 'me' ? (member?.name || '').trim() : otherRequestedForName.trim();
 
       if (!effectiveRequestedForName) {
         showAlert('Please enter the name of the person who needs the spare.', 'warning');
@@ -392,21 +392,18 @@ export default function RequestSpare() {
   };
 
   // Filter members for "someone else" autocomplete (match name only, like private invites)
-  const otherFilteredMembers = members.filter(
-    (m) => m.name.toLowerCase().includes(otherRequestedForName.toLowerCase())
+  const otherFilteredMembers = members.filter((m) =>
+    m.name.toLowerCase().includes(otherRequestedForName.toLowerCase())
   );
 
   const ccFilteredMembers = members.filter(
-    (m) =>
-      m.name.toLowerCase().includes(ccSearchTerm.toLowerCase()) &&
-      !ccMemberIds.includes(m.id)
+    (m) => m.name.toLowerCase().includes(ccSearchTerm.toLowerCase()) && !ccMemberIds.includes(m.id)
   );
 
   // Filter members for autocomplete
   const filteredMembers = members.filter(
     (m) =>
-      m.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      !selectedMembers.includes(m.id)
+      m.name.toLowerCase().includes(searchTerm.toLowerCase()) && !selectedMembers.includes(m.id)
   );
 
   const handleOtherKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -447,9 +444,7 @@ export default function RequestSpare() {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setHighlightedIndex((prev) => 
-          prev < filteredMembers.length - 1 ? prev + 1 : prev
-        );
+        setHighlightedIndex((prev) => (prev < filteredMembers.length - 1 ? prev + 1 : prev));
         break;
       case 'ArrowUp':
         e.preventDefault();
@@ -474,9 +469,7 @@ export default function RequestSpare() {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setCcHighlightedIndex((prev) =>
-          prev < ccFilteredMembers.length - 1 ? prev + 1 : prev
-        );
+        setCcHighlightedIndex((prev) => (prev < ccFilteredMembers.length - 1 ? prev + 1 : prev));
         break;
       case 'ArrowUp':
         e.preventDefault();
@@ -521,7 +514,7 @@ export default function RequestSpare() {
   const draftLeague = leagueDraftId
     ? leagues.find((l) => l.id.toString() === leagueDraftId)
     : undefined;
-  const displayedLeague = leaguePickerOpen ? (draftLeague || committedLeague) : committedLeague;
+  const displayedLeague = leaguePickerOpen ? draftLeague || committedLeague : committedLeague;
 
   const formatTimeShort = (timeStr: string) => {
     const [hours, minutes] = timeStr.split(':');
@@ -554,11 +547,14 @@ export default function RequestSpare() {
     return parts.length > 0 ? parts.join(' • ') : 'the same game slot';
   };
 
-  const leaguesByDay: Record<number, League[]> = leagues.reduce((acc, league) => {
-    const day = league.dayOfWeek ?? 0;
-    (acc[day] ||= []).push(league);
-    return acc;
-  }, {} as Record<number, League[]>);
+  const leaguesByDay: Record<number, League[]> = leagues.reduce(
+    (acc, league) => {
+      const day = league.dayOfWeek ?? 0;
+      (acc[day] ||= []).push(league);
+      return acc;
+    },
+    {} as Record<number, League[]>
+  );
 
   const dayLists: League[][] = dayNames.map((_, day) =>
     (leaguesByDay[day] || []).slice().sort((a, b) => a.name.localeCompare(b.name))
@@ -581,7 +577,9 @@ export default function RequestSpare() {
     const initialIndex =
       draftId && leagueIndexById.has(Number(draftId))
         ? (leagueIndexById.get(Number(draftId)) as number)
-        : (orderedLeagues.length > 0 ? 0 : -1);
+        : orderedLeagues.length > 0
+          ? 0
+          : -1;
     setLeaguePickerActiveIndex(initialIndex);
     if (!leagueDraftId && draftId) {
       setLeagueDraftId(draftId);
@@ -788,12 +786,16 @@ export default function RequestSpare() {
 
         {isSpareOnly && (
           <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300 rounded-lg p-4">
-            Your account is marked as <span className="font-semibold">spare-only</span>, so you can’t create spare requests.
-            If this is a mistake, please ask an admin to update your account.
+            Your account is marked as <span className="font-semibold">spare-only</span>, so you
+            can’t create spare requests. If this is a mistake, please ask an admin to update your
+            account.
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-6"
+        >
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Person who needs the spare <span className="text-red-500">*</span>
@@ -894,7 +896,9 @@ export default function RequestSpare() {
                             index === otherHighlightedIndex ? 'bg-gray-100 dark:bg-gray-700' : ''
                           }`}
                         >
-                          <div className="font-medium text-gray-900 dark:text-gray-100">{m.name}</div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
+                            {m.name}
+                          </div>
                         </button>
                       ))
                     ) : (
@@ -918,145 +922,167 @@ export default function RequestSpare() {
               </label>
               <div className="flex-1 flex items-center">
                 <div className="relative w-full" ref={leaguePickerRef}>
-                <button
-                  ref={leagueTriggerRef}
-                  type="button"
-                  onClick={() => setLeaguePickerOpen((v) => !v)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      if (!leaguePickerOpen) {
-                        setLeaguePickerOpen(true);
+                  <button
+                    ref={leagueTriggerRef}
+                    type="button"
+                    onClick={() => setLeaguePickerOpen((v) => !v)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (!leaguePickerOpen) {
+                          setLeaguePickerOpen(true);
+                        }
                       }
-                    }
-                  }}
-                  disabled={loading}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal disabled:opacity-50 flex items-center justify-between gap-3"
-                  aria-haspopup="dialog"
-                  aria-expanded={leaguePickerOpen}
-                >
-                  <div className="min-w-0">
-                    {displayedLeague ? (
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-medium text-gray-900 dark:text-gray-100 whitespace-normal break-words leading-snug">
-                            {displayedLeague.name}
-                          </span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200 shrink-0">
-                            {dayNames[displayedLeague.dayOfWeek]}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-300 mt-0.5">
-                          {displayedLeague.format === 'teams' ? 'Teams' : 'Doubles'}
-                          {displayedLeague.drawTimes?.length ? ` • ${displayedLeague.drawTimes.map(formatTimeShort).join(', ')}` : ''}
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-gray-500 dark:text-gray-300">Select a league</span>
-                    )}
-                  </div>
-                  <HiChevronDown className={`w-5 h-5 text-gray-500 dark:text-gray-300 shrink-0 transition-transform ${leaguePickerOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {leaguePickerOpen && (
-                  <div
-                    className="absolute z-20 mt-2 w-[min(44rem,calc(100vw-2rem))] max-w-[44rem] left-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-4"
-                    role="dialog"
-                    aria-label="Choose a league"
-                    onKeyDown={handleLeaguePickerKeyDown}
+                    }}
+                    disabled={loading}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal disabled:opacity-50 flex items-center justify-between gap-3"
+                    aria-haspopup="dialog"
+                    aria-expanded={leaguePickerOpen}
                   >
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Choose a league</div>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-                        onClick={() => setLeaguePickerOpen(false)}
-                      >
-                        Close
-                      </button>
-                    </div>
-
-                    <div ref={leagueDayGridRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {dayNames.map((dayName, day) => {
-                        const list = dayLists[day] || [];
-                        return (
-                          <div key={dayName} className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700/40 border-b border-gray-200 dark:border-gray-700">
-                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{dayName}</div>
-                            </div>
-                            <div className="p-2 space-y-1">
-                              {list.length === 0 ? (
-                                <div className="text-xs text-gray-500 dark:text-gray-400 px-1 py-2">No leagues</div>
-                              ) : (
-                                list.map((league) => (
-                                  <button
-                                    key={league.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setLeagueDraftId(league.id.toString());
-                                      setLeaguePickerOpen(false);
-                                      if (league.id.toString() !== selectedLeagueId) {
-                                        setSelectedLeagueId(league.id.toString());
-                                      }
-                                    }}
-                                    ref={(el) => {
-                                      const idx = leagueIndexById.get(league.id);
-                                      if (idx !== undefined) leagueOptionRefs.current[idx] = el;
-                                    }}
-                                    onFocus={() => {
-                                      const idx = leagueIndexById.get(league.id);
-                                      if (idx !== undefined) {
-                                        setLeaguePickerActiveIndex(idx);
-                                        // Draft selection while navigating; commit when popover closes
-                                        setLeagueDraftId(league.id.toString());
-                                      }
-                                    }}
-                                    onMouseEnter={() => {
-                                      const idx = leagueIndexById.get(league.id);
-                                      if (idx !== undefined) setLeaguePickerActiveIndex(idx);
-                                    }}
-                                    className={`w-full text-left px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
-                                      selectedLeagueId === league.id.toString() || leaguePickerActiveIndex === leagueIndexById.get(league.id)
-                                        ? 'bg-gray-100 dark:bg-gray-700'
-                                        : ''
-                                    }`}
-                                  >
-                                    <div className="flex items-start gap-2">
-                                      <div className="mt-0.5 text-gray-600 dark:text-gray-300">
-                                        {league.format === 'teams' ? (
-                                          <HiUserGroup className="w-4 h-4" />
-                                        ) : (
-                                          <HiUser className="w-4 h-4" />
-                                        )}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-normal break-words leading-snug">
-                                          {league.name}
-                                        </div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                                          {league.format === 'teams' ? 'Teams' : 'Doubles'}
-                                          {league.drawTimes?.length ? ` • ${league.drawTimes.map(formatTimeShort).join(', ')}` : ''}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </button>
-                                ))
-                              )}
-                            </div>
+                    <div className="min-w-0">
+                      {displayedLeague ? (
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-medium text-gray-900 dark:text-gray-100 whitespace-normal break-words leading-snug">
+                              {displayedLeague.name}
+                            </span>
+                            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200 shrink-0">
+                              {dayNames[displayedLeague.dayOfWeek]}
+                            </span>
                           </div>
-                        );
-                      })}
+                          <div className="text-xs text-gray-500 dark:text-gray-300 mt-0.5">
+                            {displayedLeague.format === 'teams' ? 'Teams' : 'Doubles'}
+                            {displayedLeague.drawTimes?.length
+                              ? ` • ${displayedLeague.drawTimes.map(formatTimeShort).join(', ')}`
+                              : ''}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 dark:text-gray-300">Select a league</span>
+                      )}
                     </div>
-                  </div>
-                )}
+                    <HiChevronDown
+                      className={`w-5 h-5 text-gray-500 dark:text-gray-300 shrink-0 transition-transform ${leaguePickerOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+                  {leaguePickerOpen && (
+                    <div
+                      className="absolute z-20 mt-2 w-[min(44rem,calc(100vw-2rem))] max-w-[44rem] left-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-4"
+                      role="dialog"
+                      aria-label="Choose a league"
+                      onKeyDown={handleLeaguePickerKeyDown}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            Choose a league
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                          onClick={() => setLeaguePickerOpen(false)}
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      <div
+                        ref={leagueDayGridRef}
+                        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+                      >
+                        {dayNames.map((dayName, day) => {
+                          const list = dayLists[day] || [];
+                          return (
+                            <div
+                              key={dayName}
+                              className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden"
+                            >
+                              <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700/40 border-b border-gray-200 dark:border-gray-700">
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                  {dayName}
+                                </div>
+                              </div>
+                              <div className="p-2 space-y-1">
+                                {list.length === 0 ? (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 px-1 py-2">
+                                    No leagues
+                                  </div>
+                                ) : (
+                                  list.map((league) => (
+                                    <button
+                                      key={league.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setLeagueDraftId(league.id.toString());
+                                        setLeaguePickerOpen(false);
+                                        if (league.id.toString() !== selectedLeagueId) {
+                                          setSelectedLeagueId(league.id.toString());
+                                        }
+                                      }}
+                                      ref={(el) => {
+                                        const idx = leagueIndexById.get(league.id);
+                                        if (idx !== undefined) leagueOptionRefs.current[idx] = el;
+                                      }}
+                                      onFocus={() => {
+                                        const idx = leagueIndexById.get(league.id);
+                                        if (idx !== undefined) {
+                                          setLeaguePickerActiveIndex(idx);
+                                          // Draft selection while navigating; commit when popover closes
+                                          setLeagueDraftId(league.id.toString());
+                                        }
+                                      }}
+                                      onMouseEnter={() => {
+                                        const idx = leagueIndexById.get(league.id);
+                                        if (idx !== undefined) setLeaguePickerActiveIndex(idx);
+                                      }}
+                                      className={`w-full text-left px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+                                        selectedLeagueId === league.id.toString() ||
+                                        leaguePickerActiveIndex === leagueIndexById.get(league.id)
+                                          ? 'bg-gray-100 dark:bg-gray-700'
+                                          : ''
+                                      }`}
+                                    >
+                                      <div className="flex items-start gap-2">
+                                        <div className="mt-0.5 text-gray-600 dark:text-gray-300">
+                                          {league.format === 'teams' ? (
+                                            <HiUserGroup className="w-4 h-4" />
+                                          ) : (
+                                            <HiUser className="w-4 h-4" />
+                                          )}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-normal break-words leading-snug">
+                                            {league.name}
+                                          </div>
+                                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                                            {league.format === 'teams' ? 'Teams' : 'Doubles'}
+                                            {league.drawTimes?.length
+                                              ? ` • ${league.drawTimes.map(formatTimeShort).join(', ')}`
+                                              : ''}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="flex flex-col h-full">
-              <label htmlFor="gameSlot" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="gameSlot"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Game date & time <span className="text-red-500">*</span>
               </label>
               <div className="flex-1 flex items-center">
@@ -1070,10 +1096,10 @@ export default function RequestSpare() {
                   disabled={!selectedLeagueId || loadingGames}
                 >
                   <option value="">
-                    {loadingGames 
-                      ? 'Loading games...' 
-                      : !selectedLeagueId 
-                        ? 'Select a league first' 
+                    {loadingGames
+                      ? 'Loading games...'
+                      : !selectedLeagueId
+                        ? 'Select a league first'
                         : 'Select a game'}
                   </option>
                   {upcomingGames.map((slot) => {
@@ -1091,7 +1117,10 @@ export default function RequestSpare() {
 
           {showPosition ? (
             <div>
-              <label htmlFor="position" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="position"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Position (optional)
               </label>
               <select
@@ -1125,7 +1154,10 @@ export default function RequestSpare() {
 
           {showMessage ? (
             <div>
-              <label htmlFor="message" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="message"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Personal message (optional)
               </label>
               <textarea
@@ -1199,14 +1231,17 @@ export default function RequestSpare() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Select members to invite <span className="text-red-500">*</span>
               </label>
-              
+
               {/* Selected Members Pills */}
               <div className="flex flex-wrap gap-2 mb-2">
-                {selectedMembers.map(id => {
-                  const member = members.find(m => m.id === id);
+                {selectedMembers.map((id) => {
+                  const member = members.find((m) => m.id === id);
                   if (!member) return null;
                   return (
-                    <div key={id} className="bg-primary-teal text-white text-sm rounded-full px-3 py-1 flex items-center focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-teal">
+                    <div
+                      key={id}
+                      className="bg-primary-teal text-white text-sm rounded-full px-3 py-1 flex items-center focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-teal"
+                    >
                       <span>{member.name}</span>
                       <button
                         type="button"
@@ -1237,7 +1272,7 @@ export default function RequestSpare() {
                   placeholder="Search for members..."
                   disabled={loading}
                 />
-                
+
                 {isDropdownOpen && searchTerm && (
                   <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
                     {filteredMembers.length > 0 ? (
@@ -1247,13 +1282,17 @@ export default function RequestSpare() {
                           type="button"
                           onClick={() => addMember(m.id)}
                           className={`w-full text-left px-4 py-2 focus:outline-none ${
-                            index === highlightedIndex 
-                              ? 'bg-gray-100 dark:bg-gray-700' 
+                            index === highlightedIndex
+                              ? 'bg-gray-100 dark:bg-gray-700'
                               : 'hover:bg-gray-50 dark:hover:bg-gray-700'
                           }`}
                         >
                           <div className="font-medium dark:text-gray-100">{m.name}</div>
-                          {m.email && <div className="text-xs text-gray-500 dark:text-gray-400">{m.email}</div>}
+                          {m.email && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {m.email}
+                            </div>
+                          )}
                         </button>
                       ))
                     ) : (
@@ -1269,20 +1308,25 @@ export default function RequestSpare() {
               {selectedLeagueId && (
                 <div className="border border-gray-300 dark:border-gray-600 rounded-md p-4 bg-gray-50 dark:bg-gray-700/50">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                    Members available during {leagues.find(l => l.id.toString() === selectedLeagueId)?.name || 'this league'}
+                    Members available during{' '}
+                    {leagues.find((l) => l.id.toString() === selectedLeagueId)?.name ||
+                      'this league'}
                   </label>
                   {loadingAvailableMembers ? (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">Loading...</div>
-                  ) : availableMembers.filter(m => !selectedMembers.includes(m.id)).length === 0 ? (
                     <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
-                      {availableMembers.length === 0 
+                      Loading...
+                    </div>
+                  ) : availableMembers.filter((m) => !selectedMembers.includes(m.id)).length ===
+                    0 ? (
+                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                      {availableMembers.length === 0
                         ? 'No members have set availability for this league'
                         : 'All available members have been selected'}
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {availableMembers
-                        .filter(m => !selectedMembers.includes(m.id))
+                        .filter((m) => !selectedMembers.includes(m.id))
                         .map((m) => (
                           <div
                             key={m.id}
@@ -1291,7 +1335,9 @@ export default function RequestSpare() {
                             <div className="flex-1">
                               <div className="font-medium text-sm dark:text-gray-100">{m.name}</div>
                               {m.email && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400">{m.email}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {m.email}
+                                </div>
                               )}
                             </div>
                             <button
@@ -1357,7 +1403,9 @@ export default function RequestSpare() {
                   onFocus={() => setCcIsDropdownOpen(true)}
                   onKeyDown={handleCcKeyDown}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
-                  placeholder={ccMemberIds.length >= 4 ? 'CC limit reached (4)' : 'Search for members to CC...'}
+                  placeholder={
+                    ccMemberIds.length >= 4 ? 'CC limit reached (4)' : 'Search for members to CC...'
+                  }
                   disabled={loading || ccMemberIds.length >= 4}
                 />
 
@@ -1376,7 +1424,11 @@ export default function RequestSpare() {
                           }`}
                         >
                           <div className="font-medium dark:text-gray-100">{m.name}</div>
-                          {m.email && <div className="text-xs text-gray-500 dark:text-gray-400">{m.email}</div>}
+                          {m.email && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {m.email}
+                            </div>
+                          )}
                         </button>
                       ))
                     ) : (

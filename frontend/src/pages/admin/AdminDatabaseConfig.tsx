@@ -30,7 +30,7 @@ export default function AdminDatabaseConfig() {
   const loadCurrentConfig = async () => {
     try {
       const config = await get('/database-config');
-      
+
       if (config) {
         setDatabaseType(config.type);
         if (config.sqlite) {
@@ -65,7 +65,7 @@ export default function AdminDatabaseConfig() {
     try {
       const adminEmailList = adminEmails
         .split(',')
-        .map(email => email.trim())
+        .map((email) => email.trim())
         .filter(Boolean);
 
       if (adminEmailList.length === 0) {
@@ -96,7 +96,12 @@ export default function AdminDatabaseConfig() {
           path: sqlitePath,
         };
       } else {
-        if (!postgresHost || !postgresDatabase || !postgresUsername || (!postgresPassword && !hasExistingPostgresConfig)) {
+        if (
+          !postgresHost ||
+          !postgresDatabase ||
+          !postgresUsername ||
+          (!postgresPassword && !hasExistingPostgresConfig)
+        ) {
           setError('Please fill in all PostgreSQL connection fields');
           setLoading(false);
           return;
@@ -112,12 +117,18 @@ export default function AdminDatabaseConfig() {
       }
 
       await post('/database-config', payload);
-      
-      showAlert('Database configuration updated successfully! The server needs to be restarted for changes to take effect. Please restart the server using: sudo systemctl restart spares-production', 'success');
+
+      showAlert(
+        'Database configuration updated successfully! The server needs to be restarted for changes to take effect. Please restart the server using: sudo systemctl restart spares-production',
+        'success'
+      );
       navigate('/admin/config');
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
-      setError(message || 'Failed to update database configuration. Please check your settings and try again.');
+      setError(
+        message ||
+          'Failed to update database configuration. Please check your settings and try again.'
+      );
       setLoading(false);
     }
   };
@@ -134,11 +145,7 @@ export default function AdminDatabaseConfig() {
     <Layout>
       <div className="max-w-3xl mx-auto">
         <div className="mb-6">
-          <Button
-            variant="secondary"
-            onClick={() => navigate('/admin/config')}
-            className="mb-4"
-          >
+          <Button variant="secondary" onClick={() => navigate('/admin/config')} className="mb-4">
             ← Back to Server Config
           </Button>
           <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
@@ -285,7 +292,9 @@ export default function AdminDatabaseConfig() {
                       onChange={(e) => setPostgresSSL(e.target.checked)}
                       className="mr-2"
                     />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Use SSL connection</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      Use SSL connection
+                    </span>
                   </label>
                 </div>
               </div>
@@ -305,7 +314,8 @@ export default function AdminDatabaseConfig() {
                 required
               />
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Enter email addresses separated by commas. These users will have administrator privileges.
+                Enter email addresses separated by commas. These users will have administrator
+                privileges.
               </p>
             </div>
 
@@ -324,10 +334,7 @@ export default function AdminDatabaseConfig() {
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={loading}
-              >
+              <Button type="submit" disabled={loading}>
                 {loading ? 'Saving...' : 'Save Configuration'}
               </Button>
             </div>

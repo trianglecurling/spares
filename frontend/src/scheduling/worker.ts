@@ -12,7 +12,11 @@ function reportProgress(update: ProgressUpdate) {
 
 function generate(input: ScheduleInput) {
   try {
-    reportProgress({ phase: 'Generating matchups', percent: 0, message: 'Building round-robin pairings...' });
+    reportProgress({
+      phase: 'Generating matchups',
+      percent: 0,
+      message: 'Building round-robin pairings...',
+    });
 
     const rounds = generateAllMatchups(input.strategies, input.teams);
 
@@ -23,7 +27,12 @@ function generate(input: ScheduleInput) {
           games: [],
           unschedulable: [],
           teamStats: [],
-          warnings: [{ severity: 'warning', message: 'No matchups generated. Check strategies and team counts.' }],
+          warnings: [
+            {
+              severity: 'warning',
+              message: 'No matchups generated. Check strategies and team counts.',
+            },
+          ],
           totalScore: 0,
         },
       });
@@ -47,12 +56,13 @@ function generate(input: ScheduleInput) {
       teamIds,
       input.seed,
       timeBudget,
-      reportProgress,
+      reportProgress
     );
 
     postMsg({ type: 'complete', payload: result });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error during schedule generation.';
+    const message =
+      err instanceof Error ? err.message : 'Unknown error during schedule generation.';
     postMsg({ type: 'error', message });
   }
 }

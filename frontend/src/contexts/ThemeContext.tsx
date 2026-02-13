@@ -97,7 +97,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore
     }
-    
+
     // Save to backend if user is logged in
     if (member) {
       try {
@@ -129,4 +129,3 @@ export function useTheme() {
   }
   return context;
 }
-

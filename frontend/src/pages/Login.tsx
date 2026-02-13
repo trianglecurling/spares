@@ -160,7 +160,10 @@ export default function Login() {
             {step === 'contact' && (
               <form onSubmit={handleRequestCode} className="space-y-4">
                 <div>
-                  <label htmlFor="contact" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="contact"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Email address
                   </label>
                   <input
@@ -190,7 +193,10 @@ export default function Login() {
             {step === 'code' && (
               <form onSubmit={handleVerifyCode} className="space-y-4">
                 <div>
-                  <label htmlFor="code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="code"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Enter the 6-digit code
                   </label>
                   <input
@@ -264,7 +270,7 @@ export default function Login() {
           </div>
         </div>
       </div>
-      
+
       <Footer simple />
     </div>
   );

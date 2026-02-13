@@ -55,7 +55,11 @@ export default function Profile() {
         phoneVisible: formData.phoneVisible,
       });
 
-      updateMember({ ...member!, ...response, themePreference: normalizeThemePreference(response.themePreference) } as import('../../../backend/src/types').AuthenticatedMember);
+      updateMember({
+        ...member!,
+        ...response,
+        themePreference: normalizeThemePreference(response.themePreference),
+      } as import('../../../backend/src/types').AuthenticatedMember);
       setMessage({ type: 'success', text: 'Profile updated successfully' });
     } catch (error) {
       console.error('Failed to update profile:', error);
@@ -68,16 +72,14 @@ export default function Profile() {
   return (
     <Layout>
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-[#121033] dark:text-gray-100">
-          My profile
-        </h1>
+        <h1 className="text-3xl font-bold mb-6 text-[#121033] dark:text-gray-100">My profile</h1>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           {message && (
             <div
               className={`mb-6 p-4 rounded ${
-                message.type === 'success' 
-                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200' 
+                message.type === 'success'
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
                   : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
               }`}
             >
@@ -87,7 +89,10 @@ export default function Profile() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -101,11 +106,16 @@ export default function Profile() {
             </div>
 
             <div className="border-t pt-6 dark:border-gray-700">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Contact information</h2>
-              
+              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                Contact information
+              </h2>
+
               <div className="space-y-6">
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="email"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Email address <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -124,14 +134,20 @@ export default function Profile() {
                       onChange={(e) => setFormData({ ...formData, emailVisible: e.target.checked })}
                       className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
                     />
-                    <label htmlFor="emailVisible" className="text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer">
+                    <label
+                      htmlFor="emailVisible"
+                      className="text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer"
+                    >
                       Show my email in the member directory
                     </label>
                   </div>
                 </div>
 
                 <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="phone"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Phone number
                   </label>
                   <input
@@ -149,7 +165,10 @@ export default function Profile() {
                       onChange={(e) => setFormData({ ...formData, phoneVisible: e.target.checked })}
                       className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
                     />
-                    <label htmlFor="phoneVisible" className="text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer">
+                    <label
+                      htmlFor="phoneVisible"
+                      className="text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer"
+                    >
                       Show my phone number in the member directory
                     </label>
                   </div>
@@ -159,8 +178,10 @@ export default function Profile() {
 
             {smsDisabled === false && (
               <div className="border-t pt-6 dark:border-gray-700">
-                <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Notifications</h2>
-                
+                <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                  Notifications
+                </h2>
+
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
                   <div className="flex items-start">
                     <input
@@ -171,9 +192,13 @@ export default function Profile() {
                       className="mt-1 mr-3 text-primary-teal focus:ring-primary-teal rounded"
                     />
                     <label htmlFor="optedInSms" className="text-sm select-none cursor-pointer">
-                      <span className="font-medium text-gray-900 dark:text-gray-100">Receive text message notifications</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                        Receive text message notifications
+                      </span>
                       <p className="text-gray-600 dark:text-gray-400 mt-1">
-                        Receive text message notifications when new spare requests match your availability and when someone has responded to your request. Message and data rates may apply. Reply STOP to any message to unsubscribe.
+                        Receive text message notifications when new spare requests match your
+                        availability and when someone has responded to your request. Message and
+                        data rates may apply. Reply STOP to any message to unsubscribe.
                       </p>
                     </label>
                   </div>
@@ -182,8 +207,10 @@ export default function Profile() {
             )}
 
             <div className="border-t pt-6 dark:border-gray-700">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Appearance</h2>
-              
+              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                Appearance
+              </h2>
+
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Theme
@@ -237,4 +264,3 @@ export default function Profile() {
     </Layout>
   );
 }
-

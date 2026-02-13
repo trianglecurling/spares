@@ -64,7 +64,11 @@ type DateTimeParts = {
   second?: string;
 };
 
-const extractDateTimeParts = (date: Date, timeZone: string, includeSeconds = false): DateTimeParts | null => {
+const extractDateTimeParts = (
+  date: Date,
+  timeZone: string,
+  includeSeconds = false
+): DateTimeParts | null => {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
@@ -154,7 +158,7 @@ export default function AdminConfig() {
   const [testingEmail, setTestingEmail] = useState(false);
   const [testingSms, setTestingSms] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
+
   const [formData, setFormData] = useState({
     twilioApiKeySid: '',
     twilioApiKeySecret: '',
@@ -221,7 +225,7 @@ export default function AdminConfig() {
 
     try {
       const payload: UpdateConfigPayload = {};
-      
+
       // Only include fields that have been changed
       if (formData.twilioApiKeySid !== (config?.twilioApiKeySid || '')) {
         payload.twilioApiKeySid = formData.twilioApiKeySid || undefined;
@@ -252,13 +256,24 @@ export default function AdminConfig() {
       }
       if (formData.dashboardAlertVariant !== (config?.dashboardAlertVariant || '')) {
         const allowedVariants = ['info', 'warning', 'success', 'danger'] as const;
-        payload.dashboardAlertVariant = allowedVariants.includes(formData.dashboardAlertVariant as (typeof allowedVariants)[number])
+        payload.dashboardAlertVariant = allowedVariants.includes(
+          formData.dashboardAlertVariant as (typeof allowedVariants)[number]
+        )
           ? (formData.dashboardAlertVariant as (typeof allowedVariants)[number])
           : undefined;
       }
       if (formData.dashboardAlertIcon !== (config?.dashboardAlertIcon || '')) {
-        const allowedIcons = ['info', 'warning', 'success', 'none', 'announcement', 'error'] as const;
-        payload.dashboardAlertIcon = allowedIcons.includes(formData.dashboardAlertIcon as (typeof allowedIcons)[number])
+        const allowedIcons = [
+          'info',
+          'warning',
+          'success',
+          'none',
+          'announcement',
+          'error',
+        ] as const;
+        payload.dashboardAlertIcon = allowedIcons.includes(
+          formData.dashboardAlertIcon as (typeof allowedIcons)[number]
+        )
           ? (formData.dashboardAlertIcon as (typeof allowedIcons)[number])
           : undefined;
       }
@@ -291,7 +306,7 @@ export default function AdminConfig() {
       setMessage({ type: 'success', text: 'Server configuration updated successfully' });
       await loadConfig();
       setFrontendLogCaptureEnabled(formData.captureFrontendLogs);
-      
+
       // Clear password fields after successful save
       setFormData({
         ...formData,
@@ -300,7 +315,10 @@ export default function AdminConfig() {
       });
     } catch (error) {
       console.error('Failed to update config:', error);
-      setMessage({ type: 'error', text: formatApiError(error, 'Failed to update server configuration') });
+      setMessage({
+        type: 'error',
+        text: formatApiError(error, 'Failed to update server configuration'),
+      });
     } finally {
       setSubmitting(false);
     }
@@ -374,8 +392,8 @@ export default function AdminConfig() {
         {message && (
           <div
             className={`mb-6 p-4 rounded ${
-              message.type === 'success' 
-                ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200' 
+              message.type === 'success'
+                ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
                 : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
             }`}
           >
@@ -399,15 +417,18 @@ export default function AdminConfig() {
                     onChange={(e) => setFormData({ ...formData, testMode: e.target.checked })}
                     className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
                   />
-                  <label htmlFor="testMode" className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label
+                    htmlFor="testMode"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
                     Enable test mode
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
-                  When enabled, emails and SMS messages will be printed to the console instead of being sent. 
-                  This is useful for testing without sending actual messages.
+                  When enabled, emails and SMS messages will be printed to the console instead of
+                  being sent. This is useful for testing without sending actual messages.
                 </p>
-                
+
                 <div className="flex items-center mt-4">
                   <input
                     type="checkbox"
@@ -416,14 +437,18 @@ export default function AdminConfig() {
                     onChange={(e) => setFormData({ ...formData, disableEmail: e.target.checked })}
                     className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
                   />
-                  <label htmlFor="disableEmail" className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label
+                    htmlFor="disableEmail"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
                     Disable email sending
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
-                  When enabled, emails will be printed to the console instead of being sent, regardless of test mode.
+                  When enabled, emails will be printed to the console instead of being sent,
+                  regardless of test mode.
                 </p>
-                
+
                 <div className="flex items-center mt-4">
                   <input
                     type="checkbox"
@@ -432,12 +457,16 @@ export default function AdminConfig() {
                     onChange={(e) => setFormData({ ...formData, disableSms: e.target.checked })}
                     className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
                   />
-                  <label htmlFor="disableSms" className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label
+                    htmlFor="disableSms"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
                     Disable SMS sending
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
-                  When enabled, SMS messages will be printed to the console instead of being sent, regardless of test mode.
+                  When enabled, SMS messages will be printed to the console instead of being sent,
+                  regardless of test mode.
                 </p>
               </div>
             </div>
@@ -449,26 +478,36 @@ export default function AdminConfig() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="dashboardAlertTitle" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="dashboardAlertTitle"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Alert title
                   </label>
                   <input
                     type="text"
                     id="dashboardAlertTitle"
                     value={formData.dashboardAlertTitle}
-                    onChange={(e) => setFormData({ ...formData, dashboardAlertTitle: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, dashboardAlertTitle: e.target.value })
+                    }
                     className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     placeholder="Monday Leagues Canceled"
                   />
                 </div>
                 <div>
-                  <label htmlFor="dashboardAlertBody" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="dashboardAlertBody"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Alert message
                   </label>
                   <textarea
                     id="dashboardAlertBody"
                     value={formData.dashboardAlertBody}
-                    onChange={(e) => setFormData({ ...formData, dashboardAlertBody: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, dashboardAlertBody: e.target.value })
+                    }
                     rows={4}
                     className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     placeholder="Due to the icy road conditions, Monday leagues have been canceled!"
@@ -478,7 +517,10 @@ export default function AdminConfig() {
                   </p>
                 </div>
                 <div>
-                  <label htmlFor="dashboardAlertExpiresAt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="dashboardAlertExpiresAt"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Optional expiration (Eastern Time)
                   </label>
                   <input
@@ -497,13 +539,18 @@ export default function AdminConfig() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="dashboardAlertVariant" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label
+                      htmlFor="dashboardAlertVariant"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    >
                       Alert color
                     </label>
                     <select
                       id="dashboardAlertVariant"
                       value={formData.dashboardAlertVariant}
-                      onChange={(e) => setFormData({ ...formData, dashboardAlertVariant: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, dashboardAlertVariant: e.target.value })
+                      }
                       className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     >
                       <option value="info">Info (blue)</option>
@@ -513,13 +560,18 @@ export default function AdminConfig() {
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="dashboardAlertIcon" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label
+                      htmlFor="dashboardAlertIcon"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    >
                       Alert icon
                     </label>
                     <select
                       id="dashboardAlertIcon"
                       value={formData.dashboardAlertIcon}
-                      onChange={(e) => setFormData({ ...formData, dashboardAlertIcon: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, dashboardAlertIcon: e.target.value })
+                      }
                       className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     >
                       <option value="announcement">Announcement</option>
@@ -558,7 +610,8 @@ export default function AdminConfig() {
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
-                  When disabled, the frontend will not initialize OpenTelemetry and no traces/logs are sent.
+                  When disabled, the frontend will not initialize OpenTelemetry and no traces/logs
+                  are sent.
                 </p>
 
                 <div className="flex items-center">
@@ -579,7 +632,8 @@ export default function AdminConfig() {
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
-                  When enabled, browser console logs are forwarded to the OpenTelemetry logs pipeline.
+                  When enabled, browser console logs are forwarded to the OpenTelemetry logs
+                  pipeline.
                 </p>
 
                 <div className="flex items-center mt-4">
@@ -612,24 +666,31 @@ export default function AdminConfig() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="testCurrentTime" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="testCurrentTime"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Override current date/time (for testing/debugging)
                   </label>
                   <input
                     type="datetime-local"
                     id="testCurrentTime"
-                    value={formData.testCurrentTime ? new Date(formData.testCurrentTime).toISOString().slice(0, 16) : ''}
+                    value={
+                      formData.testCurrentTime
+                        ? new Date(formData.testCurrentTime).toISOString().slice(0, 16)
+                        : ''
+                    }
                     onChange={(e) => {
                       const value = e.target.value;
-                      setFormData({ 
-                        ...formData, 
-                        testCurrentTime: value ? new Date(value).toISOString() : '' 
+                      setFormData({
+                        ...formData,
+                        testCurrentTime: value ? new Date(value).toISOString() : '',
                       });
                     }}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Set a fake "current" date/time for testing. Leave empty to use real time. 
+                    Set a fake "current" date/time for testing. Leave empty to use real time.
                     Format: YYYY-MM-DDTHH:mm (e.g., 2024-01-15T14:30)
                   </p>
                   {formData.testCurrentTime && (
@@ -654,7 +715,10 @@ export default function AdminConfig() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="notificationDelaySeconds" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="notificationDelaySeconds"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Delay between notifications (seconds)
                   </label>
                   <input
@@ -662,15 +726,17 @@ export default function AdminConfig() {
                     id="notificationDelaySeconds"
                     min="1"
                     value={formData.notificationDelaySeconds}
-                    onChange={(e) => setFormData({ 
-                      ...formData, 
-                      notificationDelaySeconds: parseInt(e.target.value) || 180 
-                    })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        notificationDelaySeconds: parseInt(e.target.value) || 180,
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    The number of seconds to wait between sending notifications for public spare requests. 
-                    Default is 180 seconds (3 minutes). Minimum is 1 second.
+                    The number of seconds to wait between sending notifications for public spare
+                    requests. Default is 180 seconds (3 minutes). Minimum is 1 second.
                   </p>
                 </div>
               </div>
@@ -683,7 +749,10 @@ export default function AdminConfig() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="twilioApiKeySid" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="twilioApiKeySid"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     API Key SID
                   </label>
                   <input
@@ -700,26 +769,34 @@ export default function AdminConfig() {
                 </div>
 
                 <div>
-                  <label htmlFor="twilioApiKeySecret" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="twilioApiKeySecret"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     API Key Secret
                   </label>
                   <input
                     type="password"
                     id="twilioApiKeySecret"
                     value={formData.twilioApiKeySecret}
-                    onChange={(e) => setFormData({ ...formData, twilioApiKeySecret: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, twilioApiKeySecret: e.target.value })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
                     placeholder={config?.twilioApiKeySecret ? '••••••••' : 'Enter API key secret'}
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {config?.twilioApiKeySecret 
+                    {config?.twilioApiKeySecret
                       ? 'Leave blank to keep current secret. Enter new secret to update.'
                       : 'Your Twilio API Key Secret (kept secure)'}
                   </p>
                 </div>
 
                 <div>
-                  <label htmlFor="twilioAccountSid" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="twilioAccountSid"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Account SID
                   </label>
                   <input
@@ -736,14 +813,19 @@ export default function AdminConfig() {
                 </div>
 
                 <div>
-                  <label htmlFor="twilioCampaignSid" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="twilioCampaignSid"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Campaign SID
                   </label>
                   <input
                     type="text"
                     id="twilioCampaignSid"
                     value={formData.twilioCampaignSid}
-                    onChange={(e) => setFormData({ ...formData, twilioCampaignSid: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, twilioCampaignSid: e.target.value })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
                     placeholder="CMxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                   />
@@ -782,16 +864,23 @@ export default function AdminConfig() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="azureConnectionString" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="azureConnectionString"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Connection string
                   </label>
                   <textarea
                     id="azureConnectionString"
                     value={formData.azureConnectionString}
-                    onChange={(e) => setFormData({ ...formData, azureConnectionString: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, azureConnectionString: e.target.value })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
                     rows={3}
-                    placeholder={config?.azureConnectionString ? '••••••••' : 'Endpoint=https://...'}
+                    placeholder={
+                      config?.azureConnectionString ? '••••••••' : 'Endpoint=https://...'
+                    }
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                     {config?.azureConnectionString
@@ -801,7 +890,10 @@ export default function AdminConfig() {
                 </div>
 
                 <div>
-                  <label htmlFor="azureSenderEmail" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="azureSenderEmail"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Sender email address
                   </label>
                   <input
@@ -848,12 +940,7 @@ export default function AdminConfig() {
             )}
 
             <div className="flex justify-end space-x-3 pt-4 border-t dark:border-gray-700">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={loadConfig}
-                disabled={submitting}
-              >
+              <Button type="button" variant="secondary" onClick={loadConfig} disabled={submitting}>
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
@@ -866,4 +953,3 @@ export default function AdminConfig() {
     </Layout>
   );
 }
-

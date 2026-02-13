@@ -73,7 +73,7 @@ function circleRoundRobin(teamIds: number[]): MatchupRound[] {
  */
 function generateIntraDivisionRounds(
   teams: ScheduleTeam[],
-  strategy: ScheduleStrategy,
+  strategy: ScheduleStrategy
 ): MatchupRound[] {
   const divisionTeams = teams.filter((t) => t.divisionId === strategy.divisionId);
   if (divisionTeams.length < 2) return [];
@@ -111,7 +111,7 @@ function generateIntraDivisionRounds(
  */
 function generateCrossDivisionRounds(
   teams: ScheduleTeam[],
-  strategy: ScheduleStrategy,
+  strategy: ScheduleStrategy
 ): MatchupRound[] {
   const divisionIds = [...new Set(teams.map((t) => t.divisionId))];
   if (divisionIds.length < 2) return [];
@@ -143,7 +143,7 @@ function generateCrossDivisionRounds(
  */
 function organizeIntoRounds(
   pairings: Array<[number, number]>,
-  strategyLocalId: string,
+  strategyLocalId: string
 ): MatchupRound[] {
   const rounds: MatchupRound[] = [];
   const remaining = [...pairings];
@@ -190,7 +190,7 @@ function organizeIntoRounds(
  */
 export function generateAllMatchups(
   strategies: ScheduleStrategy[],
-  teams: ScheduleTeam[],
+  teams: ScheduleTeam[]
 ): MatchupRound[] {
   if (strategies.length === 0 || teams.length < 2) return [];
 

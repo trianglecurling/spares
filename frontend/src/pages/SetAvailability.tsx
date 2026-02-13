@@ -29,7 +29,10 @@ export default function SetAvailability() {
 
   const loadData = async () => {
     try {
-      const [leaguesRes, availabilityRes] = await Promise.all([get('/leagues'), get('/availability')]);
+      const [leaguesRes, availabilityRes] = await Promise.all([
+        get('/leagues'),
+        get('/availability'),
+      ]);
 
       setLeagues(leaguesRes);
       setAvailability(availabilityRes.leagues);
@@ -48,9 +51,7 @@ export default function SetAvailability() {
     setAvailability((prev) => {
       const existing = prev.find((a) => a.leagueId === leagueId);
       if (existing) {
-        return prev.map((a) =>
-          a.leagueId === leagueId ? { ...a, available: newValue } : a
-        );
+        return prev.map((a) => (a.leagueId === leagueId ? { ...a, available: newValue } : a));
       } else {
         return [...prev, { leagueId, available: newValue }];
       }
@@ -65,9 +66,7 @@ export default function SetAvailability() {
       console.error('Failed to update availability:', error);
       // Revert on error
       setAvailability((prev) =>
-        prev.map((a) =>
-          a.leagueId === leagueId ? { ...a, available: currentlyAvailable } : a
-        )
+        prev.map((a) => (a.leagueId === leagueId ? { ...a, available: currentlyAvailable } : a))
       );
     }
   };
@@ -172,7 +171,8 @@ export default function SetAvailability() {
                       <h3 className="font-semibold text-lg dark:text-gray-100">{league.name}</h3>
                       <div className="text-sm text-gray-600 dark:text-gray-400 mt-1 space-y-1">
                         <p>
-                          <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
+                          <span className="font-medium dark:text-gray-300">Day:</span>{' '}
+                          {getDayName(league.dayOfWeek)}
                         </p>
                         <p>
                           <span className="font-medium dark:text-gray-300">Times:</span>{' '}
@@ -183,10 +183,10 @@ export default function SetAvailability() {
                           {league.format === 'teams' ? 'Teams' : 'Doubles'}
                         </p>
                       </div>
-                      
+
                       {/* Status text with fixed height container to prevent layout shift */}
                       <div className="h-6 mt-2">
-                        <p 
+                        <p
                           className={`text-sm text-primary-teal font-medium transition-opacity duration-200 ${
                             available ? 'opacity-100' : 'opacity-0'
                           }`}

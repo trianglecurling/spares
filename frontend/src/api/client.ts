@@ -24,36 +24,35 @@ type GetPath = {
   [K in ApiPathKey]: paths[K] extends { get: unknown } ? K : never;
 }[ApiPathKey];
 
-type RequestBodyFor<T> =
-  T extends { requestBody: { content: { 'application/json': infer Body } } }
+type RequestBodyFor<T> = T extends { requestBody: { content: { 'application/json': infer Body } } }
+  ? Body
+  : T extends { requestBody?: { content: { 'application/json': infer Body } } }
     ? Body
-    : T extends { requestBody?: { content: { 'application/json': infer Body } } }
-      ? Body
-      : undefined;
+    : undefined;
 
-type ResponseBodyFor<T> = T extends { responses: { 200: { content: { 'application/json': infer Body } } } }
+type ResponseBodyFor<T> = T extends {
+  responses: { 200: { content: { 'application/json': infer Body } } };
+}
   ? Body
   : never;
 
-type QueryFor<T> =
-  T extends { parameters: { query: infer Query } }
+type QueryFor<T> = T extends { parameters: { query: infer Query } }
+  ? Query
+  : T extends { parameters?: { query?: infer Query } }
     ? Query
-    : T extends { parameters?: { query?: infer Query } }
-      ? Query
-      : undefined;
+    : undefined;
 
 type PathParamsShape = Record<string, string | number | boolean>;
 
-type PathParamsFor<T> =
-  T extends { parameters: { path: infer Params } }
+type PathParamsFor<T> = T extends { parameters: { path: infer Params } }
+  ? Params extends PathParamsShape
+    ? Params
+    : PathParamsShape
+  : T extends { parameters?: { path?: infer Params } }
     ? Params extends PathParamsShape
       ? Params
       : PathParamsShape
-    : T extends { parameters?: { path?: infer Params } }
-      ? Params extends PathParamsShape
-        ? Params
-        : PathParamsShape
-      : undefined;
+    : undefined;
 
 type PostRequestBody<P extends PostPath> = RequestBodyFor<paths[P]['post']>;
 type PostResponseBody<P extends PostPath> = ResponseBodyFor<paths[P]['post']>;
@@ -75,10 +74,7 @@ type GetResponseBody<P extends GetPath> = ResponseBodyFor<paths[P]['get']>;
 type GetQuery<P extends GetPath> = QueryFor<paths[P]['get']>;
 type GetPathParams<P extends GetPath> = PathParamsFor<paths[P]['get']>;
 
-function resolvePath<P extends ApiPathKey>(
-  path: P,
-  params?: PathParamsShape | undefined
-): string {
+function resolvePath<P extends ApiPathKey>(path: P, params?: PathParamsShape | undefined): string {
   if (!params) return path;
   let resolved = path as string;
   for (const [key, value] of Object.entries(params)) {

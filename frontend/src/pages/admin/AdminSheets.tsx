@@ -125,9 +125,7 @@ export default function AdminSheets() {
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Manage sheets
-          </h1>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Manage sheets</h1>
           <Button onClick={() => handleOpenModal()}>Add sheet</Button>
         </div>
 
@@ -135,7 +133,9 @@ export default function AdminSheets() {
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : sheets.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-            <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">No sheets configured yet.</p>
+            <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">
+              No sheets configured yet.
+            </p>
             <Button onClick={() => handleOpenModal()}>Create your first sheet</Button>
           </div>
         ) : (
@@ -147,7 +147,8 @@ export default function AdminSheets() {
                     <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">{sheet.name}</h3>
                     <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                       <p>
-                        <span className="font-medium dark:text-gray-300">Sort order:</span> {sheet.sortOrder}
+                        <span className="font-medium dark:text-gray-300">Sort order:</span>{' '}
+                        {sheet.sortOrder}
                       </p>
                       <p>
                         <span className="font-medium dark:text-gray-300">Status:</span>{' '}
@@ -178,7 +179,10 @@ export default function AdminSheets() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Sheet name <span className="text-red-500">*</span>
             </label>
             <input
@@ -192,14 +196,19 @@ export default function AdminSheets() {
           </div>
 
           <div>
-            <label htmlFor="sortOrder" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="sortOrder"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Sort order
             </label>
             <input
               type="number"
               id="sortOrder"
               value={formData.sortOrder}
-              onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value, 10) || 0 })}
+              onChange={(e) =>
+                setFormData({ ...formData, sortOrder: parseInt(e.target.value, 10) || 0 })
+              }
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
             />
           </div>
@@ -212,7 +221,10 @@ export default function AdminSheets() {
               onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
               className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
             />
-            <label htmlFor="isActive" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label
+              htmlFor="isActive"
+              className="text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
               Active
             </label>
           </div>

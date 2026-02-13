@@ -36,6 +36,7 @@ const createEventBodySchema = z.object({
   start: z.string(), // ISO datetime
   end: z.string(),
   allDay: z.boolean(),
+  description: z.string().optional(),
   locations: z.array(locationSchema).optional(),
   recurrence: z
     .object({
@@ -213,6 +214,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         start: string;
         end: string;
         allDay: boolean;
+        description?: string;
         locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
         source: string;
         isRecurring?: boolean;
@@ -260,6 +262,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
               start: useStart,
               end: useEnd,
               allDay: useEv.all_day === 1,
+              description: useEv.description ?? ev.description ?? undefined,
               locations: locs.length > 0 ? locs : undefined,
               source: 'direct',
               isRecurring: true,
@@ -278,6 +281,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             start: ev.start_dt,
             end: ev.end_dt,
             allDay: ev.all_day === 1,
+            description: ev.description ?? undefined,
             locations: locs.length > 0 ? locs : undefined,
             source: 'direct',
             createdBy: ev.created_by_member_id != null ? creatorNameById.get(ev.created_by_member_id) : undefined,
@@ -300,6 +304,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             start: ov.start_dt,
             end: ov.end_dt,
             allDay: ov.all_day === 1,
+            description: ov.description ?? undefined,
             locations: locs.length > 0 ? locs : undefined,
             source: 'direct',
             isRecurring: true,
@@ -328,6 +333,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             start: { type: 'string' },
             end: { type: 'string' },
             allDay: { type: 'boolean' },
+            description: { type: 'string' },
             locations: { type: 'array' },
             recurrence: { type: 'object' },
           },
@@ -357,6 +363,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
           start_dt: body.start,
           end_dt: body.end,
           all_day: body.allDay ? 1 : 0,
+          description: body.description ?? null,
           recurrence_rule: recurrenceRule,
           created_by_member_id: member.id,
         })
@@ -428,6 +435,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
               start_dt: body.start ?? undefined,
               end_dt: body.end ?? undefined,
               all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : undefined,
+              description: body.description !== undefined ? body.description : undefined,
               updated_at: sql`CURRENT_TIMESTAMP`,
             }).where(eq(schema.calendarEvents.parent_event_id, ov.parent_event_id));
             return { success: true };
@@ -435,17 +443,18 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         }
         if (parent) {
           await db
-            .update(schema.calendarEvents)
-            .set({
-              type_id: body.typeId ?? parent.type_id,
-              title: body.title ?? parent.title,
-              start_dt: body.start ?? parent.start_dt,
-              end_dt: body.end ?? parent.end_dt,
-              all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : parent.all_day,
-              recurrence_rule: body.recurrence?.rrule ?? parent.recurrence_rule,
-              updated_at: sql`CURRENT_TIMESTAMP`,
-            })
-            .where(eq(schema.calendarEvents.id, parent.id));
+.update(schema.calendarEvents)
+          .set({
+            type_id: body.typeId ?? parent.type_id,
+            title: body.title ?? parent.title,
+            start_dt: body.start ?? parent.start_dt,
+            end_dt: body.end ?? parent.end_dt,
+            all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : parent.all_day,
+            description: body.description !== undefined ? body.description : parent.description,
+            recurrence_rule: body.recurrence?.rrule ?? parent.recurrence_rule,
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(schema.calendarEvents.id, parent.id));
           if (body.locations) {
             await db.delete(schema.calendarEventLocations).where(eq(schema.calendarEventLocations.event_id, parent.id));
             const locValues = toLocationRows(parent.id, body.locations);
@@ -471,6 +480,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             start_dt: body.start ?? parent.start_dt,
             end_dt: body.end ?? parent.end_dt,
             all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : parent.all_day,
+            description: body.description !== undefined ? body.description : parent.description,
             updated_at: sql`CURRENT_TIMESTAMP`,
           }).where(eq(schema.calendarEvents.id, dbId));
           if (body.locations) {
@@ -499,6 +509,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             start_dt: body.start ?? parent!.start_dt,
             end_dt: body.end ?? parent!.end_dt,
             all_day: (body.allDay ?? parent!.all_day === 1) ? 1 : 0,
+            description: body.description !== undefined ? body.description : parent!.description,
             parent_event_id: null,
             recurrence_date: null,
             created_by_member_id: member.id,
@@ -530,6 +541,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
           start_dt: body.start ?? ev.start_dt,
           end_dt: body.end ?? ev.end_dt,
           all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : ev.all_day,
+          description: body.description !== undefined ? body.description : ev.description,
           recurrence_rule: body.recurrence?.rrule ?? ev.recurrence_rule,
           updated_at: sql`CURRENT_TIMESTAMP`,
         })

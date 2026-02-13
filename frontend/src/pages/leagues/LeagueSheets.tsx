@@ -83,7 +83,11 @@ export default function LeagueSheets({ leagueId }: LeagueSheetsProps) {
   const loadGames = async () => {
     setLoadingGames(true);
     try {
-      const response = await get('/leagues/{id}/games', { includeUnscheduled: true }, { id: String(leagueId) });
+      const response = await get(
+        '/leagues/{id}/games',
+        { includeUnscheduled: true },
+        { id: String(leagueId) }
+      );
       setGames((response as LeagueGame[]) ?? []);
     } catch (error: unknown) {
       console.error('Failed to load games:', error);
@@ -175,7 +179,8 @@ export default function LeagueSheets({ leagueId }: LeagueSheetsProps) {
         const parts: string[] = [];
         if (scheduled > 0) parts.push(`${scheduled} sheet${scheduled === 1 ? '' : 's'} scheduled`);
         if (available > 0) parts.push(`${available} sheet${available === 1 ? '' : 's'} available`);
-        if (unavailable > 0) parts.push(`${unavailable} sheet${unavailable === 1 ? '' : 's'} unavailable`);
+        if (unavailable > 0)
+          parts.push(`${unavailable} sheet${unavailable === 1 ? '' : 's'} unavailable`);
         message = parts.join(' · ');
       }
       return { draw, scheduled, available, unavailable, message, scheduledSheetIds };
@@ -207,9 +212,7 @@ export default function LeagueSheets({ leagueId }: LeagueSheetsProps) {
                       </span>
                     )}
                   </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    {message}
-                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">{message}</div>
                 </div>
                 <Button onClick={() => openAvailabilityModal(draw)} variant="secondary">
                   Edit sheets
@@ -265,7 +268,10 @@ export default function LeagueSheets({ leagueId }: LeagueSheetsProps) {
           </div>
           <div className="space-y-2">
             {selectedDraw?.sheets.map((sheet) => (
-              <label key={sheet.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <label
+                key={sheet.id}
+                className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+              >
                 <input
                   type="checkbox"
                   checked={availabilitySelections[sheet.id] ?? true}
@@ -282,7 +288,11 @@ export default function LeagueSheets({ leagueId }: LeagueSheetsProps) {
             ))}
           </div>
           <div className="flex gap-3">
-            <Button onClick={handleSaveAvailability} disabled={availabilitySaving} className="flex-1">
+            <Button
+              onClick={handleSaveAvailability}
+              disabled={availabilitySaving}
+              className="flex-1"
+            >
               {availabilitySaving ? 'Saving...' : 'Save'}
             </Button>
             <Button variant="secondary" onClick={closeAvailabilityModal} className="flex-1">

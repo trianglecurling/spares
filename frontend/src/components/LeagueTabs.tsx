@@ -19,7 +19,11 @@ const leagueTabs = [
   { label: 'Maintenance', path: 'maintenance', requiresAdmin: true },
 ];
 
-export default function LeagueTabs({ leagueId, showSheetsTab = false, showMaintenanceTab = false }: LeagueTabsProps) {
+export default function LeagueTabs({
+  leagueId,
+  showSheetsTab = false,
+  showMaintenanceTab = false,
+}: LeagueTabsProps) {
   const location = useLocation();
   const basePath = `/leagues/${leagueId}`;
 
@@ -32,22 +36,22 @@ export default function LeagueTabs({ leagueId, showSheetsTab = false, showMainte
           return true;
         })
         .map((tab) => {
-        const to = tab.path ? `${basePath}/${tab.path}` : basePath;
-        const isActive = location.pathname === to;
-        return (
-          <Link
-            key={tab.label}
-            to={to}
-            className={`px-3 py-2 rounded-md text-sm font-medium ${
-              isActive
-                ? 'bg-primary-teal text-white'
-                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-            }`}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
+          const to = tab.path ? `${basePath}/${tab.path}` : basePath;
+          const isActive = location.pathname === to;
+          return (
+            <Link
+              key={tab.label}
+              to={to}
+              className={`px-3 py-2 rounded-md text-sm font-medium ${
+                isActive
+                  ? 'bg-primary-teal text-white'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
     </div>
   );
 }

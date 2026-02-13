@@ -1,4 +1,7 @@
-export function renderMe(name: string | null | undefined, currentMemberName: string | null | undefined): string {
+export function renderMe(
+  name: string | null | undefined,
+  currentMemberName: string | null | undefined
+): string {
   const n = (name ?? '').trim();
   if (!n) return '';
   const me = (currentMemberName ?? '').trim();
@@ -7,5 +10,3 @@ export function renderMe(name: string | null | undefined, currentMemberName: str
   }
   return n;
 }
-
-

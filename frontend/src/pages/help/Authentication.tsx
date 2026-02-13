@@ -54,16 +54,19 @@ export default function Authentication() {
                         <strong>Enter your email or phone number</strong> on the login page
                       </li>
                       <li>
-                        <strong>Click "Send Login Code"</strong> - you'll receive a 6-digit code via email or SMS
+                        <strong>Click "Send Login Code"</strong> - you'll receive a 6-digit code via
+                        email or SMS
                       </li>
                       <li>
                         <strong>Enter the code</strong> when prompted
                       </li>
                       <li>
-                        <strong>If multiple accounts share your contact:</strong> Select your name from the list
+                        <strong>If multiple accounts share your contact:</strong> Select your name
+                        from the list
                       </li>
                       <li>
-                        <strong>You're logged in!</strong> The system remembers your login for future visits
+                        <strong>You're logged in!</strong> The system remembers your login for
+                        future visits
                       </li>
                     </ol>
                   </section>
@@ -87,9 +90,7 @@ export default function Authentication() {
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Staying Logged In
                     </h2>
-                    <p className="mb-3">
-                      The system uses secure tokens to keep you logged in:
-                    </p>
+                    <p className="mb-3">The system uses secure tokens to keep you logged in:</p>
                     <ul className="list-disc list-inside space-y-2">
                       <li>Your login persists across browser sessions</li>
                       <li>You won't need to enter a code every time you visit</li>
@@ -118,7 +119,9 @@ export default function Authentication() {
                     </h2>
                     <ul className="list-disc list-inside space-y-2">
                       <li>Login codes expire after a short time for security</li>
-                      <li>Codes are single-use - you'll need a new code if you try to use an old one</li>
+                      <li>
+                        Codes are single-use - you'll need a new code if you try to use an old one
+                      </li>
                       <li>Your account information is kept secure and private</li>
                       <li>Only you and administrators can see your personal information</li>
                     </ul>
@@ -129,10 +132,21 @@ export default function Authentication() {
                       Troubleshooting
                     </h2>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Didn't receive a code?</strong> Check your spam folder, or try requesting a new code</li>
-                      <li><strong>Code expired?</strong> Request a new code - they expire quickly for security</li>
-                      <li><strong>Wrong code?</strong> Make sure you're entering all 6 digits correctly</li>
-                      <li><strong>Can't log in?</strong> Contact support at av@trianglecurling.com</li>
+                      <li>
+                        <strong>Didn't receive a code?</strong> Check your spam folder, or try
+                        requesting a new code
+                      </li>
+                      <li>
+                        <strong>Code expired?</strong> Request a new code - they expire quickly for
+                        security
+                      </li>
+                      <li>
+                        <strong>Wrong code?</strong> Make sure you're entering all 6 digits
+                        correctly
+                      </li>
+                      <li>
+                        <strong>Can't log in?</strong> Contact support at av@trianglecurling.com
+                      </li>
                     </ul>
                   </section>
                 </div>

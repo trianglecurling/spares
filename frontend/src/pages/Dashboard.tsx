@@ -190,7 +190,6 @@ export default function Dashboard() {
         } else {
           setDashboardAlert(null);
         }
-
       } catch (error) {
         console.error('Failed to load dashboard alert:', error);
       }
@@ -204,7 +203,17 @@ export default function Dashboard() {
     setOpponentRosterLoading(true);
     setOpponentRoster([]);
     get('/teams/{teamId}/roster', undefined, { teamId: String(opponentRosterModal.teamId) })
-      .then((roster) => setOpponentRoster(roster as Array<{ memberId: number; name: string; role: string; isSkip: boolean; isVice: boolean }>))
+      .then((roster) =>
+        setOpponentRoster(
+          roster as Array<{
+            memberId: number;
+            name: string;
+            role: string;
+            isSkip: boolean;
+            isVice: boolean;
+          }>
+        )
+      )
       .catch(() => setOpponentRoster([]))
       .finally(() => setOpponentRosterLoading(false));
   }, [opponentRosterModal]);
@@ -214,9 +223,9 @@ export default function Dashboard() {
     const requestIdParam = searchParams.get('requestId');
     if (requestIdParam && !loading) {
       const requestId = parseInt(requestIdParam, 10);
-      
+
       // Check if user has already responded to this request
-      const alreadyResponded = mySparing.some(r => r.id === requestId);
+      const alreadyResponded = mySparing.some((r) => r.id === requestId);
       if (alreadyResponded) {
         showAlert('You are already signed up for this spare request.', 'error');
         // Clear the requestId from URL
@@ -224,9 +233,9 @@ export default function Dashboard() {
         setSearchParams(searchParams, { replace: true });
         return;
       }
-      
+
       // Find the request in open requests
-      const request = openRequests.find(r => r.id === requestId);
+      const request = openRequests.find((r) => r.id === requestId);
       if (request) {
         setSelectedRequest(request);
         // Clear the requestId from URL
@@ -278,7 +287,7 @@ export default function Dashboard() {
     const declineIdParam = searchParams.get('declineRequestId');
     if (declineIdParam && !loading) {
       const requestId = parseInt(declineIdParam, 10);
-      const request = openRequests.find(r => r.id === requestId);
+      const request = openRequests.find((r) => r.id === requestId);
       if (request) {
         if (request.requestType !== 'private') {
           showAlert('Decline is only available for private spare requests.', 'error');
@@ -295,14 +304,15 @@ export default function Dashboard() {
 
   const loadAllData = async () => {
     try {
-      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes, upcomingGamesRes] = await Promise.all([
-        get('/spares'),
-        get('/spares/my-sparing'),
-        get('/spares/filled-upcoming'),
-        get('/spares/cc'),
-        get('/spares/my-requests'),
-        get('/members/me/upcoming-games').catch(() => []),
-      ]);
+      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes, upcomingGamesRes] =
+        await Promise.all([
+          get('/spares'),
+          get('/spares/my-sparing'),
+          get('/spares/filled-upcoming'),
+          get('/spares/cc'),
+          get('/spares/my-requests'),
+          get('/members/me/upcoming-games').catch(() => []),
+        ]);
       setOpenRequests(openRes);
       setMySparing(mySparingRes);
       setFilledRequests(filledRes);
@@ -332,13 +342,17 @@ export default function Dashboard() {
 
     setSubmitting(true);
     try {
-      await post('/spares/{id}/respond', { comment: comment.trim() || undefined }, { id: String(selectedRequest.id) });
+      await post(
+        '/spares/{id}/respond',
+        { comment: comment.trim() || undefined },
+        { id: String(selectedRequest.id) }
+      );
 
       // Reload all data
       await loadAllData();
       setSelectedRequest(null);
       setComment('');
-      
+
       // Show success notification
       setNotification({
         isOpen: true,
@@ -355,7 +369,7 @@ export default function Dashboard() {
           const go = await confirm({
             title: 'Set your availability?',
             message:
-              "Want to set your sparing availability now so others can find you for future spare requests?",
+              'Want to set your sparing availability now so others can find you for future spare requests?',
             confirmText: 'Set availability',
             cancelText: 'Not now',
             variant: 'info',
@@ -371,7 +385,9 @@ export default function Dashboard() {
       console.error('Failed to respond to spare request:', error);
 
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-      const data = axios.isAxiosError(error) ? (error.response?.data as { error?: string } | undefined) : undefined;
+      const data = axios.isAxiosError(error)
+        ? (error.response?.data as { error?: string } | undefined)
+        : undefined;
 
       // Check for specific error cases
       if (status === 404) {
@@ -427,7 +443,7 @@ export default function Dashboard() {
       await loadAllData();
       setCancelRequest(null);
       setCancelComment('');
-      
+
       // Show success notification
       setNotification({
         isOpen: true,
@@ -479,7 +495,7 @@ export default function Dashboard() {
           const go = await confirm({
             title: 'Set your availability?',
             message:
-              "Want to set your sparing availability now so others can find you for future spare requests?",
+              'Want to set your sparing availability now so others can find you for future spare requests?',
             confirmText: 'Set availability',
             cancelText: 'Not now',
             variant: 'info',
@@ -571,99 +587,106 @@ export default function Dashboard() {
     return null;
   };
 
-  const renderRequestCard = (request: SpareRequest, showButton = true, showMessage = true, showCancelButton = false) => {
-    const isPrivateInviteDeclined = request.requestType === 'private' && request.inviteStatus === 'declined';
+  const renderRequestCard = (
+    request: SpareRequest,
+    showButton = true,
+    showMessage = true,
+    showCancelButton = false
+  ) => {
+    const isPrivateInviteDeclined =
+      request.requestType === 'private' && request.inviteStatus === 'declined';
 
     return (
-    <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-          <div className="flex items-center space-x-2 mb-2">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Spare needed for {renderMe(request.requestedForName, member?.name)}
-            </h3>
-            {showButton && (
-              <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
-                Open
-              </span>
-            )}
-            {requestTypeBadge(request.requestType)}
-            {request.position && (
-              <span className="bg-primary-teal text-white px-2 py-1 rounded text-sm">
-                {request.position}
-              </span>
-            )}
-          </div>
+      <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <div className="flex items-center space-x-2 mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Spare needed for {renderMe(request.requestedForName, member?.name)}
+              </h3>
+              {showButton && (
+                <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
+                  Open
+                </span>
+              )}
+              {requestTypeBadge(request.requestType)}
+              {request.position && (
+                <span className="bg-primary-teal text-white px-2 py-1 rounded text-sm">
+                  {request.position}
+                </span>
+              )}
+            </div>
 
-          <div className="text-gray-600 dark:text-gray-400 space-y-1">
-            <p>
-              <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
-              at {formatTime(request.gameTime)}
-              {request.leagueName ? <span> • {request.leagueName}</span> : null}
-            </p>
-            <p>
-              <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
-              {renderMe(request.requesterName, member?.name)}
-            </p>
-            {request.requesterEmail && (
-              <p className="text-sm ml-4">
-                <a href={`mailto:${request.requesterEmail}`} className="text-primary-teal hover:underline">
-                  {request.requesterEmail}
-                </a>
-              </p>
-            )}
-            {request.requesterPhone && (
-              <p className="text-sm ml-4">
-                <a href={`tel:${request.requesterPhone.replace(/\D/g, '')}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
-                  {formatPhone(request.requesterPhone)}
-                </a>
-              </p>
-            )}
-            {request.filledByName && (
+            <div className="text-gray-600 dark:text-gray-400 space-y-1">
               <p>
-                <span className="font-medium dark:text-gray-300">Filled by:</span>{' '}
-                {renderMe(request.filledByName, member?.name)}
+                <span className="font-medium dark:text-gray-300">When:</span>{' '}
+                {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
+                {request.leagueName ? <span> • {request.leagueName}</span> : null}
               </p>
+              <p>
+                <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+                {renderMe(request.requesterName, member?.name)}
+              </p>
+              {request.requesterEmail && (
+                <p className="text-sm ml-4">
+                  <a
+                    href={`mailto:${request.requesterEmail}`}
+                    className="text-primary-teal hover:underline"
+                  >
+                    {request.requesterEmail}
+                  </a>
+                </p>
+              )}
+              {request.requesterPhone && (
+                <p className="text-sm ml-4">
+                  <a
+                    href={`tel:${request.requesterPhone.replace(/\D/g, '')}`}
+                    className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                  >
+                    {formatPhone(request.requesterPhone)}
+                  </a>
+                </p>
+              )}
+              {request.filledByName && (
+                <p>
+                  <span className="font-medium dark:text-gray-300">Filled by:</span>{' '}
+                  {renderMe(request.filledByName, member?.name)}
+                </p>
+              )}
+              {showMessage && request.message && <p className="italic mt-2">"{request.message}"</p>}
+            </div>
+          </div>
+
+          <div className="flex flex-row flex-wrap gap-2 ml-4 justify-end">
+            {showButton && request.requestType === 'private' && isPrivateInviteDeclined && (
+              <span className="px-3 py-2 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                Declined
+              </span>
             )}
-            {showMessage && request.message && (
-              <p className="italic mt-2">"{request.message}"</p>
+            {showButton && (
+              <Button onClick={() => setSelectedRequest(request)}>
+                {isPrivateInviteDeclined ? 'Sign Up Anyway' : 'Sign Up'}
+              </Button>
+            )}
+            {showButton && request.requestType === 'private' && !isPrivateInviteDeclined && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setDeclineRequest(request);
+                  setDeclineComment('');
+                }}
+              >
+                Decline
+              </Button>
+            )}
+            {showCancelButton && (
+              <Button variant="danger" onClick={() => setCancelRequest(request)}>
+                Cancel sparing
+              </Button>
             )}
           </div>
-        </div>
-
-        <div className="flex flex-row flex-wrap gap-2 ml-4 justify-end">
-          {showButton && request.requestType === 'private' && isPrivateInviteDeclined && (
-            <span className="px-3 py-2 rounded-md text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
-              Declined
-            </span>
-          )}
-          {showButton && (
-            <Button onClick={() => setSelectedRequest(request)}>
-              {isPrivateInviteDeclined ? 'Sign Up Anyway' : 'Sign Up'}
-            </Button>
-          )}
-          {showButton && request.requestType === 'private' && !isPrivateInviteDeclined && (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setDeclineRequest(request);
-                setDeclineComment('');
-              }}
-            >
-              Decline
-            </Button>
-          )}
-          {showCancelButton && (
-            <Button
-              variant="danger"
-              onClick={() => setCancelRequest(request)}
-            >
-              Cancel sparing
-            </Button>
-          )}
         </div>
       </div>
-    </div>
     );
   };
 
@@ -671,37 +694,36 @@ export default function Dashboard() {
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Dashboard
-          </h1>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Dashboard</h1>
         </div>
 
-        {dashboardAlert && (() => {
-          const styles = dashboardAlertStyles(dashboardAlert.variant);
-          return (
-            <div className={`${styles.container} p-4 rounded shadow-sm`}>
-              <div className="flex items-start gap-3">
-                {dashboardAlert.icon !== 'none' && (
-                  <div className={`${styles.text} mt-0.5`}>
-                    {renderDashboardAlertIcon(dashboardAlert.icon, styles.text)}
+        {dashboardAlert &&
+          (() => {
+            const styles = dashboardAlertStyles(dashboardAlert.variant);
+            return (
+              <div className={`${styles.container} p-4 rounded shadow-sm`}>
+                <div className="flex items-start gap-3">
+                  {dashboardAlert.icon !== 'none' && (
+                    <div className={`${styles.text} mt-0.5`}>
+                      {renderDashboardAlertIcon(dashboardAlert.icon, styles.text)}
+                    </div>
+                  )}
+                  <div>
+                    {dashboardAlert.title && (
+                      <div className={`text-lg font-semibold ${styles.text}`}>
+                        {dashboardAlert.title}
+                      </div>
+                    )}
+                    {dashboardAlert.body && (
+                      <div className={`text-sm whitespace-pre-line mt-1 ${styles.text}`}>
+                        {dashboardAlert.body}
+                      </div>
+                    )}
                   </div>
-                )}
-                <div>
-                  {dashboardAlert.title && (
-                    <div className={`text-lg font-semibold ${styles.text}`}>
-                      {dashboardAlert.title}
-                    </div>
-                  )}
-                  {dashboardAlert.body && (
-                    <div className={`text-sm whitespace-pre-line mt-1 ${styles.text}`}>
-                      {dashboardAlert.body}
-                    </div>
-                  )}
                 </div>
               </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {!member?.spareOnly && (
@@ -713,7 +735,9 @@ export default function Dashboard() {
                 <HiOutlineUserPlus className="w-12 h-12" />
               </div>
               <div className="text-xl font-semibold">Request a spare</div>
-              <div className="text-sm mt-1 dark:text-gray-300">Need someone to fill in for your game?</div>
+              <div className="text-sm mt-1 dark:text-gray-300">
+                Need someone to fill in for your game?
+              </div>
             </Link>
           )}
 
@@ -725,7 +749,9 @@ export default function Dashboard() {
               <HiOutlineCalendar className="w-12 h-12" />
             </div>
             <div className="text-xl font-semibold">Set your availability</div>
-            <div className="text-sm mt-1 dark:text-gray-300">Let others know when you can spare</div>
+            <div className="text-sm mt-1 dark:text-gray-300">
+              Let others know when you can spare
+            </div>
           </Link>
         </div>
 
@@ -773,7 +799,7 @@ export default function Dashboard() {
                             {game.opponentName}
                           </button>
                         ) : (
-                          game.opponentName ?? 'TBD'
+                          (game.opponentName ?? 'TBD')
                         )}
                       </span>
                       <Link
@@ -814,16 +840,19 @@ export default function Dashboard() {
                 </h2>
                 <div className="space-y-4">
                   {myRequests.map((request) => (
-                    <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <div
+                      key={request.id}
+                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                    >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-2">
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        Spare for {renderMe(request.requestedForName, member?.name)}
+                              Spare for {renderMe(request.requestedForName, member?.name)}
                             </h3>
                             {request.status === 'open' && (
                               <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
-                          Unfilled
+                                Unfilled
                               </span>
                             )}
                             {request.status === 'filled' && (
@@ -841,19 +870,21 @@ export default function Dashboard() {
 
                           <div className="text-gray-600 dark:text-gray-400 space-y-1">
                             <p>
-                              <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)}{' '}
-                              at {formatTime(request.gameTime)}
+                              <span className="font-medium dark:text-gray-300">When:</span>{' '}
+                              {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
                               {request.leagueName ? <span> • {request.leagueName}</span> : null}
                             </p>
-                          {request.requesterId && request.requesterId !== member?.id && request.requesterName && (
-                            <p>
-                              <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
-                              {renderMe(request.requesterName, member?.name)}
-                            </p>
-                          )}
-                            {request.message && (
-                              <p className="italic mt-2">"{request.message}"</p>
-                            )}
+                            {request.requesterId &&
+                              request.requesterId !== member?.id &&
+                              request.requesterName && (
+                                <p>
+                                  <span className="font-medium dark:text-gray-300">
+                                    Requested by:
+                                  </span>{' '}
+                                  {renderMe(request.requesterName, member?.name)}
+                                </p>
+                              )}
+                            {request.message && <p className="italic mt-2">"{request.message}"</p>}
                             {request.status === 'filled' && request.filledByName && (
                               <>
                                 <p className="text-green-700 dark:text-green-400 font-medium mt-2">
@@ -861,14 +892,20 @@ export default function Dashboard() {
                                 </p>
                                 {request.filledByEmail && (
                                   <p className="text-sm ml-4 mt-1">
-                                    <a href={`mailto:${request.filledByEmail}`} className="text-primary-teal hover:underline">
+                                    <a
+                                      href={`mailto:${request.filledByEmail}`}
+                                      className="text-primary-teal hover:underline"
+                                    >
                                       {request.filledByEmail}
                                     </a>
                                   </p>
                                 )}
                                 {request.filledByPhone && (
                                   <p className="text-sm ml-4 mt-1">
-                                    <a href={`tel:${request.filledByPhone.replace(/\D/g, '')}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
+                                    <a
+                                      href={`tel:${request.filledByPhone.replace(/\D/g, '')}`}
+                                      className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                                    >
                                       {formatPhone(request.filledByPhone)}
                                     </a>
                                   </p>
@@ -880,7 +917,9 @@ export default function Dashboard() {
                                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                   Message from {renderMe(request.filledByName, member?.name)}:
                                 </p>
-                                <p className="text-sm text-gray-600 dark:text-gray-400 italic">"{request.sparerComment}"</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 italic">
+                                  "{request.sparerComment}"
+                                </p>
                               </div>
                             )}
                           </div>
@@ -900,7 +939,10 @@ export default function Dashboard() {
                 </h2>
                 <div className="space-y-4">
                   {ccRequests.map((request) => (
-                    <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <div
+                      key={request.id}
+                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                    >
                       <div className="flex justify-between items-start gap-4">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-2 flex-wrap">
@@ -918,8 +960,8 @@ export default function Dashboard() {
 
                           <div className="text-gray-600 dark:text-gray-400 space-y-1">
                             <p>
-                              <span className="font-medium dark:text-gray-300">When:</span> {formatDate(request.gameDate)} at{' '}
-                              {formatTime(request.gameTime)}
+                              <span className="font-medium dark:text-gray-300">When:</span>{' '}
+                              {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
                               {request.leagueName ? <span> • {request.leagueName}</span> : null}
                             </p>
                             <p>
@@ -932,7 +974,9 @@ export default function Dashboard() {
                                 {renderMe(request.filledByName, member?.name)}
                               </p>
                             )}
-                            {request.message ? <p className="italic mt-2">"{request.message}"</p> : null}
+                            {request.message ? (
+                              <p className="italic mt-2">"{request.message}"</p>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -985,7 +1029,10 @@ export default function Dashboard() {
                     <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4">
                       <div className="divide-y divide-gray-200 dark:divide-gray-700">
                         {filledRequests.map((request) => (
-                          <div key={request.id} className="py-3 flex items-start justify-between gap-4">
+                          <div
+                            key={request.id}
+                            className="py-3 flex items-start justify-between gap-4"
+                          >
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -1008,10 +1055,11 @@ export default function Dashboard() {
                               </div>
                               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                 Requested by {renderMe(request.requesterName, member?.name)}
-                                {request.filledByName ? ` • Filled by ${renderMe(request.filledByName, member?.name)}` : ''}
+                                {request.filledByName
+                                  ? ` • Filled by ${renderMe(request.filledByName, member?.name)}`
+                                  : ''}
                               </div>
                             </div>
-
                           </div>
                         ))}
                       </div>
@@ -1047,8 +1095,12 @@ export default function Dashboard() {
             )}
 
             <div>
-              <label htmlFor="comment" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {selectedRequest.requestType === 'private' && selectedRequest.inviteStatus === 'declined'
+              <label
+                htmlFor="comment"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
+                {selectedRequest.requestType === 'private' &&
+                selectedRequest.inviteStatus === 'declined'
                   ? `Message for ${selectedRequest.requesterName} (required)`
                   : `Optional message for ${selectedRequest.requesterName}`}
               </label>
@@ -1059,7 +1111,8 @@ export default function Dashboard() {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 rows={3}
                 placeholder={
-                  selectedRequest.requestType === 'private' && selectedRequest.inviteStatus === 'declined'
+                  selectedRequest.requestType === 'private' &&
+                  selectedRequest.inviteStatus === 'declined'
                     ? 'Since you previously declined this request, please explain what changed so the requester isn’t confused...'
                     : 'Add any notes or questions...'
                 }
@@ -1132,13 +1185,17 @@ export default function Dashboard() {
         {declineRequest && (
           <div className="space-y-4">
             <p className="text-gray-700 dark:text-gray-300">
-              You&apos;re declining a private spare request for <strong>{declineRequest.requestedForName}</strong> on{' '}
+              You&apos;re declining a private spare request for{' '}
+              <strong>{declineRequest.requestedForName}</strong> on{' '}
               {formatDate(declineRequest.gameDate)} at {formatTime(declineRequest.gameTime)}
               {declineRequest.leagueName ? ` • ${declineRequest.leagueName}` : ''}.
             </p>
 
             <div>
-              <label htmlFor="declineComment" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="declineComment"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Optional message to the requester
               </label>
               <textarea
@@ -1187,11 +1244,16 @@ export default function Dashboard() {
         {cancelRequest && (
           <div className="space-y-4">
             <p className="text-gray-700 dark:text-gray-300">
-              Are you sure you want to cancel sparing for <strong>{cancelRequest.requestedForName}</strong>? Please include a comment for the spare requester.
+              Are you sure you want to cancel sparing for{' '}
+              <strong>{cancelRequest.requestedForName}</strong>? Please include a comment for the
+              spare requester.
             </p>
 
             <div>
-              <label htmlFor="cancelComment" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="cancelComment"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Comment <span className="text-red-500">*</span>
               </label>
               <textarea

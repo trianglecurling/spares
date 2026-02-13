@@ -146,7 +146,7 @@ export default function AdminMembers() {
     if (member) {
       setEditingMember(member);
       // If user is in SERVER_ADMINS, force isServerAdmin to true
-      const isServerAdmin = member.isInServerAdminsList ? true : (member.isServerAdmin || false);
+      const isServerAdmin = member.isInServerAdminsList ? true : member.isServerAdmin || false;
       setFormData({
         name: member.name,
         email: member.email || '',
@@ -216,7 +216,11 @@ export default function AdminMembers() {
     }
   };
 
-  const isExpired = (validThrough?: string | null, isAdminFlag?: boolean, isServerAdminFlag?: boolean) => {
+  const isExpired = (
+    validThrough?: string | null,
+    isAdminFlag?: boolean,
+    isServerAdminFlag?: boolean
+  ) => {
     if (isAdminFlag || isServerAdminFlag) return false;
     if (!validThrough) return false;
     const today = new Date().toISOString().split('T')[0];
@@ -225,7 +229,9 @@ export default function AdminMembers() {
 
   const toTsvCell = (value: unknown) => {
     if (value === null || value === undefined) return '';
-    return String(value).replace(/[\t\r\n]+/g, ' ').trim();
+    return String(value)
+      .replace(/[\t\r\n]+/g, ' ')
+      .trim();
   };
 
   const generateMembersTsv = () => {
@@ -315,7 +321,7 @@ export default function AdminMembers() {
           updateData.validThrough = formData.validThrough ? formData.validThrough : null;
           updateData.spareOnly = Boolean(formData.spareOnly);
         }
-        
+
         // Only server admins can set roles (and not for themselves)
         if (currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id) {
           // If user is in SERVER_ADMINS, they must remain server admin
@@ -334,7 +340,7 @@ export default function AdminMembers() {
           updateData.isCalendarAdmin = formData.isCalendarAdmin;
           updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
-        
+
         await patch('/members/{id}', updateData, { id: String(editingMember.id) });
       } else {
         const createData: MemberCreatePayload = {
@@ -344,7 +350,7 @@ export default function AdminMembers() {
           validThrough: formData.validThrough ? formData.validThrough : null,
           spareOnly: Boolean(formData.spareOnly),
         };
-        
+
         // Only server admins can set roles when creating
         if (currentMember?.isServerAdmin) {
           createData.isAdmin = formData.isAdmin;
@@ -357,7 +363,7 @@ export default function AdminMembers() {
           createData.isCalendarAdmin = formData.isCalendarAdmin;
           createData.isLeagueAdministrator = formData.isLeagueAdministrator;
         }
-        
+
         await post('/members', createData);
       }
 
@@ -424,7 +430,7 @@ export default function AdminMembers() {
     try {
       const response = await get('/members/{id}/login-link', undefined, { id: String(id) });
       const loginLink = response.loginLink;
-      
+
       await navigator.clipboard.writeText(loginLink);
       showAlert(`Login link copied for ${name}!`, 'success');
     } catch (error) {
@@ -456,28 +462,30 @@ export default function AdminMembers() {
 
     // Assume header row exists, skip it
     const dataLines = lines.length > 1 ? lines.slice(1) : [];
-    
+
     if (dataLines.length === 0) {
       showAlert('No data found. Please include a header row and at least one member.', 'warning');
       return;
     }
 
-    const parsed = dataLines.map((line) => {
-      // Handle cases where empty columns might be at the end
-      const parts = line.split(delimiter).map((p) => p.trim());
-      
-      // Expected Format: First Name, Last Name, Phone, Email
-      const firstName = parts[0] || '';
-      const lastName = parts[1] || '';
-      const phone = parts[2] || '';
-      const email = parts[3] || '';
+    const parsed = dataLines
+      .map((line) => {
+        // Handle cases where empty columns might be at the end
+        const parts = line.split(delimiter).map((p) => p.trim());
 
-      return {
-        name: `${firstName} ${lastName}`.trim(),
-        phone,
-        email,
-      };
-    }).filter(m => m.name); // Remove empty rows
+        // Expected Format: First Name, Last Name, Phone, Email
+        const firstName = parts[0] || '';
+        const lastName = parts[1] || '';
+        const phone = parts[2] || '';
+        const email = parts[3] || '';
+
+        return {
+          name: `${firstName} ${lastName}`.trim(),
+          phone,
+          email,
+        };
+      })
+      .filter((m) => m.name); // Remove empty rows
 
     if (parsed.length === 0) {
       showAlert('No valid members found in data', 'warning');
@@ -581,9 +589,7 @@ export default function AdminMembers() {
     if (selectedMemberIds.length === 0) return;
 
     // Filter to only members with email addresses
-    const membersWithEmails = members.filter(
-      (m) => selectedMemberIds.includes(m.id) && m.email
-    );
+    const membersWithEmails = members.filter((m) => selectedMemberIds.includes(m.id) && m.email);
 
     if (membersWithEmails.length === 0) {
       showAlert('No selected members have email addresses', 'warning');
@@ -619,44 +625,33 @@ export default function AdminMembers() {
   };
 
   // Computed properties
-  const deletableMembersCount = members.filter(
-    (m) => {
-      if (m.id === currentMember?.id) return false;
-      if (m.isAdmin) return false;
-      // Regular admins cannot select server admins
-      if (m.isServerAdmin && !currentMember?.isServerAdmin) return false;
-      // SERVER_ADMINS users cannot be selected
-      if (m.isInServerAdminsList) return false;
-      return true;
-    }
-  ).length;
-  const isAllSelected = 
-    deletableMembersCount > 0 && 
-    selectedMemberIds.length === deletableMembersCount;
+  const deletableMembersCount = members.filter((m) => {
+    if (m.id === currentMember?.id) return false;
+    if (m.isAdmin) return false;
+    // Regular admins cannot select server admins
+    if (m.isServerAdmin && !currentMember?.isServerAdmin) return false;
+    // SERVER_ADMINS users cannot be selected
+    if (m.isInServerAdminsList) return false;
+    return true;
+  }).length;
+  const isAllSelected =
+    deletableMembersCount > 0 && selectedMemberIds.length === deletableMembersCount;
 
   return (
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Manage members
-          </h1>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Manage members</h1>
           <div className="space-x-3">
             <Button onClick={handleOpenExportTsv} variant="secondary">
               Export TSV
             </Button>
             {selectedMemberIds.length > 0 && (
               <>
-                <Button 
-                  variant="secondary" 
-                  onClick={handleBulkSendWelcome}
-                >
+                <Button variant="secondary" onClick={handleBulkSendWelcome}>
                   Send welcome emails ({selectedMemberIds.length})
                 </Button>
-                <Button 
-                  variant="danger" 
-                  onClick={handleBulkDelete}
-                >
+                <Button variant="danger" onClick={handleBulkDelete}>
                   Delete selected ({selectedMemberIds.length})
                 </Button>
               </>
@@ -674,174 +669,194 @@ export default function AdminMembers() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10">
-                    <input
-                      type="checkbox"
-                      checked={isAllSelected}
-                      onChange={handleSelectAll}
-                      className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
-                    />
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Phone
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Valid through
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {members.map((member) => (
-                  <tr key={member.id} className={selectedMemberIds.includes(member.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {!member.isAdmin && 
-                       (!currentMember || member.id !== currentMember.id) &&
-                       // Regular admins cannot select server admins for deletion
-                       !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
-                       // SERVER_ADMINS users cannot be selected for deletion
-                       !member.isInServerAdminsList && (
-                        <input
-                          type="checkbox"
-                          checked={selectedMemberIds.includes(member.id)}
-                          onChange={() => handleToggleSelect(member.id)}
-                          className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
-                        />
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{member.name}</div>
-                        {member.isServerAdmin ? (
-                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200">
-                            Server admin
-                          </span>
-                        ) : member.isAdmin ? (
-                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">
-                            Admin
-                          </span>
-                        ) : member.isLeagueAdministratorGlobal ? (
-                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200">
-                            League admin
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {member.email || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {member.phone ? formatPhone(member.phone) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <div className="space-y-1">
-                        {member.firstLoginCompleted ? (
-                          <div className="text-green-600 dark:text-green-400">✓ Registered</div>
-                        ) : (
-                          <div className="text-gray-400 dark:text-gray-500">Not registered</div>
-                        )}
-                        {member.optedInSms && (
-                          <div className="text-blue-600 dark:text-blue-400 text-xs">SMS enabled</div>
-                        )}
-                        <div className="text-xs text-gray-400 dark:text-gray-500">
-                          {member.emailVisible ? 'Email public' : 'Email hidden'} •{' '}
-                          {member.phoneVisible ? 'Phone public' : 'Phone hidden'}
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={handleSelectAll}
+                        className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
+                      />
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Name
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Email
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Phone
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Valid through
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {members.map((member) => (
+                    <tr
+                      key={member.id}
+                      className={
+                        selectedMemberIds.includes(member.id)
+                          ? 'bg-blue-50 dark:bg-blue-900/20'
+                          : ''
+                      }
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {!member.isAdmin &&
+                          (!currentMember || member.id !== currentMember.id) &&
+                          // Regular admins cannot select server admins for deletion
+                          !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
+                          // SERVER_ADMINS users cannot be selected for deletion
+                          !member.isInServerAdminsList && (
+                            <input
+                              type="checkbox"
+                              checked={selectedMemberIds.includes(member.id)}
+                              onChange={() => handleToggleSelect(member.id)}
+                              className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
+                            />
+                          )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {member.name}
+                          </div>
+                          {member.isServerAdmin ? (
+                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200">
+                              Server admin
+                            </span>
+                          ) : member.isAdmin ? (
+                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">
+                              Admin
+                            </span>
+                          ) : member.isLeagueAdministratorGlobal ? (
+                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200">
+                              League admin
+                            </span>
+                          ) : null}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {member.isAdmin || member.isServerAdmin ? (
-                        <span className="text-gray-600 dark:text-gray-400">Always valid (admin)</span>
-                      ) : !member.validThrough ? (
-                        <span className="text-gray-600 dark:text-gray-400">No expiry</span>
-                      ) : isExpired(member.validThrough, member.isAdmin, member.isServerAdmin) ? (
-                        <span className="text-red-600 dark:text-red-400">
-                          Expired ({formatDateDisplay(member.validThrough)})
-                        </span>
-                      ) : (
-                        <span className="text-gray-900 dark:text-gray-100">{formatDateDisplay(member.validThrough)}</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
-                      <div className="relative inline-block" ref={(el) => (menuRefs.current[member.id] = el)}>
-                        <button
-                          onClick={() => setOpenMenuId(openMenuId === member.id ? null : member.id)}
-                          className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2"
-                          aria-label="Actions menu"
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {member.email || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {member.phone ? formatPhone(member.phone) : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <div className="space-y-1">
+                          {member.firstLoginCompleted ? (
+                            <div className="text-green-600 dark:text-green-400">✓ Registered</div>
+                          ) : (
+                            <div className="text-gray-400 dark:text-gray-500">Not registered</div>
+                          )}
+                          {member.optedInSms && (
+                            <div className="text-blue-600 dark:text-blue-400 text-xs">
+                              SMS enabled
+                            </div>
+                          )}
+                          <div className="text-xs text-gray-400 dark:text-gray-500">
+                            {member.emailVisible ? 'Email public' : 'Email hidden'} •{' '}
+                            {member.phoneVisible ? 'Phone public' : 'Phone hidden'}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {member.isAdmin || member.isServerAdmin ? (
+                          <span className="text-gray-600 dark:text-gray-400">
+                            Always valid (admin)
+                          </span>
+                        ) : !member.validThrough ? (
+                          <span className="text-gray-600 dark:text-gray-400">No expiry</span>
+                        ) : isExpired(member.validThrough, member.isAdmin, member.isServerAdmin) ? (
+                          <span className="text-red-600 dark:text-red-400">
+                            Expired ({formatDateDisplay(member.validThrough)})
+                          </span>
+                        ) : (
+                          <span className="text-gray-900 dark:text-gray-100">
+                            {formatDateDisplay(member.validThrough)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
+                        <div
+                          className="relative inline-block"
+                          ref={(el) => (menuRefs.current[member.id] = el)}
                         >
-                          <HiEllipsisVertical className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                        </button>
-                        {openMenuId === member.id && (
-                          <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700">
-                            <div className="py-1 flex flex-col">
-                              <button
-                                onClick={() => {
-                                  handleOpenModal(member);
-                                  setOpenMenuId(null);
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                              >
-                                Edit
-                              </button>
-                              {currentMember?.isServerAdmin && (
+                          <button
+                            onClick={() =>
+                              setOpenMenuId(openMenuId === member.id ? null : member.id)
+                            }
+                            className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2"
+                            aria-label="Actions menu"
+                          >
+                            <HiEllipsisVertical className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                          </button>
+                          {openMenuId === member.id && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700">
+                              <div className="py-1 flex flex-col">
                                 <button
                                   onClick={() => {
-                                    handleCopyLoginLink(member.id, member.name);
+                                    handleOpenModal(member);
                                     setOpenMenuId(null);
                                   }}
                                   className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
                                 >
-                                  Copy login link
+                                  Edit
                                 </button>
-                              )}
-                              {member.email && (
-                                <button
-                                  onClick={() => {
-                                    handleSendWelcome(member.id, member.name);
-                                    setOpenMenuId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                                >
-                                  Send welcome email
-                                </button>
-                              )}
-                              {(!currentMember || member.id !== currentMember.id) && 
-                               // Regular admins cannot delete server admins
-                               !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
-                               // SERVER_ADMINS users cannot be deleted by anyone
-                               !member.isInServerAdminsList && (
-                                <button
-                                  onClick={() => {
-                                    handleDelete(member.id, member.name);
-                                    setOpenMenuId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                                >
-                                  Delete
-                                </button>
-                              )}
+                                {currentMember?.isServerAdmin && (
+                                  <button
+                                    onClick={() => {
+                                      handleCopyLoginLink(member.id, member.name);
+                                      setOpenMenuId(null);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+                                  >
+                                    Copy login link
+                                  </button>
+                                )}
+                                {member.email && (
+                                  <button
+                                    onClick={() => {
+                                      handleSendWelcome(member.id, member.name);
+                                      setOpenMenuId(null);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+                                  >
+                                    Send welcome email
+                                  </button>
+                                )}
+                                {(!currentMember || member.id !== currentMember.id) &&
+                                  // Regular admins cannot delete server admins
+                                  !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
+                                  // SERVER_ADMINS users cannot be deleted by anyone
+                                  !member.isInServerAdminsList && (
+                                    <button
+                                      onClick={() => {
+                                        handleDelete(member.id, member.name);
+                                        setOpenMenuId(null);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -855,7 +870,10 @@ export default function AdminMembers() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -869,7 +887,10 @@ export default function AdminMembers() {
           </div>
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Email <span className="text-red-500">*</span>
             </label>
             <input
@@ -895,7 +916,10 @@ export default function AdminMembers() {
           </div>
 
           <div>
-            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="phone"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Phone
             </label>
             <input
@@ -920,7 +944,10 @@ export default function AdminMembers() {
           </div>
 
           <div>
-            <label htmlFor="validThrough" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="validThrough"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Valid through (optional)
             </label>
             <div className="flex items-center gap-2">
@@ -929,21 +956,28 @@ export default function AdminMembers() {
                 id="validThrough"
                 value={formData.validThrough}
                 onChange={(e) => setFormData({ ...formData, validThrough: e.target.value })}
-                disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
+                disabled={Boolean(
+                  editingMember && currentMember && editingMember.id === currentMember.id
+                )}
                 className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent disabled:opacity-60"
               />
               <Button
                 type="button"
                 variant="secondary"
                 onClick={() => setFormData({ ...formData, validThrough: '' })}
-                disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
+                disabled={Boolean(
+                  editingMember && currentMember && editingMember.id === currentMember.id
+                )}
               >
                 Clear
               </Button>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Leave empty for perpetual access. Admin/server admin users are always valid regardless of this date.
-              {editingMember && currentMember && editingMember.id === currentMember.id ? ' You cannot change your own date.' : ''}
+              Leave empty for perpetual access. Admin/server admin users are always valid regardless
+              of this date.
+              {editingMember && currentMember && editingMember.id === currentMember.id
+                ? ' You cannot change your own date.'
+                : ''}
             </p>
           </div>
 
@@ -953,14 +987,18 @@ export default function AdminMembers() {
               id="spareOnly"
               checked={formData.spareOnly}
               onChange={(e) => setFormData({ ...formData, spareOnly: e.target.checked })}
-              disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
+              disabled={Boolean(
+                editingMember && currentMember && editingMember.id === currentMember.id
+              )}
               className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal disabled:opacity-60"
             />
             <label htmlFor="spareOnly" className="text-sm text-gray-700 dark:text-gray-300">
               <span className="font-medium">Spare-only member</span>
               <div className="text-gray-600 dark:text-gray-400">
                 Can sign up to spare, but cannot create spare requests.
-                {editingMember && currentMember && editingMember.id === currentMember.id ? ' You cannot change your own status.' : ''}
+                {editingMember && currentMember && editingMember.id === currentMember.id
+                  ? ' You cannot change your own status.'
+                  : ''}
               </div>
             </label>
           </div>
@@ -972,7 +1010,8 @@ export default function AdminMembers() {
                 <div className="space-y-2">
                   <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
                     <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                      This user is in SERVER_ADMINS and must remain a server admin. Role cannot be changed.
+                      This user is in SERVER_ADMINS and must remain a server admin. Role cannot be
+                      changed.
                     </p>
                   </div>
                   <div className="flex items-center opacity-60">
@@ -984,7 +1023,10 @@ export default function AdminMembers() {
                       disabled
                       className="mr-2"
                     />
-                    <label htmlFor="roleServerAdminLocked" className="text-sm text-gray-700 dark:text-gray-300">
+                    <label
+                      htmlFor="roleServerAdminLocked"
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
                       Server admin (locked)
                     </label>
                   </div>
@@ -996,13 +1038,27 @@ export default function AdminMembers() {
                       type="radio"
                       id="roleRegular"
                       name="role"
-                      checked={!formData.isAdmin && !formData.isServerAdmin && !formData.isLeagueAdministrator && !formData.isCalendarAdmin}
+                      checked={
+                        !formData.isAdmin &&
+                        !formData.isServerAdmin &&
+                        !formData.isLeagueAdministrator &&
+                        !formData.isCalendarAdmin
+                      }
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: false, isCalendarAdmin: false })
+                        setFormData({
+                          ...formData,
+                          isAdmin: false,
+                          isServerAdmin: false,
+                          isLeagueAdministrator: false,
+                          isCalendarAdmin: false,
+                        })
                       }
                       className="mr-2"
                     />
-                    <label htmlFor="roleRegular" className="text-sm text-gray-700 dark:text-gray-300">
+                    <label
+                      htmlFor="roleRegular"
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
                       Regular user
                     </label>
                   </div>
@@ -1011,13 +1067,27 @@ export default function AdminMembers() {
                       type="radio"
                       id="roleLeagueAdmin"
                       name="role"
-                      checked={formData.isLeagueAdministrator && !formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin}
+                      checked={
+                        formData.isLeagueAdministrator &&
+                        !formData.isAdmin &&
+                        !formData.isServerAdmin &&
+                        !formData.isCalendarAdmin
+                      }
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: true, isCalendarAdmin: false })
+                        setFormData({
+                          ...formData,
+                          isAdmin: false,
+                          isServerAdmin: false,
+                          isLeagueAdministrator: true,
+                          isCalendarAdmin: false,
+                        })
                       }
                       className="mr-2"
                     />
-                    <label htmlFor="roleLeagueAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                    <label
+                      htmlFor="roleLeagueAdmin"
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
                       League admin
                     </label>
                   </div>
@@ -1026,13 +1096,27 @@ export default function AdminMembers() {
                       type="radio"
                       id="roleCalendarAdmin"
                       name="role"
-                      checked={formData.isCalendarAdmin && !formData.isAdmin && !formData.isServerAdmin && !formData.isLeagueAdministrator}
+                      checked={
+                        formData.isCalendarAdmin &&
+                        !formData.isAdmin &&
+                        !formData.isServerAdmin &&
+                        !formData.isLeagueAdministrator
+                      }
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: false, isServerAdmin: false, isLeagueAdministrator: false, isCalendarAdmin: true })
+                        setFormData({
+                          ...formData,
+                          isAdmin: false,
+                          isServerAdmin: false,
+                          isLeagueAdministrator: false,
+                          isCalendarAdmin: true,
+                        })
                       }
                       className="mr-2"
                     />
-                    <label htmlFor="roleCalendarAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                    <label
+                      htmlFor="roleCalendarAdmin"
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
                       Calendar admin
                     </label>
                   </div>
@@ -1041,9 +1125,17 @@ export default function AdminMembers() {
                       type="radio"
                       id="roleAdmin"
                       name="role"
-                      checked={formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin}
+                      checked={
+                        formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin
+                      }
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: true, isServerAdmin: false, isLeagueAdministrator: false, isCalendarAdmin: false })
+                        setFormData({
+                          ...formData,
+                          isAdmin: true,
+                          isServerAdmin: false,
+                          isLeagueAdministrator: false,
+                          isCalendarAdmin: false,
+                        })
                       }
                       className="mr-2"
                     />
@@ -1058,18 +1150,29 @@ export default function AdminMembers() {
                       name="role"
                       checked={formData.isServerAdmin}
                       onChange={() =>
-                        setFormData({ ...formData, isAdmin: false, isServerAdmin: true, isLeagueAdministrator: false, isCalendarAdmin: false })
+                        setFormData({
+                          ...formData,
+                          isAdmin: false,
+                          isServerAdmin: true,
+                          isLeagueAdministrator: false,
+                          isCalendarAdmin: false,
+                        })
                       }
                       className="mr-2"
                     />
-                    <label htmlFor="roleServerAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                    <label
+                      htmlFor="roleServerAdmin"
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
                       Server admin
                     </label>
                   </div>
                 </div>
               )}
             </div>
-          ) : currentMember?.isAdmin && !editingMember?.isServerAdmin && editingMember?.id !== currentMember?.id ? (
+          ) : currentMember?.isAdmin &&
+            !editingMember?.isServerAdmin &&
+            editingMember?.id !== currentMember?.id ? (
             <div className="space-y-2">
               <div className="flex items-center">
                 <input
@@ -1079,7 +1182,10 @@ export default function AdminMembers() {
                   onChange={(e) => setFormData({ ...formData, isAdmin: e.target.checked })}
                   className="mr-2"
                 />
-                <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label
+                  htmlFor="isAdmin"
+                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
                   Administrator
                 </label>
               </div>
@@ -1088,10 +1194,15 @@ export default function AdminMembers() {
                   type="checkbox"
                   id="isLeagueAdministrator"
                   checked={formData.isLeagueAdministrator}
-                  onChange={(e) => setFormData({ ...formData, isLeagueAdministrator: e.target.checked })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, isLeagueAdministrator: e.target.checked })
+                  }
                   className="mr-2"
                 />
-                <label htmlFor="isLeagueAdministrator" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label
+                  htmlFor="isLeagueAdministrator"
+                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
                   League admin
                 </label>
               </div>
@@ -1135,10 +1246,15 @@ export default function AdminMembers() {
                   className="w-full h-64 p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded font-mono text-sm"
                   value={bulkText}
                   onChange={(e) => setBulkText(e.target.value)}
-                  placeholder={'First Name\tLast Name\tPhone\tEmail\nJohn\tDoe\t555-0123\tjohn@example.com'}
+                  placeholder={
+                    'First Name\tLast Name\tPhone\tEmail\nJohn\tDoe\t555-0123\tjohn@example.com'
+                  }
                 />
                 <div className="mt-4">
-                  <label htmlFor="bulkValidThrough" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label
+                    htmlFor="bulkValidThrough"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                  >
                     Valid through for all imported members (optional)
                   </label>
                   <div className="flex items-center gap-2">
@@ -1149,12 +1265,17 @@ export default function AdminMembers() {
                       onChange={(e) => setBulkValidThrough(e.target.value)}
                       className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                     />
-                    <Button type="button" variant="secondary" onClick={() => setBulkValidThrough('')}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setBulkValidThrough('')}
+                    >
                       Clear
                     </Button>
                   </div>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Leave empty for perpetual access. Admin/server admin users are always valid regardless of this date.
+                    Leave empty for perpetual access. Admin/server admin users are always valid
+                    regardless of this date.
                   </p>
                 </div>
 
@@ -1166,7 +1287,10 @@ export default function AdminMembers() {
                     onChange={(e) => setBulkSpareOnly(e.target.checked)}
                     className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                   />
-                  <label htmlFor="bulkSpareOnly" className="text-sm text-gray-700 dark:text-gray-300">
+                  <label
+                    htmlFor="bulkSpareOnly"
+                    className="text-sm text-gray-700 dark:text-gray-300"
+                  >
                     <span className="font-medium">Mark all imported members as spare-only</span>
                     <div className="text-gray-600 dark:text-gray-400">
                       Spare-only members can sign up to spare, but cannot create spare requests.
@@ -1175,15 +1299,10 @@ export default function AdminMembers() {
                 </div>
               </div>
               <div className="flex justify-end space-x-3 flex-shrink-0">
-                <Button
-                  variant="secondary"
-                  onClick={() => setIsBulkAddModalOpen(false)}
-                >
+                <Button variant="secondary" onClick={() => setIsBulkAddModalOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleParseBulk}>
-                  Preview
-                </Button>
+                <Button onClick={handleParseBulk}>Preview</Button>
               </div>
             </>
           ) : (
@@ -1204,17 +1323,29 @@ export default function AdminMembers() {
                     <table className="w-full divide-y divide-gray-200 dark:divide-gray-700">
                       <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
                         <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Phone</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                            Name
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                            Email
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                            Phone
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {parsedMembers.map((m, i) => (
                           <tr key={i}>
-                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">{m.name}</td>
-                            <td className="px-3 py-2 text-sm break-words dark:text-gray-100">{m.email}</td>
-                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">{m.phone ? formatPhone(m.phone) : '—'}</td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">
+                              {m.name}
+                            </td>
+                            <td className="px-3 py-2 text-sm break-words dark:text-gray-100">
+                              {m.email}
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">
+                              {m.phone ? formatPhone(m.phone) : '—'}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1223,14 +1354,18 @@ export default function AdminMembers() {
                   {/* Mobile card view */}
                   <div className="sm:hidden space-y-3">
                     {parsedMembers.map((m, i) => (
-                      <div key={i} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                      <div
+                        key={i}
+                        className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600"
+                      >
                         <div className="font-medium text-sm mb-1 dark:text-gray-100">{m.name}</div>
                         <div className="text-xs text-gray-600 dark:text-gray-400">
                           <div className="mb-1">
                             <span className="font-medium">Email:</span> {m.email}
                           </div>
                           <div>
-                            <span className="font-medium">Phone:</span> {m.phone ? formatPhone(m.phone) : '—'}
+                            <span className="font-medium">Phone:</span>{' '}
+                            {m.phone ? formatPhone(m.phone) : '—'}
                           </div>
                         </div>
                       </div>
@@ -1246,7 +1381,11 @@ export default function AdminMembers() {
                 >
                   Back
                 </Button>
-                <Button onClick={handleBulkSubmit} disabled={submitting} className="w-full sm:w-auto">
+                <Button
+                  onClick={handleBulkSubmit}
+                  disabled={submitting}
+                  className="w-full sm:w-auto"
+                >
                   {submitting ? 'Importing...' : `Import ${parsedMembers.length} Members`}
                 </Button>
               </div>

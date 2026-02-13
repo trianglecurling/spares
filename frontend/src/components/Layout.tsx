@@ -51,18 +51,24 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isNavLinkActive = (to: string, matchPrefix?: boolean) =>
-    matchPrefix ? location.pathname === to || location.pathname.startsWith(`${to}/`) : location.pathname === to;
+    matchPrefix
+      ? location.pathname === to || location.pathname.startsWith(`${to}/`)
+      : location.pathname === to;
 
   const isLeaguesActive = isNavLinkActive('/leagues', true);
   const isSparesActive =
-    isNavLinkActive('/availability') || isNavLinkActive('/my-requests') || location.pathname.startsWith('/request-spare');
+    isNavLinkActive('/availability') ||
+    isNavLinkActive('/my-requests') ||
+    location.pathname.startsWith('/request-spare');
   const isAdminActive =
     isNavLinkActive('/admin/members') ||
     isNavLinkActive('/admin/sheets') ||
     isNavLinkActive('/admin/config');
 
   const canManageLeagues = Boolean(
-    member?.isAdmin || member?.isLeagueAdministrator || (member?.leagueManagerLeagueIds?.length ?? 0) > 0
+    member?.isAdmin ||
+      member?.isLeagueAdministrator ||
+      (member?.leagueManagerLeagueIds?.length ?? 0) > 0
   );
   const adminLinks = [
     ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
@@ -141,7 +147,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
       <button
         onClick={onToggle}
         className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium ${
-          active ? 'bg-primary-teal text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+          active
+            ? 'bg-primary-teal text-white'
+            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
         }`}
       >
         {label}
@@ -153,7 +161,10 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
-      <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700" ref={menuRef}>
+      <nav
+        className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700"
+        ref={menuRef}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-8">
@@ -187,7 +198,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                     className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isLeaguesActive)}`}
                   >
                     Leagues
-                    <HiChevronDown className={`w-4 h-4 transition-transform ${leaguesDropdownOpen ? 'rotate-180' : ''}`} />
+                    <HiChevronDown
+                      className={`w-4 h-4 transition-transform ${leaguesDropdownOpen ? 'rotate-180' : ''}`}
+                    />
                   </button>
                   {leaguesDropdownOpen && (
                     <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
@@ -230,7 +243,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                     className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isSparesActive)}`}
                   >
                     Spares
-                    <HiChevronDown className={`w-4 h-4 transition-transform ${sparesDropdownOpen ? 'rotate-180' : ''}`} />
+                    <HiChevronDown
+                      className={`w-4 h-4 transition-transform ${sparesDropdownOpen ? 'rotate-180' : ''}`}
+                    />
                   </button>
                   {sparesDropdownOpen && (
                     <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
@@ -281,7 +296,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                       className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isAdminActive)}`}
                     >
                       Admin
-                      <HiChevronDown className={`w-4 h-4 transition-transform ${adminDropdownOpen ? 'rotate-180' : ''}`} />
+                      <HiChevronDown
+                        className={`w-4 h-4 transition-transform ${adminDropdownOpen ? 'rotate-180' : ''}`}
+                      />
                     </button>
                     {adminDropdownOpen && (
                       <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
@@ -325,11 +342,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                 className="md:hidden p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-teal"
                 aria-label="Toggle menu"
               >
-                {mobileMenuOpen ? (
-                  <HiXMark className="w-6 h-6" />
-                ) : (
-                  <HiBars3 className="w-6 h-6" />
-                )}
+                {mobileMenuOpen ? <HiXMark className="w-6 h-6" /> : <HiBars3 className="w-6 h-6" />}
               </button>
             </div>
           </div>

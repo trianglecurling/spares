@@ -34,7 +34,7 @@ import {
 function mulberry32(seed: number): () => number {
   let a = seed | 0;
   return () => {
-    a = (a + 0x6D2B79F5) | 0;
+    a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
@@ -54,10 +54,7 @@ interface GameSlot {
  * Build the pool of available game slots from draw slots, filtered to only
  * slots selected by at least one strategy and only available sheets.
  */
-function buildSlotPool(
-  drawSlots: ScheduleDrawSlot[],
-  strategies: ScheduleStrategy[],
-): GameSlot[] {
+function buildSlotPool(drawSlots: ScheduleDrawSlot[], strategies: ScheduleStrategy[]): GameSlot[] {
   // Union of all draw slot keys across strategies
   const allowedKeys = new Set<string>();
   for (const s of strategies) {
@@ -146,7 +143,7 @@ function scoreCandidate(
   teamPositionCounts: Map<number, { asTeam1: number; asTeam2: number }>,
   byeMap: Map<string, ScheduleByeRequest[]>,
   strategyAllowed: Set<string>,
-  rng: () => number,
+  rng: () => number
 ): number {
   // Check strategy draw slot allowance
   const dk = drawKey(slot);
@@ -226,7 +223,7 @@ function scoreCandidate(
  */
 function optimizePositions(
   matchup: Matchup,
-  teamPositionCounts: Map<number, { asTeam1: number; asTeam2: number }>,
+  teamPositionCounts: Map<number, { asTeam1: number; asTeam2: number }>
 ): [number, number] {
   const pos1 = teamPositionCounts.get(matchup.team1Id);
   const pos2 = teamPositionCounts.get(matchup.team2Id);
@@ -289,7 +286,7 @@ function moveRelocate(
   pool: GameSlot[],
   occ: Set<string>,
   activeDrawKeys: Set<string>,
-  rng: () => number,
+  rng: () => number
 ): SAMove | null {
   const idx = Math.floor(rng() * games.length);
   for (let a = 0; a < 30; a++) {
@@ -382,7 +379,7 @@ function simulatedAnnealing(
   numSheets: number,
   rng: () => number,
   timeBudgetMs: number,
-  reportProgress: (update: ProgressUpdate) => void,
+  reportProgress: (update: ProgressUpdate) => void
 ): GeneratedGame[] {
   const n = initialGames.length;
   if (n < 2) return initialGames;
@@ -569,7 +566,7 @@ function simulatedAnnealing(
     const r = rng();
     let move: SAMove | null;
     if (r < 0.35) move = moveSwap(games, rng);
-    else if (r < 0.60) move = moveRelocate(games, slotPool, occupied, activeDrawKeys, rng);
+    else if (r < 0.6) move = moveRelocate(games, slotPool, occupied, activeDrawKeys, rng);
     else if (r < 0.85) move = moveCycle(games, rng);
     else move = movePosition(games, rng);
     if (!move) continue;
@@ -630,7 +627,7 @@ export function assignAndOptimize(
   teamIds: number[],
   seed: number,
   timeBudgetMs: number,
-  reportProgress: (update: ProgressUpdate) => void,
+  reportProgress: (update: ProgressUpdate) => void
 ): ScheduleResult {
   const rng = mulberry32(seed);
   const byeMap = buildByeMap(byeRequests);
@@ -638,7 +635,10 @@ export function assignAndOptimize(
   const warnings: ScheduleWarning[] = [];
 
   if (slotPool.length === 0) {
-    warnings.push({ severity: 'error', message: 'No available game slots. Check draw slots and sheet availability.' });
+    warnings.push({
+      severity: 'error',
+      message: 'No available game slots. Check draw slots and sheet availability.',
+    });
     return { games: [], unschedulable: [], teamStats: [], warnings, totalScore: 0 };
   }
 
@@ -684,7 +684,7 @@ export function assignAndOptimize(
   const findBestSlot = (
     matchup: Matchup,
     allowed: Set<string>,
-    filterFn: (dk: string) => boolean,
+    filterFn: (dk: string) => boolean
   ): { slot: GameSlot | null; score: number } => {
     let bestSlot: GameSlot | null = null;
     let bestScore = Infinity;
@@ -703,7 +703,7 @@ export function assignAndOptimize(
         teamPositionCounts,
         byeMap,
         allowed,
-        rng,
+        rng
       );
       if (s < bestScore) {
         bestScore = s;
@@ -796,10 +796,8 @@ export function assignAndOptimize(
       const allowed = strategyAllowedMap.get(matchup.strategyLocalId) ?? new Set<string>();
 
       // Tier 1: active draws only (draws with ≥1 game)
-      let { slot: bestSlot, score: bestScore } = findBestSlot(
-        matchup,
-        allowed,
-        (dk) => drawGameCounts.has(dk),
+      let { slot: bestSlot, score: bestScore } = findBestSlot(matchup, allowed, (dk) =>
+        drawGameCounts.has(dk)
       );
 
       // Tier 2: inactive draws in weeks that already have an active draw
@@ -807,7 +805,7 @@ export function assignAndOptimize(
         ({ slot: bestSlot, score: bestScore } = findBestSlot(
           matchup,
           allowed,
-          (dk) => !drawGameCounts.has(dk) && activeWeeks.has(drawWeekMap.get(dk)!),
+          (dk) => !drawGameCounts.has(dk) && activeWeeks.has(drawWeekMap.get(dk)!)
         ));
       }
 
@@ -820,7 +818,7 @@ export function assignAndOptimize(
           ({ slot: bestSlot, score: bestScore } = findBestSlot(
             matchup,
             allowed,
-            (dk) => !drawGameCounts.has(dk) && drawWeekMap.get(dk) === wk,
+            (dk) => !drawGameCounts.has(dk) && drawWeekMap.get(dk) === wk
           ));
           if (bestSlot != null && bestScore !== Infinity) break;
         }
@@ -851,11 +849,13 @@ export function assignAndOptimize(
     numSheets,
     rng,
     timeBudgetMs,
-    reportProgress,
+    reportProgress
   );
 
   // Build result (include compactness in total score)
-  const totalScore = totalScheduleScore(optimized, teamIds, byeMap) + compactnessScore(optimized, drawCapacities, numSheets);
+  const totalScore =
+    totalScheduleScore(optimized, teamIds, byeMap) +
+    compactnessScore(optimized, drawCapacities, numSheets);
   const teamStats = computeTeamStats(optimized, teamIds, byeMap);
 
   if (unschedulable.length > 0) {

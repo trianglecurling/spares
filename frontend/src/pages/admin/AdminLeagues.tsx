@@ -96,7 +96,11 @@ export default function Leagues() {
     setExceptionToAdd('');
   };
 
-  const computeLeagueDates = (startDateStr: string, endDateStr: string, dayOfWeek: number): string[] => {
+  const computeLeagueDates = (
+    startDateStr: string,
+    endDateStr: string,
+    dayOfWeek: number
+  ): string[] => {
     if (!startDateStr || !endDateStr) return [];
     const startDate = new Date(startDateStr + 'T00:00:00Z');
     const endDate = new Date(endDateStr + 'T00:00:00Z');
@@ -115,12 +119,18 @@ export default function Leagues() {
     return dates;
   };
 
-  const allLeagueDates = computeLeagueDates(formData.startDate, formData.endDate, formData.dayOfWeek);
+  const allLeagueDates = computeLeagueDates(
+    formData.startDate,
+    formData.endDate,
+    formData.dayOfWeek
+  );
   const availableExceptionDates = allLeagueDates.filter((d) => !formData.exceptions.includes(d));
 
   // If dates/day change, drop exceptions that are no longer valid for the league range/day
   useEffect(() => {
-    const valid = new Set(computeLeagueDates(formData.startDate, formData.endDate, formData.dayOfWeek));
+    const valid = new Set(
+      computeLeagueDates(formData.startDate, formData.endDate, formData.dayOfWeek)
+    );
     if (formData.exceptions.some((d) => !valid.has(d))) {
       setFormData((prev) => ({
         ...prev,
@@ -186,7 +196,7 @@ export default function Leagues() {
     try {
       const response = await get('/leagues/export');
       const jsonString = JSON.stringify(response, null, 2);
-      
+
       // Copy to clipboard
       await navigator.clipboard.writeText(jsonString);
       showAlert('Leagues exported and copied to clipboard!', 'success');
@@ -264,9 +274,7 @@ export default function Leagues() {
     <Layout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Leagues
-          </h1>
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Leagues</h1>
           <div className="flex space-x-2">
             {canManageLeagueDetails && (
               <>
@@ -286,7 +294,9 @@ export default function Leagues() {
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : leagues.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-            <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">No leagues configured yet.</p>
+            <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">
+              No leagues configured yet.
+            </p>
             {canManageLeagueDetails && (
               <Button onClick={() => handleOpenModal()}>Create your first league</Button>
             )}
@@ -306,7 +316,8 @@ export default function Leagues() {
                     </button>
                     <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                       <p>
-                        <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
+                        <span className="font-medium dark:text-gray-300">Day:</span>{' '}
+                        {getDayName(league.dayOfWeek)}
                       </p>
                       <p>
                         <span className="font-medium dark:text-gray-300">Times:</span>{' '}
@@ -318,8 +329,7 @@ export default function Leagues() {
                       </p>
                       <p>
                         <span className="font-medium dark:text-gray-300">Season:</span>{' '}
-                        {formatDateDisplay(league.startDate)} –{' '}
-                        {formatDateDisplay(league.endDate)}
+                        {formatDateDisplay(league.startDate)} – {formatDateDisplay(league.endDate)}
                       </p>
                       {league.exceptions?.length > 0 && (
                         <p>
@@ -329,7 +339,6 @@ export default function Leagues() {
                       )}
                     </div>
                   </div>
-
                 </div>
               </div>
             ))}
@@ -344,7 +353,10 @@ export default function Leagues() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               League name <span className="text-red-500">*</span>
             </label>
             <input
@@ -358,7 +370,10 @@ export default function Leagues() {
           </div>
 
           <div>
-            <label htmlFor="dayOfWeek" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="dayOfWeek"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Day of week <span className="text-red-500">*</span>
             </label>
             <select
@@ -412,7 +427,10 @@ export default function Leagues() {
           </div>
 
           <div>
-            <label htmlFor="format" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="format"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Format <span className="text-red-500">*</span>
             </label>
             <select
@@ -431,7 +449,10 @@ export default function Leagues() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="startDate"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 Start date <span className="text-red-500">*</span>
               </label>
               <input
@@ -445,7 +466,10 @@ export default function Leagues() {
             </div>
 
             <div>
-              <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label
+                htmlFor="endDate"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
                 End date <span className="text-red-500">*</span>
               </label>
               <input
@@ -491,7 +515,9 @@ export default function Leagues() {
                   className="w-full sm:w-auto px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                 >
                   <option value="">
-                    {availableExceptionDates.length === 0 ? 'No dates available' : 'Select a date...'}
+                    {availableExceptionDates.length === 0
+                      ? 'No dates available'
+                      : 'Select a date...'}
                   </option>
                   {availableExceptionDates.map((d) => (
                     <option key={d} value={d}>
@@ -509,7 +535,9 @@ export default function Leagues() {
                     key={d}
                     className="flex items-center justify-between px-3 py-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40"
                   >
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{formatDateDisplay(d)}</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      {formatDateDisplay(d)}
+                    </span>
                     <button
                       type="button"
                       onClick={() => removeException(d)}
@@ -550,7 +578,10 @@ export default function Leagues() {
       >
         <div className="space-y-4">
           <div>
-            <label htmlFor="importJson" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="importJson"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Paste JSON data
             </label>
             <textarea

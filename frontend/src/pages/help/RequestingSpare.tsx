@@ -51,7 +51,8 @@ export default function RequestingSpare() {
                     </h2>
                     <ol className="list-decimal list-inside space-y-3">
                       <li>
-                        <strong>Click "Request a spare"</strong> from the dashboard or navigation menu
+                        <strong>Click "Request a spare"</strong> from the dashboard or navigation
+                        menu
                       </li>
                       <li>
                         <strong>Select a league</strong> from the dropdown menu
@@ -60,23 +61,31 @@ export default function RequestingSpare() {
                         <strong>Choose a game date and time</strong> from the upcoming games list
                       </li>
                       <li>
-                        <strong>Enter the name</strong> of the person who needs the spare (usually yourself)
+                        <strong>Enter the name</strong> of the person who needs the spare (usually
+                        yourself)
                       </li>
                       <li>
-                        <strong>Optionally specify a position</strong> (lead, second, vice, or skip) if needed
+                        <strong>Optionally specify a position</strong> (lead, second, vice, or skip)
+                        if needed
                       </li>
                       <li>
-                        <strong>Add a personal message</strong> (optional) with any additional details
+                        <strong>Add a personal message</strong> (optional) with any additional
+                        details
                       </li>
                       <li>
                         <strong>Choose request type:</strong>
                         <ul className="list-disc list-inside ml-6 mt-2 space-y-1">
-                          <li><strong>Public:</strong> Visible to all members</li>
-                          <li><strong>Private:</strong> Only sent to specific members you select</li>
+                          <li>
+                            <strong>Public:</strong> Visible to all members
+                          </li>
+                          <li>
+                            <strong>Private:</strong> Only sent to specific members you select
+                          </li>
                         </ul>
                       </li>
                       <li>
-                        <strong>Submit the request</strong> - notifications will be sent automatically
+                        <strong>Submit the request</strong> - notifications will be sent
+                        automatically
                       </li>
                     </ol>
                   </section>
@@ -85,13 +94,21 @@ export default function RequestingSpare() {
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       What Happens Next?
                     </h2>
-                    <p className="mb-3">
-                      After submitting your request:
-                    </p>
+                    <p className="mb-3">After submitting your request:</p>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Public requests:</strong> All members can see it immediately on their dashboard. Notifications are sent to matching members gradually (or immediately if less than 24 hours before game time)</li>
-                      <li><strong>Private requests:</strong> Only visible to selected members, who receive email and SMS notifications immediately</li>
-                      <li>You'll receive a notification when someone signs up to fill your spare request</li>
+                      <li>
+                        <strong>Public requests:</strong> All members can see it immediately on
+                        their dashboard. Notifications are sent to matching members gradually (or
+                        immediately if less than 24 hours before game time)
+                      </li>
+                      <li>
+                        <strong>Private requests:</strong> Only visible to selected members, who
+                        receive email and SMS notifications immediately
+                      </li>
+                      <li>
+                        You'll receive a notification when someone signs up to fill your spare
+                        request
+                      </li>
                       <li>You can view and manage your request on the "My requests" page</li>
                     </ul>
                   </section>
@@ -100,14 +117,23 @@ export default function RequestingSpare() {
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Managing Your Request
                     </h2>
-                    <p className="mb-3">
-                      On the "My requests" page, you can:
-                    </p>
+                    <p className="mb-3">On the "My requests" page, you can:</p>
                     <ul className="list-disc list-inside space-y-2">
-                      <li><strong>Cancel:</strong> Cancel an open request if you no longer need a spare</li>
-                      <li><strong>Re-issue:</strong> Send notifications again if needed (after 72 hours or if someone canceled)</li>
-                      <li><strong>Pause notifications:</strong> Temporarily stop sending notifications for staggered requests</li>
-                      <li><strong>View status:</strong> See how many members have been notified</li>
+                      <li>
+                        <strong>Cancel:</strong> Cancel an open request if you no longer need a
+                        spare
+                      </li>
+                      <li>
+                        <strong>Re-issue:</strong> Send notifications again if needed (after 72
+                        hours or if someone canceled)
+                      </li>
+                      <li>
+                        <strong>Pause notifications:</strong> Temporarily stop sending notifications
+                        for staggered requests
+                      </li>
+                      <li>
+                        <strong>View status:</strong> See how many members have been notified
+                      </li>
                     </ul>
                   </section>
 
@@ -118,8 +144,12 @@ export default function RequestingSpare() {
                     <ul className="list-disc list-inside space-y-2">
                       <li>Request spares as early as possible to give members time to respond</li>
                       <li>Use private requests when you have specific members in mind</li>
-                      <li>Include helpful details in your message (e.g., "Need someone who can skip")</li>
-                      <li>Check your "My requests" page regularly to see if someone has signed up</li>
+                      <li>
+                        Include helpful details in your message (e.g., "Need someone who can skip")
+                      </li>
+                      <li>
+                        Check your "My requests" page regularly to see if someone has signed up
+                      </li>
                     </ul>
                   </section>
                 </div>
