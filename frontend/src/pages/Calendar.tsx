@@ -92,6 +92,13 @@ export interface CalendarEvent {
   recurrenceRrule?: string;
   /** Display name of the member who created the event */
   createdBy?: string;
+  /** Event source: 'direct' = calendar entries, 'leagues' = league schedule (read-only) */
+  source?: string;
+}
+
+/** True if event is from the leagues schedule (read-only) */
+function isLeagueEvent(ev: CalendarEvent): boolean {
+  return ev.source === 'leagues' || ev.id.startsWith('league:');
 }
 
 /** True if event takes place on a sheet (on-ice) */
@@ -150,7 +157,7 @@ function SingleLocationIcon({
   );
 }
 
-/** Icons for event band - one per location when set, else event type icon. */
+/** Icons for event band - one per location when set, else event type icon. Locations sorted by label (sheet names alphabetically). */
 function EventBandIcon({
   ev,
   type,
@@ -167,9 +174,12 @@ function EventBandIcon({
     const Icon = type.icon;
     return <Icon className={className} />;
   }
+  const sortedLocs = [...locs].sort((a, b) =>
+    getLocationLabel(a, sheetNameById).localeCompare(getLocationLabel(b, sheetNameById))
+  );
   return (
     <span className="inline-flex items-center gap-0.5 shrink-0">
-      {locs.map((loc, i) => (
+      {sortedLocs.map((loc, i) => (
         <SingleLocationIcon key={i} loc={loc} sheetNameById={sheetNameById} className={className} />
       ))}
     </span>
@@ -268,6 +278,7 @@ function apiEventToCalendar(ev: {
   locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
   recurrenceRrule?: string;
   createdBy?: string;
+  source?: string;
 }): CalendarEvent {
   const locs: EventLocation[] = (ev.locations ?? []).map((l) => {
     if (l.type === 'sheet' && l.sheetId != null) {
@@ -285,6 +296,7 @@ function apiEventToCalendar(ev: {
     description: ev.description,
     locations: locs.length > 0 ? locs : undefined,
     recurrenceRrule: ev.recurrenceRrule,
+    source: ev.source,
     createdBy: ev.createdBy,
   };
 }
@@ -1139,6 +1151,7 @@ export default function Calendar() {
   const [newEventDate, setNewEventDate] = useState<Date | null>(null);
   const [deleteEvent, setDeleteEvent] = useState<CalendarEvent | null>(null);
   const [onIceOnly, setOnIceOnly] = useState(false);
+  const [showLeagues, setShowLeagues] = useState(true);
   const [sheets, setSheets] = useState<Array<{ id: number; name: string }>>([]);
   const eventTypes = DEFAULT_EVENT_TYPES;
 
@@ -1180,45 +1193,55 @@ export default function Calendar() {
 
   useEffect(() => {
     setEventsLoading(true);
-    api
-      .get<
-        Array<{
-          id: string;
-          typeId: string;
-          title: string;
-          start: string;
-          end: string;
-          allDay: boolean;
-          locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
-        }>
-      >(`/calendar/events?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`)
-      .then((res) => setEvents((res.data ?? []).map(apiEventToCalendar)))
+    type EventPayload = {
+      id: string;
+      typeId: string;
+      title: string;
+      start: string;
+      end: string;
+      allDay: boolean;
+      description?: string;
+      locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
+      recurrenceRrule?: string;
+      createdBy?: string;
+      source?: string;
+    };
+    const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+    Promise.all([
+      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
+      api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
+    ])
+      .then(([eventsRes, leagueRes]) => {
+        const calendarEvents = (eventsRes.data ?? []).map(apiEventToCalendar);
+        const leagueEvents = (leagueRes.data ?? []).map(apiEventToCalendar);
+        setEvents([...calendarEvents, ...leagueEvents]);
+      })
       .catch(() => setEvents([]))
       .finally(() => setEventsLoading(false));
   }, [rangeStart, rangeEnd]);
 
   const refreshEvents = () => {
-    api
-      .get<
-        Array<{
-          id: string;
-          typeId: string;
-          title: string;
-          start: string;
-          end: string;
-          allDay: boolean;
-          locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
-        }>
-      >(`/calendar/events?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`)
-      .then((res) => setEvents((res.data ?? []).map(apiEventToCalendar)))
+    const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+    type EventPayload = Parameters<typeof apiEventToCalendar>[0];
+    Promise.all([
+      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
+      api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
+    ])
+      .then(([eventsRes, leagueRes]) => {
+        const calendarEvents = (eventsRes.data ?? []).map(apiEventToCalendar);
+        const leagueEvents = (leagueRes.data ?? []).map(apiEventToCalendar);
+        setEvents([...calendarEvents, ...leagueEvents]);
+      })
       .catch(() => {});
   };
 
   const sheetNameById = useMemo(() => new Map(sheets.map((s) => [s.id, s.name])), [sheets]);
-  const filteredEvents = useMemo(
-    () => (onIceOnly ? events.filter(isOnIceEvent) : events),
-    [events, onIceOnly]
-  );
+  const filteredEvents = useMemo(() => {
+    let list = events;
+    if (!showLeagues) list = list.filter((e) => !isLeagueEvent(e));
+    if (onIceOnly) list = list.filter(isOnIceEvent);
+    return list;
+  }, [events, showLeagues, onIceOnly]);
 
   const getEventType = (typeId: string) =>
     eventTypes.find((t) => t.id === typeId) ??
@@ -1297,7 +1320,16 @@ export default function Calendar() {
           </div>
 
           <div className="flex items-center gap-6">
-            {/* On-ice only filter */}
+            {/* Event source filters */}
+            <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showLeagues}
+                onChange={(e) => setShowLeagues(e.target.checked)}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              Leagues
+            </label>
             <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
               <input
                 type="checkbox"
@@ -1518,12 +1550,18 @@ export default function Calendar() {
                                 Location{selectedEvent.locations.length > 1 ? 's' : ''}
                               </dt>
                               <dd>
-                                {selectedEvent.locations.map((loc, i) => (
-                                  <span key={i}>
-                                    {i > 0 && ', '}
-                                    {getLocationLabel(loc, sheetNameById)}
-                                  </span>
-                                ))}
+                                {[...selectedEvent.locations]
+                                  .sort((a, b) =>
+                                    getLocationLabel(a, sheetNameById).localeCompare(
+                                      getLocationLabel(b, sheetNameById)
+                                    )
+                                  )
+                                  .map((loc, i) => (
+                                    <span key={i}>
+                                      {i > 0 && ', '}
+                                      {getLocationLabel(loc, sheetNameById)}
+                                    </span>
+                                  ))}
                               </dd>
                             </>
                           )}
@@ -1535,7 +1573,7 @@ export default function Calendar() {
                           )}
                         </dl>
                       </div>
-                      {canEditCalendar && (
+                      {canEditCalendar && !isLeagueEvent(selectedEvent) && (
                         <div className="flex justify-end gap-2 mb-2">
                           <Button
                             variant="secondary"

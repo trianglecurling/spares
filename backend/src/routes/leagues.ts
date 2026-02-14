@@ -609,8 +609,12 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // Admin: Delete league
-  fastify.delete<{ Params: { id: string } }>(
+  // Admin: Delete league (requires name confirmation)
+  const deleteLeagueBodySchema = z.object({
+    name: z.string().min(1),
+  });
+
+  fastify.delete<{ Params: { id: string }; Body: { name: string } }>(
     '/leagues/:id',
     {
       schema: {
@@ -622,6 +626,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             id: { type: 'string' },
           },
           required: ['id'],
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1 },
+          },
+          required: ['name'],
         },
         response: {
           200: successResponseSchema,
@@ -636,11 +648,26 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
     const { id } = request.params;
     const leagueId = parseInt(id, 10);
+    const body = deleteLeagueBodySchema.parse(request.body ?? {});
     const { db, schema } = getDrizzleDb();
 
-    await db
-      .delete(schema.leagues)
-      .where(eq(schema.leagues.id, leagueId));
+    const league = await db
+      .select({ id: schema.leagues.id, name: schema.leagues.name })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, leagueId))
+      .limit(1);
+
+    if (league.length === 0) {
+      return reply.code(404).send({ error: 'League not found' });
+    }
+
+    if (league[0].name !== body.name) {
+      return reply.code(400).send({
+        error: 'League name does not match. Type the exact league name to confirm deletion.',
+      });
+    }
+
+    await db.delete(schema.leagues).where(eq(schema.leagues.id, leagueId));
 
       return { success: true };
     }

@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import Button from '../../components/Button';
+import Modal from '../../components/Modal';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAlert } from '../../contexts/AlertContext';
 import api, { formatApiError } from '../../utils/api';
 
 interface LeagueMaintenanceProps {
   leagueId: number;
+  leagueName: string;
+  canDeleteLeague: boolean;
   onDataCleared: () => void;
+  onLeagueDeleted: () => void;
 }
 
 interface MaintenanceAction {
@@ -79,10 +83,19 @@ const actions: MaintenanceAction[] = [
   },
 ];
 
-export default function LeagueMaintenance({ leagueId, onDataCleared }: LeagueMaintenanceProps) {
+export default function LeagueMaintenance({
+  leagueId,
+  leagueName,
+  canDeleteLeague,
+  onDataCleared,
+  onLeagueDeleted,
+}: LeagueMaintenanceProps) {
   const { confirm } = useConfirm();
   const { showAlert } = useAlert();
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const handleAction = async (action: MaintenanceAction) => {
     const confirmed = await confirm({
@@ -105,6 +118,32 @@ export default function LeagueMaintenance({ leagueId, onDataCleared }: LeagueMai
     } finally {
       setLoadingKey(null);
     }
+  };
+
+  const handleDeleteLeague = async () => {
+    if (deleteConfirmName !== leagueName) return;
+    setDeleteSubmitting(true);
+    try {
+      await api.delete(`/leagues/${leagueId}`, { data: { name: leagueName } });
+      showAlert('League deleted successfully.', 'success');
+      setDeleteModalOpen(false);
+      setDeleteConfirmName('');
+      onLeagueDeleted();
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to delete league'), 'error');
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
+  const handleOpenDeleteModal = () => {
+    setDeleteConfirmName('');
+    setDeleteModalOpen(true);
+  };
+
+  const handleCloseDeleteModal = () => {
+    setDeleteModalOpen(false);
+    setDeleteConfirmName('');
   };
 
   return (
@@ -140,6 +179,63 @@ export default function LeagueMaintenance({ leagueId, onDataCleared }: LeagueMai
           </div>
         ))}
       </div>
+
+      {canDeleteLeague && (
+        <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <h3 className="font-medium text-red-900 dark:text-red-200">Delete league</h3>
+            <p className="text-sm text-red-800 dark:text-red-300 mt-1">
+              Permanently delete this league and all its data: games, teams, bye requests, roster,
+              divisions, and sheet availability. This cannot be undone.
+            </p>
+            <Button
+              variant="danger"
+              onClick={handleOpenDeleteModal}
+              disabled={loadingKey !== null}
+              className="mt-3"
+            >
+              Delete league
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={handleCloseDeleteModal}
+        title="Delete league"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            This will permanently delete <strong>{leagueName}</strong> and all its data: games,
+            teams, bye requests, roster, divisions, and sheet availability. This cannot be undone.
+          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Type the exact league name to confirm:
+          </p>
+          <input
+            type="text"
+            value={deleteConfirmName}
+            onChange={(e) => setDeleteConfirmName(e.target.value)}
+            placeholder={leagueName}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            autoComplete="off"
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={handleCloseDeleteModal} disabled={deleteSubmitting}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDeleteLeague}
+              disabled={deleteConfirmName !== leagueName || deleteSubmitting}
+            >
+              {deleteSubmitting ? 'Deleting...' : 'Delete league'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

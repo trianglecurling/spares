@@ -1,10 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, or, sql, asc, isNotNull, gte, lte } from 'drizzle-orm';
 import rrule from 'rrule';
 const { RRule } = rrule;
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isCalendarAdmin } from '../utils/auth.js';
+import { computeLeagueDrawDatesInRange } from '../utils/leagueSchedule.js';
 import type { Member } from '../types.js';
 
 type LocationType = 'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual';
@@ -311,6 +312,172 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             recurrenceDate: ov.recurrence_date ?? undefined,
             createdBy: ov.created_by_member_id != null ? creatorNameById.get(ov.created_by_member_id) : undefined,
           });
+        }
+      }
+
+      return result;
+    }
+  );
+
+  // GET /calendar/league-events?start=...&end=...
+  // Returns league draw schedule as calendar events (read-only, source: 'leagues')
+  fastify.get(
+    '/calendar/league-events',
+    {
+      schema: {
+        tags: ['calendar'],
+        querystring: {
+          type: 'object',
+          required: ['start', 'end'],
+          properties: {
+            start: { type: 'string', description: 'ISO date or datetime' },
+            end: { type: 'string', description: 'ISO date or datetime' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const q = request.query as { start: string; end: string };
+      const rangeStart = new Date(q.start);
+      const rangeEnd = new Date(q.end);
+
+      const { db, schema } = getDrizzleDb();
+
+      const sheetRows = await db
+        .select({ id: schema.sheets.id, name: schema.sheets.name })
+        .from(schema.sheets)
+        .orderBy(schema.sheets.sort_order, schema.sheets.name);
+      const sheetNameById = new Map(sheetRows.map((s) => [s.id, s.name]));
+
+      const leagues = await db.select().from(schema.leagues).orderBy(schema.leagues.day_of_week, schema.leagues.name);
+
+      const rangeStartStr = rangeStart.toISOString().slice(0, 10);
+      const rangeEndStr = rangeEnd.toISOString().slice(0, 10);
+      const scheduledGamesInRange = await db
+        .select({
+          league_id: schema.games.league_id,
+          game_date: schema.games.game_date,
+          game_time: schema.games.game_time,
+          sheet_id: schema.games.sheet_id,
+          sheet_name: schema.sheets.name,
+        })
+        .from(schema.games)
+        .leftJoin(schema.sheets, eq(schema.games.sheet_id, schema.sheets.id))
+        .where(
+          and(
+            gte(schema.games.game_date, rangeStartStr),
+            lte(schema.games.game_date, rangeEndStr),
+            isNotNull(schema.games.sheet_id)
+          )
+        );
+
+      const sheetsByDraw = new Map<string, Array<{ sheetId: number; sheetName?: string }>>();
+      for (const row of scheduledGamesInRange) {
+        if (row.sheet_id == null || row.game_date == null || row.game_time == null) continue;
+        const dateStr =
+          typeof row.game_date === 'string'
+            ? row.game_date.slice(0, 10)
+            : (row.game_date as Date).toISOString().slice(0, 10);
+        const timeStr =
+          typeof row.game_time === 'string'
+            ? row.game_time.slice(0, 5)
+            : `${String((row.game_time as Date).getUTCHours()).padStart(2, '0')}:${String((row.game_time as Date).getUTCMinutes()).padStart(2, '0')}`;
+        const key = `${row.league_id}:${dateStr}:${timeStr}`;
+        const arr = sheetsByDraw.get(key) ?? [];
+        if (!arr.some((s) => s.sheetId === row.sheet_id)) {
+          arr.push({
+            sheetId: row.sheet_id,
+            sheetName: row.sheet_name ?? sheetNameById.get(row.sheet_id),
+          });
+        }
+        sheetsByDraw.set(key, arr);
+      }
+
+      const result: Array<{
+        id: string;
+        typeId: string;
+        title: string;
+        start: string;
+        end: string;
+        allDay: boolean;
+        source: string;
+        locations?: Array<{ type: 'sheet'; sheetId: number; sheetName?: string }>;
+      }> = [];
+
+      const LEAGUE_DRAW_DURATION_HOURS = 2;
+
+      for (const league of leagues) {
+        const drawTimes = await db
+          .select({ draw_time: schema.leagueDrawTimes.draw_time })
+          .from(schema.leagueDrawTimes)
+          .where(eq(schema.leagueDrawTimes.league_id, league.id))
+          .orderBy(asc(schema.leagueDrawTimes.draw_time));
+
+        const exceptionRows = await db
+          .select({ exception_date: schema.leagueExceptions.exception_date })
+          .from(schema.leagueExceptions)
+          .where(eq(schema.leagueExceptions.league_id, league.id));
+        const exceptions = new Set(
+          exceptionRows.map((ex) =>
+            typeof ex.exception_date === 'string'
+              ? ex.exception_date.slice(0, 10)
+              : (ex.exception_date as Date).toISOString().slice(0, 10)
+          )
+        );
+
+        const startDateStr =
+          typeof league.start_date === 'string'
+            ? league.start_date.slice(0, 10)
+            : (league.start_date as Date).toISOString().slice(0, 10);
+        const endDateStr =
+          typeof league.end_date === 'string'
+            ? league.end_date.slice(0, 10)
+            : (league.end_date as Date).toISOString().slice(0, 10);
+
+        const drawDates = computeLeagueDrawDatesInRange(
+          startDateStr,
+          endDateStr,
+          league.day_of_week,
+          exceptions,
+          rangeStart,
+          rangeEnd
+        );
+
+        for (const dateStr of drawDates) {
+          for (const row of drawTimes) {
+            const rawTime = row.draw_time;
+            const timeStr =
+              typeof rawTime === 'string'
+                ? rawTime.slice(0, 5)
+                : `${String((rawTime as Date).getUTCHours()).padStart(2, '0')}:${String((rawTime as Date).getUTCMinutes()).padStart(2, '0')}`;
+            const startIso = `${dateStr}T${timeStr}:00`;
+            const startDate = new Date(startIso);
+            const endDate = new Date(startDate.getTime() + LEAGUE_DRAW_DURATION_HOURS * 60 * 60 * 1000);
+
+            if (endDate <= rangeStart || startDate >= rangeEnd) continue;
+
+            const drawKey = `${league.id}:${dateStr}:${timeStr}`;
+            const sheetRowsForDraw = sheetsByDraw.get(drawKey) ?? [];
+            const locations: Array<{ type: 'sheet'; sheetId: number; sheetName?: string }> = sheetRowsForDraw.map(
+              (s) => ({ type: 'sheet' as const, sheetId: s.sheetId, sheetName: s.sheetName })
+            );
+
+            result.push({
+              id: `league:${league.id}:${dateStr}:${timeStr}`,
+              typeId: 'leagues',
+              title: league.name,
+              start: startDate.toISOString(),
+              end: endDate.toISOString(),
+              allDay: false,
+              source: 'leagues',
+              locations: locations.length > 0 ? locations : undefined,
+            });
+          }
         }
       }
 

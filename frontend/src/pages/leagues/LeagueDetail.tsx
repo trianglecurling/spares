@@ -2339,8 +2339,14 @@ export default function LeagueDetail() {
           </div>
         )}
 
-        {normalizedTab === 'maintenance' && canManageSetup && (
-          <LeagueMaintenance leagueId={numericLeagueId} onDataCleared={loadAll} />
+        {normalizedTab === 'maintenance' && canManageSetup && league && (
+          <LeagueMaintenance
+            leagueId={numericLeagueId}
+            leagueName={league.name}
+            canDeleteLeague={leagueAccess.hasGlobalLeagueAdmin}
+            onDataCleared={loadAll}
+            onLeagueDeleted={() => navigate('/leagues')}
+          />
         )}
 
         {normalizedTab === 'roster' && (
