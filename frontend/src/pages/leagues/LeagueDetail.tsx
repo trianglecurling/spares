@@ -1685,6 +1685,14 @@ export default function LeagueDetail() {
                     </span>
                   </div>
                 )}
+                {managers.length > 0 && (
+                  <div>
+                    <span className="font-medium dark:text-gray-300">League managers:</span>{' '}
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {managers.map((m) => m.name).join(', ')}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

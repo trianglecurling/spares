@@ -222,6 +222,22 @@ export const memberAvailabilityResponseSchema = {
   required: ['canSkip', 'availableLeagues'],
 } as const;
 
+export const memberLeaguesResponseSchema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      leagueId: { type: 'number' },
+      leagueName: { type: 'string' },
+      dayOfWeek: { type: 'number' },
+      teamId: { type: ['number', 'null'] },
+      teamName: { type: ['string', 'null'] },
+    },
+    required: ['leagueId', 'leagueName', 'dayOfWeek', 'teamId', 'teamName'],
+  },
+} as const;
+
 export const availabilityMembersResponseSchema = {
   type: 'array',
   items: {

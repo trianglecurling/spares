@@ -58,6 +58,14 @@ export type MemberProfileResponse = {
   themePreference: string;
 };
 
+export type MemberLeaguesResponse = Array<{
+  leagueId: number;
+  leagueName: string;
+  dayOfWeek: number;
+  teamId: number | null;
+  teamName: string | null;
+}>;
+
 export type MemberSummaryResponse = {
   id: number;
   name: string;

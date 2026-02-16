@@ -11,6 +11,7 @@ import {
   bulkSendWelcomeResponseSchema,
   loginLinkResponseSchema,
   memberCreateResponseSchema,
+  memberLeaguesResponseSchema,
   memberListResponseSchema,
   memberProfileResponseSchema,
   memberUpdateResponseSchema,
@@ -26,6 +27,7 @@ import type {
   CreateMemberBody,
   LoginLinkResponse,
   MemberCreateResponse,
+  MemberLeaguesResponse,
   MemberProfileResponse,
   MemberSummaryResponse,
   MemberUpdateResponse,
@@ -610,6 +612,72 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
       return response;
     });
+    }
+  );
+
+  // Get a member's leagues and team assignments (for directory profile)
+  fastify.get<{ Params: { memberId: string }; Reply: MemberLeaguesResponse | ApiErrorResponse }>(
+    '/members/:memberId/leagues',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            memberId: { type: 'string' },
+          },
+          required: ['memberId'],
+        },
+        response: {
+          200: memberLeaguesResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+    const member = (request as AuthenticatedRequest).member;
+    if (!member) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const { memberId } = request.params;
+    const targetMemberId = parseInt(memberId, 10);
+    const { db, schema } = getDrizzleDb();
+
+    const rows = (await db
+      .select({
+        league_id: schema.leagueRoster.league_id,
+        league_name: schema.leagues.name,
+        league_day_of_week: schema.leagues.day_of_week,
+        team_id: schema.leagueTeams.id,
+        team_name: schema.leagueTeams.name,
+      })
+      .from(schema.leagueRoster)
+      .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
+      .leftJoin(schema.teamMembers, eq(schema.leagueRoster.member_id, schema.teamMembers.member_id))
+      .leftJoin(
+        schema.leagueTeams,
+        and(
+          eq(schema.teamMembers.team_id, schema.leagueTeams.id),
+          eq(schema.leagueTeams.league_id, schema.leagueRoster.league_id)
+        )
+      )
+      .where(eq(schema.leagueRoster.member_id, targetMemberId))
+      .orderBy(schema.leagues.day_of_week, schema.leagues.name)) as {
+      league_id: number;
+      league_name: string;
+      league_day_of_week: number;
+      team_id: number | null;
+      team_name: string | null;
+    }[];
+
+    return rows.map((row) => ({
+      leagueId: row.league_id,
+      leagueName: row.league_name,
+      dayOfWeek: row.league_day_of_week,
+      teamId: row.team_id,
+      teamName: row.team_name,
+    }));
     }
   );
 

@@ -1639,6 +1639,69 @@
         }
       }
     },
+    "/members/{memberId}/leagues": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "leagueId": {
+                        "type": "number"
+                      },
+                      "leagueName": {
+                        "type": "string"
+                      },
+                      "dayOfWeek": {
+                        "type": "number"
+                      },
+                      "teamId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "teamName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "leagueId",
+                      "leagueName",
+                      "dayOfWeek",
+                      "teamId",
+                      "teamName"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/members/bulk": {
       "post": {
         "tags": [
