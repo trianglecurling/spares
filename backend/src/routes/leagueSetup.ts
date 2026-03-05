@@ -32,6 +32,7 @@ import {
   teamRosterUpdateBodySchema,
   teamUpdateBodySchema,
 } from '../api/leagueSetupSchemas.js';
+import type { ApiReply } from '../api/types.js';
 import {
   hasClubLeagueAdministratorAccess,
   hasLeagueAdministratorAccess,
@@ -344,7 +345,7 @@ async function ensureRosterMembership(
 
 export async function leagueSetupRoutes(fastify: FastifyInstance) {
   // Sheets
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/sheets',
     {
       schema: {
@@ -377,7 +378,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/sheets',
     {
       schema: {
@@ -418,7 +419,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.patch(
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
     '/sheets/:id',
     {
       schema: {
@@ -470,7 +471,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/sheets/:id',
     {
       schema: {
@@ -497,7 +498,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Divisions
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/divisions',
     {
       schema: {
@@ -534,7 +535,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/divisions',
     {
       schema: {
@@ -579,7 +580,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.patch(
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
     '/leagues/:leagueId/divisions/:divisionId',
     {
       schema: {
@@ -655,7 +656,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:leagueId/divisions/:divisionId',
     {
       schema: {
@@ -709,7 +710,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // League roster
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/roster',
     {
       schema: {
@@ -774,7 +775,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/roster/unassigned',
     {
       schema: {
@@ -826,7 +827,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/roster/search',
     {
       schema: {
@@ -915,7 +916,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/roster',
     {
       schema: {
@@ -972,7 +973,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/roster/bulk',
     {
       schema: {
@@ -1097,7 +1098,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/roster/:memberId',
     {
       schema: {
@@ -1145,7 +1146,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // League managers
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/managers',
     {
       schema: {
@@ -1190,7 +1191,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/managers/search',
     {
       schema: {
@@ -1250,7 +1251,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/managers',
     {
       schema: {
@@ -1302,7 +1303,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/managers/:memberId',
     {
       schema: {
@@ -1343,7 +1344,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Teams and rosters
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/teams',
     {
       schema: {
@@ -1434,7 +1435,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/teams',
     {
       schema: {
@@ -1587,7 +1588,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.patch(
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
     '/teams/:teamId',
     {
       schema: {
@@ -1664,7 +1665,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/teams/:teamId',
     {
       schema: {
@@ -1710,7 +1711,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/teams/:teamId/roster',
     {
       schema: {
@@ -1760,7 +1761,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.put(
+  fastify.put<{ Reply: ApiReply<unknown> }>(
     '/teams/:teamId/roster',
     {
       schema: {
@@ -1879,7 +1880,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Member search (autocomplete)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/members/search',
     {
       schema: {
@@ -1942,7 +1943,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   };
 
   // Clear games
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/maintenance/games',
     {
       schema: {
@@ -1966,7 +1967,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Clear teams (also clears games, team_members, bye requests via cascade)
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/maintenance/teams',
     {
       schema: {
@@ -1992,7 +1993,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Clear roster (also clears games, teams, team_members)
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/maintenance/roster',
     {
       schema: {
@@ -2018,7 +2019,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Clear bye requests
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/maintenance/bye-requests',
     {
       schema: {
@@ -2049,7 +2050,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Clear divisions (also clears games, teams)
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/maintenance/divisions',
     {
       schema: {
@@ -2075,7 +2076,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
   );
 
   // Clear sheet availability
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/maintenance/sheet-availability',
     {
       schema: {

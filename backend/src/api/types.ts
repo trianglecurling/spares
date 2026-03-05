@@ -71,6 +71,8 @@ export type MemberSummaryResponse = {
   name: string;
   isAdmin: boolean;
   isServerAdmin: boolean;
+  isCalendarAdmin?: boolean;
+  isContentAdmin?: boolean;
   isLeagueAdministratorGlobal?: boolean;
   isInServerAdminsList: boolean;
   emailSubscribed: boolean;
@@ -134,6 +136,14 @@ export type ApiErrorResponse = {
   message?: string;
   details?: unknown;
   requiresInstallation?: boolean;
+};
+
+export type ApiErrorStatusCode = 400 | 401 | 403 | 404 | 409 | 500;
+
+export type ApiReply<TSuccess, TExtraStatus extends number = never> = {
+  200: TSuccess;
+} & {
+  [K in ApiErrorStatusCode | TExtraStatus]: ApiErrorResponse;
 };
 
 export type PublicConfigResponse = {

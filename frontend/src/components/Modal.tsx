@@ -17,7 +17,7 @@ export default function Modal({
   title,
   children,
   size = 'md',
-  contentOverflow = 'visible',
+  contentOverflow = 'auto',
 }: ModalProps) {
   const modalRef = useFocusTrap(isOpen);
 
@@ -64,7 +64,7 @@ export default function Modal({
 
         <div
           ref={modalRef}
-          className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl ${sizeClasses[size]} w-full p-4 sm:p-6 max-h-[95vh] flex flex-col`}
+          className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl ${sizeClasses[size]} w-full p-4 sm:p-6 max-h-[95vh] flex flex-col overflow-hidden`}
         >
           <div className="flex justify-between items-center mb-4 flex-shrink-0">
             <h3 className="text-lg font-semibold text-[#121033] dark:text-gray-100">{title}</h3>
@@ -76,7 +76,7 @@ export default function Modal({
             </button>
           </div>
           <div
-            className={`flex-1 ${contentOverflowClasses[contentOverflow]} flex flex-col min-h-0`}
+            className={`flex-1 ${contentOverflowClasses[contentOverflow]} flex flex-col min-h-0 -mx-4 sm:-mx-6 px-4 sm:px-6`}
           >
             {children}
           </div>

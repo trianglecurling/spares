@@ -268,3 +268,27 @@ Saturday Instructional Program / U3 League
 We also occasionally run a Saturday Instructional Program. This is similar to a league as far as registration goes, but it does not have games or teams. The cost is the same as a league.
 
 Other times we run a "U3" league - all participants of the U3 league must have 3 or less years of curling experience. Years of curling experience is something we will need to track for our members (and it can't be as simple as collecting "year you started curling" because they can take 1 or more years off - we'd only want to count the years they were actually curling).
+
+===
+
+Here is some additional information to clarify some points. Keep in mind these clarifications may necessitate changes to multiple parts of the plan.
+1. All doubles leagues are also "bring-your-own-team" leagues. Of course, this should not be hard-coded. This should be a configuration for any league.
+2. There are a few other "no team" leagues. Again, not something we should hardcode.
+3. Sessions should be more configurable than simply "Fall" and "Winter". Maybe we want to add a spring or a summer session in the future?
+4. Why have an "is_active" field for registration periods? This can be determined from open date, close date, and current date.
+5. For years_curling_experience, we need to track: 1) self-reported years when first joining the club, 2) years of experience gained while a member of the club. The first can be other_club_years (although we should not cap it here - cap it when calculating lottery tickets)
+6. Date of birth should be nullable like most fields, but required during registration. Only an admin should be able to create a user without a date of birth. It's needed for all members, juniors and adults.
+7. Instead of is_reciprocal, how about a nullable reciprocal_curling_club so we can track which club they belong to?
+8. Is first_tcc_season needed? I would think we can compute this. If caching the value is a good idea, fine, but that's an implementation detail.
+9. I want to avoid hardcoding any league particulars, such as "tuesday_team_request". League details should be configurable by admins.
+10. We will need the ability to add custom questions to the registration form.
+11. If someone submits multiple registrations, we should keep all submissions. Sometimes the user does not follow instructions and we don't want to overwrite any data that we might need.
+12. Capacity should be a property of leagues and represent the number of teams that can be in the league.
+13. Let's change the bring_your_own_team boolean to league_format with possible values "bring your own team", "skip's draft", "assigned teams", "instructional", and "pick-up". Then we can remove is_instructional.
+14. Instead of having requires_tuesday_rank, we will say that ALL leagues with format "bring your own team" are required to be #1 or #2 for priority.
+15. Fees must be admin-configurable from the app.
+
+Additionally:
+1. I would like to verify email address as part of accepting a registration. We do, however, need to harden the backend to prevent abuse of our email service.
+2. Let's say that a league is tied to a particular session. After the session ends, we will create new leagues for the following session.
+3. No QuickBooks/Stripe integration yet.

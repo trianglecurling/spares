@@ -219,6 +219,181 @@ function ensureGameIdColumnSync(db: DatabaseAdapter): void {
   );
 }
 
+async function ensureMenuItemsArticleColumns(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    // PostgreSQL: use IF NOT EXISTS for idempotent migration
+    await execSQL(db, 'ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL');
+    await execSQL(db, 'ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS use_article_title_for_label INTEGER DEFAULT 0 NOT NULL');
+    await execSQL(db, 'ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS open_in_new_tab INTEGER DEFAULT 0 NOT NULL');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_menu_items_article_id ON menu_items(article_id)');
+    return;
+  }
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(menu_items)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('article_id')) {
+    await execSQL(db, 'ALTER TABLE menu_items ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_menu_items_article_id ON menu_items(article_id)');
+  }
+  if (!columnNames.has('use_article_title_for_label')) {
+    await execSQL(db, 'ALTER TABLE menu_items ADD COLUMN use_article_title_for_label INTEGER DEFAULT 0');
+  }
+  if (!columnNames.has('open_in_new_tab')) {
+    await execSQL(db, 'ALTER TABLE menu_items ADD COLUMN open_in_new_tab INTEGER DEFAULT 0');
+  }
+}
+
+async function ensureCalendarEventsArticleColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(db, 'ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL');
+    return;
+  }
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(calendar_events)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('article_id')) {
+    await execSQL(db, 'ALTER TABLE calendar_events ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL');
+  }
+}
+
+function ensureMenuItemsArticleColumnsSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(menu_items)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('article_id')) {
+    execSQLSync(db, 'ALTER TABLE menu_items ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL');
+    execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_menu_items_article_id ON menu_items(article_id)');
+  }
+  if (!columnNames.has('use_article_title_for_label')) {
+    execSQLSync(db, 'ALTER TABLE menu_items ADD COLUMN use_article_title_for_label INTEGER DEFAULT 0');
+  }
+  if (!columnNames.has('open_in_new_tab')) {
+    execSQLSync(db, 'ALTER TABLE menu_items ADD COLUMN open_in_new_tab INTEGER DEFAULT 0');
+  }
+}
+
+function ensureCalendarEventsArticleColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(calendar_events)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('article_id')) {
+    execSQLSync(db, 'ALTER TABLE calendar_events ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL');
+  }
+}
+
+async function ensureFilesThumbnailColumns(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN IF NOT EXISTS thumbnail_storage_key TEXT');
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN IF NOT EXISTS thumbnail_mime_type TEXT');
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN IF NOT EXISTS thumbnail_byte_size INTEGER');
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN IF NOT EXISTS thumbnail_checksum_sha256 TEXT');
+    return;
+  }
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(files)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('thumbnail_storage_key')) {
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN thumbnail_storage_key TEXT');
+  }
+  if (!columnNames.has('thumbnail_mime_type')) {
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN thumbnail_mime_type TEXT');
+  }
+  if (!columnNames.has('thumbnail_byte_size')) {
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN thumbnail_byte_size INTEGER');
+  }
+  if (!columnNames.has('thumbnail_checksum_sha256')) {
+    await execSQL(db, 'ALTER TABLE files ADD COLUMN thumbnail_checksum_sha256 TEXT');
+  }
+}
+
+async function ensureArticleVersionsRevisionNoteColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(db, 'ALTER TABLE article_versions ADD COLUMN IF NOT EXISTS revision_note TEXT');
+    return;
+  }
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(article_versions)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('revision_note')) {
+    await execSQL(db, 'ALTER TABLE article_versions ADD COLUMN revision_note TEXT');
+  }
+}
+
+async function ensureArticleVersionsSmallEditColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(db, 'ALTER TABLE article_versions ADD COLUMN IF NOT EXISTS is_small_edit INTEGER DEFAULT 0 NOT NULL');
+    return;
+  }
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(article_versions)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('is_small_edit')) {
+    await execSQL(db, 'ALTER TABLE article_versions ADD COLUMN is_small_edit INTEGER DEFAULT 0');
+    await execSQL(db, 'UPDATE article_versions SET is_small_edit = 0 WHERE is_small_edit IS NULL');
+  }
+}
+
+async function ensureArticlesFeaturedSortOrderColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(db, 'ALTER TABLE articles ADD COLUMN IF NOT EXISTS featured_sort_order INTEGER DEFAULT 0 NOT NULL');
+    return;
+  }
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(articles)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('featured_sort_order')) {
+    await execSQL(db, 'ALTER TABLE articles ADD COLUMN featured_sort_order INTEGER DEFAULT 0');
+    await execSQL(db, 'UPDATE articles SET featured_sort_order = 0 WHERE featured_sort_order IS NULL');
+  }
+}
+
+function ensureFilesThumbnailColumnsSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(files)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('thumbnail_storage_key')) {
+    execSQLSync(db, 'ALTER TABLE files ADD COLUMN thumbnail_storage_key TEXT');
+  }
+  if (!columnNames.has('thumbnail_mime_type')) {
+    execSQLSync(db, 'ALTER TABLE files ADD COLUMN thumbnail_mime_type TEXT');
+  }
+  if (!columnNames.has('thumbnail_byte_size')) {
+    execSQLSync(db, 'ALTER TABLE files ADD COLUMN thumbnail_byte_size INTEGER');
+  }
+  if (!columnNames.has('thumbnail_checksum_sha256')) {
+    execSQLSync(db, 'ALTER TABLE files ADD COLUMN thumbnail_checksum_sha256 TEXT');
+  }
+}
+
+function ensureArticleVersionsRevisionNoteColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(article_versions)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('revision_note')) {
+    execSQLSync(db, 'ALTER TABLE article_versions ADD COLUMN revision_note TEXT');
+  }
+}
+
+function ensureArticleVersionsSmallEditColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(article_versions)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('is_small_edit')) {
+    execSQLSync(db, 'ALTER TABLE article_versions ADD COLUMN is_small_edit INTEGER DEFAULT 0');
+    execSQLSync(db, 'UPDATE article_versions SET is_small_edit = 0 WHERE is_small_edit IS NULL');
+  }
+}
+
+function ensureArticlesFeaturedSortOrderColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(articles)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('featured_sort_order')) {
+    execSQLSync(db, 'ALTER TABLE articles ADD COLUMN featured_sort_order INTEGER DEFAULT 0');
+    execSQLSync(db, 'UPDATE articles SET featured_sort_order = 0 WHERE featured_sort_order IS NULL');
+  }
+}
+
 export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await execSQL(db, `
     -- Members table
@@ -853,6 +1028,9 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE league_teams ADD COLUMN prefer_late_draw INTEGER DEFAULT 0', table: 'league_teams', column: 'prefer_late_draw' },
     { sql: 'ALTER TABLE members ADD COLUMN is_calendar_admin INTEGER DEFAULT 0', table: 'members', column: 'is_calendar_admin' },
     { sql: 'ALTER TABLE calendar_events ADD COLUMN description TEXT', table: 'calendar_events', column: 'description' },
+    { sql: 'ALTER TABLE calendar_events ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL', table: 'calendar_events', column: 'article_id' },
+    { sql: 'ALTER TABLE members ADD COLUMN is_content_admin INTEGER DEFAULT 0', table: 'members', column: 'is_content_admin' },
+    { sql: "ALTER TABLE articles ADD COLUMN content_type TEXT DEFAULT 'markdown'", table: 'articles', column: 'content_type' },
   ];
 
   for (const migration of migrations) {
@@ -999,6 +1177,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       recurrence_rule TEXT,
       parent_event_id INTEGER REFERENCES calendar_events(id) ON DELETE CASCADE,
       recurrence_date TEXT,
+      article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
       created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -1025,10 +1204,117 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_calendar_event_exceptions_parent_id ON calendar_event_exceptions(parent_event_id);
+
+    CREATE TABLE IF NOT EXISTS articles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      content_type TEXT DEFAULT 'markdown' NOT NULL,
+      content TEXT NOT NULL,
+      snippet TEXT,
+      featured INTEGER DEFAULT 0,
+      featured_sort_order INTEGER DEFAULT 0,
+      published_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_articles_slug ON articles(slug);
+    CREATE INDEX IF NOT EXISTS idx_articles_featured ON articles(featured);
+    CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at);
+
+    CREATE TABLE IF NOT EXISTS article_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      content_type TEXT DEFAULT 'markdown' NOT NULL,
+      content TEXT NOT NULL,
+      revision_note TEXT,
+      is_small_edit INTEGER DEFAULT 0 NOT NULL,
+      snippet TEXT,
+      featured INTEGER DEFAULT 0 NOT NULL,
+      published_at DATETIME,
+      saved_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(article_id, version_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_article_versions_article_id ON article_versions(article_id);
+    CREATE INDEX IF NOT EXISTS idx_article_versions_created_at ON article_versions(created_at);
+
+    CREATE TABLE IF NOT EXISTS site_config (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      club_name TEXT,
+      logo_url TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      footer_markdown TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT OR IGNORE INTO site_config (id) VALUES (1);
+
+    CREATE TABLE IF NOT EXISTS showcase_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL,
+      caption TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_showcase_images_sort_order ON showcase_images(sort_order);
+
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      menu_type TEXT NOT NULL DEFAULT 'navbar',
+      parent_id INTEGER REFERENCES menu_items(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      link_type TEXT CHECK(link_type IN ('internal', 'external')),
+      url TEXT,
+      open_in_new_tab INTEGER DEFAULT 0,
+      article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+      use_article_title_for_label INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_menu_items_menu_type ON menu_items(menu_type);
+    CREATE INDEX IF NOT EXISTS idx_menu_items_parent_id ON menu_items(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_menu_items_sort_order ON menu_items(sort_order);
+
+    CREATE TABLE IF NOT EXISTS files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      storage_key TEXT NOT NULL UNIQUE,
+      original_filename TEXT NOT NULL,
+      display_name TEXT,
+      description TEXT,
+      mime_type TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public', 'authenticated')),
+      checksum_sha256 TEXT,
+      thumbnail_storage_key TEXT,
+      thumbnail_mime_type TEXT,
+      thumbnail_byte_size INTEGER,
+      thumbnail_checksum_sha256 TEXT,
+      uploaded_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      suspected_orphan INTEGER NOT NULL DEFAULT 0,
+      last_referenced_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_files_visibility ON files(visibility);
+    CREATE INDEX IF NOT EXISTS idx_files_uploaded_by_member_id ON files(uploaded_by_member_id);
+    CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at);
+    CREATE INDEX IF NOT EXISTS idx_files_suspected_orphan ON files(suspected_orphan);
   `);
 
   await ensureRequestedForMemberIdColumn(db);
+  await ensureMenuItemsArticleColumns(db);
+  await ensureCalendarEventsArticleColumn(db);
   await ensureGameIdColumn(db);
+  await ensureFilesThumbnailColumns(db);
+  await ensureArticleVersionsRevisionNoteColumn(db);
+  await ensureArticleVersionsSmallEditColumn(db);
+  await ensureArticlesFeaturedSortOrderColumn(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -1545,6 +1831,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE league_teams ADD COLUMN prefer_late_draw INTEGER DEFAULT 0',
     'ALTER TABLE members ADD COLUMN is_calendar_admin INTEGER DEFAULT 0',
     'ALTER TABLE calendar_events ADD COLUMN description TEXT',
+    'ALTER TABLE members ADD COLUMN is_content_admin INTEGER DEFAULT 0',
+    "ALTER TABLE articles ADD COLUMN content_type TEXT DEFAULT 'markdown'",
   ];
 
   for (const migrationSQL of migrations) {
@@ -1649,6 +1937,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       recurrence_rule TEXT,
       parent_event_id INTEGER REFERENCES calendar_events(id) ON DELETE CASCADE,
       recurrence_date TEXT,
+      article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
       created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -1675,10 +1964,117 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_calendar_event_exceptions_parent_id ON calendar_event_exceptions(parent_event_id);
+
+    CREATE TABLE IF NOT EXISTS articles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      content_type TEXT DEFAULT 'markdown' NOT NULL,
+      content TEXT NOT NULL,
+      snippet TEXT,
+      featured INTEGER DEFAULT 0,
+      featured_sort_order INTEGER DEFAULT 0,
+      published_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_articles_slug ON articles(slug);
+    CREATE INDEX IF NOT EXISTS idx_articles_featured ON articles(featured);
+    CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at);
+
+    CREATE TABLE IF NOT EXISTS article_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      content_type TEXT DEFAULT 'markdown' NOT NULL,
+      content TEXT NOT NULL,
+      revision_note TEXT,
+      is_small_edit INTEGER DEFAULT 0 NOT NULL,
+      snippet TEXT,
+      featured INTEGER DEFAULT 0 NOT NULL,
+      published_at DATETIME,
+      saved_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(article_id, version_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_article_versions_article_id ON article_versions(article_id);
+    CREATE INDEX IF NOT EXISTS idx_article_versions_created_at ON article_versions(created_at);
+
+    CREATE TABLE IF NOT EXISTS site_config (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      club_name TEXT,
+      logo_url TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      footer_markdown TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT OR IGNORE INTO site_config (id) VALUES (1);
+
+    CREATE TABLE IF NOT EXISTS showcase_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL,
+      caption TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_showcase_images_sort_order ON showcase_images(sort_order);
+
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      menu_type TEXT NOT NULL DEFAULT 'navbar',
+      parent_id INTEGER REFERENCES menu_items(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      link_type TEXT CHECK(link_type IN ('internal', 'external')),
+      url TEXT,
+      open_in_new_tab INTEGER DEFAULT 0,
+      article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+      use_article_title_for_label INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_menu_items_menu_type ON menu_items(menu_type);
+    CREATE INDEX IF NOT EXISTS idx_menu_items_parent_id ON menu_items(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_menu_items_sort_order ON menu_items(sort_order);
+
+    CREATE TABLE IF NOT EXISTS files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      storage_key TEXT NOT NULL UNIQUE,
+      original_filename TEXT NOT NULL,
+      display_name TEXT,
+      description TEXT,
+      mime_type TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public', 'authenticated')),
+      checksum_sha256 TEXT,
+      thumbnail_storage_key TEXT,
+      thumbnail_mime_type TEXT,
+      thumbnail_byte_size INTEGER,
+      thumbnail_checksum_sha256 TEXT,
+      uploaded_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      suspected_orphan INTEGER NOT NULL DEFAULT 0,
+      last_referenced_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_files_visibility ON files(visibility);
+    CREATE INDEX IF NOT EXISTS idx_files_uploaded_by_member_id ON files(uploaded_by_member_id);
+    CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at);
+    CREATE INDEX IF NOT EXISTS idx_files_suspected_orphan ON files(suspected_orphan);
   `);
 
   ensureRequestedForMemberIdColumnSync(db);
+  ensureMenuItemsArticleColumnsSync(db);
+  ensureCalendarEventsArticleColumnSync(db);
   ensureGameIdColumnSync(db);
+  ensureFilesThumbnailColumnsSync(db);
+  ensureArticleVersionsRevisionNoteColumnSync(db);
+  ensureArticleVersionsSmallEditColumnSync(db);
+  ensureArticlesFeaturedSortOrderColumnSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

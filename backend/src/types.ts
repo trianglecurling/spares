@@ -10,6 +10,7 @@ export interface Member {
   is_admin: number;
   is_server_admin: number;
   is_calendar_admin?: number;
+  is_content_admin?: number;
   opted_in_sms: number;
   email_subscribed: number;
   first_login_completed: number;
@@ -209,6 +210,7 @@ export interface AuthenticatedMember {
   isAdmin: boolean;
   isServerAdmin: boolean;
   isCalendarAdmin: boolean;
+  isContentAdmin: boolean;
   leagueManagerLeagueIds: number[];
   isLeagueAdministrator: boolean;
   isLeagueAdministratorGlobal: boolean;

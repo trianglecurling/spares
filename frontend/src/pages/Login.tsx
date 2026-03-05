@@ -37,6 +37,15 @@ const isSelectionResponse = (
   value !== null &&
   (value as { requiresSelection?: boolean }).requiresSelection === true;
 
+const isLoginSuccessResponse = (
+  value: unknown
+): value is { token: string; member: AuthenticatedMember } =>
+  typeof value === 'object' &&
+  value !== null &&
+  'token' in value &&
+  'member' in value &&
+  typeof (value as { token?: unknown }).token === 'string';
+
 export default function Login() {
   const [contact, setContact] = useState('');
   const [code, setCode] = useState('');
@@ -78,10 +87,23 @@ export default function Login() {
 
     try {
       const response = await post('/auth/request-code', { contact });
-      if (response.multipleMembers) {
-        setMultipleMembers([]);
+      if (isLoginSuccessResponse(response)) {
+        const member = normalizeMember({
+          ...response.member,
+          themePreference: normalizeThemePreference(response.member.themePreference),
+        } as AuthenticatedMember);
+        login(response.token, member, from || undefined);
+      } else if (isSelectionResponse(response)) {
+        setMultipleMembers(response.members);
+        setTempToken(response.tempToken);
+        setStep('select');
+      } else {
+        const codeResponse = response as { success: boolean; multipleMembers: boolean };
+        if (codeResponse.multipleMembers) {
+          setMultipleMembers([]);
+        }
+        setStep('code');
       }
-      setStep('code');
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
       setError(message || 'Failed to send code');

@@ -73,6 +73,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const adminLinks = [
     ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
     ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Manage sheets' }] : []),
+    ...((member?.isContentAdmin || member?.isServerAdmin) ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(member?.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
   ];
   const hasAdminLinks = adminLinks.length > 0;
@@ -183,7 +184,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
               {/* Desktop Navigation */}
               <div className="hidden md:flex items-center space-x-1">
                 {/* Dashboard */}
-                <Link to="/" className={navLinkClass(location.pathname === '/')}>
+                <Link to="/dashboard" className={navLinkClass(location.pathname === '/dashboard')}>
                   Dashboard
                 </Link>
 
@@ -352,9 +353,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
             <div className="md:hidden border-t border-gray-200 dark:border-gray-700 py-4">
               <div className="space-y-1">
                 <Link
-                  to="/"
+                  to="/dashboard"
                   onClick={() => setMobileMenuOpen(false)}
-                  className={navLinkClassMobile(location.pathname === '/')}
+                  className={navLinkClassMobile(location.pathname === '/dashboard')}
                 >
                   Dashboard
                 </Link>
@@ -481,7 +482,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
 
       <main
         className={`mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full min-h-0 ${
-          fullWidth ? 'max-w-full flex flex-col overflow-hidden' : 'max-w-7xl'
+          fullWidth ? 'max-w-full flex flex-col overflow-hidden' : 'max-w-6xl'
         }`}
       >
         {children}

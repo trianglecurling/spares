@@ -220,6 +220,36 @@ export interface paths {
                         "application/json": {
                             success: boolean;
                             multipleMembers: boolean;
+                        } | {
+                            /** @enum {boolean} */
+                            requiresSelection: true;
+                            tempToken: string;
+                            members: {
+                                id: number;
+                                name: string;
+                            }[];
+                        } | {
+                            token: string;
+                            member: {
+                                id: number;
+                                name: string;
+                                email: null | string;
+                                phone: null | string;
+                                spareOnly: boolean;
+                                isAdmin: boolean;
+                                isServerAdmin: boolean;
+                                isCalendarAdmin: boolean;
+                                isContentAdmin: boolean;
+                                leagueManagerLeagueIds: number[];
+                                isLeagueAdministrator: boolean;
+                                isLeagueAdministratorGlobal: boolean;
+                                firstLoginCompleted: boolean;
+                                optedInSms: boolean;
+                                emailSubscribed: boolean;
+                                emailVisible: boolean;
+                                phoneVisible: boolean;
+                                themePreference: string;
+                            };
                         };
                     };
                 };
@@ -281,6 +311,7 @@ export interface paths {
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
+                                isContentAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
@@ -352,6 +383,7 @@ export interface paths {
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
+                                isContentAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
@@ -405,6 +437,7 @@ export interface paths {
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
+                                isContentAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
@@ -823,6 +856,7 @@ export interface paths {
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;
+                        isContentAdmin?: boolean;
                         isLeagueAdministrator?: boolean;
                     };
                 };
@@ -1063,6 +1097,7 @@ export interface paths {
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;
+                        isContentAdmin?: boolean;
                     };
                 };
             };

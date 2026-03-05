@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       navigate('/first-login', { replace: true });
     } else {
       // Use the redirect destination if provided, otherwise default to dashboard
-      navigate(redirectTo || '/');
+      navigate(redirectTo || '/dashboard');
     }
   };
 

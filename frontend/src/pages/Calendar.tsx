@@ -49,17 +49,24 @@ import { PiArmchair } from 'react-icons/pi';
 import api from '../utils/api';
 import Button from '../components/Button';
 import Layout from '../components/Layout';
+import PublicLayout from '../components/PublicLayout';
+import ArticleAutocomplete, { type ArticleOption } from '../components/ArticleAutocomplete';
 import MarkdownDescriptionEditor, {
   type MarkdownDescriptionEditorRef,
 } from '../components/MarkdownDescriptionEditor';
 import Modal from '../components/Modal';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import { RRule } from 'rrule';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 
 export type CalendarView = 'day' | 'week' | 'month';
+
+interface CalendarProps {
+  publicMode?: boolean;
+}
 
 /** Event type definition - eventually user/admin-configurable */
 export interface CalendarEventType {
@@ -92,6 +99,8 @@ export interface CalendarEvent {
   recurrenceRrule?: string;
   /** Display name of the member who created the event */
   createdBy?: string;
+  /** Optional linked article for "More info" */
+  article?: ArticleOption;
   /** Event source: 'direct' = calendar entries, 'leagues' = league schedule (read-only) */
   source?: string;
 }
@@ -118,6 +127,66 @@ function getLocationLabel(loc: EventLocation, sheetNameById?: Map<number, string
     return sheetNameById?.get(loc.sheetId) ?? loc.sheetName ?? `Sheet ${loc.sheetId}`;
   }
   return LOCATION_LABELS[loc.type] ?? loc.type;
+}
+
+function formatNaturalList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0]!;
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+function formatEventLocationsSummary(
+  locations: EventLocation[],
+  sheetNameById: Map<number, string>,
+  totalSheetCount: number
+): string {
+  const sortedLocations = [...locations].sort((a, b) =>
+    getLocationLabel(a, sheetNameById).localeCompare(getLocationLabel(b, sheetNameById))
+  );
+  const sheetNames = sortedLocations
+    .filter((loc): loc is Extract<EventLocation, { type: 'sheet' }> => loc.type === 'sheet')
+    .map((loc) => getLocationLabel(loc, sheetNameById));
+  const otherNames = sortedLocations
+    .filter((loc) => loc.type !== 'sheet')
+    .map((loc) => getLocationLabel(loc, sheetNameById));
+
+  const uniqueSheetNames = [...new Set(sheetNames)];
+  const uniqueOtherNames = [...new Set(otherNames)];
+  const hasAllSheets = totalSheetCount > 0 && uniqueSheetNames.length === totalSheetCount;
+  const hasWarmRoom = sortedLocations.some((loc) => loc.type === 'warm-room');
+
+  if (hasAllSheets) {
+    const remainingOtherNames = hasWarmRoom
+      ? uniqueOtherNames.filter((name) => name !== LOCATION_LABELS['warm-room'])
+      : uniqueOtherNames;
+    const allSheetsLabel = hasWarmRoom ? 'Entire facility' : 'All sheets';
+
+    if (remainingOtherNames.length === 0) {
+      return allSheetsLabel;
+    }
+
+    return formatNaturalList([allSheetsLabel, ...remainingOtherNames]);
+  }
+
+  if (uniqueOtherNames.length === 0 && uniqueSheetNames.length === 1) {
+    return `Sheet ${uniqueSheetNames[0]}`;
+  }
+  if (uniqueOtherNames.length === 0 && uniqueSheetNames.length > 1) {
+    return `Sheets ${formatNaturalList(uniqueSheetNames)}`;
+  }
+
+  // Mixed/non-sheet locations: keep a readable fallback list.
+  const parts: string[] = [];
+  if (uniqueSheetNames.length === 1) {
+    parts.push(`Sheet ${uniqueSheetNames[0]}`);
+  } else if (uniqueSheetNames.length > 1) {
+    parts.push(`Sheets ${formatNaturalList(uniqueSheetNames)}`);
+  }
+  if (uniqueOtherNames.length > 0) {
+    parts.push(formatNaturalList(uniqueOtherNames));
+  }
+  return formatNaturalList(parts);
 }
 
 function SingleLocationIcon({
@@ -174,6 +243,12 @@ function EventBandIcon({
     const Icon = type.icon;
     return <Icon className={className} />;
   }
+
+  const locationSummary = formatEventLocationsSummary(locs, sheetNameById, sheetNameById.size);
+  if (locationSummary) {
+    return <span className="shrink-0 truncate">{locationSummary}</span>;
+  }
+
   const sortedLocs = [...locs].sort((a, b) =>
     getLocationLabel(a, sheetNameById).localeCompare(getLocationLabel(b, sheetNameById))
   );
@@ -278,6 +353,7 @@ function apiEventToCalendar(ev: {
   locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
   recurrenceRrule?: string;
   createdBy?: string;
+  article?: ArticleOption;
   source?: string;
 }): CalendarEvent {
   const locs: EventLocation[] = (ev.locations ?? []).map((l) => {
@@ -298,6 +374,7 @@ function apiEventToCalendar(ev: {
     recurrenceRrule: ev.recurrenceRrule,
     source: ev.source,
     createdBy: ev.createdBy,
+    article: ev.article,
   };
 }
 
@@ -437,6 +514,7 @@ function EventFormModal({
   const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
   const [recurrenceCount, setRecurrenceCount] = useState<number | ''>('');
   const [editScope, setEditScope] = useState<'this' | 'all'>('this');
+  const [linkedArticle, setLinkedArticle] = useState<ArticleOption | null>(event?.article ?? null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'description'>('details');
   const descriptionEditorRef = useRef<MarkdownDescriptionEditorRef>(null);
@@ -662,6 +740,7 @@ function EventFormModal({
       end: end.toISOString(),
       allDay,
       description: description.trim() || undefined,
+      articleId: linkedArticle?.id ?? null,
       locations: locations.length > 0 ? locations : undefined,
       recurrence:
         !isEditingSingleInstance && rrule
@@ -749,6 +828,16 @@ function EventFormModal({
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Linked article
+              </label>
+              <ArticleAutocomplete
+                value={linkedArticle}
+                onChange={setLinkedArticle}
+                placeholder="Search for an article"
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1125,10 +1214,10 @@ function parseViewParam(value: string | null): CalendarView {
   return 'month';
 }
 
-export default function Calendar() {
+export default function Calendar({ publicMode = false }: CalendarProps) {
   const { member } = useAuth();
   const canEditCalendar =
-    member?.isCalendarAdmin ?? member?.isAdmin ?? member?.isServerAdmin ?? false;
+    !publicMode && (member?.isCalendarAdmin ?? member?.isAdmin ?? member?.isServerAdmin ?? false);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const dateParam = searchParams.get('date');
@@ -1204,16 +1293,19 @@ export default function Calendar() {
       locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
       recurrenceRrule?: string;
       createdBy?: string;
+      article?: ArticleOption;
       source?: string;
     };
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
-    Promise.all([
+    Promise.allSettled([
       api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
       api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
     ])
       .then(([eventsRes, leagueRes]) => {
-        const calendarEvents = (eventsRes.data ?? []).map(apiEventToCalendar);
-        const leagueEvents = (leagueRes.data ?? []).map(apiEventToCalendar);
+        const calendarEvents =
+          eventsRes.status === 'fulfilled' ? (eventsRes.value.data ?? []).map(apiEventToCalendar) : [];
+        const leagueEvents =
+          leagueRes.status === 'fulfilled' ? (leagueRes.value.data ?? []).map(apiEventToCalendar) : [];
         setEvents([...calendarEvents, ...leagueEvents]);
       })
       .catch(() => setEvents([]))
@@ -1223,13 +1315,15 @@ export default function Calendar() {
   const refreshEvents = () => {
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
     type EventPayload = Parameters<typeof apiEventToCalendar>[0];
-    Promise.all([
+    Promise.allSettled([
       api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
       api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
     ])
       .then(([eventsRes, leagueRes]) => {
-        const calendarEvents = (eventsRes.data ?? []).map(apiEventToCalendar);
-        const leagueEvents = (leagueRes.data ?? []).map(apiEventToCalendar);
+        const calendarEvents =
+          eventsRes.status === 'fulfilled' ? (eventsRes.value.data ?? []).map(apiEventToCalendar) : [];
+        const leagueEvents =
+          leagueRes.status === 'fulfilled' ? (leagueRes.value.data ?? []).map(apiEventToCalendar) : [];
         setEvents([...calendarEvents, ...leagueEvents]);
       })
       .catch(() => {});
@@ -1288,12 +1382,12 @@ export default function Calendar() {
     setEventFormOpen(true);
   };
 
-  return (
-    <Layout fullWidth>
+  const calendarContent = (
+    <>
       <div className="flex flex-col flex-1 min-h-[400px] overflow-hidden bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-4 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={goPrev}
               className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
@@ -1319,7 +1413,7 @@ export default function Calendar() {
             </span>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
             {/* Event source filters */}
             <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
               <input
@@ -1341,7 +1435,7 @@ export default function Calendar() {
             </label>
 
             {/* Jump to date */}
-            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <label className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               Jump to:
               <input
                 type="date"
@@ -1550,22 +1644,28 @@ export default function Calendar() {
                                 Location{selectedEvent.locations.length > 1 ? 's' : ''}
                               </dt>
                               <dd>
-                                {[...selectedEvent.locations]
-                                  .sort((a, b) =>
-                                    getLocationLabel(a, sheetNameById).localeCompare(
-                                      getLocationLabel(b, sheetNameById)
-                                    )
-                                  )
-                                  .map((loc, i) => (
-                                    <span key={i}>
-                                      {i > 0 && ', '}
-                                      {getLocationLabel(loc, sheetNameById)}
-                                    </span>
-                                  ))}
+                                {formatEventLocationsSummary(
+                                  selectedEvent.locations,
+                                  sheetNameById,
+                                  sheets.length
+                                )}
                               </dd>
                             </>
                           )}
-                          {selectedEvent.createdBy && (
+                          {selectedEvent.article && (
+                            <>
+                              <dt className="text-gray-500 dark:text-gray-400">More info</dt>
+                              <dd>
+                                <a
+                                  href={`/articles/${selectedEvent.article.slug}`}
+                                  className="text-primary-teal underline hover:opacity-80"
+                                >
+                                  {selectedEvent.article.title}
+                                </a>
+                              </dd>
+                            </>
+                          )}
+                          {!publicMode && selectedEvent.createdBy && (
                             <>
                               <dt className="text-gray-500 dark:text-gray-400">Created by</dt>
                               <dd>{selectedEvent.createdBy}</dd>
@@ -1602,7 +1702,7 @@ export default function Calendar() {
                 )}
                 {hasDescription && viewEventActiveTab === 'description' && (
                   <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal [&_a]:underline hover:[&_a]:opacity-80 min-h-[120px] flex-1">
-                    <ReactMarkdown remarkPlugins={[remarkBreaks]}>
+                    <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
                       {selectedEvent.description}
                     </ReactMarkdown>
                   </div>
@@ -1707,7 +1807,15 @@ export default function Calendar() {
           </div>
         )}
       </Modal>
-    </Layout>
+    </>
+  );
+
+  return publicMode ? (
+    <PublicLayout>
+      <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">{calendarContent}</div>
+    </PublicLayout>
+  ) : (
+    <Layout fullWidth>{calendarContent}</Layout>
   );
 }
 
@@ -1740,7 +1848,7 @@ function getMultiDaySegments(events: CalendarEvent[], weeks: Date[][]): MultiDay
       const lastDay = startOfDay(week[6]!);
       const firstT = firstDay.getTime();
       const lastT = lastDay.getTime() + 86400000;
-      if (evEndT <= firstT || evStartT >= lastT) continue;
+      if (evEndT < firstT || evStartT >= lastT) continue;
       const startCol = evStartT <= firstT ? 0 : week.findIndex((d) => isSameDay(d, ev.start));
       const endCol = evEndT >= lastT ? 6 : week.findIndex((d) => isSameDay(d, ev.end));
       if (startCol < 0 || endCol < 0) continue;
@@ -1779,7 +1887,7 @@ function getMultiDaySegments(events: CalendarEvent[], weeks: Date[][]): MultiDay
       let band = 0;
       while (band < bands.length) {
         const b = bands[band]!;
-        const overlaps = b.startCol < s.endCol && b.endCol > s.startCol;
+        const overlaps = b.startCol <= s.endCol && b.endCol >= s.startCol;
         if (!overlaps) break;
         band++;
       }
@@ -1886,6 +1994,7 @@ function MonthDayEvents({
                 sheetNameById={sheetNameById}
                 className="w-3.5 h-3.5 shrink-0"
               />
+              {ev.locations && ev.locations.length > 0 && <span className="shrink-0">·</span>}
               <span className="shrink-0">{timeLabel}</span>
               <span className="shrink-0">·</span>
               <span className="truncate min-w-0">{ev.title}</span>
@@ -2022,7 +2131,7 @@ function MonthView({
         {WEEKDAYS.map((d) => (
           <div
             key={d}
-            className="px-2 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-700"
+            className="px-2 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-300 dark:border-gray-600"
           >
             {d}
           </div>
@@ -2041,7 +2150,7 @@ function MonthView({
               <div
                 key={day.toISOString()}
                 ref={isFirstCell ? measureRef : undefined}
-                className={`border-r border-b border-gray-100 dark:border-gray-700/50 p-1 flex flex-col min-h-0 overflow-hidden ${
+                className={`border-r border-b border-gray-200 dark:border-gray-600/60 p-1 flex flex-col min-h-0 overflow-hidden ${
                   !isCurrentMonth ? 'bg-gray-50 dark:bg-gray-900/50' : ''
                 }`}
               >
@@ -2129,6 +2238,9 @@ function MonthView({
                   sheetNameById={sheetNameById}
                   className="w-3.5 h-3.5 shrink-0"
                 />
+                {seg.ev.locations && seg.ev.locations.length > 0 && (
+                  <span className="shrink-0">·</span>
+                )}
                 <span className="shrink-0">
                   {seg.ev.allDay ? 'All day' : formatCompactTimeRange(seg.ev.start, seg.ev.end)}
                 </span>
@@ -2232,7 +2344,7 @@ function WeekView({
       .map((ev) => {
         const evStartT = startOfDay(ev.start).getTime();
         const evEndT = startOfDay(ev.end).getTime();
-        if (evEndT <= firstT || evStartT >= lastT) return null;
+        if (evEndT < firstT || evStartT >= lastT) return null;
         const startCol = evStartT <= firstT ? 0 : days.findIndex((d) => isSameDay(d, ev.start));
         const endCol = evEndT >= lastT ? 6 : days.findIndex((d) => isSameDay(d, ev.end));
         if (startCol < 0 || endCol < 0) return null;
@@ -2257,13 +2369,13 @@ function WeekView({
   return (
     <div className="flex flex-col min-w-0">
       <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] min-w-[800px] shrink-0">
-        <div className="sticky top-0 left-0 z-10 bg-gray-50 dark:bg-gray-800/95 border-b border-r border-gray-200 dark:border-gray-700" />
+        <div className="sticky top-0 left-0 z-10 bg-gray-50 dark:bg-gray-800/95 border-b border-r border-gray-300 dark:border-gray-600" />
         {days.map((day) => (
           <button
             key={day.toISOString()}
             type="button"
             onClick={() => onDayClick?.(day)}
-            className={`sticky top-0 z-10 w-full px-2 py-2 text-center text-sm font-medium border-b border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 ${
+            className={`sticky top-0 z-10 w-full px-2 py-2 text-center text-sm font-medium border-b border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 ${
               isSameDay(day, new Date())
                 ? 'bg-primary-teal/10 text-primary-teal dark:bg-primary-teal/20'
                 : 'bg-gray-50 dark:bg-gray-800/95 text-gray-900 dark:text-gray-100'
@@ -2277,11 +2389,11 @@ function WeekView({
       <div
         className={`grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] min-w-[800px] shrink-0 ${hasAllDayEvents ? '' : 'hidden'}`}
       >
-        <div className="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+        <div className="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-r border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
           All day
         </div>
         <div
-          className="relative col-span-7 grid border-b border-gray-200 dark:border-gray-700 min-h-[40px]"
+          className="relative col-span-7 grid border-b border-gray-300 dark:border-gray-600 min-h-[40px]"
           style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}
         >
           {days.map((day, di) => (
@@ -2306,7 +2418,7 @@ function WeekView({
                       )
                   : undefined
               }
-              className={`border-r border-gray-200 dark:border-gray-700 p-1 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
+              className={`border-r border-gray-300 dark:border-gray-600 p-1 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
               style={{ gridColumn: di + 1 }}
             >
               {[
@@ -2408,7 +2520,7 @@ function WeekView({
           {visibleHours.map((hour) => (
             <div
               key={hour}
-              className="border-r border-b border-gray-100 dark:border-gray-700/50 px-1 py-0.5 text-xs text-gray-500 dark:text-gray-400"
+              className="border-r border-b border-gray-200 dark:border-gray-600/60 px-1 py-0.5 text-xs text-gray-500 dark:text-gray-400"
               style={{ height: HOUR_HEIGHT }}
             >
               {hour === 0
@@ -2429,7 +2541,7 @@ function WeekView({
           return (
             <div
               key={day.toISOString()}
-              className="relative border-r border-gray-100 dark:border-gray-700/50"
+              className="relative border-r border-gray-200 dark:border-gray-600/60"
             >
               {/* Hour grid */}
               {visibleHours.map((hour) => (
@@ -2454,7 +2566,7 @@ function WeekView({
                           )
                       : undefined
                   }
-                  className={`border-b border-gray-100 dark:border-gray-700/50 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
+                  className={`border-b border-gray-200 dark:border-gray-600/60 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
                   style={{ height: HOUR_HEIGHT }}
                 />
               ))}
@@ -2657,7 +2769,7 @@ function DayView({
                       )
                   : undefined
               }
-              className={`border-b border-gray-100 dark:border-gray-700/50 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
+                  className={`border-b border-gray-200 dark:border-gray-600/60 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
               style={{ height: HOUR_HEIGHT }}
             />
           ))}

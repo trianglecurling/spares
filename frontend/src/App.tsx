@@ -1,6 +1,7 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { ThemeProvider } from './contexts/ThemeContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -33,10 +34,15 @@ import ManagingRequests from './pages/help/ManagingRequests';
 import Install from './pages/Install';
 import Feedback from './pages/Feedback';
 import AdminFeedback from './pages/admin/AdminFeedback';
+import AdminContent from './pages/admin/AdminContent';
+import AdminArticleEditor from './pages/admin/AdminArticleEditor';
+import AdminArticleVersionPreview from './pages/admin/AdminArticleVersionPreview';
 import AdminObservability from './pages/admin/AdminObservability';
 import Leagues from './pages/leagues/Leagues';
 import LeagueDetail from './pages/leagues/LeagueDetail';
 import Calendar from './pages/Calendar';
+import PublicHomePage from './pages/PublicHomePage';
+import PublicArticle from './pages/PublicArticle';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -46,6 +52,19 @@ function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   }
   const targetPath = targetTab ? `/leagues/${leagueId}/${targetTab}` : `/leagues/${leagueId}`;
   return <Navigate to={targetPath} replace />;
+}
+
+function PublicCalendarPage() {
+  const { setForcedResolvedTheme } = useTheme();
+
+  useEffect(() => {
+    setForcedResolvedTheme('light');
+    return () => {
+      setForcedResolvedTheme(null);
+    };
+  }, [setForcedResolvedTheme]);
+
+  return <Calendar publicMode />;
 }
 
 function App() {
@@ -73,8 +92,14 @@ function App() {
                 <Route path="/help/managing-requests" element={<ManagingRequests />} />
                 <Route path="/feedback" element={<Feedback />} />
 
+                {/* Public pages - no auth required */}
+                <Route path="/" element={<PublicHomePage />} />
+                <Route path="/articles" element={<Navigate to="/" replace />} />
+                <Route path="/articles/:slug" element={<PublicArticle />} />
+                <Route path="/article/:slug" element={<PublicArticle />} />
+
                 <Route
-                  path="/"
+                  path="/dashboard"
                   element={
                     <ProtectedRoute>
                       <Dashboard />
@@ -156,11 +181,12 @@ function App() {
                 <Route
                   path="/calendar"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute unauthenticatedRedirectTo="/calendar/public">
                       <Calendar />
                     </ProtectedRoute>
                   }
                 />
+                <Route path="/calendar/public" element={<PublicCalendarPage />} />
 
                 <Route
                   path="/profile"
@@ -250,6 +276,34 @@ function App() {
                   element={
                     <ProtectedRoute adminOnly>
                       <AdminFeedback />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/content"
+                  element={<Navigate to="/admin/content/site" replace />}
+                />
+                <Route
+                  path="/admin/content/articles/:id/versions/:versionId/preview"
+                  element={
+                    <ProtectedRoute contentAdminOnly>
+                      <AdminArticleVersionPreview />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/content/articles/:id"
+                  element={
+                    <ProtectedRoute contentAdminOnly>
+                      <AdminArticleEditor />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/content/:tab"
+                  element={
+                    <ProtectedRoute contentAdminOnly>
+                      <AdminContent />
                     </ProtectedRoute>
                   }
                 />

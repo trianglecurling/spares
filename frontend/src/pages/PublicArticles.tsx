@@ -1,0 +1,93 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import api from '../utils/api';
+import PublicLayout from '../components/PublicLayout';
+import SeoMeta from '../components/SeoMeta';
+
+interface ArticleSummary {
+  id: number;
+  title: string;
+  slug: string;
+  snippet: string;
+  hasMore: boolean;
+  publishedAt: string | null;
+}
+
+function snippetPreview(text: string): string {
+  const normalized = text.replace(/[#>*_`[\]()!-]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 240) return normalized;
+  return `${normalized.slice(0, 237)}...`;
+}
+
+export default function PublicArticles() {
+  const [articles, setArticles] = useState<ArticleSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<ArticleSummary[]>('/public/articles')
+      .then((res) => setArticles(res.data))
+      .catch((err) => setError(err?.response?.data?.error || 'Failed to load'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (error) {
+    return (
+      <PublicLayout>
+        <section className="public-section">
+          <div className="public-container">
+            <div className="public-content">
+              <div className="public-card p-6 text-red-700">{error}</div>
+            </div>
+          </div>
+        </section>
+      </PublicLayout>
+    );
+  }
+
+  return (
+    <PublicLayout>
+      <SeoMeta
+        title="Curling resources | Triangle Curling Club"
+        description="Read Triangle Curling Club resources about learning to curl, club events, bonspiels, and updates for the Raleigh, Durham, and Chapel Hill area."
+        canonicalPath="/articles"
+      />
+      <section className="public-section">
+        <div className="public-container">
+          <div className="public-content">
+            <h1 className="public-subheading mb-6">
+              Learning resources
+            </h1>
+            {loading ? (
+              <div className="public-card p-6 text-gray-600">Loading resources...</div>
+            ) : articles.length === 0 ? (
+              <div className="public-card p-6 text-gray-600">No published resources are available yet.</div>
+            ) : (
+              <ul className="space-y-4">
+                {articles.map((a) => (
+                  <li key={a.id} className="public-card p-5">
+                    <h2 className="text-lg font-semibold text-gray-900 line-clamp-2">
+                      <Link to={`/articles/${a.slug}`} className="hover:text-primary-teal">
+                        {a.title}
+                      </Link>
+                    </h2>
+                    {a.snippet && <p className="mt-2 text-sm text-gray-600 line-clamp-4">{snippetPreview(a.snippet)}</p>}
+                    {a.hasMore && (
+                      <Link
+                        to={`/articles/${a.slug}`}
+                        className="mt-3 inline-block text-sm font-medium text-primary-teal hover:underline"
+                      >
+                        Read details
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+    </PublicLayout>
+  );
+}

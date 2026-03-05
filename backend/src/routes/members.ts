@@ -61,6 +61,7 @@ const createMemberSchema = z.object({
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
   isCalendarAdmin: z.boolean().optional(),
+  isContentAdmin: z.boolean().optional(),
   isLeagueAdministrator: z.boolean().optional(),
 });
 
@@ -73,6 +74,7 @@ const updateMemberSchema = z.object({
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
   isCalendarAdmin: z.boolean().optional(),
+  isContentAdmin: z.boolean().optional(),
   isLeagueAdministrator: z.boolean().optional(),
 });
 
@@ -127,6 +129,7 @@ const createMemberBodySchema = {
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
+    isContentAdmin: { type: 'boolean' },
     isLeagueAdministrator: { type: 'boolean' },
   },
   required: ['name', 'email'],
@@ -144,6 +147,7 @@ const updateMemberBodySchema = {
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
+    isContentAdmin: { type: 'boolean' },
   },
 } as const;
 
@@ -218,6 +222,7 @@ interface MemberUpdateData {
   is_admin?: number;
   is_server_admin?: number;
   is_calendar_admin?: number;
+  is_content_admin?: number;
   updated_at?: ReturnType<typeof sql>;
 }
 
@@ -481,6 +486,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
         name: m.name,
         isAdmin: isAdmin(m),
         isServerAdmin: isServerAdmin(m),
+        isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
+        isContentAdmin: (m.is_content_admin ?? 0) === 1,
         isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
         isInServerAdminsList: isInServerAdminsList(m),
         emailSubscribed: Boolean(m.email_subscribed === 1),
@@ -538,6 +545,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       is_admin: schema.members.is_admin,
       is_server_admin: schema.members.is_server_admin,
       is_calendar_admin: schema.members.is_calendar_admin,
+      is_content_admin: schema.members.is_content_admin,
       opted_in_sms: schema.members.opted_in_sms,
       email_subscribed: schema.members.email_subscribed,
       first_login_completed: schema.members.first_login_completed,
@@ -591,6 +599,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
         name: m.name,
         isAdmin: isAdmin(m),
         isServerAdmin: isServerAdmin(m),
+        isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
+        isContentAdmin: (m.is_content_admin ?? 0) === 1,
         isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
         isInServerAdminsList: isInServerAdminsList(m),
         emailSubscribed: Boolean(m.email_subscribed === 1),
@@ -718,6 +728,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         is_admin: body.isAdmin ? 1 : 0,
         is_server_admin: body.isServerAdmin ? 1 : 0,
         is_calendar_admin: body.isCalendarAdmin ? 1 : 0,
+        is_content_admin: body.isContentAdmin ? 1 : 0,
         opted_in_sms: 0,
         email_subscribed: 1,
         first_login_completed: 0,
@@ -924,6 +935,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
     if (body.isCalendarAdmin !== undefined) {
       updateData.is_calendar_admin = body.isCalendarAdmin ? 1 : 0;
+    }
+    if (body.isContentAdmin !== undefined) {
+      updateData.is_content_admin = body.isContentAdmin ? 1 : 0;
     }
 
     if (Object.keys(updateData).length > 0) {

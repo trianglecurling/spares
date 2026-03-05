@@ -65,6 +65,11 @@ export function isCalendarAdmin(member: Member): boolean {
   return isAdmin(member);
 }
 
+export function isContentAdmin(member: Member): boolean {
+  if (member.is_content_admin === 1) return true;
+  return isServerAdmin(member);
+}
+
 export function isServerAdmin(member: Member): boolean {
   // Check database flag
   if (member.is_server_admin === 1) return true;

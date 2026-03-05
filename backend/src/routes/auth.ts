@@ -9,6 +9,7 @@ import {
   isAdmin,
   isServerAdmin,
   isCalendarAdmin,
+  isContentAdmin,
 } from '../utils/auth.js';
 import { getLeagueAdministratorRoleInfo, getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
 import { sendAuthCodeEmail } from '../services/email.js';
@@ -83,6 +84,7 @@ const authMemberResponseSchema = {
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
+    isContentAdmin: { type: 'boolean' },
     leagueManagerLeagueIds: { type: 'array', items: { type: 'number' } },
     isLeagueAdministrator: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
@@ -102,6 +104,7 @@ const authMemberResponseSchema = {
     'isAdmin',
     'isServerAdmin',
     'isCalendarAdmin',
+    'isContentAdmin',
     'leagueManagerLeagueIds',
     'isLeagueAdministrator',
     'isLeagueAdministratorGlobal',
@@ -124,13 +127,47 @@ const authRequestCodeBodySchema = {
 } as const;
 
 const authRequestCodeResponseSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    success: { type: 'boolean' },
-    multipleMembers: { type: 'boolean' },
-  },
-  required: ['success', 'multipleMembers'],
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        success: { type: 'boolean' },
+        multipleMembers: { type: 'boolean' },
+      },
+      required: ['success', 'multipleMembers'],
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        requiresSelection: { type: 'boolean', enum: [true] },
+        tempToken: { type: 'string' },
+        members: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'number' },
+              name: { type: 'string' },
+            },
+            required: ['id', 'name'],
+          },
+        },
+      },
+      required: ['requiresSelection', 'tempToken', 'members'],
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        token: { type: 'string' },
+        member: authMemberResponseSchema,
+      },
+      required: ['token', 'member'],
+    },
+  ],
 } as const;
 
 const authVerifyCodeBodySchema = {
@@ -199,7 +236,13 @@ const authVerifyTokenResponseSchema = {
 
 export async function publicAuthRoutes(fastify: FastifyInstance) {
   // Request auth code
-  fastify.post<{ Body: AuthRequestCodeBody; Reply: AuthRequestCodeResponse | ApiErrorResponse }>(
+  fastify.post<{
+    Body: AuthRequestCodeBody;
+    Reply:
+      | AuthRequestCodeResponse
+      | AuthVerifyCodeResponse<AuthenticatedMember>
+      | ApiErrorResponse;
+  }>(
     '/auth/request-code',
     {
       schema: {
@@ -213,6 +256,14 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const body = requestCodeSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
+
+    // Check if test mode is enabled (auto-login without verification)
+    const configRows = await db
+      .select({ test_mode: schema.serverConfig.test_mode })
+      .from(schema.serverConfig)
+      .where(eq(schema.serverConfig.id, 1))
+      .limit(1);
+    const testMode = configRows[0]?.test_mode === 1;
 
     // Determine if it's email or phone
     const isEmail = body.contact.includes('@');
@@ -258,7 +309,64 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // Generate auth code
+    // Test mode: auto-login without sending verification code
+    if (testMode) {
+      if (members.length === 1) {
+        const member = members[0];
+        if (isMemberExpired(member)) {
+          return reply.code(403).send({ error: 'Membership expired' });
+        }
+        const token = generateToken(member as Member);
+        const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
+        const leagueAdminRoleInfo = await getLeagueAdministratorRoleInfo(member.id);
+
+        logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
+
+        return {
+          token,
+          member: {
+            id: member.id,
+            name: member.name,
+            email: member.email,
+            phone: member.phone,
+            spareOnly: member.spare_only === 1,
+            isAdmin: isAdmin(member as Member),
+            isServerAdmin: isServerAdmin(member as Member),
+            isCalendarAdmin: isCalendarAdmin(member as Member),
+            isContentAdmin: isContentAdmin(member as Member),
+            leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
+            isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
+            isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
+            firstLoginCompleted: member.first_login_completed === 1,
+            optedInSms: member.opted_in_sms === 1,
+            emailSubscribed: member.email_subscribed === 1,
+            emailVisible: member.email_visible === 1,
+            phoneVisible: member.phone_visible === 1,
+            themePreference:
+              member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
+                ? member.theme_preference
+                : 'system',
+          },
+        };
+      }
+
+      // Multiple members - return temp token for selection
+      const tempToken = generateAuthCode();
+      await db.insert(schema.authCodes).values({
+        contact: `temp:${normalizedContact}`,
+        code: tempToken,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000),
+        used: 0,
+      });
+
+      return {
+        requiresSelection: true as const,
+        tempToken,
+        members: members.map((m: Member) => ({ id: m.id, name: m.name })),
+      };
+    }
+
+    // Normal flow: generate and send auth code
     const code = generateAuthCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
@@ -276,7 +384,6 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     }).catch(() => {});
 
     // Send code via email or SMS asynchronously (fire-and-forget) to avoid blocking the response
-    // Auth codes are time-sensitive but we can still return immediately
     const member = members[0]; // Use first member for sending
     if (isEmail && member.email && member.email_subscribed === 1) {
       sendAuthCodeEmail(authContactToStore, member.name, code).catch((error) => {
@@ -392,6 +499,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
           isAdmin: isAdmin(member as Member),
           isServerAdmin: isServerAdmin(member as Member),
           isCalendarAdmin: isCalendarAdmin(member as Member),
+          isContentAdmin: isContentAdmin(member as Member),
           leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
           isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
           isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
@@ -507,6 +615,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
         isCalendarAdmin: isCalendarAdmin(member),
+        isContentAdmin: isContentAdmin(member),
         leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
         isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
         isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
@@ -556,6 +665,7 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         isAdmin: isAdmin(member),
         isServerAdmin: isServerAdmin(member),
         isCalendarAdmin: isCalendarAdmin(member),
+        isContentAdmin: isContentAdmin(member),
         leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
         isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
         isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,

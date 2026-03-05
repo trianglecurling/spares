@@ -8,16 +8,16 @@
     "backend"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=frontend & npm run dev --workspace=backend",
-    "dev:frontend": "npm run dev --workspace=frontend",
-    "dev:backend": "npm run dev --workspace=backend",
-    "build": "npm run build --workspace=frontend && npm run build --workspace=backend",
-    "build:frontend": "npm run build --workspace=frontend",
-    "build:backend": "npm run build --workspace=backend",
-    "openapi:generate": "npm run openapi:generate --workspace=backend && npx openapi-typescript backend/openapi.json -o frontend/src/api/generated/types.ts",
+    "dev": "bun run --elide-lines=0 --filter '*' dev",
+    "dev:frontend": "bun run --filter frontend dev",
+    "dev:backend": "bun run --filter backend dev",
+    "build": "bun run --filter frontend build && bun run --filter backend build",
+    "build:frontend": "bun run --filter frontend build",
+    "build:backend": "bun run --filter backend build",
+    "openapi:generate": "bun run --filter backend openapi:generate && bunx openapi-typescript backend/openapi.json -o frontend/src/api/generated/types.ts",
     "openapi:check": "npm run openapi:generate",
-    "lint": "npm run lint --workspaces",
-    "format": "npm run format --workspaces"
+    "lint": "bun run --filter '*' lint",
+    "format": "bun run --filter '*' format"
   },
   "keywords": [
     "curling",

@@ -1,6 +1,6 @@
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { drizzle as drizzlePg, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import { Pool } from 'pg';
 import { getDatabaseConfig } from './config.js';
 import * as sqliteSchema from './drizzle-schema.js';
@@ -40,6 +40,12 @@ type SqliteSchema = {
   calendarEvents: typeof sqliteSchema.calendarEventsSqlite;
   calendarEventLocations: typeof sqliteSchema.calendarEventLocationsSqlite;
   calendarEventExceptions: typeof sqliteSchema.calendarEventExceptionsSqlite;
+  articles: typeof sqliteSchema.articlesSqlite;
+  articleVersions: typeof sqliteSchema.articleVersionsSqlite;
+  siteConfig: typeof sqliteSchema.siteConfigSqlite;
+  showcaseImages: typeof sqliteSchema.showcaseImagesSqlite;
+  menuItems: typeof sqliteSchema.menuItemsSqlite;
+  files: typeof sqliteSchema.filesSqlite;
 };
 
 type PgSchema = {
@@ -76,6 +82,12 @@ type PgSchema = {
   calendarEvents: typeof pgSchema.calendarEventsPg;
   calendarEventLocations: typeof pgSchema.calendarEventLocationsPg;
   calendarEventExceptions: typeof pgSchema.calendarEventExceptionsPg;
+  articles: typeof pgSchema.articlesPg;
+  articleVersions: typeof pgSchema.articleVersionsPg;
+  siteConfig: typeof pgSchema.siteConfigPg;
+  showcaseImages: typeof pgSchema.showcaseImagesPg;
+  menuItems: typeof pgSchema.menuItemsPg;
+  files: typeof pgSchema.filesPg;
 };
 
 type DrizzleDb = NodePgDatabase<PgSchema>;
@@ -97,10 +109,10 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
   if (config.type === 'sqlite') {
     const dbPath = config.sqlite?.path || './data/spares.sqlite';
     const sqlite = new Database(dbPath);
-    sqlite.pragma('journal_mode = WAL');
-    sqlite.pragma('foreign_keys = ON');
+    sqlite.run('PRAGMA journal_mode = WAL;');
+    sqlite.run('PRAGMA foreign_keys = ON;');
     
-    dbInstance = drizzle(sqlite) as unknown as DrizzleDb;
+    dbInstance = drizzle({ client: sqlite }) as unknown as DrizzleDb;
     schema = {
       members: sqliteSchema.membersSqlite,
       authCodes: sqliteSchema.authCodesSqlite,
@@ -135,6 +147,12 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       calendarEvents: sqliteSchema.calendarEventsSqlite,
       calendarEventLocations: sqliteSchema.calendarEventLocationsSqlite,
       calendarEventExceptions: sqliteSchema.calendarEventExceptionsSqlite,
+      articles: sqliteSchema.articlesSqlite,
+      articleVersions: sqliteSchema.articleVersionsSqlite,
+      siteConfig: sqliteSchema.siteConfigSqlite,
+      showcaseImages: sqliteSchema.showcaseImagesSqlite,
+      menuItems: sqliteSchema.menuItemsSqlite,
+      files: sqliteSchema.filesSqlite,
     } as unknown as DrizzleSchema;
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
@@ -185,6 +203,12 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       calendarEvents: pgSchema.calendarEventsPg,
       calendarEventLocations: pgSchema.calendarEventLocationsPg,
       calendarEventExceptions: pgSchema.calendarEventExceptionsPg,
+      articles: pgSchema.articlesPg,
+      articleVersions: pgSchema.articleVersionsPg,
+      siteConfig: pgSchema.siteConfigPg,
+      showcaseImages: pgSchema.showcaseImagesPg,
+      menuItems: pgSchema.menuItemsPg,
+      files: pgSchema.filesPg,
     } as DrizzleSchema;
   } else {
     throw new Error(`Unsupported database type: ${config.type}`);

@@ -28,7 +28,7 @@ export default function FirstLogin() {
   // Important: do NOT auto-redirect on completion, because handleComplete decides where to go.
   useEffect(() => {
     if (member?.firstLoginCompleted && step === 1) {
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     }
   }, [member, navigate, step]);
 
@@ -90,7 +90,7 @@ export default function FirstLogin() {
       const pendingRequestId = sessionStorage.getItem('pendingSpareAcceptRequestId');
       if (pendingRequestId) {
         sessionStorage.removeItem('pendingSpareAcceptRequestId');
-        navigate(`/?requestId=${pendingRequestId}`, { replace: true });
+        navigate(`/dashboard?requestId=${pendingRequestId}`, { replace: true });
         return;
       }
 
@@ -99,7 +99,7 @@ export default function FirstLogin() {
       const pendingDeclineId = sessionStorage.getItem('pendingSpareDeclineRequestId');
       if (pendingDeclineId) {
         sessionStorage.removeItem('pendingSpareDeclineRequestId');
-        navigate(`/?declineRequestId=${pendingDeclineId}`, { replace: true });
+        navigate(`/dashboard?declineRequestId=${pendingDeclineId}`, { replace: true });
         return;
       }
 

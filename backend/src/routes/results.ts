@@ -21,6 +21,7 @@ import {
   memberStatsListResponseSchema,
   teamStatsSchema,
 } from '../api/leagueResultsSchemas.js';
+import type { ApiReply } from '../api/types.js';
 import { hasLeagueSetupAccess } from '../utils/leagueAccess.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
@@ -228,7 +229,7 @@ function orderByHeadToHead(
 
 export async function resultsRoutes(fastify: FastifyInstance) {
   // Get league settings
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/settings',
     {
       schema: {
@@ -260,7 +261,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // Update league settings (league manager only)
-  fastify.put(
+  fastify.put<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/settings',
     {
       schema: {
@@ -323,7 +324,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // Get game results
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/games/:gameId/results',
     {
       schema: {
@@ -384,7 +385,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // Set/update game results (league manager only)
-  fastify.put(
+  fastify.put<{ Reply: ApiReply<unknown> }>(
     '/games/:gameId/results',
     {
       schema: {
@@ -492,7 +493,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // Get game lineups (computed from roster + filled spare requests for this game)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/games/:gameId/lineups',
     {
       schema: {
@@ -562,7 +563,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // Set/update game lineups (league manager only)
-  fastify.put(
+  fastify.put<{ Reply: ApiReply<unknown> }>(
     '/games/:gameId/lineups',
     {
       schema: {
@@ -683,7 +684,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // Get league standings (per division)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/standings',
     {
       schema: {
@@ -916,7 +917,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // List league games with results (for schedule + results UI)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/games/with-results',
     {
       schema: {
@@ -1035,7 +1036,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // Team stats (games played, wins, losses, ties) — derived from game_results using first tiebreaker as W/L/T
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/teams/:teamId/stats',
     {
       schema: {
@@ -1129,7 +1130,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
   );
 
   // League member stats (from game_lineups)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/member-stats',
     {
       schema: {

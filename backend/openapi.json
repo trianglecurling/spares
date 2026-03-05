@@ -297,19 +297,164 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "success": {
+                          "type": "boolean"
+                        },
+                        "multipleMembers": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "success",
+                        "multipleMembers"
+                      ]
                     },
-                    "multipleMembers": {
-                      "type": "boolean"
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "requiresSelection": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "tempToken": {
+                          "type": "string"
+                        },
+                        "members": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "type": "number"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "requiresSelection",
+                        "tempToken",
+                        "members"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "token": {
+                          "type": "string"
+                        },
+                        "member": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "type": "number"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "phone": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "spareOnly": {
+                              "type": "boolean"
+                            },
+                            "isAdmin": {
+                              "type": "boolean"
+                            },
+                            "isServerAdmin": {
+                              "type": "boolean"
+                            },
+                            "isCalendarAdmin": {
+                              "type": "boolean"
+                            },
+                            "isContentAdmin": {
+                              "type": "boolean"
+                            },
+                            "leagueManagerLeagueIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
+                            "isLeagueAdministrator": {
+                              "type": "boolean"
+                            },
+                            "isLeagueAdministratorGlobal": {
+                              "type": "boolean"
+                            },
+                            "firstLoginCompleted": {
+                              "type": "boolean"
+                            },
+                            "optedInSms": {
+                              "type": "boolean"
+                            },
+                            "emailSubscribed": {
+                              "type": "boolean"
+                            },
+                            "emailVisible": {
+                              "type": "boolean"
+                            },
+                            "phoneVisible": {
+                              "type": "boolean"
+                            },
+                            "themePreference": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "email",
+                            "phone",
+                            "spareOnly",
+                            "isAdmin",
+                            "isServerAdmin",
+                            "isCalendarAdmin",
+                            "isContentAdmin",
+                            "leagueManagerLeagueIds",
+                            "isLeagueAdministrator",
+                            "isLeagueAdministratorGlobal",
+                            "firstLoginCompleted",
+                            "optedInSms",
+                            "emailSubscribed",
+                            "emailVisible",
+                            "phoneVisible",
+                            "themePreference"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "member"
+                      ]
                     }
-                  },
-                  "required": [
-                    "success",
-                    "multipleMembers"
                   ]
                 }
               }
@@ -436,6 +581,9 @@
                             "isCalendarAdmin": {
                               "type": "boolean"
                             },
+                            "isContentAdmin": {
+                              "type": "boolean"
+                            },
                             "leagueManagerLeagueIds": {
                               "type": "array",
                               "items": {
@@ -476,6 +624,7 @@
                             "isAdmin",
                             "isServerAdmin",
                             "isCalendarAdmin",
+                            "isContentAdmin",
                             "leagueManagerLeagueIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
@@ -616,6 +765,9 @@
                             "isCalendarAdmin": {
                               "type": "boolean"
                             },
+                            "isContentAdmin": {
+                              "type": "boolean"
+                            },
                             "leagueManagerLeagueIds": {
                               "type": "array",
                               "items": {
@@ -656,6 +808,7 @@
                             "isAdmin",
                             "isServerAdmin",
                             "isCalendarAdmin",
+                            "isContentAdmin",
                             "leagueManagerLeagueIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
@@ -729,6 +882,9 @@
                         "isCalendarAdmin": {
                           "type": "boolean"
                         },
+                        "isContentAdmin": {
+                          "type": "boolean"
+                        },
                         "leagueManagerLeagueIds": {
                           "type": "array",
                           "items": {
@@ -769,6 +925,7 @@
                         "isAdmin",
                         "isServerAdmin",
                         "isCalendarAdmin",
+                        "isContentAdmin",
                         "leagueManagerLeagueIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
@@ -1454,6 +1611,9 @@
                   "isCalendarAdmin": {
                     "type": "boolean"
                   },
+                  "isContentAdmin": {
+                    "type": "boolean"
+                  },
                   "isLeagueAdministrator": {
                     "type": "boolean"
                   }
@@ -1854,6 +2014,9 @@
                     "type": "boolean"
                   },
                   "isCalendarAdmin": {
+                    "type": "boolean"
+                  },
+                  "isContentAdmin": {
                     "type": "boolean"
                   }
                 }
