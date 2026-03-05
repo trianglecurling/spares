@@ -10,6 +10,7 @@ interface ThemeContextType {
   theme: Theme;
   resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
+  setForcedResolvedTheme: (theme: ResolvedTheme | null) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -53,6 +54,7 @@ const applyResolvedTheme = (resolved: ResolvedTheme) => {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { member, updateMember } = useAuth();
   const [theme, setThemeState] = useState<Theme>(() => getStoredTheme());
+  const [forcedResolvedTheme, setForcedResolvedTheme] = useState<ResolvedTheme | null>(null);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     resolveTheme(getStoredTheme())
   );
@@ -72,10 +74,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Apply theme whenever it changes.
   useEffect(() => {
-    const resolved = resolveTheme(theme);
+    const resolved = forcedResolvedTheme ?? resolveTheme(theme);
     setResolvedTheme(resolved);
     applyResolvedTheme(resolved);
-  }, [theme]);
+  }, [theme, forcedResolvedTheme]);
 
   // If we're following system, react to changes in OS/browser theme.
   useEffect(() => {
@@ -116,7 +118,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, setForcedResolvedTheme }}>
       {children}
     </ThemeContext.Provider>
   );

@@ -14,9 +14,9 @@ export default function DeclineSpare() {
       // We only need requestId to continue the flow.
       setTimeout(() => {
         if (requestId) {
-          navigate(`/?declineRequestId=${requestId}`);
+          navigate(`/dashboard?declineRequestId=${requestId}`);
         } else {
-          navigate('/');
+          navigate('/dashboard');
         }
       }, 500);
     }

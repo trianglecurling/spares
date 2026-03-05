@@ -26,6 +26,7 @@ import {
   gameUpdateBodySchema,
   memberUpcomingGamesResponseSchema,
 } from '../api/leagueScheduleSchemas.js';
+import type { ApiReply } from '../api/types.js';
 import { hasLeagueSetupAccess } from '../utils/leagueAccess.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
 
@@ -496,7 +497,7 @@ async function isValidDrawSlot(
 
 export async function gameRoutes(fastify: FastifyInstance) {
   // List games for a league
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/games',
     {
       schema: {
@@ -581,7 +582,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Create game
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/games',
     {
       schema: {
@@ -671,7 +672,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Bulk create games
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/games/bulk',
     {
       schema: {
@@ -837,7 +838,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Update game
-  fastify.patch(
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
     '/games/:gameId',
     {
       schema: {
@@ -949,7 +950,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Delete game
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/games/:gameId',
     {
       schema: {
@@ -994,7 +995,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Draw slots (computed from league rules + overrides)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/draw-slots',
     {
       schema: {
@@ -1040,7 +1041,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Create extra draw
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/extra-draws',
     {
       schema: {
@@ -1111,7 +1112,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Delete extra draw
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:leagueId/extra-draws/:drawId',
     {
       schema: {
@@ -1189,7 +1190,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Update draw sheet availability
-  fastify.put(
+  fastify.put<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/draws/availability',
     {
       schema: {
@@ -1287,7 +1288,7 @@ export async function gameRoutes(fastify: FastifyInstance) {
   );
 
   // Upcoming games for the current member
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/members/me/upcoming-games',
     {
       schema: {

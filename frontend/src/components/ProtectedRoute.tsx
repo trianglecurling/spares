@@ -7,6 +7,8 @@ interface ProtectedRouteProps {
   serverAdminOnly?: boolean;
   leagueManagerOnly?: boolean;
   leagueManagerGlobalOnly?: boolean;
+  contentAdminOnly?: boolean;
+  unauthenticatedRedirectTo?: string;
 }
 
 export function ProtectedRoute({
@@ -15,6 +17,8 @@ export function ProtectedRoute({
   serverAdminOnly = false,
   leagueManagerOnly = false,
   leagueManagerGlobalOnly = false,
+  contentAdminOnly = false,
+  unauthenticatedRedirectTo = '/login',
 }: ProtectedRouteProps) {
   const { member, token, isLoading } = useAuth();
   const location = useLocation();
@@ -28,19 +32,19 @@ export function ProtectedRoute({
   }
 
   if (!token || !member) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to={unauthenticatedRedirectTo} state={{ from: location }} replace />;
   }
 
   if (serverAdminOnly && !member.isServerAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (adminOnly && !member.isAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (leagueManagerGlobalOnly && !(member.isAdmin || member.isLeagueAdministratorGlobal)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (
@@ -51,7 +55,11 @@ export function ProtectedRoute({
       (member.leagueManagerLeagueIds?.length ?? 0) > 0
     )
   ) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (contentAdminOnly && !(member.isContentAdmin ?? member.isServerAdmin)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

@@ -14,8 +14,8 @@ A web application for Triangle Curling Club members to find and offer spares whe
 ## Tech Stack
 
 ### Backend
-- Node.js with Fastify
-- SQLite database with better-sqlite3
+- Bun runtime with Fastify
+- SQLite database with bun:sqlite (or PostgreSQL)
 - TypeScript
 - Azure Communication Services (email)
 - Twilio (SMS)
@@ -37,8 +37,7 @@ A web application for Triangle Curling Club members to find and offer spares whe
 
 ### Prerequisites
 
-- Node.js 20 or higher
-- npm or yarn
+- [Bun](https://bun.sh/) – install via `curl -fsSL https://bun.sh/install | bash`
 
 ### Installation
 
@@ -50,7 +49,7 @@ cd spares
 
 2. Install dependencies:
 ```bash
-npm install
+bun install
 ```
 
 3. Set up environment variables:
@@ -75,7 +74,7 @@ Required environment variables:
 Run both frontend and backend in development mode:
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 ### API Types and OpenAPI
@@ -85,7 +84,7 @@ The backend emits an OpenAPI schema which is used to generate typed frontend API
 Generate the OpenAPI schema and TypeScript types:
 
 ```bash
-npm run openapi:generate
+bun run openapi:generate
 ```
 
 The generated types live at `frontend/src/api/generated/types.ts`.
@@ -94,10 +93,10 @@ Or run them separately:
 
 ```bash
 # Frontend (http://localhost:5173)
-npm run dev:frontend
+bun run dev:frontend
 
 # Backend (http://localhost:3001)
-npm run dev:backend
+bun run dev:backend
 ```
 
 ### Database Setup
@@ -105,13 +104,13 @@ npm run dev:backend
 Initialize the database:
 
 ```bash
-npm run db:init --workspace=backend
+bun run --filter backend db:init
 ```
 
 ### Building for Production
 
 ```bash
-npm run build
+bun run build
 ```
 
 This builds both the frontend and backend.
@@ -224,8 +223,8 @@ Admins specified in the `.env` file cannot have their admin rights removed throu
 This project uses ESLint and Prettier for code formatting. Run:
 
 ```bash
-npm run lint      # Check for issues
-npm run format    # Auto-format code
+bun run lint      # Check for issues
+bun run format    # Auto-format code
 ```
 
 ### Database

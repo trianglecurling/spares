@@ -12,6 +12,7 @@ import {
   successResponseSchema,
   upcomingGamesResponseSchema,
 } from '../api/schemas.js';
+import type { ApiReply } from '../api/types.js';
 import {
   getLeagueAdministratorRoleInfo,
   getLeagueManagerRoleInfo,
@@ -124,7 +125,7 @@ function getTimePartsInTimeZone(timeZone: string) {
 
 export async function leagueRoutes(fastify: FastifyInstance) {
   // Get all leagues
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues',
     {
       schema: {
@@ -283,7 +284,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   );
 
   // Admin: Create league
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues',
     {
       schema: {
@@ -674,7 +675,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
   );
 
   // Admin: Export leagues
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/export',
     {
       schema: {
@@ -737,7 +738,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     })),
   });
 
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/import',
     {
       schema: {

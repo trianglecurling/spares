@@ -362,7 +362,7 @@ export default function AdminConfig() {
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
             Server configuration

@@ -9,6 +9,7 @@ import {
   memberAvailabilityResponseSchema,
   successResponseSchema,
 } from '../api/schemas.js';
+import type { ApiReply } from '../api/types.js';
 
 const setAvailabilitySchema = z.object({
   leagueId: z.number(),
@@ -21,7 +22,7 @@ const setCanSkipSchema = z.object({
 
 export async function availabilityRoutes(fastify: FastifyInstance) {
   // Get current member's availability
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/availability',
     {
       schema: {
@@ -57,7 +58,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
   );
 
   // Set availability for a league
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/availability/league',
     {
       schema: {
@@ -133,7 +134,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
   );
 
   // Set can skip preference
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/availability/can-skip',
     {
       schema: {
@@ -199,7 +200,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
   );
 
   // Get a specific member's availability
-  fastify.get<{ Params: { memberId: string } }>(
+  fastify.get<{ Params: { memberId: string }; Reply: ApiReply<unknown> }>(
     '/members/:memberId/availability',
     {
       schema: {
@@ -264,7 +265,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
   );
 
   // Get members available for a specific league
-  fastify.get<{ Params: { leagueId: string }; Querystring: { position?: string } }>(
+  fastify.get<{ Params: { leagueId: string }; Querystring: { position?: string }; Reply: ApiReply<unknown> }>(
     '/availability/league/:leagueId/members',
     {
       schema: {

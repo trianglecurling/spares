@@ -22,16 +22,19 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 503 && error.response?.data?.requiresInstallation) {
       const currentPath = window.location.pathname;
-      if (!currentPath.startsWith('/install')) {
+      // Don't redirect when on / - Install page redirects configured users to /,
+      // so redirecting / -> /install -> / would create an infinite loop
+      if (!currentPath.startsWith('/install') && currentPath !== '/') {
         window.location.href = '/install';
       }
       return Promise.reject(error);
     }
 
     if (error.response?.status === 401) {
-      // Only redirect to login if we're not already on install/login pages
       const currentPath = window.location.pathname;
-      if (!currentPath.startsWith('/install') && currentPath !== '/login') {
+      // Don't redirect when on public pages - user can stay and browse
+      const isPublicPath = currentPath === '/' || currentPath.startsWith('/article/');
+      if (!currentPath.startsWith('/install') && currentPath !== '/login' && !isPublicPath) {
         localStorage.removeItem('authToken');
         window.location.href = '/login';
       }

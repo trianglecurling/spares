@@ -38,6 +38,7 @@ const createEventBodySchema = z.object({
   end: z.string(),
   allDay: z.boolean(),
   description: z.string().optional(),
+  articleId: z.number().int().positive().nullable().optional(),
   locations: z.array(locationSchema).optional(),
   recurrence: z
     .object({
@@ -208,6 +209,22 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         }
       }
 
+      const articleIds = [
+        ...events.map((e) => e.article_id).filter((id): id is number => id != null),
+        ...overrides.map((o) => o.article_id).filter((id): id is number => id != null),
+      ];
+      const uniqueArticleIds = [...new Set(articleIds)];
+      const articleById = new Map<number, { id: number; title: string; slug: string }>();
+      if (uniqueArticleIds.length > 0) {
+        const articleRows = await db
+          .select({ id: schema.articles.id, title: schema.articles.title, slug: schema.articles.slug })
+          .from(schema.articles)
+          .where(sql`${schema.articles.id} IN (${sql.join(uniqueArticleIds.map((id) => sql`${id}`), sql`, `)})`);
+        for (const a of articleRows) {
+          articleById.set(a.id, a);
+        }
+      }
+
       const result: Array<{
         id: string;
         typeId: string;
@@ -222,6 +239,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         recurrenceDate?: string;
         recurrenceRrule?: string;
         createdBy?: string;
+        article?: { id: number; title: string; slug: string };
       }> = [];
 
       for (const ev of events) {
@@ -272,6 +290,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
               createdBy: (useEv.created_by_member_id ?? ev.created_by_member_id) != null
                 ? creatorNameById.get(useEv.created_by_member_id ?? ev.created_by_member_id!)
                 : undefined,
+              article: useEv.article_id != null ? articleById.get(useEv.article_id) : undefined,
             });
           }
         } else {
@@ -286,6 +305,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             locations: locs.length > 0 ? locs : undefined,
             source: 'direct',
             createdBy: ev.created_by_member_id != null ? creatorNameById.get(ev.created_by_member_id) : undefined,
+            article: ev.article_id != null ? articleById.get(ev.article_id) : undefined,
           });
         }
       }
@@ -311,6 +331,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             isRecurring: true,
             recurrenceDate: ov.recurrence_date ?? undefined,
             createdBy: ov.created_by_member_id != null ? creatorNameById.get(ov.created_by_member_id) : undefined,
+            article: ov.article_id != null ? articleById.get(ov.article_id) : undefined,
           });
         }
       }
@@ -531,6 +552,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
           end_dt: body.end,
           all_day: body.allDay ? 1 : 0,
           description: body.description ?? null,
+          article_id: body.articleId ?? null,
           recurrence_rule: recurrenceRule,
           created_by_member_id: member.id,
         })
@@ -603,6 +625,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
               end_dt: body.end ?? undefined,
               all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : undefined,
               description: body.description !== undefined ? body.description : undefined,
+              article_id: body.articleId !== undefined ? body.articleId : undefined,
               updated_at: sql`CURRENT_TIMESTAMP`,
             }).where(eq(schema.calendarEvents.parent_event_id, ov.parent_event_id));
             return { success: true };
@@ -618,6 +641,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             end_dt: body.end ?? parent.end_dt,
             all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : parent.all_day,
             description: body.description !== undefined ? body.description : parent.description,
+            article_id: body.articleId !== undefined ? body.articleId : parent.article_id,
             recurrence_rule: body.recurrence?.rrule ?? parent.recurrence_rule,
             updated_at: sql`CURRENT_TIMESTAMP`,
           })
@@ -648,6 +672,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             end_dt: body.end ?? parent.end_dt,
             all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : parent.all_day,
             description: body.description !== undefined ? body.description : parent.description,
+            article_id: body.articleId !== undefined ? body.articleId : parent.article_id,
             updated_at: sql`CURRENT_TIMESTAMP`,
           }).where(eq(schema.calendarEvents.id, dbId));
           if (body.locations) {
@@ -677,6 +702,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             end_dt: body.end ?? parent!.end_dt,
             all_day: (body.allDay ?? parent!.all_day === 1) ? 1 : 0,
             description: body.description !== undefined ? body.description : parent!.description,
+            article_id: body.articleId !== undefined ? body.articleId : parent!.article_id,
             parent_event_id: null,
             recurrence_date: null,
             created_by_member_id: member.id,
@@ -709,6 +735,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
           end_dt: body.end ?? ev.end_dt,
           all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : ev.all_day,
           description: body.description !== undefined ? body.description : ev.description,
+          article_id: body.articleId !== undefined ? body.articleId : ev.article_id,
           recurrence_rule: body.recurrence?.rrule ?? ev.recurrence_rule,
           updated_at: sql`CURRENT_TIMESTAMP`,
         })

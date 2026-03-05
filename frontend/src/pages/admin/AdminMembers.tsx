@@ -28,6 +28,7 @@ type MemberUpdatePayload = {
   isAdmin?: boolean;
   isServerAdmin?: boolean;
   isCalendarAdmin?: boolean;
+  isContentAdmin?: boolean;
   isLeagueAdministrator?: boolean;
 };
 
@@ -40,6 +41,7 @@ type MemberCreatePayload = {
   isAdmin?: boolean;
   isServerAdmin?: boolean;
   isCalendarAdmin?: boolean;
+  isContentAdmin?: boolean;
   isLeagueAdministrator?: boolean;
 };
 
@@ -62,6 +64,7 @@ export default function AdminMembers() {
     isAdmin: false,
     isServerAdmin: false,
     isCalendarAdmin: false,
+    isContentAdmin: false,
     isLeagueAdministrator: false,
     emailVisible: false,
     phoneVisible: false,
@@ -121,6 +124,8 @@ export default function AdminMembers() {
         isAdmin: Boolean(m.isAdmin),
         isServerAdmin: Boolean(m.isServerAdmin),
         isCalendarAdmin: Boolean((m as { isCalendarAdmin?: boolean }).isCalendarAdmin),
+        isContentAdmin: Boolean((m as { isContentAdmin?: boolean }).isContentAdmin),
+        isLeagueAdministrator: Boolean(m.isLeagueAdministratorGlobal),
         isLeagueAdministratorGlobal: Boolean(m.isLeagueAdministratorGlobal),
         isInServerAdminsList: Boolean(m.isInServerAdminsList),
         firstLoginCompleted: Boolean(m.firstLoginCompleted),
@@ -156,6 +161,7 @@ export default function AdminMembers() {
         isAdmin: member.isInServerAdminsList ? false : member.isAdmin,
         isServerAdmin: isServerAdmin,
         isCalendarAdmin: Boolean((member as { isCalendarAdmin?: boolean }).isCalendarAdmin),
+        isContentAdmin: Boolean((member as { isContentAdmin?: boolean }).isContentAdmin),
         isLeagueAdministrator: Boolean(member.isLeagueAdministratorGlobal),
         emailVisible: member.emailVisible,
         phoneVisible: member.phoneVisible,
@@ -171,6 +177,7 @@ export default function AdminMembers() {
         isAdmin: false,
         isServerAdmin: false,
         isCalendarAdmin: false,
+        isContentAdmin: false,
         isLeagueAdministrator: false,
         emailVisible: false,
         phoneVisible: false,
@@ -191,6 +198,7 @@ export default function AdminMembers() {
       isAdmin: false,
       isServerAdmin: false,
       isCalendarAdmin: false,
+      isContentAdmin: false,
       isLeagueAdministrator: false,
       emailVisible: false,
       phoneVisible: false,
@@ -332,6 +340,7 @@ export default function AdminMembers() {
             updateData.isAdmin = formData.isAdmin;
             updateData.isServerAdmin = formData.isServerAdmin;
             updateData.isCalendarAdmin = formData.isCalendarAdmin;
+            updateData.isContentAdmin = formData.isContentAdmin;
             updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
           }
         } else if (currentMember?.isAdmin && editingMember?.id !== currentMember?.id) {
@@ -356,6 +365,7 @@ export default function AdminMembers() {
           createData.isAdmin = formData.isAdmin;
           createData.isServerAdmin = formData.isServerAdmin;
           createData.isCalendarAdmin = formData.isCalendarAdmin;
+          createData.isContentAdmin = formData.isContentAdmin;
           createData.isLeagueAdministrator = formData.isLeagueAdministrator;
         } else if (currentMember?.isAdmin) {
           // Regular admins can set isAdmin, isCalendarAdmin, isLeagueAdministrator
@@ -1100,6 +1110,7 @@ export default function AdminMembers() {
                         formData.isCalendarAdmin &&
                         !formData.isAdmin &&
                         !formData.isServerAdmin &&
+                        !formData.isContentAdmin &&
                         !formData.isLeagueAdministrator
                       }
                       onChange={() =>
@@ -1107,6 +1118,7 @@ export default function AdminMembers() {
                           ...formData,
                           isAdmin: false,
                           isServerAdmin: false,
+                          isContentAdmin: false,
                           isLeagueAdministrator: false,
                           isCalendarAdmin: true,
                         })
@@ -1122,11 +1134,26 @@ export default function AdminMembers() {
                   </div>
                   <div className="flex items-center">
                     <input
+                      type="checkbox"
+                      id="isContentAdmin"
+                      checked={formData.isContentAdmin}
+                      onChange={(e) => setFormData({ ...formData, isContentAdmin: e.target.checked })}
+                      className="mr-2"
+                    />
+                    <label
+                      htmlFor="isContentAdmin"
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
+                      Content admin
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
                       type="radio"
                       id="roleAdmin"
                       name="role"
                       checked={
-                        formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin
+                        formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin && !formData.isContentAdmin
                       }
                       onChange={() =>
                         setFormData({
@@ -1135,6 +1162,7 @@ export default function AdminMembers() {
                           isServerAdmin: false,
                           isLeagueAdministrator: false,
                           isCalendarAdmin: false,
+                          isContentAdmin: false,
                         })
                       }
                       className="mr-2"
@@ -1156,6 +1184,7 @@ export default function AdminMembers() {
                           isServerAdmin: true,
                           isLeagueAdministrator: false,
                           isCalendarAdmin: false,
+                          isContentAdmin: false,
                         })
                       }
                       className="mr-2"

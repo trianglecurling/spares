@@ -10,6 +10,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@opentelemetry/api-logs": "^0.53.0",
     "@opentelemetry/context-zone": "^1.27.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.53.0",
@@ -26,12 +27,14 @@
     "@toast-ui/react-editor": "^3.2.3",
     "axios": "^1.6.5",
     "eslint-plugin-react": "^7.37.5",
+    "marked": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.5.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.21.1",
     "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "rrule": "^2.8.1",
     "zone.js": "^0.14.3"
   },

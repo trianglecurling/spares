@@ -18,6 +18,7 @@ export const membersSqlite = sqliteTable('members', {
   is_admin: integer('is_admin').default(0).notNull(),
   is_server_admin: integer('is_server_admin').default(0).notNull(),
   is_calendar_admin: integer('is_calendar_admin').default(0).notNull(),
+  is_content_admin: integer('is_content_admin').default(0).notNull(),
   opted_in_sms: integer('opted_in_sms').default(0).notNull(),
   email_subscribed: integer('email_subscribed').default(1).notNull(),
   first_login_completed: integer('first_login_completed').default(0).notNull(),
@@ -484,6 +485,7 @@ export const calendarEventsSqlite = sqliteTable('calendar_events', {
   parent_event_id: integer('parent_event_id'),
   recurrence_date: text('recurrence_date'),
   description: text('description'),
+  article_id: integer('article_id'),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
@@ -511,6 +513,117 @@ export const calendarEventExceptionsSqlite = sqliteTable('calendar_event_excepti
   uniqueParentDate: uniqueIndex('calendar_event_exceptions_parent_date_unique').on(table.parent_event_id, table.exception_date),
 }));
 
+// Articles (Markdown or HTML content, public pages)
+export const articlesSqlite = sqliteTable('articles', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  slug: text('slug').notNull().unique(),
+  content_type: text('content_type').default('markdown').notNull(),
+  content: text('content').notNull(),
+  snippet: text('snippet'),
+  featured: integer('featured').default(0).notNull(),
+  featured_sort_order: integer('featured_sort_order').default(0).notNull(),
+  published_at: text('published_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+}, (table) => ({
+  slugIdx: index('idx_articles_slug').on(table.slug),
+  featuredIdx: index('idx_articles_featured').on(table.featured),
+  publishedIdx: index('idx_articles_published_at').on(table.published_at),
+}));
+
+export const articleVersionsSqlite = sqliteTable('article_versions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  article_id: integer('article_id').notNull().references(() => articlesSqlite.id, { onDelete: 'cascade' }),
+  version_number: integer('version_number').notNull(),
+  title: text('title').notNull(),
+  slug: text('slug').notNull(),
+  content_type: text('content_type').default('markdown').notNull(),
+  content: text('content').notNull(),
+  revision_note: text('revision_note'),
+  is_small_edit: integer('is_small_edit').default(0).notNull(),
+  snippet: text('snippet'),
+  featured: integer('featured').default(0).notNull(),
+  published_at: text('published_at'),
+  saved_by_member_id: integer('saved_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  articleIdx: index('idx_article_versions_article_id').on(table.article_id),
+  articleVersionUnique: uniqueIndex('article_versions_article_id_version_number_unique').on(table.article_id, table.version_number),
+  createdIdx: index('idx_article_versions_created_at').on(table.created_at),
+}));
+
+// Site config (club branding, contact - public-facing)
+export const siteConfigSqlite = sqliteTable('site_config', {
+  id: integer('id').primaryKey(),
+  club_name: text('club_name'),
+  logo_url: text('logo_url'),
+  contact_email: text('contact_email'),
+  contact_phone: text('contact_phone'),
+  footer_markdown: text('footer_markdown'),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
+// Showcase images for homepage (URLs only)
+export const showcaseImagesSqlite = sqliteTable('showcase_images', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  url: text('url').notNull(),
+  caption: text('caption'),
+  sort_order: integer('sort_order').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  sortIdx: index('idx_showcase_images_sort_order').on(table.sort_order),
+}));
+
+// Menu items for dynamic navigation (hierarchical)
+export const menuItemsSqlite = sqliteTable('menu_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  menu_type: text('menu_type').default('navbar').notNull(),
+  parent_id: integer('parent_id'),
+  label: text('label').notNull(),
+  sort_order: integer('sort_order').default(0).notNull(),
+  link_type: text('link_type').$type<'internal' | 'external'>(),
+  url: text('url'),
+  open_in_new_tab: integer('open_in_new_tab').default(0).notNull(),
+  article_id: integer('article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
+  use_article_title_for_label: integer('use_article_title_for_label').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  menuTypeIdx: index('idx_menu_items_menu_type').on(table.menu_type),
+  parentIdIdx: index('idx_menu_items_parent_id').on(table.parent_id),
+  sortOrderIdx: index('idx_menu_items_sort_order').on(table.sort_order),
+  articleIdIdx: index('idx_menu_items_article_id').on(table.article_id),
+}));
+
+export const filesSqlite = sqliteTable('files', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  storage_key: text('storage_key').notNull().unique(),
+  original_filename: text('original_filename').notNull(),
+  display_name: text('display_name'),
+  description: text('description'),
+  mime_type: text('mime_type').notNull(),
+  byte_size: integer('byte_size').notNull(),
+  visibility: text('visibility').default('public').notNull().$type<'public' | 'authenticated'>(),
+  checksum_sha256: text('checksum_sha256'),
+  thumbnail_storage_key: text('thumbnail_storage_key'),
+  thumbnail_mime_type: text('thumbnail_mime_type'),
+  thumbnail_byte_size: integer('thumbnail_byte_size'),
+  thumbnail_checksum_sha256: text('thumbnail_checksum_sha256'),
+  uploaded_by_member_id: integer('uploaded_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  suspected_orphan: integer('suspected_orphan').default(0).notNull(),
+  last_referenced_at: text('last_referenced_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  storageKeyIdx: uniqueIndex('files_storage_key_unique').on(table.storage_key),
+  visibilityIdx: index('idx_files_visibility').on(table.visibility),
+  uploadedByIdx: index('idx_files_uploaded_by_member_id').on(table.uploaded_by_member_id),
+  createdAtIdx: index('idx_files_created_at').on(table.created_at),
+  suspectedOrphanIdx: index('idx_files_suspected_orphan').on(table.suspected_orphan),
+}));
+
 // ========== PostgreSQL Schema ==========
 export const membersPg = pgTable('members', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -522,6 +635,7 @@ export const membersPg = pgTable('members', {
   is_admin: integerPg('is_admin').default(0).notNull(),
   is_server_admin: integerPg('is_server_admin').default(0).notNull(),
   is_calendar_admin: integerPg('is_calendar_admin').default(0).notNull(),
+  is_content_admin: integerPg('is_content_admin').default(0).notNull(),
   opted_in_sms: integerPg('opted_in_sms').default(0).notNull(),
   email_subscribed: integerPg('email_subscribed').default(1).notNull(),
   first_login_completed: integerPg('first_login_completed').default(0).notNull(),
@@ -985,6 +1099,7 @@ export const calendarEventsPg = pgTable('calendar_events', {
   parent_event_id: integerPg('parent_event_id'),
   recurrence_date: textPg('recurrence_date'),
   description: textPg('description'),
+  article_id: integerPg('article_id'),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
@@ -1010,6 +1125,117 @@ export const calendarEventExceptionsPg = pgTable('calendar_event_exceptions', {
 }, (table) => ({
   parentIdIdx: indexPg('idx_calendar_event_exceptions_parent_id').on(table.parent_event_id),
   uniqueParentDate: uniqueIndexPg('calendar_event_exceptions_parent_date_unique').on(table.parent_event_id, table.exception_date),
+}));
+
+// Articles (Markdown or HTML content, public pages)
+export const articlesPg = pgTable('articles', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  title: textPg('title').notNull(),
+  slug: textPg('slug').notNull().unique(),
+  content_type: textPg('content_type').default('markdown').notNull(),
+  content: textPg('content').notNull(),
+  snippet: textPg('snippet'),
+  featured: integerPg('featured').default(0).notNull(),
+  featured_sort_order: integerPg('featured_sort_order').default(0).notNull(),
+  published_at: timestamp('published_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+}, (table) => ({
+  slugIdx: indexPg('idx_articles_slug').on(table.slug),
+  featuredIdx: indexPg('idx_articles_featured').on(table.featured),
+  publishedIdx: indexPg('idx_articles_published_at').on(table.published_at),
+}));
+
+export const articleVersionsPg = pgTable('article_versions', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  article_id: integerPg('article_id').notNull().references(() => articlesPg.id, { onDelete: 'cascade' }),
+  version_number: integerPg('version_number').notNull(),
+  title: textPg('title').notNull(),
+  slug: textPg('slug').notNull(),
+  content_type: textPg('content_type').default('markdown').notNull(),
+  content: textPg('content').notNull(),
+  revision_note: textPg('revision_note'),
+  is_small_edit: integerPg('is_small_edit').default(0).notNull(),
+  snippet: textPg('snippet'),
+  featured: integerPg('featured').default(0).notNull(),
+  published_at: timestamp('published_at', { withTimezone: false }),
+  saved_by_member_id: integerPg('saved_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  articleIdx: indexPg('idx_article_versions_article_id').on(table.article_id),
+  articleVersionUnique: uniqueIndexPg('article_versions_article_id_version_number_unique').on(table.article_id, table.version_number),
+  createdIdx: indexPg('idx_article_versions_created_at').on(table.created_at),
+}));
+
+// Site config (club branding, contact - public-facing)
+export const siteConfigPg = pgTable('site_config', {
+  id: integerPg('id').primaryKey(),
+  club_name: textPg('club_name'),
+  logo_url: textPg('logo_url'),
+  contact_email: textPg('contact_email'),
+  contact_phone: textPg('contact_phone'),
+  footer_markdown: textPg('footer_markdown'),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
+// Showcase images for homepage (URLs only)
+export const showcaseImagesPg = pgTable('showcase_images', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  url: textPg('url').notNull(),
+  caption: textPg('caption'),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  sortIdx: indexPg('idx_showcase_images_sort_order').on(table.sort_order),
+}));
+
+// Menu items for dynamic navigation (hierarchical)
+export const menuItemsPg = pgTable('menu_items', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  menu_type: textPg('menu_type').default('navbar').notNull(),
+  parent_id: integerPg('parent_id'),
+  label: textPg('label').notNull(),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  link_type: textPg('link_type').$type<'internal' | 'external'>(),
+  url: textPg('url'),
+  open_in_new_tab: integerPg('open_in_new_tab').default(0).notNull(),
+  article_id: integerPg('article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
+  use_article_title_for_label: integerPg('use_article_title_for_label').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  menuTypeIdx: indexPg('idx_menu_items_menu_type').on(table.menu_type),
+  parentIdIdx: indexPg('idx_menu_items_parent_id').on(table.parent_id),
+  sortOrderIdx: indexPg('idx_menu_items_sort_order').on(table.sort_order),
+  articleIdIdx: indexPg('idx_menu_items_article_id').on(table.article_id),
+}));
+
+export const filesPg = pgTable('files', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  storage_key: textPg('storage_key').notNull().unique(),
+  original_filename: textPg('original_filename').notNull(),
+  display_name: textPg('display_name'),
+  description: textPg('description'),
+  mime_type: textPg('mime_type').notNull(),
+  byte_size: integerPg('byte_size').notNull(),
+  visibility: textPg('visibility').default('public').notNull().$type<'public' | 'authenticated'>(),
+  checksum_sha256: textPg('checksum_sha256'),
+  thumbnail_storage_key: textPg('thumbnail_storage_key'),
+  thumbnail_mime_type: textPg('thumbnail_mime_type'),
+  thumbnail_byte_size: integerPg('thumbnail_byte_size'),
+  thumbnail_checksum_sha256: textPg('thumbnail_checksum_sha256'),
+  uploaded_by_member_id: integerPg('uploaded_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  suspected_orphan: integerPg('suspected_orphan').default(0).notNull(),
+  last_referenced_at: timestamp('last_referenced_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  storageKeyIdx: uniqueIndexPg('files_storage_key_unique').on(table.storage_key),
+  visibilityIdx: indexPg('idx_files_visibility').on(table.visibility),
+  uploadedByIdx: indexPg('idx_files_uploaded_by_member_id').on(table.uploaded_by_member_id),
+  createdAtIdx: indexPg('idx_files_created_at').on(table.created_at),
+  suspectedOrphanIdx: indexPg('idx_files_suspected_orphan').on(table.suspected_orphan),
 }));
 
 // Export schema objects for use in database initialization
@@ -1047,6 +1273,12 @@ export const sqliteSchema = {
   calendarEvents: calendarEventsSqlite,
   calendarEventLocations: calendarEventLocationsSqlite,
   calendarEventExceptions: calendarEventExceptionsSqlite,
+  articles: articlesSqlite,
+  articleVersions: articleVersionsSqlite,
+  siteConfig: siteConfigSqlite,
+  showcaseImages: showcaseImagesSqlite,
+  menuItems: menuItemsSqlite,
+  files: filesSqlite,
 };
 
 export const pgSchema = {
@@ -1083,4 +1315,10 @@ export const pgSchema = {
   calendarEvents: calendarEventsPg,
   calendarEventLocations: calendarEventLocationsPg,
   calendarEventExceptions: calendarEventExceptionsPg,
+  articles: articlesPg,
+  articleVersions: articleVersionsPg,
+  siteConfig: siteConfigPg,
+  showcaseImages: showcaseImagesPg,
+  menuItems: menuItemsPg,
+  files: filesPg,
 };

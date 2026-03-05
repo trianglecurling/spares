@@ -37,6 +37,7 @@ import {
   sparesListResponseSchema,
   successResponseSchema,
 } from '../api/schemas.js';
+import type { ApiReply } from '../api/types.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
@@ -200,7 +201,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   }
 
   // Get spare requests the user was CC'd on (upcoming; includes private requests)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/cc',
     {
       schema: {
@@ -288,7 +289,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get all public spare requests
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares',
     {
       schema: {
@@ -426,7 +427,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Decline a private spare request invitation (invited member only)
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/decline',
     {
       schema: {
@@ -576,7 +577,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get invitation statuses for a private spare request (requester only)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/invitations',
     {
       schema: {
@@ -632,7 +633,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get basic status for a spare request (used for email deep-link feedback)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/status',
     {
       schema: {
@@ -709,7 +710,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Invite more people to a private spare request (requester only)
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/invite',
     {
       schema: {
@@ -886,7 +887,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Convert a private spare request to public (requester only; irreversible)
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/make-public',
     {
       schema: {
@@ -1082,7 +1083,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get member's own spare requests
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/my-requests',
     {
       schema: {
@@ -1234,7 +1235,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get member's past spare requests (read-only, includes filled or unfilled)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/my-requests/past',
     {
       schema: {
@@ -1350,7 +1351,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get spare requests the user has signed up to fill (upcoming)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/my-sparing',
     {
       schema: {
@@ -1414,7 +1415,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get filled spare requests (for expandable section)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/filled-upcoming',
     {
       schema: {
@@ -1513,7 +1514,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Create spare request
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares',
     {
       schema: {
@@ -1639,7 +1640,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     if (!body.allowDuplicate && duplicateMatches.length > 0) {
       const match = duplicateMatches[0];
-      return reply.send({
+      return reply.code(200).send({
         duplicate: true,
         existingRequest: {
           id: match.id,
@@ -2062,7 +2063,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Respond to spare request
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/respond',
     {
       schema: {
@@ -2266,7 +2267,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Cancel spare request
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/cancel',
     {
       schema: {
@@ -2397,7 +2398,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Cancel sparing (cancel a spare response)
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/cancel-sparing',
     {
       schema: {
@@ -2558,7 +2559,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Re-issue spare request (re-send notifications)
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/reissue',
     {
       schema: {
@@ -2945,7 +2946,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Get notification status for a spare request
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/notification-status',
     {
       schema: {
@@ -3085,7 +3086,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Pause notifications for a spare request
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/pause-notifications',
     {
       schema: {
@@ -3143,7 +3144,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
   );
 
   // Unpause notifications for a spare request
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/spares/:id/unpause-notifications',
     {
       schema: {

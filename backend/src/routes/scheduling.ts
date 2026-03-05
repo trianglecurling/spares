@@ -12,6 +12,7 @@ import {
   teamByeRequestsWithPreferenceResponseSchema,
 } from '../api/schedulingSchemas.js';
 import { successResponseSchema } from '../api/schemas.js';
+import type { ApiReply } from '../api/types.js';
 import { sendByeRequestsConfirmationEmail } from '../services/email.js';
 
 function formatDateValue(value: unknown): string {
@@ -62,7 +63,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
   const { db, schema } = getDrizzleDb();
 
   // List bye requests for a league (all teams in league)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/bye-requests',
     {
       schema: {
@@ -134,7 +135,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
   );
 
   // Create bye request
-  fastify.post(
+  fastify.post<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/bye-requests',
     {
       schema: {
@@ -181,7 +182,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
   );
 
   // Update bye request
-  fastify.patch(
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
     '/leagues/:leagueId/bye-requests/:requestId',
     {
       schema: {
@@ -246,7 +247,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
   );
 
   // Delete bye request
-  fastify.delete(
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
     '/leagues/:leagueId/bye-requests/:requestId',
     {
       schema: {
@@ -295,7 +296,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
   );
 
   // List bye requests for a specific team (team members or league manager)
-  fastify.get(
+  fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:leagueId/teams/:teamId/bye-requests',
     {
       schema: {
@@ -379,7 +380,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
   );
 
   // Replace a team's bye requests (team members or league manager); sends confirmation email only when a team member updates
-  fastify.put(
+  fastify.put<{ Reply: ApiReply<unknown> }>(
     '/leagues/:leagueId/teams/:teamId/bye-requests',
     {
       schema: {

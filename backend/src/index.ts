@@ -1,6 +1,7 @@
 import { loadBackendLogCaptureFromDb } from './otel.js';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import { config } from './config.js';
@@ -20,6 +21,9 @@ import { calendarRoutes } from './routes/calendar.js';
 import { installRoutes } from './routes/install.js';
 import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
 import { publicConfigRoutes } from './routes/publicConfig.js';
+import { publicRoutes } from './routes/public.js';
+import { contentRoutes } from './routes/content.js';
+import { fileRoutes } from './routes/files.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 
@@ -31,6 +35,13 @@ const fastify = Fastify({
 await fastify.register(cors, {
   origin: config.frontendUrl,
   credentials: true,
+});
+
+await fastify.register(multipart, {
+  limits: {
+    files: 50,
+    fileSize: 50 * 1024 * 1024,
+  },
 });
 
 await fastify.register(swagger, {
@@ -192,7 +203,7 @@ fastify.addHook('onRequest', async (request, reply) => {
     // If initialization failed, block the request
     return reply.code(503).send({
       error: 'Database initialization failed',
-      message: dbInitError?.message || 'Please check your database configuration',
+      message: dbInitError?.message || 'Please check your database configuration. Run "npm run db:init" in the backend directory for details.',
       requiresInstallation: true,
     });
   }
@@ -217,6 +228,8 @@ fastify.register(publicAuthRoutes, { prefix: '/api' });
 fastify.register(publicFeedbackRoutes, { prefix: '/api' });
 // Public config flags (no auth required)
 fastify.register(publicConfigRoutes, { prefix: '/api' });
+// Public site content (no auth required)
+fastify.register(publicRoutes, { prefix: '/api' });
 
 // Protected routes
 fastify.register(
@@ -234,6 +247,8 @@ fastify.register(
     await instance.register(spareRoutes, { prefix: '/api' });
     await instance.register(configRoutes, { prefix: '/api' });
     await instance.register(calendarRoutes, { prefix: '/api' });
+    await instance.register(contentRoutes, { prefix: '/api' });
+    await instance.register(fileRoutes, { prefix: '/api' });
     await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
   }
 );

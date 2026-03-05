@@ -14,9 +14,9 @@ export default function RespondToSpare() {
       // We only need requestId to continue the flow.
       setTimeout(() => {
         if (requestId) {
-          navigate(`/?requestId=${requestId}`);
+          navigate(`/dashboard?requestId=${requestId}`);
         } else {
-          navigate('/');
+          navigate('/dashboard');
         }
       }, 500);
     }
