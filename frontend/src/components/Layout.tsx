@@ -42,9 +42,11 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [leaguesDropdownOpen, setLeaguesDropdownOpen] = useState(false);
   const [sparesDropdownOpen, setSparesDropdownOpen] = useState(false);
+  const [directoryDropdownOpen, setDirectoryDropdownOpen] = useState(false);
   const [adminDropdownOpen, setAdminDropdownOpen] = useState(false);
   const [mobileLeaguesExpanded, setMobileLeaguesExpanded] = useState(false);
   const [mobileSparesExpanded, setMobileSparesExpanded] = useState(false);
+  const [mobileDirectoryExpanded, setMobileDirectoryExpanded] = useState(false);
   const [mobileAdminExpanded, setMobileAdminExpanded] = useState(false);
   const [leagues, setLeagues] = useState<League[]>([]);
   const [leaguesLoading, setLeaguesLoading] = useState(true);
@@ -60,9 +62,12 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     isNavLinkActive('/availability') ||
     isNavLinkActive('/my-requests') ||
     location.pathname.startsWith('/request-spare');
+  const isDirectoryActive = isNavLinkActive('/members') || isNavLinkActive('/governance');
   const isAdminActive =
     isNavLinkActive('/admin/members') ||
     isNavLinkActive('/admin/sheets') ||
+    isNavLinkActive('/admin/governance') ||
+    isNavLinkActive('/admin/sponsorship') ||
     isNavLinkActive('/admin/config');
 
   const canManageLeagues = Boolean(
@@ -74,6 +79,8 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
     ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Manage sheets' }] : []),
     ...((member?.isContentAdmin || member?.isServerAdmin) ? [{ to: '/admin/content', label: 'Manage content' }] : []),
+    ...((member?.isAdmin || member?.isServerAdmin) ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
+    ...((member?.isSponsorAdmin || member?.isServerAdmin) ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
     ...(member?.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
   ];
   const hasAdminLinks = adminLinks.length > 0;
@@ -103,6 +110,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     setMobileMenuOpen(false);
     setMobileLeaguesExpanded(false);
     setMobileSparesExpanded(false);
+    setMobileDirectoryExpanded(false);
     setMobileAdminExpanded(false);
   }, [location.pathname]);
 
@@ -113,21 +121,23 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
         setMobileMenuOpen(false);
         setLeaguesDropdownOpen(false);
         setSparesDropdownOpen(false);
+        setDirectoryDropdownOpen(false);
         setAdminDropdownOpen(false);
       }
     };
 
-    if (mobileMenuOpen || leaguesDropdownOpen || sparesDropdownOpen || adminDropdownOpen) {
+    if (mobileMenuOpen || leaguesDropdownOpen || sparesDropdownOpen || directoryDropdownOpen || adminDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  }, [mobileMenuOpen, leaguesDropdownOpen, sparesDropdownOpen, adminDropdownOpen]);
+  }, [mobileMenuOpen, leaguesDropdownOpen, sparesDropdownOpen, directoryDropdownOpen, adminDropdownOpen]);
 
   const closeDropdowns = () => {
     setLeaguesDropdownOpen(false);
     setSparesDropdownOpen(false);
+    setDirectoryDropdownOpen(false);
     setAdminDropdownOpen(false);
   };
 
@@ -239,6 +249,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                     onClick={() => {
                       setSparesDropdownOpen(!sparesDropdownOpen);
                       setLeaguesDropdownOpen(false);
+                      setDirectoryDropdownOpen(false);
                       setAdminDropdownOpen(false);
                     }}
                     className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isSparesActive)}`}
@@ -275,10 +286,41 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   )}
                 </div>
 
-                {/* Directory */}
-                <Link to="/members" className={navLinkClass(isNavLinkActive('/members'))}>
-                  Directory
-                </Link>
+                {/* Directory dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setDirectoryDropdownOpen(!directoryDropdownOpen);
+                      setLeaguesDropdownOpen(false);
+                      setSparesDropdownOpen(false);
+                      setAdminDropdownOpen(false);
+                    }}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isDirectoryActive)}`}
+                  >
+                    Directory
+                    <HiChevronDown
+                      className={`w-4 h-4 transition-transform ${directoryDropdownOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {directoryDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
+                      <Link
+                        to="/members"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Club membership
+                      </Link>
+                      <Link
+                        to="/governance"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Club governance
+                      </Link>
+                    </div>
+                  )}
+                </div>
 
                 {/* Calendar */}
                 <Link to="/calendar" className={navLinkClass(isNavLinkActive('/calendar'))}>
@@ -293,6 +335,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                         setAdminDropdownOpen(!adminDropdownOpen);
                         setLeaguesDropdownOpen(false);
                         setSparesDropdownOpen(false);
+                        setDirectoryDropdownOpen(false);
                       }}
                       className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isAdminActive)}`}
                     >
@@ -420,13 +463,27 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   </Link>
                 </MobileDropdownSection>
 
-                <Link
-                  to="/members"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={navLinkClassMobile(isNavLinkActive('/members'))}
+                <MobileDropdownSection
+                  label="Directory"
+                  expanded={mobileDirectoryExpanded}
+                  onToggle={() => setMobileDirectoryExpanded(!mobileDirectoryExpanded)}
+                  active={isDirectoryActive}
                 >
-                  Directory
-                </Link>
+                  <Link
+                    to="/members"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Club membership
+                  </Link>
+                  <Link
+                    to="/governance"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Club governance
+                  </Link>
+                </MobileDropdownSection>
 
                 <Link
                   to="/calendar"

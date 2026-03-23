@@ -46,6 +46,15 @@ type SqliteSchema = {
   showcaseImages: typeof sqliteSchema.showcaseImagesSqlite;
   menuItems: typeof sqliteSchema.menuItemsSqlite;
   files: typeof sqliteSchema.filesSqlite;
+  sponsorshipLevels: typeof sqliteSchema.sponsorshipLevelsSqlite;
+  sponsors: typeof sqliteSchema.sponsorsSqlite;
+  sponsorships: typeof sqliteSchema.sponsorshipsSqlite;
+  governanceSettings: typeof sqliteSchema.governanceSettingsSqlite;
+  governanceBoardMembers: typeof sqliteSchema.governanceBoardMembersSqlite;
+  governanceCommittees: typeof sqliteSchema.governanceCommitteesSqlite;
+  governanceCommitteeChairs: typeof sqliteSchema.governanceCommitteeChairsSqlite;
+  governanceBoardMemberCommittees: typeof sqliteSchema.governanceBoardMemberCommitteesSqlite;
+  governanceOfficers: typeof sqliteSchema.governanceOfficersSqlite;
 };
 
 type PgSchema = {
@@ -88,6 +97,15 @@ type PgSchema = {
   showcaseImages: typeof pgSchema.showcaseImagesPg;
   menuItems: typeof pgSchema.menuItemsPg;
   files: typeof pgSchema.filesPg;
+  sponsorshipLevels: typeof pgSchema.sponsorshipLevelsPg;
+  sponsors: typeof pgSchema.sponsorsPg;
+  sponsorships: typeof pgSchema.sponsorshipsPg;
+  governanceSettings: typeof pgSchema.governanceSettingsPg;
+  governanceBoardMembers: typeof pgSchema.governanceBoardMembersPg;
+  governanceCommittees: typeof pgSchema.governanceCommitteesPg;
+  governanceCommitteeChairs: typeof pgSchema.governanceCommitteeChairsPg;
+  governanceBoardMemberCommittees: typeof pgSchema.governanceBoardMemberCommitteesPg;
+  governanceOfficers: typeof pgSchema.governanceOfficersPg;
 };
 
 type DrizzleDb = NodePgDatabase<PgSchema>;
@@ -153,6 +171,15 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       showcaseImages: sqliteSchema.showcaseImagesSqlite,
       menuItems: sqliteSchema.menuItemsSqlite,
       files: sqliteSchema.filesSqlite,
+      sponsorshipLevels: sqliteSchema.sponsorshipLevelsSqlite,
+      sponsors: sqliteSchema.sponsorsSqlite,
+      sponsorships: sqliteSchema.sponsorshipsSqlite,
+      governanceSettings: sqliteSchema.governanceSettingsSqlite,
+      governanceBoardMembers: sqliteSchema.governanceBoardMembersSqlite,
+      governanceCommittees: sqliteSchema.governanceCommitteesSqlite,
+      governanceCommitteeChairs: sqliteSchema.governanceCommitteeChairsSqlite,
+      governanceBoardMemberCommittees: sqliteSchema.governanceBoardMemberCommitteesSqlite,
+      governanceOfficers: sqliteSchema.governanceOfficersSqlite,
     } as unknown as DrizzleSchema;
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
@@ -209,6 +236,15 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       showcaseImages: pgSchema.showcaseImagesPg,
       menuItems: pgSchema.menuItemsPg,
       files: pgSchema.filesPg,
+      sponsorshipLevels: pgSchema.sponsorshipLevelsPg,
+      sponsors: pgSchema.sponsorsPg,
+      sponsorships: pgSchema.sponsorshipsPg,
+      governanceSettings: pgSchema.governanceSettingsPg,
+      governanceBoardMembers: pgSchema.governanceBoardMembersPg,
+      governanceCommittees: pgSchema.governanceCommitteesPg,
+      governanceCommitteeChairs: pgSchema.governanceCommitteeChairsPg,
+      governanceBoardMemberCommittees: pgSchema.governanceBoardMemberCommitteesPg,
+      governanceOfficers: pgSchema.governanceOfficersPg,
     } as DrizzleSchema;
   } else {
     throw new Error(`Unsupported database type: ${config.type}`);

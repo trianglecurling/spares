@@ -30,6 +30,7 @@ type MemberUpdatePayload = {
   isCalendarAdmin?: boolean;
   isContentAdmin?: boolean;
   isLeagueAdministrator?: boolean;
+  isSponsorAdmin?: boolean;
 };
 
 type MemberCreatePayload = {
@@ -43,6 +44,7 @@ type MemberCreatePayload = {
   isCalendarAdmin?: boolean;
   isContentAdmin?: boolean;
   isLeagueAdministrator?: boolean;
+  isSponsorAdmin?: boolean;
 };
 
 export default function AdminMembers() {
@@ -66,6 +68,7 @@ export default function AdminMembers() {
     isCalendarAdmin: false,
     isContentAdmin: false,
     isLeagueAdministrator: false,
+    isSponsorAdmin: false,
     emailVisible: false,
     phoneVisible: false,
   });
@@ -125,6 +128,7 @@ export default function AdminMembers() {
         isServerAdmin: Boolean(m.isServerAdmin),
         isCalendarAdmin: Boolean((m as { isCalendarAdmin?: boolean }).isCalendarAdmin),
         isContentAdmin: Boolean((m as { isContentAdmin?: boolean }).isContentAdmin),
+        isSponsorAdmin: Boolean((m as { isSponsorAdmin?: boolean }).isSponsorAdmin),
         isLeagueAdministrator: Boolean(m.isLeagueAdministratorGlobal),
         isLeagueAdministratorGlobal: Boolean(m.isLeagueAdministratorGlobal),
         isInServerAdminsList: Boolean(m.isInServerAdminsList),
@@ -162,6 +166,7 @@ export default function AdminMembers() {
         isServerAdmin: isServerAdmin,
         isCalendarAdmin: Boolean((member as { isCalendarAdmin?: boolean }).isCalendarAdmin),
         isContentAdmin: Boolean((member as { isContentAdmin?: boolean }).isContentAdmin),
+        isSponsorAdmin: Boolean((member as { isSponsorAdmin?: boolean }).isSponsorAdmin),
         isLeagueAdministrator: Boolean(member.isLeagueAdministratorGlobal),
         emailVisible: member.emailVisible,
         phoneVisible: member.phoneVisible,
@@ -179,6 +184,7 @@ export default function AdminMembers() {
         isCalendarAdmin: false,
         isContentAdmin: false,
         isLeagueAdministrator: false,
+        isSponsorAdmin: false,
         emailVisible: false,
         phoneVisible: false,
       });
@@ -200,6 +206,7 @@ export default function AdminMembers() {
       isCalendarAdmin: false,
       isContentAdmin: false,
       isLeagueAdministrator: false,
+      isSponsorAdmin: false,
       emailVisible: false,
       phoneVisible: false,
     });
@@ -342,12 +349,14 @@ export default function AdminMembers() {
             updateData.isCalendarAdmin = formData.isCalendarAdmin;
             updateData.isContentAdmin = formData.isContentAdmin;
             updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
+            updateData.isSponsorAdmin = formData.isSponsorAdmin;
           }
         } else if (currentMember?.isAdmin && editingMember?.id !== currentMember?.id) {
           // Regular admins can set isAdmin, isCalendarAdmin, isLeagueAdministrator (and not for themselves)
           updateData.isAdmin = formData.isAdmin;
           updateData.isCalendarAdmin = formData.isCalendarAdmin;
           updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
+          updateData.isSponsorAdmin = formData.isSponsorAdmin;
         }
 
         await patch('/members/{id}', updateData, { id: String(editingMember.id) });
@@ -367,11 +376,13 @@ export default function AdminMembers() {
           createData.isCalendarAdmin = formData.isCalendarAdmin;
           createData.isContentAdmin = formData.isContentAdmin;
           createData.isLeagueAdministrator = formData.isLeagueAdministrator;
+          createData.isSponsorAdmin = formData.isSponsorAdmin;
         } else if (currentMember?.isAdmin) {
           // Regular admins can set isAdmin, isCalendarAdmin, isLeagueAdministrator
           createData.isAdmin = formData.isAdmin;
           createData.isCalendarAdmin = formData.isCalendarAdmin;
           createData.isLeagueAdministrator = formData.isLeagueAdministrator;
+          createData.isSponsorAdmin = formData.isSponsorAdmin;
         }
 
         await post('/members', createData);
@@ -751,6 +762,10 @@ export default function AdminMembers() {
                             <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200">
                               League admin
                             </span>
+                          ) : (member as { isSponsorAdmin?: boolean }).isSponsorAdmin ? (
+                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200">
+                              Sponsor admin
+                            </span>
                           ) : null}
                         </div>
                       </td>
@@ -1120,6 +1135,7 @@ export default function AdminMembers() {
                           isServerAdmin: false,
                           isContentAdmin: false,
                           isLeagueAdministrator: false,
+                          isSponsorAdmin: false,
                           isCalendarAdmin: true,
                         })
                       }
@@ -1149,11 +1165,26 @@ export default function AdminMembers() {
                   </div>
                   <div className="flex items-center">
                     <input
+                      type="checkbox"
+                      id="isSponsorAdmin"
+                      checked={formData.isSponsorAdmin}
+                      onChange={(e) => setFormData({ ...formData, isSponsorAdmin: e.target.checked })}
+                      className="mr-2"
+                    />
+                    <label
+                      htmlFor="isSponsorAdmin"
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
+                      Sponsor admin
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
                       type="radio"
                       id="roleAdmin"
                       name="role"
                       checked={
-                        formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin && !formData.isContentAdmin
+                        formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin && !formData.isContentAdmin && !formData.isSponsorAdmin
                       }
                       onChange={() =>
                         setFormData({
@@ -1163,6 +1194,7 @@ export default function AdminMembers() {
                           isLeagueAdministrator: false,
                           isCalendarAdmin: false,
                           isContentAdmin: false,
+                          isSponsorAdmin: false,
                         })
                       }
                       className="mr-2"
@@ -1185,6 +1217,7 @@ export default function AdminMembers() {
                           isLeagueAdministrator: false,
                           isCalendarAdmin: false,
                           isContentAdmin: false,
+                          isSponsorAdmin: false,
                         })
                       }
                       className="mr-2"
@@ -1216,6 +1249,23 @@ export default function AdminMembers() {
                   className="text-sm font-medium text-gray-700 dark:text-gray-300"
                 >
                   Administrator
+                </label>
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="isSponsorAdminRegular"
+                  checked={formData.isSponsorAdmin}
+                  onChange={(e) =>
+                    setFormData({ ...formData, isSponsorAdmin: e.target.checked })
+                  }
+                  className="mr-2"
+                />
+                <label
+                  htmlFor="isSponsorAdminRegular"
+                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Sponsor admin
                 </label>
               </div>
               <div className="flex items-center">

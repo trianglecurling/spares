@@ -160,9 +160,7 @@ export async function publicRoutes(fastify: FastifyInstance) {
     return reply.send(stream);
   });
 
-  // GET /public/menus/:type - Menu tree for public nav (e.g. navbar, footer)
-  fastify.get<{ Params: { type: string } }>('/public/menus/:type', async (request) => {
-    const menuType = request.params.type || 'navbar';
+  const loadMenuTree = async (menuType: string): Promise<MenuItemNode[]> => {
     const rows = await db
       .select({
         id: schema.menuItems.id,
@@ -216,17 +214,32 @@ export async function publicRoutes(fastify: FastifyInstance) {
       }
     }
     return roots;
-  });
+  };
 
-  // GET /public/site-config - Lightweight site config for header/footer
-  fastify.get('/public/site-config', async () => {
-    const [row] = await db
-      .select()
-      .from(schema.siteConfig)
-      .where(eq(schema.siteConfig.id, 1))
-      .limit(1);
+  const loadPublicSiteConfig = async () => {
+    const [siteConfigRows, serverConfigRows] = await Promise.all([
+      db
+        .select()
+        .from(schema.siteConfig)
+        .where(eq(schema.siteConfig.id, 1))
+        .limit(1),
+      db
+        .select({ disable_sms: schema.serverConfig.disable_sms })
+        .from(schema.serverConfig)
+        .where(eq(schema.serverConfig.id, 1))
+        .limit(1),
+    ]);
+    const row = siteConfigRows[0];
+    const serverConfig = serverConfigRows[0];
     if (!row) {
-      return { clubName: null, logoUrl: null, contactEmail: null, contactPhone: null, footerMarkdown: null };
+      return {
+        clubName: null,
+        logoUrl: null,
+        contactEmail: null,
+        contactPhone: null,
+        footerMarkdown: null,
+        disableSms: serverConfig?.disable_sms === 1,
+      };
     }
     return {
       clubName: row.club_name ?? null,
@@ -234,18 +247,24 @@ export async function publicRoutes(fastify: FastifyInstance) {
       contactEmail: row.contact_email ?? null,
       contactPhone: row.contact_phone ?? null,
       footerMarkdown: row.footer_markdown ?? null,
+      disableSms: serverConfig?.disable_sms === 1,
     };
-  });
+  };
 
-  // GET /public/home - Homepage data
-  fastify.get('/public/home', async () => {
+  const loadPublicHomeData = async () => {
     const now = new Date().toISOString();
+    const todayDate = now.split('T')[0];
 
-    const [siteConfigRows, featuredArticles, showcaseRows, bonspielEvents] = await Promise.all([
+    const [siteConfigRows, serverConfigRows, featuredArticles, showcaseRows, bonspielEvents, sponsorshipRows] = await Promise.all([
       db
         .select()
         .from(schema.siteConfig)
         .where(eq(schema.siteConfig.id, 1))
+        .limit(1),
+      db
+        .select({ disable_sms: schema.serverConfig.disable_sms })
+        .from(schema.serverConfig)
+        .where(eq(schema.serverConfig.id, 1))
         .limit(1),
       db
         .select({
@@ -287,9 +306,33 @@ export async function publicRoutes(fastify: FastifyInstance) {
           )
         )
         .orderBy(asc(schema.calendarEvents.start_dt)),
+      db
+        .select({
+          sponsorshipId: schema.sponsorships.id,
+          sponsorId: schema.sponsors.id,
+          sponsorName: schema.sponsors.name,
+          sponsorWebsiteUrl: schema.sponsors.website_url,
+          logoFileId: schema.sponsors.logo_file_id,
+          logoChecksumSha256: schema.files.checksum_sha256,
+          logoDisplayName: schema.files.display_name,
+          logoOriginalFilename: schema.files.original_filename,
+          levelSortOrder: schema.sponsorshipLevels.sort_order,
+        })
+        .from(schema.sponsorships)
+        .innerJoin(schema.sponsors, eq(schema.sponsorships.sponsor_id, schema.sponsors.id))
+        .innerJoin(schema.sponsorshipLevels, eq(schema.sponsorships.sponsorship_level_id, schema.sponsorshipLevels.id))
+        .leftJoin(schema.files, eq(schema.sponsors.logo_file_id, schema.files.id))
+        .where(
+          and(
+            or(sql`${schema.sponsorships.start_date} IS NULL`, sql`${schema.sponsorships.start_date} <= ${todayDate}`),
+            or(sql`${schema.sponsorships.end_date} IS NULL`, sql`${schema.sponsorships.end_date} >= ${todayDate}`)
+          )
+        )
+        .orderBy(asc(schema.sponsorshipLevels.sort_order), asc(schema.sponsorships.id)),
     ]);
 
     const siteConfig = siteConfigRows[0];
+    const serverConfig = serverConfigRows[0];
     const rangeStart = new Date();
     const rangeEnd = new Date();
     rangeEnd.setMonth(rangeEnd.getMonth() + 6);
@@ -337,6 +380,7 @@ export async function publicRoutes(fastify: FastifyInstance) {
             contactEmail: siteConfig.contact_email ?? null,
             contactPhone: siteConfig.contact_phone ?? null,
             footerMarkdown: siteConfig.footer_markdown ?? null,
+            disableSms: serverConfig?.disable_sms === 1,
           }
         : null,
       featuredArticles: featuredArticles.map((a) => {
@@ -358,8 +402,57 @@ export async function publicRoutes(fastify: FastifyInstance) {
         url: img.url,
         caption: img.caption ?? null,
       })),
+      currentSponsorships: sponsorshipRows.map((row) => ({
+        sponsorshipId: row.sponsorshipId,
+        sponsorId: row.sponsorId,
+        sponsorName: row.sponsorName,
+        sponsorWebsiteUrl: row.sponsorWebsiteUrl,
+        sponsorLogoUrl: row.logoFileId
+          ? publicFileUrl(
+              row.logoFileId,
+              row.logoDisplayName || row.logoOriginalFilename || `file-${row.logoFileId}`,
+              row.logoChecksumSha256
+            )
+          : null,
+        levelSortOrder: row.levelSortOrder,
+      })),
       upcomingBonspiels,
     };
+  };
+
+  // GET /public/menus/:type - Menu tree for public nav (e.g. navbar, footer)
+  fastify.get<{ Params: { type: string } }>('/public/menus/:type', async (request) => {
+    const menuType = request.params.type || 'navbar';
+    return loadMenuTree(menuType);
+  });
+
+  // GET /public/site-config - Lightweight site config for header/footer
+  fastify.get('/public/site-config', async () => {
+    return loadPublicSiteConfig();
+  });
+
+  // GET /public/bootstrap?includeHome=true - Shared payload for public shell (+ optional homepage content)
+  fastify.get<{ Querystring: { includeHome?: string } }>('/public/bootstrap', async (request) => {
+    const includeHome = request.query.includeHome === 'true' || request.query.includeHome === '1';
+    if (includeHome) {
+      const [home, navbarMenu] = await Promise.all([loadPublicHomeData(), loadMenuTree('navbar')]);
+      return {
+        siteConfig: home.siteConfig,
+        navbarMenu,
+        home,
+      };
+    }
+    const [siteConfig, navbarMenu] = await Promise.all([loadPublicSiteConfig(), loadMenuTree('navbar')]);
+    return {
+      siteConfig,
+      navbarMenu,
+      home: null,
+    };
+  });
+
+  // GET /public/home - Homepage data
+  fastify.get('/public/home', async () => {
+    return loadPublicHomeData();
   });
 
   // GET /public/articles?featured=true
@@ -548,6 +641,7 @@ export async function publicRoutes(fastify: FastifyInstance) {
     const staticUrls: SitemapEntry[] = [
       { loc: `${frontendBaseUrl}/`, changefreq: 'daily', priority: '1.0' },
       { loc: `${frontendBaseUrl}/articles`, changefreq: 'daily', priority: '0.8' },
+      { loc: `${frontendBaseUrl}/contact`, changefreq: 'weekly', priority: '0.7' },
     ];
     const articleUrls: SitemapEntry[] = articleRows.map((row) => ({
       loc: `${frontendBaseUrl}/articles/${row.slug}`,

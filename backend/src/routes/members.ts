@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { isAdmin, isServerAdmin, isCalendarAdmin, isInServerAdminsList } from '../utils/auth.js';
+import { isAdmin, isServerAdmin, isCalendarAdmin, isInServerAdminsList, isSponsorAdmin } from '../utils/auth.js';
 import { getLeagueAdministratorRoleInfo, getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
 import { Member } from '../types.js';
 import {
@@ -62,6 +62,7 @@ const createMemberSchema = z.object({
   isServerAdmin: z.boolean().optional(),
   isCalendarAdmin: z.boolean().optional(),
   isContentAdmin: z.boolean().optional(),
+  isSponsorAdmin: z.boolean().optional(),
   isLeagueAdministrator: z.boolean().optional(),
 });
 
@@ -75,6 +76,7 @@ const updateMemberSchema = z.object({
   isServerAdmin: z.boolean().optional(),
   isCalendarAdmin: z.boolean().optional(),
   isContentAdmin: z.boolean().optional(),
+  isSponsorAdmin: z.boolean().optional(),
   isLeagueAdministrator: z.boolean().optional(),
 });
 
@@ -130,6 +132,7 @@ const createMemberBodySchema = {
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
     isContentAdmin: { type: 'boolean' },
+    isSponsorAdmin: { type: 'boolean' },
     isLeagueAdministrator: { type: 'boolean' },
   },
   required: ['name', 'email'],
@@ -148,6 +151,7 @@ const updateMemberBodySchema = {
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
     isContentAdmin: { type: 'boolean' },
+    isSponsorAdmin: { type: 'boolean' },
   },
 } as const;
 
@@ -223,6 +227,7 @@ interface MemberUpdateData {
   is_server_admin?: number;
   is_calendar_admin?: number;
   is_content_admin?: number;
+  is_sponsor_admin?: number;
   updated_at?: ReturnType<typeof sql>;
 }
 
@@ -488,6 +493,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         isServerAdmin: isServerAdmin(m),
         isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
         isContentAdmin: (m.is_content_admin ?? 0) === 1,
+        isSponsorAdmin: isSponsorAdmin(m),
         isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
         isInServerAdminsList: isInServerAdminsList(m),
         emailSubscribed: Boolean(m.email_subscribed === 1),
@@ -546,6 +552,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       is_server_admin: schema.members.is_server_admin,
       is_calendar_admin: schema.members.is_calendar_admin,
       is_content_admin: schema.members.is_content_admin,
+      is_sponsor_admin: schema.members.is_sponsor_admin,
       opted_in_sms: schema.members.opted_in_sms,
       email_subscribed: schema.members.email_subscribed,
       first_login_completed: schema.members.first_login_completed,
@@ -601,6 +608,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         isServerAdmin: isServerAdmin(m),
         isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
         isContentAdmin: (m.is_content_admin ?? 0) === 1,
+        isSponsorAdmin: isSponsorAdmin(m),
         isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
         isInServerAdminsList: isInServerAdminsList(m),
         emailSubscribed: Boolean(m.email_subscribed === 1),
@@ -729,6 +737,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         is_server_admin: body.isServerAdmin ? 1 : 0,
         is_calendar_admin: body.isCalendarAdmin ? 1 : 0,
         is_content_admin: body.isContentAdmin ? 1 : 0,
+        is_sponsor_admin: body.isSponsorAdmin ? 1 : 0,
         opted_in_sms: 0,
         email_subscribed: 1,
         first_login_completed: 0,
@@ -938,6 +947,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
     if (body.isContentAdmin !== undefined) {
       updateData.is_content_admin = body.isContentAdmin ? 1 : 0;
+    }
+    if (body.isSponsorAdmin !== undefined) {
+      updateData.is_sponsor_admin = body.isSponsorAdmin ? 1 : 0;
     }
 
     if (Object.keys(updateData).length > 0) {

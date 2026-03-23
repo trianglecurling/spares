@@ -5,50 +5,41 @@ import './index.css';
 import { initOtel, type RuntimeOtelConfig } from './otel';
 
 const loadRuntimeOtelConfig = async (): Promise<RuntimeOtelConfig | undefined> => {
-  let runtimeConfig: RuntimeOtelConfig | undefined;
+  const authToken = localStorage.getItem('authToken');
+  const isAuthenticated = Boolean(authToken);
 
-  try {
-    const response = await fetch('/otel-config.json', { cache: 'no-store' });
-    if (response.ok) {
-      const data = (await response.json()) as RuntimeOtelConfig;
-      if (data && typeof data === 'object') {
-        runtimeConfig = data;
-      }
-    }
-  } catch {
-    runtimeConfig = undefined;
+  // Authenticated-only server config is the source of truth for frontend OTEL.
+  // Unauthenticated sessions never fetch protected config and never capture console logs.
+  if (!isAuthenticated || !authToken) {
+    return {
+      enabled: false,
+      captureConsoleLogs: false,
+    };
   }
 
-  // Server config is the source of truth for frontend OTEL. If we can't reach it,
-  // default to disabled to avoid failed telemetry requests (e.g. CORS errors).
-  let gotServerConfig = false;
   try {
-    const response = await fetch('/api/public-config', { cache: 'no-store' });
+    const response = await fetch('/api/public-config', {
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
     if (response.ok) {
       const data = (await response.json()) as {
         captureFrontendLogs?: boolean;
         frontendOtelEnabled?: boolean;
       };
-      gotServerConfig = true;
-      if (typeof data?.frontendOtelEnabled === 'boolean') {
-        runtimeConfig = runtimeConfig || {};
-        runtimeConfig.enabled = data.frontendOtelEnabled;
-      }
-      if (typeof data?.captureFrontendLogs === 'boolean') {
-        runtimeConfig = runtimeConfig || {};
-        runtimeConfig.captureConsoleLogs = data.captureFrontendLogs;
-      }
+      return {
+        enabled: typeof data?.frontendOtelEnabled === 'boolean' ? data.frontendOtelEnabled : false,
+        captureConsoleLogs: typeof data?.captureFrontendLogs === 'boolean' ? data.captureFrontendLogs : false,
+      };
     }
   } catch {
-    // Ignore public config errors.
+    // Ignore protected config errors.
   }
 
-  if (!gotServerConfig) {
-    runtimeConfig = runtimeConfig || {};
-    runtimeConfig.enabled = false;
-  }
-
-  return runtimeConfig;
+  return {
+    enabled: false,
+    captureConsoleLogs: false,
+  };
 };
 
 const startApp = async () => {

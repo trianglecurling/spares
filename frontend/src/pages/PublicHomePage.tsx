@@ -12,6 +12,7 @@ interface HomeData {
     contactEmail: string | null;
     contactPhone: string | null;
     footerMarkdown: string | null;
+    disableSms?: boolean;
   } | null;
   featuredArticles: Array<{
     id: number;
@@ -32,6 +33,38 @@ interface HomeData {
     end: string;
     allDay: boolean;
   }>;
+  currentSponsorships: Array<{
+    sponsorshipId: number;
+    sponsorId: number;
+    sponsorName: string;
+    sponsorWebsiteUrl: string;
+    sponsorLogoUrl: string | null;
+    levelSortOrder: number;
+  }>;
+}
+
+interface SiteConfig {
+  clubName: string | null;
+  logoUrl: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  footerMarkdown: string | null;
+  disableSms?: boolean;
+}
+
+interface MenuItemNode {
+  id: number;
+  label: string;
+  linkType: 'internal' | 'external' | null;
+  url: string | null;
+  openInNewTab: boolean;
+  children: MenuItemNode[];
+}
+
+interface PublicHomeBootstrapResponse {
+  siteConfig: SiteConfig | null;
+  navbarMenu: MenuItemNode[];
+  home: HomeData | null;
 }
 
 const HOMEPAGE_COPY = {
@@ -50,6 +83,10 @@ export default function PublicHomePage() {
   const { member, token, isLoading } = useAuth();
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showDelayedLoading, setShowDelayedLoading] = useState(false);
+  const [layoutSiteConfig, setLayoutSiteConfig] = useState<SiteConfig | null | undefined>(undefined);
+  const [layoutMenuItems, setLayoutMenuItems] = useState<MenuItemNode[] | undefined>(undefined);
+  const [deferLayoutBootstrapLoad, setDeferLayoutBootstrapLoad] = useState(true);
   const [heroImageIndex, setHeroImageIndex] = useState(0);
   const [heroAutoScrollEnabled, setHeroAutoScrollEnabled] = useState(true);
 
@@ -69,21 +106,47 @@ export default function PublicHomePage() {
     ];
   }, [data?.showcaseImages]);
 
-  const sponsorPlaceholders = useMemo(
-    () =>
-      Array.from({ length: 20 }, (_, i) => ({
-        id: i + 1,
-        src: `https://placehold.co/180x96/f8fafc/94a3b8?text=Sponsor+${i + 1}`,
-      })),
-    []
-  );
+  const displayedSponsorships = useMemo(() => {
+    const sorted = [...(data?.currentSponsorships ?? [])]
+      .filter((s) => Boolean(s.sponsorLogoUrl))
+      .sort((a, b) => a.levelSortOrder - b.levelSortOrder || Math.random() - 0.5);
+    const seenLogos = new Set<string>();
+    return sorted.filter((s) => {
+      const logoKey = s.sponsorLogoUrl || `sponsor-${s.sponsorId}`;
+      if (seenLogos.has(logoKey)) return false;
+      seenLogos.add(logoKey);
+      return true;
+    });
+  }, [data?.currentSponsorships]);
 
   useEffect(() => {
     api
-      .get<HomeData>('/public/home')
-      .then((res) => setData(res.data))
-      .catch((err) => setError(err?.response?.data?.error || 'Failed to load'));
+      .get<PublicHomeBootstrapResponse>('/public/bootstrap', { params: { includeHome: 'true' } })
+      .then((res) => {
+        setLayoutSiteConfig(res.data?.siteConfig ?? null);
+        setLayoutMenuItems(Array.isArray(res.data?.navbarMenu) ? res.data.navbarMenu : []);
+        if (res.data?.home) {
+          setData(res.data.home);
+          return;
+        }
+        setError('Failed to load');
+      })
+      .catch((err) => {
+        setDeferLayoutBootstrapLoad(false);
+        setError(err?.response?.data?.error || 'Failed to load');
+      });
   }, []);
+
+  useEffect(() => {
+    if (data || error) {
+      setShowDelayedLoading(false);
+      return;
+    }
+    const timerId = window.setTimeout(() => {
+      setShowDelayedLoading(true);
+    }, 1000);
+    return () => window.clearTimeout(timerId);
+  }, [data, error]);
 
   useEffect(() => {
     if (heroImages.length <= 1 || !heroAutoScrollEnabled) return;
@@ -116,7 +179,11 @@ export default function PublicHomePage() {
 
   if (error) {
     return (
-      <PublicLayout>
+      <PublicLayout
+        initialSiteConfig={layoutSiteConfig}
+        initialMenuItems={layoutMenuItems}
+        deferPublicBootstrapLoad={deferLayoutBootstrapLoad}
+      >
         <section className="public-section">
           <div className="public-container">
             <div className="public-card p-6 text-red-700">{error}</div>
@@ -127,7 +194,11 @@ export default function PublicHomePage() {
   }
 
   return (
-    <PublicLayout>
+    <PublicLayout
+      initialSiteConfig={layoutSiteConfig}
+      initialMenuItems={layoutMenuItems}
+      deferPublicBootstrapLoad={deferLayoutBootstrapLoad}
+    >
       <SeoMeta
         title="Triangle Curling Club | Curling in the Triangle"
         description="Discover curling in the Raleigh, Durham, and Chapel Hill area: beginner resources, group event info, upcoming bonspiels, and member information."
@@ -146,9 +217,11 @@ export default function PublicHomePage() {
       />
       <div className="public-container">
         {!data ? (
-          <section className="public-section">
-            <div className="public-card p-6 text-gray-600">Loading homepage...</div>
-          </section>
+          showDelayedLoading ? (
+            <section className="public-section">
+              <div className="public-card p-6 text-gray-600">Loading homepage...</div>
+            </section>
+          ) : null
         ) : (
           <>
             <section className="public-section pb-8 sm:pb-12">
@@ -307,21 +380,36 @@ export default function PublicHomePage() {
               )}
             </section>
 
-            <section className="public-section pt-0">
-              <div className="rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-6 sm:p-8">
-                <h2 className="text-xl font-semibold text-gray-900">Our sponsors</h2>
+            {displayedSponsorships.length > 0 && (
+              <section className="public-section pt-0">
+                <h2 className="public-subheading">Our sponsors</h2>
                 <p className="mt-2 text-sm text-gray-600">
-                  Sponsor logos appear here. Replace these placeholders with current sponsor assets from your content workflow.
+                  Triangle Curling extends its sincere gratitude to the sponsors below.
                 </p>
-                <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                  {sponsorPlaceholders.map((sponsor) => (
-                    <div key={sponsor.id} className="public-card flex items-center justify-center p-2">
-                      <img src={sponsor.src} alt={`Sponsor ${sponsor.id}`} className="h-12 w-full object-contain" loading="lazy" />
-                    </div>
+                <div className="mt-5 flex flex-wrap justify-center gap-y-3">
+                  {displayedSponsorships.map((sponsorship) => (
+                    <a
+                      key={sponsorship.sponsorshipId}
+                      href={sponsorship.sponsorWebsiteUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={sponsorship.sponsorName}
+                      className="w-1/2 px-1.5 sm:w-1/3 md:w-1/4 lg:w-1/5"
+                    >
+                      <div className="rounded p-2">
+                        <img
+                          src={sponsorship.sponsorLogoUrl || ''}
+                          alt={sponsorship.sponsorName}
+                          title={sponsorship.sponsorName}
+                          className="mx-auto max-h-[122px] max-w-[calc(100%+10px)] w-full object-contain"
+                          loading="lazy"
+                        />
+                      </div>
+                    </a>
                   ))}
                 </div>
-              </div>
-            </section>
+              </section>
+            )}
           </>
         )}
       </div>

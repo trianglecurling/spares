@@ -14,6 +14,7 @@
     "build": "bun run --filter frontend build && bun run --filter backend build",
     "build:frontend": "bun run --filter frontend build",
     "build:backend": "bun run --filter backend build",
+    "prod:test": "bun run build && bunx concurrently \"bun run --filter backend start\" \"bun run --filter frontend preview\"",
     "openapi:generate": "bun run --filter backend openapi:generate && bunx openapi-typescript backend/openapi.json -o frontend/src/api/generated/types.ts",
     "openapi:check": "npm run openapi:generate",
     "lint": "bun run --filter '*' lint",

@@ -19,6 +19,7 @@ export const membersSqlite = sqliteTable('members', {
   is_server_admin: integer('is_server_admin').default(0).notNull(),
   is_calendar_admin: integer('is_calendar_admin').default(0).notNull(),
   is_content_admin: integer('is_content_admin').default(0).notNull(),
+  is_sponsor_admin: integer('is_sponsor_admin').default(0).notNull(),
   opted_in_sms: integer('opted_in_sms').default(0).notNull(),
   email_subscribed: integer('email_subscribed').default(1).notNull(),
   first_login_completed: integer('first_login_completed').default(0).notNull(),
@@ -624,6 +625,128 @@ export const filesSqlite = sqliteTable('files', {
   suspectedOrphanIdx: index('idx_files_suspected_orphan').on(table.suspected_orphan),
 }));
 
+export const sponsorshipLevelsSqlite = sqliteTable('sponsorship_levels', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  amount: integer('amount').notNull(),
+  sort_order: integer('sort_order').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  sortIdx: index('idx_sponsorship_levels_sort_order').on(table.sort_order),
+  uniqueName: uniqueIndex('sponsorship_levels_name_unique').on(table.name),
+}));
+
+export const sponsorsSqlite = sqliteTable('sponsors', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  website_url: text('website_url').notNull(),
+  logo_file_id: integer('logo_file_id').references(() => filesSqlite.id, { onDelete: 'set null' }),
+  contact_name: text('contact_name'),
+  contact_email: text('contact_email'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  nameIdx: index('idx_sponsors_name').on(table.name),
+}));
+
+export const sponsorshipsSqlite = sqliteTable('sponsorships', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sponsor_id: integer('sponsor_id').notNull().references(() => sponsorsSqlite.id, { onDelete: 'cascade' }),
+  sponsorship_level_id: integer('sponsorship_level_id').notNull().references(() => sponsorshipLevelsSqlite.id, { onDelete: 'restrict' }),
+  start_date: text('start_date'),
+  end_date: text('end_date'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  sponsorIdx: index('idx_sponsorships_sponsor_id').on(table.sponsor_id),
+  levelIdx: index('idx_sponsorships_sponsorship_level_id').on(table.sponsorship_level_id),
+  datesIdx: index('idx_sponsorships_dates').on(table.start_date, table.end_date),
+}));
+
+export const governanceSettingsSqlite = sqliteTable('governance_settings', {
+  id: integer('id').primaryKey(),
+  fiscal_year_start_mmdd: text('fiscal_year_start_mmdd').notNull(), // MM-DD
+  board_turnover_mmdd: text('board_turnover_mmdd').notNull(), // MM-DD
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
+export const governanceBoardMembersSqlite = sqliteTable('governance_board_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  public_email: text('public_email'),
+  first_fiscal_year: integer('first_fiscal_year').notNull(),
+  last_fiscal_year: integer('last_fiscal_year').notNull(),
+  manual_inactive: integer('manual_inactive').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_governance_board_members_member_id').on(table.member_id),
+  uniqueMember: uniqueIndex('governance_board_members_member_id_unique').on(table.member_id),
+}));
+
+export const governanceCommitteesSqlite = sqliteTable('governance_committees', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  contact_info: text('contact_info'),
+  responsibilities: text('responsibilities'),
+  board_liaison_board_member_id: integer('board_liaison_board_member_id').references(
+    () => governanceBoardMembersSqlite.id,
+    { onDelete: 'set null' }
+  ),
+  sort_order: integer('sort_order').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  uniqueName: uniqueIndex('governance_committees_name_unique').on(table.name),
+  liaisonIdx: index('idx_governance_committees_liaison_id').on(table.board_liaison_board_member_id),
+  sortIdx: index('idx_governance_committees_sort_order').on(table.sort_order),
+}));
+
+export const governanceCommitteeChairsSqlite = sqliteTable('governance_committee_chairs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  committee_id: integer('committee_id').notNull().references(() => governanceCommitteesSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  public_email: text('public_email'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  committeeIdx: index('idx_governance_committee_chairs_committee_id').on(table.committee_id),
+  memberIdx: index('idx_governance_committee_chairs_member_id').on(table.member_id),
+  uniqueCommitteeMember: uniqueIndex('governance_committee_chairs_committee_id_member_id_unique').on(
+    table.committee_id,
+    table.member_id
+  ),
+}));
+
+export const governanceBoardMemberCommitteesSqlite = sqliteTable('governance_board_member_committees', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  board_member_id: integer('board_member_id').notNull().references(() => governanceBoardMembersSqlite.id, { onDelete: 'cascade' }),
+  committee_id: integer('committee_id').notNull().references(() => governanceCommitteesSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  boardMemberIdx: index('idx_governance_board_member_committees_board_member_id').on(table.board_member_id),
+  committeeIdx: index('idx_governance_board_member_committees_committee_id').on(table.committee_id),
+  uniqueBoardMemberCommittee: uniqueIndex('governance_board_member_committees_board_member_id_committee_id_unique').on(
+    table.board_member_id,
+    table.committee_id
+  ),
+}));
+
+export const governanceOfficersSqlite = sqliteTable('governance_officers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  position: text('position').notNull().$type<'president' | 'vice_president' | 'treasurer' | 'secretary'>(),
+  board_member_id: integer('board_member_id').notNull().references(() => governanceBoardMembersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  uniquePosition: uniqueIndex('governance_officers_position_unique').on(table.position),
+  uniqueBoardMember: uniqueIndex('governance_officers_board_member_id_unique').on(table.board_member_id),
+  boardMemberIdx: index('idx_governance_officers_board_member_id').on(table.board_member_id),
+}));
+
 // ========== PostgreSQL Schema ==========
 export const membersPg = pgTable('members', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -636,6 +759,7 @@ export const membersPg = pgTable('members', {
   is_server_admin: integerPg('is_server_admin').default(0).notNull(),
   is_calendar_admin: integerPg('is_calendar_admin').default(0).notNull(),
   is_content_admin: integerPg('is_content_admin').default(0).notNull(),
+  is_sponsor_admin: integerPg('is_sponsor_admin').default(0).notNull(),
   opted_in_sms: integerPg('opted_in_sms').default(0).notNull(),
   email_subscribed: integerPg('email_subscribed').default(1).notNull(),
   first_login_completed: integerPg('first_login_completed').default(0).notNull(),
@@ -1238,6 +1362,128 @@ export const filesPg = pgTable('files', {
   suspectedOrphanIdx: indexPg('idx_files_suspected_orphan').on(table.suspected_orphan),
 }));
 
+export const sponsorshipLevelsPg = pgTable('sponsorship_levels', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  amount: integerPg('amount').notNull(),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  sortIdx: indexPg('idx_sponsorship_levels_sort_order').on(table.sort_order),
+  uniqueName: uniqueIndexPg('sponsorship_levels_name_unique').on(table.name),
+}));
+
+export const sponsorsPg = pgTable('sponsors', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  website_url: textPg('website_url').notNull(),
+  logo_file_id: integerPg('logo_file_id').references(() => filesPg.id, { onDelete: 'set null' }),
+  contact_name: textPg('contact_name'),
+  contact_email: textPg('contact_email'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  nameIdx: indexPg('idx_sponsors_name').on(table.name),
+}));
+
+export const sponsorshipsPg = pgTable('sponsorships', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  sponsor_id: integerPg('sponsor_id').notNull().references(() => sponsorsPg.id, { onDelete: 'cascade' }),
+  sponsorship_level_id: integerPg('sponsorship_level_id').notNull().references(() => sponsorshipLevelsPg.id, { onDelete: 'restrict' }),
+  start_date: date('start_date'),
+  end_date: date('end_date'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  sponsorIdx: indexPg('idx_sponsorships_sponsor_id').on(table.sponsor_id),
+  levelIdx: indexPg('idx_sponsorships_sponsorship_level_id').on(table.sponsorship_level_id),
+  datesIdx: indexPg('idx_sponsorships_dates').on(table.start_date, table.end_date),
+}));
+
+export const governanceSettingsPg = pgTable('governance_settings', {
+  id: integerPg('id').primaryKey(),
+  fiscal_year_start_mmdd: textPg('fiscal_year_start_mmdd').notNull(), // MM-DD
+  board_turnover_mmdd: textPg('board_turnover_mmdd').notNull(), // MM-DD
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
+export const governanceBoardMembersPg = pgTable('governance_board_members', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  public_email: textPg('public_email'),
+  first_fiscal_year: integerPg('first_fiscal_year').notNull(),
+  last_fiscal_year: integerPg('last_fiscal_year').notNull(),
+  manual_inactive: integerPg('manual_inactive').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_governance_board_members_member_id').on(table.member_id),
+  uniqueMember: uniqueIndexPg('governance_board_members_member_id_unique').on(table.member_id),
+}));
+
+export const governanceCommitteesPg = pgTable('governance_committees', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  contact_info: textPg('contact_info'),
+  responsibilities: textPg('responsibilities'),
+  board_liaison_board_member_id: integerPg('board_liaison_board_member_id').references(
+    () => governanceBoardMembersPg.id,
+    { onDelete: 'set null' }
+  ),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  uniqueName: uniqueIndexPg('governance_committees_name_unique').on(table.name),
+  liaisonIdx: indexPg('idx_governance_committees_liaison_id').on(table.board_liaison_board_member_id),
+  sortIdx: indexPg('idx_governance_committees_sort_order').on(table.sort_order),
+}));
+
+export const governanceCommitteeChairsPg = pgTable('governance_committee_chairs', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  committee_id: integerPg('committee_id').notNull().references(() => governanceCommitteesPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  public_email: textPg('public_email'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  committeeIdx: indexPg('idx_governance_committee_chairs_committee_id').on(table.committee_id),
+  memberIdx: indexPg('idx_governance_committee_chairs_member_id').on(table.member_id),
+  uniqueCommitteeMember: uniqueIndexPg('governance_committee_chairs_committee_id_member_id_unique').on(
+    table.committee_id,
+    table.member_id
+  ),
+}));
+
+export const governanceBoardMemberCommitteesPg = pgTable('governance_board_member_committees', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  board_member_id: integerPg('board_member_id').notNull().references(() => governanceBoardMembersPg.id, { onDelete: 'cascade' }),
+  committee_id: integerPg('committee_id').notNull().references(() => governanceCommitteesPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  boardMemberIdx: indexPg('idx_governance_board_member_committees_board_member_id').on(table.board_member_id),
+  committeeIdx: indexPg('idx_governance_board_member_committees_committee_id').on(table.committee_id),
+  uniqueBoardMemberCommittee: uniqueIndexPg('governance_board_member_committees_board_member_id_committee_id_unique').on(
+    table.board_member_id,
+    table.committee_id
+  ),
+}));
+
+export const governanceOfficersPg = pgTable('governance_officers', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  position: textPg('position').notNull().$type<'president' | 'vice_president' | 'treasurer' | 'secretary'>(),
+  board_member_id: integerPg('board_member_id').notNull().references(() => governanceBoardMembersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  uniquePosition: uniqueIndexPg('governance_officers_position_unique').on(table.position),
+  uniqueBoardMember: uniqueIndexPg('governance_officers_board_member_id_unique').on(table.board_member_id),
+  boardMemberIdx: indexPg('idx_governance_officers_board_member_id').on(table.board_member_id),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -1279,6 +1525,15 @@ export const sqliteSchema = {
   showcaseImages: showcaseImagesSqlite,
   menuItems: menuItemsSqlite,
   files: filesSqlite,
+  sponsorshipLevels: sponsorshipLevelsSqlite,
+  sponsors: sponsorsSqlite,
+  sponsorships: sponsorshipsSqlite,
+  governanceSettings: governanceSettingsSqlite,
+  governanceBoardMembers: governanceBoardMembersSqlite,
+  governanceCommittees: governanceCommitteesSqlite,
+  governanceCommitteeChairs: governanceCommitteeChairsSqlite,
+  governanceBoardMemberCommittees: governanceBoardMemberCommitteesSqlite,
+  governanceOfficers: governanceOfficersSqlite,
 };
 
 export const pgSchema = {
@@ -1321,4 +1576,13 @@ export const pgSchema = {
   showcaseImages: showcaseImagesPg,
   menuItems: menuItemsPg,
   files: filesPg,
+  sponsorshipLevels: sponsorshipLevelsPg,
+  sponsors: sponsorsPg,
+  sponsorships: sponsorshipsPg,
+  governanceSettings: governanceSettingsPg,
+  governanceBoardMembers: governanceBoardMembersPg,
+  governanceCommittees: governanceCommitteesPg,
+  governanceCommitteeChairs: governanceCommitteeChairsPg,
+  governanceBoardMemberCommittees: governanceBoardMemberCommitteesPg,
+  governanceOfficers: governanceOfficersPg,
 };
