@@ -38,11 +38,16 @@ import AdminContent from './pages/admin/AdminContent';
 import AdminArticleEditor from './pages/admin/AdminArticleEditor';
 import AdminArticleVersionPreview from './pages/admin/AdminArticleVersionPreview';
 import AdminObservability from './pages/admin/AdminObservability';
+import AdminSponsorship from './pages/admin/AdminSponsorship';
 import Leagues from './pages/leagues/Leagues';
 import LeagueDetail from './pages/leagues/LeagueDetail';
 import Calendar from './pages/Calendar';
 import PublicHomePage from './pages/PublicHomePage';
 import PublicArticle from './pages/PublicArticle';
+import PublicContactPage from './pages/PublicContactPage';
+import PublicContactConfirmPage from './pages/PublicContactConfirmPage';
+import ClubGovernance from './pages/ClubGovernance';
+import AdminGovernance from './pages/admin/AdminGovernance';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -94,6 +99,8 @@ function App() {
 
                 {/* Public pages - no auth required */}
                 <Route path="/" element={<PublicHomePage />} />
+                <Route path="/contact" element={<PublicContactPage />} />
+                <Route path="/contact/confirm" element={<PublicContactConfirmPage />} />
                 <Route path="/articles" element={<Navigate to="/" replace />} />
                 <Route path="/articles/:slug" element={<PublicArticle />} />
                 <Route path="/article/:slug" element={<PublicArticle />} />
@@ -174,6 +181,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <MembersDirectory />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governance"
+                  element={
+                    <ProtectedRoute>
+                      <ClubGovernance />
                     </ProtectedRoute>
                   }
                 />
@@ -260,6 +275,22 @@ function App() {
                   element={
                     <ProtectedRoute serverAdminOnly>
                       <AdminObservability />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/sponsorship"
+                  element={
+                    <ProtectedRoute sponsorAdminOnly>
+                      <AdminSponsorship />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/governance"
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <AdminGovernance />
                     </ProtectedRoute>
                   }
                 />

@@ -73,6 +73,7 @@ export type MemberSummaryResponse = {
   isServerAdmin: boolean;
   isCalendarAdmin?: boolean;
   isContentAdmin?: boolean;
+  isSponsorAdmin?: boolean;
   isLeagueAdministratorGlobal?: boolean;
   isInServerAdminsList: boolean;
   emailSubscribed: boolean;
@@ -504,6 +505,8 @@ export type CreateMemberBody = {
   spareOnly?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
+  isContentAdmin?: boolean;
+  isSponsorAdmin?: boolean;
 };
 
 export type UpdateMemberBody = {
@@ -514,6 +517,8 @@ export type UpdateMemberBody = {
   spareOnly?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
+  isContentAdmin?: boolean;
+  isSponsorAdmin?: boolean;
 };
 
 export type BulkDeleteBody = {
@@ -527,3 +532,107 @@ export type BulkCreateBody =
       validThrough?: string | null;
       spareOnly?: boolean;
     };
+
+export type GovernanceOfficerPosition = 'president' | 'vice_president' | 'treasurer' | 'secretary';
+
+export type GovernanceSettings = {
+  fiscalYearStartMmdd: string;
+  boardTurnoverMmdd: string;
+};
+
+export type GovernanceBoardMember = {
+  id: number;
+  memberId: number;
+  memberName: string;
+  memberEmail: string | null;
+  publicEmail: string | null;
+  effectivePublicEmail: string | null;
+  firstFiscalYear: number;
+  lastFiscalYear: number;
+  manualInactive: boolean;
+  derivedActive: boolean;
+  isActive: boolean;
+  committeeIds: number[];
+};
+
+export type GovernanceOfficer = {
+  position: GovernanceOfficerPosition;
+  boardMemberId: number;
+};
+
+export type GovernanceCommitteeChair = {
+  id: number;
+  memberId: number;
+  memberName: string;
+  memberEmail: string | null;
+  publicEmail: string | null;
+  effectivePublicEmail: string | null;
+};
+
+export type GovernanceCommittee = {
+  id: number;
+  name: string;
+  boardLiaisonBoardMemberId: number | null;
+  contactInfo: string | null;
+  responsibilities: string | null;
+  chairs: GovernanceCommitteeChair[];
+};
+
+export type GovernanceSummaryResponse = {
+  today: string;
+  currentFiscalYear: number;
+  currentBoardYear: number;
+  settings: GovernanceSettings;
+  boardMembers: GovernanceBoardMember[];
+  officers: GovernanceOfficer[];
+  committees: GovernanceCommittee[];
+};
+
+export type GovernanceUpsertSettingsBody = {
+  fiscalYearStartMmdd: string;
+  boardTurnoverMmdd: string;
+};
+
+export type GovernanceCreateBoardMemberBody = {
+  memberId: number;
+  publicEmail?: string | null;
+  firstFiscalYear: number;
+  lastFiscalYear: number;
+  manualInactive?: boolean;
+  committeeIds?: number[];
+};
+
+export type GovernanceUpdateBoardMemberBody = {
+  publicEmail?: string | null;
+  firstFiscalYear?: number;
+  lastFiscalYear?: number;
+  manualInactive?: boolean;
+  committeeIds?: number[];
+};
+
+export type GovernanceUpsertOfficerBody = {
+  boardMemberId: number;
+};
+
+export type GovernanceCreateCommitteeBody = {
+  name: string;
+  boardLiaisonBoardMemberId?: number | null;
+  contactInfo?: string | null;
+  responsibilities?: string | null;
+};
+
+export type GovernanceUpdateCommitteeBody = {
+  name?: string;
+  boardLiaisonBoardMemberId?: number | null;
+  contactInfo?: string | null;
+  responsibilities?: string | null;
+};
+
+export type GovernanceCreateCommitteeChairBody = {
+  memberId: number;
+  publicEmail?: string | null;
+};
+
+export type GovernanceUpdateCommitteeChairBody = {
+  publicEmail?: string | null;
+};

@@ -82,6 +82,8 @@ interface EmailOptions {
   subject: string;
   htmlContent: string;
   recipientName: string;
+  replyTo?: string;
+  includeUnsubscribeFooter?: boolean;
 }
 
 function getUnsubscribeFooter(memberToken?: string): string {
@@ -98,7 +100,11 @@ function getUnsubscribeFooter(memberToken?: string): string {
   `;
 }
 
-function buildFullHtmlContent(htmlContent: string, memberToken?: string): string {
+function buildFullHtmlContent(
+  htmlContent: string,
+  memberToken?: string,
+  includeUnsubscribeFooter = true
+): string {
   return `
     <!DOCTYPE html>
     <html>
@@ -107,7 +113,7 @@ function buildFullHtmlContent(htmlContent: string, memberToken?: string): string
     </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       ${htmlContent}
-      ${getUnsubscribeFooter(memberToken)}
+      ${includeUnsubscribeFooter ? getUnsubscribeFooter(memberToken) : ''}
     </body>
     </html>
   `;
@@ -126,7 +132,11 @@ function logEmail(options: EmailOptions, fullHtmlContent: string, prefix: string
 
 export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<void> {
   console.log(`[Email Service] sendEmail called for ${options.to}`);
-  const fullHtmlContent = buildFullHtmlContent(options.htmlContent, memberToken);
+  const fullHtmlContent = buildFullHtmlContent(
+    options.htmlContent,
+    memberToken,
+    options.includeUnsubscribeFooter !== false
+  );
 
   // Special case: Never send emails to @example.com addresses (log instead)
   if (options.to.toLowerCase().endsWith('@example.com')) {
@@ -168,6 +178,11 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
         to: [{ address: options.to, displayName: options.recipientName }],
       },
     };
+    if (options.replyTo && options.replyTo.trim().length > 0) {
+      (message as EmailMessage & { replyTo: Array<{ address: string }> }).replyTo = [
+        { address: options.replyTo.trim() },
+      ];
+    }
 
     const poller = await client.beginSend(message);
     await poller.pollUntilDone();

@@ -9,6 +9,7 @@ interface SiteConfig {
   contactEmail: string | null;
   contactPhone: string | null;
   footerMarkdown: string | null;
+  disableSms?: boolean;
 }
 
 interface MenuItemNode {
@@ -20,10 +21,18 @@ interface MenuItemNode {
   children: MenuItemNode[];
 }
 
+interface PublicBootstrapResponse {
+  siteConfig: SiteConfig | null;
+  navbarMenu: MenuItemNode[];
+}
+
 interface PublicLayoutProps {
   children: React.ReactNode;
   /** Optional: show "Back to home" instead of logo+club name in header */
   backToHome?: boolean;
+  initialSiteConfig?: SiteConfig | null;
+  initialMenuItems?: MenuItemNode[];
+  deferPublicBootstrapLoad?: boolean;
 }
 
 const navLinkClass =
@@ -216,15 +225,22 @@ function MobileMenuItem({
   );
 }
 
-export default function PublicLayout({ children, backToHome = false }: PublicLayoutProps) {
+export default function PublicLayout({
+  children,
+  backToHome = false,
+  initialSiteConfig,
+  initialMenuItems,
+  deferPublicBootstrapLoad = false,
+}: PublicLayoutProps) {
   const { member, token, isLoading, logout } = useAuth();
-  const [siteConfig, setSiteConfig] = useState<SiteConfig | null>(cachedSiteConfig);
-  const [menuItems, setMenuItems] = useState<MenuItemNode[]>(cachedMenuItems);
+  const [siteConfig, setSiteConfig] = useState<SiteConfig | null>(initialSiteConfig ?? cachedSiteConfig);
+  const [menuItems, setMenuItems] = useState<MenuItemNode[]>(initialMenuItems ?? cachedMenuItems);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [publicDataReady, setPublicDataReady] = useState<boolean>(
-    Boolean(cachedSiteConfig || cachedMenuItems.length > 0)
+    deferPublicBootstrapLoad
+      || Boolean(initialSiteConfig || (initialMenuItems?.length ?? 0) > 0 || cachedSiteConfig || cachedMenuItems.length > 0)
   );
 
   useEffect(() => {
@@ -239,26 +255,47 @@ export default function PublicLayout({ children, backToHome = false }: PublicLay
   }, [profileMenuOpen]);
 
   useEffect(() => {
-    Promise.all([
-      api.get<SiteConfig>('/public/site-config').then((r) => r.data),
-      api.get<MenuItemNode[]>('/public/menus/navbar').then((r) => r.data),
-    ])
-      .then(([config, menu]) => {
+    if (initialSiteConfig !== undefined) {
+      cachedSiteConfig = initialSiteConfig;
+      setSiteConfig(initialSiteConfig);
+    }
+    if (initialMenuItems !== undefined) {
+      cachedMenuItems = Array.isArray(initialMenuItems) ? initialMenuItems : [];
+      setMenuItems(cachedMenuItems);
+    }
+    if (initialSiteConfig !== undefined || initialMenuItems !== undefined || deferPublicBootstrapLoad) {
+      setPublicDataReady(true);
+    }
+  }, [initialSiteConfig, initialMenuItems, deferPublicBootstrapLoad]);
+
+  useEffect(() => {
+    if (deferPublicBootstrapLoad) return;
+    api.get<PublicBootstrapResponse>('/public/bootstrap')
+      .then((r) => {
+        const config = r.data?.siteConfig ?? null;
+        const menu = Array.isArray(r.data?.navbarMenu) ? r.data.navbarMenu : [];
         cachedSiteConfig = config;
-        cachedMenuItems = Array.isArray(menu) ? menu : [];
+        cachedMenuItems = menu;
         setSiteConfig(config);
-        setMenuItems(cachedMenuItems);
+        setMenuItems(menu);
         setPublicDataReady(true);
       })
       .catch(() => {
         if (!cachedSiteConfig) {
-          cachedSiteConfig = { clubName: null, logoUrl: null, contactEmail: null, contactPhone: null, footerMarkdown: null };
+          cachedSiteConfig = {
+            clubName: null,
+            logoUrl: null,
+            contactEmail: null,
+            contactPhone: null,
+            footerMarkdown: null,
+            disableSms: false,
+          };
         }
         setSiteConfig(cachedSiteConfig);
         setMenuItems(cachedMenuItems);
         setPublicDataReady(true);
       });
-  }, []);
+  }, [deferPublicBootstrapLoad]);
 
   const clubName = siteConfig?.clubName ?? '';
   const initials = (member?.name ?? '?')
@@ -328,7 +365,8 @@ export default function PublicLayout({ children, backToHome = false }: PublicLay
                     <div className="absolute right-0 top-full z-50 mt-2 w-44 rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
                       <Link to="/leagues" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Leagues</Link>
                       <Link to="/my-requests" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Spares</Link>
-                      <Link to="/members" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Directory</Link>
+                      <Link to="/members" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Club membership</Link>
+                      <Link to="/governance" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Club governance</Link>
                       <button type="button" onClick={() => { setProfileMenuOpen(false); logout(); }} className={memberMenuItemClass}>
                         Log out
                       </button>
@@ -377,7 +415,8 @@ export default function PublicLayout({ children, backToHome = false }: PublicLay
                     <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Member</p>
                     <Link to="/leagues" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Leagues</Link>
                     <Link to="/my-requests" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Spares</Link>
-                    <Link to="/members" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Directory</Link>
+                    <Link to="/members" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Club membership</Link>
+                    <Link to="/governance" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Club governance</Link>
                     <button
                       type="button"
                       className="mt-1 block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
@@ -421,6 +460,7 @@ export default function PublicLayout({ children, backToHome = false }: PublicLay
             <h2 className="text-sm font-semibold text-gray-700">Quick links</h2>
             <div className="flex flex-col gap-1 text-sm">
               <Link to="/" className="text-gray-600 hover:text-gray-900 hover:underline">Home</Link>
+              <Link to="/contact" className="text-gray-600 hover:text-gray-900 hover:underline">Contact</Link>
               <Link to="/articles/try-curling" className="text-gray-600 hover:text-gray-900 hover:underline">Learn</Link>
               {token && member ? (
                 <Link to="/leagues" className="text-gray-600 hover:text-gray-900 hover:underline">Leagues</Link>

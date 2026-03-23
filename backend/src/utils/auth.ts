@@ -70,6 +70,11 @@ export function isContentAdmin(member: Member): boolean {
   return isServerAdmin(member);
 }
 
+export function isSponsorAdmin(member: Member): boolean {
+  if (member.is_sponsor_admin === 1) return true;
+  return isServerAdmin(member);
+}
+
 export function isServerAdmin(member: Member): boolean {
   // Check database flag
   if (member.is_server_admin === 1) return true;

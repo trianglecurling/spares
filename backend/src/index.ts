@@ -22,8 +22,11 @@ import { installRoutes } from './routes/install.js';
 import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
 import { publicConfigRoutes } from './routes/publicConfig.js';
 import { publicRoutes } from './routes/public.js';
+import { contactRoutes } from './routes/contact.js';
 import { contentRoutes } from './routes/content.js';
 import { fileRoutes } from './routes/files.js';
+import { sponsorshipRoutes } from './routes/sponsorship.js';
+import { governanceRoutes } from './routes/governance.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 
@@ -226,10 +229,10 @@ fastify.get('/api/health', async () => {
 fastify.register(publicAuthRoutes, { prefix: '/api' });
 // Feedback routes (no auth required; may still accept optional auth header)
 fastify.register(publicFeedbackRoutes, { prefix: '/api' });
-// Public config flags (no auth required)
-fastify.register(publicConfigRoutes, { prefix: '/api' });
 // Public site content (no auth required)
 fastify.register(publicRoutes, { prefix: '/api' });
+// Public contact form workflow (no auth required)
+fastify.register(contactRoutes, { prefix: '/api' });
 
 // Protected routes
 fastify.register(
@@ -245,10 +248,13 @@ fastify.register(
     await instance.register(schedulingRoutes, { prefix: '/api' });
     await instance.register(availabilityRoutes, { prefix: '/api' });
     await instance.register(spareRoutes, { prefix: '/api' });
+    await instance.register(publicConfigRoutes, { prefix: '/api' });
     await instance.register(configRoutes, { prefix: '/api' });
     await instance.register(calendarRoutes, { prefix: '/api' });
     await instance.register(contentRoutes, { prefix: '/api' });
     await instance.register(fileRoutes, { prefix: '/api' });
+    await instance.register(sponsorshipRoutes, { prefix: '/api' });
+    await instance.register(governanceRoutes, { prefix: '/api' });
     await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
   }
 );

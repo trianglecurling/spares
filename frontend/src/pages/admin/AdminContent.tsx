@@ -139,6 +139,7 @@ export default function AdminContent() {
   const featuredDragRef = useRef<number | null>(null);
   const featuredDropTargetRef = useRef<{ targetId: number; insertBefore: boolean } | null>(null);
   const [featuredDragOver, setFeaturedDragOver] = useState<{ targetId: number; insertBefore: boolean } | null>(null);
+  const loadDataRequestIdRef = useRef(0);
 
   // Files
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([]);
@@ -185,6 +186,8 @@ export default function AdminContent() {
   const uploadedPublicImages = showcaseSelectableFiles.filter((file) => file.visibility === 'public' && file.mimeType.startsWith('image/'));
 
   const loadData = useCallback(async () => {
+    const requestId = loadDataRequestIdRef.current + 1;
+    loadDataRequestIdRef.current = requestId;
     setLoading(true);
     try {
       const articleParams: Record<string, string | number> = {
@@ -214,6 +217,7 @@ export default function AdminContent() {
         api.get<FilesListResponse>('/content/files', { params: filesParams }),
         api.get<FilesListResponse>('/content/files', { params: { page: 1, pageSize: 1000, visibility: 'public', type: 'image' } }),
       ]);
+      if (requestId !== loadDataRequestIdRef.current) return;
       setSiteConfig(configRes.data);
       setArticles(articlesRes.data.items);
       setFeaturedHomeArticles(featuredHomeRes.data);
@@ -229,9 +233,12 @@ export default function AdminContent() {
       setFilePageSize(filesRes.data.pageSize);
       setShowcaseSelectableFiles(showcaseFilesRes.data.items);
     } catch {
+      if (requestId !== loadDataRequestIdRef.current) return;
       showAlert('Failed to load content', 'error');
     } finally {
-      setLoading(false);
+      if (requestId === loadDataRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [
     articlePage,
@@ -255,11 +262,11 @@ export default function AdminContent() {
   }, [loadData]);
 
   useEffect(() => {
-    setArticlePage(1);
+    setArticlePage((prev) => (prev === 1 ? prev : 1));
   }, [articleSearch, articlePageSize]);
 
   useEffect(() => {
-    setFilePage(1);
+    setFilePage((prev) => (prev === 1 ? prev : 1));
   }, [fileSearch, fileOrphanFilter, fileVisibilityFilter, fileTypeFilter, filePageSize]);
 
   useEffect(() => {
@@ -1101,6 +1108,16 @@ export default function AdminContent() {
     setArticleSortOrder(column === 'title' || column === 'slug' ? 'asc' : 'desc');
   };
   const cropOutputDimensions = getCropOutputDimensions();
+  const fileTotalPages = Math.max(1, Math.ceil(fileTotal / filePageSize));
+  const fileRangeStart = fileTotal === 0 ? 0 : (filePage - 1) * filePageSize + 1;
+  const fileRangeEnd = fileTotal === 0 ? 0 : Math.min(fileTotal, fileRangeStart + Math.max(0, files.length - 1));
+  const filePageWindow = 2;
+  const filePageNumbers = Array.from(
+    {
+      length: Math.max(0, Math.min(fileTotalPages, filePage + filePageWindow) - Math.max(1, filePage - filePageWindow) + 1),
+    },
+    (_, index) => Math.max(1, filePage - filePageWindow) + index
+  );
 
   return (
     <Layout>
@@ -2127,9 +2144,9 @@ export default function AdminContent() {
 
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">
-                    Showing {files.length} of {fileTotal}
+                    Showing {fileRangeStart}–{fileRangeEnd} of {fileTotal}
                   </p>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <Button
                       type="button"
                       variant="secondary"
@@ -2138,11 +2155,59 @@ export default function AdminContent() {
                     >
                       Previous
                     </Button>
+                    {filePageNumbers[0] > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setFilePage(1)}
+                          className={`px-3 py-1.5 rounded border text-sm ${
+                            filePage === 1
+                              ? 'border-primary-teal bg-primary-teal text-white'
+                              : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          1
+                        </button>
+                        {filePageNumbers[0] > 2 && <span className="text-sm text-gray-500">...</span>}
+                      </>
+                    )}
+                    {filePageNumbers.map((pageNumber) => (
+                      <button
+                        key={pageNumber}
+                        type="button"
+                        onClick={() => setFilePage(pageNumber)}
+                        className={`px-3 py-1.5 rounded border text-sm ${
+                          filePage === pageNumber
+                            ? 'border-primary-teal bg-primary-teal text-white'
+                            : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    ))}
+                    {filePageNumbers[filePageNumbers.length - 1] < fileTotalPages && (
+                      <>
+                        {filePageNumbers[filePageNumbers.length - 1] < fileTotalPages - 1 && (
+                          <span className="text-sm text-gray-500">...</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setFilePage(fileTotalPages)}
+                          className={`px-3 py-1.5 rounded border text-sm ${
+                            filePage === fileTotalPages
+                              ? 'border-primary-teal bg-primary-teal text-white'
+                              : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          {fileTotalPages}
+                        </button>
+                      </>
+                    )}
                     <Button
                       type="button"
                       variant="secondary"
                       onClick={() => setFilePage((p) => p + 1)}
-                      disabled={filePage * filePageSize >= fileTotal}
+                      disabled={filePage >= fileTotalPages}
                     >
                       Next
                     </Button>

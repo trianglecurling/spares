@@ -12,8 +12,7 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
     return String(value);
   }
 
-  // Public, non-sensitive flags that the UI can use to adjust behavior.
-  // Intentionally does not expose secrets or admin-only settings.
+  // Authenticated runtime flags used by member-facing UI.
   fastify.get<{ Reply: PublicConfigResponse }>(
     '/public-config',
     {

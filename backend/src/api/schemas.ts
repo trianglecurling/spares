@@ -995,3 +995,119 @@ export const spareNotificationStatusResponseSchema = {
     'notificationPaused',
   ],
 } as const;
+
+export const governanceOfficerPositionSchema = {
+  type: 'string',
+  enum: ['president', 'vice_president', 'treasurer', 'secretary'],
+} as const;
+
+export const governanceSettingsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    fiscalYearStartMmdd: { type: 'string' },
+    boardTurnoverMmdd: { type: 'string' },
+  },
+  required: ['fiscalYearStartMmdd', 'boardTurnoverMmdd'],
+} as const;
+
+export const governanceCommitteeChairSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    memberId: { type: 'number' },
+    memberName: { type: 'string' },
+    memberEmail: { type: ['string', 'null'] },
+    publicEmail: { type: ['string', 'null'] },
+    effectivePublicEmail: { type: ['string', 'null'] },
+  },
+  required: ['id', 'memberId', 'memberName', 'memberEmail', 'publicEmail', 'effectivePublicEmail'],
+} as const;
+
+export const governanceCommitteeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+    boardLiaisonBoardMemberId: { type: ['number', 'null'] },
+    contactInfo: { type: ['string', 'null'] },
+    responsibilities: { type: ['string', 'null'] },
+    chairs: {
+      type: 'array',
+      items: governanceCommitteeChairSchema,
+    },
+  },
+  required: ['id', 'name', 'boardLiaisonBoardMemberId', 'contactInfo', 'responsibilities', 'chairs'],
+} as const;
+
+export const governanceBoardMemberSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    memberId: { type: 'number' },
+    memberName: { type: 'string' },
+    memberEmail: { type: ['string', 'null'] },
+    publicEmail: { type: ['string', 'null'] },
+    effectivePublicEmail: { type: ['string', 'null'] },
+    firstFiscalYear: { type: 'number' },
+    lastFiscalYear: { type: 'number' },
+    manualInactive: { type: 'boolean' },
+    derivedActive: { type: 'boolean' },
+    isActive: { type: 'boolean' },
+    committeeIds: {
+      type: 'array',
+      items: { type: 'number' },
+    },
+  },
+  required: [
+    'id',
+    'memberId',
+    'memberName',
+    'memberEmail',
+    'publicEmail',
+    'effectivePublicEmail',
+    'firstFiscalYear',
+    'lastFiscalYear',
+    'manualInactive',
+    'derivedActive',
+    'isActive',
+    'committeeIds',
+  ],
+} as const;
+
+export const governanceOfficerSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    position: governanceOfficerPositionSchema,
+    boardMemberId: { type: 'number' },
+  },
+  required: ['position', 'boardMemberId'],
+} as const;
+
+export const governanceSummaryResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    today: { type: 'string' },
+    currentFiscalYear: { type: 'number' },
+    currentBoardYear: { type: 'number' },
+    settings: governanceSettingsSchema,
+    boardMembers: {
+      type: 'array',
+      items: governanceBoardMemberSchema,
+    },
+    officers: {
+      type: 'array',
+      items: governanceOfficerSchema,
+    },
+    committees: {
+      type: 'array',
+      items: governanceCommitteeSchema,
+    },
+  },
+  required: ['today', 'currentFiscalYear', 'currentBoardYear', 'settings', 'boardMembers', 'officers', 'committees'],
+} as const;

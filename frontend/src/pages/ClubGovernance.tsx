@@ -1,0 +1,235 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import Layout from '../components/Layout';
+import api from '../utils/api';
+import { useAuth } from '../contexts/AuthContext';
+import { deserializeCommitteeContactInfo } from '../utils/governanceContactInfo';
+import {
+  GovernanceBoardMember,
+  GovernanceCommittee,
+  GovernanceOfficerPosition,
+  GovernanceSummaryResponse,
+  OFFICER_LABELS,
+} from '../types/governance';
+
+const OFFICER_EMAILS: Record<GovernanceOfficerPosition, string> = {
+  president: 'president@trianglecurling.com',
+  vice_president: 'vp@trianglecurling.com',
+  treasurer: 'treasurer@trianglecurling.com',
+  secretary: 'secretary@trianglecurling.com',
+};
+
+function formatCommitteeContactDisplay(contactInfo: string | null): string {
+  const parsed = deserializeCommitteeContactInfo(contactInfo);
+  const parts: string[] = [];
+  if (parsed.emails.length > 0) parts.push(`Emails: ${parsed.emails.join(', ')}`);
+  if (parsed.slackChannels.length > 0) parts.push(`Slack: ${parsed.slackChannels.join(', ')}`);
+  if (parsed.note) parts.push(parsed.note);
+  return parts.join(' | ') || 'None';
+}
+
+export default function ClubGovernance() {
+  const { member } = useAuth();
+  const [data, setData] = useState<GovernanceSummaryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<GovernanceSummaryResponse>('/governance')
+      .then((response) => {
+        if (!cancelled) {
+          setData(response.data);
+          setLoading(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const message =
+          typeof err === 'object' && err !== null && 'response' in err
+            ? String((err as { response?: { data?: { error?: string } } }).response?.data?.error ?? 'Unable to load club governance.')
+            : 'Unable to load club governance.';
+        setError(message);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const boardMembersById = useMemo(() => {
+    const map = new Map<number, GovernanceBoardMember>();
+    for (const boardMember of data?.boardMembers ?? []) {
+      map.set(boardMember.id, boardMember);
+    }
+    return map;
+  }, [data?.boardMembers]);
+
+  const activeBoardMembers = useMemo(() => {
+    const active = (data?.boardMembers ?? []).filter((bm) => bm.isActive);
+    active.sort((a, b) => {
+      if (a.lastFiscalYear !== b.lastFiscalYear) return a.lastFiscalYear - b.lastFiscalYear;
+      return a.memberName.localeCompare(b.memberName);
+    });
+    return active;
+  }, [data?.boardMembers]);
+
+  const committeesById = useMemo(() => {
+    const map = new Map<number, GovernanceCommittee>();
+    for (const committee of data?.committees ?? []) {
+      map.set(committee.id, committee);
+    }
+    return map;
+  }, [data?.committees]);
+
+  return (
+    <Layout>
+      <div className="space-y-8">
+        <header className="space-y-3">
+          <h1 className="text-3xl font-semibold text-gray-900 dark:text-gray-100">Club governance</h1>
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            Current board, officers, and committees.
+          </p>
+          {(member?.isAdmin || member?.isServerAdmin) && (
+            <p>
+              <Link
+                to="/admin/governance"
+                className="inline-flex rounded-md bg-primary-teal text-white px-3 py-1.5 text-sm font-medium hover:bg-primary-teal/90"
+              >
+                Manage governance
+              </Link>
+            </p>
+          )}
+        </header>
+
+        {loading && <p className="text-sm text-gray-600 dark:text-gray-400">Loading governance data...</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+        {!loading && !error && data && (
+          <>
+            <section className="space-y-3">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Officers</h2>
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-300">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium">Position</th>
+                      <th className="text-left px-4 py-3 font-medium">Board member</th>
+                      <th className="text-left px-4 py-3 font-medium">Email</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {data.officers.length === 0 && (
+                      <tr>
+                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400" colSpan={3}>
+                          No officers are assigned.
+                        </td>
+                      </tr>
+                    )}
+                    {data.officers.map((officer) => (
+                      <tr key={officer.position}>
+                        <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{OFFICER_LABELS[officer.position]}</td>
+                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                          {boardMembersById.get(officer.boardMemberId)?.memberName ?? 'Unknown board member'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                          <a
+                            href={`mailto:${OFFICER_EMAILS[officer.position]}`}
+                            className="text-primary-teal hover:underline"
+                          >
+                            {OFFICER_EMAILS[officer.position]}
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Board members</h2>
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-300">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium">Name</th>
+                      <th className="text-left px-4 py-3 font-medium">Public email</th>
+                      <th className="text-left px-4 py-3 font-medium">Term</th>
+                      <th className="text-left px-4 py-3 font-medium">Liaison to</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {activeBoardMembers.length === 0 && (
+                      <tr>
+                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400" colSpan={4}>
+                          No active board members.
+                        </td>
+                      </tr>
+                    )}
+                    {activeBoardMembers.map((boardMember) => (
+                      <tr key={boardMember.id}>
+                        <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{boardMember.memberName}</td>
+                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{boardMember.effectivePublicEmail ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                          {boardMember.firstFiscalYear}–{boardMember.lastFiscalYear}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                          {boardMember.committeeIds.length === 0
+                            ? '—'
+                            : boardMember.committeeIds
+                                .map((committeeId) => committeesById.get(committeeId)?.name ?? `Committee #${committeeId}`)
+                                .join(', ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Committees</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {data.committees.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No committees configured.</p>
+                )}
+                {data.committees.map((committee) => (
+                  <article
+                    key={committee.id}
+                    className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-2"
+                  >
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">{committee.name}</h3>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Board liaison:</span>{' '}
+                      {committee.boardLiaisonBoardMemberId
+                        ? (boardMembersById.get(committee.boardLiaisonBoardMemberId)?.memberName ?? 'Unknown board member')
+                        : 'Not assigned'}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Chairs:</span>{' '}
+                      {committee.chairs.length > 0
+                        ? committee.chairs.map((chair) => chair.memberName).join(', ')
+                        : 'None'}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Contact info:</span>{' '}
+                      {formatCommitteeContactDisplay(committee.contactInfo)}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                      <span className="font-medium">Responsibilities:</span>{' '}
+                      {committee.responsibilities || 'Not specified'}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+    </Layout>
+  );
+}

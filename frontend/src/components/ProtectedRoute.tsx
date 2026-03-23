@@ -8,6 +8,7 @@ interface ProtectedRouteProps {
   leagueManagerOnly?: boolean;
   leagueManagerGlobalOnly?: boolean;
   contentAdminOnly?: boolean;
+  sponsorAdminOnly?: boolean;
   unauthenticatedRedirectTo?: string;
 }
 
@@ -18,6 +19,7 @@ export function ProtectedRoute({
   leagueManagerOnly = false,
   leagueManagerGlobalOnly = false,
   contentAdminOnly = false,
+  sponsorAdminOnly = false,
   unauthenticatedRedirectTo = '/login',
 }: ProtectedRouteProps) {
   const { member, token, isLoading } = useAuth();
@@ -39,7 +41,7 @@ export function ProtectedRoute({
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (adminOnly && !member.isAdmin) {
+  if (adminOnly && !(member.isAdmin || member.isServerAdmin)) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -59,6 +61,10 @@ export function ProtectedRoute({
   }
 
   if (contentAdminOnly && !(member.isContentAdmin ?? member.isServerAdmin)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (sponsorAdminOnly && !(member.isSponsorAdmin ?? member.isServerAdmin)) {
     return <Navigate to="/dashboard" replace />;
   }
 

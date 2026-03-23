@@ -11,6 +11,7 @@ export interface Member {
   is_server_admin: number;
   is_calendar_admin?: number;
   is_content_admin?: number;
+  is_sponsor_admin?: number;
   opted_in_sms: number;
   email_subscribed: number;
   first_login_completed: number;
@@ -211,6 +212,7 @@ export interface AuthenticatedMember {
   isServerAdmin: boolean;
   isCalendarAdmin: boolean;
   isContentAdmin: boolean;
+  isSponsorAdmin: boolean;
   leagueManagerLeagueIds: number[];
   isLeagueAdministrator: boolean;
   isLeagueAdministratorGlobal: boolean;
@@ -232,6 +234,8 @@ export interface MemberSummary {
   isAdmin: boolean;
   isServerAdmin?: boolean;
   isCalendarAdmin?: boolean;
+  isContentAdmin?: boolean;
+  isSponsorAdmin?: boolean;
   isLeagueAdministratorGlobal?: boolean;
   isInServerAdminsList?: boolean;
   emailSubscribed: boolean;
@@ -240,4 +244,34 @@ export interface MemberSummary {
   emailVisible: boolean;
   phoneVisible: boolean;
   firstLoginCompleted: boolean;
+}
+
+export interface SponsorshipLevel {
+  id: number;
+  name: string;
+  amount: number;
+  sort_order: number;
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
+export interface Sponsor {
+  id: number;
+  name: string;
+  website_url: string;
+  logo_file_id: number | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
+export interface Sponsorship {
+  id: number;
+  sponsor_id: number;
+  sponsorship_level_id: number;
+  start_date: DbDate | null;
+  end_date: DbDate | null;
+  created_at: DbDate;
+  updated_at: DbDate;
 }

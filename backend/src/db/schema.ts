@@ -394,6 +394,409 @@ function ensureArticlesFeaturedSortOrderColumnSync(db: DatabaseAdapter): void {
   }
 }
 
+async function ensureSponsorAdminAndSponsorshipTables(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(db, 'ALTER TABLE members ADD COLUMN IF NOT EXISTS is_sponsor_admin INTEGER DEFAULT 0 NOT NULL');
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS sponsorship_levels (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        amount INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS sponsors (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        website_url TEXT NOT NULL,
+        logo_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+        contact_name TEXT,
+        contact_email TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS sponsorships (
+        id SERIAL PRIMARY KEY,
+        sponsor_id INTEGER NOT NULL REFERENCES sponsors(id) ON DELETE CASCADE,
+        sponsorship_level_id INTEGER NOT NULL REFERENCES sponsorship_levels(id) ON DELETE RESTRICT,
+        start_date DATE,
+        end_date DATE,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorship_levels_sort_order ON sponsorship_levels(sort_order)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsors_name ON sponsors(name)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_sponsor_id ON sponsorships(sponsor_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_sponsorship_level_id ON sponsorships(sponsorship_level_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_dates ON sponsorships(start_date, end_date)');
+    return;
+  }
+
+  const columnsStmt = db.prepare<{ name?: string | null }>('PRAGMA table_info(members)');
+  const columns = await allPrepared<{ name?: string | null }>(columnsStmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('is_sponsor_admin')) {
+    await execSQL(db, 'ALTER TABLE members ADD COLUMN is_sponsor_admin INTEGER DEFAULT 0 NOT NULL');
+  }
+
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS sponsorship_levels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      amount INTEGER NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS sponsors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      website_url TEXT NOT NULL,
+      logo_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+      contact_name TEXT,
+      contact_email TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS sponsorships (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sponsor_id INTEGER NOT NULL REFERENCES sponsors(id) ON DELETE CASCADE,
+      sponsorship_level_id INTEGER NOT NULL REFERENCES sponsorship_levels(id) ON DELETE RESTRICT,
+      start_date TEXT,
+      end_date TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorship_levels_sort_order ON sponsorship_levels(sort_order)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsors_name ON sponsors(name)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_sponsor_id ON sponsorships(sponsor_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_sponsorship_level_id ON sponsorships(sponsorship_level_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_dates ON sponsorships(start_date, end_date)');
+}
+
+function ensureSponsorAdminAndSponsorshipTablesSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare('PRAGMA table_info(members)');
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('is_sponsor_admin')) {
+    execSQLSync(db, 'ALTER TABLE members ADD COLUMN is_sponsor_admin INTEGER DEFAULT 0 NOT NULL');
+  }
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS sponsorship_levels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      amount INTEGER NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS sponsors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      website_url TEXT NOT NULL,
+      logo_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+      contact_name TEXT,
+      contact_email TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS sponsorships (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sponsor_id INTEGER NOT NULL REFERENCES sponsors(id) ON DELETE CASCADE,
+      sponsorship_level_id INTEGER NOT NULL REFERENCES sponsorship_levels(id) ON DELETE RESTRICT,
+      start_date TEXT,
+      end_date TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorship_levels_sort_order ON sponsorship_levels(sort_order)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_sponsors_name ON sponsors(name)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_sponsor_id ON sponsorships(sponsor_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_sponsorship_level_id ON sponsorships(sponsorship_level_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_dates ON sponsorships(start_date, end_date)');
+}
+
+async function ensureGovernanceTables(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS governance_settings (
+        id INTEGER PRIMARY KEY,
+        fiscal_year_start_mmdd TEXT NOT NULL,
+        board_turnover_mmdd TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(
+      db,
+      `INSERT INTO governance_settings (id, fiscal_year_start_mmdd, board_turnover_mmdd)
+       VALUES (1, '09-01', '09-01')
+       ON CONFLICT (id) DO NOTHING`
+    );
+
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS governance_board_members (
+        id SERIAL PRIMARY KEY,
+        member_id INTEGER NOT NULL UNIQUE REFERENCES members(id) ON DELETE CASCADE,
+        public_email TEXT,
+        first_fiscal_year INTEGER NOT NULL,
+        last_fiscal_year INTEGER NOT NULL,
+        manual_inactive INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS governance_committees (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        contact_info TEXT,
+        responsibilities TEXT,
+        board_liaison_board_member_id INTEGER REFERENCES governance_board_members(id) ON DELETE SET NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS governance_committee_chairs (
+        id SERIAL PRIMARY KEY,
+        committee_id INTEGER NOT NULL REFERENCES governance_committees(id) ON DELETE CASCADE,
+        member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        public_email TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(committee_id, member_id)
+      )`
+    );
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS governance_board_member_committees (
+        id SERIAL PRIMARY KEY,
+        board_member_id INTEGER NOT NULL REFERENCES governance_board_members(id) ON DELETE CASCADE,
+        committee_id INTEGER NOT NULL REFERENCES governance_committees(id) ON DELETE CASCADE,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(board_member_id, committee_id)
+      )`
+    );
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS governance_officers (
+        id SERIAL PRIMARY KEY,
+        position TEXT NOT NULL CHECK(position IN ('president', 'vice_president', 'treasurer', 'secretary')),
+        board_member_id INTEGER NOT NULL UNIQUE REFERENCES governance_board_members(id) ON DELETE CASCADE,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(position)
+      )`
+    );
+
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_members_member_id ON governance_board_members(member_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committees_liaison_id ON governance_committees(board_liaison_board_member_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committees_sort_order ON governance_committees(sort_order)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committee_chairs_committee_id ON governance_committee_chairs(committee_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committee_chairs_member_id ON governance_committee_chairs(member_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_member_committees_board_member_id ON governance_board_member_committees(board_member_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_member_committees_committee_id ON governance_board_member_committees(committee_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_officers_board_member_id ON governance_officers(board_member_id)');
+    return;
+  }
+
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_settings (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      fiscal_year_start_mmdd TEXT NOT NULL,
+      board_turnover_mmdd TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(db, `INSERT OR IGNORE INTO governance_settings (id, fiscal_year_start_mmdd, board_turnover_mmdd) VALUES (1, '09-01', '09-01')`);
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_board_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL UNIQUE REFERENCES members(id) ON DELETE CASCADE,
+      public_email TEXT,
+      first_fiscal_year INTEGER NOT NULL,
+      last_fiscal_year INTEGER NOT NULL,
+      manual_inactive INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_committees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      contact_info TEXT,
+      responsibilities TEXT,
+      board_liaison_board_member_id INTEGER REFERENCES governance_board_members(id) ON DELETE SET NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_committee_chairs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      committee_id INTEGER NOT NULL REFERENCES governance_committees(id) ON DELETE CASCADE,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      public_email TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(committee_id, member_id)
+    )`
+  );
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_board_member_committees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      board_member_id INTEGER NOT NULL REFERENCES governance_board_members(id) ON DELETE CASCADE,
+      committee_id INTEGER NOT NULL REFERENCES governance_committees(id) ON DELETE CASCADE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(board_member_id, committee_id)
+    )`
+  );
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_officers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      position TEXT NOT NULL CHECK(position IN ('president', 'vice_president', 'treasurer', 'secretary')),
+      board_member_id INTEGER NOT NULL UNIQUE REFERENCES governance_board_members(id) ON DELETE CASCADE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(position)
+    )`
+  );
+
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_members_member_id ON governance_board_members(member_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committees_liaison_id ON governance_committees(board_liaison_board_member_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committees_sort_order ON governance_committees(sort_order)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committee_chairs_committee_id ON governance_committee_chairs(committee_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committee_chairs_member_id ON governance_committee_chairs(member_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_member_committees_board_member_id ON governance_board_member_committees(board_member_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_member_committees_committee_id ON governance_board_member_committees(committee_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_governance_officers_board_member_id ON governance_officers(board_member_id)');
+}
+
+function ensureGovernanceTablesSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_settings (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      fiscal_year_start_mmdd TEXT NOT NULL,
+      board_turnover_mmdd TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(db, `INSERT OR IGNORE INTO governance_settings (id, fiscal_year_start_mmdd, board_turnover_mmdd) VALUES (1, '09-01', '09-01')`);
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_board_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL UNIQUE REFERENCES members(id) ON DELETE CASCADE,
+      public_email TEXT,
+      first_fiscal_year INTEGER NOT NULL,
+      last_fiscal_year INTEGER NOT NULL,
+      manual_inactive INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_committees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      contact_info TEXT,
+      responsibilities TEXT,
+      board_liaison_board_member_id INTEGER REFERENCES governance_board_members(id) ON DELETE SET NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_committee_chairs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      committee_id INTEGER NOT NULL REFERENCES governance_committees(id) ON DELETE CASCADE,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      public_email TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(committee_id, member_id)
+    )`
+  );
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_board_member_committees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      board_member_id INTEGER NOT NULL REFERENCES governance_board_members(id) ON DELETE CASCADE,
+      committee_id INTEGER NOT NULL REFERENCES governance_committees(id) ON DELETE CASCADE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(board_member_id, committee_id)
+    )`
+  );
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS governance_officers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      position TEXT NOT NULL CHECK(position IN ('president', 'vice_president', 'treasurer', 'secretary')),
+      board_member_id INTEGER NOT NULL UNIQUE REFERENCES governance_board_members(id) ON DELETE CASCADE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(position)
+    )`
+  );
+
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_members_member_id ON governance_board_members(member_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committees_liaison_id ON governance_committees(board_liaison_board_member_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committees_sort_order ON governance_committees(sort_order)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committee_chairs_committee_id ON governance_committee_chairs(committee_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_committee_chairs_member_id ON governance_committee_chairs(member_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_member_committees_board_member_id ON governance_board_member_committees(board_member_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_board_member_committees_committee_id ON governance_board_member_committees(committee_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_officers_board_member_id ON governance_officers(board_member_id)');
+}
+
 export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await execSQL(db, `
     -- Members table
@@ -1315,6 +1718,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureArticleVersionsRevisionNoteColumn(db);
   await ensureArticleVersionsSmallEditColumn(db);
   await ensureArticlesFeaturedSortOrderColumn(db);
+  await ensureSponsorAdminAndSponsorshipTables(db);
+  await ensureGovernanceTables(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -2075,6 +2480,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureArticleVersionsRevisionNoteColumnSync(db);
   ensureArticleVersionsSmallEditColumnSync(db);
   ensureArticlesFeaturedSortOrderColumnSync(db);
+  ensureSponsorAdminAndSponsorshipTablesSync(db);
+  ensureGovernanceTablesSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {
