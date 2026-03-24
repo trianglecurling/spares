@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   HiOutlineUserPlus,
@@ -14,6 +14,7 @@ import {
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { get, post } from '../api/client';
+import api from '../utils/api';
 import { formatApiError } from '../utils/api';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
@@ -74,6 +75,35 @@ interface UpcomingGame {
   opponentTeamId: number | null;
 }
 
+interface MyIceBooking {
+  id: number;
+  sheetId: number;
+  sheetName: string;
+  start: string;
+  end: string;
+  purpose: string;
+  purposeOther?: string;
+  guestNames?: string;
+  createdAt: string;
+}
+
+const icePurposeLabel = (purpose: string, other?: string, guestNames?: string) => {
+  const map: Record<string, string> = {
+    practice: 'Practice',
+    makeup_game: 'Make-up game',
+    guests: 'Bringing guests',
+    guests_new: 'Bringing guests: new curlers',
+    guests_experienced: 'Bringing guests: experienced',
+    other: 'Other',
+  };
+  const base = map[purpose] ?? purpose;
+  if (purpose === 'other' && other) return `${base}: ${other}`;
+  if ((purpose === 'guests_new' || purpose === 'guests_experienced') && guestNames) {
+    return `${base} (${guestNames})`;
+  }
+  return base;
+};
+
 const roleLabels: Record<string, string> = {
   lead: 'Lead',
   second: 'Second',
@@ -95,6 +125,7 @@ export default function Dashboard() {
   const [ccRequests, setCcRequests] = useState<SpareRequest[]>([]);
   const [myRequests, setMyRequests] = useState<MySpareRequest[]>([]);
   const [upcomingGames, setUpcomingGames] = useState<UpcomingGame[]>([]);
+  const [iceBookings, setIceBookings] = useState<MyIceBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilled, setShowFilled] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SpareRequest | null>(null);
@@ -304,7 +335,12 @@ export default function Dashboard() {
 
   const loadAllData = async () => {
     try {
-      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes, upcomingGamesRes] =
+      const icePromise =
+        member?.socialMember === true
+          ? Promise.resolve([] as MyIceBooking[])
+          : api.get<MyIceBooking[]>('/ice-bookings').then((r) => r.data ?? []);
+
+      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes, upcomingGamesRes, iceRes] =
         await Promise.all([
           get('/spares'),
           get('/spares/my-sparing'),
@@ -312,6 +348,7 @@ export default function Dashboard() {
           get('/spares/cc'),
           get('/spares/my-requests'),
           get('/members/me/upcoming-games').catch(() => []),
+          icePromise.catch(() => [] as MyIceBooking[]),
         ]);
       setOpenRequests(openRes);
       setMySparing(mySparingRes);
@@ -320,10 +357,29 @@ export default function Dashboard() {
       // Filter out cancelled requests - only show open and filled
       setMyRequests(myRequestsRes.filter((r: MySpareRequest) => r.status !== 'cancelled'));
       setUpcomingGames(upcomingGamesRes || []);
+      setIceBookings(iceRes);
     } catch (error) {
       console.error('Failed to load spare requests:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteIceBooking = async (id: number) => {
+    const go = await confirm({
+      title: 'Cancel this ice booking?',
+      message: 'The sheet will be freed for that time. You can book another slot if you need to.',
+      confirmText: 'Cancel booking',
+      cancelText: 'Keep booking',
+      variant: 'danger',
+    });
+    if (!go) return;
+    try {
+      await api.delete(`/ice-bookings/${id}`);
+      showAlert('Your ice booking was cancelled.', 'success');
+      await loadAllData();
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Could not cancel booking'), 'error');
     }
   };
 
@@ -547,6 +603,11 @@ export default function Dashboard() {
     return date.toLocaleDateString('en-US', { weekday: 'long' });
   };
 
+  const upcomingIceBookings = useMemo(
+    () => iceBookings.filter((b) => new Date(b.end).getTime() > Date.now()),
+    [iceBookings]
+  );
+
   const filledBadge = (
     <span className="px-2 py-1 rounded text-sm font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">
       Filled
@@ -726,7 +787,7 @@ export default function Dashboard() {
           })()}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {!member?.spareOnly && (
+          {!member?.spareOnly && !member?.socialMember && (
             <Link
               to="/request-spare"
               className="border-2 border-primary-orange text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-primary-orange hover:text-white dark:hover:bg-primary-orange transition-colors text-center"
@@ -741,18 +802,35 @@ export default function Dashboard() {
             </Link>
           )}
 
-          <Link
-            to="/availability"
-            className="border-2 border-primary-teal text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-primary-teal hover:text-white dark:hover:bg-primary-teal transition-colors text-center"
-          >
-            <div className="flex justify-center mb-2">
-              <HiOutlineCalendar className="w-12 h-12" />
-            </div>
-            <div className="text-xl font-semibold">Set your availability</div>
-            <div className="text-sm mt-1 dark:text-gray-300">
-              Let others know when you can spare
-            </div>
-          </Link>
+          {!member?.socialMember && (
+            <Link
+              to="/availability"
+              className="border-2 border-primary-teal text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-primary-teal hover:text-white dark:hover:bg-primary-teal transition-colors text-center"
+            >
+              <div className="flex justify-center mb-2">
+                <HiOutlineCalendar className="w-12 h-12" />
+              </div>
+              <div className="text-xl font-semibold">Set your availability</div>
+              <div className="text-sm mt-1 dark:text-gray-300">
+                Let others know when you can spare
+              </div>
+            </Link>
+          )}
+
+          {!member?.socialMember && (
+            <Link
+              to="/book-ice"
+              className="border-2 border-[#121033] text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-[#121033] hover:text-white dark:hover:bg-[#121033] transition-colors text-center"
+            >
+              <div className="flex justify-center mb-2">
+                <HiOutlineCalendarDays className="w-12 h-12" />
+              </div>
+              <div className="text-xl font-semibold">Book ice time</div>
+              <div className="text-sm mt-1 dark:text-gray-300">
+                Reserve practice or make-up ice on a sheet
+              </div>
+            </Link>
+          )}
         </div>
 
         {loading ? (
@@ -760,6 +838,58 @@ export default function Dashboard() {
         ) : (
           <div className="space-y-6">
             {/* My Upcoming Games */}
+            {!member?.socialMember && upcomingIceBookings.length > 0 && (
+              <div>
+                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                  My ice bookings{' '}
+                  <Link
+                    to="/book-ice"
+                    className="text-sm font-normal text-primary-teal hover:underline"
+                  >
+                    (book time)
+                  </Link>
+                </h2>
+                <div className="space-y-3">
+                  {upcomingIceBookings.map((b) => (
+                    <div
+                      key={b.id}
+                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex flex-wrap items-center gap-3 justify-between"
+                    >
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-900 dark:text-gray-100">
+                        <span className="font-medium">
+                          {new Date(b.start).toLocaleString(undefined, {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          →{' '}
+                          {new Date(b.end).toLocaleTimeString(undefined, {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        <span className="text-gray-600 dark:text-gray-400">Sheet {b.sheetName}</span>
+                        <span className="text-gray-600 dark:text-gray-400 text-sm">
+                          {icePurposeLabel(b.purpose, b.purposeOther, b.guestNames)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteIceBooking(b.id)}
+                        className="text-sm text-rose-600 dark:text-rose-400 hover:underline font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {upcomingGames.length > 0 && (
               <div>
                 <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">

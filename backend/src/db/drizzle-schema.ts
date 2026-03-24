@@ -15,6 +15,8 @@ export const membersSqlite = sqliteTable('members', {
   valid_through: text('valid_through'),
   // Spare-only members can participate as spares, but cannot create spare requests.
   spare_only: integer('spare_only').default(0).notNull(),
+  // Social members have membership without ice privileges (no sparing or league roster).
+  social_member: integer('social_member').default(0).notNull(),
   is_admin: integer('is_admin').default(0).notNull(),
   is_server_admin: integer('is_server_admin').default(0).notNull(),
   is_calendar_admin: integer('is_calendar_admin').default(0).notNull(),
@@ -514,6 +516,24 @@ export const calendarEventExceptionsSqlite = sqliteTable('calendar_event_excepti
   uniqueParentDate: uniqueIndex('calendar_event_exceptions_parent_date_unique').on(table.parent_event_id, table.exception_date),
 }));
 
+export const iceBookingsSqlite = sqliteTable('ice_bookings', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  sheet_id: integer('sheet_id').notNull().references(() => sheetsSqlite.id, { onDelete: 'cascade' }),
+  start_dt: text('start_dt').notNull(),
+  end_dt: text('end_dt').notNull(),
+  purpose: text('purpose')
+    .notNull()
+    .$type<'practice' | 'makeup_game' | 'guests_new' | 'guests_experienced' | 'other'>(),
+  purpose_other: text('purpose_other'),
+  guest_names: text('guest_names'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_ice_bookings_member_id').on(table.member_id),
+  sheetIdx: index('idx_ice_bookings_sheet_id').on(table.sheet_id),
+  rangeIdx: index('idx_ice_bookings_sheet_range').on(table.sheet_id, table.start_dt, table.end_dt),
+}));
+
 // Articles (Markdown or HTML content, public pages)
 export const articlesSqlite = sqliteTable('articles', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -755,6 +775,7 @@ export const membersPg = pgTable('members', {
   phone: textPg('phone'),
   valid_through: date('valid_through'),
   spare_only: integerPg('spare_only').default(0).notNull(),
+  social_member: integerPg('social_member').default(0).notNull(),
   is_admin: integerPg('is_admin').default(0).notNull(),
   is_server_admin: integerPg('is_server_admin').default(0).notNull(),
   is_calendar_admin: integerPg('is_calendar_admin').default(0).notNull(),
@@ -1251,6 +1272,24 @@ export const calendarEventExceptionsPg = pgTable('calendar_event_exceptions', {
   uniqueParentDate: uniqueIndexPg('calendar_event_exceptions_parent_date_unique').on(table.parent_event_id, table.exception_date),
 }));
 
+export const iceBookingsPg = pgTable('ice_bookings', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  sheet_id: integerPg('sheet_id').notNull().references(() => sheetsPg.id, { onDelete: 'cascade' }),
+  start_dt: textPg('start_dt').notNull(),
+  end_dt: textPg('end_dt').notNull(),
+  purpose: textPg('purpose')
+    .notNull()
+    .$type<'practice' | 'makeup_game' | 'guests_new' | 'guests_experienced' | 'other'>(),
+  purpose_other: textPg('purpose_other'),
+  guest_names: textPg('guest_names'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_ice_bookings_member_id').on(table.member_id),
+  sheetIdx: indexPg('idx_ice_bookings_sheet_id').on(table.sheet_id),
+  rangeIdx: indexPg('idx_ice_bookings_sheet_range').on(table.sheet_id, table.start_dt, table.end_dt),
+}));
+
 // Articles (Markdown or HTML content, public pages)
 export const articlesPg = pgTable('articles', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -1519,6 +1558,7 @@ export const sqliteSchema = {
   calendarEvents: calendarEventsSqlite,
   calendarEventLocations: calendarEventLocationsSqlite,
   calendarEventExceptions: calendarEventExceptionsSqlite,
+  iceBookings: iceBookingsSqlite,
   articles: articlesSqlite,
   articleVersions: articleVersionsSqlite,
   siteConfig: siteConfigSqlite,
@@ -1570,6 +1610,7 @@ export const pgSchema = {
   calendarEvents: calendarEventsPg,
   calendarEventLocations: calendarEventLocationsPg,
   calendarEventExceptions: calendarEventExceptionsPg,
+  iceBookings: iceBookingsPg,
   articles: articlesPg,
   articleVersions: articleVersionsPg,
   siteConfig: siteConfigPg,

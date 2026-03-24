@@ -53,6 +53,8 @@ export default function RequestSpare() {
   const { confirm } = useConfirm();
   const navigate = useNavigate();
   const isSpareOnly = Boolean(member?.spareOnly);
+  const isSocialMember = Boolean(member?.socialMember);
+  const cannotCreateSpareRequest = isSpareOnly || isSocialMember;
 
   // Form State
   const [requestedForMode, setRequestedForMode] = useState<'me' | 'other'>(
@@ -126,7 +128,7 @@ export default function RequestSpare() {
   const ccInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isSpareOnly) {
+    if (cannotCreateSpareRequest) {
       setLoading(false);
       return;
     }
@@ -144,7 +146,7 @@ export default function RequestSpare() {
       }
     };
     initData();
-  }, [member?.id, isSpareOnly]);
+  }, [member?.id, cannotCreateSpareRequest]);
 
   // Load upcoming games when league changes
   useEffect(() => {
@@ -258,8 +260,13 @@ export default function RequestSpare() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (isSpareOnly) {
-      showAlert('Your account is set to spare-only, so you cannot request a spare.', 'error');
+    if (cannotCreateSpareRequest) {
+      showAlert(
+        isSocialMember
+          ? 'Social memberships do not include spare requests.'
+          : 'Your account is set to spare-only, so you cannot request a spare.',
+        'error'
+      );
       return;
     }
     setSubmitting(true);
@@ -788,6 +795,13 @@ export default function RequestSpare() {
           <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300 rounded-lg p-4">
             Your account is marked as <span className="font-semibold">spare-only</span>, so you
             can’t create spare requests. If this is a mistake, please ask an admin to update your
+            account.
+          </div>
+        )}
+        {isSocialMember && !isSpareOnly && (
+          <div className="mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-lg p-4">
+            Your account is a <span className="font-semibold">social membership</span>, which does
+            not include spare requests. If this is a mistake, ask an administrator to update your
             account.
           </div>
         )}
@@ -1460,7 +1474,7 @@ export default function RequestSpare() {
           )}
 
           <div className="flex space-x-3">
-            <Button type="submit" disabled={submitting || isSpareOnly} className="flex-1">
+            <Button type="submit" disabled={submitting || cannotCreateSpareRequest} className="flex-1">
               {submitting ? 'Submitting...' : 'Submit request'}
             </Button>
             <Button

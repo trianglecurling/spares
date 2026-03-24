@@ -18,6 +18,7 @@ import { availabilityRoutes } from './routes/availability.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
 import { calendarRoutes } from './routes/calendar.js';
+import { iceBookingRoutes } from './routes/iceBookings.js';
 import { installRoutes } from './routes/install.js';
 import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
 import { publicConfigRoutes } from './routes/publicConfig.js';
@@ -251,6 +252,7 @@ fastify.register(
     await instance.register(publicConfigRoutes, { prefix: '/api' });
     await instance.register(configRoutes, { prefix: '/api' });
     await instance.register(calendarRoutes, { prefix: '/api' });
+    await instance.register(iceBookingRoutes, { prefix: '/api' });
     await instance.register(contentRoutes, { prefix: '/api' });
     await instance.register(fileRoutes, { prefix: '/api' });
     await instance.register(sponsorshipRoutes, { prefix: '/api' });

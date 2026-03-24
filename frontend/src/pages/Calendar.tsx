@@ -39,6 +39,7 @@ import {
   HiPencil,
   HiPhone,
   HiPlus,
+  HiStar,
   HiSun,
   HiTrash,
   HiUserGroup,
@@ -101,13 +102,23 @@ export interface CalendarEvent {
   createdBy?: string;
   /** Optional linked article for "More info" */
   article?: ArticleOption;
-  /** Event source: 'direct' = calendar entries, 'leagues' = league schedule (read-only) */
+  /** Event source: 'direct' | 'leagues' | 'ice-booking' (read-only for leagues & ice) */
   source?: string;
 }
 
 /** True if event is from the leagues schedule (read-only) */
 function isLeagueEvent(ev: CalendarEvent): boolean {
   return ev.source === 'leagues' || ev.id.startsWith('league:');
+}
+
+/** True if event is a member ice reservation (read-only on calendar) */
+function isIceBookingEvent(ev: CalendarEvent): boolean {
+  return ev.source === 'ice-booking' || ev.id.startsWith('ice-booking:');
+}
+
+/** Events that cannot be edited or deleted via calendar admin UI */
+function isReadOnlyCalendarEvent(ev: CalendarEvent): boolean {
+  return isLeagueEvent(ev) || isIceBookingEvent(ev);
 }
 
 /** True if event takes place on a sheet (on-ice) */
@@ -339,6 +350,13 @@ const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
     color:
       'bg-gray-200 text-gray-900 border-gray-900/50 dark:bg-gray-500 dark:text-white dark:border-white/25',
     icon: HiOutlineCalendarDays,
+  },
+  {
+    id: 'member-ice',
+    label: 'Member booking',
+    color:
+      'bg-cyan-100 text-cyan-950 border-cyan-900/40 dark:bg-cyan-700 dark:text-white dark:border-white/25',
+    icon: HiStar,
   },
 ];
 
@@ -1297,8 +1315,9 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       source?: string;
     };
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+    const directCalendarPath = publicMode ? '/public/calendar/events' : '/calendar/events';
     Promise.allSettled([
-      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
+      api.get<EventPayload[]>(`${directCalendarPath}?${rangeQuery}`),
       api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
     ])
       .then(([eventsRes, leagueRes]) => {
@@ -1310,13 +1329,14 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       })
       .catch(() => setEvents([]))
       .finally(() => setEventsLoading(false));
-  }, [rangeStart, rangeEnd]);
+  }, [rangeStart, rangeEnd, publicMode]);
 
   const refreshEvents = () => {
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+    const directCalendarPath = publicMode ? '/public/calendar/events' : '/calendar/events';
     type EventPayload = Parameters<typeof apiEventToCalendar>[0];
     Promise.allSettled([
-      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
+      api.get<EventPayload[]>(`${directCalendarPath}?${rangeQuery}`),
       api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
     ])
       .then(([eventsRes, leagueRes]) => {
@@ -1559,10 +1579,13 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       >
         {selectedEvent &&
           (() => {
-            const hasDescription = Boolean(selectedEvent.description?.trim());
+            const descriptionText = selectedEvent.description?.trim() ?? '';
+            const hasDescription = Boolean(descriptionText);
+            const isIceBooking = isIceBookingEvent(selectedEvent);
+            const showDescriptionTab = hasDescription && !isIceBooking;
             return (
               <div className="flex flex-col min-h-[680px] space-y-3">
-                {hasDescription && (
+                {showDescriptionTab && (
                   <div className="flex border-b border-gray-200 dark:border-gray-600 mb-2 shrink-0">
                     <button
                       type="button"
@@ -1589,7 +1612,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                   </div>
                 )}
 
-                {(viewEventActiveTab === 'details' || !hasDescription) && (
+                {(viewEventActiveTab === 'details' || !showDescriptionTab) && (
                   <>
                     <div className="flex flex-1">
                       <div className="space-y-3 flex-1">
@@ -1672,8 +1695,20 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                             </>
                           )}
                         </dl>
+                        {isIceBooking && hasDescription && (
+                          <div className="pt-2 border-t border-gray-200 dark:border-gray-600 mt-3">
+                            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                              Booking details
+                            </div>
+                            <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal [&_a]:underline hover:[&_a]:opacity-80">
+                              <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
+                                {descriptionText}
+                              </ReactMarkdown>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {canEditCalendar && !isLeagueEvent(selectedEvent) && (
+                      {canEditCalendar && !isReadOnlyCalendarEvent(selectedEvent) && (
                         <div className="flex justify-end gap-2 mb-2">
                           <Button
                             variant="secondary"
@@ -1700,10 +1735,10 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                     </div>
                   </>
                 )}
-                {hasDescription && viewEventActiveTab === 'description' && (
+                {showDescriptionTab && viewEventActiveTab === 'description' && (
                   <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal [&_a]:underline hover:[&_a]:opacity-80 min-h-[120px] flex-1">
                     <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
-                      {selectedEvent.description}
+                      {descriptionText}
                     </ReactMarkdown>
                   </div>
                 )}

@@ -869,6 +869,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(schema.leagueRoster.league_id, leagueId),
+            eq(schema.members.social_member, 0),
             memberNotExpiredCondition(schema, today),
             or(
               sql`LOWER(${schema.members.name}) LIKE ${search}`,
@@ -898,6 +899,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .where(
         and(
           rosterIdSet.length > 0 ? notInArray(schema.members.id, rosterIdSet) : sql`1=1`,
+          eq(schema.members.social_member, 0),
           memberNotExpiredCondition(schema, today),
           or(
             sql`LOWER(${schema.members.name}) LIKE ${search}`,
@@ -951,13 +953,17 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
 
     const memberRows = await db
-      .select({ id: schema.members.id })
+      .select({ id: schema.members.id, social_member: schema.members.social_member })
       .from(schema.members)
       .where(eq(schema.members.id, body.memberId))
       .limit(1);
 
     if (memberRows.length === 0) {
       return reply.code(404).send({ error: 'Member not found.' });
+    }
+
+    if ((memberRows[0].social_member ?? 0) === 1) {
+      return reply.code(400).send({ error: 'Social members cannot be added to a league roster.' });
     }
 
     if (await isMemberExpired(db, schema, body.memberId)) {
@@ -1012,6 +1018,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .where(
         and(
           memberNotExpiredCondition(schema, today),
+          eq(schema.members.social_member, 0),
           inArray(lowerName, uniqueNormalized)
         )
       )
@@ -1077,6 +1084,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .where(
           and(
             memberNotExpiredCondition(schema, today),
+            eq(schema.members.social_member, 0),
             or(
               sql`LOWER(${schema.members.name}) LIKE ${search}`,
               sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`

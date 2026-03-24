@@ -915,3 +915,76 @@ export async function sendByeRequestsConfirmationEmail(
   });
 }
 
+function escapeHtmlEmail(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+const ICE_PURPOSE_LABELS: Record<string, string> = {
+  practice: 'Practice',
+  makeup_game: 'Make-up game',
+  guests: 'Bringing guests',
+  guests_new: 'Bringing guests: new curlers',
+  guests_experienced: 'Bringing guests: experienced',
+  other: 'Other',
+};
+
+export async function sendIceBookingConfirmationEmail(
+  to: string,
+  recipientName: string,
+  details: {
+    sheetName: string;
+    startIso: string;
+    endIso: string;
+    purpose: string;
+    purposeOther?: string | null;
+    guestNames?: string | null;
+  },
+  memberToken?: string
+): Promise<void> {
+  const start = new Date(details.startIso);
+  const end = new Date(details.endIso);
+  const whenStr = `${start.toLocaleString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })} – ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  const purposeLabel = ICE_PURPOSE_LABELS[details.purpose] ?? details.purpose;
+  const otherLine =
+    details.purpose === 'other' && details.purposeOther
+      ? `<p><strong>Notes:</strong> ${escapeHtmlEmail(details.purposeOther)}</p>`
+      : '';
+  const guestNamesLine =
+    (details.purpose === 'guests_new' || details.purpose === 'guests_experienced') && details.guestNames
+      ? `<p><strong>Guest names:</strong> ${escapeHtmlEmail(details.guestNames)}</p>`
+      : '';
+
+  const htmlContent = `
+    <h2>Ice time booked</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>Your ice booking is confirmed.</p>
+    <p><strong>When:</strong> ${escapeHtmlEmail(whenStr)}</p>
+    <p><strong>Sheet:</strong> ${escapeHtmlEmail(details.sheetName)}</p>
+    <p><strong>Purpose:</strong> ${escapeHtmlEmail(purposeLabel)}</p>
+    ${otherLine}
+    ${guestNamesLine}
+    <p>Please review the facility rules shown in the app after booking. At least one other person must be on premises with you; you may not use the ice alone.</p>
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Ice time confirmed: Sheet ${details.sheetName}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+

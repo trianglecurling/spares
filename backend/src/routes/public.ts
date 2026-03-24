@@ -66,6 +66,8 @@ function stripMarker(content: string): string {
 import rrule from 'rrule';
 const { RRule } = rrule;
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { fetchDirectCalendarEventsForRange } from '../services/calendarExpansion.js';
+import { fetchIceBookingsAsCalendarEvents } from '../services/iceBookingsCalendar.js';
 
 const BONSPIEL_LIMIT = 10;
 
@@ -159,6 +161,37 @@ export async function publicRoutes(fastify: FastifyInstance) {
     const stream = await getFileStorageAdapter().getReadStream(row.thumbnail_storage_key);
     return reply.send(stream);
   });
+
+  // GET /public/calendar/events?start=&end= — same shape as /calendar/events; includes anonymized member ice bookings
+  fastify.get<{ Querystring: { start: string; end: string } }>(
+    '/public/calendar/events',
+    {
+      schema: {
+        tags: ['public'],
+        querystring: {
+          type: 'object',
+          required: ['start', 'end'],
+          properties: {
+            start: { type: 'string', description: 'ISO date or datetime' },
+            end: { type: 'string', description: 'ISO date or datetime' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const q = request.query;
+      const rangeStart = new Date(q.start);
+      const rangeEnd = new Date(q.end);
+      if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime())) {
+        return reply.code(400).send({ error: 'Invalid date range' });
+      }
+      const [direct, ice] = await Promise.all([
+        fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
+        fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, 'public'),
+      ]);
+      return [...direct, ...ice];
+    }
+  );
 
   const loadMenuTree = async (menuType: string): Promise<MenuItemNode[]> => {
     const rows = await db

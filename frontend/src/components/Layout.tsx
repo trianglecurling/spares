@@ -44,10 +44,12 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const [sparesDropdownOpen, setSparesDropdownOpen] = useState(false);
   const [directoryDropdownOpen, setDirectoryDropdownOpen] = useState(false);
   const [adminDropdownOpen, setAdminDropdownOpen] = useState(false);
+  const [calendarDropdownOpen, setCalendarDropdownOpen] = useState(false);
   const [mobileLeaguesExpanded, setMobileLeaguesExpanded] = useState(false);
   const [mobileSparesExpanded, setMobileSparesExpanded] = useState(false);
   const [mobileDirectoryExpanded, setMobileDirectoryExpanded] = useState(false);
   const [mobileAdminExpanded, setMobileAdminExpanded] = useState(false);
+  const [mobileCalendarExpanded, setMobileCalendarExpanded] = useState(false);
   const [leagues, setLeagues] = useState<League[]>([]);
   const [leaguesLoading, setLeaguesLoading] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -58,11 +60,13 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
       : location.pathname === to;
 
   const isLeaguesActive = isNavLinkActive('/leagues', true);
+  const isSocialMember = Boolean(member?.socialMember);
   const isSparesActive =
     isNavLinkActive('/availability') ||
     isNavLinkActive('/my-requests') ||
     location.pathname.startsWith('/request-spare');
   const isDirectoryActive = isNavLinkActive('/members') || isNavLinkActive('/governance');
+  const isCalendarActive = isNavLinkActive('/calendar') || isNavLinkActive('/book-ice');
   const isAdminActive =
     isNavLinkActive('/admin/members') ||
     isNavLinkActive('/admin/sheets') ||
@@ -112,6 +116,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     setMobileSparesExpanded(false);
     setMobileDirectoryExpanded(false);
     setMobileAdminExpanded(false);
+    setMobileCalendarExpanded(false);
   }, [location.pathname]);
 
   // Close mobile menu when clicking outside
@@ -123,22 +128,38 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
         setSparesDropdownOpen(false);
         setDirectoryDropdownOpen(false);
         setAdminDropdownOpen(false);
+        setCalendarDropdownOpen(false);
       }
     };
 
-    if (mobileMenuOpen || leaguesDropdownOpen || sparesDropdownOpen || directoryDropdownOpen || adminDropdownOpen) {
+    if (
+      mobileMenuOpen ||
+      leaguesDropdownOpen ||
+      sparesDropdownOpen ||
+      directoryDropdownOpen ||
+      adminDropdownOpen ||
+      calendarDropdownOpen
+    ) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  }, [mobileMenuOpen, leaguesDropdownOpen, sparesDropdownOpen, directoryDropdownOpen, adminDropdownOpen]);
+  }, [
+    mobileMenuOpen,
+    leaguesDropdownOpen,
+    sparesDropdownOpen,
+    directoryDropdownOpen,
+    adminDropdownOpen,
+    calendarDropdownOpen,
+  ]);
 
   const closeDropdowns = () => {
     setLeaguesDropdownOpen(false);
     setSparesDropdownOpen(false);
     setDirectoryDropdownOpen(false);
     setAdminDropdownOpen(false);
+    setCalendarDropdownOpen(false);
   };
 
   const MobileDropdownSection = ({
@@ -205,6 +226,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                       setLeaguesDropdownOpen(!leaguesDropdownOpen);
                       setSparesDropdownOpen(false);
                       setAdminDropdownOpen(false);
+                      setCalendarDropdownOpen(false);
                     }}
                     className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isLeaguesActive)}`}
                   >
@@ -251,6 +273,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                       setLeaguesDropdownOpen(false);
                       setDirectoryDropdownOpen(false);
                       setAdminDropdownOpen(false);
+                      setCalendarDropdownOpen(false);
                     }}
                     className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isSparesActive)}`}
                   >
@@ -261,27 +284,35 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   </button>
                   {sparesDropdownOpen && (
                     <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
-                      <Link
-                        to="/availability"
-                        onClick={closeDropdowns}
-                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        My availability
-                      </Link>
-                      <Link
-                        to="/my-requests"
-                        onClick={closeDropdowns}
-                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        My requests
-                      </Link>
-                      <Link
-                        to="/request-spare"
-                        onClick={closeDropdowns}
-                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        Request a spare
-                      </Link>
+                      {isSocialMember ? (
+                        <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          Social memberships do not include sparing or spare requests.
+                        </div>
+                      ) : (
+                        <>
+                          <Link
+                            to="/availability"
+                            onClick={closeDropdowns}
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            My availability
+                          </Link>
+                          <Link
+                            to="/my-requests"
+                            onClick={closeDropdowns}
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            My requests
+                          </Link>
+                          <Link
+                            to="/request-spare"
+                            onClick={closeDropdowns}
+                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            Request a spare
+                          </Link>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -294,6 +325,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                       setLeaguesDropdownOpen(false);
                       setSparesDropdownOpen(false);
                       setAdminDropdownOpen(false);
+                      setCalendarDropdownOpen(false);
                     }}
                     className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isDirectoryActive)}`}
                   >
@@ -322,10 +354,45 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   )}
                 </div>
 
-                {/* Calendar */}
-                <Link to="/calendar" className={navLinkClass(isNavLinkActive('/calendar'))}>
-                  Calendar
-                </Link>
+                {/* Calendar dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCalendarDropdownOpen(!calendarDropdownOpen);
+                      setLeaguesDropdownOpen(false);
+                      setSparesDropdownOpen(false);
+                      setDirectoryDropdownOpen(false);
+                      setAdminDropdownOpen(false);
+                    }}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isCalendarActive)}`}
+                  >
+                    Calendar
+                    <HiChevronDown
+                      className={`w-4 h-4 transition-transform ${calendarDropdownOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {calendarDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
+                      <Link
+                        to="/calendar"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Full calendar
+                      </Link>
+                      {!isSocialMember && (
+                        <Link
+                          to="/book-ice"
+                          onClick={closeDropdowns}
+                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          Book ice time
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* Admin dropdown - only when user has admin links */}
                 {hasAdminLinks && (
@@ -336,6 +403,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                         setLeaguesDropdownOpen(false);
                         setSparesDropdownOpen(false);
                         setDirectoryDropdownOpen(false);
+                        setCalendarDropdownOpen(false);
                       }}
                       className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isAdminActive)}`}
                     >
@@ -440,27 +508,35 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   onToggle={() => setMobileSparesExpanded(!mobileSparesExpanded)}
                   active={isSparesActive}
                 >
-                  <Link
-                    to="/availability"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
-                    My availability
-                  </Link>
-                  <Link
-                    to="/my-requests"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
-                    My requests
-                  </Link>
-                  <Link
-                    to="/request-spare"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
-                    Request a spare
-                  </Link>
+                  {isSocialMember ? (
+                    <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                      Social memberships do not include sparing or spare requests.
+                    </div>
+                  ) : (
+                    <>
+                      <Link
+                        to="/availability"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        My availability
+                      </Link>
+                      <Link
+                        to="/my-requests"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        My requests
+                      </Link>
+                      <Link
+                        to="/request-spare"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Request a spare
+                      </Link>
+                    </>
+                  )}
                 </MobileDropdownSection>
 
                 <MobileDropdownSection
@@ -485,13 +561,29 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   </Link>
                 </MobileDropdownSection>
 
-                <Link
-                  to="/calendar"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={navLinkClassMobile(isNavLinkActive('/calendar'))}
+                <MobileDropdownSection
+                  label="Calendar"
+                  expanded={mobileCalendarExpanded}
+                  onToggle={() => setMobileCalendarExpanded(!mobileCalendarExpanded)}
+                  active={isCalendarActive}
                 >
-                  Calendar
-                </Link>
+                  <Link
+                    to="/calendar"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Full calendar
+                  </Link>
+                  {!isSocialMember && (
+                    <Link
+                      to="/book-ice"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Book ice time
+                    </Link>
+                  )}
+                </MobileDropdownSection>
 
                 {hasAdminLinks && (
                   <MobileDropdownSection

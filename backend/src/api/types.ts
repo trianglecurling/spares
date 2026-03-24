@@ -48,6 +48,7 @@ export type MemberProfileResponse = {
   phone: string | null;
   validThrough: string | null;
   spareOnly: boolean;
+  socialMember: boolean;
   isAdmin: boolean;
   isServerAdmin: boolean;
   firstLoginCompleted: boolean;
@@ -86,6 +87,7 @@ export type MemberSummaryResponse = {
   createdAt?: string | null;
   validThrough?: string | null;
   spareOnly?: boolean;
+  socialMember?: boolean;
 };
 
 export type MemberCreateResponse = {
@@ -95,6 +97,7 @@ export type MemberCreateResponse = {
   phone: string | null;
   validThrough: string | null;
   spareOnly: boolean;
+  socialMember: boolean;
   isAdmin: boolean;
   emailSubscribed: boolean;
   optedInSms: boolean;
