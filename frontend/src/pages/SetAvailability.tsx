@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { get, post } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 interface League {
   id: number;
@@ -18,14 +19,20 @@ interface Availability {
 }
 
 export default function SetAvailability() {
+  const { member } = useAuth();
+  const isSocialMember = Boolean(member?.socialMember);
   const [leagues, setLeagues] = useState<League[]>([]);
   const [availability, setAvailability] = useState<Availability[]>([]);
   const [canSkip, setCanSkip] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isSocialMember) {
+      setLoading(false);
+      return;
+    }
     loadData();
-  }, []);
+  }, [isSocialMember]);
 
   const loadData = async () => {
     try {
@@ -105,6 +112,23 @@ export default function SetAvailability() {
     return (
       <Layout>
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+      </Layout>
+    );
+  }
+
+  if (isSocialMember) {
+    return (
+      <Layout>
+        <div className="space-y-6 max-w-2xl">
+          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
+            Sparing availability
+          </h1>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-lg p-4 text-sm">
+            Your account is a <span className="font-semibold">social membership</span>, which does
+            not include ice privileges. You cannot sign up as a spare or change sparing availability.
+            If this is a mistake, contact an administrator.
+          </div>
+        </div>
       </Layout>
     );
   }

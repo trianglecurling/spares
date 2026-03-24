@@ -541,6 +541,178 @@ function ensureSponsorAdminAndSponsorshipTablesSync(db: DatabaseAdapter): void {
   execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_sponsorships_dates ON sponsorships(start_date, end_date)');
 }
 
+const ICE_BOOKING_PURPOSES_SQL = `('practice', 'makeup_game', 'guests_new', 'guests_experienced', 'other')`;
+
+async function ensureIceBookingsTable(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS ice_bookings (
+        id SERIAL PRIMARY KEY,
+        member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        sheet_id INTEGER NOT NULL REFERENCES sheets(id) ON DELETE CASCADE,
+        start_dt TEXT NOT NULL,
+        end_dt TEXT NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ${ICE_BOOKING_PURPOSES_SQL}),
+        purpose_other TEXT,
+        guest_names TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_member_id ON ice_bookings(member_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_id ON ice_bookings(sheet_id)');
+    await execSQL(
+      db,
+      'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_range ON ice_bookings(sheet_id, start_dt, end_dt)'
+    );
+    return;
+  }
+
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS ice_bookings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      sheet_id INTEGER NOT NULL REFERENCES sheets(id) ON DELETE CASCADE,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK(purpose IN ${ICE_BOOKING_PURPOSES_SQL}),
+      purpose_other TEXT,
+      guest_names TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_member_id ON ice_bookings(member_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_id ON ice_bookings(sheet_id)');
+  await execSQL(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_range ON ice_bookings(sheet_id, start_dt, end_dt)'
+  );
+}
+
+function ensureIceBookingsTableSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS ice_bookings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      sheet_id INTEGER NOT NULL REFERENCES sheets(id) ON DELETE CASCADE,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK(purpose IN ${ICE_BOOKING_PURPOSES_SQL}),
+      purpose_other TEXT,
+      guest_names TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_member_id ON ice_bookings(member_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_id ON ice_bookings(sheet_id)');
+  execSQLSync(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_range ON ice_bookings(sheet_id, start_dt, end_dt)'
+  );
+}
+
+/** Migrate legacy purpose `guests` and add guest_names column (SQLite rebuild when needed). */
+async function migrateIceBookingsGuestPurposeExpand(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(db, 'ALTER TABLE ice_bookings ADD COLUMN IF NOT EXISTS guest_names TEXT');
+    await execSQL(db, `UPDATE ice_bookings SET purpose = 'guests_new' WHERE purpose = 'guests'`);
+    await execSQL(db, 'ALTER TABLE ice_bookings DROP CONSTRAINT IF EXISTS ice_bookings_purpose_check');
+    await execSQL(
+      db,
+      `ALTER TABLE ice_bookings ADD CONSTRAINT ice_bookings_purpose_check CHECK (purpose IN ${ICE_BOOKING_PURPOSES_SQL})`
+    );
+    return;
+  }
+
+  const tableStmt = db.prepare<{ name?: string }>(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name='ice_bookings'`
+  );
+  const tableRow = await getPrepared(tableStmt);
+  if (!tableRow?.name) return;
+
+  const colStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(ice_bookings)`);
+  const columns = await allPrepared<{ name?: string | null }>(colStmt);
+  const colNames = new Set(columns.map((c) => String(c.name)));
+  if (colNames.has('guest_names')) return;
+
+  await execSQL(db, 'DROP TABLE IF EXISTS ice_bookings__new');
+  await execSQL(
+    db,
+    `CREATE TABLE ice_bookings__new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      sheet_id INTEGER NOT NULL REFERENCES sheets(id) ON DELETE CASCADE,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK(purpose IN ${ICE_BOOKING_PURPOSES_SQL}),
+      purpose_other TEXT,
+      guest_names TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(
+    db,
+    `INSERT INTO ice_bookings__new (id, member_id, sheet_id, start_dt, end_dt, purpose, purpose_other, guest_names, created_at)
+     SELECT id, member_id, sheet_id, start_dt, end_dt,
+       CASE purpose WHEN 'guests' THEN 'guests_new' ELSE purpose END,
+       purpose_other, NULL, created_at
+     FROM ice_bookings`
+  );
+  await execSQL(db, 'DROP TABLE ice_bookings');
+  await execSQL(db, 'ALTER TABLE ice_bookings__new RENAME TO ice_bookings');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_member_id ON ice_bookings(member_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_id ON ice_bookings(sheet_id)');
+  await execSQL(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_range ON ice_bookings(sheet_id, start_dt, end_dt)'
+  );
+}
+
+function migrateIceBookingsGuestPurposeExpandSync(db: DatabaseAdapter): void {
+  const tableRow = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='ice_bookings'`)
+    .get() as { name?: string } | undefined;
+  if (!tableRow?.name) return;
+
+  const columns = db.prepare(`PRAGMA table_info(ice_bookings)`).all() as { name?: string }[];
+  const colNames = new Set(columns.map((c) => String(c.name)));
+  if (colNames.has('guest_names')) return;
+
+  execSQLSync(db, 'DROP TABLE IF EXISTS ice_bookings__new');
+  execSQLSync(
+    db,
+    `CREATE TABLE ice_bookings__new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      sheet_id INTEGER NOT NULL REFERENCES sheets(id) ON DELETE CASCADE,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK(purpose IN ${ICE_BOOKING_PURPOSES_SQL}),
+      purpose_other TEXT,
+      guest_names TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(
+    db,
+    `INSERT INTO ice_bookings__new (id, member_id, sheet_id, start_dt, end_dt, purpose, purpose_other, guest_names, created_at)
+     SELECT id, member_id, sheet_id, start_dt, end_dt,
+       CASE purpose WHEN 'guests' THEN 'guests_new' ELSE purpose END,
+       purpose_other, NULL, created_at
+     FROM ice_bookings`
+  );
+  execSQLSync(db, 'DROP TABLE ice_bookings');
+  execSQLSync(db, 'ALTER TABLE ice_bookings__new RENAME TO ice_bookings');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_member_id ON ice_bookings(member_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_id ON ice_bookings(sheet_id)');
+  execSQLSync(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_ice_bookings_sheet_range ON ice_bookings(sheet_id, start_dt, end_dt)'
+  );
+}
+
 async function ensureGovernanceTables(db: DatabaseAdapter): Promise<void> {
   if (db.isAsync()) {
     await execSQL(
@@ -807,6 +979,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       phone TEXT,
       valid_through DATE,
       spare_only INTEGER DEFAULT 0,
+      social_member INTEGER DEFAULT 0 NOT NULL,
       is_admin INTEGER DEFAULT 0,
       is_server_admin INTEGER DEFAULT 0,
       opted_in_sms INTEGER DEFAULT 0,
@@ -1398,6 +1571,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE members ADD COLUMN is_server_admin INTEGER DEFAULT 0', table: 'members', column: 'is_server_admin' },
     { sql: 'ALTER TABLE members ADD COLUMN valid_through DATE', table: 'members', column: 'valid_through' },
     { sql: 'ALTER TABLE members ADD COLUMN spare_only INTEGER DEFAULT 0', table: 'members', column: 'spare_only' },
+    { sql: 'ALTER TABLE members ADD COLUMN social_member INTEGER DEFAULT 0 NOT NULL', table: 'members', column: 'social_member' },
     { sql: 'ALTER TABLE server_config ADD COLUMN azure_sender_display_name TEXT', table: 'server_config', column: 'azure_sender_display_name' },
     { sql: 'ALTER TABLE server_config ADD COLUMN dashboard_alert_title TEXT', table: 'server_config', column: 'dashboard_alert_title' },
     { sql: 'ALTER TABLE server_config ADD COLUMN dashboard_alert_body TEXT', table: 'server_config', column: 'dashboard_alert_body' },
@@ -1719,6 +1893,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureArticleVersionsSmallEditColumn(db);
   await ensureArticlesFeaturedSortOrderColumn(db);
   await ensureSponsorAdminAndSponsorshipTables(db);
+  await ensureIceBookingsTable(db);
+  await migrateIceBookingsGuestPurposeExpand(db);
   await ensureGovernanceTables(db);
 }
 
@@ -1738,6 +1914,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       phone TEXT,
       valid_through DATE,
       spare_only INTEGER DEFAULT 0,
+      social_member INTEGER DEFAULT 0 NOT NULL,
       is_admin INTEGER DEFAULT 0,
       is_server_admin INTEGER DEFAULT 0,
       opted_in_sms INTEGER DEFAULT 0,
@@ -2205,6 +2382,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE members ADD COLUMN is_server_admin INTEGER DEFAULT 0',
     'ALTER TABLE members ADD COLUMN valid_through DATE',
     'ALTER TABLE members ADD COLUMN spare_only INTEGER DEFAULT 0',
+    'ALTER TABLE members ADD COLUMN social_member INTEGER DEFAULT 0 NOT NULL',
     'ALTER TABLE server_config ADD COLUMN azure_sender_display_name TEXT',
     'ALTER TABLE server_config ADD COLUMN dashboard_alert_title TEXT',
     'ALTER TABLE server_config ADD COLUMN dashboard_alert_body TEXT',
@@ -2481,6 +2659,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureArticleVersionsSmallEditColumnSync(db);
   ensureArticlesFeaturedSortOrderColumnSync(db);
   ensureSponsorAdminAndSponsorshipTablesSync(db);
+  ensureIceBookingsTableSync(db);
+  migrateIceBookingsGuestPurposeExpandSync(db);
   ensureGovernanceTablesSync(db);
 
   // Migrate existing admins to server admins (sync version)

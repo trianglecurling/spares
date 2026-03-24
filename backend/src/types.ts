@@ -7,6 +7,7 @@ export interface Member {
   phone: string | null;
   valid_through: DbDate | null;
   spare_only: number;
+  social_member: number;
   is_admin: number;
   is_server_admin: number;
   is_calendar_admin?: number;
@@ -208,6 +209,7 @@ export interface AuthenticatedMember {
   email: string | null;
   phone: string | null;
   spareOnly: boolean;
+  socialMember: boolean;
   isAdmin: boolean;
   isServerAdmin: boolean;
   isCalendarAdmin: boolean;
@@ -231,6 +233,7 @@ export interface MemberSummary {
   phone: string | null;
   validThrough?: string | null;
   spareOnly?: boolean;
+  socialMember?: boolean;
   isAdmin: boolean;
   isServerAdmin?: boolean;
   isCalendarAdmin?: boolean;

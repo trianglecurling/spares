@@ -42,6 +42,7 @@ import AdminSponsorship from './pages/admin/AdminSponsorship';
 import Leagues from './pages/leagues/Leagues';
 import LeagueDetail from './pages/leagues/LeagueDetail';
 import Calendar from './pages/Calendar';
+import BookIceTime from './pages/BookIceTime';
 import PublicHomePage from './pages/PublicHomePage';
 import PublicArticle from './pages/PublicArticle';
 import PublicContactPage from './pages/PublicContactPage';
@@ -198,6 +199,14 @@ function App() {
                   element={
                     <ProtectedRoute unauthenticatedRedirectTo="/calendar/public">
                       <Calendar />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/book-ice"
+                  element={
+                    <ProtectedRoute>
+                      <BookIceTime />
                     </ProtectedRoute>
                   }
                 />

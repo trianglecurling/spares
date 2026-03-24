@@ -25,6 +25,7 @@ type MemberUpdatePayload = {
   phoneVisible: boolean;
   validThrough?: string | null;
   spareOnly?: boolean;
+  socialMember?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
   isCalendarAdmin?: boolean;
@@ -39,6 +40,7 @@ type MemberCreatePayload = {
   phone?: string;
   validThrough: string | null;
   spareOnly: boolean;
+  socialMember: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
   isCalendarAdmin?: boolean;
@@ -63,6 +65,7 @@ export default function AdminMembers() {
     phone: '',
     validThrough: '',
     spareOnly: false,
+    socialMember: false,
     isAdmin: false,
     isServerAdmin: false,
     isCalendarAdmin: false,
@@ -79,6 +82,7 @@ export default function AdminMembers() {
   const [bulkText, setBulkText] = useState('');
   const [bulkValidThrough, setBulkValidThrough] = useState<string>('');
   const [bulkSpareOnly, setBulkSpareOnly] = useState(false);
+  const [bulkSocialMember, setBulkSocialMember] = useState(false);
   const [parsedMembers, setParsedMembers] = useState<ParsedMember[]>([]);
   const [bulkStep, setBulkStep] = useState<'input' | 'confirm'>('input');
 
@@ -120,6 +124,7 @@ export default function AdminMembers() {
         ...m,
         validThrough: m.validThrough ?? null,
         spareOnly: Boolean(m.spareOnly),
+        socialMember: Boolean(m.socialMember),
         emailVisible: Boolean(m.emailVisible),
         phoneVisible: Boolean(m.phoneVisible),
         emailSubscribed: Boolean(m.emailSubscribed),
@@ -162,6 +167,7 @@ export default function AdminMembers() {
         phone: member.phone || '',
         validThrough: member.validThrough || '',
         spareOnly: Boolean(member.spareOnly),
+        socialMember: Boolean(member.socialMember),
         isAdmin: member.isInServerAdminsList ? false : member.isAdmin,
         isServerAdmin: isServerAdmin,
         isCalendarAdmin: Boolean((member as { isCalendarAdmin?: boolean }).isCalendarAdmin),
@@ -179,6 +185,7 @@ export default function AdminMembers() {
         phone: '',
         validThrough: '',
         spareOnly: false,
+        socialMember: false,
         isAdmin: false,
         isServerAdmin: false,
         isCalendarAdmin: false,
@@ -201,6 +208,7 @@ export default function AdminMembers() {
       phone: '',
       validThrough: '',
       spareOnly: false,
+      socialMember: false,
       isAdmin: false,
       isServerAdmin: false,
       isCalendarAdmin: false,
@@ -257,6 +265,7 @@ export default function AdminMembers() {
       'phone',
       'role',
       'spareOnly',
+      'socialMember',
       'validThrough',
       'expired',
       'registered',
@@ -283,6 +292,7 @@ export default function AdminMembers() {
         m.phone || '',
         role,
         Boolean(m.spareOnly),
+        Boolean(m.socialMember),
         formatDateIso(m.validThrough),
         expired,
         Boolean(m.firstLoginCompleted),
@@ -335,6 +345,7 @@ export default function AdminMembers() {
         if (editingMember?.id !== currentMember?.id) {
           updateData.validThrough = formData.validThrough ? formData.validThrough : null;
           updateData.spareOnly = Boolean(formData.spareOnly);
+          updateData.socialMember = Boolean(formData.socialMember);
         }
 
         // Only server admins can set roles (and not for themselves)
@@ -367,6 +378,7 @@ export default function AdminMembers() {
           phone: formData.phone || undefined,
           validThrough: formData.validThrough ? formData.validThrough : null,
           spareOnly: Boolean(formData.spareOnly),
+          socialMember: Boolean(formData.socialMember),
         };
 
         // Only server admins can set roles when creating
@@ -465,6 +477,7 @@ export default function AdminMembers() {
     setBulkText('');
     setBulkValidThrough('');
     setBulkSpareOnly(false);
+    setBulkSocialMember(false);
     setParsedMembers([]);
     setBulkStep('input');
     setIsBulkAddModalOpen(true);
@@ -518,18 +531,24 @@ export default function AdminMembers() {
   };
 
   const handleBulkSubmit = async () => {
+    if (bulkSpareOnly && bulkSocialMember) {
+      showAlert('Members cannot be both spare-only and social.', 'warning');
+      return;
+    }
     setSubmitting(true);
     try {
       await post('/members/bulk', {
         members: parsedMembers,
         validThrough: bulkValidThrough ? bulkValidThrough : null,
         spareOnly: bulkSpareOnly,
+        socialMember: bulkSocialMember,
       });
       await loadMembers();
       setIsBulkAddModalOpen(false);
       setBulkText('');
       setBulkValidThrough('');
       setBulkSpareOnly(false);
+      setBulkSocialMember(false);
       setParsedMembers([]);
     } catch (error) {
       console.error('Failed to bulk add members:', error);
@@ -787,6 +806,12 @@ export default function AdminMembers() {
                               SMS enabled
                             </div>
                           )}
+                          {member.spareOnly && (
+                            <div className="text-xs text-amber-700 dark:text-amber-300">Spare-only</div>
+                          )}
+                          {member.socialMember && (
+                            <div className="text-xs text-amber-700 dark:text-amber-300">Social member</div>
+                          )}
                           <div className="text-xs text-gray-400 dark:text-gray-500">
                             {member.emailVisible ? 'Email public' : 'Email hidden'} •{' '}
                             {member.phoneVisible ? 'Phone public' : 'Phone hidden'}
@@ -1011,7 +1036,13 @@ export default function AdminMembers() {
               type="checkbox"
               id="spareOnly"
               checked={formData.spareOnly}
-              onChange={(e) => setFormData({ ...formData, spareOnly: e.target.checked })}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  spareOnly: e.target.checked,
+                  socialMember: e.target.checked ? false : formData.socialMember,
+                })
+              }
               disabled={Boolean(
                 editingMember && currentMember && editingMember.id === currentMember.id
               )}
@@ -1021,6 +1052,34 @@ export default function AdminMembers() {
               <span className="font-medium">Spare-only member</span>
               <div className="text-gray-600 dark:text-gray-400">
                 Can sign up to spare, but cannot create spare requests.
+                {editingMember && currentMember && editingMember.id === currentMember.id
+                  ? ' You cannot change your own status.'
+                  : ''}
+              </div>
+            </label>
+          </div>
+
+          <div className="flex items-start">
+            <input
+              type="checkbox"
+              id="socialMember"
+              checked={formData.socialMember}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  socialMember: e.target.checked,
+                  spareOnly: e.target.checked ? false : formData.spareOnly,
+                })
+              }
+              disabled={Boolean(
+                editingMember && currentMember && editingMember.id === currentMember.id
+              )}
+              className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal disabled:opacity-60"
+            />
+            <label htmlFor="socialMember" className="text-sm text-gray-700 dark:text-gray-300">
+              <span className="font-medium">Social member</span>
+              <div className="text-gray-600 dark:text-gray-400">
+                Member without ice privileges: cannot spare, request spares, or be on a league roster.
                 {editingMember && currentMember && editingMember.id === currentMember.id
                   ? ' You cannot change your own status.'
                   : ''}
@@ -1363,7 +1422,11 @@ export default function AdminMembers() {
                     type="checkbox"
                     id="bulkSpareOnly"
                     checked={bulkSpareOnly}
-                    onChange={(e) => setBulkSpareOnly(e.target.checked)}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      setBulkSpareOnly(v);
+                      if (v) setBulkSocialMember(false);
+                    }}
                     className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                   />
                   <label
@@ -1373,6 +1436,29 @@ export default function AdminMembers() {
                     <span className="font-medium">Mark all imported members as spare-only</span>
                     <div className="text-gray-600 dark:text-gray-400">
                       Spare-only members can sign up to spare, but cannot create spare requests.
+                    </div>
+                  </label>
+                </div>
+
+                <div className="mt-4 flex items-start">
+                  <input
+                    type="checkbox"
+                    id="bulkSocialMember"
+                    checked={bulkSocialMember}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      setBulkSocialMember(v);
+                      if (v) setBulkSpareOnly(false);
+                    }}
+                    className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
+                  />
+                  <label
+                    htmlFor="bulkSocialMember"
+                    className="text-sm text-gray-700 dark:text-gray-300"
+                  >
+                    <span className="font-medium">Mark all imported members as social members</span>
+                    <div className="text-gray-600 dark:text-gray-400">
+                      No ice privileges: cannot spare, request spares, or join league rosters.
                     </div>
                   </label>
                 </div>
@@ -1394,6 +1480,16 @@ export default function AdminMembers() {
                   Valid through for all imported members:{' '}
                   <span className="font-medium dark:text-gray-200">
                     {bulkValidThrough ? formatDateDisplay(bulkValidThrough) : 'No expiry'}
+                  </span>
+                </p>
+                <p className="mb-4 text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">
+                  Membership type for import:{' '}
+                  <span className="font-medium dark:text-gray-200">
+                    {bulkSpareOnly
+                      ? 'Spare-only'
+                      : bulkSocialMember
+                        ? 'Social member'
+                        : 'Regular (full ice privileges)'}
                   </span>
                 </p>
                 <div className="flex-1 overflow-auto min-h-0">

@@ -236,6 +236,7 @@ export interface paths {
                                 email: null | string;
                                 phone: null | string;
                                 spareOnly: boolean;
+                                socialMember: boolean;
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
@@ -308,6 +309,7 @@ export interface paths {
                                 email: null | string;
                                 phone: null | string;
                                 spareOnly: boolean;
+                                socialMember: boolean;
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
@@ -380,6 +382,7 @@ export interface paths {
                                 email: null | string;
                                 phone: null | string;
                                 spareOnly: boolean;
+                                socialMember: boolean;
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
@@ -434,6 +437,7 @@ export interface paths {
                                 email: null | string;
                                 phone: null | string;
                                 spareOnly: boolean;
+                                socialMember: boolean;
                                 isAdmin: boolean;
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
@@ -651,6 +655,7 @@ export interface paths {
                             phone: null | string;
                             validThrough: null | string;
                             spareOnly: boolean;
+                            socialMember: boolean;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
                             firstLoginCompleted: boolean;
@@ -704,6 +709,7 @@ export interface paths {
                             phone: null | string;
                             validThrough: null | string;
                             spareOnly: boolean;
+                            socialMember: boolean;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
                             firstLoginCompleted: boolean;
@@ -823,6 +829,7 @@ export interface paths {
                             createdAt?: null | string;
                             validThrough?: null | string;
                             spareOnly?: boolean;
+                            socialMember?: boolean;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
                             isLeagueAdministratorGlobal: boolean;
@@ -853,6 +860,7 @@ export interface paths {
                         phone?: string;
                         validThrough?: string | null;
                         spareOnly?: boolean;
+                        socialMember?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;
@@ -875,6 +883,7 @@ export interface paths {
                             phone: null | string;
                             validThrough: null | string;
                             spareOnly: boolean;
+                            socialMember: boolean;
                             isAdmin: boolean;
                             emailSubscribed: boolean;
                             optedInSms: boolean;
@@ -1016,6 +1025,7 @@ export interface paths {
                         }[];
                         validThrough?: string | null;
                         spareOnly?: boolean;
+                        socialMember?: boolean;
                     };
                 };
             };
@@ -1094,6 +1104,7 @@ export interface paths {
                         phone?: string;
                         validThrough?: string | null;
                         spareOnly?: boolean;
+                        socialMember?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;

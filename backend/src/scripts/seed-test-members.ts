@@ -13,6 +13,7 @@ async function seedTestMembers(): Promise<void> {
       phone: null,
       valid_through: null,
       spare_only: 0,
+      social_member: 0,
       is_admin: 0,
       is_server_admin: 0,
       opted_in_sms: 0,

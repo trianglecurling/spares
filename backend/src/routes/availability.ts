@@ -84,6 +84,10 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     }
 
     const body = setAvailabilitySchema.parse(request.body);
+    if (body.available && (member.social_member ?? 0) === 1) {
+      return reply.code(403).send({ error: 'Social members cannot sign up as a spare' });
+    }
+
     const { db, schema } = getDrizzleDb();
 
     // Check if record exists
@@ -305,6 +309,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     const conditions = [
       eq(schema.memberAvailability.league_id, leagueIdNum),
       eq(schema.memberAvailability.available, 1),
+      eq(schema.members.social_member, 0),
       sql`${schema.members.id} != ${member.id}`,
     ];
     

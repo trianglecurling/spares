@@ -40,6 +40,7 @@ type SqliteSchema = {
   calendarEvents: typeof sqliteSchema.calendarEventsSqlite;
   calendarEventLocations: typeof sqliteSchema.calendarEventLocationsSqlite;
   calendarEventExceptions: typeof sqliteSchema.calendarEventExceptionsSqlite;
+  iceBookings: typeof sqliteSchema.iceBookingsSqlite;
   articles: typeof sqliteSchema.articlesSqlite;
   articleVersions: typeof sqliteSchema.articleVersionsSqlite;
   siteConfig: typeof sqliteSchema.siteConfigSqlite;
@@ -91,6 +92,7 @@ type PgSchema = {
   calendarEvents: typeof pgSchema.calendarEventsPg;
   calendarEventLocations: typeof pgSchema.calendarEventLocationsPg;
   calendarEventExceptions: typeof pgSchema.calendarEventExceptionsPg;
+  iceBookings: typeof pgSchema.iceBookingsPg;
   articles: typeof pgSchema.articlesPg;
   articleVersions: typeof pgSchema.articleVersionsPg;
   siteConfig: typeof pgSchema.siteConfigPg;
@@ -165,6 +167,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       calendarEvents: sqliteSchema.calendarEventsSqlite,
       calendarEventLocations: sqliteSchema.calendarEventLocationsSqlite,
       calendarEventExceptions: sqliteSchema.calendarEventExceptionsSqlite,
+      iceBookings: sqliteSchema.iceBookingsSqlite,
       articles: sqliteSchema.articlesSqlite,
       articleVersions: sqliteSchema.articleVersionsSqlite,
       siteConfig: sqliteSchema.siteConfigSqlite,
@@ -230,6 +233,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       calendarEvents: pgSchema.calendarEventsPg,
       calendarEventLocations: pgSchema.calendarEventLocationsPg,
       calendarEventExceptions: pgSchema.calendarEventExceptionsPg,
+      iceBookings: pgSchema.iceBookingsPg,
       articles: pgSchema.articlesPg,
       articleVersions: pgSchema.articleVersionsPg,
       siteConfig: pgSchema.siteConfigPg,

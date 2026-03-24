@@ -58,6 +58,7 @@ const createMemberSchema = z.object({
   phone: z.string().optional(),
   validThrough: z.string().nullable().optional(),
   spareOnly: z.boolean().optional(),
+  socialMember: z.boolean().optional(),
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
   isCalendarAdmin: z.boolean().optional(),
@@ -72,6 +73,7 @@ const updateMemberSchema = z.object({
   phone: z.string().optional(),
   validThrough: z.string().nullable().optional(),
   spareOnly: z.boolean().optional(),
+  socialMember: z.boolean().optional(),
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
   isCalendarAdmin: z.boolean().optional(),
@@ -98,6 +100,7 @@ const bulkCreateRequestSchema = z.union([
     members: bulkCreateSchema,
     validThrough: z.string().nullable().optional(),
     spareOnly: z.boolean().optional(),
+    socialMember: z.boolean().optional(),
   }),
 ]);
 
@@ -128,6 +131,7 @@ const createMemberBodySchema = {
     phone: { type: 'string' },
     validThrough: { type: ['string', 'null'] },
     spareOnly: { type: 'boolean' },
+    socialMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
@@ -147,6 +151,7 @@ const updateMemberBodySchema = {
     phone: { type: 'string' },
     validThrough: { type: ['string', 'null'] },
     spareOnly: { type: 'boolean' },
+    socialMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
@@ -199,6 +204,7 @@ const bulkCreateBodySchema = {
         },
         validThrough: { type: ['string', 'null'] },
         spareOnly: { type: 'boolean' },
+        socialMember: { type: 'boolean' },
       },
       required: ['members'],
     },
@@ -219,6 +225,7 @@ interface MemberUpdateData {
   phone?: string | null;
   valid_through?: string | null;
   spare_only?: number;
+  social_member?: number;
   opted_in_sms?: number;
   email_visible?: number;
   phone_visible?: number;
@@ -306,6 +313,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       phone: member.phone,
       validThrough: normalizeDateString(member.valid_through),
       spareOnly: member.spare_only === 1,
+      socialMember: (member.social_member ?? 0) === 1,
       isAdmin: isAdmin(member),
       isServerAdmin: isServerAdmin(member),
       leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
@@ -386,6 +394,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       phone: updatedMember.phone,
       validThrough: normalizeDateString(updatedMember.valid_through),
       spareOnly: updatedMember.spare_only === 1,
+      socialMember: (updatedMember.social_member ?? 0) === 1,
       isAdmin: isAdmin(updatedMember),
       isServerAdmin: isServerAdmin(updatedMember),
       firstLoginCompleted: updatedMember.first_login_completed === 1,
@@ -511,6 +520,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         response.createdAt = normalizeTimestamp(m.created_at);
         response.validThrough = normalizeDateString(m.valid_through);
         response.spareOnly = m.spare_only === 1;
+        response.socialMember = (m.social_member ?? 0) === 1;
       } else {
         // Others see based on privacy settings
         response.email = m.email_visible === 1 ? m.email : null;
@@ -548,6 +558,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       phone: schema.members.phone,
       valid_through: schema.members.valid_through,
       spare_only: schema.members.spare_only,
+      social_member: schema.members.social_member,
       is_admin: schema.members.is_admin,
       is_server_admin: schema.members.is_server_admin,
       is_calendar_admin: schema.members.is_calendar_admin,
@@ -720,6 +731,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const body = createMemberSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
+    if (body.spareOnly && body.socialMember) {
+      return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
+    }
+
     // Only server admins can create server admins
     if (body.isServerAdmin && !isServerAdmin(member)) {
       return _reply.code(403).send({ error: 'Only server admins can create server admins' });
@@ -733,6 +748,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         phone: body.phone || null,
         valid_through: body.validThrough ?? null,
         spare_only: body.spareOnly ? 1 : 0,
+        social_member: body.socialMember ? 1 : 0,
         is_admin: body.isAdmin ? 1 : 0,
         is_server_admin: body.isServerAdmin ? 1 : 0,
         is_calendar_admin: body.isCalendarAdmin ? 1 : 0,
@@ -759,6 +775,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       phone: newMember.phone,
       validThrough: normalizeDateString(newMember.valid_through),
       spareOnly: newMember.spare_only === 1,
+      socialMember: (newMember.social_member ?? 0) === 1,
       isAdmin: isAdmin(newMember),
       emailSubscribed: newMember.email_subscribed === 1,
       optedInSms: newMember.opted_in_sms === 1,
@@ -788,7 +805,12 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const body = Array.isArray(parsed) ? parsed : parsed.members;
     const bulkValidThrough = Array.isArray(parsed) ? undefined : (parsed.validThrough ?? undefined);
     const bulkSpareOnly = Array.isArray(parsed) ? undefined : (parsed.spareOnly ?? undefined);
+    const bulkSocialMember = Array.isArray(parsed) ? undefined : (parsed.socialMember ?? undefined);
     const { db, schema } = getDrizzleDb();
+
+    if (bulkSpareOnly && bulkSocialMember) {
+      return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
+    }
 
     // Use a transaction to ensure atomicity
     const insertedIds = await db.transaction(async (tx) => {
@@ -803,6 +825,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
             phone: memberData.phone || null,
             valid_through: bulkValidThrough === undefined ? null : bulkValidThrough,
             spare_only: bulkSpareOnly ? 1 : 0,
+            social_member: bulkSocialMember ? 1 : 0,
             is_admin: 0,
             opted_in_sms: 0,
             email_subscribed: 1,
@@ -887,6 +910,14 @@ export async function memberRoutes(fastify: FastifyInstance) {
     if (memberId === member.id && body.spareOnly !== undefined) {
       return _reply.code(400).send({ error: 'You cannot change your own spare-only status' });
     }
+    // Prevent users from changing their own social-member flag
+    if (memberId === member.id && body.socialMember !== undefined) {
+      return _reply.code(400).send({ error: 'You cannot change your own social member status' });
+    }
+
+    if (body.spareOnly === true && body.socialMember === true) {
+      return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
+    }
 
     // Prevent changing role for users in SERVER_ADMINS (they are always server admins)
     if (isInServerAdminsList(targetMember)) {
@@ -928,8 +959,17 @@ export async function memberRoutes(fastify: FastifyInstance) {
     if (body.validThrough !== undefined) {
       updateData.valid_through = body.validThrough;
     }
+    if (body.spareOnly === true) {
+      updateData.social_member = 0;
+    }
+    if (body.socialMember === true) {
+      updateData.spare_only = 0;
+    }
     if (body.spareOnly !== undefined) {
       updateData.spare_only = body.spareOnly ? 1 : 0;
+    }
+    if (body.socialMember !== undefined) {
+      updateData.social_member = body.socialMember ? 1 : 0;
     }
     if (body.isAdmin !== undefined) {
       updateData.is_admin = body.isAdmin ? 1 : 0;
@@ -958,6 +998,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
         .update(schema.members)
         .set(updateData)
         .where(eq(schema.members.id, memberId));
+    }
+
+    if (body.socialMember === true) {
+      await db.delete(schema.memberAvailability).where(eq(schema.memberAvailability.member_id, memberId));
     }
 
     if (body.isLeagueAdministrator !== undefined) {
