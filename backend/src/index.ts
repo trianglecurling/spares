@@ -28,6 +28,7 @@ import { contentRoutes } from './routes/content.js';
 import { fileRoutes } from './routes/files.js';
 import { sponsorshipRoutes } from './routes/sponsorship.js';
 import { governanceRoutes } from './routes/governance.js';
+import { rbacRoutes } from './routes/rbac.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 
@@ -257,6 +258,7 @@ fastify.register(
     await instance.register(fileRoutes, { prefix: '/api' });
     await instance.register(sponsorshipRoutes, { prefix: '/api' });
     await instance.register(governanceRoutes, { prefix: '/api' });
+    await instance.register(rbacRoutes, { prefix: '/api' });
     await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
   }
 );

@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { memberHasScope } from '../utils/permissions';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -41,30 +42,26 @@ export function ProtectedRoute({
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (adminOnly && !(member.isAdmin || member.isServerAdmin)) {
+  if (adminOnly && !memberHasScope(member, 'admin.manage')) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (leagueManagerGlobalOnly && !(member.isAdmin || member.isLeagueAdministratorGlobal)) {
+  if (leagueManagerGlobalOnly && !memberHasScope(member, 'leagues.manage')) {
     return <Navigate to="/dashboard" replace />;
   }
 
   if (
     leagueManagerOnly &&
-    !(
-      member.isAdmin ||
-      member.isLeagueAdministrator ||
-      (member.leagueManagerLeagueIds?.length ?? 0) > 0
-    )
+    !memberHasScope(member, 'leagues.manage')
   ) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (contentAdminOnly && !(member.isContentAdmin ?? member.isServerAdmin)) {
+  if (contentAdminOnly && !memberHasScope(member, 'content.manage')) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (sponsorAdminOnly && !(member.isSponsorAdmin ?? member.isServerAdmin)) {
+  if (sponsorAdminOnly && !memberHasScope(member, 'sponsorship.manage')) {
     return <Navigate to="/dashboard" replace />;
   }
 

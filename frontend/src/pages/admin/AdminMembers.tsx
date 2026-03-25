@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import { formatPhone } from '../../utils/phone';
+import api, { formatApiError } from '../../utils/api';
 import { HiEllipsisVertical } from 'react-icons/hi2';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
 
@@ -26,12 +27,7 @@ type MemberUpdatePayload = {
   validThrough?: string | null;
   spareOnly?: boolean;
   socialMember?: boolean;
-  isAdmin?: boolean;
   isServerAdmin?: boolean;
-  isCalendarAdmin?: boolean;
-  isContentAdmin?: boolean;
-  isLeagueAdministrator?: boolean;
-  isSponsorAdmin?: boolean;
 };
 
 type MemberCreatePayload = {
@@ -41,13 +37,45 @@ type MemberCreatePayload = {
   validThrough: string | null;
   spareOnly: boolean;
   socialMember: boolean;
-  isAdmin?: boolean;
   isServerAdmin?: boolean;
-  isCalendarAdmin?: boolean;
-  isContentAdmin?: boolean;
-  isLeagueAdministrator?: boolean;
-  isSponsorAdmin?: boolean;
 };
+
+type RoleRule = {
+  scope: string;
+  effect: 'allow' | 'deny';
+};
+
+type RbacRole = {
+  id: number;
+  name: string;
+  description: string | null;
+  isAssignable: boolean;
+  rules: RoleRule[];
+};
+
+type MemberAssignmentApi = {
+  id?: number;
+  roleId: number;
+  roleName?: string;
+  resourceType?: string | null;
+  resourceId?: number | null;
+};
+
+type AssignmentDraft = {
+  id: string;
+  roleId: number;
+  resourceType: string;
+  resourceId: string;
+};
+
+function makeAssignmentDraft(roleId: number): AssignmentDraft {
+  return {
+    id: crypto.randomUUID(),
+    roleId,
+    resourceType: '',
+    resourceId: '',
+  };
+}
 
 export default function AdminMembers() {
   const { showAlert } = useAlert();
@@ -66,16 +94,16 @@ export default function AdminMembers() {
     validThrough: '',
     spareOnly: false,
     socialMember: false,
-    isAdmin: false,
     isServerAdmin: false,
-    isCalendarAdmin: false,
-    isContentAdmin: false,
-    isLeagueAdministrator: false,
-    isSponsorAdmin: false,
     emailVisible: false,
     phoneVisible: false,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [assignableRoles, setAssignableRoles] = useState<RbacRole[]>([]);
+  const [memberAssignments, setMemberAssignments] = useState<AssignmentDraft[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
+  const [activeMemberModalTab, setActiveMemberModalTab] = useState<'details' | 'permissions'>('details');
 
   // Bulk Add State
   const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
@@ -115,6 +143,11 @@ export default function AdminMembers() {
       };
     }
   }, [openMenuId]);
+
+  useEffect(() => {
+    if (!isModalOpen || !editingMember || !currentMember?.isServerAdmin) return;
+    void loadRoleEditorData(editingMember.id);
+  }, [isModalOpen, editingMember?.id, currentMember?.isServerAdmin]);
 
   const loadMembers = async () => {
     try {
@@ -156,7 +189,56 @@ export default function AdminMembers() {
     }
   };
 
+  const loadRoleEditorData = async (memberId: number) => {
+    setAssignmentsLoading(true);
+    setAssignmentsError(null);
+    try {
+      const [rolesResponse, assignmentsResponse] = await Promise.all([
+        api.get<RbacRole[]>('/rbac/roles'),
+        api.get<MemberAssignmentApi[]>(`/rbac/members/${memberId}/assignments`),
+      ]);
+      const roles = rolesResponse.data.filter((role) => role.isAssignable);
+      const firstRoleId = roles[0]?.id ?? 0;
+      setAssignableRoles(roles);
+      setMemberAssignments(
+        assignmentsResponse.data.map((assignment) => ({
+          id: crypto.randomUUID(),
+          roleId: assignment.roleId || firstRoleId,
+          resourceType: assignment.resourceType ?? '',
+          resourceId:
+            assignment.resourceId === null || assignment.resourceId === undefined
+              ? ''
+              : String(assignment.resourceId),
+        }))
+      );
+    } catch (error: unknown) {
+      setAssignableRoles([]);
+      setMemberAssignments([]);
+      setAssignmentsError(formatApiError(error, 'Failed to load roles and assignments'));
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  };
+
+  const addAssignmentDraft = () => {
+    const defaultRoleId = assignableRoles[0]?.id;
+    if (!defaultRoleId) return;
+    setMemberAssignments((current) => [...current, makeAssignmentDraft(defaultRoleId)]);
+  };
+
+  const updateAssignmentDraft = (id: string, patch: Partial<AssignmentDraft>) => {
+    setMemberAssignments((current) =>
+      current.map((assignment) => (assignment.id === id ? { ...assignment, ...patch } : assignment))
+    );
+  };
+
+  const removeAssignmentDraft = (id: string) => {
+    setMemberAssignments((current) => current.filter((assignment) => assignment.id !== id));
+  };
+
   const handleOpenModal = (member?: Member) => {
+    setAssignmentsError(null);
+    setActiveMemberModalTab('details');
     if (member) {
       setEditingMember(member);
       // If user is in SERVER_ADMINS, force isServerAdmin to true
@@ -168,12 +250,7 @@ export default function AdminMembers() {
         validThrough: member.validThrough || '',
         spareOnly: Boolean(member.spareOnly),
         socialMember: Boolean(member.socialMember),
-        isAdmin: member.isInServerAdminsList ? false : member.isAdmin,
         isServerAdmin: isServerAdmin,
-        isCalendarAdmin: Boolean((member as { isCalendarAdmin?: boolean }).isCalendarAdmin),
-        isContentAdmin: Boolean((member as { isContentAdmin?: boolean }).isContentAdmin),
-        isSponsorAdmin: Boolean((member as { isSponsorAdmin?: boolean }).isSponsorAdmin),
-        isLeagueAdministrator: Boolean(member.isLeagueAdministratorGlobal),
         emailVisible: member.emailVisible,
         phoneVisible: member.phoneVisible,
       });
@@ -186,15 +263,12 @@ export default function AdminMembers() {
         validThrough: '',
         spareOnly: false,
         socialMember: false,
-        isAdmin: false,
         isServerAdmin: false,
-        isCalendarAdmin: false,
-        isContentAdmin: false,
-        isLeagueAdministrator: false,
-        isSponsorAdmin: false,
         emailVisible: false,
         phoneVisible: false,
       });
+      setAssignableRoles([]);
+      setMemberAssignments([]);
     }
     setIsModalOpen(true);
   };
@@ -202,6 +276,10 @@ export default function AdminMembers() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingMember(null);
+    setActiveMemberModalTab('details');
+    setAssignableRoles([]);
+    setMemberAssignments([]);
+    setAssignmentsError(null);
     setFormData({
       name: '',
       email: '',
@@ -209,12 +287,7 @@ export default function AdminMembers() {
       validThrough: '',
       spareOnly: false,
       socialMember: false,
-      isAdmin: false,
       isServerAdmin: false,
-      isCalendarAdmin: false,
-      isContentAdmin: false,
-      isLeagueAdministrator: false,
-      isSponsorAdmin: false,
       emailVisible: false,
       phoneVisible: false,
     });
@@ -348,29 +421,38 @@ export default function AdminMembers() {
           updateData.socialMember = Boolean(formData.socialMember);
         }
 
-        // Only server admins can set roles (and not for themselves)
+        // Only server admins can change server-admin status (and not for themselves)
         if (currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id) {
-          // If user is in SERVER_ADMINS, they must remain server admin
           if (editingMember?.isInServerAdminsList) {
             updateData.isServerAdmin = true;
-            updateData.isAdmin = false;
           } else {
-            updateData.isAdmin = formData.isAdmin;
             updateData.isServerAdmin = formData.isServerAdmin;
-            updateData.isCalendarAdmin = formData.isCalendarAdmin;
-            updateData.isContentAdmin = formData.isContentAdmin;
-            updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
-            updateData.isSponsorAdmin = formData.isSponsorAdmin;
           }
-        } else if (currentMember?.isAdmin && editingMember?.id !== currentMember?.id) {
-          // Regular admins can set isAdmin, isCalendarAdmin, isLeagueAdministrator (and not for themselves)
-          updateData.isAdmin = formData.isAdmin;
-          updateData.isCalendarAdmin = formData.isCalendarAdmin;
-          updateData.isLeagueAdministrator = formData.isLeagueAdministrator;
-          updateData.isSponsorAdmin = formData.isSponsorAdmin;
         }
 
         await patch('/members/{id}', updateData, { id: String(editingMember.id) });
+
+        if (currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id) {
+          const normalizedAssignments = memberAssignments.map((assignment) => {
+            const resourceType = assignment.resourceType.trim();
+            const resourceIdRaw = assignment.resourceId.trim();
+            if (!assignment.roleId) {
+              throw new Error('Each assignment requires a role.');
+            }
+            if (resourceIdRaw && !/^\d+$/.test(resourceIdRaw)) {
+              throw new Error('Resource ID must be a whole number.');
+            }
+            return {
+              roleId: assignment.roleId,
+              resourceType: resourceType || null,
+              resourceId: resourceIdRaw ? Number(resourceIdRaw) : null,
+            };
+          });
+
+          await api.put(`/rbac/members/${editingMember.id}/assignments`, {
+            assignments: normalizedAssignments,
+          });
+        }
       } else {
         const createData: MemberCreatePayload = {
           name: formData.name,
@@ -381,20 +463,9 @@ export default function AdminMembers() {
           socialMember: Boolean(formData.socialMember),
         };
 
-        // Only server admins can set roles when creating
+        // Only server admins can set server-admin status when creating
         if (currentMember?.isServerAdmin) {
-          createData.isAdmin = formData.isAdmin;
           createData.isServerAdmin = formData.isServerAdmin;
-          createData.isCalendarAdmin = formData.isCalendarAdmin;
-          createData.isContentAdmin = formData.isContentAdmin;
-          createData.isLeagueAdministrator = formData.isLeagueAdministrator;
-          createData.isSponsorAdmin = formData.isSponsorAdmin;
-        } else if (currentMember?.isAdmin) {
-          // Regular admins can set isAdmin, isCalendarAdmin, isLeagueAdministrator
-          createData.isAdmin = formData.isAdmin;
-          createData.isCalendarAdmin = formData.isCalendarAdmin;
-          createData.isLeagueAdministrator = formData.isLeagueAdministrator;
-          createData.isSponsorAdmin = formData.isSponsorAdmin;
         }
 
         await post('/members', createData);
@@ -404,7 +475,7 @@ export default function AdminMembers() {
       handleCloseModal();
     } catch (error) {
       console.error('Failed to save member:', error);
-      showAlert('Failed to save member', 'error');
+      showAlert(formatApiError(error, 'Failed to save member'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -676,6 +747,12 @@ export default function AdminMembers() {
   }).length;
   const isAllSelected =
     deletableMembersCount > 0 && selectedMemberIds.length === deletableMembersCount;
+  const canEditRoleAccess = Boolean(
+    currentMember?.isServerAdmin &&
+      editingMember &&
+      currentMember &&
+      editingMember.id !== currentMember.id
+  );
 
   return (
     <Layout>
@@ -917,8 +994,40 @@ export default function AdminMembers() {
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         title={editingMember ? 'Edit member' : 'Add member'}
+        size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {editingMember && (
+            <div className="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveMemberModalTab('details')}
+                  className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    activeMemberModalTab === 'details'
+                      ? 'bg-primary-teal text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  Details
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMemberModalTab('permissions')}
+                  className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    activeMemberModalTab === 'permissions'
+                      ? 'bg-primary-teal text-white'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  Permissions
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(!editingMember || activeMemberModalTab === 'details') && (
+            <>
           <div>
             <label
               htmlFor="name"
@@ -1086,265 +1195,135 @@ export default function AdminMembers() {
               </div>
             </label>
           </div>
+            </>
+          )}
 
-          {currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id ? (
-            <div className="space-y-3">
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Role</div>
-              {editingMember?.isInServerAdminsList ? (
-                <div className="space-y-2">
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
-                    <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                      This user is in SERVER_ADMINS and must remain a server admin. Role cannot be
-                      changed.
-                    </p>
+          {editingMember && activeMemberModalTab === 'permissions' ? (
+            currentMember?.isServerAdmin ? (
+            <div className="space-y-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Roles & access</h3>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  Assign one or more roles to this member. Optional context fields scope a role to a specific
+                  resource (example: <code className="px-1 rounded bg-gray-100 dark:bg-gray-700">league / 42</code>).
+                </p>
+              </div>
+
+              {editingMember.isInServerAdminsList && (
+                <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">
+                  This member is managed by <code>SERVER_ADMINS</code> and must remain a server admin.
+                </div>
+              )}
+
+              <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+                <input
+                  type="checkbox"
+                  id="isServerAdmin"
+                  checked={formData.isServerAdmin}
+                  onChange={(e) => setFormData({ ...formData, isServerAdmin: e.target.checked })}
+                  disabled={!canEditRoleAccess || editingMember.isInServerAdminsList}
+                  className="mt-1 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal disabled:opacity-60"
+                />
+                <label htmlFor="isServerAdmin" className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Server admin override</span>
+                  <div className="text-gray-600 dark:text-gray-400">
+                    Grants unrestricted access regardless of assigned roles.
                   </div>
-                  <div className="flex items-center opacity-60">
-                    <input
-                      type="radio"
-                      id="roleServerAdminLocked"
-                      name="role"
-                      checked={true}
-                      disabled
-                      className="mr-2"
-                    />
-                    <label
-                      htmlFor="roleServerAdminLocked"
-                      className="text-sm text-gray-700 dark:text-gray-300"
-                    >
-                      Server admin (locked)
-                    </label>
-                  </div>
+                </label>
+              </div>
+
+              {assignmentsLoading ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Loading role assignments…</div>
+              ) : assignmentsError ? (
+                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
+                  {assignmentsError}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="roleRegular"
-                      name="role"
-                      checked={
-                        !formData.isAdmin &&
-                        !formData.isServerAdmin &&
-                        !formData.isLeagueAdministrator &&
-                        !formData.isCalendarAdmin
-                      }
-                      onChange={() =>
-                        setFormData({
-                          ...formData,
-                          isAdmin: false,
-                          isServerAdmin: false,
-                          isLeagueAdministrator: false,
-                          isCalendarAdmin: false,
-                        })
-                      }
-                      className="mr-2"
-                    />
-                    <label
-                      htmlFor="roleRegular"
-                      className="text-sm text-gray-700 dark:text-gray-300"
+                  {memberAssignments.map((assignment) => {
+                    const selectedRole = assignableRoles.find((role) => role.id === assignment.roleId);
+                    return (
+                      <div
+                        key={assignment.id}
+                        className="rounded-lg border border-gray-200 bg-white p-3 space-y-2 dark:border-gray-700 dark:bg-gray-800"
+                      >
+                        <div className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_auto]">
+                          <select
+                            value={assignment.roleId}
+                            onChange={(e) =>
+                              updateAssignmentDraft(assignment.id, { roleId: Number(e.target.value) })
+                            }
+                            disabled={!canEditRoleAccess}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+                          >
+                            {assignableRoles.map((role) => (
+                              <option key={role.id} value={role.id}>
+                                {role.name}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            value={assignment.resourceType}
+                            onChange={(e) =>
+                              updateAssignmentDraft(assignment.id, { resourceType: e.target.value })
+                            }
+                            disabled={!canEditRoleAccess}
+                            placeholder="resourceType"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+                          />
+                          <input
+                            type="text"
+                            value={assignment.resourceId}
+                            onChange={(e) =>
+                              updateAssignmentDraft(assignment.id, {
+                                resourceId: e.target.value.replace(/[^\d]/g, ''),
+                              })
+                            }
+                            disabled={!canEditRoleAccess}
+                            placeholder="resourceId"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+                          />
+                          <Button
+                            type="button"
+                            variant="danger"
+                            onClick={() => removeAssignmentDraft(assignment.id)}
+                            disabled={!canEditRoleAccess}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                        {selectedRole?.description && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400">{selectedRole.description}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {memberAssignments.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
+                      No explicit role assignments yet.
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={addAssignmentDraft}
+                      disabled={!canEditRoleAccess || assignableRoles.length === 0}
                     >
-                      Regular user
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="roleLeagueAdmin"
-                      name="role"
-                      checked={
-                        formData.isLeagueAdministrator &&
-                        !formData.isAdmin &&
-                        !formData.isServerAdmin &&
-                        !formData.isCalendarAdmin
-                      }
-                      onChange={() =>
-                        setFormData({
-                          ...formData,
-                          isAdmin: false,
-                          isServerAdmin: false,
-                          isLeagueAdministrator: true,
-                          isCalendarAdmin: false,
-                        })
-                      }
-                      className="mr-2"
-                    />
-                    <label
-                      htmlFor="roleLeagueAdmin"
-                      className="text-sm text-gray-700 dark:text-gray-300"
-                    >
-                      League admin
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="roleCalendarAdmin"
-                      name="role"
-                      checked={
-                        formData.isCalendarAdmin &&
-                        !formData.isAdmin &&
-                        !formData.isServerAdmin &&
-                        !formData.isContentAdmin &&
-                        !formData.isLeagueAdministrator
-                      }
-                      onChange={() =>
-                        setFormData({
-                          ...formData,
-                          isAdmin: false,
-                          isServerAdmin: false,
-                          isContentAdmin: false,
-                          isLeagueAdministrator: false,
-                          isSponsorAdmin: false,
-                          isCalendarAdmin: true,
-                        })
-                      }
-                      className="mr-2"
-                    />
-                    <label
-                      htmlFor="roleCalendarAdmin"
-                      className="text-sm text-gray-700 dark:text-gray-300"
-                    >
-                      Calendar admin
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="isContentAdmin"
-                      checked={formData.isContentAdmin}
-                      onChange={(e) => setFormData({ ...formData, isContentAdmin: e.target.checked })}
-                      className="mr-2"
-                    />
-                    <label
-                      htmlFor="isContentAdmin"
-                      className="text-sm text-gray-700 dark:text-gray-300"
-                    >
-                      Content admin
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="isSponsorAdmin"
-                      checked={formData.isSponsorAdmin}
-                      onChange={(e) => setFormData({ ...formData, isSponsorAdmin: e.target.checked })}
-                      className="mr-2"
-                    />
-                    <label
-                      htmlFor="isSponsorAdmin"
-                      className="text-sm text-gray-700 dark:text-gray-300"
-                    >
-                      Sponsor admin
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="roleAdmin"
-                      name="role"
-                      checked={
-                        formData.isAdmin && !formData.isServerAdmin && !formData.isCalendarAdmin && !formData.isContentAdmin && !formData.isSponsorAdmin
-                      }
-                      onChange={() =>
-                        setFormData({
-                          ...formData,
-                          isAdmin: true,
-                          isServerAdmin: false,
-                          isLeagueAdministrator: false,
-                          isCalendarAdmin: false,
-                          isContentAdmin: false,
-                          isSponsorAdmin: false,
-                        })
-                      }
-                      className="mr-2"
-                    />
-                    <label htmlFor="roleAdmin" className="text-sm text-gray-700 dark:text-gray-300">
-                      Admin
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="roleServerAdmin"
-                      name="role"
-                      checked={formData.isServerAdmin}
-                      onChange={() =>
-                        setFormData({
-                          ...formData,
-                          isAdmin: false,
-                          isServerAdmin: true,
-                          isLeagueAdministrator: false,
-                          isCalendarAdmin: false,
-                          isContentAdmin: false,
-                          isSponsorAdmin: false,
-                        })
-                      }
-                      className="mr-2"
-                    />
-                    <label
-                      htmlFor="roleServerAdmin"
-                      className="text-sm text-gray-700 dark:text-gray-300"
-                    >
-                      Server admin
-                    </label>
+                      Add role assignment
+                    </Button>
                   </div>
                 </div>
               )}
             </div>
-          ) : currentMember?.isAdmin &&
-            !editingMember?.isServerAdmin &&
-            editingMember?.id !== currentMember?.id ? (
-            <div className="space-y-2">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="isAdmin"
-                  checked={formData.isAdmin}
-                  onChange={(e) => setFormData({ ...formData, isAdmin: e.target.checked })}
-                  className="mr-2"
-                />
-                <label
-                  htmlFor="isAdmin"
-                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  Administrator
-                </label>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="isSponsorAdminRegular"
-                  checked={formData.isSponsorAdmin}
-                  onChange={(e) =>
-                    setFormData({ ...formData, isSponsorAdmin: e.target.checked })
-                  }
-                  className="mr-2"
-                />
-                <label
-                  htmlFor="isSponsorAdminRegular"
-                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  Sponsor admin
-                </label>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="isLeagueAdministrator"
-                  checked={formData.isLeagueAdministrator}
-                  onChange={(e) =>
-                    setFormData({ ...formData, isLeagueAdministrator: e.target.checked })
-                  }
-                  className="mr-2"
-                />
-                <label
-                  htmlFor="isLeagueAdministrator"
-                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  League admin
-                </label>
-              </div>
+            ) : (
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300">
+              Role assignments are managed in this dialog by server admins.
             </div>
+            )
           ) : null}
 
           <div className="flex space-x-3">

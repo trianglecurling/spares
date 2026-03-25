@@ -4,6 +4,7 @@ import { eq, and, desc, sql, like, gt } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import {
   generateAuthCode,
+  buildJwtPayloadForMember,
   generateToken,
   normalizeEmail,
   isAdmin,
@@ -12,7 +13,7 @@ import {
   isContentAdmin,
   isSponsorAdmin,
 } from '../utils/auth.js';
-import { getLeagueAdministratorRoleInfo, getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
+import { buildAuthzClaimsForMember, hasScope } from '../utils/rbac.js';
 import { sendAuthCodeEmail } from '../services/email.js';
 import { sendAuthCodeSMS } from '../services/sms.js';
 import { Member } from '../types.js';
@@ -91,6 +92,22 @@ const authMemberResponseSchema = {
     leagueManagerLeagueIds: { type: 'array', items: { type: 'number' } },
     isLeagueAdministrator: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
+    roleCodes: { type: 'array', items: { type: 'string' } },
+    roleNames: { type: 'array', items: { type: 'string' } },
+    scopeRules: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          scope: { type: 'string' },
+          effect: { type: 'string', enum: ['allow', 'deny'] },
+          resourceType: { type: ['string', 'null'] },
+          resourceId: { type: ['number', 'null'] },
+        },
+        required: ['scope', 'effect'],
+      },
+    },
     firstLoginCompleted: { type: 'boolean' },
     optedInSms: { type: 'boolean' },
     emailSubscribed: { type: 'boolean' },
@@ -113,6 +130,9 @@ const authMemberResponseSchema = {
     'leagueManagerLeagueIds',
     'isLeagueAdministrator',
     'isLeagueAdministratorGlobal',
+    'roleCodes',
+    'roleNames',
+    'scopeRules',
     'firstLoginCompleted',
     'optedInSms',
     'emailSubscribed',
@@ -121,6 +141,56 @@ const authMemberResponseSchema = {
     'themePreference',
   ],
 } as const;
+
+function getLeagueManagerLeagueIdsFromRules(
+  rules: Array<{ scope: string; effect: 'allow' | 'deny'; resourceType?: string | null; resourceId?: number | null }>
+): number[] {
+  const leagueIds = new Set<number>();
+  for (const rule of rules) {
+    if (rule.effect !== 'allow') continue;
+    if (rule.scope !== 'leagues.manage' && rule.scope !== 'leagues.*' && rule.scope !== '*') continue;
+    if (rule.resourceType !== 'league') continue;
+    if (rule.resourceId === null || rule.resourceId === undefined) continue;
+    leagueIds.add(Number(rule.resourceId));
+  }
+  return Array.from(leagueIds);
+}
+
+async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMember> {
+  const authz = member.authz ?? (await buildAuthzClaimsForMember(member));
+  member.authz = authz;
+  const leagueManagerLeagueIds = getLeagueManagerLeagueIdsFromRules(authz.scopeRules);
+  const isLeagueAdministratorGlobal = hasScope(authz, 'leagues.manage');
+
+  return {
+    id: member.id,
+    name: member.name,
+    email: member.email,
+    phone: member.phone,
+    spareOnly: member.spare_only === 1,
+    socialMember: (member.social_member ?? 0) === 1,
+    isAdmin: isAdmin(member),
+    isServerAdmin: isServerAdmin(member),
+    isCalendarAdmin: isCalendarAdmin(member),
+    isContentAdmin: isContentAdmin(member),
+    isSponsorAdmin: isSponsorAdmin(member),
+    leagueManagerLeagueIds,
+    isLeagueAdministrator: isLeagueAdministratorGlobal,
+    isLeagueAdministratorGlobal,
+    roleCodes: authz.roleCodes,
+    roleNames: authz.roleNames,
+    scopeRules: authz.scopeRules,
+    firstLoginCompleted: member.first_login_completed === 1,
+    optedInSms: member.opted_in_sms === 1,
+    emailSubscribed: member.email_subscribed === 1,
+    emailVisible: member.email_visible === 1,
+    phoneVisible: member.phone_visible === 1,
+    themePreference:
+      member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
+        ? member.theme_preference
+        : 'system',
+  };
+}
 
 const authRequestCodeBodySchema = {
   type: 'object',
@@ -321,39 +391,14 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         if (isMemberExpired(member)) {
           return reply.code(403).send({ error: 'Membership expired' });
         }
-        const token = generateToken(member as Member);
-        const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
-        const leagueAdminRoleInfo = await getLeagueAdministratorRoleInfo(member.id);
+        const payload = await buildJwtPayloadForMember(member as Member);
+        const token = generateToken(payload);
 
         logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
         return {
           token,
-          member: {
-            id: member.id,
-            name: member.name,
-            email: member.email,
-            phone: member.phone,
-            spareOnly: member.spare_only === 1,
-            socialMember: (member.social_member ?? 0) === 1,
-            isAdmin: isAdmin(member as Member),
-            isServerAdmin: isServerAdmin(member as Member),
-            isCalendarAdmin: isCalendarAdmin(member as Member),
-            isContentAdmin: isContentAdmin(member as Member),
-            isSponsorAdmin: isSponsorAdmin(member as Member),
-            leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
-            isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
-            isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
-            firstLoginCompleted: member.first_login_completed === 1,
-            optedInSms: member.opted_in_sms === 1,
-            emailSubscribed: member.email_subscribed === 1,
-            emailVisible: member.email_visible === 1,
-            phoneVisible: member.phone_visible === 1,
-            themePreference:
-              member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
-                ? member.theme_preference
-                : 'system',
-          },
+          member: await buildAuthenticatedMember(member as Member),
         };
       }
 
@@ -488,40 +533,15 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       if (isMemberExpired(member)) {
         return reply.code(403).send({ error: 'Membership expired' });
       }
-      const token = generateToken(member as Member);
-      const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
-      const leagueAdminRoleInfo = await getLeagueAdministratorRoleInfo(member.id);
+      const payload = await buildJwtPayloadForMember(member as Member);
+      const token = generateToken(payload);
 
       // Best-effort analytics (do not block)
       logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
       return {
         token,
-        member: {
-          id: member.id,
-          name: member.name,
-          email: member.email,
-          phone: member.phone,
-          spareOnly: member.spare_only === 1,
-          socialMember: (member.social_member ?? 0) === 1,
-          isAdmin: isAdmin(member as Member),
-          isServerAdmin: isServerAdmin(member as Member),
-          isCalendarAdmin: isCalendarAdmin(member as Member),
-          isContentAdmin: isContentAdmin(member as Member),
-          isSponsorAdmin: isSponsorAdmin(member as Member),
-          leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
-          isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
-          isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
-          firstLoginCompleted: member.first_login_completed === 1,
-          optedInSms: member.opted_in_sms === 1,
-          emailSubscribed: member.email_subscribed === 1,
-          emailVisible: member.email_visible === 1,
-          phoneVisible: member.phone_visible === 1,
-          themePreference:
-            member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
-              ? member.theme_preference
-              : 'system',
-        },
+        member: await buildAuthenticatedMember(member as Member),
       };
     }
 
@@ -606,40 +626,15 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ error: 'Membership expired' });
     }
 
-    const token = generateToken(member as Member);
-    const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
-    const leagueAdminRoleInfo = await getLeagueAdministratorRoleInfo(member.id);
+    const payload = await buildJwtPayloadForMember(member as Member);
+    const token = generateToken(payload);
 
     // Best-effort analytics (do not block)
     logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
       return {
       token,
-      member: {
-        id: member.id,
-        name: member.name,
-        email: member.email,
-        phone: member.phone,
-        spareOnly: member.spare_only === 1,
-        socialMember: (member.social_member ?? 0) === 1,
-        isAdmin: isAdmin(member),
-        isServerAdmin: isServerAdmin(member),
-        isCalendarAdmin: isCalendarAdmin(member),
-        isContentAdmin: isContentAdmin(member),
-        isSponsorAdmin: isSponsorAdmin(member),
-        leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
-        isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
-        isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
-        firstLoginCompleted: member.first_login_completed === 1,
-        optedInSms: member.opted_in_sms === 1,
-        emailSubscribed: member.email_subscribed === 1,
-        emailVisible: member.email_visible === 1,
-        phoneVisible: member.phone_visible === 1,
-        themePreference:
-          member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
-            ? member.theme_preference
-            : 'system',
-      },
+      member: await buildAuthenticatedMember(member),
       };
     }
   );
@@ -663,35 +658,8 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
-    const leagueAdminRoleInfo = await getLeagueAdministratorRoleInfo(member.id);
-
     return {
-      member: {
-        id: member.id,
-        name: member.name,
-        email: member.email,
-        phone: member.phone,
-        spareOnly: member.spare_only === 1,
-        socialMember: (member.social_member ?? 0) === 1,
-        isAdmin: isAdmin(member),
-        isServerAdmin: isServerAdmin(member),
-        isCalendarAdmin: isCalendarAdmin(member),
-        isContentAdmin: isContentAdmin(member),
-        isSponsorAdmin: isSponsorAdmin(member),
-        leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
-        isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
-        isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
-        firstLoginCompleted: member.first_login_completed === 1,
-        optedInSms: member.opted_in_sms === 1,
-        emailSubscribed: member.email_subscribed === 1,
-        emailVisible: member.email_visible === 1,
-        phoneVisible: member.phone_visible === 1,
-        themePreference:
-          member.theme_preference === 'light' || member.theme_preference === 'dark' || member.theme_preference === 'system'
-            ? member.theme_preference
-            : 'system',
-      },
+      member: await buildAuthenticatedMember(member),
       };
     }
   );

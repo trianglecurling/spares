@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin, isCalendarAdmin, isInServerAdminsList, isSponsorAdmin } from '../utils/auth.js';
-import { getLeagueAdministratorRoleInfo, getLeagueManagerRoleInfo } from '../utils/leagueAccess.js';
+import { hasScope } from '../utils/rbac.js';
 import { Member } from '../types.js';
 import {
   bulkCreateResponseSchema,
@@ -35,7 +35,7 @@ import type {
   UpdateProfileBody,
 } from '../api/types.js';
 import { sendWelcomeEmail } from '../services/email.js';
-import { generateEmailLinkToken } from '../utils/auth.js';
+import { buildJwtPayloadForMember, generateEmailLinkToken } from '../utils/auth.js';
 import { config } from '../config.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
@@ -288,6 +288,18 @@ function isMemberExpired(member: Member): boolean {
   return today > validThrough;
 }
 
+function leagueManagerLeagueIdsFromMember(member: Member): number[] {
+  const roleIds = new Set<number>();
+  for (const rule of member.authz?.scopeRules ?? []) {
+    if (rule.effect !== 'allow') continue;
+    if (rule.scope !== 'leagues.manage' && rule.scope !== 'leagues.*' && rule.scope !== '*') continue;
+    if (rule.resourceType !== 'league') continue;
+    if (rule.resourceId === null || rule.resourceId === undefined) continue;
+    roleIds.add(Number(rule.resourceId));
+  }
+  return Array.from(roleIds);
+}
+
 export async function memberRoutes(fastify: FastifyInstance) {
   // Get current member profile
   fastify.get<{ Reply: MemberProfileResponse | ApiErrorResponse }>(
@@ -303,8 +315,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
     async (request, _reply) => {
     const member = (request as AuthenticatedRequest).member;
 
-    const leagueRoleInfo = await getLeagueManagerRoleInfo(member.id);
-    const leagueAdminRoleInfo = await getLeagueAdministratorRoleInfo(member.id);
+    const leagueManagerLeagueIds = leagueManagerLeagueIdsFromMember(member);
+    const isLeagueAdministratorGlobal = hasScope(member.authz, 'leagues.manage');
 
     return {
       id: member.id,
@@ -316,9 +328,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
       socialMember: (member.social_member ?? 0) === 1,
       isAdmin: isAdmin(member),
       isServerAdmin: isServerAdmin(member),
-      leagueManagerLeagueIds: leagueRoleInfo.leagueIds,
-      isLeagueAdministrator: leagueAdminRoleInfo.isGlobal,
-      isLeagueAdministratorGlobal: leagueAdminRoleInfo.isGlobal,
+      leagueManagerLeagueIds,
+      isLeagueAdministrator: isLeagueAdministratorGlobal,
+      isLeagueAdministratorGlobal,
       firstLoginCompleted: member.first_login_completed === 1,
       optedInSms: member.opted_in_sms === 1,
       emailSubscribed: member.email_subscribed === 1,
@@ -1232,7 +1244,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       return _reply.code(404).send({ error: 'Member not found' });
     }
 
-    const token = generateEmailLinkToken(targetMember);
+    const token = generateEmailLinkToken(await buildJwtPayloadForMember(targetMember));
     const loginLink = `${config.frontendUrl}?token=${token}`;
 
     return { loginLink };
@@ -1279,7 +1291,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       return _reply.code(404).send({ error: 'Member not found or has no email' });
     }
 
-    const token = generateEmailLinkToken(targetMember);
+    const token = generateEmailLinkToken(await buildJwtPayloadForMember(targetMember));
     // Send welcome email asynchronously (fire-and-forget) to avoid blocking the response
     sendWelcomeEmail(targetMember.email, targetMember.name, token).catch((error) => {
       console.error('Error sending welcome email:', error);
@@ -1329,7 +1341,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     // Send welcome emails asynchronously (fire-and-forget) to avoid blocking the response
     for (const targetMember of targetMembers) {
       if (targetMember.email) {
-        const token = generateEmailLinkToken(targetMember);
+        const token = generateEmailLinkToken(await buildJwtPayloadForMember(targetMember));
         sendWelcomeEmail(targetMember.email, targetMember.name, token).catch((error) => {
           console.error(`Error sending welcome email to ${targetMember.email}:`, error);
         });

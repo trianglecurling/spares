@@ -969,6 +969,507 @@ function ensureGovernanceTablesSync(db: DatabaseAdapter): void {
   execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_governance_officers_board_member_id ON governance_officers(board_member_id)');
 }
 
+async function ensureRbacTables(db: DatabaseAdapter): Promise<void> {
+  await execSQL(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        description TEXT,
+        is_system INTEGER DEFAULT 0 NOT NULL,
+        is_computed INTEGER DEFAULT 0 NOT NULL,
+        is_assignable INTEGER DEFAULT 1 NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_roles_code ON roles(code);
+      CREATE INDEX IF NOT EXISTS idx_roles_is_system ON roles(is_system);
+
+      CREATE TABLE IF NOT EXISTS role_scope_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+        scope TEXT NOT NULL,
+        effect TEXT NOT NULL CHECK(effect IN ('allow', 'deny')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(role_id, scope)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_role_scope_rules_role_id ON role_scope_rules(role_id);
+      CREATE INDEX IF NOT EXISTS idx_role_scope_rules_scope ON role_scope_rules(scope);
+
+      CREATE TABLE IF NOT EXISTS member_role_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+        resource_type TEXT,
+        resource_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(member_id, role_id, resource_type, resource_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_member_role_assignments_member_id ON member_role_assignments(member_id);
+      CREATE INDEX IF NOT EXISTS idx_member_role_assignments_role_id ON member_role_assignments(role_id);
+      CREATE INDEX IF NOT EXISTS idx_member_role_assignments_resource ON member_role_assignments(resource_type, resource_id);
+    `
+  );
+
+  if (db.isAsync()) {
+    // PostgreSQL path
+    await execSQL(
+      db,
+      `
+        INSERT INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES
+          ('authenticated_user', 'Authenticated user', 'Base permissions for any signed-in user', 1, 1, 0),
+          ('active_member', 'Active member', 'Computed role for members with non-expired membership', 1, 1, 0),
+          ('member_with_ice_privileges', 'Member with ice privileges', 'Computed role for members with on-ice access', 1, 1, 0),
+          ('general_admin', 'General admin', 'General administrative permissions', 1, 0, 1),
+          ('calendar_admin', 'Calendar admin', 'Calendar administration permissions', 1, 0, 1),
+          ('content_admin', 'Content admin', 'Content and file administration permissions', 1, 0, 1),
+          ('sponsor_admin', 'Sponsor admin', 'Sponsorship administration permissions', 1, 0, 1),
+          ('league_admin', 'League admin', 'League administration permissions', 1, 0, 1),
+          ('league_manager', 'League manager', 'League management permissions', 1, 0, 1)
+        ON CONFLICT (code) DO NOTHING;
+      `
+    );
+
+    await execSQL(
+      db,
+      `
+        INSERT INTO role_scope_rules (role_id, scope, effect)
+        SELECT r.id, v.scope, v.effect
+        FROM roles r
+        JOIN (
+          VALUES
+            ('authenticated_user', 'dashboard.read', 'allow'),
+            ('authenticated_user', 'profile.manage_self', 'allow'),
+            ('authenticated_user', 'members.read', 'allow'),
+            ('authenticated_user', 'leagues.read', 'allow'),
+            ('authenticated_user', 'calendar.read', 'allow'),
+            ('authenticated_user', 'governance.read', 'allow'),
+            ('authenticated_user', 'feedback.submit', 'allow'),
+            ('authenticated_user', 'spares.read', 'allow'),
+            ('authenticated_user', 'spares.respond', 'allow'),
+            ('authenticated_user', 'availability.manage_self', 'allow'),
+            ('active_member', 'member.active', 'allow'),
+            ('member_with_ice_privileges', 'member.ice_privileges', 'allow'),
+            ('member_with_ice_privileges', 'spares.request', 'allow'),
+            ('member_with_ice_privileges', 'ice_bookings.manage_own', 'allow'),
+            ('general_admin', 'admin.manage', 'allow'),
+            ('general_admin', 'members.manage', 'allow'),
+            ('general_admin', 'governance.manage', 'allow'),
+            ('general_admin', 'feedback.manage', 'allow'),
+            ('calendar_admin', 'calendar.manage', 'allow'),
+            ('content_admin', 'content.manage', 'allow'),
+            ('content_admin', 'files.manage', 'allow'),
+            ('sponsor_admin', 'sponsorship.manage', 'allow'),
+            ('league_admin', 'leagues.manage', 'allow'),
+            ('league_manager', 'leagues.manage', 'allow')
+        ) AS v(role_code, scope, effect)
+          ON r.code = v.role_code
+        ON CONFLICT (role_id, scope) DO NOTHING;
+      `
+    );
+  } else {
+    // SQLite path
+    await execSQL(
+      db,
+      `
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('authenticated_user', 'Authenticated user', 'Base permissions for any signed-in user', 1, 1, 0);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('active_member', 'Active member', 'Computed role for members with non-expired membership', 1, 1, 0);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('member_with_ice_privileges', 'Member with ice privileges', 'Computed role for members with on-ice access', 1, 1, 0);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('general_admin', 'General admin', 'General administrative permissions', 1, 0, 1);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('calendar_admin', 'Calendar admin', 'Calendar administration permissions', 1, 0, 1);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('content_admin', 'Content admin', 'Content and file administration permissions', 1, 0, 1);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('sponsor_admin', 'Sponsor admin', 'Sponsorship administration permissions', 1, 0, 1);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('league_admin', 'League admin', 'League administration permissions', 1, 0, 1);
+        INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+        VALUES ('league_manager', 'League manager', 'League management permissions', 1, 0, 1);
+      `
+    );
+
+    await execSQL(
+      db,
+      `
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'dashboard.read', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'profile.manage_self', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'members.read', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'leagues.read', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'calendar.read', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'governance.read', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'feedback.submit', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'spares.read', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'spares.respond', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'availability.manage_self', 'allow');
+
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'active_member'), 'member.active', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'member_with_ice_privileges'), 'member.ice_privileges', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'member_with_ice_privileges'), 'spares.request', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'member_with_ice_privileges'), 'ice_bookings.manage_own', 'allow');
+
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'admin.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'members.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'governance.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'feedback.manage', 'allow');
+
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'calendar_admin'), 'calendar.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'content_admin'), 'content.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'content_admin'), 'files.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'sponsor_admin'), 'sponsorship.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'league_admin'), 'leagues.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'league_manager'), 'leagues.manage', 'allow');
+      `
+    );
+  }
+
+  // Backfill first-pass role assignments from legacy columns/tables.
+  await execSQL(
+    db,
+    `
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'general_admin'
+      WHERE COALESCE(m.is_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'calendar_admin'
+      WHERE COALESCE(m.is_calendar_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'content_admin'
+      WHERE COALESCE(m.is_content_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'sponsor_admin'
+      WHERE COALESCE(m.is_sponsor_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT lmr.member_id, r.id, 'league', lmr.league_id
+      FROM league_member_roles lmr
+      JOIN roles r ON r.code = 'league_manager'
+      WHERE lmr.role = 'league_manager'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = lmr.member_id
+            AND a.role_id = r.id
+            AND COALESCE(a.resource_type, '') = 'league'
+            AND COALESCE(a.resource_id, -1) = COALESCE(lmr.league_id, -1)
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT lmr.member_id, r.id, 'league', lmr.league_id
+      FROM league_member_roles lmr
+      JOIN roles r ON r.code = 'league_admin'
+      WHERE lmr.role = 'league_administrator'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = lmr.member_id
+            AND a.role_id = r.id
+            AND COALESCE(a.resource_type, '') = 'league'
+            AND COALESCE(a.resource_id, -1) = COALESCE(lmr.league_id, -1)
+        );
+    `
+  );
+}
+
+function ensureRbacTablesSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        description TEXT,
+        is_system INTEGER DEFAULT 0 NOT NULL,
+        is_computed INTEGER DEFAULT 0 NOT NULL,
+        is_assignable INTEGER DEFAULT 1 NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_roles_code ON roles(code);
+      CREATE INDEX IF NOT EXISTS idx_roles_is_system ON roles(is_system);
+
+      CREATE TABLE IF NOT EXISTS role_scope_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+        scope TEXT NOT NULL,
+        effect TEXT NOT NULL CHECK(effect IN ('allow', 'deny')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(role_id, scope)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_role_scope_rules_role_id ON role_scope_rules(role_id);
+      CREATE INDEX IF NOT EXISTS idx_role_scope_rules_scope ON role_scope_rules(scope);
+
+      CREATE TABLE IF NOT EXISTS member_role_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+        resource_type TEXT,
+        resource_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(member_id, role_id, resource_type, resource_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_member_role_assignments_member_id ON member_role_assignments(member_id);
+      CREATE INDEX IF NOT EXISTS idx_member_role_assignments_role_id ON member_role_assignments(role_id);
+      CREATE INDEX IF NOT EXISTS idx_member_role_assignments_resource ON member_role_assignments(resource_type, resource_id);
+    `
+  );
+
+  execSQLSync(
+    db,
+    `
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('authenticated_user', 'Authenticated user', 'Base permissions for any signed-in user', 1, 1, 0);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('active_member', 'Active member', 'Computed role for members with non-expired membership', 1, 1, 0);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('member_with_ice_privileges', 'Member with ice privileges', 'Computed role for members with on-ice access', 1, 1, 0);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('general_admin', 'General admin', 'General administrative permissions', 1, 0, 1);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('calendar_admin', 'Calendar admin', 'Calendar administration permissions', 1, 0, 1);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('content_admin', 'Content admin', 'Content and file administration permissions', 1, 0, 1);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('sponsor_admin', 'Sponsor admin', 'Sponsorship administration permissions', 1, 0, 1);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('league_admin', 'League admin', 'League administration permissions', 1, 0, 1);
+      INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+      VALUES ('league_manager', 'League manager', 'League management permissions', 1, 0, 1);
+    `
+  );
+
+  execSQLSync(
+    db,
+    `
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'dashboard.read', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'profile.manage_self', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'members.read', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'leagues.read', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'calendar.read', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'governance.read', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'feedback.submit', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'spares.read', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'spares.respond', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'authenticated_user'), 'availability.manage_self', 'allow');
+
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'active_member'), 'member.active', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'member_with_ice_privileges'), 'member.ice_privileges', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'member_with_ice_privileges'), 'spares.request', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'member_with_ice_privileges'), 'ice_bookings.manage_own', 'allow');
+
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'admin.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'members.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'governance.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'feedback.manage', 'allow');
+
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'calendar_admin'), 'calendar.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'content_admin'), 'content.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'content_admin'), 'files.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'sponsor_admin'), 'sponsorship.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'league_admin'), 'leagues.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'league_manager'), 'leagues.manage', 'allow');
+    `
+  );
+
+  execSQLSync(
+    db,
+    `
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'general_admin'
+      WHERE COALESCE(m.is_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'calendar_admin'
+      WHERE COALESCE(m.is_calendar_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'content_admin'
+      WHERE COALESCE(m.is_content_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT m.id, r.id, NULL, NULL
+      FROM members m
+      JOIN roles r ON r.code = 'sponsor_admin'
+      WHERE COALESCE(m.is_sponsor_admin, 0) = 1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = m.id
+            AND a.role_id = r.id
+            AND a.resource_type IS NULL
+            AND a.resource_id IS NULL
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT lmr.member_id, r.id, 'league', lmr.league_id
+      FROM league_member_roles lmr
+      JOIN roles r ON r.code = 'league_manager'
+      WHERE lmr.role = 'league_manager'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = lmr.member_id
+            AND a.role_id = r.id
+            AND COALESCE(a.resource_type, '') = 'league'
+            AND COALESCE(a.resource_id, -1) = COALESCE(lmr.league_id, -1)
+        );
+
+      INSERT INTO member_role_assignments (member_id, role_id, resource_type, resource_id)
+      SELECT lmr.member_id, r.id, 'league', lmr.league_id
+      FROM league_member_roles lmr
+      JOIN roles r ON r.code = 'league_admin'
+      WHERE lmr.role = 'league_administrator'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM member_role_assignments a
+          WHERE a.member_id = lmr.member_id
+            AND a.role_id = r.id
+            AND COALESCE(a.resource_type, '') = 'league'
+            AND COALESCE(a.resource_id, -1) = COALESCE(lmr.league_id, -1)
+        );
+    `
+  );
+}
+
 export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await execSQL(db, `
     -- Members table
@@ -1896,6 +2397,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureIceBookingsTable(db);
   await migrateIceBookingsGuestPurposeExpand(db);
   await ensureGovernanceTables(db);
+  await ensureRbacTables(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -2662,6 +3164,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureIceBookingsTableSync(db);
   migrateIceBookingsGuestPurposeExpandSync(db);
   ensureGovernanceTablesSync(db);
+  ensureRbacTablesSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

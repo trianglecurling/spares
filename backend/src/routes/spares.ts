@@ -17,7 +17,7 @@ import {
   sendSpareOfferCancellationConfirmationEmail,
 } from '../services/email.js';
 import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } from '../services/sms.js';
-import { generateToken, generateEmailLinkToken } from '../utils/auth.js';
+import { buildJwtPayloadForMember, generateToken, generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
@@ -503,7 +503,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .limit(1);
         const requester = requesters[0];
         if (requester?.email && requester.email_subscribed === 1) {
-          const requesterToken = generateToken(requester);
+          const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
           const { sendPrivateInviteDeclinedEmail } = await import('../services/email.js');
           sendPrivateInviteDeclinedEmail(
             requester.email,
@@ -552,7 +552,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .limit(1);
         const requester = requesters[0];
         if (requester?.email && requester.email_subscribed === 1) {
-          const requesterToken = generateToken(requester);
+          const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
           const { sendAllPrivateInvitesDeclinedEmail } = await import('../services/email.js');
           sendAllPrivateInvitesDeclinedEmail(
             requester.email,
@@ -841,7 +841,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       const toNotify = invitees.filter((m) => toNotifyIds.includes(m.id));
       for (const recipient of toNotify) {
-        const acceptToken = generateEmailLinkToken(recipient);
+        const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
         if (recipient.email && recipient.email_subscribed === 1) {
           sendOnceWithDeliveryClaim(
             {
@@ -1004,7 +1004,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (isLessThan24Hours) {
       for (const recipient of recipientMembers) {
         if (recipient.email) {
-          const acceptToken = generateEmailLinkToken(recipient);
+          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
           sendOnceWithDeliveryClaim(
             {
               spareRequestId: requestId,
@@ -1773,7 +1773,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     // Send confirmation email to creator + CC recipients (separately, no email-level CC)
     try {
       if (member.email && member.email_subscribed === 1) {
-        const requesterToken = generateToken(member);
+        const requesterToken = generateToken(await buildJwtPayloadForMember(member));
         sendSpareRequestCreatedEmail(
           member.email,
           member.name,
@@ -1799,7 +1799,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
         for (const ccMember of ccMembers) {
           if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
-          const ccToken = generateToken(ccMember);
+          const ccToken = generateToken(await buildJwtPayloadForMember(ccMember));
           sendSpareRequestCcCreatedEmail(
             ccMember.email,
             ccMember.name,
@@ -1862,7 +1862,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
       for (const recipient of recipientMembers) {
         if (recipient.email) {
-          const acceptToken = generateEmailLinkToken(recipient);
+          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
           
           // Don't await - send in background
           sendOnceWithDeliveryClaim(
@@ -2214,7 +2214,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
     // The user experience is more important than waiting for external API calls
     if (requester.email && requester.email_subscribed === 1) {
-      const requesterToken = generateToken(requester);
+      const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
       
       // Don't await - send in background
       sendSpareResponseEmail(
@@ -2236,7 +2236,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Confirmation email to the responder (the member who signed up to spare)
     if (member.email && member.email_subscribed === 1) {
-      const responderToken = generateToken(member);
+      const responderToken = generateToken(await buildJwtPayloadForMember(member));
       sendSpareOfferConfirmationEmail(
         member.email,
         member.name,
@@ -2256,7 +2256,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     for (const ccMember of ccMembers) {
       if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
-      const ccToken = generateToken(ccMember);
+      const ccToken = generateToken(await buildJwtPayloadForMember(ccMember));
       sendSpareRequestCcFilledEmail(
         ccMember.email,
         ccMember.name,
@@ -2371,7 +2371,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       // Canceller confirmation
       if (member.email && member.email_subscribed === 1) {
-        const cancellerToken = generateToken(member);
+        const cancellerToken = generateToken(await buildJwtPayloadForMember(member));
         sendSpareRequestCancelConfirmationEmail(
           member.email,
           member.name,
@@ -2403,7 +2403,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       for (const recipient of notifyMap.values()) {
         if (!recipient.email) continue;
-        const recipientToken = generateToken(recipient);
+        const recipientToken = generateToken(await buildJwtPayloadForMember(recipient));
         sendSpareRequestCancelledEmail(
           recipient.email,
           recipient.name,
@@ -2506,7 +2506,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
     if (requester.email && requester.email_subscribed === 1) {
-      const requesterToken = generateToken(requester);
+      const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
       
       // Don't await - send in background
       sendSpareCancellationEmail(
@@ -2528,7 +2528,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Confirmation email to the responder (the member who cancelled sparing)
     if (member.email && member.email_subscribed === 1) {
-      const responderToken = generateToken(member);
+      const responderToken = generateToken(await buildJwtPayloadForMember(member));
       sendSpareOfferCancellationConfirmationEmail(
         member.email,
         member.name,
@@ -2548,7 +2548,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     for (const ccMember of ccMembers) {
       if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
-      const ccToken = generateToken(ccMember);
+      const ccToken = generateToken(await buildJwtPayloadForMember(ccMember));
       sendSpareRequestCcCancellationEmail(
         ccMember.email,
         ccMember.name,
@@ -2707,7 +2707,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
       for (const recipient of recipientMembers) {
         if (recipient.email) {
-          const acceptToken = generateEmailLinkToken(recipient);
+          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
           
           console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
           // Don't await - send in background
@@ -2856,7 +2856,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         console.log(`[Re-issue] Sending immediate notifications (<24h path)`);
         for (const recipient of recipientMembers) {
           if (recipient.email) {
-            const acceptToken = generateEmailLinkToken(recipient);
+            const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
             
             console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
             // Don't await - send in background

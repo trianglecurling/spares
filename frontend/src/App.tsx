@@ -49,6 +49,7 @@ import PublicContactPage from './pages/PublicContactPage';
 import PublicContactConfirmPage from './pages/PublicContactConfirmPage';
 import ClubGovernance from './pages/ClubGovernance';
 import AdminGovernance from './pages/admin/AdminGovernance';
+import AdminRoles from './pages/admin/AdminRoles';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -300,6 +301,14 @@ function App() {
                   element={
                     <ProtectedRoute adminOnly>
                       <AdminGovernance />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/roles"
+                  element={
+                    <ProtectedRoute serverAdminOnly>
+                      <AdminRoles />
                     </ProtectedRoute>
                   }
                 />

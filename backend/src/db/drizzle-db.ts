@@ -10,6 +10,9 @@ type SqliteSchema = {
   members: typeof sqliteSchema.membersSqlite;
   authCodes: typeof sqliteSchema.authCodesSqlite;
   authTokens: typeof sqliteSchema.authTokensSqlite;
+  roles: typeof sqliteSchema.rolesSqlite;
+  roleScopeRules: typeof sqliteSchema.roleScopeRulesSqlite;
+  memberRoleAssignments: typeof sqliteSchema.memberRoleAssignmentsSqlite;
   leagues: typeof sqliteSchema.leaguesSqlite;
   leagueDrawTimes: typeof sqliteSchema.leagueDrawTimesSqlite;
   leagueExceptions: typeof sqliteSchema.leagueExceptionsSqlite;
@@ -62,6 +65,9 @@ type PgSchema = {
   members: typeof pgSchema.membersPg;
   authCodes: typeof pgSchema.authCodesPg;
   authTokens: typeof pgSchema.authTokensPg;
+  roles: typeof pgSchema.rolesPg;
+  roleScopeRules: typeof pgSchema.roleScopeRulesPg;
+  memberRoleAssignments: typeof pgSchema.memberRoleAssignmentsPg;
   leagues: typeof pgSchema.leaguesPg;
   leagueDrawTimes: typeof pgSchema.leagueDrawTimesPg;
   leagueExceptions: typeof pgSchema.leagueExceptionsPg;
@@ -137,6 +143,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       members: sqliteSchema.membersSqlite,
       authCodes: sqliteSchema.authCodesSqlite,
       authTokens: sqliteSchema.authTokensSqlite,
+      roles: sqliteSchema.rolesSqlite,
+      roleScopeRules: sqliteSchema.roleScopeRulesSqlite,
+      memberRoleAssignments: sqliteSchema.memberRoleAssignmentsSqlite,
       leagues: sqliteSchema.leaguesSqlite,
       leagueDrawTimes: sqliteSchema.leagueDrawTimesSqlite,
       leagueExceptions: sqliteSchema.leagueExceptionsSqlite,
@@ -203,6 +212,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       members: pgSchema.membersPg,
       authCodes: pgSchema.authCodesPg,
       authTokens: pgSchema.authTokensPg,
+      roles: pgSchema.rolesPg,
+      roleScopeRules: pgSchema.roleScopeRulesPg,
+      memberRoleAssignments: pgSchema.memberRoleAssignmentsPg,
       leagues: pgSchema.leaguesPg,
       leagueDrawTimes: pgSchema.leagueDrawTimesPg,
       leagueExceptions: pgSchema.leagueExceptionsPg,

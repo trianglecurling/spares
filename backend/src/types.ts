@@ -1,5 +1,26 @@
 type DbDate = string | Date;
 
+export type ScopeEffect = 'allow' | 'deny';
+
+export interface ScopeContext {
+  resourceType?: string | null;
+  resourceId?: number | null;
+}
+
+export interface AuthzRule {
+  scope: string;
+  effect: ScopeEffect;
+  resourceType?: string | null;
+  resourceId?: number | null;
+}
+
+export interface AuthzClaims {
+  roleCodes: string[];
+  roleNames: string[];
+  scopeRules: AuthzRule[];
+  isServerAdmin: boolean;
+}
+
 export interface Member {
   id: number;
   name: string;
@@ -21,6 +42,7 @@ export interface Member {
   theme_preference: string | null;
   created_at: DbDate;
   updated_at: DbDate;
+  authz?: AuthzClaims;
 }
 
 export interface AuthCode {
@@ -200,7 +222,9 @@ export interface JWTPayload {
   memberId: number;
   email: string | null;
   phone: string | null;
-  isAdmin: boolean;
+  isAdmin?: boolean;
+  authz?: AuthzClaims;
+  issuedAtEpochMs?: number;
 }
 
 export interface AuthenticatedMember {
@@ -218,6 +242,9 @@ export interface AuthenticatedMember {
   leagueManagerLeagueIds: number[];
   isLeagueAdministrator: boolean;
   isLeagueAdministratorGlobal: boolean;
+  roleCodes: string[];
+  roleNames: string[];
+  scopeRules: AuthzRule[];
   firstLoginCompleted: boolean;
   optedInSms: boolean;
   emailSubscribed: boolean;
