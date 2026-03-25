@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Footer from './Footer';
 import { get } from '../api/client';
 import { HiBars3, HiChevronDown, HiXMark } from 'react-icons/hi2';
+import { memberHasScope } from '../utils/permissions';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -75,17 +76,21 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     isNavLinkActive('/admin/config');
 
   const canManageLeagues = Boolean(
-    member?.isAdmin ||
-      member?.isLeagueAdministrator ||
-      (member?.leagueManagerLeagueIds?.length ?? 0) > 0
+    member && memberHasScope(member, 'leagues.manage')
   );
+  const canManageMembers = Boolean(member && memberHasScope(member, 'members.manage'));
+  const canManageContent = Boolean(member && memberHasScope(member, 'content.manage'));
+  const canManageGovernance = Boolean(member && memberHasScope(member, 'governance.manage'));
+  const canManageSponsorship = Boolean(member && memberHasScope(member, 'sponsorship.manage'));
+  const canManageServerConfig = Boolean(member?.isServerAdmin);
   const adminLinks = [
-    ...(member?.isAdmin ? [{ to: '/admin/members', label: 'Manage members' }] : []),
+    ...(canManageMembers ? [{ to: '/admin/members', label: 'Manage members' }] : []),
     ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Manage sheets' }] : []),
-    ...((member?.isContentAdmin || member?.isServerAdmin) ? [{ to: '/admin/content', label: 'Manage content' }] : []),
-    ...((member?.isAdmin || member?.isServerAdmin) ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
-    ...((member?.isSponsorAdmin || member?.isServerAdmin) ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
-    ...(member?.isServerAdmin ? [{ to: '/admin/config', label: 'Server config' }] : []),
+    ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
+    ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
+    ...(canManageSponsorship ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
+    ...(canManageServerConfig ? [{ to: '/admin/roles', label: 'Manage roles' }] : []),
+    ...(canManageServerConfig ? [{ to: '/admin/config', label: 'Server config' }] : []),
   ];
   const hasAdminLinks = adminLinks.length > 0;
 

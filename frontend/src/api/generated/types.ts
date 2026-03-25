@@ -241,9 +241,19 @@ export interface paths {
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
                                 isContentAdmin: boolean;
+                                isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
+                                roleCodes: string[];
+                                roleNames: string[];
+                                scopeRules: {
+                                    scope: string;
+                                    /** @enum {string} */
+                                    effect: "allow" | "deny";
+                                    resourceType?: null | string;
+                                    resourceId?: null | number;
+                                }[];
                                 firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
@@ -314,9 +324,19 @@ export interface paths {
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
                                 isContentAdmin: boolean;
+                                isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
+                                roleCodes: string[];
+                                roleNames: string[];
+                                scopeRules: {
+                                    scope: string;
+                                    /** @enum {string} */
+                                    effect: "allow" | "deny";
+                                    resourceType?: null | string;
+                                    resourceId?: null | number;
+                                }[];
                                 firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
@@ -387,9 +407,19 @@ export interface paths {
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
                                 isContentAdmin: boolean;
+                                isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
+                                roleCodes: string[];
+                                roleNames: string[];
+                                scopeRules: {
+                                    scope: string;
+                                    /** @enum {string} */
+                                    effect: "allow" | "deny";
+                                    resourceType?: null | string;
+                                    resourceId?: null | number;
+                                }[];
                                 firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
@@ -442,9 +472,19 @@ export interface paths {
                                 isServerAdmin: boolean;
                                 isCalendarAdmin: boolean;
                                 isContentAdmin: boolean;
+                                isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
+                                roleCodes: string[];
+                                roleNames: string[];
+                                scopeRules: {
+                                    scope: string;
+                                    /** @enum {string} */
+                                    effect: "allow" | "deny";
+                                    resourceType?: null | string;
+                                    resourceId?: null | number;
+                                }[];
                                 firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
@@ -681,7 +721,7 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name?: string;
@@ -865,6 +905,7 @@ export interface paths {
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;
                         isContentAdmin?: boolean;
+                        isSponsorAdmin?: boolean;
                         isLeagueAdministrator?: boolean;
                     };
                 };
@@ -930,6 +971,7 @@ export interface paths {
                             createdAt?: null | string;
                             validThrough?: null | string;
                             spareOnly?: boolean;
+                            socialMember?: boolean;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
                             isLeagueAdministratorGlobal: boolean;
@@ -1011,7 +1053,7 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name: string;
@@ -1096,7 +1138,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name?: string;
@@ -1109,6 +1151,7 @@ export interface paths {
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;
                         isContentAdmin?: boolean;
+                        isSponsorAdmin?: boolean;
                     };
                 };
             };
@@ -1480,7 +1523,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name?: string;
@@ -1749,7 +1792,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name?: string;
@@ -1904,7 +1947,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name?: string;
@@ -2397,7 +2440,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name?: string;
@@ -2480,7 +2523,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name?: string;
@@ -3077,7 +3120,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         team1Id?: number;
@@ -3746,7 +3789,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         comment?: string;
@@ -4182,7 +4225,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         comment?: string;
@@ -4311,7 +4354,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         message?: string;
@@ -4522,7 +4565,7 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         twilioApiKeySid?: string;
@@ -4811,6 +4854,265 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rbac/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rbac/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/rbac/roles/{id}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rbac/members/{id}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rbac/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rbac/scope-registry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

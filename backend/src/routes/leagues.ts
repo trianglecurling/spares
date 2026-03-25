@@ -4,6 +4,7 @@ import { and, eq, sql, asc, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
+import { hasScope } from '../utils/rbac.js';
 import {
   leagueExportResponseSchema,
   leagueImportResponseSchema,
@@ -14,8 +15,6 @@ import {
 } from '../api/schemas.js';
 import type { ApiReply } from '../api/types.js';
 import {
-  getLeagueAdministratorRoleInfo,
-  getLeagueManagerRoleInfo,
   hasClubLeagueAdministratorAccess,
   hasLeagueManagerAccess,
 } from '../utils/leagueAccess.js';
@@ -124,6 +123,18 @@ function getTimePartsInTimeZone(timeZone: string) {
 }
 
 export async function leagueRoutes(fastify: FastifyInstance) {
+  const leagueManagerLeagueIdsFromMember = (member: Member): number[] => {
+    const leagueIds = new Set<number>();
+    for (const rule of member.authz?.scopeRules ?? []) {
+      if (rule.effect !== 'allow') continue;
+      if (rule.scope !== 'leagues.manage' && rule.scope !== 'leagues.*' && rule.scope !== '*') continue;
+      if (rule.resourceType !== 'league') continue;
+      if (rule.resourceId === null || rule.resourceId === undefined) continue;
+      leagueIds.add(Number(rule.resourceId));
+    }
+    return Array.from(leagueIds);
+  };
+
   // Get all leagues
   fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues',
@@ -145,10 +156,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const canManageAll = isAdmin(member) || isServerAdmin(member);
     const leagueAdminInfo = canManageAll
       ? { isGlobal: true, leagueIds: [] as number[] }
-      : await getLeagueAdministratorRoleInfo(member.id);
+      : {
+          isGlobal: hasScope(member.authz, 'leagues.manage'),
+          leagueIds: leagueManagerLeagueIdsFromMember(member),
+        };
     const leagueManagerInfo = canManageAll
       ? { leagueIds: [] as number[] }
-      : await getLeagueManagerRoleInfo(member.id);
+      : { leagueIds: leagueManagerLeagueIdsFromMember(member) };
     const leagues = await db
       .select()
       .from(schema.leagues)

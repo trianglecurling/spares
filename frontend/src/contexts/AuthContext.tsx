@@ -34,6 +34,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const normalizeMember = (value: AuthenticatedMember): AuthenticatedMember => ({
     ...value,
     themePreference: normalizeThemePreference(value.themePreference),
+    roleCodes: value.roleCodes ?? [],
+    roleNames: value.roleNames ?? [],
+    scopeRules: value.scopeRules ?? [],
   });
 
   useEffect(() => {

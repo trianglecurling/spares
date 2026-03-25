@@ -58,6 +58,54 @@ export const authTokensSqlite = sqliteTable('auth_tokens', {
   memberIdIdx: index('idx_auth_tokens_member_id').on(table.member_id),
 }));
 
+export const rolesSqlite = sqliteTable('roles', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  is_system: integer('is_system').default(0).notNull(),
+  is_computed: integer('is_computed').default(0).notNull(),
+  is_assignable: integer('is_assignable').default(1).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  codeIdx: index('idx_roles_code').on(table.code),
+  systemIdx: index('idx_roles_is_system').on(table.is_system),
+}));
+
+export const roleScopeRulesSqlite = sqliteTable('role_scope_rules', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  role_id: integer('role_id').notNull().references(() => rolesSqlite.id, { onDelete: 'cascade' }),
+  scope: text('scope').notNull(),
+  effect: text('effect').notNull().$type<'allow' | 'deny'>(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  roleIdIdx: index('idx_role_scope_rules_role_id').on(table.role_id),
+  scopeIdx: index('idx_role_scope_rules_scope').on(table.scope),
+  uniqueRoleScope: uniqueIndex('role_scope_rules_role_id_scope_unique').on(table.role_id, table.scope),
+}));
+
+export const memberRoleAssignmentsSqlite = sqliteTable('member_role_assignments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  role_id: integer('role_id').notNull().references(() => rolesSqlite.id, { onDelete: 'cascade' }),
+  resource_type: text('resource_type'),
+  resource_id: integer('resource_id'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdIdx: index('idx_member_role_assignments_member_id').on(table.member_id),
+  roleIdIdx: index('idx_member_role_assignments_role_id').on(table.role_id),
+  resourceIdx: index('idx_member_role_assignments_resource').on(table.resource_type, table.resource_id),
+  uniqueMemberRoleContext: uniqueIndex('member_role_assignments_member_role_resource_unique').on(
+    table.member_id,
+    table.role_id,
+    table.resource_type,
+    table.resource_id
+  ),
+}));
+
 export const leaguesSqlite = sqliteTable('leagues', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -817,6 +865,54 @@ export const authTokensPg = pgTable('auth_tokens', {
   memberIdIdx: indexPg('idx_auth_tokens_member_id').on(table.member_id),
 }));
 
+export const rolesPg = pgTable('roles', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  code: textPg('code').notNull().unique(),
+  name: textPg('name').notNull(),
+  description: textPg('description'),
+  is_system: integerPg('is_system').default(0).notNull(),
+  is_computed: integerPg('is_computed').default(0).notNull(),
+  is_assignable: integerPg('is_assignable').default(1).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  codeIdx: indexPg('idx_roles_code').on(table.code),
+  systemIdx: indexPg('idx_roles_is_system').on(table.is_system),
+}));
+
+export const roleScopeRulesPg = pgTable('role_scope_rules', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  role_id: integerPg('role_id').notNull().references(() => rolesPg.id, { onDelete: 'cascade' }),
+  scope: textPg('scope').notNull(),
+  effect: textPg('effect').notNull().$type<'allow' | 'deny'>(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  roleIdIdx: indexPg('idx_role_scope_rules_role_id').on(table.role_id),
+  scopeIdx: indexPg('idx_role_scope_rules_scope').on(table.scope),
+  uniqueRoleScope: uniqueIndexPg('role_scope_rules_role_id_scope_unique').on(table.role_id, table.scope),
+}));
+
+export const memberRoleAssignmentsPg = pgTable('member_role_assignments', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  role_id: integerPg('role_id').notNull().references(() => rolesPg.id, { onDelete: 'cascade' }),
+  resource_type: textPg('resource_type'),
+  resource_id: integerPg('resource_id'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdIdx: indexPg('idx_member_role_assignments_member_id').on(table.member_id),
+  roleIdIdx: indexPg('idx_member_role_assignments_role_id').on(table.role_id),
+  resourceIdx: indexPg('idx_member_role_assignments_resource').on(table.resource_type, table.resource_id),
+  uniqueMemberRoleContext: uniqueIndexPg('member_role_assignments_member_role_resource_unique').on(
+    table.member_id,
+    table.role_id,
+    table.resource_type,
+    table.resource_id
+  ),
+}));
+
 export const leaguesPg = pgTable('leagues', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   name: textPg('name').notNull(),
@@ -1528,6 +1624,9 @@ export const sqliteSchema = {
   members: membersSqlite,
   authCodes: authCodesSqlite,
   authTokens: authTokensSqlite,
+  roles: rolesSqlite,
+  roleScopeRules: roleScopeRulesSqlite,
+  memberRoleAssignments: memberRoleAssignmentsSqlite,
   leagues: leaguesSqlite,
   leagueDrawTimes: leagueDrawTimesSqlite,
   leagueExceptions: leagueExceptionsSqlite,
@@ -1580,6 +1679,9 @@ export const pgSchema = {
   members: membersPg,
   authCodes: authCodesPg,
   authTokens: authTokensPg,
+  roles: rolesPg,
+  roleScopeRules: roleScopeRulesPg,
+  memberRoleAssignments: memberRoleAssignmentsPg,
   leagues: leaguesPg,
   leagueDrawTimes: leagueDrawTimesPg,
   leagueExceptions: leagueExceptionsPg,

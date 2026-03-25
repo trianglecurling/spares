@@ -1,7 +1,7 @@
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendSpareRequestEmail } from './email.js';
 import { sendSpareRequestSMS } from './sms.js';
-import { generateEmailLinkToken } from '../utils/auth.js';
+import { buildJwtPayloadForMember, generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTime, getCurrentTimestamp, getCurrentTimeAsync } from '../utils/time.js';
 import { eq, and, or, sql, asc, isNull, isNotNull, lte, lt } from 'drizzle-orm';
 import { Member } from '../types.js';
@@ -251,7 +251,7 @@ export async function processNextNotification(): Promise<void> {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         } as Member;
-        const acceptToken = generateEmailLinkToken(memberForToken);
+        const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(memberForToken));
         const sent = await sendOnceWithDeliveryClaim(
           {
             spareRequestId: spareRequest.id,
@@ -559,7 +559,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           } as Member;
-          const acceptToken = generateEmailLinkToken(memberForToken);
+          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(memberForToken));
           await sendOnceWithDeliveryClaim(
             {
               spareRequestId: spareRequest.id,

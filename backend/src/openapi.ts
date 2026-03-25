@@ -8,6 +8,7 @@ import { gameRoutes } from './routes/games.js';
 import { availabilityRoutes } from './routes/availability.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
+import { rbacRoutes } from './routes/rbac.js';
 import { installRoutes } from './routes/install.js';
 import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
 import { publicConfigRoutes } from './routes/publicConfig.js';
@@ -45,6 +46,7 @@ async function buildOpenApi(): Promise<void> {
   await fastify.register(availabilityRoutes, { prefix: '/api' });
   await fastify.register(spareRoutes, { prefix: '/api' });
   await fastify.register(configRoutes, { prefix: '/api' });
+  await fastify.register(rbacRoutes, { prefix: '/api' });
 
   await fastify.ready();
   const spec = fastify.swagger();

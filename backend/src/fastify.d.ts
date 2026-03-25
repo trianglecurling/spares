@@ -1,8 +1,9 @@
 import 'fastify';
-import type { Member } from './types.js';
+import type { AuthzClaims, Member } from './types.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
     member?: Member;
+    authz?: AuthzClaims;
   }
 }

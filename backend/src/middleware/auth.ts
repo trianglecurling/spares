@@ -5,6 +5,7 @@ import { Member } from '../types.js';
 import { eq } from 'drizzle-orm';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { recordDailyActivity } from '../services/observability.js';
+import { buildAuthzClaimsForMember } from '../utils/rbac.js';
 
 function normalizeDateString(value: string | Date | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -57,6 +58,10 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   if (!member) {
     return reply.code(401).send({ error: 'Member not found' });
   }
+
+  // JWT is the authorization source of truth for request-time checks.
+  member.authz = payload.authz ?? (await buildAuthzClaimsForMember(member));
+  request.authz = member.authz;
 
   if (isMemberExpired(member)) {
     return reply.code(403).send({ error: 'Membership expired' });
