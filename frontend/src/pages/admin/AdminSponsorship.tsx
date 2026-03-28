@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import Button from '../../components/Button';
@@ -232,27 +233,20 @@ export default function AdminSponsorship() {
 
   return (
     <Layout>
-      <div className="space-y-8">
-        <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white p-6 dark:border-gray-700 dark:from-gray-900 dark:to-gray-800">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Sponsorship management
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-gray-300">
-            Manage sponsorship levels, sponsors, and sponsorships.
-          </p>
-        </div>
+      <AppPage>
+        <AppPageHeader title="Sponsorship management" description="Manage sponsorship levels, sponsors, and sponsorships." />
 
         {loading ? (
           <div className="text-gray-500">Loading...</div>
         ) : (
           <div className="space-y-6">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <section className="app-card">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-gray-100">
+                  <h2 className="app-section-title">
                     Sponsorship levels
                   </h2>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-gray-300">
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                     Levels define sponsorship tiering. Higher levels appear first on the homepage.
                     Drag rows to reorder ranking.
                   </p>
@@ -265,7 +259,7 @@ export default function AdminSponsorship() {
                       levels: !prev.levels,
                     }))
                   }
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
                   aria-label={
                     expandedSections.levels
                       ? 'Collapse sponsorship levels'
@@ -305,13 +299,13 @@ export default function AdminSponsorship() {
                         const from = Number.parseInt(e.dataTransfer.getData('text/plain'), 10);
                         if (!Number.isNaN(from) && from !== idx) reorderLevels(from, idx);
                       }}
-                      className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
+                      className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-gray-700 dark:text-gray-200">
+                        <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
                           Rank {idx + 1}
                         </span>
-                        <div className="font-medium text-slate-900 dark:text-gray-100">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">
                           {level.name}
                           {level.amount !== null ? ` ($${level.amount.toLocaleString()})` : ''}
                         </div>
@@ -360,13 +354,13 @@ export default function AdminSponsorship() {
               ) : null}
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <section className="app-card">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-gray-100">
+                  <h2 className="app-section-title">
                     Sponsors
                   </h2>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-gray-300">
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                     Sponsors represent organizations. Add logo and website URL here, then map them
                     to levels using sponsorship records below.
                   </p>
@@ -379,7 +373,7 @@ export default function AdminSponsorship() {
                       sponsors: !prev.sponsors,
                     }))
                   }
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
                   aria-label={expandedSections.sponsors ? 'Collapse sponsors' : 'Expand sponsors'}
                   title={expandedSections.sponsors ? 'Collapse' : 'Expand'}
                 >
@@ -415,7 +409,7 @@ export default function AdminSponsorship() {
                   {sponsors.map((sponsor) => (
                     <div
                       key={sponsor.id}
-                      className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
+                      className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
                     >
                       <div className="flex items-center gap-3">
                         {sponsor.logoUrl ? (
@@ -425,15 +419,15 @@ export default function AdminSponsorship() {
                             className="h-10 w-20 rounded bg-white object-contain p-1 dark:bg-gray-100"
                           />
                         ) : (
-                          <div className="flex h-10 w-20 items-center justify-center rounded bg-white text-xs text-slate-400 dark:bg-gray-700 dark:text-gray-300">
+                          <div className="flex h-10 w-20 items-center justify-center rounded bg-white text-xs text-gray-400 dark:bg-gray-700 dark:text-gray-300">
                             No logo
                           </div>
                         )}
                         <div>
-                          <div className="font-medium text-slate-900 dark:text-gray-100">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
                             {sponsor.name}
                           </div>
-                          <div className="text-xs text-slate-600 dark:text-gray-300">
+                          <div className="text-xs text-gray-600 dark:text-gray-300">
                             {sponsor.websiteUrl}
                           </div>
                         </div>
@@ -486,13 +480,13 @@ export default function AdminSponsorship() {
               ) : null}
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <section className="app-card">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-gray-100">
+                  <h2 className="app-section-title">
                     Sponsorships
                   </h2>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-gray-300">
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                     Sponsorships assign a sponsor to a level and optional date window.
                     Current display is inclusive of start and end dates.
                   </p>
@@ -505,7 +499,7 @@ export default function AdminSponsorship() {
                       sponsorships: !prev.sponsorships,
                     }))
                   }
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
                   aria-label={
                     expandedSections.sponsorships ? 'Collapse sponsorships' : 'Expand sponsorships'
                   }
@@ -541,13 +535,13 @@ export default function AdminSponsorship() {
                   {sponsorships.map((s) => (
                     <div
                       key={s.id}
-                      className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
+                      className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
                     >
-                      <div className="text-slate-900 dark:text-gray-100">
+                      <div className="text-gray-900 dark:text-gray-100">
                         <span className="font-medium">{s.sponsorName}</span>
-                        <span className="text-slate-500 dark:text-gray-400"> - </span>
+                        <span className="text-gray-500 dark:text-gray-400"> - </span>
                         <span>{s.levelName}</span>
-                        <div className="text-xs text-slate-600 dark:text-gray-300">
+                        <div className="text-xs text-gray-600 dark:text-gray-300">
                           {s.startDate || 'No start'} to {s.endDate || 'No end'}
                         </div>
                       </div>
@@ -598,7 +592,7 @@ export default function AdminSponsorship() {
             </section>
           </div>
         )}
-      </div>
+      </AppPage>
 
       <Modal
         isOpen={levelModalOpen}
@@ -609,25 +603,25 @@ export default function AdminSponsorship() {
           <div>
             <label
               htmlFor="level-name"
-              className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+              className="app-label"
             >
               Level name
             </label>
             <input
               id="level-name"
-              className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="app-input"
               placeholder="Platinum"
               value={levelForm.name}
               onChange={(e) => setLevelForm((p) => ({ ...p, name: e.target.value }))}
             />
-            <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Used for grouping and display order.
             </p>
           </div>
           <div>
             <label
               htmlFor="level-amount"
-              className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+              className="app-label"
             >
               Dollar amount
             </label>
@@ -635,12 +629,12 @@ export default function AdminSponsorship() {
               id="level-amount"
               type="number"
               min={0}
-              className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="app-input"
               placeholder="5000"
               value={levelForm.amount}
               onChange={(e) => setLevelForm((p) => ({ ...p, amount: e.target.value }))}
             />
-            <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Optional. Leave blank if this level has no fixed dollar amount.
             </p>
           </div>
@@ -664,13 +658,13 @@ export default function AdminSponsorship() {
           <div>
             <label
               htmlFor="sponsor-name"
-              className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+              className="app-label"
             >
               Sponsor name
             </label>
             <input
               id="sponsor-name"
-              className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="app-input"
               placeholder="Acme Corp"
               value={sponsorForm.name}
               onChange={(e) => setSponsorForm((p) => ({ ...p, name: e.target.value }))}
@@ -680,35 +674,35 @@ export default function AdminSponsorship() {
           <div>
             <label
               htmlFor="sponsor-website"
-              className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+              className="app-label"
             >
               Website URL
             </label>
             <input
               id="sponsor-website"
-              className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="app-input"
               placeholder="https://example.com"
               value={sponsorForm.websiteUrl}
               onChange={(e) => setSponsorForm((p) => ({ ...p, websiteUrl: e.target.value }))}
             />
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-900">
-            <p className="text-sm font-medium text-slate-800 dark:text-gray-100">Logo</p>
-            <p className="mt-1 text-xs text-slate-600 dark:text-gray-300">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Logo</p>
+            <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
               Select an existing uploaded image or choose a new file to upload when you save.
             </p>
 
             <div className="mt-3 space-y-2">
               <label
                 htmlFor="sponsor-logo-file"
-                className="block text-sm font-medium text-slate-700 dark:text-gray-200"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-200"
               >
                 Use existing image
               </label>
               <select
                 id="sponsor-logo-file"
-                className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className="app-input"
                 value={sponsorForm.logoFileId}
                 disabled={Boolean(logoUploadFile) || uploadingLogo || saving}
                 onChange={(e) => setSponsorForm((p) => ({ ...p, logoFileId: e.target.value }))}
@@ -726,7 +720,7 @@ export default function AdminSponsorship() {
               <div>
                 <label
                   htmlFor="new-sponsor-logo"
-                  className="block text-sm font-medium text-slate-700 dark:text-gray-200"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-200"
                 >
                   Upload new image
                 </label>
@@ -734,12 +728,12 @@ export default function AdminSponsorship() {
                   id="new-sponsor-logo"
                   type="file"
                   accept="image/*"
-                  className="mt-1 w-full text-sm text-slate-700 dark:text-gray-200"
+                  className="mt-1 w-full text-sm text-gray-700 dark:text-gray-200"
                   onChange={(e) => setLogoUploadFile(e.target.files?.[0] ?? null)}
                 />
               </div>
               {logoUploadFile ? (
-                <p className="mt-2 text-xs text-slate-500 dark:text-gray-400">
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   Selected: {logoUploadFile.name}. This file will upload when you click Save
                   sponsor.
                 </p>
@@ -751,13 +745,13 @@ export default function AdminSponsorship() {
             <div>
               <label
                 htmlFor="sponsor-contact-name"
-                className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+                className="app-label"
               >
                 Contact name (optional)
               </label>
               <input
                 id="sponsor-contact-name"
-                className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className="app-input"
                 value={sponsorForm.contactName}
                 onChange={(e) => setSponsorForm((p) => ({ ...p, contactName: e.target.value }))}
               />
@@ -765,13 +759,13 @@ export default function AdminSponsorship() {
             <div>
               <label
                 htmlFor="sponsor-contact-email"
-                className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+                className="app-label"
               >
                 Contact email (optional)
               </label>
               <input
                 id="sponsor-contact-email"
-                className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className="app-input"
                 value={sponsorForm.contactEmail}
                 onChange={(e) =>
                   setSponsorForm((p) => ({
@@ -807,13 +801,13 @@ export default function AdminSponsorship() {
           <div>
             <label
               htmlFor="sponsorship-sponsor"
-              className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+              className="app-label"
             >
               Sponsor
             </label>
             <select
               id="sponsorship-sponsor"
-              className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="app-input"
               value={sponsorshipForm.sponsorId}
               onChange={(e) => setSponsorshipForm((p) => ({ ...p, sponsorId: e.target.value }))}
             >
@@ -828,13 +822,13 @@ export default function AdminSponsorship() {
           <div>
             <label
               htmlFor="sponsorship-level"
-              className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+              className="app-label"
             >
               Sponsorship level
             </label>
             <select
               id="sponsorship-level"
-              className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="app-input"
               value={sponsorshipForm.sponsorshipLevelId}
               onChange={(e) =>
                 setSponsorshipForm((p) => ({
@@ -855,14 +849,14 @@ export default function AdminSponsorship() {
             <div>
               <label
                 htmlFor="sponsorship-start"
-                className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+                className="app-label"
               >
                 Start date (optional)
               </label>
               <input
                 id="sponsorship-start"
                 type="date"
-                className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className="app-input"
                 value={sponsorshipForm.startDate}
                 onChange={(e) =>
                   setSponsorshipForm((p) => ({
@@ -875,14 +869,14 @@ export default function AdminSponsorship() {
             <div>
               <label
                 htmlFor="sponsorship-end"
-                className="mb-1 block text-sm font-medium text-slate-700 dark:text-gray-200"
+                className="app-label"
               >
                 End date (optional)
               </label>
               <input
                 id="sponsorship-end"
                 type="date"
-                className="w-full rounded border border-slate-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                className="app-input"
                 value={sponsorshipForm.endDate}
                 onChange={(e) =>
                   setSponsorshipForm((p) => ({
@@ -893,7 +887,7 @@ export default function AdminSponsorship() {
               />
             </div>
           </div>
-          <p className="text-xs text-slate-500 dark:text-gray-400">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Current status is inclusive: active when today is on/after start date (or no start) and
             on/before end date (or no end).
           </p>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import Button from '../components/Button';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import api from '../utils/api';
@@ -152,18 +153,17 @@ export default function BookIceTime() {
   if (member?.socialMember) {
     return (
       <Layout>
-        <div className="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow p-8">
-          <h1 className="text-2xl font-semibold text-[#121033] dark:text-gray-100 mb-2">Book ice time</h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Social memberships do not include ice booking. Upgrade to a full membership to reserve practice ice.
-          </p>
-          <Link
-            to="/calendar"
-            className="text-primary-teal font-medium hover:underline"
-          >
-            View full calendar
-          </Link>
-        </div>
+        <AppPage narrow>
+          <AppPageHeader title="Book ice time" />
+          <div className="app-card">
+            <p className="app-page-subtitle">
+              Social memberships do not include ice booking. Upgrade to a full membership to reserve practice ice.
+            </p>
+            <Link to="/calendar" className="mt-5 inline-flex text-sm font-medium text-primary-teal hover:underline">
+              View full calendar
+            </Link>
+          </div>
+        </AppPage>
       </Layout>
     );
   }
@@ -173,12 +173,12 @@ export default function BookIceTime() {
       PURPOSE_OPTIONS.find((p) => p.value === confirmedSummary.purpose)?.label ?? confirmedSummary.purpose;
     return (
       <Layout>
-        <div className="max-w-xl mx-auto space-y-6">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
-            <h1 className="text-2xl font-semibold text-[#121033] dark:text-gray-100 mb-2">You&apos;re booked</h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              We sent a confirmation email{member?.email ? ` to ${member.email}` : ''}. Please remember:
-            </p>
+        <AppPage narrow>
+          <div className="app-card">
+            <AppPageHeader
+              title="You're booked"
+              description={`We sent a confirmation email${member?.email ? ` to ${member.email}` : ''}. Please remember:`}
+            />
             <ul className="list-disc pl-5 space-y-2 text-gray-800 dark:text-gray-200 mb-6">
               <li>At least one other person must be on premises with you. You may not use the ice alone.</li>
               <li>Do not enter the ice maintenance room without proper training.</li>
@@ -233,26 +233,30 @@ export default function BookIceTime() {
               </Button>
             </div>
           </div>
-        </div>
+        </AppPage>
       </Layout>
     );
   }
 
   return (
     <Layout>
-      <div className="max-w-xl mx-auto">
-        <h1 className="text-2xl font-semibold text-[#121033] dark:text-gray-100 mb-2">Book ice time</h1>
-        <p className="text-gray-600 dark:text-gray-400 mb-6">
-          Reserve 1 or 2 hours on one sheet, up to 7 days ahead. Your sheet must be available accoridng to the{' '}
-          <Link to="/calendar" className="text-primary-teal hover:underline">
-            club calendar
-          </Link>
-          .
-        </p>
+      <AppPage narrow>
+        <AppPageHeader
+          title="Book ice time"
+          description={
+            <>
+              Reserve 1 or 2 hours on one sheet, up to 7 days ahead. Your sheet must be available according to the{' '}
+              <Link to="/calendar" className="text-primary-teal hover:underline">
+                club calendar
+              </Link>
+              .
+            </>
+          }
+        />
 
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="app-card space-y-5">
           <div>
-            <label htmlFor="ice-sheet" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor="ice-sheet" className="app-label">
               Sheet
             </label>
             {sheetsLoading ? (
@@ -264,7 +268,7 @@ export default function BookIceTime() {
                 id="ice-sheet"
                 value={sheetId}
                 onChange={(e) => setSheetId(e.target.value)}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-900 dark:text-gray-100"
+                className="app-input"
                 required
               >
                 {sheets.map((s) => (
@@ -277,7 +281,7 @@ export default function BookIceTime() {
           </div>
 
           <div>
-            <label htmlFor="ice-start" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor="ice-start" className="app-label">
               Start date and time
             </label>
             <input
@@ -287,7 +291,7 @@ export default function BookIceTime() {
               min={minLocal}
               max={maxLocal}
               onChange={(e) => setStartLocal(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-900 dark:text-gray-100"
+              className="app-input"
               required
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -296,7 +300,7 @@ export default function BookIceTime() {
           </div>
 
           <fieldset>
-            <legend className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Duration</legend>
+            <legend className="app-label">Duration</legend>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 text-gray-800 dark:text-gray-200">
                 <input
@@ -320,7 +324,7 @@ export default function BookIceTime() {
           </fieldset>
 
           <fieldset>
-            <legend className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Purpose</legend>
+            <legend className="app-label">Purpose</legend>
             <div className="space-y-2">
               {PURPOSE_OPTIONS.map((opt) => (
                 <label
@@ -394,7 +398,7 @@ export default function BookIceTime() {
               <div className="mt-3">
                 <label
                   htmlFor="guest-names"
-                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  className="app-label"
                 >
                   Guest names <span className="text-red-600 dark:text-red-400">*</span>
                 </label>
@@ -404,7 +408,7 @@ export default function BookIceTime() {
                   onChange={(e) => setGuestNames(e.target.value)}
                   rows={2}
                   placeholder="List everyone who will be on the ice as your guests"
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-900 dark:text-gray-100 text-sm"
+                  className="app-input"
                   required
                   aria-required="true"
                 />
@@ -421,7 +425,7 @@ export default function BookIceTime() {
                   onChange={(e) => setPurposeOther(e.target.value)}
                   rows={3}
                   placeholder={"Briefly describe what you're using the ice for"}
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-900 dark:text-gray-100 text-sm"
+                  className="app-input"
                   required
                 />
               </div>
@@ -440,7 +444,7 @@ export default function BookIceTime() {
             </Link>
           </div>
         </form>
-      </div>
+      </AppPage>
     </Layout>
   );
 }

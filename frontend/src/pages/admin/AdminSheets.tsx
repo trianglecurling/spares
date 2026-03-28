@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
@@ -123,16 +124,16 @@ export default function AdminSheets() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Manage sheets</h1>
-          <Button onClick={() => handleOpenModal()}>Add sheet</Button>
-        </div>
+      <AppPage>
+        <AppPageHeader
+          title="Manage sheets"
+          actions={<Button onClick={() => handleOpenModal()}>Add sheet</Button>}
+        />
 
         {loading ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : sheets.length === 0 ? (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="app-card py-12 text-center">
             <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">
               No sheets configured yet.
             </p>
@@ -141,10 +142,10 @@ export default function AdminSheets() {
         ) : (
           <div className="grid gap-4">
             {sheets.map((sheet) => (
-              <div key={sheet.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div key={sheet.id} className="app-card p-6">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">{sheet.name}</h3>
+                    <h3 className="app-section-title mb-2">{sheet.name}</h3>
                     <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                       <p>
                         <span className="font-medium dark:text-gray-300">Sort order:</span>{' '}
@@ -170,7 +171,7 @@ export default function AdminSheets() {
             ))}
           </div>
         )}
-      </div>
+      </AppPage>
 
       <Modal
         isOpen={isModalOpen}
@@ -179,10 +180,7 @@ export default function AdminSheets() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label
-              htmlFor="name"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-            >
+            <label htmlFor="name" className="app-label">
               Sheet name <span className="text-red-500">*</span>
             </label>
             <input
@@ -190,16 +188,13 @@ export default function AdminSheets() {
               id="name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
               required
             />
           </div>
 
           <div>
-            <label
-              htmlFor="sortOrder"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-            >
+            <label htmlFor="sortOrder" className="app-label">
               Sort order
             </label>
             <input
@@ -209,7 +204,7 @@ export default function AdminSheets() {
               onChange={(e) =>
                 setFormData({ ...formData, sortOrder: parseInt(e.target.value, 10) || 0 })
               }
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
             />
           </div>
 

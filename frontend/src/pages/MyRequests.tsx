@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HiChevronDown, HiOutlineClipboardDocument, HiPlus } from 'react-icons/hi2';
 import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
@@ -419,23 +420,23 @@ export default function MyRequests() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            My spare requests
-          </h1>
-          <Link to="/request-spare">
-            <Button>
-              <HiPlus className="w-5 h-5 mr-1" />
-              New request
-            </Button>
-          </Link>
-        </div>
+      <AppPage>
+        <AppPageHeader
+          title="My spare requests"
+          actions={
+            <Link to="/request-spare">
+              <Button>
+                <HiPlus className="w-5 h-5 mr-1" />
+                New request
+              </Button>
+            </Link>
+          }
+        />
 
         {loading ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : requests.length === 0 ? (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="text-center py-12 app-card">
             <div className="flex justify-center mb-4">
               <HiOutlineClipboardDocument className="w-16 h-16 text-gray-400 dark:text-gray-500" />
             </div>
@@ -452,7 +453,7 @@ export default function MyRequests() {
         ) : (
           <div className="space-y-4">
             {requests.map((request) => (
-              <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div key={request.id} className="app-card p-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <div className="flex items-center space-x-2 mb-2">
@@ -676,7 +677,7 @@ export default function MyRequests() {
           </div>
         )}
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="app-card overflow-hidden">
           <button
             type="button"
             className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
@@ -771,7 +772,7 @@ export default function MyRequests() {
             </div>
           )}
         </div>
-      </div>
+      </AppPage>
 
       <Modal
         isOpen={!!reissueRequest}
@@ -792,7 +793,7 @@ export default function MyRequests() {
             <div>
               <label
                 htmlFor="reissueMessage"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Message (optional)
               </label>
@@ -800,7 +801,7 @@ export default function MyRequests() {
                 id="reissueMessage"
                 value={reissueMessage}
                 onChange={(e) => setReissueMessage(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 rows={4}
                 placeholder="Add or update your message for potential spares..."
               />
@@ -876,7 +877,7 @@ export default function MyRequests() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="app-label">
                     Add invitees
                   </label>
                   <input
@@ -884,7 +885,7 @@ export default function MyRequests() {
                     value={inviteFilter}
                     onChange={(e) => setInviteFilter(e.target.value)}
                     placeholder="Search members..."
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                   />
                 </div>
 

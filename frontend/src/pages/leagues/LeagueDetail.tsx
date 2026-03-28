@@ -1631,7 +1631,7 @@ export default function LeagueDetail() {
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">{league.name}</h1>
+            <h1 className="app-page-title">{league.name}</h1>
             <p className="text-sm text-gray-600 dark:text-gray-400">League details</p>
           </div>
           <Button variant="secondary" onClick={() => navigate('/leagues')}>
@@ -1649,9 +1649,9 @@ export default function LeagueDetail() {
 
         {normalizedTab === 'overview' && (
           <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
+            <div className="app-card space-y-3">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                <h2 className="app-section-title">
                   League info
                 </h2>
                 {canEditLeagueInfo && (
@@ -1697,8 +1697,8 @@ export default function LeagueDetail() {
             </div>
 
             {memberTeamIds.length > 0 && leagueSettings?.collectByeRequests && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              <div className="app-card space-y-3">
+                <h2 className="app-section-title">
                   Bye requests
                 </h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -1708,7 +1708,7 @@ export default function LeagueDetail() {
               </div>
             )}
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4">
+            <div className="app-card space-y-4">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <button
                   type="button"
@@ -1815,7 +1815,7 @@ export default function LeagueDetail() {
             )}
 
             {divisions.length === 0 ? (
-              <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+              <div className="app-card text-center py-12">
                 <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">No divisions yet.</p>
                 {canManageSetup && (
                   <Button onClick={() => handleOpenDivisionModal()}>Create a division</Button>
@@ -1829,11 +1829,11 @@ export default function LeagueDetail() {
                   .map((division) => (
                     <div
                       key={division.id}
-                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                      className="app-card"
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">
+                          <h3 className="app-section-title mb-2">
                             {division.name}
                           </h3>
                         </div>
@@ -1864,11 +1864,11 @@ export default function LeagueDetail() {
             {canManageSetup && (
               <div
                 ref={teamFormRef}
-                className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4"
+                className="app-card space-y-4"
               >
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                    <h2 className="app-section-title">
                       {editingTeam ? 'Edit team' : 'Add team'}
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -1900,7 +1900,7 @@ export default function LeagueDetail() {
                     <div>
                       <label
                         htmlFor="teamNameInline"
-                        className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                        className="app-label"
                       >
                         Team name
                       </label>
@@ -1909,7 +1909,7 @@ export default function LeagueDetail() {
                         id="teamNameInline"
                         value={teamForm.name}
                         onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                        className="app-input"
                       />
                     </div>
 
@@ -1917,7 +1917,7 @@ export default function LeagueDetail() {
                       <div>
                         <label
                           htmlFor="teamDivisionInline"
-                          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                          className="app-label"
                         >
                           Division
                         </label>
@@ -1927,7 +1927,7 @@ export default function LeagueDetail() {
                           onChange={(e) =>
                             setTeamForm({ ...teamForm, divisionId: parseInt(e.target.value, 10) })
                           }
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                          className="app-input"
                         >
                           {divisions.map((division) => (
                             <option key={division.id} value={division.id}>
@@ -2023,7 +2023,7 @@ export default function LeagueDetail() {
                                     onBlur={() => handleRoleBlur(role)}
                                     onKeyDown={(e) => handleRoleKeyDown(role, e)}
                                     placeholder={`Select ${roleLabels[role].toLowerCase()}`}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                                    className="app-input"
                                   />
                                   {focusedRole === role && roleDropdownOpen[role] && (
                                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
@@ -2102,7 +2102,7 @@ export default function LeagueDetail() {
                                     onBlur={() => handleDoublesBlur(role)}
                                     onKeyDown={(e) => handleDoublesKeyDown(role, e)}
                                     placeholder={`Select ${roleLabels[role].toLowerCase()}`}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                                    className="app-input"
                                   />
                                   {focusedDoublesRole === role && doublesDropdownOpen[role] && (
                                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
@@ -2171,7 +2171,7 @@ export default function LeagueDetail() {
             )}
 
             {teams.length === 0 ? (
-              <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+              <div className="app-card text-center py-12">
                 <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">No teams yet.</p>
               </div>
             ) : (
@@ -2184,18 +2184,18 @@ export default function LeagueDetail() {
 
                   return (
                     <div key={division.id} className="space-y-3">
-                      <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                      <h2 className="app-section-title">
                         {division.name}
                       </h2>
                       <div className="grid gap-4">
                         {divisionTeams.map((team) => (
                           <div
                             key={team.id}
-                            className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                            className="app-card"
                           >
                             <div className="flex justify-between items-start gap-4">
                               <div className="flex-1">
-                                <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">
+                                <h3 className="app-section-title mb-2">
                                   {team.name || 'Unnamed team'}
                                 </h3>
                                 <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
@@ -2233,10 +2233,10 @@ export default function LeagueDetail() {
 
         {normalizedTab === 'managers' && (
           <div className="space-y-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-2">
+            <div className="app-card space-y-2">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  <h2 className="app-section-title">
                     League managers
                   </h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -2249,7 +2249,7 @@ export default function LeagueDetail() {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="app-card">
               {managers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   No league managers assigned yet.
@@ -2283,7 +2283,7 @@ export default function LeagueDetail() {
             </div>
 
             {canEditManagers && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
+              <div className="app-card space-y-3">
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     Add league manager
@@ -2304,7 +2304,7 @@ export default function LeagueDetail() {
                     onFocus={() => setManagerDropdownOpen(true)}
                     onKeyDown={handleManagerKeyDown}
                     placeholder="Search members by name or email"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                    className="app-input"
                   />
                   {managerDropdownOpen && managerSearchQuery.trim().length >= 2 && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
@@ -2359,10 +2359,10 @@ export default function LeagueDetail() {
 
         {normalizedTab === 'roster' && (
           <div className="space-y-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-2">
+            <div className="app-card space-y-2">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  <h2 className="app-section-title">
                     League roster
                   </h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -2377,7 +2377,7 @@ export default function LeagueDetail() {
             </div>
 
             {canManageRoster && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-3">
+              <div className="app-card space-y-3">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                   <div>
                     <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -2403,7 +2403,7 @@ export default function LeagueDetail() {
                     onFocus={() => setRosterDropdownOpen(true)}
                     onKeyDown={handleRosterKeyDown}
                     placeholder="Search members by name or email"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                    className="app-input"
                   />
                   {rosterDropdownOpen && rosterSearchQuery.trim().length >= 2 && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
@@ -2444,7 +2444,7 @@ export default function LeagueDetail() {
               </div>
             )}
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="app-card">
               {rosterMembers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   No roster members yet.
@@ -2505,7 +2505,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="divisionName"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Division name <span className="text-red-500">*</span>
               </label>
@@ -2514,7 +2514,7 @@ export default function LeagueDetail() {
                 id="divisionName"
                 value={divisionForm.name}
                 onChange={(e) => setDivisionForm({ ...divisionForm, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               />
             </div>
@@ -2547,7 +2547,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="leagueName"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 League name <span className="text-red-500">*</span>
               </label>
@@ -2556,7 +2556,7 @@ export default function LeagueDetail() {
                 id="leagueName"
                 value={leagueForm.name}
                 onChange={(e) => setLeagueForm({ ...leagueForm, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               />
             </div>
@@ -2564,7 +2564,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="leagueDayOfWeek"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Day of week <span className="text-red-500">*</span>
               </label>
@@ -2574,7 +2574,7 @@ export default function LeagueDetail() {
                 onChange={(e) =>
                   setLeagueForm({ ...leagueForm, dayOfWeek: parseInt(e.target.value, 10) })
                 }
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               >
                 {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(
@@ -2588,7 +2588,7 @@ export default function LeagueDetail() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="app-label">
                 Draw times <span className="text-red-500">*</span>
               </label>
               {leagueForm.drawTimes.map((time, index) => (
@@ -2597,7 +2597,7 @@ export default function LeagueDetail() {
                     type="time"
                     value={time}
                     onChange={(e) => updateDrawTime(index, e.target.value)}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input flex-1"
                     required
                   />
                   {leagueForm.drawTimes.length > 1 && (
@@ -2615,7 +2615,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="leagueStartDate"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Season start date <span className="text-red-500">*</span>
               </label>
@@ -2624,7 +2624,7 @@ export default function LeagueDetail() {
                 id="leagueStartDate"
                 value={leagueForm.startDate}
                 onChange={(e) => setLeagueForm({ ...leagueForm, startDate: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               />
             </div>
@@ -2632,7 +2632,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="leagueEndDate"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Season end date <span className="text-red-500">*</span>
               </label>
@@ -2641,7 +2641,7 @@ export default function LeagueDetail() {
                 id="leagueEndDate"
                 value={leagueForm.endDate}
                 onChange={(e) => setLeagueForm({ ...leagueForm, endDate: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               />
             </div>
@@ -2649,7 +2649,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="leagueFormat"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Format <span className="text-red-500">*</span>
               </label>
@@ -2659,7 +2659,7 @@ export default function LeagueDetail() {
                 onChange={(e) =>
                   setLeagueForm({ ...leagueForm, format: e.target.value as League['format'] })
                 }
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               >
                 <option value="teams">Teams (4 players)</option>
@@ -2668,7 +2668,7 @@ export default function LeagueDetail() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="app-label">
                 Exception dates (no games)
               </label>
               <div className="space-y-2">
@@ -2701,7 +2701,7 @@ export default function LeagueDetail() {
                     <select
                       value={exceptionToAdd}
                       onChange={(e) => setExceptionToAdd(e.target.value)}
-                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                      className="app-input flex-1"
                     >
                       <option value="">Select date</option>
                       {availableExceptionDates.map((date) => (
@@ -2831,7 +2831,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="bye-requests-team"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                className="app-label"
               >
                 Team
               </label>
@@ -2839,7 +2839,7 @@ export default function LeagueDetail() {
                 id="bye-requests-team"
                 value={byeRequestsTeamId ?? ''}
                 onChange={(e) => handleByeRequestsTeamChange(Number(e.target.value))}
-                className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                className="app-input"
               >
                 {teams
                   .filter((t) => memberTeamIds.includes(t.id))
@@ -2923,7 +2923,7 @@ export default function LeagueDetail() {
             <div>
               <label
                 htmlFor="bulkRosterNames"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Paste names (one per line)
               </label>
@@ -2932,7 +2932,7 @@ export default function LeagueDetail() {
                 value={bulkRosterNames}
                 onChange={(e) => setBulkRosterNames(e.target.value)}
                 rows={8}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                className="app-input"
                 placeholder="Jane Doe&#10;John Smith"
               />
             </div>
@@ -3003,7 +3003,7 @@ export default function LeagueDetail() {
                         onFocus={() => setBulkRosterDropdownOpen(true)}
                         onKeyDown={handleBulkRosterKeyDown}
                         placeholder="Search members by name or email"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md"
+                        className="app-input"
                       />
                       {bulkRosterDropdownOpen && bulkRosterQuery.trim().length >= 2 && (
                         <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">

@@ -985,10 +985,14 @@ export default function LeagueSchedule({
         isOpen={gameModalOpen}
         onClose={closeGameModal}
         title={editingGame ? 'Edit game' : 'Add game'}
+        verticalAlign={editingGame ? 'start' : 'center'}
       >
-        <form onSubmit={handleSaveGame} className="space-y-4">
+        <form
+          onSubmit={handleSaveGame}
+          className={editingGame ? 'flex flex-col flex-1 min-h-0 gap-4' : 'space-y-4'}
+        >
           {editingGame && (
-            <div className="flex border-b border-gray-200 dark:border-gray-700 -mx-4 px-4">
+            <div className="flex shrink-0 border-b border-gray-200 dark:border-gray-700 -mx-4 px-4">
               <button
                 type="button"
                 onClick={() => setEditTab('details')}
@@ -1014,6 +1018,13 @@ export default function LeagueSchedule({
             </div>
           )}
 
+          <div
+            className={
+              editingGame
+                ? 'min-h-[16rem] h-[min(30rem,58vh)] shrink-0 overflow-y-auto space-y-4'
+                : 'contents'
+            }
+          >
           {(!editingGame || editTab === 'details') && (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
@@ -1038,7 +1049,7 @@ export default function LeagueSchedule({
               {gameForm.status !== 'unscheduled' && (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="app-label">
                       Draw time
                     </label>
                     <select
@@ -1077,7 +1088,7 @@ export default function LeagueSchedule({
                           team2Id: drawTeamIds.has(Number(prev.team2Id)) ? '' : prev.team2Id,
                         }));
                       }}
-                      className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                      className="app-input"
                     >
                       <option value="">Select draw time</option>
                       {drawSlots.map((slot) => (
@@ -1096,7 +1107,7 @@ export default function LeagueSchedule({
                   {addingDrawTime && (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <label className="app-label">
                           New draw date
                         </label>
                         <input
@@ -1105,11 +1116,11 @@ export default function LeagueSchedule({
                           onChange={(event) =>
                             setExtraDrawForm({ ...extraDrawForm, date: event.target.value })
                           }
-                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                          className="app-input"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <label className="app-label">
                           New draw time
                         </label>
                         <input
@@ -1118,7 +1129,7 @@ export default function LeagueSchedule({
                           onChange={(event) =>
                             setExtraDrawForm({ ...extraDrawForm, time: event.target.value })
                           }
-                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                          className="app-input"
                         />
                       </div>
                     </div>
@@ -1138,7 +1149,7 @@ export default function LeagueSchedule({
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="app-label">
                       Sheet
                     </label>
                     {addingDrawTime ? (
@@ -1213,7 +1224,7 @@ export default function LeagueSchedule({
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="app-label">
                   Team 1
                 </label>
                 <select
@@ -1225,7 +1236,7 @@ export default function LeagueSchedule({
                       team2Id: prev.team2Id === event.target.value ? '' : prev.team2Id,
                     }))
                   }
-                  className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                  className="app-input"
                   required
                 >
                   <option value="">Select team</option>
@@ -1238,7 +1249,7 @@ export default function LeagueSchedule({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="app-label">
                   Team 2
                 </label>
                 <select
@@ -1250,7 +1261,7 @@ export default function LeagueSchedule({
                       team1Id: prev.team1Id === event.target.value ? '' : prev.team1Id,
                     }))
                   }
-                  className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2"
+                  className="app-input"
                   required
                 >
                   <option value="">Select team</option>
@@ -1295,7 +1306,7 @@ export default function LeagueSchedule({
                               return { ...prev, team1Values: next };
                             });
                           }}
-                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
+                          className="app-input"
                         />
                       </div>
                       <div>
@@ -1315,7 +1326,7 @@ export default function LeagueSchedule({
                               return { ...prev, team2Values: next };
                             });
                           }}
-                          className="w-full rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 px-3 py-2 text-sm"
+                          className="app-input"
                         />
                       </div>
                     </div>
@@ -1338,8 +1349,11 @@ export default function LeagueSchedule({
               )}
             </div>
           )}
+          </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div
+            className={`flex flex-wrap gap-3 ${editingGame ? 'shrink-0 border-t border-gray-200 pt-4 dark:border-gray-700' : ''}`}
+          >
             {editingGame && (
               <Button
                 type="button"

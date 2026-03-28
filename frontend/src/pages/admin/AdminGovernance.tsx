@@ -2,6 +2,7 @@ import { FormEvent, KeyboardEvent, useEffect, useId, useMemo, useRef, useState }
 import Button from '../../components/Button';
 import Layout from '../../components/Layout';
 import Modal from '../../components/Modal';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../utils/api';
@@ -48,10 +49,10 @@ function daysInMonth(month: string): number {
 }
 
 const selectClass =
-  'w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm';
+  'app-input';
 const inputClass =
-  'w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm';
-const labelClass = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
+  'app-input';
+const labelClass = 'app-label';
 
 function splitOfficerAssignments(
   data: GovernanceSummaryResponse | null
@@ -592,23 +593,21 @@ export default function AdminGovernance() {
 
   return (
     <Layout>
-      <div className="space-y-8">
-        <header className="space-y-2">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Manage governance</h1>
-          <p className="text-sm text-gray-700 dark:text-gray-300">
-            Configure board membership, officers, committees, chairs, and governance calendar settings.
-          </p>
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-        </header>
+      <AppPage>
+        <AppPageHeader
+          title="Manage governance"
+          description="Configure board membership, officers, committees, chairs, and governance calendar settings."
+        />
+        {error && <p className="app-alert-error">{error}</p>}
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <div className="app-card text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : (
           <>
             {/* Board Members */}
-            <section className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 space-y-4">
+            <section className="app-card space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Board members</h2>
+                <h2 className="app-section-title">Board members</h2>
                 <Button onClick={() => setIsAddBoardMemberOpen(true)}>Add board member</Button>
               </div>
 
@@ -660,8 +659,8 @@ export default function AdminGovernance() {
             </section>
 
             {/* Officers */}
-            <section className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 space-y-4">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Officers</h2>
+            <section className="app-card space-y-4">
+              <h2 className="app-section-title">Officers</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {OFFICER_POSITIONS.map((position) => {
                   const currentName =
@@ -708,9 +707,9 @@ export default function AdminGovernance() {
             </section>
 
             {/* Committees */}
-            <section className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 space-y-4">
+            <section className="app-card space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Committees</h2>
+                <h2 className="app-section-title">Committees</h2>
                 <Button onClick={() => setIsAddCommitteeOpen(true)}>Add committee</Button>
               </div>
 
@@ -872,7 +871,7 @@ export default function AdminGovernance() {
             </div>
           </>
         )}
-      </div>
+      </AppPage>
 
       {/* Add board member dialog */}
       <Modal isOpen={isAddBoardMemberOpen} onClose={resetAddBoardMemberForm} title="Add board member">

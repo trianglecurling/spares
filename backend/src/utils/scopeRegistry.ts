@@ -54,6 +54,8 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
   { scope: 'content.manage', category: 'Operations', description: 'Manage site content (pages, CMS-style resources).' },
   { scope: 'files.manage', category: 'Operations', description: 'Upload and manage file assets.' },
   { scope: 'sponsorship.manage', category: 'Operations', description: 'Manage sponsors and sponsorship content.' },
+  { scope: 'payments.read', category: 'Payments', description: 'Read payment orders, webhook events, transactions, and refund records.' },
+  { scope: 'payments.manage', category: 'Payments', description: 'Manage payment operations such as manual transitions and refunds.' },
 
   { scope: 'leagues.manage', category: 'Leagues', description: 'Manage leagues globally or in a scoped context (league id).' },
 ];

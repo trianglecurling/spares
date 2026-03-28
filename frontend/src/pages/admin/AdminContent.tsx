@@ -1122,7 +1122,7 @@ export default function AdminContent() {
   return (
     <Layout>
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-2xl font-semibold mb-6">Manage content</h1>
+        <h1 className="app-page-title mb-6">Manage content</h1>
 
         <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700 mb-6">
           {tabs.map((tab) => {
@@ -1151,48 +1151,48 @@ export default function AdminContent() {
             {activeTab === 'site' && siteConfig && (
               <form onSubmit={handleSaveSiteConfig} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Club name</label>
+                  <label className="app-label">Club name</label>
                   <input
                     type="text"
                     value={siteConfig.clubName ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, clubName: e.target.value || null })}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                    className="app-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Logo URL</label>
+                  <label className="app-label">Logo URL</label>
                   <input
                     type="url"
                     value={siteConfig.logoUrl ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, logoUrl: e.target.value || null })}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                    className="app-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Contact email</label>
+                  <label className="app-label">Contact email</label>
                   <input
                     type="email"
                     value={siteConfig.contactEmail ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, contactEmail: e.target.value || null })}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                    className="app-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Contact phone</label>
+                  <label className="app-label">Contact phone</label>
                   <input
                     type="text"
                     value={siteConfig.contactPhone ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, contactPhone: e.target.value || null })}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                    className="app-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Footer (Markdown)</label>
+                  <label className="app-label">Footer (Markdown)</label>
                   <textarea
                     value={siteConfig.footerMarkdown ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, footerMarkdown: e.target.value || null })}
                     rows={4}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                    className="app-input"
                   />
                 </div>
                 <Button type="submit" disabled={saving}>
@@ -1439,7 +1439,7 @@ export default function AdminContent() {
                 >
                   <form onSubmit={handleSaveMenuItem} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Link type</label>
+                      <label className="app-label">Link type</label>
                       <select
                         value={menuForm.linkType ?? ''}
                         onChange={(e) => {
@@ -1454,7 +1454,7 @@ export default function AdminContent() {
                             selectedArticleSlug: linkType === 'internal' ? f.selectedArticleSlug : '',
                           }));
                         }}
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                        className="app-input"
                       >
                         <option value="">— None (dropdown parent only) —</option>
                         <option value="internal">Article</option>
@@ -1463,7 +1463,7 @@ export default function AdminContent() {
                     </div>
                     {menuForm.linkType === 'internal' && (
                       <div>
-                        <label className="block text-sm font-medium mb-1">Article</label>
+                        <label className="app-label">Article</label>
                         <ArticleAutocomplete
                           value={
                             menuForm.selectedArticleId
@@ -1491,13 +1491,13 @@ export default function AdminContent() {
                     {menuForm.linkType === 'external' && (
                       <>
                         <div>
-                          <label className="block text-sm font-medium mb-1">URL</label>
+                          <label className="app-label">URL</label>
                           <input
                             type="text"
                             value={menuForm.url}
                             onChange={(e) => setMenuForm((f) => ({ ...f, url: e.target.value }))}
                             placeholder="https://example.com or /calendar/public"
-                            className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                            className="app-input"
                             required
                           />
                         </div>
@@ -1515,7 +1515,7 @@ export default function AdminContent() {
                       </>
                     )}
                     <div>
-                      <label className="block text-sm font-medium mb-1">
+                      <label className="app-label">
                         Label {menuForm.linkType === 'internal' && menuForm.selectedArticleId && !menuForm.labelOverridden && '(from article)'}
                       </label>
                       <input
@@ -1534,7 +1534,7 @@ export default function AdminContent() {
                             ? 'Override to use custom label'
                             : 'e.g. Home, Articles'
                         }
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                        className="app-input"
                         required={
                           !(
                             menuForm.linkType === 'internal' &&
@@ -1545,7 +1545,7 @@ export default function AdminContent() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Parent</label>
+                      <label className="app-label">Parent</label>
                       <select
                         value={menuForm.parentId ?? ''}
                         onChange={(e) =>
@@ -1554,7 +1554,7 @@ export default function AdminContent() {
                             parentId: e.target.value ? parseInt(e.target.value, 10) : null,
                           }))
                         }
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                        className="app-input"
                       >
                         <option value="">— None (top level) —</option>
                         {(() => {
@@ -1613,7 +1613,7 @@ export default function AdminContent() {
               <div>
                 <div className="mb-4 flex flex-wrap items-end gap-3">
                   <div className="min-w-[280px]">
-                    <label className="block text-sm font-medium mb-1">Add featured article</label>
+                    <label className="app-label">Add featured article</label>
                     <ArticleAutocomplete
                       value={menuArticleOptions.find((article) => article.id === selectedFeaturedArticleId) ?? null}
                       onChange={(selected) => setSelectedFeaturedArticleId(selected?.id ?? null)}
@@ -1706,21 +1706,21 @@ export default function AdminContent() {
               <div>
                 <div className="mb-4 flex flex-wrap items-end gap-3">
                   <div className="min-w-[240px]">
-                    <label className="block text-sm font-medium mb-1">Search</label>
+                    <label className="app-label">Search</label>
                     <input
                       type="text"
                       value={articleSearch}
                       onChange={(e) => setArticleSearch(e.target.value)}
                       placeholder="Find by title"
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                      className="app-input"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Page size</label>
+                    <label className="app-label">Page size</label>
                     <select
                       value={articlePageSize}
                       onChange={(e) => setArticlePageSize(Number.parseInt(e.target.value, 10))}
-                      className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                      className="app-input"
                     >
                       {[10, 25, 50, 100].map((size) => (
                         <option key={size} value={size}>
@@ -1737,25 +1737,25 @@ export default function AdminContent() {
                   <Button onClick={() => navigate('/admin/content/articles/new')}>Add article</Button>
                 </div>
 
-                <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-gray-900">
+                <div className="app-table-shell">
+                  <table className="app-table">
+                    <thead className="app-table-head">
                       <tr>
-                        <th className="px-3 py-2 text-left cursor-pointer" onClick={() => toggleArticleSort('title')}>Title</th>
-                        <th className="px-3 py-2 text-left cursor-pointer" onClick={() => toggleArticleSort('slug')}>Slug</th>
-                        <th className="px-3 py-2 text-left">Published</th>
-                        <th className="px-3 py-2 text-left cursor-pointer" onClick={() => toggleArticleSort('updatedAt')}>Last edited</th>
-                        <th className="px-3 py-2 text-left cursor-pointer" onClick={() => toggleArticleSort('publishedAt')}>Publish date</th>
-                        <th className="px-3 py-2 text-left">Actions</th>
+                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('title')}>Title</th>
+                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('slug')}>Slug</th>
+                        <th className="app-table-th">Published</th>
+                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('updatedAt')}>Last edited</th>
+                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('publishedAt')}>Publish date</th>
+                        <th className="app-table-th">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {articles.map((a) => (
                         <tr key={a.id} className="border-t border-gray-100 dark:border-gray-800">
-                          <td className="px-3 py-2 min-w-[220px]">
+                          <td className="app-table-td min-w-[220px]">
                             <div className="font-medium truncate">{a.title}</div>
                           </td>
-                          <td className="px-3 py-2 text-gray-500">
+                          <td className="app-table-td text-gray-500">
                             <a
                               href={`/articles/${a.slug}`}
                               target="_blank"
@@ -1765,7 +1765,7 @@ export default function AdminContent() {
                               /articles/{a.slug}
                             </a>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="app-table-td">
                             <div className="flex items-center">
                               <button
                                 type="button"
@@ -1786,9 +1786,9 @@ export default function AdminContent() {
                               </button>
                             </div>
                           </td>
-                          <td className="px-3 py-2">{a.updatedAt ? new Date(a.updatedAt).toLocaleDateString() : '-'}</td>
-                          <td className="px-3 py-2">{a.publishedAt ? new Date(a.publishedAt).toLocaleDateString() : '-'}</td>
-                          <td className="px-3 py-2">
+                          <td className="app-table-td">{a.updatedAt ? new Date(a.updatedAt).toLocaleDateString() : '-'}</td>
+                          <td className="app-table-td">{a.publishedAt ? new Date(a.publishedAt).toLocaleDateString() : '-'}</td>
+                          <td className="app-table-td">
                             <div className="flex gap-2">
                               <button
                                 type="button"
@@ -1883,7 +1883,7 @@ export default function AdminContent() {
                 >
                   <form onSubmit={handleSaveShowcase} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Image source</label>
+                      <label className="app-label">Image source</label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
@@ -1919,7 +1919,7 @@ export default function AdminContent() {
                     <div>
                       {showcaseSourceMode === 'uploaded' ? (
                         <>
-                          <label className="block text-sm font-medium mb-1">Uploaded image</label>
+                          <label className="app-label">Uploaded image</label>
                           {uploadedPublicImages.length > 0 ? (
                             <select
                               value={selectedShowcaseFileId ?? ''}
@@ -1929,7 +1929,7 @@ export default function AdminContent() {
                                 setSelectedShowcaseFileId(Number.isFinite(fileId) ? fileId : null);
                                 setShowcaseForm((f) => ({ ...f, url: selectedFile?.publicUrl ?? '' }));
                               }}
-                              className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                              className="app-input"
                               required
                             >
                               {uploadedPublicImages.map((file) => (
@@ -1946,33 +1946,33 @@ export default function AdminContent() {
                         </>
                       ) : (
                         <>
-                          <label className="block text-sm font-medium mb-1">Image URL</label>
+                          <label className="app-label">Image URL</label>
                           <input
                             type="url"
                             value={showcaseForm.url}
                             onChange={(e) => setShowcaseForm((f) => ({ ...f, url: e.target.value }))}
-                            className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                            className="app-input"
                             required
                           />
                         </>
                       )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Caption</label>
+                      <label className="app-label">Caption</label>
                       <input
                         type="text"
                         value={showcaseForm.caption}
                         onChange={(e) => setShowcaseForm((f) => ({ ...f, caption: e.target.value }))}
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                        className="app-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Sort order</label>
+                      <label className="app-label">Sort order</label>
                       <input
                         type="number"
                         value={showcaseForm.sortOrder}
                         onChange={(e) => setShowcaseForm((f) => ({ ...f, sortOrder: parseInt(e.target.value, 10) || 0 }))}
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                        className="app-input"
                       />
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
@@ -2001,22 +2001,22 @@ export default function AdminContent() {
 
                 <div className="flex flex-wrap gap-3 items-end">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Orphan status</label>
+                    <label className="app-label">Orphan status</label>
                     <select
                       value={fileOrphanFilter}
                       onChange={(e) => setFileOrphanFilter(e.target.value as 'all' | 'suspected')}
-                      className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                      className="app-input"
                     >
                       <option value="all">All files</option>
                       <option value="suspected">Suspected orphan</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Visibility</label>
+                    <label className="app-label">Visibility</label>
                     <select
                       value={fileVisibilityFilter}
                       onChange={(e) => setFileVisibilityFilter(e.target.value as 'all' | 'public' | 'authenticated')}
-                      className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                      className="app-input"
                     >
                       <option value="all">All</option>
                       <option value="public">Public</option>
@@ -2024,11 +2024,11 @@ export default function AdminContent() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">File type</label>
+                    <label className="app-label">File type</label>
                     <select
                       value={fileTypeFilter}
                       onChange={(e) => setFileTypeFilter(e.target.value as 'all' | 'image' | 'video' | 'audio' | 'document' | 'other')}
-                      className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                      className="app-input"
                     >
                       <option value="all">All</option>
                       <option value="image">Image</option>
@@ -2039,21 +2039,21 @@ export default function AdminContent() {
                     </select>
                   </div>
                   <div className="min-w-[240px]">
-                    <label className="block text-sm font-medium mb-1">Search</label>
+                    <label className="app-label">Search</label>
                     <input
                       type="text"
                       value={fileSearch}
                       onChange={(e) => setFileSearch(e.target.value)}
                       placeholder="Name, description, filename"
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                      className="app-input"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Page size</label>
+                    <label className="app-label">Page size</label>
                     <select
                       value={filePageSize}
                       onChange={(e) => setFilePageSize(Number.parseInt(e.target.value, 10))}
-                      className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                      className="app-input"
                     >
                       {[10, 25, 50, 100].map((size) => (
                         <option key={size} value={size}>
@@ -2064,11 +2064,11 @@ export default function AdminContent() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-gray-900">
+                <div className="app-table-shell">
+                  <table className="app-table">
+                    <thead className="app-table-head">
                       <tr>
-                        <th className="px-3 py-2 text-left">
+                        <th className="app-table-th">
                           <input
                             type="checkbox"
                             checked={files.length > 0 && files.every((f) => selectedFileIds.includes(f.id))}
@@ -2078,19 +2078,19 @@ export default function AdminContent() {
                             }}
                           />
                         </th>
-                        <th className="px-3 py-2 text-left">Preview</th>
-                        <th className="px-3 py-2 text-left cursor-pointer" onClick={() => toggleFileSort('name')}>Name</th>
-                        <th className="px-3 py-2 text-left cursor-pointer w-40" onClick={() => toggleFileSort('type')}>Type</th>
-                        <th className="px-3 py-2 text-left cursor-pointer" onClick={() => toggleFileSort('size')}>Size</th>
-                        <th className="px-3 py-2 text-left">Visibility</th>
-                        <th className="px-3 py-2 text-left cursor-pointer" onClick={() => toggleFileSort('createdAt')}>Created</th>
-                        <th className="px-3 py-2 text-left">Actions</th>
+                        <th className="app-table-th">Preview</th>
+                        <th className="app-table-th cursor-pointer" onClick={() => toggleFileSort('name')}>Name</th>
+                        <th className="app-table-th cursor-pointer w-40" onClick={() => toggleFileSort('type')}>Type</th>
+                        <th className="app-table-th cursor-pointer" onClick={() => toggleFileSort('size')}>Size</th>
+                        <th className="app-table-th">Visibility</th>
+                        <th className="app-table-th cursor-pointer" onClick={() => toggleFileSort('createdAt')}>Created</th>
+                        <th className="app-table-th">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {files.map((file) => (
                         <tr key={file.id} className="border-t border-gray-100 dark:border-gray-800">
-                          <td className="px-3 py-2">
+                          <td className="app-table-td">
                             <input
                               type="checkbox"
                               checked={selectedFileIds.includes(file.id)}
@@ -2101,7 +2101,7 @@ export default function AdminContent() {
                               }}
                             />
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="app-table-td">
                             {isImageFile(file) ? (
                               <img
                                 src={getImageThumbnailUrl(file)}
@@ -2112,7 +2112,7 @@ export default function AdminContent() {
                               <span className="text-gray-400">-</span>
                             )}
                           </td>
-                          <td className="px-3 py-2 min-w-[240px]">
+                          <td className="app-table-td min-w-[240px]">
                             <div className="font-medium truncate">{file.displayName || file.originalFilename}</div>
                             <div className="text-xs text-gray-500 truncate">{file.originalFilename}</div>
                             {file.suspectedOrphan && (
@@ -2121,15 +2121,15 @@ export default function AdminContent() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2 max-w-[10rem]">
+                          <td className="app-table-td max-w-[10rem]">
                             <span className="block truncate" title={file.mimeType}>
                               {file.mimeType}
                             </span>
                           </td>
-                          <td className="px-3 py-2">{Math.max(1, Math.round(file.byteSize / 1024))} KB</td>
-                          <td className="px-3 py-2">{file.visibility}</td>
-                          <td className="px-3 py-2">{new Date(file.createdAt).toLocaleDateString()}</td>
-                          <td className="px-3 py-2">
+                          <td className="app-table-td">{Math.max(1, Math.round(file.byteSize / 1024))} KB</td>
+                          <td className="app-table-td">{file.visibility}</td>
+                          <td className="app-table-td">{new Date(file.createdAt).toLocaleDateString()}</td>
+                          <td className="app-table-td">
                             <div className="flex items-center gap-2">
                               <button type="button" onClick={() => handleCopyFileUrl(file)} className="text-primary-teal hover:underline">Copy URL</button>
                               <button type="button" onClick={() => openFileModal(file)} className="text-primary-teal hover:underline">Edit</button>
@@ -2217,32 +2217,32 @@ export default function AdminContent() {
                 <Modal isOpen={uploadModalOpen} onClose={() => setUploadModalOpen(false)} title="Upload file">
                   <form onSubmit={handleUploadFile} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Files</label>
+                      <label className="app-label">Files</label>
                       <input
                         type="file"
                         multiple
                         onChange={(e) => setSelectedUploadFiles(e.target.files ? Array.from(e.target.files) : [])}
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                        className="app-input"
                       />
                     </div>
                     {selectedUploadFiles.length === 1 && (
                       <>
                         <div>
-                          <label className="block text-sm font-medium mb-1">Display name (optional)</label>
+                          <label className="app-label">Display name (optional)</label>
                           <input
                             type="text"
                             value={fileUploadForm.displayName}
                             onChange={(e) => setFileUploadForm((f) => ({ ...f, displayName: e.target.value }))}
-                            className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                            className="app-input"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium mb-1">Description (optional)</label>
+                          <label className="app-label">Description (optional)</label>
                           <textarea
                             value={fileUploadForm.description}
                             onChange={(e) => setFileUploadForm((f) => ({ ...f, description: e.target.value }))}
                             rows={3}
-                            className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                            className="app-input"
                           />
                         </div>
                       </>
@@ -2267,11 +2267,11 @@ export default function AdminContent() {
                       </div>
                     )}
                     <div>
-                      <label className="block text-sm font-medium mb-1">Visibility</label>
+                      <label className="app-label">Visibility</label>
                       <select
                         value={fileUploadForm.visibility}
                         onChange={(e) => setFileUploadForm((f) => ({ ...f, visibility: e.target.value as 'public' | 'authenticated' }))}
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                        className="app-input"
                       >
                         <option value="public">Public</option>
                         <option value="authenticated">Logged-in users only</option>
@@ -2424,7 +2424,7 @@ export default function AdminContent() {
                                 placeholder="Width"
                                 value={resizeForm.width}
                                 onChange={(e) => setResizeForm((f) => ({ ...f, width: e.target.value }))}
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                                className="app-input"
                               />
                               <input
                                 type="number"
@@ -2432,7 +2432,7 @@ export default function AdminContent() {
                                 placeholder="Height"
                                 value={resizeForm.height}
                                 onChange={(e) => setResizeForm((f) => ({ ...f, height: e.target.value }))}
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                                className="app-input"
                               />
                             </div>
                           )}
@@ -2501,29 +2501,29 @@ export default function AdminContent() {
                       ) : (
                         <form onSubmit={handleSaveFileMetadata} className="space-y-4">
                           <div>
-                            <label className="block text-sm font-medium mb-1">Display name</label>
+                            <label className="app-label">Display name</label>
                             <input
                               type="text"
                               value={fileEditForm.displayName}
                               onChange={(e) => setFileEditForm((f) => ({ ...f, displayName: e.target.value }))}
-                              className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                              className="app-input"
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium mb-1">Description</label>
+                            <label className="app-label">Description</label>
                             <textarea
                               value={fileEditForm.description}
                               onChange={(e) => setFileEditForm((f) => ({ ...f, description: e.target.value }))}
                               rows={3}
-                              className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                              className="app-input"
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium mb-1">Visibility</label>
+                            <label className="app-label">Visibility</label>
                             <select
                               value={fileEditForm.visibility}
                               onChange={(e) => setFileEditForm((f) => ({ ...f, visibility: e.target.value as 'public' | 'authenticated' }))}
-                              className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                              className="app-input"
                             >
                               <option value="public">Public</option>
                               <option value="authenticated">Authenticated users only</option>
@@ -2532,11 +2532,11 @@ export default function AdminContent() {
                           {isImageFile(editingFile) && (
                             <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
                               <div>
-                                <label className="block text-sm font-medium mb-1">Convert image type</label>
+                                <label className="app-label">Convert image type</label>
                                 <select
                                   value={convertFormat}
                                   onChange={(e) => setConvertFormat(e.target.value as 'jpg' | 'png' | 'gif')}
-                                  className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800"
+                                  className="app-input"
                                 >
                                   <option value="jpg">JPG</option>
                                   <option value="png">PNG</option>

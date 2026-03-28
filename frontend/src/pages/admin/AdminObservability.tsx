@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { get } from '../../api/client';
 import Button from '../../components/Button';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 
 interface ObservabilityTotals {
   membersTotal: number;
@@ -64,49 +65,49 @@ export default function AdminObservability() {
 
   return (
     <Layout>
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Observability</h1>
-            <div className="mt-1">
-              <Link
-                to="/admin/config"
-                className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+      <AppPage>
+        <AppPageHeader
+          title="Observability"
+          description={
+            <Link
+              to="/admin/config"
+              className="text-primary-teal hover:underline text-sm font-medium"
+            >
+              ← Back to Server Config
+            </Link>
+          }
+          actions={
+            <div className="flex items-center gap-3">
+              <a
+                href="https://observability.tccnc.club"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary-teal hover:underline text-sm font-medium"
               >
-                ← Back to Server Config
-              </Link>
+                Grafana dashboard ↗
+              </a>
+              <select
+                value={obsRangeDays}
+                onChange={(e) => loadObservability(parseInt(e.target.value, 10))}
+                className="app-input w-auto min-w-[10rem]"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+              </select>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => loadObservability(obsRangeDays)}
+                disabled={obsLoading}
+              >
+                {obsLoading ? 'Refreshing...' : 'Refresh'}
+              </Button>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <a
-              href="https://observability.tccnc.club"
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
-            >
-              Grafana dashboard ↗
-            </a>
-            <select
-              value={obsRangeDays}
-              onChange={(e) => loadObservability(parseInt(e.target.value, 10))}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md text-sm"
-            >
-              <option value={7}>Last 7 days</option>
-              <option value={30}>Last 30 days</option>
-              <option value={90}>Last 90 days</option>
-            </select>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => loadObservability(obsRangeDays)}
-              disabled={obsLoading}
-            >
-              {obsLoading ? 'Refreshing...' : 'Refresh'}
-            </Button>
-          </div>
-        </div>
+          }
+        />
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="app-card p-6">
           {obsLoading && (
             <div className="text-sm text-gray-500 dark:text-gray-400">Loading metrics…</div>
           )}
@@ -155,43 +156,43 @@ export default function AdminObservability() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="text-left text-gray-600 dark:text-gray-300 border-b dark:border-gray-700">
+              <div className="app-table-shell">
+                <table className="app-table">
+                  <thead className="app-table-head">
                     <tr>
-                      <th className="py-2 pr-4 font-medium">Date</th>
-                      <th className="py-2 pr-4 font-medium">DAU</th>
-                      <th className="py-2 pr-4 font-medium">Emails</th>
-                      <th className="py-2 pr-4 font-medium">SMS</th>
-                      <th className="py-2 pr-4 font-medium">Spare created</th>
-                      <th className="py-2 pr-4 font-medium">Spare filled</th>
-                      <th className="py-2 pr-4 font-medium">Offer cancels</th>
-                      <th className="py-2 pr-4 font-medium">Logins</th>
+                      <th className="app-table-th">Date</th>
+                      <th className="app-table-th">DAU</th>
+                      <th className="app-table-th">Emails</th>
+                      <th className="app-table-th">SMS</th>
+                      <th className="app-table-th">Spare created</th>
+                      <th className="app-table-th">Spare filled</th>
+                      <th className="app-table-th">Offer cancels</th>
+                      <th className="app-table-th">Logins</th>
                     </tr>
                   </thead>
-                  <tbody className="text-gray-800 dark:text-gray-100">
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                     {observability.series.map((d) => (
-                      <tr key={d.date} className="border-b dark:border-gray-700">
-                        <td className="py-2 pr-4 whitespace-nowrap">{d.date}</td>
-                        <td className="py-2 pr-4">{d.dau}</td>
-                        <td className="py-2 pr-4">
+                      <tr key={d.date}>
+                        <td className="app-table-td whitespace-nowrap">{d.date}</td>
+                        <td className="app-table-td">{d.dau}</td>
+                        <td className="app-table-td">
                           {d.emailsSent + d.emailsLogged}
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             {' '}
                             (sent {d.emailsSent}, logged {d.emailsLogged})
                           </span>
                         </td>
-                        <td className="py-2 pr-4">
+                        <td className="app-table-td">
                           {d.smsSent + d.smsLogged}
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             {' '}
                             (sent {d.smsSent}, logged {d.smsLogged})
                           </span>
                         </td>
-                        <td className="py-2 pr-4">{d.spareRequestsCreated}</td>
-                        <td className="py-2 pr-4">{d.spareRequestsFilled}</td>
-                        <td className="py-2 pr-4">{d.spareOffersCancelled}</td>
-                        <td className="py-2 pr-4">{d.logins}</td>
+                        <td className="app-table-td">{d.spareRequestsCreated}</td>
+                        <td className="app-table-td">{d.spareRequestsFilled}</td>
+                        <td className="app-table-td">{d.spareOffersCancelled}</td>
+                        <td className="app-table-td">{d.logins}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -211,7 +212,7 @@ export default function AdminObservability() {
             </div>
           )}
         </div>
-      </div>
+      </AppPage>
     </Layout>
   );
 }

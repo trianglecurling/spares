@@ -219,6 +219,176 @@ function ensureGameIdColumnSync(db: DatabaseAdapter): void {
   );
 }
 
+async function ensurePaymentDomainTables(db: DatabaseAdapter): Promise<void> {
+  await execSQL(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS payment_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_token TEXT NOT NULL UNIQUE,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        subject_type TEXT NOT NULL CHECK(subject_type IN ('donation', 'membership', 'event_registration')),
+        subject_id INTEGER,
+        amount_minor INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'usd',
+        status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded')),
+        status_reason TEXT,
+        provider_order_id TEXT,
+        metadata TEXT,
+        created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        completed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_orders_status ON payment_orders(status);
+      CREATE INDEX IF NOT EXISTS idx_payment_orders_subject ON payment_orders(subject_type, subject_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_orders_provider_provider_order_id_unique ON payment_orders(provider, provider_order_id);
+
+      CREATE TABLE IF NOT EXISTS payment_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payment_order_id INTEGER NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        provider_transaction_id TEXT NOT NULL,
+        transaction_type TEXT NOT NULL CHECK(transaction_type IN ('charge', 'capture', 'refund', 'adjustment')),
+        amount_minor INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'usd',
+        fee_minor INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded')),
+        occurred_at DATETIME,
+        metadata TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_transactions_order_id ON payment_transactions(payment_order_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON payment_transactions(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_provider_transaction_id_unique
+        ON payment_transactions(provider, provider_transaction_id);
+
+      CREATE TABLE IF NOT EXISTS payment_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        provider_event_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        payment_order_id INTEGER REFERENCES payment_orders(id) ON DELETE SET NULL,
+        processing_status TEXT NOT NULL DEFAULT 'received' CHECK(processing_status IN ('received', 'processed', 'ignored', 'failed')),
+        processing_error TEXT,
+        raw_payload TEXT NOT NULL,
+        received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        processed_at DATETIME
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_events_provider_event_unique
+        ON payment_events(provider, provider_event_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_events_order_id ON payment_events(payment_order_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_events_processing_status ON payment_events(processing_status);
+
+      CREATE TABLE IF NOT EXISTS refunds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payment_order_id INTEGER NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
+        payment_transaction_id INTEGER REFERENCES payment_transactions(id) ON DELETE SET NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        amount_minor INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'usd',
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'requested' CHECK(status IN ('requested', 'approved', 'rejected', 'processing', 'succeeded', 'failed')),
+        requested_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        approved_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        provider_refund_id TEXT,
+        provider_response TEXT,
+        processed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_refunds_order_id ON refunds(payment_order_id);
+      CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS refunds_provider_refund_id_unique ON refunds(provider, provider_refund_id);
+    `
+  );
+}
+
+function ensurePaymentDomainTablesSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS payment_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_token TEXT NOT NULL UNIQUE,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        subject_type TEXT NOT NULL CHECK(subject_type IN ('donation', 'membership', 'event_registration')),
+        subject_id INTEGER,
+        amount_minor INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'usd',
+        status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded')),
+        status_reason TEXT,
+        provider_order_id TEXT,
+        metadata TEXT,
+        created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        completed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_orders_status ON payment_orders(status);
+      CREATE INDEX IF NOT EXISTS idx_payment_orders_subject ON payment_orders(subject_type, subject_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_orders_provider_provider_order_id_unique ON payment_orders(provider, provider_order_id);
+
+      CREATE TABLE IF NOT EXISTS payment_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payment_order_id INTEGER NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        provider_transaction_id TEXT NOT NULL,
+        transaction_type TEXT NOT NULL CHECK(transaction_type IN ('charge', 'capture', 'refund', 'adjustment')),
+        amount_minor INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'usd',
+        fee_minor INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded')),
+        occurred_at DATETIME,
+        metadata TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_transactions_order_id ON payment_transactions(payment_order_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON payment_transactions(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_provider_transaction_id_unique
+        ON payment_transactions(provider, provider_transaction_id);
+
+      CREATE TABLE IF NOT EXISTS payment_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        provider_event_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        payment_order_id INTEGER REFERENCES payment_orders(id) ON DELETE SET NULL,
+        processing_status TEXT NOT NULL DEFAULT 'received' CHECK(processing_status IN ('received', 'processed', 'ignored', 'failed')),
+        processing_error TEXT,
+        raw_payload TEXT NOT NULL,
+        received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        processed_at DATETIME
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_events_provider_event_unique
+        ON payment_events(provider, provider_event_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_events_order_id ON payment_events(payment_order_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_events_processing_status ON payment_events(processing_status);
+
+      CREATE TABLE IF NOT EXISTS refunds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payment_order_id INTEGER NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
+        payment_transaction_id INTEGER REFERENCES payment_transactions(id) ON DELETE SET NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
+        amount_minor INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'usd',
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'requested' CHECK(status IN ('requested', 'approved', 'rejected', 'processing', 'succeeded', 'failed')),
+        requested_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        approved_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        provider_refund_id TEXT,
+        provider_response TEXT,
+        processed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_refunds_order_id ON refunds(payment_order_id);
+      CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS refunds_provider_refund_id_unique ON refunds(provider, provider_refund_id);
+    `
+  );
+}
+
 async function ensureMenuItemsArticleColumns(db: DatabaseAdapter): Promise<void> {
   if (db.isAsync()) {
     // PostgreSQL: use IF NOT EXISTS for idempotent migration
@@ -1064,6 +1234,8 @@ async function ensureRbacTables(db: DatabaseAdapter): Promise<void> {
             ('general_admin', 'members.manage', 'allow'),
             ('general_admin', 'governance.manage', 'allow'),
             ('general_admin', 'feedback.manage', 'allow'),
+            ('general_admin', 'payments.read', 'allow'),
+            ('general_admin', 'payments.manage', 'allow'),
             ('calendar_admin', 'calendar.manage', 'allow'),
             ('content_admin', 'content.manage', 'allow'),
             ('content_admin', 'files.manage', 'allow'),
@@ -1142,6 +1314,10 @@ async function ensureRbacTables(db: DatabaseAdapter): Promise<void> {
         VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'governance.manage', 'allow');
         INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
         VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'feedback.manage', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.read', 'allow');
+        INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.manage', 'allow');
 
         INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
         VALUES ((SELECT id FROM roles WHERE code = 'calendar_admin'), 'calendar.manage', 'allow');
@@ -1364,6 +1540,10 @@ function ensureRbacTablesSync(db: DatabaseAdapter): void {
       VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'governance.manage', 'allow');
       INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
       VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'feedback.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.read', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.manage', 'allow');
 
       INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
       VALUES ((SELECT id FROM roles WHERE code = 'calendar_admin'), 'calendar.manage', 'allow');
@@ -2398,6 +2578,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await migrateIceBookingsGuestPurposeExpand(db);
   await ensureGovernanceTables(db);
   await ensureRbacTables(db);
+  await ensurePaymentDomainTables(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -3165,6 +3346,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   migrateIceBookingsGuestPurposeExpandSync(db);
   ensureGovernanceTablesSync(db);
   ensureRbacTablesSync(db);
+  ensurePaymentDomainTablesSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

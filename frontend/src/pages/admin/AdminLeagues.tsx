@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
@@ -272,11 +273,11 @@ export default function Leagues() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Leagues</h1>
-          <div className="flex space-x-2">
-            {canManageLeagueDetails && (
+      <AppPage>
+        <AppPageHeader
+          title="Leagues"
+          actions={
+            canManageLeagueDetails && (
               <>
                 <Button onClick={handleExport} variant="secondary">
                   Export
@@ -286,14 +287,14 @@ export default function Leagues() {
                 </Button>
                 <Button onClick={() => handleOpenModal()}>Add league</Button>
               </>
-            )}
-          </div>
-        </div>
+            )
+          }
+        />
 
         {loading ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : leagues.length === 0 ? (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="app-card py-12 text-center">
             <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">
               No leagues configured yet.
             </p>
@@ -304,7 +305,7 @@ export default function Leagues() {
         ) : (
           <div className="grid gap-4">
             {leagues.map((league) => (
-              <div key={league.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div key={league.id} className="app-card p-6">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <button
@@ -344,7 +345,7 @@ export default function Leagues() {
             ))}
           </div>
         )}
-      </div>
+      </AppPage>
 
       <Modal
         isOpen={isModalOpen}
@@ -355,7 +356,7 @@ export default function Leagues() {
           <div>
             <label
               htmlFor="name"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               League name <span className="text-red-500">*</span>
             </label>
@@ -364,7 +365,7 @@ export default function Leagues() {
               id="name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
               required
             />
           </div>
@@ -372,7 +373,7 @@ export default function Leagues() {
           <div>
             <label
               htmlFor="dayOfWeek"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               Day of week <span className="text-red-500">*</span>
             </label>
@@ -380,7 +381,7 @@ export default function Leagues() {
               id="dayOfWeek"
               value={formData.dayOfWeek}
               onChange={(e) => setFormData({ ...formData, dayOfWeek: parseInt(e.target.value) })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
               required
             >
               {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(
@@ -394,7 +395,7 @@ export default function Leagues() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="app-label">
               Draw times <span className="text-red-500">*</span>
             </label>
             {formData.drawTimes.map((time, index) => (
@@ -403,7 +404,7 @@ export default function Leagues() {
                   type="time"
                   value={time}
                   onChange={(e) => updateDrawTime(index, e.target.value)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="app-input flex-1"
                   required
                 />
                 {formData.drawTimes.length > 1 && (
@@ -429,7 +430,7 @@ export default function Leagues() {
           <div>
             <label
               htmlFor="format"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               Format <span className="text-red-500">*</span>
             </label>
@@ -439,7 +440,7 @@ export default function Leagues() {
               onChange={(e) =>
                 setFormData({ ...formData, format: e.target.value as 'teams' | 'doubles' })
               }
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
               required
             >
               <option value="teams">Teams</option>
@@ -451,7 +452,7 @@ export default function Leagues() {
             <div>
               <label
                 htmlFor="startDate"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Start date <span className="text-red-500">*</span>
               </label>
@@ -460,7 +461,7 @@ export default function Leagues() {
                 id="startDate"
                 value={formData.startDate}
                 onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               />
             </div>
@@ -468,7 +469,7 @@ export default function Leagues() {
             <div>
               <label
                 htmlFor="endDate"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 End date <span className="text-red-500">*</span>
               </label>
@@ -477,14 +478,14 @@ export default function Leagues() {
                 id="endDate"
                 value={formData.endDate}
                 onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="app-label">
               Exceptions (dates the league does not run)
             </label>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -512,7 +513,7 @@ export default function Leagues() {
                     }
                     setExceptionToAdd('');
                   }}
-                  className="w-full sm:w-auto px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="app-input w-full sm:w-auto"
                 >
                   <option value="">
                     {availableExceptionDates.length === 0
@@ -580,7 +581,7 @@ export default function Leagues() {
           <div>
             <label
               htmlFor="importJson"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               Paste JSON data
             </label>
@@ -588,7 +589,7 @@ export default function Leagues() {
               id="importJson"
               value={importJson}
               onChange={(e) => setImportJson(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
+              className="app-input font-mono text-sm"
               rows={15}
               placeholder='{"leagues": [{"name": "Example League", "dayOfWeek": 1, "format": "teams", "startDate": "2024-01-01", "endDate": "2024-12-31", "drawTimes": ["19:00", "21:00"]}]}'
             />

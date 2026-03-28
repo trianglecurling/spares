@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import Button from '../../components/Button';
@@ -355,57 +356,53 @@ export default function AdminConfig() {
   if (loading) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+        <AppPage>
+          <div className="app-card text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+        </AppPage>
       </Layout>
     );
   }
 
   return (
     <Layout>
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Server configuration
-          </h1>
-          <div className="flex items-center gap-4">
-            <Link
-              to="/admin/observability"
-              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
-            >
-              Observability →
-            </Link>
-            <Link
-              to="/admin/feedback"
-              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
-            >
-              View feedback →
-            </Link>
-            <Link
-              to="/admin/database-config"
-              className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
-            >
-              Configure database →
-            </Link>
-          </div>
-        </div>
+      <AppPage>
+        <AppPageHeader
+          title="Server configuration"
+          actions={
+            <div className="flex items-center gap-4">
+              <Link
+                to="/admin/observability"
+                className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+              >
+                Observability →
+              </Link>
+              <Link
+                to="/admin/feedback"
+                className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+              >
+                View feedback →
+              </Link>
+              <Link
+                to="/admin/database-config"
+                className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+              >
+                Configure database →
+              </Link>
+            </div>
+          }
+        />
 
         {message && (
-          <div
-            className={`mb-6 p-4 rounded ${
-              message.type === 'success'
-                ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
-                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
-            }`}
-          >
+          <div className={message.type === 'success' ? 'app-alert-success' : 'app-alert-error'}>
             {message.text}
           </div>
         )}
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="app-card p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Test Mode Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Test Mode & Message Controls
               </h2>
               <div className="space-y-4">
@@ -473,14 +470,14 @@ export default function AdminConfig() {
 
             {/* Dashboard Alert Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Dashboard Alert
               </h2>
               <div className="space-y-4">
                 <div>
                   <label
                     htmlFor="dashboardAlertTitle"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Alert title
                   </label>
@@ -491,14 +488,14 @@ export default function AdminConfig() {
                     onChange={(e) =>
                       setFormData({ ...formData, dashboardAlertTitle: e.target.value })
                     }
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="app-input"
                     placeholder="Monday Leagues Canceled"
                   />
                 </div>
                 <div>
                   <label
                     htmlFor="dashboardAlertBody"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Alert message
                   </label>
@@ -509,7 +506,7 @@ export default function AdminConfig() {
                       setFormData({ ...formData, dashboardAlertBody: e.target.value })
                     }
                     rows={4}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="app-input"
                     placeholder="Due to the icy road conditions, Monday leagues have been canceled!"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
@@ -519,7 +516,7 @@ export default function AdminConfig() {
                 <div>
                   <label
                     htmlFor="dashboardAlertExpiresAt"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Optional expiration (Eastern Time)
                   </label>
@@ -534,14 +531,14 @@ export default function AdminConfig() {
                         dashboardAlertExpiresAt: value ? parseEasternDateTimeToIso(value) : '',
                       });
                     }}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="app-input"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label
                       htmlFor="dashboardAlertVariant"
-                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      className="app-label"
                     >
                       Alert color
                     </label>
@@ -551,7 +548,7 @@ export default function AdminConfig() {
                       onChange={(e) =>
                         setFormData({ ...formData, dashboardAlertVariant: e.target.value })
                       }
-                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      className="app-input"
                     >
                       <option value="info">Info (blue)</option>
                       <option value="warning">Warning (amber)</option>
@@ -562,7 +559,7 @@ export default function AdminConfig() {
                   <div>
                     <label
                       htmlFor="dashboardAlertIcon"
-                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                      className="app-label"
                     >
                       Alert icon
                     </label>
@@ -572,7 +569,7 @@ export default function AdminConfig() {
                       onChange={(e) =>
                         setFormData({ ...formData, dashboardAlertIcon: e.target.value })
                       }
-                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      className="app-input"
                     >
                       <option value="announcement">Announcement</option>
                       <option value="info">Info</option>
@@ -588,7 +585,7 @@ export default function AdminConfig() {
 
             {/* Observability Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Observability
               </h2>
               <div className="space-y-4">
@@ -661,14 +658,14 @@ export default function AdminConfig() {
 
             {/* Test Current Time Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Test Current Time
               </h2>
               <div className="space-y-4">
                 <div>
                   <label
                     htmlFor="testCurrentTime"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Override current date/time (for testing/debugging)
                   </label>
@@ -687,7 +684,7 @@ export default function AdminConfig() {
                         testCurrentTime: value ? new Date(value).toISOString() : '',
                       });
                     }}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                     Set a fake "current" date/time for testing. Leave empty to use real time.
@@ -710,14 +707,14 @@ export default function AdminConfig() {
 
             {/* Notification Delay Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Notification Delay
               </h2>
               <div className="space-y-4">
                 <div>
                   <label
                     htmlFor="notificationDelaySeconds"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Delay between notifications (seconds)
                   </label>
@@ -732,7 +729,7 @@ export default function AdminConfig() {
                         notificationDelaySeconds: parseInt(e.target.value) || 180,
                       })
                     }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                     The number of seconds to wait between sending notifications for public spare
@@ -744,14 +741,14 @@ export default function AdminConfig() {
 
             {/* Twilio Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Twilio (SMS provider)
               </h2>
               <div className="space-y-4">
                 <div>
                   <label
                     htmlFor="twilioApiKeySid"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     API Key SID
                   </label>
@@ -760,7 +757,7 @@ export default function AdminConfig() {
                     id="twilioApiKeySid"
                     value={formData.twilioApiKeySid}
                     onChange={(e) => setFormData({ ...formData, twilioApiKeySid: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
+                    className="app-input font-mono text-sm"
                     placeholder="SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -771,7 +768,7 @@ export default function AdminConfig() {
                 <div>
                   <label
                     htmlFor="twilioApiKeySecret"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     API Key Secret
                   </label>
@@ -782,7 +779,7 @@ export default function AdminConfig() {
                     onChange={(e) =>
                       setFormData({ ...formData, twilioApiKeySecret: e.target.value })
                     }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
+                    className="app-input font-mono text-sm"
                     placeholder={config?.twilioApiKeySecret ? '••••••••' : 'Enter API key secret'}
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -795,7 +792,7 @@ export default function AdminConfig() {
                 <div>
                   <label
                     htmlFor="twilioAccountSid"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Account SID
                   </label>
@@ -804,7 +801,7 @@ export default function AdminConfig() {
                     id="twilioAccountSid"
                     value={formData.twilioAccountSid}
                     onChange={(e) => setFormData({ ...formData, twilioAccountSid: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
+                    className="app-input font-mono text-sm"
                     placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -815,7 +812,7 @@ export default function AdminConfig() {
                 <div>
                   <label
                     htmlFor="twilioCampaignSid"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Campaign SID
                   </label>
@@ -826,7 +823,7 @@ export default function AdminConfig() {
                     onChange={(e) =>
                       setFormData({ ...formData, twilioCampaignSid: e.target.value })
                     }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
+                    className="app-input font-mono text-sm"
                     placeholder="CMxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -859,14 +856,14 @@ export default function AdminConfig() {
 
             {/* Azure Communication Services Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Azure Communication Services (Email provider)
               </h2>
               <div className="space-y-4">
                 <div>
                   <label
                     htmlFor="azureConnectionString"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Connection string
                   </label>
@@ -876,7 +873,7 @@ export default function AdminConfig() {
                     onChange={(e) =>
                       setFormData({ ...formData, azureConnectionString: e.target.value })
                     }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent font-mono text-sm"
+                    className="app-input font-mono text-sm"
                     rows={3}
                     placeholder={
                       config?.azureConnectionString ? '••••••••' : 'Endpoint=https://...'
@@ -892,7 +889,7 @@ export default function AdminConfig() {
                 <div>
                   <label
                     htmlFor="azureSenderEmail"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Sender email address
                   </label>
@@ -901,7 +898,7 @@ export default function AdminConfig() {
                     id="azureSenderEmail"
                     value={formData.azureSenderEmail}
                     onChange={(e) => setFormData({ ...formData, azureSenderEmail: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                     placeholder="noreply@tccnc.club"
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -949,7 +946,7 @@ export default function AdminConfig() {
             </div>
           </form>
         </div>
-      </div>
+      </AppPage>
     </Layout>
   );
 }

@@ -246,6 +246,12 @@ export default function PublicHomePage() {
                       >
                         Plan a group event
                       </Link>
+                      <Link
+                        to="/donate"
+                        className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                      >
+                        Donate
+                      </Link>
                       <a
                         href="#upcoming-bonspiels"
                         className="rounded-md border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50"

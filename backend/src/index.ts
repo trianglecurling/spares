@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import fastifyRawBody from 'fastify-raw-body';
 import { config } from './config.js';
 import { initializeDatabase, resetDatabaseState, getDatabaseAsync } from './db/index.js';
 import { authMiddleware } from './middleware/auth.js';
@@ -24,12 +25,16 @@ import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback
 import { publicConfigRoutes } from './routes/publicConfig.js';
 import { publicRoutes } from './routes/public.js';
 import { contactRoutes } from './routes/contact.js';
+import { donationRoutes } from './routes/donations.js';
+import { paymentWebhookRoutes } from './routes/paymentWebhooks.js';
+import { paymentRoutes } from './routes/payments.js';
 import { contentRoutes } from './routes/content.js';
 import { fileRoutes } from './routes/files.js';
 import { sponsorshipRoutes } from './routes/sponsorship.js';
 import { governanceRoutes } from './routes/governance.js';
 import { rbacRoutes } from './routes/rbac.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
+import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 
 const fastify = Fastify({
@@ -60,6 +65,13 @@ await fastify.register(swagger, {
 
 await fastify.register(swaggerUi, {
   routePrefix: '/docs',
+});
+
+await fastify.register(fastifyRawBody, {
+  field: 'rawBody',
+  global: false,
+  encoding: 'utf8',
+  runFirst: true,
 });
 
 // Install routes (always available)
@@ -220,6 +232,7 @@ fastify.addHook('onRequest', async (request, reply) => {
 // Start notification processor for staggered notifications (only if DB configured)
 if (isDatabaseConfigured()) {
   startNotificationProcessor();
+  startPaymentReconciliationProcessor();
 }
 
 // Health check
@@ -235,6 +248,10 @@ fastify.register(publicFeedbackRoutes, { prefix: '/api' });
 fastify.register(publicRoutes, { prefix: '/api' });
 // Public contact form workflow (no auth required)
 fastify.register(contactRoutes, { prefix: '/api' });
+// Public donations checkout + status (no auth required)
+fastify.register(donationRoutes, { prefix: '/api' });
+// Public payment webhooks (provider signature verified in-route)
+fastify.register(paymentWebhookRoutes, { prefix: '/api' });
 
 // Protected routes
 fastify.register(
@@ -258,6 +275,7 @@ fastify.register(
     await instance.register(fileRoutes, { prefix: '/api' });
     await instance.register(sponsorshipRoutes, { prefix: '/api' });
     await instance.register(governanceRoutes, { prefix: '/api' });
+    await instance.register(paymentRoutes, { prefix: '/api' });
     await instance.register(rbacRoutes, { prefix: '/api' });
     await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
   }

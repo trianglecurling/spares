@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Layout from '../../components/Layout';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import api, { formatApiError } from '../../utils/api';
 
 type RoleRule = {
@@ -291,45 +292,46 @@ export default function AdminRoles() {
   if (loading) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading roles…</div>
+        <AppPage>
+          <div className="app-card text-center py-10 text-gray-500 dark:text-gray-400">Loading roles...</div>
+        </AppPage>
       </Layout>
     );
   }
 
   return (
     <Layout>
-      <div className="space-y-8">
-        <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-cyan-50/40 to-blue-50/70 px-6 py-5 dark:border-gray-700 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Role management</h1>
-          <p className="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
-            Browse every role and its scope footprint in one list. Hover any scope chip for documentation. Scope
-            metadata is also available via{' '}
-            <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-800">GET /api/rbac/scope-registry</code>.
-          </p>
-        </div>
+      <AppPage>
+        <AppPageHeader
+          title="Role management"
+          description={
+            <>
+              Browse every role and its scope footprint in one list. Hover any scope chip for documentation. Scope
+              metadata is also available via{' '}
+              <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-800">
+                GET /api/rbac/scope-registry
+              </code>
+              .
+            </>
+          }
+        />
 
         {message && (
-          <div
-            className={`rounded-xl border px-4 py-3 ${
-              message.type === 'success'
-                ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-700/60 dark:bg-green-900/20 dark:text-green-200'
-                : 'border-red-200 bg-red-50 text-red-800 dark:border-red-700/60 dark:bg-red-900/20 dark:text-red-200'
-            }`}
-          >
+          <div className={message.type === 'success' ? 'app-alert-success' : 'app-alert-error'}>
             {message.text}
           </div>
         )}
 
         <form
           onSubmit={handleCreateRole}
-          className="grid gap-3 rounded-2xl border border-dashed border-gray-300 bg-white/80 p-4 dark:border-gray-600 dark:bg-gray-800/50 md:grid-cols-[1.4fr_2fr_auto]"
+          className="app-card grid gap-3 border-dashed md:grid-cols-[1.4fr_2fr_auto]"
         >
           <input
             type="text"
             value={newRoleName}
             onChange={(event) => setNewRoleName(event.target.value)}
             placeholder="New role name"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-primary-teal focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            className="app-input"
             required
           />
           <input
@@ -337,14 +339,14 @@ export default function AdminRoles() {
             value={newRoleDescription}
             onChange={(event) => setNewRoleDescription(event.target.value)}
             placeholder="Description (optional)"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-primary-teal focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            className="app-input"
           />
           <Button type="submit" disabled={saving}>
             Create role
           </Button>
         </form>
 
-        <section className="space-y-0 rounded-2xl border border-gray-200 bg-white/90 shadow-sm dark:border-gray-700 dark:bg-gray-800/60">
+        <section className="app-card space-y-0 p-0">
           {roles.length === 0 ? (
             <div className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">No roles found.</div>
           ) : (
@@ -359,7 +361,7 @@ export default function AdminRoles() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-semibold text-[#121033] dark:text-gray-100">{role.name}</h2>
+                        <h2 className="app-section-title">{role.name}</h2>
                         {role.isComputed && (
                           <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
                             Computed
@@ -410,7 +412,7 @@ export default function AdminRoles() {
             })
           )}
         </section>
-      </div>
+      </AppPage>
 
       <Modal
         isOpen={Boolean(editingRole)}
@@ -422,21 +424,21 @@ export default function AdminRoles() {
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Role name</label>
+                <label className="app-label">Role name</label>
                 <input
                   type="text"
                   value={editName}
                   onChange={(event) => setEditName(event.target.value)}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-primary-teal focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="app-input"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                <label className="app-label">Description</label>
                 <input
                   type="text"
                   value={editDescription}
                   onChange={(event) => setEditDescription(event.target.value)}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-primary-teal focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="app-input"
                   placeholder="Optional"
                 />
               </div>
@@ -444,7 +446,7 @@ export default function AdminRoles() {
 
             <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-700 dark:bg-gray-900/30">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="font-semibold text-[#121033] dark:text-gray-100">Scope rules</h3>
+                <h3 className="app-section-title">Scope rules</h3>
                 <Button type="button" variant="secondary" onClick={addDraftRow} disabled={saving}>
                   Add scope
                 </Button>
@@ -472,7 +474,7 @@ export default function AdminRoles() {
                           onChange={(event) =>
                             updateDraftRow(row.id, { effect: event.target.value as 'allow' | 'deny' })
                           }
-                          className="min-w-[6rem] rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                          className="app-input min-w-[6rem] px-2 py-1.5"
                         >
                           <option value="allow">Allow</option>
                           <option value="deny">Deny</option>
@@ -484,7 +486,7 @@ export default function AdminRoles() {
                             value={row.scope}
                             onChange={(event) => updateDraftRow(row.id, { scope: event.target.value })}
                             placeholder="e.g. leagues.manage or leagues.*"
-                            className="min-w-[14rem] flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                            className="app-input min-w-[14rem] flex-1 px-2 py-1.5"
                           />
                         ) : (
                           <select
@@ -497,7 +499,7 @@ export default function AdminRoles() {
                                 updateDraftRow(row.id, { useCustomInput: false, scope: value });
                               }
                             }}
-                            className="min-w-[14rem] flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                            className="app-input min-w-[14rem] flex-1 px-2 py-1.5"
                           >
                             <option value="">Select scope…</option>
                             {registryByCategory.map(([category, entries]) => (

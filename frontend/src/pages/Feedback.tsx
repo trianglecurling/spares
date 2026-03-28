@@ -111,35 +111,29 @@ export default function Feedback() {
 
       <div className="flex-grow">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
+          <div className="app-card">
+            <h1 className="app-page-title mb-2">
               Report issues / feedback
             </h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
+            <p className="app-page-subtitle mb-6">
               Tell us what’s going on. The more detail you can share, the easier it is to fix.
             </p>
 
             {message && (
-              <div
-                className={`mb-6 p-4 rounded ${
-                  message.type === 'success'
-                    ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
-                    : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
-                }`}
-              >
+              <div className={`mb-6 ${message.type === 'success' ? 'app-alert-success' : 'app-alert-error'}`}>
                 {message.text}
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="app-label">
                   Category
                 </label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="app-input"
                 >
                   {categoryOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -151,14 +145,14 @@ export default function Feedback() {
 
               {!isLoggedIn && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="app-label">
                     Your email (optional)
                   </label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                     placeholder="you@example.com"
                     autoComplete="email"
                   />
@@ -169,14 +163,14 @@ export default function Feedback() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="app-label">
                   Details
                 </label>
                 <textarea
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   rows={8}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="app-input"
                   placeholder="What happened? What did you expect to happen? Any steps to reproduce?"
                 />
               </div>
@@ -204,7 +198,7 @@ export default function Feedback() {
                     type="text"
                     value={captchaAnswer}
                     onChange={(e) => setCaptchaAnswer(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                     placeholder="Answer"
                     inputMode="numeric"
                   />

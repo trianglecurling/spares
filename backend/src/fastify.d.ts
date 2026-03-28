@@ -5,5 +5,6 @@ declare module 'fastify' {
   interface FastifyRequest {
     member?: Member;
     authz?: AuthzClaims;
+    rawBody?: string | Buffer;
   }
 }

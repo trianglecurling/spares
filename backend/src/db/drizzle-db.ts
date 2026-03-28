@@ -39,6 +39,10 @@ type SqliteSchema = {
   spareRequestNotificationDeliveries: typeof sqliteSchema.spareRequestNotificationDeliveriesSqlite;
   feedback: typeof sqliteSchema.feedbackSqlite;
   observabilityEvents: typeof sqliteSchema.observabilityEventsSqlite;
+  paymentOrders: typeof sqliteSchema.paymentOrdersSqlite;
+  paymentTransactions: typeof sqliteSchema.paymentTransactionsSqlite;
+  paymentEvents: typeof sqliteSchema.paymentEventsSqlite;
+  refunds: typeof sqliteSchema.refundsSqlite;
   dailyActivity: typeof sqliteSchema.dailyActivitySqlite;
   calendarEvents: typeof sqliteSchema.calendarEventsSqlite;
   calendarEventLocations: typeof sqliteSchema.calendarEventLocationsSqlite;
@@ -94,6 +98,10 @@ type PgSchema = {
   spareRequestNotificationDeliveries: typeof pgSchema.spareRequestNotificationDeliveriesPg;
   feedback: typeof pgSchema.feedbackPg;
   observabilityEvents: typeof pgSchema.observabilityEventsPg;
+  paymentOrders: typeof pgSchema.paymentOrdersPg;
+  paymentTransactions: typeof pgSchema.paymentTransactionsPg;
+  paymentEvents: typeof pgSchema.paymentEventsPg;
+  refunds: typeof pgSchema.refundsPg;
   dailyActivity: typeof pgSchema.dailyActivityPg;
   calendarEvents: typeof pgSchema.calendarEventsPg;
   calendarEventLocations: typeof pgSchema.calendarEventLocationsPg;
@@ -172,6 +180,10 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       spareRequestNotificationDeliveries: sqliteSchema.spareRequestNotificationDeliveriesSqlite,
       feedback: sqliteSchema.feedbackSqlite,
       observabilityEvents: sqliteSchema.observabilityEventsSqlite,
+      paymentOrders: sqliteSchema.paymentOrdersSqlite,
+      paymentTransactions: sqliteSchema.paymentTransactionsSqlite,
+      paymentEvents: sqliteSchema.paymentEventsSqlite,
+      refunds: sqliteSchema.refundsSqlite,
       dailyActivity: sqliteSchema.dailyActivitySqlite,
       calendarEvents: sqliteSchema.calendarEventsSqlite,
       calendarEventLocations: sqliteSchema.calendarEventLocationsSqlite,
@@ -241,6 +253,10 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       spareRequestNotificationDeliveries: pgSchema.spareRequestNotificationDeliveriesPg,
       feedback: pgSchema.feedbackPg,
       observabilityEvents: pgSchema.observabilityEventsPg,
+      paymentOrders: pgSchema.paymentOrdersPg,
+      paymentTransactions: pgSchema.paymentTransactionsPg,
+      paymentEvents: pgSchema.paymentEventsPg,
+      refunds: pgSchema.refundsPg,
       dailyActivity: pgSchema.dailyActivityPg,
       calendarEvents: pgSchema.calendarEventsPg,
       calendarEventLocations: pgSchema.calendarEventLocationsPg,
