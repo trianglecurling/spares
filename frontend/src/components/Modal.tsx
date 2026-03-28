@@ -9,6 +9,8 @@ interface ModalProps {
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   contentOverflow?: 'hidden' | 'visible' | 'auto';
+  /** start: anchor near top of viewport (reduces jump when modal height changes) */
+  verticalAlign?: 'center' | 'start';
 }
 
 export default function Modal({
@@ -18,6 +20,7 @@ export default function Modal({
   children,
   size = 'md',
   contentOverflow = 'auto',
+  verticalAlign = 'center',
 }: ModalProps) {
   const modalRef = useFocusTrap(isOpen);
 
@@ -54,17 +57,30 @@ export default function Modal({
     auto: 'overflow-auto',
   };
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center p-2 sm:p-4">
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-          onClick={onClose}
-        />
+  /** Keep panel + padding within dvh so the overlay never scrolls (avoids “whole dialog” scrollbar). */
+  const panelMaxHClass =
+    verticalAlign === 'start'
+      ? 'max-h-[calc(100dvh-6rem)]'
+      : 'max-h-[calc(100dvh-2rem)]';
 
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      <div
+        className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"
+        onClick={onClose}
+        aria-hidden
+      />
+
+      <div
+        className={
+          verticalAlign === 'start'
+            ? 'pointer-events-none absolute inset-0 flex items-start justify-center overflow-hidden pt-8 sm:pt-12 pb-8 px-2 sm:px-4'
+            : 'pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden p-2 sm:p-4'
+        }
+      >
         <div
           ref={modalRef}
-          className={`relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl ${sizeClasses[size]} w-full p-4 sm:p-6 max-h-[95vh] flex flex-col overflow-hidden`}
+          className={`pointer-events-auto relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl ${sizeClasses[size]} w-full p-4 sm:p-6 ${panelMaxHClass} flex flex-col overflow-hidden`}
         >
           <div className="flex justify-between items-center mb-4 flex-shrink-0">
             <h3 className="text-lg font-semibold text-[#121033] dark:text-gray-100">{title}</h3>

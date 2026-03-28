@@ -73,6 +73,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     isNavLinkActive('/admin/sheets') ||
     isNavLinkActive('/admin/governance') ||
     isNavLinkActive('/admin/sponsorship') ||
+    isNavLinkActive('/admin/payments') ||
     isNavLinkActive('/admin/config');
 
   const canManageLeagues = Boolean(
@@ -82,6 +83,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const canManageContent = Boolean(member && memberHasScope(member, 'content.manage'));
   const canManageGovernance = Boolean(member && memberHasScope(member, 'governance.manage'));
   const canManageSponsorship = Boolean(member && memberHasScope(member, 'sponsorship.manage'));
+  const canReadPayments = Boolean(member && memberHasScope(member, 'payments.read'));
   const canManageServerConfig = Boolean(member?.isServerAdmin);
   const adminLinks = [
     ...(canManageMembers ? [{ to: '/admin/members', label: 'Manage members' }] : []),
@@ -89,6 +91,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canManageSponsorship ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
+    ...(canReadPayments ? [{ to: '/admin/payments', label: 'Payment activity' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/roles', label: 'Manage roles' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/config', label: 'Server config' }] : []),
   ];

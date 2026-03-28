@@ -923,6 +923,71 @@ function escapeHtmlEmail(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+interface DonationReceiptEmailOptions {
+  to: string;
+  donorName: string;
+  amountMinor: number;
+  currency: string;
+  receivedAt: Date;
+  treasurerName: string;
+}
+
+function formatDonationAmount(amountMinor: number, currency: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: (currency || 'usd').toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amountMinor / 100);
+}
+
+function formatDonationReceiptDate(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: config.timeZone,
+  });
+}
+
+export async function sendDonationReceiptEmail(options: DonationReceiptEmailOptions): Promise<void> {
+  const donorName = escapeHtmlEmail(options.donorName);
+  const amount = escapeHtmlEmail(formatDonationAmount(options.amountMinor, options.currency));
+  const receivedDate = escapeHtmlEmail(formatDonationReceiptDate(options.receivedAt));
+  const treasurerName = escapeHtmlEmail(options.treasurerName);
+
+  const htmlContent = `
+    <p>Dear ${donorName},</p>
+    <p>
+      Thank you for your generous donation of ${amount} to Triangle Curling Club, received on ${receivedDate}.
+      We sincerely appreciate your support of our mission and the impact your contribution makes.
+    </p>
+    <p>
+      Triangle Curling Club of North Carolina is a qualified 501(c)(3) tax-exempt organization.
+      Our EIN is 56-1997682. No goods or services were provided in exchange for this contribution, so the full
+      amount of your donation may be tax-deductible to the extent allowed by law.
+    </p>
+    <p>Thank you again for your kindness and support.</p>
+    <p>Sincerely,</p>
+    <p>
+      ${treasurerName}<br />
+      Treasurer<br />
+      Triangle Curling Club of North Carolina<br />
+      P.O. Box 14687<br />
+      Durham, NC 27709<br />
+      <a href="mailto:treasurer@trianglecurling.com">treasurer@trianglecurling.com</a>
+    </p>
+  `;
+
+  await sendEmail({
+    to: options.to,
+    subject: `Donation receipt - Triangle Curling Club (${receivedDate})`,
+    htmlContent,
+    recipientName: options.donorName,
+    includeUnsubscribeFooter: false,
+  });
+}
+
 const ICE_PURPOSE_LABELS: Record<string, string> = {
   practice: 'Practice',
   makeup_game: 'Make-up game',

@@ -1,5 +1,6 @@
 import { useEffect, useState, FormEvent } from 'react';
 import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { get, patch } from '../api/client';
@@ -71,28 +72,19 @@ export default function Profile() {
 
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-[#121033] dark:text-gray-100">My profile</h1>
+      <AppPage narrow>
+        <AppPageHeader title="My profile" />
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          {message && (
-            <div
-              className={`mb-6 p-4 rounded ${
-                message.type === 'success'
-                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
-                  : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
-              }`}
-            >
-              {message.text}
-            </div>
-          )}
+        {message && (
+          <div className={message.type === 'success' ? 'app-alert-success' : 'app-alert-error'}>
+            {message.text}
+          </div>
+        )}
 
+        <div className="app-card">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label
-                htmlFor="name"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-              >
+              <label htmlFor="name" className="app-label">
                 Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -100,22 +92,19 @@ export default function Profile() {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 required
               />
             </div>
 
             <div className="border-t pt-6 dark:border-gray-700">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+              <h2 className="app-section-title mb-4">
                 Contact information
               </h2>
 
               <div className="space-y-6">
                 <div>
-                  <label
-                    htmlFor="email"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                  >
+                  <label htmlFor="email" className="app-label">
                     Email address <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -123,7 +112,7 @@ export default function Profile() {
                     id="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                     required
                   />
                   <div className="mt-2 flex items-start">
@@ -144,10 +133,7 @@ export default function Profile() {
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="phone"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-                  >
+                  <label htmlFor="phone" className="app-label">
                     Phone number
                   </label>
                   <input
@@ -155,7 +141,7 @@ export default function Profile() {
                     id="phone"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                   />
                   <div className="mt-2 flex items-start">
                     <input
@@ -178,7 +164,7 @@ export default function Profile() {
 
             {smsDisabled === false && (
               <div className="border-t pt-6 dark:border-gray-700">
-                <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                <h2 className="app-section-title mb-4">
                   Notifications
                 </h2>
 
@@ -207,12 +193,12 @@ export default function Profile() {
             )}
 
             <div className="border-t pt-6 dark:border-gray-700">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+              <h2 className="app-section-title mb-4">
                 Appearance
               </h2>
 
               <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="app-label">
                   Theme
                 </label>
                 <div className="space-y-2">
@@ -260,7 +246,7 @@ export default function Profile() {
             </div>
           </form>
         </div>
-      </div>
+      </AppPage>
     </Layout>
   );
 }

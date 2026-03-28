@@ -125,7 +125,7 @@ export default function FirstLogin() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       <div className="flex-grow flex items-center justify-center px-4">
         <div className="max-w-2xl w-full">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 relative">
+          <div className="app-card relative">
             <button
               type="button"
               onClick={logout}
@@ -133,17 +133,17 @@ export default function FirstLogin() {
             >
               Logout
             </button>
-            <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
+            <h1 className="app-page-title mb-2">
               Welcome to Triangle Curling Spares!
             </h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-8">Let's get your profile set up.</p>
+            <p className="app-page-subtitle mb-8">Let's get your profile set up.</p>
 
             {step === 1 && (
               <form onSubmit={handleUpdateProfile} className="space-y-6">
                 <div>
                   <label
                     htmlFor="name"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Your name <span className="text-red-500">*</span>
                   </label>
@@ -152,7 +152,7 @@ export default function FirstLogin() {
                     id="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                     placeholder="The name most people know you by"
                     required
                   />
@@ -164,7 +164,7 @@ export default function FirstLogin() {
                 <div>
                   <label
                     htmlFor="email"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Email address <span className="text-red-500">*</span>
                   </label>
@@ -173,7 +173,7 @@ export default function FirstLogin() {
                     id="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                     placeholder="your.email@example.com"
                     required
                   />
@@ -198,7 +198,7 @@ export default function FirstLogin() {
                 <div>
                   <label
                     htmlFor="phone"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Phone number
                   </label>
@@ -207,7 +207,7 @@ export default function FirstLogin() {
                     id="phone"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                    className="app-input"
                     placeholder="(555) 123-4567"
                   />
 
@@ -274,10 +274,10 @@ export default function FirstLogin() {
               <div className="space-y-6">
                 <div className="text-center">
                   <div className="text-6xl mb-4">🥌</div>
-                  <h2 className="text-2xl font-bold mb-2 text-[#121033] dark:text-gray-100">
+                  <h2 className="app-page-title mb-2">
                     You're all set!
                   </h2>
-                  <p className="text-gray-600 dark:text-gray-400">
+                  <p className="app-page-subtitle">
                     {(() => {
                       const pendingRequestId = sessionStorage.getItem(
                         'pendingSpareAcceptRequestId'

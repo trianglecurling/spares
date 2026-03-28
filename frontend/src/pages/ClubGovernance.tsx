@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import api from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import { deserializeCommitteeContactInfo } from '../utils/governanceContactInfo';
@@ -87,23 +88,21 @@ export default function ClubGovernance() {
 
   return (
     <Layout>
-      <div className="space-y-8">
-        <header className="space-y-3">
-          <h1 className="text-3xl font-semibold text-gray-900 dark:text-gray-100">Club governance</h1>
-          <p className="text-sm text-gray-700 dark:text-gray-300">
-            Current board, officers, and committees.
-          </p>
-          {(member?.isAdmin || member?.isServerAdmin) && (
-            <p>
+      <AppPage>
+        <AppPageHeader
+          title="Club governance"
+          description="Current board members, officers, and committee details."
+          actions={
+            (member?.isAdmin || member?.isServerAdmin) && (
               <Link
                 to="/admin/governance"
-                className="inline-flex rounded-md bg-primary-teal text-white px-3 py-1.5 text-sm font-medium hover:bg-primary-teal/90"
+                className="inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-teal/90"
               >
                 Manage governance
               </Link>
-            </p>
-          )}
-        </header>
+            )
+          }
+        />
 
         {loading && <p className="text-sm text-gray-600 dark:text-gray-400">Loading governance data...</p>}
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -111,14 +110,14 @@ export default function ClubGovernance() {
         {!loading && !error && data && (
           <>
             <section className="space-y-3">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Officers</h2>
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-300">
+              <h2 className="app-section-title">Officers</h2>
+              <div className="app-table-shell">
+                <table className="app-table text-sm">
+                  <thead className="app-table-head">
                     <tr>
-                      <th className="text-left px-4 py-3 font-medium">Position</th>
-                      <th className="text-left px-4 py-3 font-medium">Board member</th>
-                      <th className="text-left px-4 py-3 font-medium">Email</th>
+                      <th className="app-table-th">Position</th>
+                      <th className="app-table-th">Board member</th>
+                      <th className="app-table-th">Email</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -131,11 +130,13 @@ export default function ClubGovernance() {
                     )}
                     {data.officers.map((officer) => (
                       <tr key={officer.position}>
-                        <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{OFFICER_LABELS[officer.position]}</td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                        <td className="app-table-td font-medium text-gray-900 dark:text-gray-100">
+                          {OFFICER_LABELS[officer.position]}
+                        </td>
+                        <td className="app-table-td">
                           {boardMembersById.get(officer.boardMemberId)?.memberName ?? 'Unknown board member'}
                         </td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                        <td className="app-table-td">
                           <a
                             href={`mailto:${OFFICER_EMAILS[officer.position]}`}
                             className="text-primary-teal hover:underline"
@@ -151,15 +152,15 @@ export default function ClubGovernance() {
             </section>
 
             <section className="space-y-3">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Board members</h2>
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-300">
+              <h2 className="app-section-title">Board members</h2>
+              <div className="app-table-shell">
+                <table className="app-table text-sm">
+                  <thead className="app-table-head">
                     <tr>
-                      <th className="text-left px-4 py-3 font-medium">Name</th>
-                      <th className="text-left px-4 py-3 font-medium">Public email</th>
-                      <th className="text-left px-4 py-3 font-medium">Term</th>
-                      <th className="text-left px-4 py-3 font-medium">Liaison to</th>
+                      <th className="app-table-th">Name</th>
+                      <th className="app-table-th">Public email</th>
+                      <th className="app-table-th">Term</th>
+                      <th className="app-table-th">Liaison to</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -172,12 +173,14 @@ export default function ClubGovernance() {
                     )}
                     {activeBoardMembers.map((boardMember) => (
                       <tr key={boardMember.id}>
-                        <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{boardMember.memberName}</td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{boardMember.effectivePublicEmail ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                        <td className="app-table-td font-medium text-gray-900 dark:text-gray-100">
+                          {boardMember.memberName}
+                        </td>
+                        <td className="app-table-td">{boardMember.effectivePublicEmail ?? '—'}</td>
+                        <td className="app-table-td">
                           {boardMember.firstFiscalYear}–{boardMember.lastFiscalYear}
                         </td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                        <td className="app-table-td">
                           {boardMember.committeeIds.length === 0
                             ? '—'
                             : boardMember.committeeIds
@@ -192,7 +195,7 @@ export default function ClubGovernance() {
             </section>
 
             <section className="space-y-3">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Committees</h2>
+              <h2 className="app-section-title">Committees</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {data.committees.length === 0 && (
                   <p className="text-sm text-gray-500 dark:text-gray-400">No committees configured.</p>
@@ -200,7 +203,7 @@ export default function ClubGovernance() {
                 {data.committees.map((committee) => (
                   <article
                     key={committee.id}
-                    className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-2"
+                    className="app-card space-y-2"
                   >
                     <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">{committee.name}</h3>
                     <p className="text-sm text-gray-700 dark:text-gray-300">
@@ -229,7 +232,7 @@ export default function ClubGovernance() {
             </section>
           </>
         )}
-      </div>
+      </AppPage>
     </Layout>
   );
 }

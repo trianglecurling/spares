@@ -511,6 +511,101 @@ export const observabilityEventsSqlite = sqliteTable('observability_events', {
   memberIdIdx: index('idx_observability_events_member_id').on(table.member_id),
 }));
 
+export const paymentOrdersSqlite = sqliteTable('payment_orders', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  order_token: text('order_token').notNull().unique(),
+  provider: text('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  subject_type: text('subject_type').notNull().$type<'donation' | 'membership' | 'event_registration'>(),
+  subject_id: integer('subject_id'),
+  amount_minor: integer('amount_minor').notNull(),
+  currency: text('currency').notNull().default('usd'),
+  status: text('status')
+    .notNull()
+    .default('created')
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+  status_reason: text('status_reason'),
+  provider_order_id: text('provider_order_id'),
+  metadata: text('metadata'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  completed_at: text('completed_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  statusIdx: index('idx_payment_orders_status').on(table.status),
+  subjectIdx: index('idx_payment_orders_subject').on(table.subject_type, table.subject_id),
+  providerOrderIdx: uniqueIndex('payment_orders_provider_provider_order_id_unique').on(table.provider, table.provider_order_id),
+}));
+
+export const paymentTransactionsSqlite = sqliteTable('payment_transactions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  payment_order_id: integer('payment_order_id').notNull().references(() => paymentOrdersSqlite.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  provider_transaction_id: text('provider_transaction_id').notNull(),
+  transaction_type: text('transaction_type').notNull().$type<'charge' | 'capture' | 'refund' | 'adjustment'>(),
+  amount_minor: integer('amount_minor').notNull(),
+  currency: text('currency').notNull().default('usd'),
+  fee_minor: integer('fee_minor'),
+  status: text('status')
+    .notNull()
+    .default('pending')
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+  occurred_at: text('occurred_at'),
+  metadata: text('metadata'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  orderIdx: index('idx_payment_transactions_order_id').on(table.payment_order_id),
+  statusIdx: index('idx_payment_transactions_status').on(table.status),
+  providerTxnIdx: uniqueIndex('payment_transactions_provider_transaction_id_unique').on(
+    table.provider,
+    table.provider_transaction_id
+  ),
+}));
+
+export const paymentEventsSqlite = sqliteTable('payment_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  provider: text('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  provider_event_id: text('provider_event_id').notNull(),
+  event_type: text('event_type').notNull(),
+  payment_order_id: integer('payment_order_id').references(() => paymentOrdersSqlite.id, { onDelete: 'set null' }),
+  processing_status: text('processing_status')
+    .notNull()
+    .default('received')
+    .$type<'received' | 'processed' | 'ignored' | 'failed'>(),
+  processing_error: text('processing_error'),
+  raw_payload: text('raw_payload').notNull(),
+  received_at: text('received_at').default(sql`datetime('now')`).notNull(),
+  processed_at: text('processed_at'),
+}, (table) => ({
+  providerEventIdx: uniqueIndex('payment_events_provider_event_unique').on(table.provider, table.provider_event_id),
+  orderIdx: index('idx_payment_events_order_id').on(table.payment_order_id),
+  statusIdx: index('idx_payment_events_processing_status').on(table.processing_status),
+}));
+
+export const refundsSqlite = sqliteTable('refunds', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  payment_order_id: integer('payment_order_id').notNull().references(() => paymentOrdersSqlite.id, { onDelete: 'cascade' }),
+  payment_transaction_id: integer('payment_transaction_id').references(() => paymentTransactionsSqlite.id, { onDelete: 'set null' }),
+  provider: text('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  amount_minor: integer('amount_minor').notNull(),
+  currency: text('currency').notNull().default('usd'),
+  reason: text('reason'),
+  status: text('status')
+    .notNull()
+    .default('requested')
+    .$type<'requested' | 'approved' | 'rejected' | 'processing' | 'succeeded' | 'failed'>(),
+  requested_by_member_id: integer('requested_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  approved_by_member_id: integer('approved_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  provider_refund_id: text('provider_refund_id'),
+  provider_response: text('provider_response'),
+  processed_at: text('processed_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  orderIdx: index('idx_refunds_order_id').on(table.payment_order_id),
+  statusIdx: index('idx_refunds_status').on(table.status),
+  providerRefundIdx: uniqueIndex('refunds_provider_refund_id_unique').on(table.provider, table.provider_refund_id),
+}));
+
 // Daily active users table (one row per member per day; duplicates ignored)
 export const dailyActivitySqlite = sqliteTable('daily_activity', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -1317,6 +1412,101 @@ export const observabilityEventsPg = pgTable('observability_events', {
   memberIdIdx: indexPg('idx_observability_events_member_id').on(table.member_id),
 }));
 
+export const paymentOrdersPg = pgTable('payment_orders', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  order_token: textPg('order_token').notNull().unique(),
+  provider: textPg('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  subject_type: textPg('subject_type').notNull().$type<'donation' | 'membership' | 'event_registration'>(),
+  subject_id: integerPg('subject_id'),
+  amount_minor: integerPg('amount_minor').notNull(),
+  currency: textPg('currency').notNull().default('usd'),
+  status: textPg('status')
+    .notNull()
+    .default('created')
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+  status_reason: textPg('status_reason'),
+  provider_order_id: textPg('provider_order_id'),
+  metadata: textPg('metadata'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  completed_at: timestamp('completed_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  statusIdx: indexPg('idx_payment_orders_status').on(table.status),
+  subjectIdx: indexPg('idx_payment_orders_subject').on(table.subject_type, table.subject_id),
+  providerOrderIdx: uniqueIndexPg('payment_orders_provider_provider_order_id_unique').on(table.provider, table.provider_order_id),
+}));
+
+export const paymentTransactionsPg = pgTable('payment_transactions', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  payment_order_id: integerPg('payment_order_id').notNull().references(() => paymentOrdersPg.id, { onDelete: 'cascade' }),
+  provider: textPg('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  provider_transaction_id: textPg('provider_transaction_id').notNull(),
+  transaction_type: textPg('transaction_type').notNull().$type<'charge' | 'capture' | 'refund' | 'adjustment'>(),
+  amount_minor: integerPg('amount_minor').notNull(),
+  currency: textPg('currency').notNull().default('usd'),
+  fee_minor: integerPg('fee_minor'),
+  status: textPg('status')
+    .notNull()
+    .default('pending')
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+  occurred_at: timestamp('occurred_at', { withTimezone: false }),
+  metadata: textPg('metadata'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  orderIdx: indexPg('idx_payment_transactions_order_id').on(table.payment_order_id),
+  statusIdx: indexPg('idx_payment_transactions_status').on(table.status),
+  providerTxnIdx: uniqueIndexPg('payment_transactions_provider_transaction_id_unique').on(
+    table.provider,
+    table.provider_transaction_id
+  ),
+}));
+
+export const paymentEventsPg = pgTable('payment_events', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  provider: textPg('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  provider_event_id: textPg('provider_event_id').notNull(),
+  event_type: textPg('event_type').notNull(),
+  payment_order_id: integerPg('payment_order_id').references(() => paymentOrdersPg.id, { onDelete: 'set null' }),
+  processing_status: textPg('processing_status')
+    .notNull()
+    .default('received')
+    .$type<'received' | 'processed' | 'ignored' | 'failed'>(),
+  processing_error: textPg('processing_error'),
+  raw_payload: textPg('raw_payload').notNull(),
+  received_at: timestamp('received_at', { withTimezone: false }).defaultNow().notNull(),
+  processed_at: timestamp('processed_at', { withTimezone: false }),
+}, (table) => ({
+  providerEventIdx: uniqueIndexPg('payment_events_provider_event_unique').on(table.provider, table.provider_event_id),
+  orderIdx: indexPg('idx_payment_events_order_id').on(table.payment_order_id),
+  statusIdx: indexPg('idx_payment_events_processing_status').on(table.processing_status),
+}));
+
+export const refundsPg = pgTable('refunds', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  payment_order_id: integerPg('payment_order_id').notNull().references(() => paymentOrdersPg.id, { onDelete: 'cascade' }),
+  payment_transaction_id: integerPg('payment_transaction_id').references(() => paymentTransactionsPg.id, { onDelete: 'set null' }),
+  provider: textPg('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
+  amount_minor: integerPg('amount_minor').notNull(),
+  currency: textPg('currency').notNull().default('usd'),
+  reason: textPg('reason'),
+  status: textPg('status')
+    .notNull()
+    .default('requested')
+    .$type<'requested' | 'approved' | 'rejected' | 'processing' | 'succeeded' | 'failed'>(),
+  requested_by_member_id: integerPg('requested_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  approved_by_member_id: integerPg('approved_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  provider_refund_id: textPg('provider_refund_id'),
+  provider_response: textPg('provider_response'),
+  processed_at: timestamp('processed_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  orderIdx: indexPg('idx_refunds_order_id').on(table.payment_order_id),
+  statusIdx: indexPg('idx_refunds_status').on(table.status),
+  providerRefundIdx: uniqueIndexPg('refunds_provider_refund_id_unique').on(table.provider, table.provider_refund_id),
+}));
+
 export const dailyActivityPg = pgTable('daily_activity', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   activity_date: textPg('activity_date').notNull(), // YYYY-MM-DD
@@ -1653,6 +1843,10 @@ export const sqliteSchema = {
   spareRequestNotificationDeliveries: spareRequestNotificationDeliveriesSqlite,
   feedback: feedbackSqlite,
   observabilityEvents: observabilityEventsSqlite,
+  paymentOrders: paymentOrdersSqlite,
+  paymentTransactions: paymentTransactionsSqlite,
+  paymentEvents: paymentEventsSqlite,
+  refunds: refundsSqlite,
   dailyActivity: dailyActivitySqlite,
   calendarEvents: calendarEventsSqlite,
   calendarEventLocations: calendarEventLocationsSqlite,
@@ -1708,6 +1902,10 @@ export const pgSchema = {
   spareRequestNotificationDeliveries: spareRequestNotificationDeliveriesPg,
   feedback: feedbackPg,
   observabilityEvents: observabilityEventsPg,
+  paymentOrders: paymentOrdersPg,
+  paymentTransactions: paymentTransactionsPg,
+  paymentEvents: paymentEventsPg,
+  refunds: refundsPg,
   dailyActivity: dailyActivityPg,
   calendarEvents: calendarEventsPg,
   calendarEventLocations: calendarEventLocationsPg,

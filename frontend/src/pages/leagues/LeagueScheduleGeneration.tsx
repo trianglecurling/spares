@@ -655,7 +655,7 @@ export default function LeagueScheduleGeneration({
     <div className="space-y-8">
       {canManage && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+          <h2 className="app-section-title">
             Bye request collection
           </h2>
           <div className="flex items-center gap-3">
@@ -692,7 +692,7 @@ export default function LeagueScheduleGeneration({
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Rounds</h2>
+          <h2 className="app-section-title">Rounds</h2>
           {canManage && (
             <Button onClick={() => openStrategyModal()} variant="secondary">
               Add round
@@ -831,7 +831,7 @@ export default function LeagueScheduleGeneration({
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              <h2 className="app-section-title">
                 Hard constraints
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
@@ -908,7 +908,7 @@ export default function LeagueScheduleGeneration({
                     sheetId: '',
                   }))
                 }
-                className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                className="app-input"
               >
                 <option value="bye">Bye week</option>
                 <option value="matchup">Match-up</option>
@@ -925,7 +925,7 @@ export default function LeagueScheduleGeneration({
                     onChange={(e) =>
                       setHardConstraintForm((f) => ({ ...f, teamId: e.target.value }))
                     }
-                    className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
+                    className="app-input min-w-[140px]"
                   >
                     <option value="">Select team</option>
                     {teams
@@ -947,7 +947,7 @@ export default function LeagueScheduleGeneration({
                     onChange={(e) =>
                       setHardConstraintForm((f) => ({ ...f, drawDate: e.target.value }))
                     }
-                    className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
+                    className="app-input min-w-[140px]"
                   >
                     <option value="">Select date</option>
                     {uniqueDrawDates.map((d) => (
@@ -970,7 +970,7 @@ export default function LeagueScheduleGeneration({
                       onChange={(e) =>
                         setHardConstraintForm((f) => ({ ...f, team1Id: e.target.value }))
                       }
-                      className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
+                      className="app-input min-w-[140px]"
                     >
                       <option value="">Select team</option>
                       {teams
@@ -992,7 +992,7 @@ export default function LeagueScheduleGeneration({
                       onChange={(e) =>
                         setHardConstraintForm((f) => ({ ...f, team2Id: e.target.value }))
                       }
-                      className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[140px]"
+                      className="app-input min-w-[140px]"
                     >
                       <option value="">Select team</option>
                       {teams
@@ -1036,7 +1036,7 @@ export default function LeagueScheduleGeneration({
                           sheetId: '',
                         }));
                       }}
-                      className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[180px]"
+                      className="app-input min-w-[180px]"
                     >
                       <option value="">Select draw</option>
                       {drawSlots
@@ -1073,7 +1073,7 @@ export default function LeagueScheduleGeneration({
                             setHardConstraintForm((f) => ({ ...f, sheetId: e.target.value }))
                           }
                           disabled={sheets.length === 0}
-                          className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 min-w-[120px]"
+                          className="app-input min-w-[120px]"
                         >
                           <option value="">Any sheet</option>
                           {sheets.map((s) => (
@@ -1108,7 +1108,7 @@ export default function LeagueScheduleGeneration({
 
       {canManage && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+          <h2 className="app-section-title">
             Generate schedule
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -1117,7 +1117,7 @@ export default function LeagueScheduleGeneration({
           </p>
           <div className="space-y-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="app-label">
                 Optimization
                 <span className="ml-2 font-normal text-gray-500 dark:text-gray-400">
                   {optimizationLevel === 0
@@ -1543,7 +1543,7 @@ export default function LeagueScheduleGeneration({
         >
           <form onSubmit={handleSaveStrategy} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="app-label">
                 Priority (lower = applied first)
               </label>
               <input
@@ -1556,7 +1556,7 @@ export default function LeagueScheduleGeneration({
                     priority: parseInt(e.target.value, 10) || 0,
                   }))
                 }
-                className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                className="app-input"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -1575,7 +1575,7 @@ export default function LeagueScheduleGeneration({
             </div>
             {strategyForm.isIntraDivision && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label className="app-label">
                   Division
                 </label>
                 <select
@@ -1583,7 +1583,7 @@ export default function LeagueScheduleGeneration({
                   onChange={(e) =>
                     setStrategyForm((prev) => ({ ...prev, divisionId: e.target.value }))
                   }
-                  className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                  className="app-input"
                 >
                   <option value="">Select division</option>
                   {divisions.map((d) => (
@@ -1595,7 +1595,7 @@ export default function LeagueScheduleGeneration({
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="app-label">
                 Games per opponent
               </label>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
@@ -1612,12 +1612,12 @@ export default function LeagueScheduleGeneration({
                     gamesPerTeam: parseInt(e.target.value, 10) || 1,
                   }))
                 }
-                className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                className="app-input"
               />
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="app-label">
                   Draw slots ({strategyForm.drawSlotKeys.length} of {drawSlots.length} selected)
                 </label>
                 <button
@@ -1750,7 +1750,7 @@ export default function LeagueScheduleGeneration({
                             [date]: v === '' ? 0 : parseInt(v, 10) || 0,
                           }));
                         }}
-                        className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-gray-900 dark:text-gray-100 text-right"
+                        className="app-input w-20 text-right"
                       />
                     </div>
                   );

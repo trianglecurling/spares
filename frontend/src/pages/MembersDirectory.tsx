@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get } from '../api/client';
 import { formatPhone } from '../utils/phone';
 import Modal from '../components/Modal';
@@ -166,67 +167,60 @@ export default function MembersDirectory() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Member directory</h1>
-          <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
-            <div className="w-full sm:w-72">
-              <select
-                value={leagueFilterId}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setLeagueFilterId(value);
-                  const parsed = value ? parseInt(value, 10) : undefined;
-                  loadMembers(parsed);
-                }}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
-              >
-                <option value="">Filter by league availability (all)</option>
-                {leagues.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name} ({DAY_NAMES[l.dayOfWeek]})
-                  </option>
-                ))}
-              </select>
+      <AppPage>
+        <AppPageHeader
+          title="Member directory"
+          actions={
+            <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
+              <div className="w-full sm:w-72">
+                <select
+                  value={leagueFilterId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setLeagueFilterId(value);
+                    const parsed = value ? parseInt(value, 10) : undefined;
+                    loadMembers(parsed);
+                  }}
+                  className="app-input"
+                >
+                  <option value="">Filter by league availability (all)</option>
+                  {leagues.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} ({DAY_NAMES[l.dayOfWeek]})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  placeholder="Search members..."
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  className="app-input"
+                />
+              </div>
             </div>
-            <div className="w-full sm:w-64">
-              <input
-                type="text"
-                placeholder="Search members..."
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
-              />
-            </div>
-          </div>
-        </div>
+          }
+        />
 
         {loading ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+          <div className="app-table-shell">
+              <table className="app-table">
+                <thead className="app-table-head">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Phone
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Role
-                    </th>
+                    <th className="app-table-th">Name</th>
+                    <th className="app-table-th">Email</th>
+                    <th className="app-table-th">Phone</th>
+                    <th className="app-table-th">Role</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {filteredMembers.map((member) => (
-                    <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                    <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                      <td className="app-table-td whitespace-nowrap">
                         <div className="flex items-center gap-2 relative">
                           <div className="w-5 h-5 flex-shrink-0">
                             {member.firstLoginCompleted && (
@@ -246,7 +240,7 @@ export default function MembersDirectory() {
                           </button>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="app-table-td whitespace-nowrap">
                         {member.email ? (
                           <a
                             href={`mailto:${member.email}`}
@@ -258,7 +252,7 @@ export default function MembersDirectory() {
                           <span className="text-gray-400 dark:text-gray-500">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="app-table-td whitespace-nowrap">
                         {member.phone ? (
                           <a
                             href={`tel:${member.phone.replace(/\D/g, '')}`}
@@ -270,7 +264,7 @@ export default function MembersDirectory() {
                           <span className="text-gray-400 dark:text-gray-500">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <td className="app-table-td whitespace-nowrap">
                         {member.isServerAdmin ? (
                           <span className="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 rounded">
                             Server admin
@@ -289,7 +283,7 @@ export default function MembersDirectory() {
                     <tr>
                       <td
                         colSpan={4}
-                        className="px-6 py-8 text-center text-gray-500 dark:text-gray-400"
+                        className="app-table-td py-8 text-center"
                       >
                         {members.length === 0
                           ? 'No members in the directory.'
@@ -299,7 +293,6 @@ export default function MembersDirectory() {
                   )}
                 </tbody>
               </table>
-            </div>
           </div>
         )}
 
@@ -337,7 +330,7 @@ export default function MembersDirectory() {
               <div className="overflow-y-auto flex-1 min-h-0">
                 {activeTab === 'profile' && (
                   <div className="space-y-2">
-                    <h3 className="text-lg font-semibold mb-3 text-[#121033] dark:text-gray-100">
+                    <h3 className="app-section-title mb-3">
                       Contact Information
                     </h3>
                     <div className="space-y-2">
@@ -392,7 +385,7 @@ export default function MembersDirectory() {
 
                 {activeTab === 'sparing' && (
                   <div>
-                    <h3 className="text-lg font-semibold mb-3 text-[#121033] dark:text-gray-100">
+                    <h3 className="app-section-title mb-3">
                       Sparing Availability
                     </h3>
                     {loadingAvailability ? (
@@ -448,7 +441,7 @@ export default function MembersDirectory() {
 
                 {activeTab === 'leagues' && (
                   <div>
-                    <h3 className="text-lg font-semibold mb-3 text-[#121033] dark:text-gray-100">
+                    <h3 className="app-section-title mb-3">
                       Leagues & Teams
                     </h3>
                     {loadingLeagues ? (
@@ -533,7 +526,7 @@ export default function MembersDirectory() {
             </div>
           )}
         </Modal>
-      </div>
+      </AppPage>
     </Layout>
   );
 }

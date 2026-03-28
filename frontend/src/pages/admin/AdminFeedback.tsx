@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { get } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 
@@ -54,17 +55,13 @@ export default function AdminFeedback() {
 
   return (
     <Layout>
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Feedback</h1>
-        </div>
+      <AppPage>
+        <AppPageHeader title="Feedback" />
 
         {loading && <div className="text-gray-500 dark:text-gray-400">Loading...</div>}
 
         {error && (
-          <div className="mb-6 p-4 rounded bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200">
-            {error}
-          </div>
+          <div className="app-alert-error">{error}</div>
         )}
 
         {!loading && !error && rows.length === 0 && (
@@ -72,35 +69,27 @@ export default function AdminFeedback() {
         )}
 
         {!loading && !error && rows.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="app-card overflow-hidden p-0">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-900/40">
+              <table className="app-table">
+                <thead className="app-table-head">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Category
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      From
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Details
-                    </th>
+                    <th className="app-table-th">Date</th>
+                    <th className="app-table-th">Category</th>
+                    <th className="app-table-th">From</th>
+                    <th className="app-table-th">Details</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {rows.map((r) => (
                     <tr key={r.id} className="align-top">
-                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                      <td className="app-table-td whitespace-nowrap">
                         {r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                      <td className="app-table-td whitespace-nowrap">
                         {categoryLabel(r.category)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                      <td className="app-table-td">
                         <div className="font-medium">{r.memberName || r.email || 'Anonymous'}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           {r.memberEmail || (r.memberId ? `Member #${r.memberId}` : null)}
@@ -111,7 +100,7 @@ export default function AdminFeedback() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                      <td className="app-table-td whitespace-pre-wrap">
                         {r.body}
                       </td>
                     </tr>
@@ -121,7 +110,7 @@ export default function AdminFeedback() {
             </div>
           </div>
         )}
-      </div>
+      </AppPage>
     </Layout>
   );
 }

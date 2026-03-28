@@ -10,6 +10,7 @@ interface ProtectedRouteProps {
   leagueManagerGlobalOnly?: boolean;
   contentAdminOnly?: boolean;
   sponsorAdminOnly?: boolean;
+  requiredScope?: string;
   unauthenticatedRedirectTo?: string;
 }
 
@@ -21,6 +22,7 @@ export function ProtectedRoute({
   leagueManagerGlobalOnly = false,
   contentAdminOnly = false,
   sponsorAdminOnly = false,
+  requiredScope,
   unauthenticatedRedirectTo = '/login',
 }: ProtectedRouteProps) {
   const { member, token, isLoading } = useAuth();
@@ -62,6 +64,10 @@ export function ProtectedRoute({
   }
 
   if (sponsorAdminOnly && !memberHasScope(member, 'sponsorship.manage')) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requiredScope && !memberHasScope(member, requiredScope)) {
     return <Navigate to="/dashboard" replace />;
   }
 

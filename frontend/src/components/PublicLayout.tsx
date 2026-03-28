@@ -461,6 +461,7 @@ export default function PublicLayout({
             <div className="flex flex-col gap-1 text-sm">
               <Link to="/" className="text-gray-600 hover:text-gray-900 hover:underline">Home</Link>
               <Link to="/contact" className="text-gray-600 hover:text-gray-900 hover:underline">Contact</Link>
+              <Link to="/donate" className="text-gray-600 hover:text-gray-900 hover:underline">Donate</Link>
               <Link to="/articles/try-curling" className="text-gray-600 hover:text-gray-900 hover:underline">Learn</Link>
               {token && member ? (
                 <Link to="/leagues" className="text-gray-600 hover:text-gray-900 hover:underline">Leagues</Link>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import axios from 'axios';
 import { get, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
@@ -136,31 +137,29 @@ export default function AdminDatabaseConfig() {
   if (loadingConfig) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+        <AppPage>
+          <div className="app-card text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+        </AppPage>
       </Layout>
     );
   }
 
   return (
     <Layout>
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-6">
-          <Button variant="secondary" onClick={() => navigate('/admin/config')} className="mb-4">
-            ← Back to Server Config
-          </Button>
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Configure Database
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Update your database connection settings. Changes will require a server restart.
-          </p>
-        </div>
+      <AppPage narrow>
+        <Button variant="secondary" onClick={() => navigate('/admin/config')} className="mb-4">
+          ← Back to Server Config
+        </Button>
+        <AppPageHeader
+          title="Configure Database"
+          description="Update your database connection settings. Changes will require a server restart."
+        />
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="app-card p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Database Type Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="app-label">
                 Database Type
               </label>
               <div className="space-y-2">
@@ -192,14 +191,14 @@ export default function AdminDatabaseConfig() {
             {/* SQLite Configuration */}
             {databaseType === 'sqlite' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="app-label">
                   Database File Path
                 </label>
                 <input
                   type="text"
                   value={sqlitePath}
                   onChange={(e) => setSqlitePath(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                  className="app-input"
                   placeholder="./data/spares.sqlite"
                 />
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -212,14 +211,14 @@ export default function AdminDatabaseConfig() {
             {databaseType === 'postgres' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="app-label">
                     Host
                   </label>
                   <input
                     type="text"
                     value={postgresHost}
                     onChange={(e) => setPostgresHost(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    className="app-input"
                     placeholder="your-server.postgres.database.azure.com"
                     required={databaseType === 'postgres'}
                   />
@@ -227,28 +226,28 @@ export default function AdminDatabaseConfig() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="app-label">
                       Port
                     </label>
                     <input
                       type="number"
                       value={postgresPort}
                       onChange={(e) => setPostgresPort(parseInt(e.target.value) || 5432)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      className="app-input"
                       min="1"
                       max="65535"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="app-label">
                       Database Name
                     </label>
                     <input
                       type="text"
                       value={postgresDatabase}
                       onChange={(e) => setPostgresDatabase(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      className="app-input"
                       placeholder="spares"
                       required={databaseType === 'postgres'}
                     />
@@ -256,27 +255,27 @@ export default function AdminDatabaseConfig() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="app-label">
                     Username
                   </label>
                   <input
                     type="text"
                     value={postgresUsername}
                     onChange={(e) => setPostgresUsername(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    className="app-input"
                     required={databaseType === 'postgres'}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="app-label">
                     Password
                   </label>
                   <input
                     type="password"
                     value={postgresPassword}
                     onChange={(e) => setPostgresPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    className="app-input"
                     placeholder={postgresPassword ? '' : 'Leave blank to keep current password'}
                   />
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -302,13 +301,13 @@ export default function AdminDatabaseConfig() {
 
             {/* Admin Emails */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="app-label">
                 Administrator Email Addresses
               </label>
               <textarea
                 value={adminEmails}
                 onChange={(e) => setAdminEmails(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                className="app-input"
                 rows={3}
                 placeholder="admin1@example.com, admin2@example.com"
                 required
@@ -320,7 +319,7 @@ export default function AdminDatabaseConfig() {
             </div>
 
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded">
+              <div className="app-alert-error">
                 {error}
               </div>
             )}
@@ -340,7 +339,7 @@ export default function AdminDatabaseConfig() {
             </div>
           </form>
         </div>
-      </div>
+      </AppPage>
     </Layout>
   );
 }

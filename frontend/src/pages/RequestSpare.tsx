@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
@@ -781,25 +782,18 @@ export default function RequestSpare() {
 
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
-            Request a spare
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Fill out the details below to request a spare for your game.
-          </p>
-        </div>
+      <AppPage narrow>
+        <AppPageHeader title="Request a spare" description="Fill out the details below to request a spare for your game." />
 
         {isSpareOnly && (
-          <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300 rounded-lg p-4">
+          <div className="app-alert border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">
             Your account is marked as <span className="font-semibold">spare-only</span>, so you
             can’t create spare requests. If this is a mistake, please ask an admin to update your
             account.
           </div>
         )}
         {isSocialMember && !isSpareOnly && (
-          <div className="mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-lg p-4">
+          <div className="app-alert border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
             Your account is a <span className="font-semibold">social membership</span>, which does
             not include spare requests. If this is a mistake, ask an administrator to update your
             account.
@@ -808,10 +802,10 @@ export default function RequestSpare() {
 
         <form
           onSubmit={handleSubmit}
-          className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-6"
+          className="app-card p-6 space-y-6"
         >
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="app-label">
               Person who needs the spare <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -931,7 +925,7 @@ export default function RequestSpare() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
             <div className="flex flex-col h-full">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="app-label">
                 League <span className="text-red-500">*</span>
               </label>
               <div className="flex-1 flex items-center">
@@ -949,7 +943,7 @@ export default function RequestSpare() {
                       }
                     }}
                     disabled={loading}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal disabled:opacity-50 flex items-center justify-between gap-3"
+                    className="app-input text-left disabled:opacity-50 flex items-center justify-between gap-3"
                     aria-haspopup="dialog"
                     aria-expanded={leaguePickerOpen}
                   >
@@ -1095,7 +1089,7 @@ export default function RequestSpare() {
             <div className="flex flex-col h-full">
               <label
                 htmlFor="gameSlot"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Game date & time <span className="text-red-500">*</span>
               </label>
@@ -1105,7 +1099,7 @@ export default function RequestSpare() {
                   id="gameSlot"
                   value={selectedGameSlot}
                   onChange={(e) => setSelectedGameSlot(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="app-input"
                   required
                   disabled={!selectedLeagueId || loadingGames}
                 >
@@ -1133,7 +1127,7 @@ export default function RequestSpare() {
             <div>
               <label
                 htmlFor="position"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Position (optional)
               </label>
@@ -1142,7 +1136,7 @@ export default function RequestSpare() {
                 id="position"
                 value={position}
                 onChange={(e) => setPosition(e.target.value as PositionOption)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
               >
                 <option value="">Any position</option>
                 <option value="lead">Lead</option>
@@ -1170,7 +1164,7 @@ export default function RequestSpare() {
             <div>
               <label
                 htmlFor="message"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Personal message (optional)
               </label>
@@ -1179,7 +1173,7 @@ export default function RequestSpare() {
                 id="message"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 rows={3}
                 placeholder="Any additional details, such as who is on your team, who the opponent is, what are the stakes of this game, etc."
               />
@@ -1200,7 +1194,7 @@ export default function RequestSpare() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="app-label">
               Request type <span className="text-red-500">*</span>
             </label>
             <div className="space-y-2">
@@ -1242,7 +1236,7 @@ export default function RequestSpare() {
 
           {requestType === 'private' && (
             <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="app-label">
                 Select members to invite <span className="text-red-500">*</span>
               </label>
 
@@ -1282,7 +1276,7 @@ export default function RequestSpare() {
                   }}
                   onFocus={() => setIsDropdownOpen(true)}
                   onKeyDown={handleKeyDown}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="app-input"
                   placeholder="Search for members..."
                   disabled={loading}
                 />
@@ -1321,7 +1315,7 @@ export default function RequestSpare() {
               {/* Available Members Box */}
               {selectedLeagueId && (
                 <div className="border border-gray-300 dark:border-gray-600 rounded-md p-4 bg-gray-50 dark:bg-gray-700/50">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  <label className="app-label mb-3">
                     Members available during{' '}
                     {leagues.find((l) => l.id.toString() === selectedLeagueId)?.name ||
                       'this league'}
@@ -1376,7 +1370,7 @@ export default function RequestSpare() {
 
           {showCc ? (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="app-label">
                 Let your teammates know? (optional)
               </label>
 
@@ -1416,7 +1410,7 @@ export default function RequestSpare() {
                   }}
                   onFocus={() => setCcIsDropdownOpen(true)}
                   onKeyDown={handleCcKeyDown}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                  className="app-input"
                   placeholder={
                     ccMemberIds.length >= 4 ? 'CC limit reached (4)' : 'Search for members to CC...'
                   }
@@ -1487,7 +1481,7 @@ export default function RequestSpare() {
             </Button>
           </div>
         </form>
-      </div>
+      </AppPage>
     </Layout>
   );
 }

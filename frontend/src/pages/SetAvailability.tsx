@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -119,36 +120,30 @@ export default function SetAvailability() {
   if (isSocialMember) {
     return (
       <Layout>
-        <div className="space-y-6 max-w-2xl">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">
-            Sparing availability
-          </h1>
-          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-lg p-4 text-sm">
+        <AppPage narrow>
+          <AppPageHeader title="Sparing availability" />
+          <div className="app-alert border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
             Your account is a <span className="font-semibold">social membership</span>, which does
             not include ice privileges. You cannot sign up as a spare or change sparing availability.
             If this is a mistake, contact an administrator.
           </div>
-        </div>
+        </AppPage>
       </Layout>
     );
   }
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2 text-[#121033] dark:text-gray-100">
-            Set your sparing availability
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Let others know when you're available to spare. Your changes are saved automatically.
-          </p>
-        </div>
+      <AppPage>
+        <AppPageHeader
+          title="Set your sparing availability"
+          description="Let others know when you're available to spare. Your changes are saved automatically."
+        />
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="app-card">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-lg dark:text-gray-100">Comfortable skipping?</h3>
+              <h3 className="app-section-title">Comfortable skipping?</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Check this if you're comfortable sparing as a skip
               </p>
@@ -169,14 +164,14 @@ export default function SetAvailability() {
         </div>
 
         {leagues.length === 0 ? (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="app-card py-12 text-center">
             <p className="text-gray-600 dark:text-gray-400">
               No leagues have been set up yet. Check back later or contact an administrator.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-[#121033] dark:text-gray-100">
+            <h2 className="app-section-title">
               League availability
             </h2>
 
@@ -186,13 +181,13 @@ export default function SetAvailability() {
               return (
                 <div
                   key={league.id}
-                  className={`bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-all border-l-4 ${
+                  className={`app-card transition-all border-l-4 ${
                     available ? 'border-l-primary-teal' : 'border-l-transparent'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg dark:text-gray-100">{league.name}</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{league.name}</h3>
                       <div className="text-sm text-gray-600 dark:text-gray-400 mt-1 space-y-1">
                         <p>
                           <span className="font-medium dark:text-gray-300">Day:</span>{' '}
@@ -238,7 +233,7 @@ export default function SetAvailability() {
             })}
           </div>
         )}
-      </div>
+      </AppPage>
     </Layout>
   );
 }

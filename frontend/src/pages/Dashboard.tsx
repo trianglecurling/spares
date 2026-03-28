@@ -13,6 +13,7 @@ import {
 } from 'react-icons/hi2';
 import axios from 'axios';
 import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import api from '../utils/api';
 import { formatApiError } from '../utils/api';
@@ -658,7 +659,7 @@ export default function Dashboard() {
       request.requestType === 'private' && request.inviteStatus === 'declined';
 
     return (
-      <div key={request.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div key={request.id} className="app-card p-6">
         <div className="flex justify-between items-start">
           <div className="flex-1">
             <div className="flex items-center space-x-2 mb-2">
@@ -753,10 +754,8 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Dashboard</h1>
-        </div>
+      <AppPage>
+        <AppPageHeader title="Dashboard" />
 
         {dashboardAlert &&
           (() => {
@@ -786,52 +785,47 @@ export default function Dashboard() {
             );
           })()}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {!member?.spareOnly && !member?.socialMember && (
-            <Link
-              to="/request-spare"
-              className="border-2 border-primary-orange text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-primary-orange hover:text-white dark:hover:bg-primary-orange transition-colors text-center"
-            >
-              <div className="flex justify-center mb-2">
-                <HiOutlineUserPlus className="w-12 h-12" />
-              </div>
-              <div className="text-xl font-semibold">Request a spare</div>
-              <div className="text-sm mt-1 dark:text-gray-300">
-                Need someone to fill in for your game?
-              </div>
-            </Link>
-          )}
+        {!member?.socialMember && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            {!member?.spareOnly && (
+              <Link
+                to="/request-spare"
+                className="group flex items-center gap-3 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm hover:shadow-md hover:border-primary-orange/40 dark:hover:border-primary-orange/40 transition-all"
+              >
+                <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary-orange/10 dark:bg-primary-orange/20 flex items-center justify-center text-primary-orange">
+                  <HiOutlineUserPlus className="w-5 h-5" />
+                </div>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-100 group-hover:text-primary-orange transition-colors">
+                  Request a spare
+                </span>
+              </Link>
+            )}
 
-          {!member?.socialMember && (
             <Link
               to="/availability"
-              className="border-2 border-primary-teal text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-primary-teal hover:text-white dark:hover:bg-primary-teal transition-colors text-center"
+              className="group flex items-center gap-3 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm hover:shadow-md hover:border-primary-teal/40 dark:hover:border-primary-teal/40 transition-all"
             >
-              <div className="flex justify-center mb-2">
-                <HiOutlineCalendar className="w-12 h-12" />
+              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary-teal/10 dark:bg-primary-teal/20 flex items-center justify-center text-primary-teal">
+                <HiOutlineCalendar className="w-5 h-5" />
               </div>
-              <div className="text-xl font-semibold">Set your availability</div>
-              <div className="text-sm mt-1 dark:text-gray-300">
-                Let others know when you can spare
-              </div>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-100 group-hover:text-primary-teal transition-colors">
+                Set availability
+              </span>
             </Link>
-          )}
 
-          {!member?.socialMember && (
             <Link
               to="/book-ice"
-              className="border-2 border-[#121033] text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800 p-6 rounded-lg hover:bg-[#121033] hover:text-white dark:hover:bg-[#121033] transition-colors text-center"
+              className="group flex items-center gap-3 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm hover:shadow-md hover:border-primary-dark/30 dark:hover:border-indigo-500/40 transition-all"
             >
-              <div className="flex justify-center mb-2">
-                <HiOutlineCalendarDays className="w-12 h-12" />
+              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary-dark/[0.08] dark:bg-indigo-500/15 flex items-center justify-center text-primary-dark dark:text-indigo-300">
+                <HiOutlineCalendarDays className="w-5 h-5" />
               </div>
-              <div className="text-xl font-semibold">Book ice time</div>
-              <div className="text-sm mt-1 dark:text-gray-300">
-                Reserve practice or make-up ice on a sheet
-              </div>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-100 group-hover:text-primary-dark dark:group-hover:text-indigo-300 transition-colors">
+                Book ice time
+              </span>
             </Link>
-          )}
-        </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
@@ -840,7 +834,7 @@ export default function Dashboard() {
             {/* My Upcoming Games */}
             {!member?.socialMember && upcomingIceBookings.length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                <h2 className="app-section-title mb-4">
                   My ice bookings{' '}
                   <Link
                     to="/book-ice"
@@ -853,7 +847,7 @@ export default function Dashboard() {
                   {upcomingIceBookings.map((b) => (
                     <div
                       key={b.id}
-                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex flex-wrap items-center gap-3 justify-between"
+                      className="app-card p-4 flex flex-wrap items-center gap-3 justify-between"
                     >
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-900 dark:text-gray-100">
                         <span className="font-medium">
@@ -892,14 +886,14 @@ export default function Dashboard() {
 
             {upcomingGames.length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                <h2 className="app-section-title mb-4">
                   My upcoming games
                 </h2>
                 <div className="space-y-3">
                   {upcomingGames.map((game) => (
                     <div
                       key={game.id}
-                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+                      className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
                     >
                       <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
                         <HiOutlineCalendarDays className="w-5 h-5 text-primary-teal shrinking-0" />
@@ -947,7 +941,7 @@ export default function Dashboard() {
             {/* My Upcoming Sparing */}
             {mySparing.length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                <h2 className="app-section-title mb-4">
                   My upcoming sparing
                 </h2>
                 <div className="space-y-4">
@@ -959,7 +953,7 @@ export default function Dashboard() {
             {/* My Spare Requests */}
             {myRequests.length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                <h2 className="app-section-title mb-4">
                   My spare requests{' '}
                   <Link
                     to="/my-requests"
@@ -972,7 +966,7 @@ export default function Dashboard() {
                   {myRequests.map((request) => (
                     <div
                       key={request.id}
-                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                      className="app-card p-6"
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
@@ -1064,14 +1058,14 @@ export default function Dashboard() {
             {/* Requests I've been CC'd on */}
             {ccRequests.length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                <h2 className="app-section-title mb-4">
                   Requests I've been CC&apos;d on
                 </h2>
                 <div className="space-y-4">
                   {ccRequests.map((request) => (
                     <div
                       key={request.id}
-                      className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+                      className="app-card p-6"
                     >
                       <div className="flex justify-between items-start gap-4">
                         <div className="flex-1">
@@ -1118,11 +1112,11 @@ export default function Dashboard() {
 
             {/* Outstanding Spare Requests */}
             <div>
-              <h2 className="text-xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+              <h2 className="app-section-title mb-4">
                 Outstanding spare requests
               </h2>
               {openRequests.length === 0 ? (
-                <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg shadow">
+                <div className="app-card py-8 text-center">
                   <div className="flex justify-center mb-2">
                     <HiOutlineInbox className="w-12 h-12 text-gray-400 dark:text-gray-500" />
                   </div>
@@ -1140,7 +1134,7 @@ export default function Dashboard() {
             {/* Filled Spare Requests */}
             {filledRequests.length > 0 && (
               <div>
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <div className="app-card overflow-hidden p-0">
                   <button
                     type="button"
                     onClick={() => setShowFilled(!showFilled)}
@@ -1200,7 +1194,7 @@ export default function Dashboard() {
             )}
           </div>
         )}
-      </div>
+      </AppPage>
 
       <Modal
         isOpen={!!selectedRequest}
@@ -1227,7 +1221,7 @@ export default function Dashboard() {
             <div>
               <label
                 htmlFor="comment"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 {selectedRequest.requestType === 'private' &&
                 selectedRequest.inviteStatus === 'declined'
@@ -1238,7 +1232,7 @@ export default function Dashboard() {
                 id="comment"
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 rows={3}
                 placeholder={
                   selectedRequest.requestType === 'private' &&
@@ -1324,7 +1318,7 @@ export default function Dashboard() {
             <div>
               <label
                 htmlFor="declineComment"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Optional message to the requester
               </label>
@@ -1332,7 +1326,7 @@ export default function Dashboard() {
                 id="declineComment"
                 value={declineComment}
                 onChange={(e) => setDeclineComment(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 rows={3}
                 placeholder="If you add a message, it will be emailed to the requester."
               />
@@ -1382,7 +1376,7 @@ export default function Dashboard() {
             <div>
               <label
                 htmlFor="cancelComment"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="app-label"
               >
                 Comment <span className="text-red-500">*</span>
               </label>
@@ -1390,7 +1384,7 @@ export default function Dashboard() {
                 id="cancelComment"
                 value={cancelComment}
                 onChange={(e) => setCancelComment(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                className="app-input"
                 rows={4}
                 placeholder="Please explain why you need to cancel..."
                 required

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
@@ -42,14 +42,19 @@ import AdminSponsorship from './pages/admin/AdminSponsorship';
 import Leagues from './pages/leagues/Leagues';
 import LeagueDetail from './pages/leagues/LeagueDetail';
 import Calendar from './pages/Calendar';
+import CalendarEventFormPage from './pages/CalendarEventFormPage';
 import BookIceTime from './pages/BookIceTime';
 import PublicHomePage from './pages/PublicHomePage';
 import PublicArticle from './pages/PublicArticle';
 import PublicContactPage from './pages/PublicContactPage';
 import PublicContactConfirmPage from './pages/PublicContactConfirmPage';
+import PublicDonatePage from './pages/PublicDonatePage';
+import PublicDonateSuccessPage from './pages/PublicDonateSuccessPage';
+import PublicDonateCancelPage from './pages/PublicDonateCancelPage';
 import ClubGovernance from './pages/ClubGovernance';
 import AdminGovernance from './pages/admin/AdminGovernance';
 import AdminRoles from './pages/admin/AdminRoles';
+import AdminPayments from './pages/admin/AdminPayments';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -103,6 +108,9 @@ function App() {
                 <Route path="/" element={<PublicHomePage />} />
                 <Route path="/contact" element={<PublicContactPage />} />
                 <Route path="/contact/confirm" element={<PublicContactConfirmPage />} />
+                <Route path="/donate" element={<PublicDonatePage />} />
+                <Route path="/donate/success" element={<PublicDonateSuccessPage />} />
+                <Route path="/donate/cancel" element={<PublicDonateCancelPage />} />
                 <Route path="/articles" element={<Navigate to="/" replace />} />
                 <Route path="/articles/:slug" element={<PublicArticle />} />
                 <Route path="/article/:slug" element={<PublicArticle />} />
@@ -199,10 +207,14 @@ function App() {
                   path="/calendar"
                   element={
                     <ProtectedRoute unauthenticatedRedirectTo="/calendar/public">
-                      <Calendar />
+                      <Outlet />
                     </ProtectedRoute>
                   }
-                />
+                >
+                  <Route index element={<Calendar />} />
+                  <Route path="events/new" element={<CalendarEventFormPage />} />
+                  <Route path="events/edit/*" element={<CalendarEventFormPage />} />
+                </Route>
                 <Route
                   path="/book-ice"
                   element={
@@ -309,6 +321,14 @@ function App() {
                   element={
                     <ProtectedRoute serverAdminOnly>
                       <AdminRoles />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/payments"
+                  element={
+                    <ProtectedRoute requiredScope="payments.read">
+                      <AdminPayments />
                     </ProtectedRoute>
                   }
                 />

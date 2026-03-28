@@ -27,6 +27,90 @@ html.dark body {
 }
 
 @layer components {
+  .app-page {
+    @apply mx-auto w-full space-y-8;
+  }
+
+  .app-page-narrow {
+    @apply mx-auto w-full max-w-3xl space-y-8;
+  }
+
+  .app-page-header {
+    @apply flex flex-col gap-4 md:flex-row md:items-start md:justify-between;
+  }
+
+  .app-page-title {
+    @apply text-3xl font-bold tracking-tight text-[#121033] dark:text-gray-100;
+  }
+
+  .app-page-subtitle {
+    @apply text-sm leading-relaxed text-gray-600 dark:text-gray-300;
+  }
+
+  .app-card {
+    @apply rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800;
+  }
+
+  .app-card-subtle {
+    @apply rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-gray-900/30;
+  }
+
+  .app-section-title {
+    @apply text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100;
+  }
+
+  .app-section-subtitle {
+    @apply text-sm text-gray-600 dark:text-gray-400;
+  }
+
+  .app-input {
+    @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-teal focus:outline-none focus:ring-2 focus:ring-primary-teal/20 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100;
+  }
+
+  .app-table-shell {
+    @apply overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700;
+  }
+
+  .app-table {
+    @apply min-w-full divide-y divide-gray-200 dark:divide-gray-700;
+  }
+
+  .app-table-head {
+    @apply bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-300;
+  }
+
+  .app-table-th {
+    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide;
+  }
+
+  .app-table-td {
+    @apply px-4 py-3 text-sm text-gray-700 dark:text-gray-300;
+  }
+
+  .app-label {
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
+  }
+
+  .app-alert {
+    @apply rounded-lg border px-4 py-3 text-sm;
+  }
+
+  .app-alert-success {
+    @apply app-alert border-green-200 bg-green-50 text-green-800 dark:border-green-700/60 dark:bg-green-900/20 dark:text-green-200;
+  }
+
+  .app-alert-error {
+    @apply app-alert border-red-200 bg-red-50 text-red-800 dark:border-red-700/60 dark:bg-red-900/20 dark:text-red-200;
+  }
+
+  .app-toggle {
+    @apply relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors;
+  }
+
+  .app-toggle-knob {
+    @apply inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform;
+  }
+
   .public-shell {
     @apply bg-white text-gray-800;
   }

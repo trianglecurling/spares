@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import Layout from '../../components/Layout';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -756,39 +757,40 @@ export default function AdminMembers() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-[#121033] dark:text-gray-100">Manage members</h1>
-          <div className="space-x-3">
-            <Button onClick={handleOpenExportTsv} variant="secondary">
-              Export TSV
-            </Button>
-            {selectedMemberIds.length > 0 && (
-              <>
-                <Button variant="secondary" onClick={handleBulkSendWelcome}>
-                  Send welcome emails ({selectedMemberIds.length})
-                </Button>
-                <Button variant="danger" onClick={handleBulkDelete}>
-                  Delete selected ({selectedMemberIds.length})
-                </Button>
-              </>
-            )}
-            <Button onClick={handleOpenBulkModal} variant="secondary">
-              Bulk import
-            </Button>
-            <Button onClick={() => handleOpenModal()}>Add member</Button>
-          </div>
-        </div>
+      <AppPage>
+        <AppPageHeader
+          title="Manage members"
+          actions={
+            <>
+              <Button onClick={handleOpenExportTsv} variant="secondary">
+                Export TSV
+              </Button>
+              {selectedMemberIds.length > 0 && (
+                <>
+                  <Button variant="secondary" onClick={handleBulkSendWelcome}>
+                    Send welcome emails ({selectedMemberIds.length})
+                  </Button>
+                  <Button variant="danger" onClick={handleBulkDelete}>
+                    Delete selected ({selectedMemberIds.length})
+                  </Button>
+                </>
+              )}
+              <Button onClick={handleOpenBulkModal} variant="secondary">
+                Bulk import
+              </Button>
+              <Button onClick={() => handleOpenModal()}>Add member</Button>
+            </>
+          }
+        />
 
         {loading ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
+          <div className="app-table-shell">
+              <table className="app-table">
+                <thead className="app-table-head">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10">
+                    <th className="app-table-th w-10">
                       <input
                         type="checkbox"
                         checked={isAllSelected}
@@ -796,27 +798,27 @@ export default function AdminMembers() {
                         className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
                       />
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="app-table-th">
                       Name
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="app-table-th">
                       Email
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="app-table-th">
                       Phone
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="app-table-th">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="app-table-th">
                       Valid through
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="app-table-th text-right">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {members.map((member) => (
                     <tr
                       key={member.id}
@@ -826,7 +828,7 @@ export default function AdminMembers() {
                           : ''
                       }
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="app-table-td">
                         {!member.isAdmin &&
                           (!currentMember || member.id !== currentMember.id) &&
                           // Regular admins cannot select server admins for deletion
@@ -841,7 +843,7 @@ export default function AdminMembers() {
                             />
                           )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="app-table-td">
                         <div className="flex items-center">
                           <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                             {member.name}
@@ -865,13 +867,13 @@ export default function AdminMembers() {
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="app-table-td">
                         {member.email || '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="app-table-td">
                         {member.phone ? formatPhone(member.phone) : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <td className="app-table-td">
                         <div className="space-y-1">
                           {member.firstLoginCompleted ? (
                             <div className="text-green-600 dark:text-green-400">✓ Registered</div>
@@ -895,7 +897,7 @@ export default function AdminMembers() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <td className="app-table-td">
                         {member.isAdmin || member.isServerAdmin ? (
                           <span className="text-gray-600 dark:text-gray-400">
                             Always valid (admin)
@@ -912,7 +914,7 @@ export default function AdminMembers() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
+                      <td className="app-table-td text-right font-medium relative">
                         <div
                           className="relative inline-block"
                           ref={(el) => (menuRefs.current[member.id] = el)}
@@ -984,10 +986,9 @@ export default function AdminMembers() {
                   ))}
                 </tbody>
               </table>
-            </div>
           </div>
         )}
-      </div>
+      </AppPage>
 
       {/* Edit/Create Member Modal */}
       <Modal
@@ -1031,7 +1032,7 @@ export default function AdminMembers() {
           <div>
             <label
               htmlFor="name"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               Name <span className="text-red-500">*</span>
             </label>
@@ -1040,7 +1041,7 @@ export default function AdminMembers() {
               id="name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
               required
             />
           </div>
@@ -1048,7 +1049,7 @@ export default function AdminMembers() {
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               Email <span className="text-red-500">*</span>
             </label>
@@ -1057,7 +1058,7 @@ export default function AdminMembers() {
               id="email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
               required
             />
             <div className="mt-2 flex items-center">
@@ -1077,7 +1078,7 @@ export default function AdminMembers() {
           <div>
             <label
               htmlFor="phone"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               Phone
             </label>
@@ -1086,7 +1087,7 @@ export default function AdminMembers() {
               id="phone"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+              className="app-input"
             />
             <div className="mt-2 flex items-center">
               <input
@@ -1105,7 +1106,7 @@ export default function AdminMembers() {
           <div>
             <label
               htmlFor="validThrough"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              className="app-label"
             >
               Valid through (optional)
             </label>
@@ -1118,7 +1119,7 @@ export default function AdminMembers() {
                 disabled={Boolean(
                   editingMember && currentMember && editingMember.id === currentMember.id
                 )}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent disabled:opacity-60"
+                className="flex-1 app-input disabled:opacity-60"
               />
               <Button
                 type="button"
@@ -1254,7 +1255,7 @@ export default function AdminMembers() {
                               updateAssignmentDraft(assignment.id, { roleId: Number(e.target.value) })
                             }
                             disabled={!canEditRoleAccess}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+                            className="app-input disabled:opacity-60"
                           >
                             {assignableRoles.map((role) => (
                               <option key={role.id} value={role.id}>
@@ -1270,7 +1271,7 @@ export default function AdminMembers() {
                             }
                             disabled={!canEditRoleAccess}
                             placeholder="resourceType"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+                            className="app-input disabled:opacity-60"
                           />
                           <input
                             type="text"
@@ -1282,7 +1283,7 @@ export default function AdminMembers() {
                             }
                             disabled={!canEditRoleAccess}
                             placeholder="resourceId"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+                            className="app-input disabled:opacity-60"
                           />
                           <Button
                             type="button"
@@ -1360,7 +1361,7 @@ export default function AdminMembers() {
                   Expected columns: <strong>First Name, Last Name, Phone, Email</strong>
                 </p>
                 <textarea
-                  className="w-full h-64 p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded font-mono text-sm"
+                  className="app-input h-64 font-mono text-sm"
                   value={bulkText}
                   onChange={(e) => setBulkText(e.target.value)}
                   placeholder={
@@ -1370,7 +1371,7 @@ export default function AdminMembers() {
                 <div className="mt-4">
                   <label
                     htmlFor="bulkValidThrough"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    className="app-label"
                   >
                     Valid through for all imported members (optional)
                   </label>
@@ -1380,7 +1381,7 @@ export default function AdminMembers() {
                       id="bulkValidThrough"
                       value={bulkValidThrough}
                       onChange={(e) => setBulkValidThrough(e.target.value)}
-                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
+                      className="flex-1 app-input"
                     />
                     <Button
                       type="button"
@@ -1474,30 +1475,30 @@ export default function AdminMembers() {
                 <div className="flex-1 overflow-auto min-h-0">
                   {/* Desktop table view */}
                   <div className="hidden sm:block">
-                    <table className="w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
+                    <table className="app-table">
+                      <thead className="app-table-head sticky top-0 z-10">
                         <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                          <th className="app-table-th">
                             Name
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                          <th className="app-table-th">
                             Email
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                          <th className="app-table-th">
                             Phone
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                         {parsedMembers.map((m, i) => (
                           <tr key={i}>
-                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">
+                            <td className="app-table-td whitespace-nowrap">
                               {m.name}
                             </td>
-                            <td className="px-3 py-2 text-sm break-words dark:text-gray-100">
+                            <td className="app-table-td break-words">
                               {m.email}
                             </td>
-                            <td className="px-3 py-2 text-sm whitespace-nowrap dark:text-gray-100">
+                            <td className="app-table-td whitespace-nowrap">
                               {m.phone ? formatPhone(m.phone) : '—'}
                             </td>
                           </tr>
@@ -1560,7 +1561,7 @@ export default function AdminMembers() {
             Copy and paste this into a spreadsheet (tab-separated values).
           </div>
           <textarea
-            className="w-full flex-1 min-h-0 p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded font-mono text-xs"
+            className="app-input flex-1 min-h-0 font-mono text-xs"
             value={exportTsv}
             readOnly
           />
