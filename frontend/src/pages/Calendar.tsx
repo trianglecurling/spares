@@ -35,7 +35,6 @@ import {
   HiOutlineCalendarDays,
   HiOutlineCalendarDays as HiOutlineDay,
   HiPencil,
-  HiPhone,
   HiPlus,
   HiStar,
   HiSun,
@@ -43,8 +42,6 @@ import {
   HiUserGroup,
   HiWrench,
 } from 'react-icons/hi2';
-import { LuMapPin, LuTreePine } from 'react-icons/lu';
-import { PiArmchair } from 'react-icons/pi';
 import api from '../utils/api';
 import Button from '../components/Button';
 import Layout from '../components/Layout';
@@ -109,9 +106,14 @@ function isIceBookingEvent(ev: CalendarEvent): boolean {
   return ev.source === 'ice-booking' || ev.id.startsWith('ice-booking:');
 }
 
+/** True if event is from the events system (read-only on calendar) */
+function isRegistrableEvent(ev: CalendarEvent): boolean {
+  return ev.source === 'events' || ev.id.startsWith('event:');
+}
+
 /** Events that cannot be edited or deleted via calendar admin UI */
 export function isReadOnlyCalendarEvent(ev: CalendarEvent): boolean {
-  return isLeagueEvent(ev) || isIceBookingEvent(ev);
+  return isLeagueEvent(ev) || isIceBookingEvent(ev) || isRegistrableEvent(ev);
 }
 
 /** True if event takes place on a sheet (on-ice) */
@@ -193,75 +195,82 @@ function formatEventLocationsSummary(
   return formatNaturalList(parts);
 }
 
-function SingleLocationIcon({
-  loc,
-  sheetNameById,
-  className,
-}: {
-  loc: EventLocation;
-  sheetNameById: Map<number, string>;
-  className: string;
-}) {
-  const wrapperClass = 'inline-flex items-center justify-center shrink-0';
-  if (loc.type === 'sheet') {
-    const name = sheetNameById.get(loc.sheetId) ?? loc.sheetName ?? String(loc.sheetId);
-    return (
-      <span
-        className={`${wrapperClass} ${className} font-semibold min-w-[1em] leading-none -translate-y-px`}
-      >
-        {name}
-      </span>
-    );
-  }
-  const Icon =
-    loc.type === 'warm-room'
-      ? PiArmchair
-      : loc.type === 'exterior'
-        ? LuTreePine
-        : loc.type === 'virtual'
-          ? HiPhone
-          : loc.type === 'offsite'
-            ? LuMapPin
-            : HiCalendar;
-  return (
-    <span className={`${wrapperClass} ${className}`}>
-      <Icon className="size-full" />
-    </span>
-  );
+function eventSpansSingleCalendarDay(ev: CalendarEvent): boolean {
+  return isSameDay(startOfDay(ev.start), startOfDay(ev.end));
 }
 
-/** Icons for event band - one per location when set, else event type icon. Locations sorted by label (sheet names alphabetically). */
-function EventBandIcon({
+/** Time segment for compact bands; omit when the event spans more than one calendar day. */
+function eventBandTimeLabel(ev: CalendarEvent): string | null {
+  if (!eventSpansSingleCalendarDay(ev)) return null;
+  if (ev.allDay) return 'All day';
+  return formatCompactTimeRange(ev.start, ev.end);
+}
+
+function getEventBandLocationSummary(
+  ev: CalendarEvent,
+  sheetNameById: Map<number, string>
+): string | null {
+  const locs = ev.locations;
+  if (!locs?.length) return null;
+  const s = formatEventLocationsSummary(locs, sheetNameById, sheetNameById.size);
+  return s || null;
+}
+
+/** Horizontal band chips: type icon, title, optional location text, optional time (single calendar day only). */
+function EventBandRowContent({
   ev,
   type,
   sheetNameById,
-  className,
+  iconClassName,
+  layout = 'truncate',
 }: {
   ev: CalendarEvent;
   type: CalendarEventType;
   sheetNameById: Map<number, string>;
-  className: string;
+  iconClassName: string;
+  /** `wrap` breaks long text within narrow week all-day cells so grid columns stay aligned. */
+  layout?: 'truncate' | 'wrap';
 }) {
-  const locs = ev.locations;
-  if (!locs || locs.length === 0) {
-    const Icon = type.icon;
-    return <Icon className={className} />;
-  }
-
-  const locationSummary = formatEventLocationsSummary(locs, sheetNameById, sheetNameById.size);
-  if (locationSummary) {
-    return <span className="shrink-0 truncate">{locationSummary}</span>;
-  }
-
-  const sortedLocs = [...locs].sort((a, b) =>
-    getLocationLabel(a, sheetNameById).localeCompare(getLocationLabel(b, sheetNameById))
-  );
+  const Icon = type.icon;
+  const loc = getEventBandLocationSummary(ev, sheetNameById);
+  const timeLabel = eventBandTimeLabel(ev);
+  const titleClass =
+    layout === 'wrap'
+      ? 'min-w-0 break-words text-sm font-medium leading-snug [overflow-wrap:anywhere]'
+      : 'truncate min-w-0';
+  const locClass =
+    layout === 'wrap'
+      ? 'min-w-0 break-words text-sm leading-snug [overflow-wrap:anywhere]'
+      : 'shrink-0 truncate min-w-0';
   return (
-    <span className="inline-flex items-center gap-0.5 shrink-0">
-      {sortedLocs.map((loc, i) => (
-        <SingleLocationIcon key={i} loc={loc} sheetNameById={sheetNameById} className={className} />
-      ))}
-    </span>
+    <>
+      {layout === 'wrap' ? (
+        <span className="inline-flex h-[1.25rem] shrink-0 items-center justify-center">
+          <Icon className={iconClassName} />
+        </span>
+      ) : (
+        <Icon className={`${iconClassName} shrink-0`} />
+      )}
+      <span className={titleClass}>{ev.title}</span>
+      {loc && (
+        <>
+          <span className="shrink-0 leading-snug">·</span>
+          <span className={locClass}>{loc}</span>
+        </>
+      )}
+      {timeLabel && (
+        <>
+          <span className="shrink-0 leading-snug">·</span>
+          <span
+            className={
+              layout === 'wrap' ? 'shrink-0 text-xs leading-snug opacity-90' : 'shrink-0'
+            }
+          >
+            {timeLabel}
+          </span>
+        </>
+      )}
+    </>
   );
 }
 
@@ -352,6 +361,30 @@ export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
     icon: HiStar,
   },
 ];
+
+/**
+ * Subtle wash behind week-view time columns when that day has an all-day (or equivalent) event.
+ * Used for both authenticated `/calendar` and public `/calendar/public` (same `WeekView`).
+ * Light + `dark:` variants so the tint reads on `bg-white dark:bg-gray-800` calendar cards.
+ */
+const WEEK_ALL_DAY_COLUMN_TINT: Record<string, string> = {
+  maintenance: 'bg-slate-100/40 dark:bg-slate-900/35',
+  leagues: 'bg-teal-50/50 dark:bg-teal-950/35',
+  bonspiel: 'bg-violet-50/50 dark:bg-violet-950/35',
+  practice: 'bg-amber-50/50 dark:bg-amber-950/35',
+  'group-event': 'bg-emerald-50/50 dark:bg-emerald-950/35',
+  clinic: 'bg-sky-50/50 dark:bg-sky-950/35',
+  social: 'bg-rose-50/50 dark:bg-rose-950/35',
+  'board-committee': 'bg-indigo-50/50 dark:bg-indigo-950/35',
+  'learn-to-curl': 'bg-teal-50/50 dark:bg-teal-950/35',
+  'off-season': 'bg-orange-50/50 dark:bg-orange-950/35',
+  other: 'bg-gray-100/45 dark:bg-gray-900/35',
+  'member-ice': 'bg-cyan-50/50 dark:bg-cyan-950/35',
+};
+
+function getWeekAllDayColumnTintClass(typeId: string): string {
+  return WEEK_ALL_DAY_COLUMN_TINT[typeId] ?? 'bg-gray-50/45 dark:bg-gray-900/35';
+}
 
 export function apiEventToCalendar(ev: {
   id: string;
@@ -539,6 +572,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const [deleteEvent, setDeleteEvent] = useState<CalendarEvent | null>(null);
   const [onIceOnly, setOnIceOnly] = useState(false);
   const [showLeagues, setShowLeagues] = useState(true);
+  const [showEvents, setShowEvents] = useState(true);
   const [sheets, setSheets] = useState<Array<{ id: number; name: string }>>([]);
   const eventTypes = DEFAULT_EVENT_TYPES;
 
@@ -633,9 +667,10 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const filteredEvents = useMemo(() => {
     let list = events;
     if (!showLeagues) list = list.filter((e) => !isLeagueEvent(e));
+    if (!showEvents) list = list.filter((e) => !isRegistrableEvent(e));
     if (onIceOnly) list = list.filter(isOnIceEvent);
     return list;
-  }, [events, showLeagues, onIceOnly]);
+  }, [events, showLeagues, showEvents, onIceOnly]);
 
   const getEventType = (typeId: string) =>
     eventTypes.find((t) => t.id === typeId) ??
@@ -725,6 +760,15 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                 className="rounded border-gray-300 dark:border-gray-600"
               />
               Leagues
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showEvents}
+                onChange={(e) => setShowEvents(e.target.checked)}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              Events
             </label>
             <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
               <input
@@ -1267,7 +1311,6 @@ function MonthDayEvents({
         ))}
         {visibleEvents.map((ev) => {
           const type = getEventType(ev.typeId);
-          const timeLabel = ev.allDay ? 'All day' : formatCompactTimeRange(ev.start, ev.end);
           return (
             <div
               key={ev.id}
@@ -1281,16 +1324,12 @@ function MonthDayEvents({
               className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-sm truncate shrink-0 border cursor-pointer hover:opacity-90 ${type.color}`}
               title={ev.title}
             >
-              <EventBandIcon
+              <EventBandRowContent
                 ev={ev}
                 type={type}
                 sheetNameById={sheetNameById}
-                className="w-3.5 h-3.5 shrink-0"
+                iconClassName="w-3.5 h-3.5 shrink-0"
               />
-              {ev.locations && ev.locations.length > 0 && <span className="shrink-0">·</span>}
-              <span className="shrink-0">{timeLabel}</span>
-              <span className="shrink-0">·</span>
-              <span className="truncate min-w-0">{ev.title}</span>
             </div>
           );
         })}
@@ -1525,25 +1564,12 @@ function MonthView({
                 onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(seg.ev)}
                 title={seg.ev.title}
               >
-                <EventBandIcon
+                <EventBandRowContent
                   ev={seg.ev}
                   type={type}
                   sheetNameById={sheetNameById}
-                  className="w-3.5 h-3.5 shrink-0"
+                  iconClassName="w-3.5 h-3.5 shrink-0"
                 />
-                {seg.ev.locations && seg.ev.locations.length > 0 && (
-                  <span className="shrink-0">·</span>
-                )}
-                <span className="shrink-0">
-                  {seg.ev.allDay ? 'All day' : formatCompactTimeRange(seg.ev.start, seg.ev.end)}
-                </span>
-                <span className="shrink-0">·</span>
-                <span className="truncate min-w-0">{seg.ev.title}</span>
-                {seg.ev.start.getTime() !== seg.ev.end.getTime() && (
-                  <span className="shrink-0 text-xs opacity-90">
-                    {format(seg.ev.start, 'M/d')}–{format(seg.ev.end, 'M/d')}
-                  </span>
-                )}
               </div>
             );
           })}
@@ -1602,12 +1628,12 @@ function WeekView({
     });
   }, [days, getEventsForDay]);
 
-  const isMultiDayTimedOnMiddleDay = (ev: CalendarEvent, day: Date) => {
+  const isMultiDayTimedOnMiddleDay = useCallback((ev: CalendarEvent, day: Date) => {
     if (ev.allDay) return false;
     const isMultiDay = !isSameDay(startOfDay(ev.start), startOfDay(ev.end));
     if (!isMultiDay) return false;
     return !isSameDay(ev.start, day) && !isSameDay(ev.end, day);
-  };
+  }, []);
 
   const hasAllDayEvents = useMemo(() => {
     const hasAllDay = allDayEvents.length > 0;
@@ -1654,21 +1680,61 @@ function WeekView({
       .filter((s): s is NonNullable<typeof s> => s !== null);
   }, [allDayEvents, days]);
 
+  const weekAllDayColumnTintByDayIndex = useMemo(() => {
+    const sortAllDayRowEvents = (a: CalendarEvent, b: CalendarEvent) => {
+      const multiA = !isSameDay(startOfDay(a.start), startOfDay(a.end));
+      const multiB = !isSameDay(startOfDay(b.start), startOfDay(b.end));
+      if (multiA && multiB) {
+        const durA = startOfDay(a.end).getTime() - startOfDay(a.start).getTime();
+        const durB = startOfDay(b.end).getTime() - startOfDay(b.start).getTime();
+        return durB - durA;
+      }
+      return multiA ? -1 : multiB ? 1 : 0;
+    };
+
+    return days.map((day, di) => {
+      const cellEvents = [
+        ...allDayEvents.filter((ev) => {
+          if (isSameDay(startOfDay(ev.start), startOfDay(ev.end))) {
+            return isSameDay(day, ev.start);
+          }
+          return false;
+        }),
+        ...getEventsForDay(day).filter((ev) => isMultiDayTimedOnMiddleDay(ev, day)),
+      ];
+      const fromSegments = allDaySegments
+        .filter((s) => s.startCol <= di && s.endCol >= di)
+        .map((s) => s.ev);
+      const combined = [...cellEvents, ...fromSegments];
+      const seen = new Set<string>();
+      const unique = combined.filter((e) => {
+        if (seen.has(e.id)) return false;
+        seen.add(e.id);
+        return true;
+      });
+      unique.sort(sortAllDayRowEvents);
+      if (unique.length === 0) return null;
+      return getWeekAllDayColumnTintClass(getEventType(unique[0]!.typeId).id);
+    });
+  }, [days, allDayEvents, allDaySegments, getEventsForDay, getEventType, isMultiDayTimedOnMiddleDay]);
+
   const allTimedEvents = days.flatMap((day) => getEventsForDay(day).filter((e) => !e.allDay));
   const visibleHours = getVisibleHours(allTimedEvents);
   const totalDayHeight = visibleHours.length * HOUR_HEIGHT;
   const hourStart = visibleHours[0] ?? 0;
+  /** minmax(0,1fr) keeps day columns equal when all-day chips have long text (matches rows below). */
+  const weekGridClass = 'grid grid-cols-[60px_repeat(7,minmax(0,1fr))] min-w-[800px]';
 
   return (
-    <div className="flex flex-col min-w-0">
-      <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] min-w-[800px] shrink-0">
+    <div className="flex flex-col min-w-0 w-full">
+      <div className={`${weekGridClass} shrink-0`}>
         <div className="sticky top-0 left-0 z-10 bg-gray-50 dark:bg-gray-800/95 border-b border-r border-gray-300 dark:border-gray-600" />
         {days.map((day) => (
           <button
             key={day.toISOString()}
             type="button"
             onClick={() => onDayClick?.(day)}
-            className={`sticky top-0 z-10 w-full px-2 py-2 text-center text-sm font-medium border-b border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 ${
+            className={`sticky top-0 z-10 w-full min-w-0 px-2 py-2 text-center text-sm font-medium border-b border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 ${
               isSameDay(day, new Date())
                 ? 'bg-primary-teal/10 text-primary-teal dark:bg-primary-teal/20'
                 : 'bg-gray-50 dark:bg-gray-800/95 text-gray-900 dark:text-gray-100'
@@ -1679,15 +1745,13 @@ function WeekView({
           </button>
         ))}
       </div>
-      <div
-        className={`grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] min-w-[800px] shrink-0 ${hasAllDayEvents ? '' : 'hidden'}`}
-      >
+      <div className={`${weekGridClass} shrink-0 ${hasAllDayEvents ? '' : 'hidden'}`}>
         <div className="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-r border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
           All day
         </div>
         <div
-          className="relative col-span-7 grid border-b border-gray-300 dark:border-gray-600 min-h-[40px]"
-          style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}
+          className="relative col-span-7 grid min-w-0 border-b border-gray-300 dark:border-gray-600 min-h-[40px]"
+          style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
         >
           {days.map((day, di) => (
             <div
@@ -1711,7 +1775,7 @@ function WeekView({
                       )
                   : undefined
               }
-              className={`border-r border-gray-300 dark:border-gray-600 p-1 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
+              className={`min-w-0 border-r border-gray-300 dark:border-gray-600 p-1 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
               style={{ gridColumn: di + 1 }}
             >
               {[
@@ -1735,8 +1799,6 @@ function WeekView({
                 })
                 .map((ev) => {
                   const type = getEventType(ev.typeId);
-                  const isMultiDayTimed =
-                    !ev.allDay && !isSameDay(startOfDay(ev.start), startOfDay(ev.end));
                   return (
                     <div
                       key={`${ev.id}-${day.toISOString()}`}
@@ -1747,20 +1809,15 @@ function WeekView({
                         onEventClick?.(ev);
                       }}
                       onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(ev)}
-                      className={`flex items-center gap-1 px-2 py-1 rounded text-sm border cursor-pointer hover:opacity-90 ${type.color}`}
+                      className={`flex w-full min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 px-2 py-1 rounded text-sm border cursor-pointer hover:opacity-90 ${type.color}`}
                     >
-                      <EventBandIcon
+                      <EventBandRowContent
                         ev={ev}
                         type={type}
                         sheetNameById={sheetNameById}
-                        className="w-3.5 h-3.5 shrink-0"
+                        iconClassName="w-3.5 h-3.5"
+                        layout="wrap"
                       />
-                      <span className="truncate">{ev.title}</span>
-                      {isMultiDayTimed && (
-                        <span className="text-xs opacity-90 shrink-0">
-                          {format(ev.start, 'M/d')}–{format(ev.end, 'M/d')}
-                        </span>
-                      )}
                     </div>
                   );
                 })}
@@ -1779,7 +1836,7 @@ function WeekView({
             return (
               <div
                 key={`${seg.ev.id}-${i}`}
-                className={`absolute top-1 bottom-1 flex items-center gap-1 px-2 py-1 text-sm border cursor-pointer hover:opacity-90 ${type.color} ${roundClass}`}
+                className={`absolute top-1 bottom-1 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 px-2 py-1 text-sm border cursor-pointer hover:opacity-90 ${type.color} ${roundClass}`}
                 style={{
                   left: `calc(${(seg.startCol / 7) * 100}% + 4px)`,
                   width: `calc(${((seg.endCol - seg.startCol + 1) / 7) * 100}% - 8px)`,
@@ -1792,22 +1849,19 @@ function WeekView({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(seg.ev)}
               >
-                <EventBandIcon
+                <EventBandRowContent
                   ev={seg.ev}
                   type={type}
                   sheetNameById={sheetNameById}
-                  className="w-3.5 h-3.5 shrink-0"
+                  iconClassName="w-3.5 h-3.5"
+                  layout="wrap"
                 />
-                <span className="truncate">{seg.ev.title}</span>
-                <span className="text-xs opacity-90 shrink-0">
-                  {format(seg.ev.start, 'M/d')}–{format(seg.ev.end, 'M/d')}
-                </span>
               </div>
             );
           })}
         </div>
       </div>
-      <div className="flex-1 grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] min-w-[800px] min-h-[600px]">
+      <div className={`flex-1 ${weekGridClass} min-h-[600px]`}>
         {/* Time column */}
         <div className="relative">
           {visibleHours.map((hour) => (
@@ -1827,15 +1881,22 @@ function WeekView({
           ))}
         </div>
         {/* Day columns with events */}
-        {days.map((day) => {
+        {days.map((day, di) => {
           const dayEvents = getEventsForDay(day).filter(
             (e) => !e.allDay && !isMultiDayTimedOnMiddleDay(e, day)
           );
+          const columnTint = weekAllDayColumnTintByDayIndex[di];
           return (
             <div
               key={day.toISOString()}
-              className="relative border-r border-gray-200 dark:border-gray-600/60"
+              className="relative min-w-0 border-r border-gray-200 dark:border-gray-600/60"
             >
+              {columnTint && (
+                <div
+                  className={`pointer-events-none absolute inset-0 z-0 ${columnTint}`}
+                  aria-hidden
+                />
+              )}
               {/* Hour grid */}
               {visibleHours.map((hour) => (
                 <div
@@ -1859,12 +1920,12 @@ function WeekView({
                           )
                       : undefined
                   }
-                  className={`border-b border-gray-200 dark:border-gray-600/60 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
+                  className={`relative z-[1] border-b border-gray-200 dark:border-gray-600/60 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
                   style={{ height: HOUR_HEIGHT }}
                 />
               ))}
               {/* Events overlay */}
-              <div className="absolute inset-0 pointer-events-none">
+              <div className="pointer-events-none absolute inset-0 z-10">
                 <div className="relative" style={{ height: totalDayHeight }}>
                   {(() => {
                     const visibleDayEvents = dayEvents;
@@ -1911,18 +1972,35 @@ function WeekView({
                           <div
                             className={`flex flex-col justify-center px-2 py-1 rounded border ${type.color} h-full min-w-0`}
                           >
-                            <div className="flex items-center gap-1">
-                              <EventBandIcon
-                                ev={ev}
-                                type={type}
-                                sheetNameById={sheetNameById}
-                                className="w-3.5 h-3.5 shrink-0"
-                              />
-                              <span className="truncate text-sm font-medium">{ev.title}</span>
+                            <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
+                              {(() => {
+                                const Icon = type.icon;
+                                const loc = getEventBandLocationSummary(ev, sheetNameById);
+                                const showTime = eventSpansSingleCalendarDay(ev);
+                                return (
+                                  <>
+                                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="truncate text-sm font-medium min-w-0">
+                                      {ev.title}
+                                    </span>
+                                    {loc && (
+                                      <>
+                                        <span className="shrink-0">·</span>
+                                        <span className="truncate text-sm min-w-0">{loc}</span>
+                                      </>
+                                    )}
+                                    {showTime && (
+                                      <>
+                                        <span className="shrink-0">·</span>
+                                        <span className="text-xs opacity-90 shrink-0">
+                                          {format(ev.start, 'h:mm a')} – {format(ev.end, 'h:mm a')}
+                                        </span>
+                                      </>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </div>
-                            <span className="text-xs opacity-90 truncate">
-                              {format(ev.start, 'h:mm a')} – {format(ev.end, 'h:mm a')}
-                            </span>
                           </div>
                         </div>
                       );
@@ -2007,19 +2085,12 @@ function DayView({
                     onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(ev)}
                     className={`flex items-center gap-2 px-3 py-2 rounded border cursor-pointer hover:opacity-90 ${type.color}`}
                   >
-                    <EventBandIcon
+                    <EventBandRowContent
                       ev={ev}
                       type={type}
                       sheetNameById={sheetNameById}
-                      className="w-4 h-4 shrink-0"
+                      iconClassName="w-4 h-4 shrink-0"
                     />
-                    <span className="font-medium">{ev.title}</span>
-                    {(ev.start.getTime() !== ev.end.getTime() ||
-                      isMultiDayTimedOnMiddleDay(ev)) && (
-                      <span className="text-sm opacity-90">
-                        {format(ev.start, 'MMM d')} – {format(ev.end, 'MMM d')}
-                      </span>
-                    )}
                   </div>
                 );
               })}
@@ -2120,16 +2191,31 @@ function DayView({
                   <div
                     className={`flex flex-col justify-center px-3 py-2 rounded-lg border ${type.color} h-full min-w-0 shadow-sm`}
                   >
-                    <div className="flex items-center gap-2">
-                      <EventBandIcon
-                        ev={ev}
-                        type={type}
-                        sheetNameById={sheetNameById}
-                        className="w-4 h-4 shrink-0"
-                      />
-                      <span className="font-medium truncate">{ev.title}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                      {(() => {
+                        const Icon = type.icon;
+                        const loc = getEventBandLocationSummary(ev, sheetNameById);
+                        const showTime = eventSpansSingleCalendarDay(ev);
+                        return (
+                          <>
+                            <Icon className="w-4 h-4 shrink-0" />
+                            <span className="font-medium truncate min-w-0">{ev.title}</span>
+                            {loc && (
+                              <>
+                                <span className="shrink-0">·</span>
+                                <span className="text-sm opacity-90 truncate min-w-0">{loc}</span>
+                              </>
+                            )}
+                            {showTime && (
+                              <>
+                                <span className="shrink-0">·</span>
+                                <span className="text-sm opacity-90 shrink-0">{timeLabel}</span>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
-                    <div className="text-sm opacity-90 mt-0.5">{timeLabel}</div>
                   </div>
                 </div>
               );

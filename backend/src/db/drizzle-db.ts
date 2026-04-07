@@ -63,6 +63,17 @@ type SqliteSchema = {
   governanceCommitteeChairs: typeof sqliteSchema.governanceCommitteeChairsSqlite;
   governanceBoardMemberCommittees: typeof sqliteSchema.governanceBoardMemberCommitteesSqlite;
   governanceOfficers: typeof sqliteSchema.governanceOfficersSqlite;
+  eventCategories: typeof sqliteSchema.eventCategoriesSqlite;
+  events: typeof sqliteSchema.eventsSqlite;
+  eventTimespans: typeof sqliteSchema.eventTimespansSqlite;
+  eventLocations: typeof sqliteSchema.eventLocationsSqlite;
+  eventCategoryAssignments: typeof sqliteSchema.eventCategoryAssignmentsSqlite;
+  eventOwners: typeof sqliteSchema.eventOwnersSqlite;
+  eventRegistrationFields: typeof sqliteSchema.eventRegistrationFieldsSqlite;
+  eventRegistrations: typeof sqliteSchema.eventRegistrationsSqlite;
+  eventRegistrationMembers: typeof sqliteSchema.eventRegistrationMembersSqlite;
+  eventRegistrationFieldValues: typeof sqliteSchema.eventRegistrationFieldValuesSqlite;
+  eventSpecialLinks: typeof sqliteSchema.eventSpecialLinksSqlite;
 };
 
 type PgSchema = {
@@ -122,6 +133,17 @@ type PgSchema = {
   governanceCommitteeChairs: typeof pgSchema.governanceCommitteeChairsPg;
   governanceBoardMemberCommittees: typeof pgSchema.governanceBoardMemberCommitteesPg;
   governanceOfficers: typeof pgSchema.governanceOfficersPg;
+  eventCategories: typeof pgSchema.eventCategoriesPg;
+  events: typeof pgSchema.eventsPg;
+  eventTimespans: typeof pgSchema.eventTimespansPg;
+  eventLocations: typeof pgSchema.eventLocationsPg;
+  eventCategoryAssignments: typeof pgSchema.eventCategoryAssignmentsPg;
+  eventOwners: typeof pgSchema.eventOwnersPg;
+  eventRegistrationFields: typeof pgSchema.eventRegistrationFieldsPg;
+  eventRegistrations: typeof pgSchema.eventRegistrationsPg;
+  eventRegistrationMembers: typeof pgSchema.eventRegistrationMembersPg;
+  eventRegistrationFieldValues: typeof pgSchema.eventRegistrationFieldValuesPg;
+  eventSpecialLinks: typeof pgSchema.eventSpecialLinksPg;
 };
 
 type DrizzleDb = NodePgDatabase<PgSchema>;
@@ -204,6 +226,17 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       governanceCommitteeChairs: sqliteSchema.governanceCommitteeChairsSqlite,
       governanceBoardMemberCommittees: sqliteSchema.governanceBoardMemberCommitteesSqlite,
       governanceOfficers: sqliteSchema.governanceOfficersSqlite,
+      eventCategories: sqliteSchema.eventCategoriesSqlite,
+      events: sqliteSchema.eventsSqlite,
+      eventTimespans: sqliteSchema.eventTimespansSqlite,
+      eventLocations: sqliteSchema.eventLocationsSqlite,
+      eventCategoryAssignments: sqliteSchema.eventCategoryAssignmentsSqlite,
+      eventOwners: sqliteSchema.eventOwnersSqlite,
+      eventRegistrationFields: sqliteSchema.eventRegistrationFieldsSqlite,
+      eventRegistrations: sqliteSchema.eventRegistrationsSqlite,
+      eventRegistrationMembers: sqliteSchema.eventRegistrationMembersSqlite,
+      eventRegistrationFieldValues: sqliteSchema.eventRegistrationFieldValuesSqlite,
+      eventSpecialLinks: sqliteSchema.eventSpecialLinksSqlite,
     } as unknown as DrizzleSchema;
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
@@ -277,6 +310,17 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       governanceCommitteeChairs: pgSchema.governanceCommitteeChairsPg,
       governanceBoardMemberCommittees: pgSchema.governanceBoardMemberCommitteesPg,
       governanceOfficers: pgSchema.governanceOfficersPg,
+      eventCategories: pgSchema.eventCategoriesPg,
+      events: pgSchema.eventsPg,
+      eventTimespans: pgSchema.eventTimespansPg,
+      eventLocations: pgSchema.eventLocationsPg,
+      eventCategoryAssignments: pgSchema.eventCategoryAssignmentsPg,
+      eventOwners: pgSchema.eventOwnersPg,
+      eventRegistrationFields: pgSchema.eventRegistrationFieldsPg,
+      eventRegistrations: pgSchema.eventRegistrationsPg,
+      eventRegistrationMembers: pgSchema.eventRegistrationMembersPg,
+      eventRegistrationFieldValues: pgSchema.eventRegistrationFieldValuesPg,
+      eventSpecialLinks: pgSchema.eventSpecialLinksPg,
     } as DrizzleSchema;
   } else {
     throw new Error(`Unsupported database type: ${config.type}`);

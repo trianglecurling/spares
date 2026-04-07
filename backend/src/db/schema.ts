@@ -389,6 +389,443 @@ function ensurePaymentDomainTablesSync(db: DatabaseAdapter): void {
   );
 }
 
+async function ensureEventsTables(db: DatabaseAdapter): Promise<void> {
+  const eventsSQL = `
+    CREATE TABLE IF NOT EXISTS event_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      description TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+      image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+      visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public', 'active_members', 'ice_members')),
+      published INTEGER NOT NULL DEFAULT 0,
+      capacity INTEGER,
+      fee_minor INTEGER NOT NULL DEFAULT 0,
+      member_fee_minor INTEGER,
+      currency TEXT NOT NULL DEFAULT 'usd',
+      registration_start DATETIME,
+      registration_cutoff DATETIME,
+      cancellation_cutoff DATETIME,
+      allow_group_registration INTEGER NOT NULL DEFAULT 0,
+      max_group_size INTEGER,
+      enable_waitlist INTEGER NOT NULL DEFAULT 1,
+      terms_article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+      created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_published ON events(published);
+    CREATE INDEX IF NOT EXISTS idx_events_visibility ON events(visibility);
+
+    CREATE TABLE IF NOT EXISTS event_timespans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_timespans_event_id ON event_timespans(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_timespans_start_dt ON event_timespans(start_dt);
+
+    CREATE TABLE IF NOT EXISTS event_locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      location_type TEXT NOT NULL CHECK(location_type IN ('sheet', 'warm-room', 'exterior', 'offsite', 'virtual')),
+      sheet_id INTEGER REFERENCES sheets(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_locations_event_id ON event_locations(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_category_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      category_id INTEGER NOT NULL REFERENCES event_categories(id) ON DELETE CASCADE,
+      UNIQUE(event_id, category_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_category_assignments_event_id ON event_category_assignments(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_category_assignments_category_id ON event_category_assignments(category_id);
+
+    CREATE TABLE IF NOT EXISTS event_owners (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(event_id, member_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_owners_event_id ON event_owners(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_owners_member_id ON event_owners(member_id);
+
+    CREATE TABLE IF NOT EXISTS event_registration_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      field_type TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'group' CHECK(scope IN ('group', 'individual')),
+      required INTEGER NOT NULL DEFAULT 0,
+      options TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_registration_fields_event_id ON event_registration_fields(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_registrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      contact_name TEXT NOT NULL,
+      contact_email TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending_payment' CHECK(status IN ('confirmed', 'pending_payment', 'waitlisted', 'cancelled')),
+      group_size INTEGER NOT NULL DEFAULT 1,
+      payment_order_id INTEGER,
+      special_link_id INTEGER,
+      waitlist_position INTEGER,
+      registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      cancelled_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_registrations_event_id ON event_registrations(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_registrations_member_id ON event_registrations(member_id);
+    CREATE INDEX IF NOT EXISTS idx_event_registrations_status ON event_registrations(status);
+
+    CREATE TABLE IF NOT EXISTS event_registration_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL REFERENCES event_registrations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      email TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_registration_members_registration_id ON event_registration_members(registration_id);
+
+    CREATE TABLE IF NOT EXISTS event_registration_field_values (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL REFERENCES event_registrations(id) ON DELETE CASCADE,
+      field_id INTEGER NOT NULL REFERENCES event_registration_fields(id) ON DELETE CASCADE,
+      registration_member_id INTEGER REFERENCES event_registration_members(id) ON DELETE CASCADE,
+      value TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_reg_field_values_registration_id ON event_registration_field_values(registration_id);
+    CREATE INDEX IF NOT EXISTS idx_event_reg_field_values_field_id ON event_registration_field_values(field_id);
+
+    CREATE TABLE IF NOT EXISTS event_special_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      label TEXT,
+      override_fee_minor INTEGER,
+      max_group_size INTEGER,
+      bypass_capacity INTEGER NOT NULL DEFAULT 0,
+      ignore_registration_dates INTEGER NOT NULL DEFAULT 0,
+      used INTEGER NOT NULL DEFAULT 0,
+      invalidated INTEGER NOT NULL DEFAULT 0,
+      used_by_registration_id INTEGER REFERENCES event_registrations(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_special_links_event_id ON event_special_links(event_id);
+  `;
+
+  if (db.isAsync()) {
+    const pgSQL = eventsSQL
+      .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY')
+      .replace(/DATETIME DEFAULT CURRENT_TIMESTAMP/g, 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP')
+      .replace(/DATETIME/g, 'TIMESTAMP');
+    await execSQL(db, pgSQL);
+    await ensureSpecialLinksMaxGroupSizeColumn(db);
+    await ensureEventRegistrationFieldTypesUnconstrained(db);
+    return;
+  }
+
+  await execSQL(db, eventsSQL);
+  await ensureSpecialLinksMaxGroupSizeColumn(db);
+  await ensureEventRegistrationFieldTypesUnconstrained(db);
+}
+
+async function ensureSpecialLinksMaxGroupSizeColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    const stmt = db.prepare<{ column_name?: string | null }>(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'event_special_links'
+    `);
+    const rows = await allPrepared<{ column_name?: string | null }>(stmt);
+    const columnNames = new Set(rows.map((row) => String(row.column_name)));
+    if (!columnNames.has('max_group_size')) {
+      await execSQL(db, `ALTER TABLE event_special_links ADD COLUMN IF NOT EXISTS max_group_size INTEGER;`);
+    }
+  } else {
+    const stmt = db.prepare(`PRAGMA table_info(event_special_links)`);
+    const columns = stmt.all() as { name?: string }[];
+    const columnNames = new Set(columns.map((col) => String(col.name)));
+    if (!columnNames.has('max_group_size')) {
+      await execSQL(db, `ALTER TABLE event_special_links ADD COLUMN max_group_size INTEGER;`);
+    }
+  }
+}
+
+async function ensureEventRegistrationFieldTypesUnconstrained(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      `
+      DO $$
+      DECLARE r RECORD;
+      BEGIN
+        FOR r IN
+          SELECT c.conname
+          FROM pg_constraint c
+          JOIN pg_class t ON c.conrelid = t.oid
+          WHERE t.relname = 'event_registration_fields'
+            AND c.contype = 'c'
+            AND pg_get_constraintdef(c.oid) LIKE '%field_type%'
+        LOOP
+          EXECUTE format('ALTER TABLE event_registration_fields DROP CONSTRAINT IF EXISTS %I', r.conname);
+        END LOOP;
+      END $$;
+    `
+    );
+    return;
+  }
+  const stmt = db.prepare<{ sql?: string | null }>(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='event_registration_fields'`
+  );
+  const row = stmt.get() as { sql?: string | null } | undefined;
+  if (!row?.sql || !String(row.sql).includes('CHECK(field_type IN (')) {
+    return;
+  }
+  await execSQL(db, `BEGIN IMMEDIATE`);
+  try {
+    await execSQL(
+      db,
+      `
+      CREATE TABLE event_registration_fields_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        field_type TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'group' CHECK(scope IN ('group', 'individual')),
+        required INTEGER NOT NULL DEFAULT 0,
+        options TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+    `
+    );
+    await execSQL(db, `INSERT INTO event_registration_fields_new SELECT * FROM event_registration_fields;`);
+    await execSQL(db, `DROP TABLE event_registration_fields;`);
+    await execSQL(db, `ALTER TABLE event_registration_fields_new RENAME TO event_registration_fields;`);
+    await execSQL(
+      db,
+      `CREATE INDEX IF NOT EXISTS idx_event_registration_fields_event_id ON event_registration_fields(event_id);`
+    );
+    await execSQL(db, `COMMIT`);
+  } catch (err) {
+    await execSQL(db, `ROLLBACK`);
+    throw err;
+  }
+}
+
+function ensureEventsTablesSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `
+    CREATE TABLE IF NOT EXISTS event_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      description TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+      image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+      visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public', 'active_members', 'ice_members')),
+      published INTEGER NOT NULL DEFAULT 0,
+      capacity INTEGER,
+      fee_minor INTEGER NOT NULL DEFAULT 0,
+      member_fee_minor INTEGER,
+      currency TEXT NOT NULL DEFAULT 'usd',
+      registration_start DATETIME,
+      registration_cutoff DATETIME,
+      cancellation_cutoff DATETIME,
+      allow_group_registration INTEGER NOT NULL DEFAULT 0,
+      max_group_size INTEGER,
+      enable_waitlist INTEGER NOT NULL DEFAULT 1,
+      terms_article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+      created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_published ON events(published);
+    CREATE INDEX IF NOT EXISTS idx_events_visibility ON events(visibility);
+
+    CREATE TABLE IF NOT EXISTS event_timespans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      start_dt TEXT NOT NULL,
+      end_dt TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_timespans_event_id ON event_timespans(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_timespans_start_dt ON event_timespans(start_dt);
+
+    CREATE TABLE IF NOT EXISTS event_locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      location_type TEXT NOT NULL CHECK(location_type IN ('sheet', 'warm-room', 'exterior', 'offsite', 'virtual')),
+      sheet_id INTEGER REFERENCES sheets(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_locations_event_id ON event_locations(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_category_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      category_id INTEGER NOT NULL REFERENCES event_categories(id) ON DELETE CASCADE,
+      UNIQUE(event_id, category_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_category_assignments_event_id ON event_category_assignments(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_category_assignments_category_id ON event_category_assignments(category_id);
+
+    CREATE TABLE IF NOT EXISTS event_owners (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(event_id, member_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_owners_event_id ON event_owners(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_owners_member_id ON event_owners(member_id);
+
+    CREATE TABLE IF NOT EXISTS event_registration_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      field_type TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'group' CHECK(scope IN ('group', 'individual')),
+      required INTEGER NOT NULL DEFAULT 0,
+      options TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_registration_fields_event_id ON event_registration_fields(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_registrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      contact_name TEXT NOT NULL,
+      contact_email TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending_payment' CHECK(status IN ('confirmed', 'pending_payment', 'waitlisted', 'cancelled')),
+      group_size INTEGER NOT NULL DEFAULT 1,
+      payment_order_id INTEGER,
+      special_link_id INTEGER,
+      waitlist_position INTEGER,
+      registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      cancelled_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_registrations_event_id ON event_registrations(event_id);
+    CREATE INDEX IF NOT EXISTS idx_event_registrations_member_id ON event_registrations(member_id);
+    CREATE INDEX IF NOT EXISTS idx_event_registrations_status ON event_registrations(status);
+
+    CREATE TABLE IF NOT EXISTS event_registration_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL REFERENCES event_registrations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      email TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_registration_members_registration_id ON event_registration_members(registration_id);
+
+    CREATE TABLE IF NOT EXISTS event_registration_field_values (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registration_id INTEGER NOT NULL REFERENCES event_registrations(id) ON DELETE CASCADE,
+      field_id INTEGER NOT NULL REFERENCES event_registration_fields(id) ON DELETE CASCADE,
+      registration_member_id INTEGER REFERENCES event_registration_members(id) ON DELETE CASCADE,
+      value TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_reg_field_values_registration_id ON event_registration_field_values(registration_id);
+    CREATE INDEX IF NOT EXISTS idx_event_reg_field_values_field_id ON event_registration_field_values(field_id);
+
+    CREATE TABLE IF NOT EXISTS event_special_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      label TEXT,
+      override_fee_minor INTEGER,
+      max_group_size INTEGER,
+      bypass_capacity INTEGER NOT NULL DEFAULT 0,
+      ignore_registration_dates INTEGER NOT NULL DEFAULT 0,
+      used INTEGER NOT NULL DEFAULT 0,
+      invalidated INTEGER NOT NULL DEFAULT 0,
+      used_by_registration_id INTEGER REFERENCES event_registrations(id) ON DELETE SET NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_special_links_event_id ON event_special_links(event_id);
+    `
+  );
+  ensureSpecialLinksMaxGroupSizeColumnSync(db);
+  ensureEventRegistrationFieldTypesUnconstrainedSync(db);
+}
+
+function ensureSpecialLinksMaxGroupSizeColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(event_special_links)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('max_group_size')) {
+    execSQLSync(db, `ALTER TABLE event_special_links ADD COLUMN max_group_size INTEGER;`);
+  }
+}
+
+function ensureEventRegistrationFieldTypesUnconstrainedSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare<{ sql?: string | null }>(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='event_registration_fields'`
+  );
+  const row = stmt.get() as { sql?: string | null } | undefined;
+  if (!row?.sql || !String(row.sql).includes('CHECK(field_type IN (')) {
+    return;
+  }
+  execSQLSync(db, `BEGIN IMMEDIATE`);
+  try {
+    execSQLSync(
+      db,
+      `
+      CREATE TABLE event_registration_fields_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        field_type TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'group' CHECK(scope IN ('group', 'individual')),
+        required INTEGER NOT NULL DEFAULT 0,
+        options TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+    `
+    );
+    execSQLSync(db, `INSERT INTO event_registration_fields_new SELECT * FROM event_registration_fields;`);
+    execSQLSync(db, `DROP TABLE event_registration_fields;`);
+    execSQLSync(db, `ALTER TABLE event_registration_fields_new RENAME TO event_registration_fields;`);
+    execSQLSync(
+      db,
+      `CREATE INDEX IF NOT EXISTS idx_event_registration_fields_event_id ON event_registration_fields(event_id);`
+    );
+    execSQLSync(db, `COMMIT`);
+  } catch (err) {
+    execSQLSync(db, `ROLLBACK`);
+    throw err;
+  }
+}
+
 async function ensureMenuItemsArticleColumns(db: DatabaseAdapter): Promise<void> {
   if (db.isAsync()) {
     // PostgreSQL: use IF NOT EXISTS for idempotent migration
@@ -2289,6 +2726,12 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE calendar_events ADD COLUMN article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL', table: 'calendar_events', column: 'article_id' },
     { sql: 'ALTER TABLE members ADD COLUMN is_content_admin INTEGER DEFAULT 0', table: 'members', column: 'is_content_admin' },
     { sql: "ALTER TABLE articles ADD COLUMN content_type TEXT DEFAULT 'markdown'", table: 'articles', column: 'content_type' },
+    {
+      sql: "ALTER TABLE events ADD COLUMN calendar_type_id TEXT NOT NULL DEFAULT 'other'",
+      table: 'events',
+      column: 'calendar_type_id',
+    },
+    { sql: 'ALTER TABLE events ADD COLUMN member_fee_minor INTEGER', table: 'events', column: 'member_fee_minor' },
   ];
 
   for (const migration of migrations) {
@@ -2579,6 +3022,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureGovernanceTables(db);
   await ensureRbacTables(db);
   await ensurePaymentDomainTables(db);
+  await ensureEventsTables(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -3099,6 +3543,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE calendar_events ADD COLUMN description TEXT',
     'ALTER TABLE members ADD COLUMN is_content_admin INTEGER DEFAULT 0',
     "ALTER TABLE articles ADD COLUMN content_type TEXT DEFAULT 'markdown'",
+    "ALTER TABLE events ADD COLUMN calendar_type_id TEXT NOT NULL DEFAULT 'other'",
+    'ALTER TABLE events ADD COLUMN member_fee_minor INTEGER',
   ];
 
   for (const migrationSQL of migrations) {
@@ -3347,6 +3793,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureGovernanceTablesSync(db);
   ensureRbacTablesSync(db);
   ensurePaymentDomainTablesSync(db);
+  ensureEventsTablesSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

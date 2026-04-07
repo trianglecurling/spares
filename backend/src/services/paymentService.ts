@@ -218,6 +218,7 @@ export interface VerifiedWebhookEvent {
     orderId: number | null;
     orderToken: string | null;
     providerOrderId: string | null;
+    providerTransactionId: string | null;
   };
   nextStatus: PaymentOrderStatus | null;
   transaction: {
@@ -380,12 +381,13 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
     }
 
     const paymentIntentId = asString(object.payment_intent);
-    const transactionId = paymentIntentId ?? objectId;
+    let transactionId = paymentIntentId ?? objectId;
     let transactionType = normalizeTransactionType(null, event.type);
     let transactionAmount = amountMinor;
     if (event.type === 'charge.refunded') {
       transactionType = 'refund';
       transactionAmount = rawAmountRefunded > 0 ? rawAmountRefunded : amountMinor;
+      transactionId = `${objectId}:refund`;
     }
 
     return {
@@ -396,6 +398,7 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
         orderId,
         orderToken,
         providerOrderId,
+        providerTransactionId: paymentIntentId,
       },
       nextStatus,
       transaction: transactionId
@@ -551,6 +554,7 @@ class HmacPaymentProviderAdapter implements PaymentProviderAdapter {
         orderId,
         orderToken,
         providerOrderId,
+        providerTransactionId: providerTransactionId ?? null,
       },
       nextStatus: status,
       transaction: providerTransactionId
@@ -647,6 +651,13 @@ export interface ReconcilePendingPaymentsSummary {
   staleThresholdIso: string;
   maxPendingAgeThresholdIso: string | null;
   results: ReconcilePaymentOrderResult[];
+}
+
+export interface CreateRefundForOrderInput {
+  orderId: number;
+  amountMinor?: number | null;
+  reason?: string | null;
+  requestedByMemberId?: number | null;
 }
 
 export class PaymentService {
@@ -863,6 +874,100 @@ export class PaymentService {
       createdAt: order.created_at,
       updatedAt: order.updated_at,
       metadata: safeJsonParseObject(order.metadata),
+    };
+  }
+
+  async createRefundForOrder(input: CreateRefundForOrderInput): Promise<{
+    refundId: number;
+    provider: PaymentProvider;
+    providerRefundId: string;
+    status: RefundStatus;
+    amountMinor: number;
+    currency: string;
+  }> {
+    const [order] = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+        provider: this.schema.paymentOrders.provider,
+        provider_order_id: this.schema.paymentOrders.provider_order_id,
+        status: this.schema.paymentOrders.status,
+        amount_minor: this.schema.paymentOrders.amount_minor,
+        currency: this.schema.paymentOrders.currency,
+      })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, input.orderId))
+      .limit(1);
+    if (!order) {
+      throw new PaymentServiceError(`Payment order ${input.orderId} not found`, 404);
+    }
+
+    const currentStatus = order.status as PaymentOrderStatus;
+    if (currentStatus !== 'succeeded' && currentStatus !== 'partially_refunded') {
+      throw new PaymentServiceError(`Payment order ${input.orderId} cannot be refunded from status ${currentStatus}`, 409);
+    }
+
+    const amountMinor = Math.max(1, Math.min(input.amountMinor ?? order.amount_minor, order.amount_minor));
+    const provider = order.provider as PaymentProvider;
+    const adapter = this.adapters[provider];
+    if (!adapter) {
+      throw new PaymentServiceError(`Unsupported payment provider: ${provider}`, 400);
+    }
+
+    const providerRefund = await adapter.createRefund({
+      orderId: order.id,
+      providerOrderId: order.provider_order_id ?? null,
+      amountMinor,
+      currency: order.currency,
+      reason: input.reason?.trim() || null,
+    });
+
+    const isTerminal = providerRefund.status === 'succeeded' || providerRefund.status === 'failed' || providerRefund.status === 'rejected';
+    const [refund] = await this.db
+      .insert(this.schema.refunds)
+      .values({
+        payment_order_id: order.id,
+        provider,
+        amount_minor: amountMinor,
+        currency: order.currency,
+        reason: input.reason?.trim() || null,
+        status: providerRefund.status,
+        requested_by_member_id: input.requestedByMemberId ?? null,
+        provider_refund_id: providerRefund.providerRefundId,
+        provider_response: safeJsonStringify(providerRefund.rawResponse),
+        processed_at: isTerminal ? sql`CURRENT_TIMESTAMP` : null,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .returning({
+        id: this.schema.refunds.id,
+      });
+
+    if (providerRefund.status === 'succeeded') {
+      const targetStatus: PaymentOrderStatus = amountMinor >= order.amount_minor ? 'refunded' : 'partially_refunded';
+      if (targetStatus !== currentStatus) {
+        await this.transitionOrderStatus(order.id, targetStatus, 'refund-created');
+      }
+    }
+
+    await logEvent({
+      eventType: 'payment.refund.created',
+      memberId: input.requestedByMemberId ?? null,
+      relatedId: refund.id,
+      meta: {
+        paymentOrderId: order.id,
+        provider,
+        status: providerRefund.status,
+        amountMinor,
+        providerRefundId: providerRefund.providerRefundId,
+      },
+    });
+
+    return {
+      refundId: refund.id,
+      provider,
+      providerRefundId: providerRefund.providerRefundId,
+      status: providerRefund.status,
+      amountMinor,
+      currency: order.currency,
     };
   }
 
@@ -1260,6 +1365,7 @@ export class PaymentService {
       }
 
       let transitionedToSucceeded = false;
+      let transitionedToRefunded = false;
       if (verified.nextStatus) {
         const transitioned = await this.transitionOrderStatus(
           order.id,
@@ -1267,6 +1373,7 @@ export class PaymentService {
           `webhook:${input.provider}:${verified.eventType}`
         );
         transitionedToSucceeded = transitioned && verified.nextStatus === 'succeeded';
+        transitionedToRefunded = transitioned && (verified.nextStatus === 'refunded' || verified.nextStatus === 'partially_refunded');
       }
 
       await this.db
@@ -1281,6 +1388,11 @@ export class PaymentService {
 
       if (transitionedToSucceeded) {
         await this.sendDonationReceiptForSucceededOrder(order.id);
+        await this.confirmEventRegistrationForSucceededOrder(order.id);
+      }
+
+      if (transitionedToRefunded) {
+        await this.cancelEventRegistrationForRefundedOrder(order.id);
       }
 
       await logEvent({
@@ -1403,6 +1515,83 @@ export class PaymentService {
     }
   }
 
+  private async confirmEventRegistrationForSucceededOrder(orderId: number): Promise<void> {
+    try {
+      const [order] = await this.db
+        .select({
+          id: this.schema.paymentOrders.id,
+          subject_type: this.schema.paymentOrders.subject_type,
+          subject_id: this.schema.paymentOrders.subject_id,
+          status: this.schema.paymentOrders.status,
+        })
+        .from(this.schema.paymentOrders)
+        .where(eq(this.schema.paymentOrders.id, orderId))
+        .limit(1);
+
+      if (!order || order.subject_type !== 'event_registration' || order.status !== 'succeeded' || !order.subject_id) {
+        return;
+      }
+
+      const { confirmRegistrationPayment } = await import('./eventService.js');
+      await confirmRegistrationPayment(order.subject_id, order.id);
+
+      await logEvent({
+        eventType: 'event.registration.payment_confirmed',
+        relatedId: order.subject_id,
+        meta: { paymentOrderId: orderId },
+      });
+    } catch (error) {
+      await logEvent({
+        eventType: 'event.registration.payment_confirmation_failed',
+        relatedId: orderId,
+        meta: { error: error instanceof Error ? error.message : 'Unknown error' },
+      });
+    }
+  }
+
+  private async cancelEventRegistrationForRefundedOrder(orderId: number): Promise<void> {
+    try {
+      const [order] = await this.db
+        .select({
+          id: this.schema.paymentOrders.id,
+          subject_type: this.schema.paymentOrders.subject_type,
+          subject_id: this.schema.paymentOrders.subject_id,
+        })
+        .from(this.schema.paymentOrders)
+        .where(eq(this.schema.paymentOrders.id, orderId))
+        .limit(1);
+
+      if (!order || order.subject_type !== 'event_registration' || !order.subject_id) {
+        return;
+      }
+
+      const [reg] = await this.db
+        .select({ status: this.schema.eventRegistrations.status })
+        .from(this.schema.eventRegistrations)
+        .where(eq(this.schema.eventRegistrations.id, order.subject_id))
+        .limit(1);
+
+      if (!reg || reg.status === 'cancelled') {
+        return;
+      }
+
+      const { cancelRegistration } = await import('./eventService.js');
+      await cancelRegistration(order.subject_id);
+
+      await logEvent({
+        eventType: 'event.registration.cancelled_by_refund',
+        relatedId: order.subject_id,
+        meta: { paymentOrderId: orderId },
+      });
+    } catch (error) {
+      await logEvent({
+        eventType: 'event.registration.refund_cancellation_failed',
+        relatedId: orderId,
+        meta: { error: error instanceof Error ? error.message : 'Unknown error' },
+      });
+    }
+  }
+
   private async getCurrentTreasurerName(): Promise<string | null> {
     const [treasurer] = await this.db
       .select({
@@ -1422,7 +1611,7 @@ export class PaymentService {
 
   private async findOrderForWebhook(
     provider: PaymentProvider,
-    lookup: { orderId: number | null; orderToken: string | null; providerOrderId: string | null }
+    lookup: { orderId: number | null; orderToken: string | null; providerOrderId: string | null; providerTransactionId: string | null }
   ): Promise<{ id: number; provider_order_id: string | null } | null> {
     if (lookup.orderId) {
       const [orderById] = await this.db
@@ -1463,6 +1652,27 @@ export class PaymentService {
         )
         .limit(1);
       if (orderByProvider) return orderByProvider;
+    }
+
+    if (lookup.providerTransactionId) {
+      const [orderByTransaction] = await this.db
+        .select({
+          id: this.schema.paymentOrders.id,
+          provider_order_id: this.schema.paymentOrders.provider_order_id,
+        })
+        .from(this.schema.paymentOrders)
+        .innerJoin(
+          this.schema.paymentTransactions,
+          eq(this.schema.paymentTransactions.payment_order_id, this.schema.paymentOrders.id)
+        )
+        .where(
+          and(
+            eq(this.schema.paymentTransactions.provider, provider),
+            eq(this.schema.paymentTransactions.provider_transaction_id, lookup.providerTransactionId)
+          )
+        )
+        .limit(1);
+      if (orderByTransaction) return orderByTransaction;
     }
 
     return null;

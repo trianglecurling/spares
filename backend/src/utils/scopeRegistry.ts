@@ -58,6 +58,9 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
   { scope: 'payments.manage', category: 'Payments', description: 'Manage payment operations such as manual transitions and refunds.' },
 
   { scope: 'leagues.manage', category: 'Leagues', description: 'Manage leagues globally or in a scoped context (league id).' },
+
+  { scope: 'events.read', category: 'Events', description: 'View events and event registration data.' },
+  { scope: 'events.manage', category: 'Events', description: 'Create, edit, delete events and manage registrations.' },
 ];
 
 const byScope = new Map(SCOPE_REGISTRY.map((entry) => [entry.scope, entry]));

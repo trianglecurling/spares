@@ -62,6 +62,11 @@ export function isSponsorAdmin(member: Member): boolean {
   return isServerAdmin(member);
 }
 
+export function isEventsAdmin(member: Member): boolean {
+  if (member.authz) return hasScope(member.authz, 'events.manage') || isServerAdmin(member);
+  return isServerAdmin(member);
+}
+
 export function isServerAdmin(member: Member): boolean {
   if (member.authz?.isServerAdmin) return true;
   if (isInServerAdminsList(member)) return true;
