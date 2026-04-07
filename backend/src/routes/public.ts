@@ -68,6 +68,7 @@ const { RRule } = rrule;
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { fetchDirectCalendarEventsForRange } from '../services/calendarExpansion.js';
 import { fetchIceBookingsAsCalendarEvents } from '../services/iceBookingsCalendar.js';
+import { getEventTimespansForCalendar } from '../services/eventService.js';
 
 const BONSPIEL_LIMIT = 10;
 
@@ -185,11 +186,12 @@ export async function publicRoutes(fastify: FastifyInstance) {
       if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime())) {
         return reply.code(400).send({ error: 'Invalid date range' });
       }
-      const [direct, ice] = await Promise.all([
+      const [direct, ice, eventItems] = await Promise.all([
         fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
         fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, 'public'),
+        getEventTimespansForCalendar(q.start, q.end, ['public']),
       ]);
-      return [...direct, ...ice];
+      return [...direct, ...ice, ...eventItems];
     }
   );
 

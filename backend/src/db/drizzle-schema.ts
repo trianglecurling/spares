@@ -910,6 +910,180 @@ export const governanceOfficersSqlite = sqliteTable('governance_officers', {
   boardMemberIdx: index('idx_governance_officers_board_member_id').on(table.board_member_id),
 }));
 
+// ========== Events System (SQLite) ==========
+
+export type EventVisibility = 'public' | 'active_members' | 'ice_members';
+export type EventRegistrationStatus = 'confirmed' | 'pending_payment' | 'waitlisted' | 'cancelled';
+export type EventFieldType =
+  | 'text'
+  | 'number'
+  | 'checkbox'
+  | 'dropdown'
+  | 'radio'
+  | 'subheading'
+  | 'preset_phone'
+  | 'preset_address'
+  | 'preset_team_four'
+  | 'preset_team_doubles'
+  | 'preset_dob';
+export type EventFieldScope = 'group' | 'individual';
+
+export const eventCategoriesSqlite = sqliteTable('event_categories', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  description: text('description'),
+  sort_order: integer('sort_order').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  slugIdx: uniqueIndex('event_categories_slug_unique').on(table.slug),
+}));
+
+export const eventsSqlite = sqliteTable('events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  slug: text('slug').notNull().unique(),
+  article_id: integer('article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
+  image_file_id: integer('image_file_id').references(() => filesSqlite.id, { onDelete: 'set null' }),
+  visibility: text('visibility').default('public').notNull().$type<EventVisibility>(),
+  published: integer('published').default(0).notNull(),
+  capacity: integer('capacity'),
+  fee_minor: integer('fee_minor').default(0).notNull(),
+  /** When set, logged-in members pay this per-person amount instead of fee_minor. */
+  member_fee_minor: integer('member_fee_minor'),
+  currency: text('currency').default('usd').notNull(),
+  registration_start: text('registration_start'),
+  registration_cutoff: text('registration_cutoff'),
+  cancellation_cutoff: text('cancellation_cutoff'),
+  allow_group_registration: integer('allow_group_registration').default(0).notNull(),
+  max_group_size: integer('max_group_size'),
+  enable_waitlist: integer('enable_waitlist').default(1).notNull(),
+  /** Matches calendar DEFAULT_EVENT_TYPES ids shown on the club calendar. */
+  calendar_type_id: text('calendar_type_id').default('other').notNull(),
+  terms_article_id: integer('terms_article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  slugIdx: uniqueIndex('events_slug_unique').on(table.slug),
+  publishedIdx: index('idx_events_published').on(table.published),
+  visibilityIdx: index('idx_events_visibility').on(table.visibility),
+}));
+
+export const eventTimespansSqlite = sqliteTable('event_timespans', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  start_dt: text('start_dt').notNull(),
+  end_dt: text('end_dt').notNull(),
+  sort_order: integer('sort_order').default(0).notNull(),
+}, (table) => ({
+  eventIdx: index('idx_event_timespans_event_id').on(table.event_id),
+  startIdx: index('idx_event_timespans_start_dt').on(table.start_dt),
+}));
+
+export const eventLocationsSqlite = sqliteTable('event_locations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  location_type: text('location_type').notNull().$type<'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual'>(),
+  sheet_id: integer('sheet_id').references(() => sheetsSqlite.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  eventIdx: index('idx_event_locations_event_id').on(table.event_id),
+}));
+
+export const eventCategoryAssignmentsSqlite = sqliteTable('event_category_assignments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  category_id: integer('category_id').notNull().references(() => eventCategoriesSqlite.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  eventIdx: index('idx_event_category_assignments_event_id').on(table.event_id),
+  categoryIdx: index('idx_event_category_assignments_category_id').on(table.category_id),
+  uniqueAssignment: uniqueIndex('event_category_assignments_event_category_unique').on(table.event_id, table.category_id),
+}));
+
+export const eventOwnersSqlite = sqliteTable('event_owners', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  eventIdx: index('idx_event_owners_event_id').on(table.event_id),
+  memberIdx: index('idx_event_owners_member_id').on(table.member_id),
+  uniqueOwner: uniqueIndex('event_owners_event_member_unique').on(table.event_id, table.member_id),
+}));
+
+export const eventRegistrationFieldsSqlite = sqliteTable('event_registration_fields', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  label: text('label').notNull(),
+  field_type: text('field_type').notNull().$type<EventFieldType>(),
+  scope: text('scope').default('group').notNull().$type<EventFieldScope>(),
+  required: integer('required').default(0).notNull(),
+  options: text('options'),
+  sort_order: integer('sort_order').default(0).notNull(),
+}, (table) => ({
+  eventIdx: index('idx_event_registration_fields_event_id').on(table.event_id),
+}));
+
+export const eventRegistrationsSqlite = sqliteTable('event_registrations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  contact_name: text('contact_name').notNull(),
+  contact_email: text('contact_email').notNull(),
+  status: text('status').default('pending_payment').notNull().$type<EventRegistrationStatus>(),
+  group_size: integer('group_size').default(1).notNull(),
+  payment_order_id: integer('payment_order_id'),
+  special_link_id: integer('special_link_id'),
+  waitlist_position: integer('waitlist_position'),
+  registered_at: text('registered_at').default(sql`datetime('now')`).notNull(),
+  cancelled_at: text('cancelled_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  eventIdx: index('idx_event_registrations_event_id').on(table.event_id),
+  memberIdx: index('idx_event_registrations_member_id').on(table.member_id),
+  statusIdx: index('idx_event_registrations_status').on(table.status),
+}));
+
+export const eventRegistrationMembersSqlite = sqliteTable('event_registration_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_id: integer('registration_id').notNull().references(() => eventRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  email: text('email'),
+  sort_order: integer('sort_order').default(0).notNull(),
+}, (table) => ({
+  registrationIdx: index('idx_event_registration_members_registration_id').on(table.registration_id),
+}));
+
+export const eventRegistrationFieldValuesSqlite = sqliteTable('event_registration_field_values', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_id: integer('registration_id').notNull().references(() => eventRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  field_id: integer('field_id').notNull().references(() => eventRegistrationFieldsSqlite.id, { onDelete: 'cascade' }),
+  registration_member_id: integer('registration_member_id').references(() => eventRegistrationMembersSqlite.id, { onDelete: 'cascade' }),
+  value: text('value'),
+}, (table) => ({
+  registrationIdx: index('idx_event_reg_field_values_registration_id').on(table.registration_id),
+  fieldIdx: index('idx_event_reg_field_values_field_id').on(table.field_id),
+}));
+
+export const eventSpecialLinksSqlite = sqliteTable('event_special_links', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  token: text('token').notNull().unique(),
+  label: text('label'),
+  override_fee_minor: integer('override_fee_minor'),
+  max_group_size: integer('max_group_size'),
+  bypass_capacity: integer('bypass_capacity').default(0).notNull(),
+  ignore_registration_dates: integer('ignore_registration_dates').default(0).notNull(),
+  used: integer('used').default(0).notNull(),
+  invalidated: integer('invalidated').default(0).notNull(),
+  used_by_registration_id: integer('used_by_registration_id').references(() => eventRegistrationsSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  eventIdx: index('idx_event_special_links_event_id').on(table.event_id),
+  tokenIdx: uniqueIndex('event_special_links_token_unique').on(table.token),
+}));
+
 // ========== PostgreSQL Schema ==========
 export const membersPg = pgTable('members', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -1809,6 +1983,162 @@ export const governanceOfficersPg = pgTable('governance_officers', {
   boardMemberIdx: indexPg('idx_governance_officers_board_member_id').on(table.board_member_id),
 }));
 
+// ========== Events System (PostgreSQL) ==========
+
+export const eventCategoriesPg = pgTable('event_categories', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  slug: textPg('slug').notNull().unique(),
+  description: textPg('description'),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  slugIdx: uniqueIndexPg('event_categories_slug_unique_pg').on(table.slug),
+}));
+
+export const eventsPg = pgTable('events', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  title: textPg('title').notNull(),
+  slug: textPg('slug').notNull().unique(),
+  article_id: integerPg('article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
+  image_file_id: integerPg('image_file_id').references(() => filesPg.id, { onDelete: 'set null' }),
+  visibility: textPg('visibility').default('public').notNull().$type<EventVisibility>(),
+  published: integerPg('published').default(0).notNull(),
+  capacity: integerPg('capacity'),
+  fee_minor: integerPg('fee_minor').default(0).notNull(),
+  member_fee_minor: integerPg('member_fee_minor'),
+  currency: textPg('currency').default('usd').notNull(),
+  registration_start: timestamp('registration_start', { withTimezone: false }),
+  registration_cutoff: timestamp('registration_cutoff', { withTimezone: false }),
+  cancellation_cutoff: timestamp('cancellation_cutoff', { withTimezone: false }),
+  allow_group_registration: integerPg('allow_group_registration').default(0).notNull(),
+  max_group_size: integerPg('max_group_size'),
+  enable_waitlist: integerPg('enable_waitlist').default(1).notNull(),
+  calendar_type_id: textPg('calendar_type_id').default('other').notNull(),
+  terms_article_id: integerPg('terms_article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  slugIdx: uniqueIndexPg('events_slug_unique_pg').on(table.slug),
+  publishedIdx: indexPg('idx_events_published').on(table.published),
+  visibilityIdx: indexPg('idx_events_visibility').on(table.visibility),
+}));
+
+export const eventTimespansPg = pgTable('event_timespans', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  start_dt: textPg('start_dt').notNull(),
+  end_dt: textPg('end_dt').notNull(),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_timespans_event_id').on(table.event_id),
+  startIdx: indexPg('idx_event_timespans_start_dt').on(table.start_dt),
+}));
+
+export const eventLocationsPg = pgTable('event_locations', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  location_type: textPg('location_type').notNull().$type<'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual'>(),
+  sheet_id: integerPg('sheet_id').references(() => sheetsPg.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_locations_event_id').on(table.event_id),
+}));
+
+export const eventCategoryAssignmentsPg = pgTable('event_category_assignments', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  category_id: integerPg('category_id').notNull().references(() => eventCategoriesPg.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_category_assignments_event_id').on(table.event_id),
+  categoryIdx: indexPg('idx_event_category_assignments_category_id').on(table.category_id),
+  uniqueAssignment: uniqueIndexPg('event_category_assignments_event_category_unique_pg').on(table.event_id, table.category_id),
+}));
+
+export const eventOwnersPg = pgTable('event_owners', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_owners_event_id').on(table.event_id),
+  memberIdx: indexPg('idx_event_owners_member_id').on(table.member_id),
+  uniqueOwner: uniqueIndexPg('event_owners_event_member_unique_pg').on(table.event_id, table.member_id),
+}));
+
+export const eventRegistrationFieldsPg = pgTable('event_registration_fields', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  label: textPg('label').notNull(),
+  field_type: textPg('field_type').notNull().$type<EventFieldType>(),
+  scope: textPg('scope').default('group').notNull().$type<EventFieldScope>(),
+  required: integerPg('required').default(0).notNull(),
+  options: textPg('options'),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_registration_fields_event_id').on(table.event_id),
+}));
+
+export const eventRegistrationsPg = pgTable('event_registrations', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  contact_name: textPg('contact_name').notNull(),
+  contact_email: textPg('contact_email').notNull(),
+  status: textPg('status').default('pending_payment').notNull().$type<EventRegistrationStatus>(),
+  group_size: integerPg('group_size').default(1).notNull(),
+  payment_order_id: integerPg('payment_order_id'),
+  special_link_id: integerPg('special_link_id'),
+  waitlist_position: integerPg('waitlist_position'),
+  registered_at: timestamp('registered_at', { withTimezone: false }).defaultNow().notNull(),
+  cancelled_at: timestamp('cancelled_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_registrations_event_id').on(table.event_id),
+  memberIdx: indexPg('idx_event_registrations_member_id').on(table.member_id),
+  statusIdx: indexPg('idx_event_registrations_status').on(table.status),
+}));
+
+export const eventRegistrationMembersPg = pgTable('event_registration_members', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_id: integerPg('registration_id').notNull().references(() => eventRegistrationsPg.id, { onDelete: 'cascade' }),
+  name: textPg('name').notNull(),
+  email: textPg('email'),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+}, (table) => ({
+  registrationIdx: indexPg('idx_event_registration_members_registration_id').on(table.registration_id),
+}));
+
+export const eventRegistrationFieldValuesPg = pgTable('event_registration_field_values', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_id: integerPg('registration_id').notNull().references(() => eventRegistrationsPg.id, { onDelete: 'cascade' }),
+  field_id: integerPg('field_id').notNull().references(() => eventRegistrationFieldsPg.id, { onDelete: 'cascade' }),
+  registration_member_id: integerPg('registration_member_id').references(() => eventRegistrationMembersPg.id, { onDelete: 'cascade' }),
+  value: textPg('value'),
+}, (table) => ({
+  registrationIdx: indexPg('idx_event_reg_field_values_registration_id').on(table.registration_id),
+  fieldIdx: indexPg('idx_event_reg_field_values_field_id').on(table.field_id),
+}));
+
+export const eventSpecialLinksPg = pgTable('event_special_links', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  token: textPg('token').notNull().unique(),
+  label: textPg('label'),
+  override_fee_minor: integerPg('override_fee_minor'),
+  max_group_size: integerPg('max_group_size'),
+  bypass_capacity: integerPg('bypass_capacity').default(0).notNull(),
+  ignore_registration_dates: integerPg('ignore_registration_dates').default(0).notNull(),
+  used: integerPg('used').default(0).notNull(),
+  invalidated: integerPg('invalidated').default(0).notNull(),
+  used_by_registration_id: integerPg('used_by_registration_id').references(() => eventRegistrationsPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_special_links_event_id').on(table.event_id),
+  tokenIdx: uniqueIndexPg('event_special_links_token_unique_pg').on(table.token),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -1867,6 +2197,17 @@ export const sqliteSchema = {
   governanceCommitteeChairs: governanceCommitteeChairsSqlite,
   governanceBoardMemberCommittees: governanceBoardMemberCommitteesSqlite,
   governanceOfficers: governanceOfficersSqlite,
+  eventCategories: eventCategoriesSqlite,
+  events: eventsSqlite,
+  eventTimespans: eventTimespansSqlite,
+  eventLocations: eventLocationsSqlite,
+  eventCategoryAssignments: eventCategoryAssignmentsSqlite,
+  eventOwners: eventOwnersSqlite,
+  eventRegistrationFields: eventRegistrationFieldsSqlite,
+  eventRegistrations: eventRegistrationsSqlite,
+  eventRegistrationMembers: eventRegistrationMembersSqlite,
+  eventRegistrationFieldValues: eventRegistrationFieldValuesSqlite,
+  eventSpecialLinks: eventSpecialLinksSqlite,
 };
 
 export const pgSchema = {
@@ -1926,4 +2267,15 @@ export const pgSchema = {
   governanceCommitteeChairs: governanceCommitteeChairsPg,
   governanceBoardMemberCommittees: governanceBoardMemberCommitteesPg,
   governanceOfficers: governanceOfficersPg,
+  eventCategories: eventCategoriesPg,
+  events: eventsPg,
+  eventTimespans: eventTimespansPg,
+  eventLocations: eventLocationsPg,
+  eventCategoryAssignments: eventCategoryAssignmentsPg,
+  eventOwners: eventOwnersPg,
+  eventRegistrationFields: eventRegistrationFieldsPg,
+  eventRegistrations: eventRegistrationsPg,
+  eventRegistrationMembers: eventRegistrationMembersPg,
+  eventRegistrationFieldValues: eventRegistrationFieldValuesPg,
+  eventSpecialLinks: eventSpecialLinksPg,
 };

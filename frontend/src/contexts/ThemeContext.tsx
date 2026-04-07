@@ -84,13 +84,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (theme !== 'system') return;
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
-      const resolved = resolveTheme('system');
+      const resolved = forcedResolvedTheme ?? resolveTheme('system');
       setResolvedTheme(resolved);
       applyResolvedTheme(resolved);
     };
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]);
+  }, [theme, forcedResolvedTheme]);
 
   const setTheme = async (newTheme: Theme) => {
     setThemeState(newTheme);

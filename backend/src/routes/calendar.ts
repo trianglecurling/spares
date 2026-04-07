@@ -8,6 +8,7 @@ import {
   fetchLeagueCalendarEventsForRange,
 } from '../services/calendarExpansion.js';
 import { fetchIceBookingsAsCalendarEvents } from '../services/iceBookingsCalendar.js';
+import { getEventTimespansForCalendar } from '../services/eventService.js';
 import type { Member } from '../types.js';
 
 type LocationType = 'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual';
@@ -76,11 +77,19 @@ export async function calendarRoutes(fastify: FastifyInstance) {
       const rangeEnd = new Date(q.end);
       const member = request.member as Member | undefined;
       const iceViewer = member && isCalendarAdmin(member) ? 'admin' : 'member';
-      const [direct, ice] = await Promise.all([
+      const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public'];
+      if (member) {
+        visibilityFilter.push('active_members');
+        if (member.spare_only !== 1 && member.social_member !== 1) {
+          visibilityFilter.push('ice_members');
+        }
+      }
+      const [direct, ice, eventItems] = await Promise.all([
         fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
         fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, iceViewer),
+        getEventTimespansForCalendar(q.start, q.end, visibilityFilter),
       ]);
-      return [...direct, ...ice];
+      return [...direct, ...ice, ...eventItems];
     }
   );
 

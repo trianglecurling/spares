@@ -1053,3 +1053,182 @@ export async function sendIceBookingConfirmationEmail(
   );
 }
 
+// ========== Event Registration Emails ==========
+
+export async function sendEventRegistrationConfirmationEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  eventDateStr: string,
+  status: 'confirmed' | 'pending_payment' | 'waitlisted',
+  groupSize: number,
+  memberToken?: string
+): Promise<void> {
+  const statusLabel = status === 'confirmed'
+    ? 'Your registration is confirmed!'
+    : status === 'waitlisted'
+      ? 'You have been added to the waitlist.'
+      : 'Your registration is pending payment.';
+
+  const groupLine = groupSize > 1
+    ? `<p><strong>Group size:</strong> ${groupSize}</p>`
+    : '';
+
+  const htmlContent = `
+    <h2>Event registration</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>${statusLabel}</p>
+    <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
+    <p><strong>When:</strong> ${escapeHtmlEmail(eventDateStr)}</p>
+    ${groupLine}
+    <p>If you need to cancel your registration, you can do so from the event page.</p>
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Registration ${status === 'confirmed' ? 'confirmed' : status === 'waitlisted' ? 'waitlisted' : 'pending'}: ${eventTitle}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+
+export async function sendEventRegistrationCancelledEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  refundIssued: boolean,
+  memberToken?: string
+): Promise<void> {
+  const refundLine = refundIssued
+    ? '<p>A refund has been issued and will be processed within a few business days.</p>'
+    : '';
+
+  const htmlContent = `
+    <h2>Registration cancelled</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>Your registration for <strong>${escapeHtmlEmail(eventTitle)}</strong> has been cancelled.</p>
+    ${refundLine}
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Registration cancelled: ${eventTitle}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+
+export async function sendEventWaitlistPromotionEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  needsPayment: boolean,
+  eventUrl: string,
+  memberToken?: string
+): Promise<void> {
+  const actionLine = needsPayment
+    ? `<p>A spot has opened up! Please <a href="${eventUrl}">complete your payment</a> to confirm your registration.</p>`
+    : '<p>A spot has opened up and your registration has been confirmed!</p>';
+
+  const htmlContent = `
+    <h2>You've been promoted from the waitlist!</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    ${actionLine}
+    <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Spot available: ${eventTitle}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+
+export async function sendEventOwnerNewRegistrationEmail(
+  to: string,
+  ownerName: string,
+  eventTitle: string,
+  registrantName: string,
+  registrantEmail: string,
+  groupSize: number,
+  status: string
+): Promise<void> {
+  const htmlContent = `
+    <h2>New event registration</h2>
+    <p>Hi ${escapeHtmlEmail(ownerName)},</p>
+    <p>A new registration has been received for <strong>${escapeHtmlEmail(eventTitle)}</strong>.</p>
+    <p><strong>Registrant:</strong> ${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)})</p>
+    <p><strong>Group size:</strong> ${groupSize}</p>
+    <p><strong>Status:</strong> ${escapeHtmlEmail(status)}</p>
+  `;
+
+  await sendEmail({
+    to,
+    subject: `New registration for ${eventTitle}`,
+    htmlContent,
+    recipientName: ownerName,
+    includeUnsubscribeFooter: false,
+  });
+}
+
+export async function sendEventCancelledEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  memberToken?: string
+): Promise<void> {
+  const htmlContent = `
+    <h2>Event cancelled</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>The event <strong>${escapeHtmlEmail(eventTitle)}</strong> has been cancelled.</p>
+    <p>If you were registered and paid a fee, a refund will be processed within a few business days.</p>
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Event cancelled: ${eventTitle}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+
+export async function sendEventReminderEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  eventDateStr: string,
+  eventUrl: string,
+  memberToken?: string
+): Promise<void> {
+  const htmlContent = `
+    <h2>Event reminder</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>This is a reminder that <strong>${escapeHtmlEmail(eventTitle)}</strong> is coming up.</p>
+    <p><strong>When:</strong> ${escapeHtmlEmail(eventDateStr)}</p>
+    <p><a href="${eventUrl}">View event details</a></p>
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Reminder: ${eventTitle}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+

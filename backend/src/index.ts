@@ -33,6 +33,7 @@ import { fileRoutes } from './routes/files.js';
 import { sponsorshipRoutes } from './routes/sponsorship.js';
 import { governanceRoutes } from './routes/governance.js';
 import { rbacRoutes } from './routes/rbac.js';
+import { publicEventRoutes, protectedEventRoutes } from './routes/events.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
@@ -250,6 +251,8 @@ fastify.register(publicRoutes, { prefix: '/api' });
 fastify.register(contactRoutes, { prefix: '/api' });
 // Public donations checkout + status (no auth required)
 fastify.register(donationRoutes, { prefix: '/api' });
+// Public events (listing, detail, registration - no auth required)
+fastify.register(publicEventRoutes, { prefix: '/api' });
 // Public payment webhooks (provider signature verified in-route)
 fastify.register(paymentWebhookRoutes, { prefix: '/api' });
 
@@ -277,6 +280,7 @@ fastify.register(
     await instance.register(governanceRoutes, { prefix: '/api' });
     await instance.register(paymentRoutes, { prefix: '/api' });
     await instance.register(rbacRoutes, { prefix: '/api' });
+    await instance.register(protectedEventRoutes, { prefix: '/api' });
     await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
   }
 );

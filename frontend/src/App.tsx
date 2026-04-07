@@ -1,7 +1,6 @@
-import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -55,6 +54,14 @@ import ClubGovernance from './pages/ClubGovernance';
 import AdminGovernance from './pages/admin/AdminGovernance';
 import AdminRoles from './pages/admin/AdminRoles';
 import AdminPayments from './pages/admin/AdminPayments';
+import AdminEvents from './pages/admin/AdminEvents';
+import AdminEventEditor from './pages/admin/AdminEventEditor';
+import AdminEventRegistrationEditor from './pages/admin/AdminEventRegistrationEditor';
+import PublicEventsPage from './pages/PublicEventsPage';
+import PublicEventDetailPage from './pages/PublicEventDetailPage';
+import PublicEventRegisterPage from './pages/PublicEventRegisterPage';
+import PublicEventRegisterSuccessPage from './pages/PublicEventRegisterSuccessPage';
+import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -64,19 +71,6 @@ function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   }
   const targetPath = targetTab ? `/leagues/${leagueId}/${targetTab}` : `/leagues/${leagueId}`;
   return <Navigate to={targetPath} replace />;
-}
-
-function PublicCalendarPage() {
-  const { setForcedResolvedTheme } = useTheme();
-
-  useEffect(() => {
-    setForcedResolvedTheme('light');
-    return () => {
-      setForcedResolvedTheme(null);
-    };
-  }, [setForcedResolvedTheme]);
-
-  return <Calendar publicMode />;
 }
 
 function App() {
@@ -92,28 +86,37 @@ function App() {
                 <Route path="/install" element={<Install />} />
 
                 {/* Help pages - accessible without authentication */}
-                <Route path="/help" element={<Help />} />
-                <Route path="/help/quick-start" element={<QuickStart />} />
-                <Route path="/help/requesting-spare" element={<RequestingSpare />} />
-                <Route path="/help/responding" element={<Responding />} />
-                <Route path="/help/public-vs-private" element={<PublicVsPrivate />} />
-                <Route path="/help/notifications" element={<Notifications />} />
-                <Route path="/help/authentication" element={<Authentication />} />
-                <Route path="/help/email-sms" element={<EmailSMS />} />
-                <Route path="/help/availability" element={<Availability />} />
-                <Route path="/help/managing-requests" element={<ManagingRequests />} />
-                <Route path="/feedback" element={<Feedback />} />
+                {/* Public marketing pages (always light); native UI matches via color-scheme */}
+                <Route element={<PublicLightThemeOutlet />}>
+                  <Route path="/help" element={<Help />} />
+                  <Route path="/help/quick-start" element={<QuickStart />} />
+                  <Route path="/help/requesting-spare" element={<RequestingSpare />} />
+                  <Route path="/help/responding" element={<Responding />} />
+                  <Route path="/help/public-vs-private" element={<PublicVsPrivate />} />
+                  <Route path="/help/notifications" element={<Notifications />} />
+                  <Route path="/help/authentication" element={<Authentication />} />
+                  <Route path="/help/email-sms" element={<EmailSMS />} />
+                  <Route path="/help/availability" element={<Availability />} />
+                  <Route path="/help/managing-requests" element={<ManagingRequests />} />
+                  <Route path="/feedback" element={<Feedback />} />
 
-                {/* Public pages - no auth required */}
-                <Route path="/" element={<PublicHomePage />} />
-                <Route path="/contact" element={<PublicContactPage />} />
-                <Route path="/contact/confirm" element={<PublicContactConfirmPage />} />
-                <Route path="/donate" element={<PublicDonatePage />} />
-                <Route path="/donate/success" element={<PublicDonateSuccessPage />} />
-                <Route path="/donate/cancel" element={<PublicDonateCancelPage />} />
-                <Route path="/articles" element={<Navigate to="/" replace />} />
-                <Route path="/articles/:slug" element={<PublicArticle />} />
-                <Route path="/article/:slug" element={<PublicArticle />} />
+                  <Route path="/" element={<PublicHomePage />} />
+                  <Route path="/contact" element={<PublicContactPage />} />
+                  <Route path="/contact/confirm" element={<PublicContactConfirmPage />} />
+                  <Route path="/donate" element={<PublicDonatePage />} />
+                  <Route path="/donate/success" element={<PublicDonateSuccessPage />} />
+                  <Route path="/donate/cancel" element={<PublicDonateCancelPage />} />
+                  <Route path="/articles" element={<Navigate to="/" replace />} />
+                  <Route path="/articles/:slug" element={<PublicArticle />} />
+                  <Route path="/article/:slug" element={<PublicArticle />} />
+
+                  <Route path="/events" element={<PublicEventsPage />} />
+                  <Route path="/events/:slug" element={<PublicEventDetailPage />} />
+                  <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
+                  <Route path="/events/:slug/register/success" element={<PublicEventRegisterSuccessPage />} />
+
+                  <Route path="/calendar/public" element={<Calendar publicMode />} />
+                </Route>
 
                 <Route
                   path="/dashboard"
@@ -223,8 +226,6 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
-                <Route path="/calendar/public" element={<PublicCalendarPage />} />
-
                 <Route
                   path="/profile"
                   element={
@@ -321,6 +322,38 @@ function App() {
                   element={
                     <ProtectedRoute serverAdminOnly>
                       <AdminRoles />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/events"
+                  element={
+                    <ProtectedRoute requiredScope="events.manage">
+                      <AdminEvents />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/events/:id"
+                  element={
+                    <ProtectedRoute requiredScope="events.manage">
+                      <AdminEventEditor />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/events/:id/:tab"
+                  element={
+                    <ProtectedRoute requiredScope="events.manage">
+                      <AdminEventEditor />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/events/:id/registrations/:registrationId"
+                  element={
+                    <ProtectedRoute requiredScope="events.manage">
+                      <AdminEventRegistrationEditor />
                     </ProtectedRoute>
                   }
                 />

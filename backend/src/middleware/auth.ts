@@ -73,3 +73,41 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   recordDailyActivity(member.id).catch(() => {});
 }
 
+/**
+ * When a Bearer token is present and valid, sets `request.member` (and authz) like {@link authMiddleware}.
+ * Missing, invalid, or expired membership leaves the request unauthenticated without an error response.
+ */
+export async function optionalAuthMiddleware(request: FastifyRequest, reply: FastifyReply) {
+  const authHeader = request.headers.authorization;
+  const tokenFromQuery = (() => {
+    if (request.query && typeof request.query === 'object' && 'token' in request.query) {
+      return (request.query as { token?: string }).token;
+    }
+    return undefined;
+  })();
+
+  const token = authHeader?.replace('Bearer ', '') || tokenFromQuery;
+  if (!token) return;
+
+  const payload = verifyToken(token);
+  if (!payload) return;
+
+  const { db, schema } = getDrizzleDb();
+  const members = await db
+    .select()
+    .from(schema.members)
+    .where(eq(schema.members.id, payload.memberId))
+    .limit(1);
+
+  const member = members[0] as Member | undefined;
+  if (!member) return;
+
+  member.authz = payload.authz ?? (await buildAuthzClaimsForMember(member));
+  request.authz = member.authz;
+
+  if (isMemberExpired(member)) return;
+
+  request.member = member;
+  recordDailyActivity(member.id).catch(() => {});
+}
+
