@@ -7,11 +7,10 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { addYears, format, parseISO, subYears } from 'date-fns';
-import { HiArrowLeft } from 'react-icons/hi2';
 import api from '../utils/api';
 import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
-import Button from '../components/Button';
+import BackButton from '../components/BackButton';
 import CalendarEventForm from '../components/CalendarEventForm';
 import {
   apiEventToCalendar,
@@ -134,9 +133,7 @@ export default function CalendarEventFormPage() {
           <AppPage narrow>
             <AppPageHeader title={title} description={subtitle} />
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{loadError}</p>
-            <Button variant="secondary" onClick={() => goBackToCalendar()}>
-              Back to calendar
-            </Button>
+            <BackButton label="Calendar" onClick={() => goBackToCalendar()} />
           </AppPage>
         </div>
       </Layout>
@@ -164,9 +161,7 @@ export default function CalendarEventFormPage() {
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
               League games and member ice bookings are managed elsewhere.
             </p>
-            <Button variant="secondary" onClick={() => goBackToCalendar(event.start)}>
-              Back to calendar
-            </Button>
+            <BackButton label="Calendar" onClick={() => goBackToCalendar(event.start)} />
           </AppPage>
         </div>
       </Layout>
@@ -181,15 +176,10 @@ export default function CalendarEventFormPage() {
             title={title}
             description={subtitle}
             actions={
-              <Button
-                type="button"
-                variant="secondary"
+              <BackButton
+                label="Calendar"
                 onClick={() => goBackToCalendar(event?.start ?? initialDate)}
-                className="inline-flex items-center gap-2"
-              >
-                <HiArrowLeft className="h-4 w-4" />
-                Calendar
-              </Button>
+              />
             }
           />
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-6">

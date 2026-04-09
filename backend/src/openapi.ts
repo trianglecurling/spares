@@ -1,17 +1,6 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { publicAuthRoutes, protectedAuthRoutes } from './routes/auth.js';
-import { memberRoutes } from './routes/members.js';
-import { leagueRoutes } from './routes/leagues.js';
-import { leagueSetupRoutes } from './routes/leagueSetup.js';
-import { gameRoutes } from './routes/games.js';
-import { availabilityRoutes } from './routes/availability.js';
-import { spareRoutes } from './routes/spares.js';
-import { configRoutes } from './routes/config.js';
-import { rbacRoutes } from './routes/rbac.js';
-import { installRoutes } from './routes/install.js';
-import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
-import { publicConfigRoutes } from './routes/publicConfig.js';
+import { registerProtectedApiRoutes, registerPublicApiRoutes } from './registerRoutes.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -32,21 +21,8 @@ async function buildOpenApi(): Promise<void> {
     },
   });
 
-  // Register all routes for OpenAPI generation.
-  await fastify.register(installRoutes, { prefix: '/api' });
-  await fastify.register(publicAuthRoutes, { prefix: '/api' });
-  await fastify.register(protectedAuthRoutes, { prefix: '/api' });
-  await fastify.register(publicFeedbackRoutes, { prefix: '/api' });
-  await fastify.register(protectedFeedbackRoutes, { prefix: '/api' });
-  await fastify.register(publicConfigRoutes, { prefix: '/api' });
-  await fastify.register(memberRoutes, { prefix: '/api' });
-  await fastify.register(leagueRoutes, { prefix: '/api' });
-  await fastify.register(leagueSetupRoutes, { prefix: '/api' });
-  await fastify.register(gameRoutes, { prefix: '/api' });
-  await fastify.register(availabilityRoutes, { prefix: '/api' });
-  await fastify.register(spareRoutes, { prefix: '/api' });
-  await fastify.register(configRoutes, { prefix: '/api' });
-  await fastify.register(rbacRoutes, { prefix: '/api' });
+  await registerPublicApiRoutes(fastify);
+  await registerProtectedApiRoutes(fastify);
 
   await fastify.ready();
   const spec = fastify.swagger();

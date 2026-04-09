@@ -1,12 +1,17 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { HiBars3, HiChevronDown, HiChevronRight } from 'react-icons/hi2';
+import { useNavigate, useParams } from 'react-router-dom';
+import { HiChevronDown, HiChevronRight } from 'react-icons/hi2';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import Button from '../../components/Button';
+import DragHandle from '../../components/dragDrop/DragHandle';
+import SortableList from '../../components/dragDrop/SortableList';
+import SortableRow from '../../components/dragDrop/SortableRow';
+import SortableTree from '../../components/dragDrop/SortableTree';
 import Modal from '../../components/Modal';
+import PageTabs from '../../components/PageTabs';
 import ArticleAutocomplete from '../../components/ArticleAutocomplete';
 
 type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files';
@@ -62,6 +67,10 @@ type FilesListResponse = {
   page: number;
   pageSize: number;
 };
+
+function sortByOrder<T extends { sortOrder: number; id: number }>(a: T, b: T) {
+  return a.sortOrder - b.sortOrder || a.id - b.id;
+}
 
 function extractReferencedFileIds(content: string): number[] {
   const ids = new Set<number>();
@@ -132,13 +141,7 @@ export default function AdminContent() {
   });
   const [menuInsertBeforeId, setMenuInsertBeforeId] = useState<number | null>(null);
 
-  const menuDragRef = useRef<{ id: number; parentId: number | null } | null>(null);
-  const menuDropTargetRef = useRef<{ targetId: number; insertBefore: boolean } | null>(null);
-  const [menuDragOver, setMenuDragOver] = useState<{ targetId: number; insertBefore: boolean } | null>(null);
   const [menuExpandedIds, setMenuExpandedIds] = useState<Set<number>>(new Set());
-  const featuredDragRef = useRef<number | null>(null);
-  const featuredDropTargetRef = useRef<{ targetId: number; insertBefore: boolean } | null>(null);
-  const [featuredDragOver, setFeaturedDragOver] = useState<{ targetId: number; insertBefore: boolean } | null>(null);
   const loadDataRequestIdRef = useRef(0);
 
   // Files
@@ -363,16 +366,7 @@ export default function AdminContent() {
     }
   };
 
-  const handleFeaturedReorder = async (draggedId: number, targetId: number, insertBefore: boolean) => {
-    if (draggedId === targetId) return;
-    const fromIdx = featuredHomeArticles.findIndex((a) => a.id === draggedId);
-    const toIdx = featuredHomeArticles.findIndex((a) => a.id === targetId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    const reordered = [...featuredHomeArticles];
-    const [dragged] = reordered.splice(fromIdx, 1);
-    let nextIdx = reordered.findIndex((a) => a.id === targetId);
-    if (!insertBefore) nextIdx += 1;
-    reordered.splice(nextIdx, 0, dragged);
+  const handleFeaturedReorder = async (reordered: Article[]) => {
     setFeaturedHomeArticles(reordered);
     setSaving(true);
     try {
@@ -624,9 +618,7 @@ export default function AdminContent() {
     const dragged = items.find((m) => m.id === draggedId);
     const target = items.find((m) => m.id === targetId);
     if (!dragged || !target || dragged.parentId !== target.parentId) return;
-    const siblings = items
-      .filter((m) => m.parentId === dragged.parentId)
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+    const siblings = items.filter((m) => m.parentId === dragged.parentId).sort(sortByOrder);
     const fromIdx = siblings.findIndex((m) => m.id === draggedId);
     const toIdx = siblings.findIndex((m) => m.id === targetId);
     if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
@@ -646,6 +638,33 @@ export default function AdminContent() {
     try {
       await api.patch('/content/menu-items/reorder', {
         updates: reordered.map((item, i) => ({ id: item.id, sortOrder: i })),
+      });
+    } catch {
+      showAlert('Failed to update order', 'error');
+      loadData();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const persistMenuSiblingOrder = async (
+    reordered: MenuItem[],
+    parentId: number | null,
+    itemsOverride?: MenuItem[]
+  ) => {
+    setMenuItems((prev) => {
+      const base = itemsOverride ?? prev;
+      return base.map((item) => {
+        if (item.parentId !== parentId) return item;
+        const nextIndex = reordered.findIndex((candidate) => candidate.id === item.id);
+        return nextIndex >= 0 ? { ...item, sortOrder: nextIndex } : item;
+      });
+    });
+
+    setSaving(true);
+    try {
+      await api.patch('/content/menu-items/reorder', {
+        updates: reordered.map((item, index) => ({ id: item.id, sortOrder: index })),
       });
     } catch {
       showAlert('Failed to update order', 'error');
@@ -1124,25 +1143,14 @@ export default function AdminContent() {
       <div className="max-w-6xl mx-auto">
         <h1 className="app-page-title mb-6">Manage content</h1>
 
-        <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700 mb-6">
-          {tabs.map((tab) => {
-            const to = `/admin/content/${tab.id}`;
-            const isActive = activeTab === tab.id;
-            return (
-              <Link
-                key={tab.id}
-                to={to}
-                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-                  isActive
-                    ? 'border-primary-teal text-primary-teal'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </div>
+        <PageTabs
+          items={tabs.map((tab) => ({
+            key: tab.id,
+            label: tab.label,
+            to: `/admin/content/${tab.id}`,
+            isActive: activeTab === tab.id,
+          }))}
+        />
 
         {loading ? (
           <p className="text-gray-500">Loading...</p>
@@ -1206,232 +1214,155 @@ export default function AdminContent() {
                 <p className="text-gray-500 mb-4">
                   Navbar menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level.
                 </p>
-                <ul>
-                  {(() => {
-                    const roots = menuItems
-                      .filter((m) => !m.parentId)
-                      .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
-                    const byParent = new Map<number | null, MenuItem[]>();
-                    for (const m of menuItems) {
-                      const pid = m.parentId ?? null;
-                      if (!byParent.has(pid)) byParent.set(pid, []);
-                      byParent.get(pid)!.push(m);
-                    }
-                    for (const [, items] of byParent) {
-                      items.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
-                    }
-                    const result: { item: MenuItem; depth: number }[] = [];
-                    const added = new Set<number>();
-                    const markDescendantsAdded = (parentId: number) => {
-                      for (const child of byParent.get(parentId) ?? []) {
-                        added.add(child.id);
-                        markDescendantsAdded(child.id);
+                {(() => {
+                  const byParent = new Map<number | null, MenuItem[]>();
+                  for (const item of menuItems) {
+                    const parentId = item.parentId ?? null;
+                    if (!byParent.has(parentId)) byParent.set(parentId, []);
+                    byParent.get(parentId)!.push(item);
+                  }
+                  for (const [, siblings] of byParent) siblings.sort(sortByOrder);
+
+                  const toggleMenuExpanded = (id: number) => {
+                    setMenuExpandedIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    });
+                  };
+
+                  return (
+                    <SortableTree
+                      items={menuItems}
+                      getId={(item) => item.id}
+                      getParentId={(item) => item.parentId}
+                      getItemLabel={(item) => item.label}
+                      sortSiblings={(siblings) => siblings.sort(sortByOrder)}
+                      isExpanded={(item) => menuExpandedIds.has(item.id)}
+                      canDragItem={(_, siblings) => siblings.length > 1}
+                      itemNoun="menu item"
+                      rootListClassName="space-y-2"
+                      childListClassName="ml-6 space-y-2"
+                      onReorder={({ parentId, reorderedSiblings }) =>
+                        void persistMenuSiblingOrder(reorderedSiblings, (parentId as number | null) ?? null)
                       }
-                    };
-                    const addWithChildren = (parent: MenuItem, depth: number) => {
-                      if (added.has(parent.id)) return;
-                      added.add(parent.id);
-                      result.push({ item: parent, depth });
-                      if (!menuExpandedIds.has(parent.id)) {
-                        markDescendantsAdded(parent.id);
-                        return;
-                      }
-                      const children = byParent.get(parent.id) ?? [];
-                      for (const child of children) addWithChildren(child, depth + 1);
-                    };
-                    for (const root of roots) addWithChildren(root, 0);
-                    const orphans = menuItems.filter((m) => !added.has(m.id));
-                    orphans.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
-                    orphans.forEach((m) => result.push({ item: m, depth: 0 }));
-                    const toggleMenuExpanded = (id: number) => {
-                      setMenuExpandedIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(id)) next.delete(id);
-                        else next.add(id);
-                        return next;
-                      });
-                    };
-                    const isLastChildOfParent = (idx: number) => {
-                      if (idx < 0) return false;
-                      const { item } = result[idx];
-                      const sibs = (item.parentId !== null ? byParent.get(item.parentId) : byParent.get(null)) ?? [];
-                      const lastSib = sibs[sibs.length - 1];
-                      return lastSib?.id === item.id;
-                    };
-                    type SlotOrItem = { type: 'slot'; parentId: number | null; insertBeforeId: number | null; depth: number } | { type: 'item'; item: MenuItem; depth: number };
-                    const elements: SlotOrItem[] = [];
-                    for (let i = 0; i < result.length; i++) {
-                      const prev = i > 0 ? result[i - 1] : null;
-                      const curr = result[i];
-                      const useAfterSlot =
-                        prev &&
-                        isLastChildOfParent(i - 1) &&
-                        prev.item.parentId !== curr.item.parentId;
-                      if (useAfterSlot) {
-                        elements.push({ type: 'slot', parentId: prev.item.parentId, insertBeforeId: null, depth: prev.depth });
-                      } else {
-                        elements.push({ type: 'slot', parentId: curr.item.parentId, insertBeforeId: curr.item.id, depth: curr.depth });
-                      }
-                      elements.push({ type: 'item', item: curr.item, depth: curr.depth });
-                    }
-                    if (result.length > 0) {
-                      const last = result[result.length - 1];
-                      elements.push({ type: 'slot', parentId: last.item.parentId, insertBeforeId: null, depth: last.depth });
-                    } else {
-                      elements.push({ type: 'slot', parentId: null, insertBeforeId: null, depth: 0 });
-                    }
-                    return elements.map((el, idx) => {
-                      if (el.type === 'slot') {
-                        return (
-                          <li
-                            key={`slot-${el.insertBeforeId ?? 'end'}-${idx}`}
-                            className="group h-6 -mt-1.5 -mb-1.5 shrink-0 flex items-center justify-center relative cursor-pointer"
-                            style={{ paddingLeft: el.depth * 24 }}
-                            onClick={() => openMenuModalForAdd(el.parentId, el.insertBeforeId)}
-                          >
-                            <div
-                              className="absolute right-0 top-[6px] h-1 bg-primary-teal opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none"
-                              style={{ left: el.depth * 24 }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => openMenuModalForAdd(el.parentId, el.insertBeforeId)}
-                              className="relative z-10 px-3 py-1 rounded border-2 border-primary-teal bg-gray-50 dark:bg-gray-900 text-primary-teal text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                            >
-                              + Add item
-                            </button>
-                          </li>
-                        );
-                      }
-                      const { item, depth } = el;
-                      const siblings = (item.parentId !== null ? byParent.get(item.parentId) : byParent.get(null)) ?? [];
-                      const canDrop = siblings.length > 1;
-                      const hasChildren = (byParent.get(item.id)?.length ?? 0) > 0;
-                      const isExpanded = menuExpandedIds.has(item.id);
-                      const showDropAbove = menuDragOver?.targetId === item.id && menuDragOver.insertBefore;
-                      const showDropBelow = menuDragOver?.targetId === item.id && !menuDragOver.insertBefore;
-                      return (
+                      renderGap={({ parentId, insertBeforeId, depth }) => (
                         <li
-                          key={item.id}
-                          className={`relative flex items-center justify-between min-h-[2.5rem] py-2 border-b border-gray-100 dark:border-gray-800 ${canDrop ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                          style={depth > 0 ? { paddingLeft: depth * 24 } : undefined}
-                          draggable={canDrop}
-                          onDragStart={(e) => {
-                            if (!canDrop) return;
-                            menuDragRef.current = { id: item.id, parentId: item.parentId };
-                            e.dataTransfer.setData('application/json', JSON.stringify({ id: item.id, parentId: item.parentId }));
-                            e.dataTransfer.effectAllowed = 'move';
-                          }}
-                          onDragEnd={() => {
-                            menuDragRef.current = null;
-                            menuDropTargetRef.current = null;
-                            setMenuDragOver(null);
-                          }}
-                          onDragOver={(e) => {
-                            if (!canDrop) return;
-                            const dragged = menuDragRef.current;
-                            if (!dragged || dragged.parentId !== item.parentId) return;
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = 'move';
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const insertBefore = e.clientY < rect.top + rect.height / 2;
-                            menuDropTargetRef.current = { targetId: item.id, insertBefore };
-                            setMenuDragOver({ targetId: item.id, insertBefore });
-                          }}
-                          onDragLeave={() => {
-                            setMenuDragOver((prev) =>
-                              prev?.targetId === item.id ? null : prev
-                            );
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const data = e.dataTransfer.getData('application/json');
-                            const target = menuDropTargetRef.current;
-                            menuDropTargetRef.current = null;
-                            setMenuDragOver(null);
-                            if (!data || !target) return;
-                            try {
-                              const { id: draggedId } = JSON.parse(data);
-                              if (draggedId !== target.targetId)
-                                handleMenuReorder(draggedId, target.targetId, target.insertBefore);
-                            } catch {
-                              // ignore
-                            }
-                          }}
+                          key={`slot-${parentId ?? 'root'}-${insertBeforeId ?? 'end'}-${depth}`}
+                          className="group relative -my-1.5 flex h-6 shrink-0 items-center justify-center"
+                          onClick={() =>
+                            openMenuModalForAdd(
+                              (parentId as number | null) ?? null,
+                              (insertBeforeId as number | null) ?? null
+                            )
+                          }
                         >
-                          {showDropAbove && (
-                            <div
-                              className="absolute left-0 right-0 top-0 h-0.5 bg-primary-teal z-10 pointer-events-none"
-                              style={{ left: depth * 24 }}
-                              aria-hidden
-                            />
-                          )}
-                          {showDropBelow && (
-                            <div
-                              className="absolute left-0 right-0 bottom-0 h-0.5 bg-primary-teal z-10 pointer-events-none"
-                              style={{ left: depth * 24 }}
-                              aria-hidden
-                            />
-                          )}
-                          <div className="flex items-center gap-2 min-w-0">
-                            {hasChildren ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleMenuExpanded(item.id);
-                                }}
-                                className="p-0.5 -m-0.5 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 shrink-0"
-                                aria-label={isExpanded ? 'Collapse' : 'Expand'}
-                              >
-                                {isExpanded ? (
-                                  <HiChevronDown className="w-4 h-4" />
+                          <div className="pointer-events-none absolute inset-x-0 top-[6px] h-1 bg-primary-teal opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openMenuModalForAdd(
+                                (parentId as number | null) ?? null,
+                                (insertBeforeId as number | null) ?? null
+                              )
+                            }
+                            className="relative z-10 rounded border-2 border-primary-teal bg-gray-50 px-3 py-1 text-xs text-primary-teal opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:bg-gray-900"
+                          >
+                            + Add item
+                          </button>
+                        </li>
+                      )}
+                      renderItem={({ item, isDragging, isOverlay, canDrag, dragHandle }) => {
+                        const hasChildren = (byParent.get(item.id)?.length ?? 0) > 0;
+                        const isExpanded = menuExpandedIds.has(item.id);
+
+                        return (
+                          <SortableRow
+                            isDragging={isDragging}
+                            isOverlay={isOverlay}
+                            className="border-gray-100 px-3 py-2 dark:border-gray-800"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-2">
+                                {hasChildren ? (
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      toggleMenuExpanded(item.id);
+                                    }}
+                                    className="shrink-0 rounded p-0.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                                  >
+                                    {isExpanded ? (
+                                      <HiChevronDown className="h-4 w-4" />
+                                    ) : (
+                                      <HiChevronRight className="h-4 w-4" />
+                                    )}
+                                  </button>
                                 ) : (
-                                  <HiChevronRight className="w-4 h-4" />
+                                  <span className="w-5 shrink-0" aria-hidden />
                                 )}
-                              </button>
-                            ) : (
-                              <span className="w-4 shrink-0" aria-hidden />
-                            )}
-                            {canDrop && (
-                              <HiBars3 className="text-gray-400 shrink-0 w-4 h-4" aria-hidden />
-                            )}
+                                {canDrag ? dragHandle : <span className="w-8 shrink-0" aria-hidden />}
+                                <div className="min-w-0">
+                                  <span className="font-medium">{item.label}</span>
+                                  {item.linkType && item.url && (
+                                    <span className="ml-2 text-sm text-gray-500">
+                                      ({item.linkType === 'internal' ? 'Article' : 'Other'}: {item.url}
+                                      {item.linkType === 'external'
+                                        ? item.openInNewTab
+                                          ? ' - new tab'
+                                          : ' - same tab'
+                                        : ''}
+                                      )
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openMenuModal(item)}
+                                  className="text-sm text-primary-teal hover:underline"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMenuItem(item)}
+                                  className="text-sm text-red-600 hover:underline dark:text-red-400"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </SortableRow>
+                        );
+                      }}
+                      renderOverlay={(item) => (
+                        <SortableRow isDragging isOverlay className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <DragHandle label={`Reorder ${item.label}`} disabled />
                             <div className="min-w-0">
                               <span className="font-medium">{item.label}</span>
-                              {item.linkType && item.url && (
-                                <span className="text-gray-500 text-sm ml-2">
-                                  ({item.linkType === 'internal' ? 'Article' : 'Other'}: {item.url}{item.linkType === 'external' ? (item.openInNewTab ? ' — new tab' : ' — same tab') : ''})
+                              {item.linkType && item.url ? (
+                                <span className="ml-2 text-sm text-gray-500">
+                                  ({item.linkType === 'internal' ? 'Article' : 'Other'}: {item.url})
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </div>
-                          <div className="flex gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => openMenuModal(item)}
-                              className="text-sm text-primary-teal hover:underline"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteMenuItem(item)}
-                              className="text-sm text-red-600 dark:text-red-400 hover:underline"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </li>
-                      );
-                    });
-                  })()}
-                </ul>
-                {menuItems.length === 0 && (
-                  <p className="text-gray-500 py-2 text-sm">
-                    No menu items yet. Click above to add. When empty, default links (Home, Articles) are shown.
-                  </p>
-                )}
-
+                        </SortableRow>
+                      )}
+                      emptyState={
+                        <p className="py-2 text-sm text-gray-500">
+                          No menu items yet. Click above to add. When empty, default links (Home, Articles) are shown.
+                        </p>
+                      }
+                    />
+                  );
+                })()}
                 <Modal
                   isOpen={menuModalOpen}
                   onClose={closeMenuModal}
@@ -1639,53 +1570,25 @@ export default function AdminContent() {
                 {featuredHomeArticles.length === 0 ? (
                   <p className="text-sm text-gray-500">No featured articles selected.</p>
                 ) : (
-                  <ul className="space-y-2">
-                    {featuredHomeArticles.map((article) => {
-                      const showDropAbove = featuredDragOver?.targetId === article.id && featuredDragOver.insertBefore;
-                      const showDropBelow = featuredDragOver?.targetId === article.id && !featuredDragOver.insertBefore;
-                      return (
-                        <li
-                          key={article.id}
-                          className="relative flex items-center justify-between gap-3 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 cursor-grab active:cursor-grabbing"
-                          draggable
-                          onDragStart={(e) => {
-                            featuredDragRef.current = article.id;
-                            e.dataTransfer.setData('text/plain', String(article.id));
-                            e.dataTransfer.effectAllowed = 'move';
-                          }}
-                          onDragEnd={() => {
-                            featuredDragRef.current = null;
-                            featuredDropTargetRef.current = null;
-                            setFeaturedDragOver(null);
-                          }}
-                          onDragOver={(e) => {
-                            const draggedId = featuredDragRef.current;
-                            if (!draggedId || draggedId === article.id) return;
-                            e.preventDefault();
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const insertBefore = e.clientY < rect.top + rect.height / 2;
-                            featuredDropTargetRef.current = { targetId: article.id, insertBefore };
-                            setFeaturedDragOver({ targetId: article.id, insertBefore });
-                          }}
-                          onDragLeave={() => {
-                            setFeaturedDragOver((prev) => (prev?.targetId === article.id ? null : prev));
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const draggedIdRaw = e.dataTransfer.getData('text/plain');
-                            const target = featuredDropTargetRef.current;
-                            featuredDropTargetRef.current = null;
-                            setFeaturedDragOver(null);
-                            const draggedId = Number.parseInt(draggedIdRaw, 10);
-                            if (!Number.isFinite(draggedId) || !target || draggedId === target.targetId) return;
-                            void handleFeaturedReorder(draggedId, target.targetId, target.insertBefore);
-                          }}
-                        >
-                          {showDropAbove && <div className="absolute left-0 right-0 top-0 h-0.5 bg-primary-teal" aria-hidden />}
-                          {showDropBelow && <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-primary-teal" aria-hidden />}
-                          <div className="min-w-0">
-                            <div className="font-medium truncate">{article.title}</div>
-                            <div className="text-xs text-gray-500 truncate">/articles/{article.slug}</div>
+                  <SortableList
+                    items={featuredHomeArticles}
+                    getId={(article) => article.id}
+                    getItemLabel={(article) => article.title}
+                    itemNoun="featured article"
+                    onReorder={(nextArticles) => void handleFeaturedReorder(nextArticles)}
+                    renderItem={({ item: article, isDragging, isOverlay, dragHandle }) => (
+                      <SortableRow
+                        isDragging={isDragging}
+                        isOverlay={isOverlay}
+                        className="border-gray-200 px-3 py-2 dark:border-gray-700"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            {dragHandle}
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{article.title}</div>
+                              <div className="truncate text-xs text-gray-500">/articles/{article.slug}</div>
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -1694,10 +1597,21 @@ export default function AdminContent() {
                           >
                             Remove
                           </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                        </div>
+                      </SortableRow>
+                    )}
+                    renderOverlay={(article) => (
+                      <SortableRow isDragging isOverlay className="px-3 py-2">
+                        <div className="flex items-center gap-3">
+                          <DragHandle label={`Reorder ${article.title}`} disabled />
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{article.title}</div>
+                            <div className="truncate text-xs text-gray-500">/articles/{article.slug}</div>
+                          </div>
+                        </div>
+                      </SortableRow>
+                    )}
+                  />
                 )}
               </div>
             )}

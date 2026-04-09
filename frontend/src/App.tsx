@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
+import { MemberOptionsProvider } from './contexts/MemberOptionsContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -80,10 +81,11 @@ function App() {
         <ThemeProvider>
           <AlertProvider>
             <ConfirmProvider>
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/unsubscribe" element={<Unsubscribe />} />
-                <Route path="/install" element={<Install />} />
+              <MemberOptionsProvider>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/unsubscribe" element={<Unsubscribe />} />
+                  <Route path="/install" element={<Install />} />
 
                 {/* Help pages - accessible without authentication */}
                 {/* Public marketing pages (always light); native UI matches via color-scheme */}
@@ -411,7 +413,8 @@ function App() {
                 />
 
                 <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
+                </Routes>
+              </MemberOptionsProvider>
             </ConfirmProvider>
           </AlertProvider>
         </ThemeProvider>

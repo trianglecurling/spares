@@ -50,7 +50,7 @@ export async function sendOnceWithDeliveryClaim(
         kind: key.kind,
       })
       .onConflictDoNothing();
-  } catch (e) {
+  } catch {
     // If we can't write the idempotency row for any reason, do not block sending.
     await send();
     return true;

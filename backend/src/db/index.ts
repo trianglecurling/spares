@@ -1,6 +1,6 @@
-import { getDatabaseConfig as getDbConfigFromFile, DatabaseConfig, isDatabaseConfigured } from './config.js';
+import { getDatabaseConfig as getDbConfigFromFile, DatabaseConfig } from './config.js';
 import { getDrizzleDb, resetDrizzleDb } from './drizzle-db.js';
-import { createSchema, createSchemaSync } from './schema.js';
+import { createSchema } from './schema.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -38,12 +38,11 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
   resetDrizzleDb();
   
   // Get Drizzle instance (this will initialize the connection)
-  const { db, schema } = getDrizzleDb();
-  
+  const { db } = getDrizzleDb();
+
   // Use Drizzle's push to sync schema (creates tables if they don't exist)
   // Import the appropriate schema based on database type
   if (configToUse.type === 'sqlite') {
-    const { sqliteSchema } = await import('./drizzle-schema.js');
     const sqliteDb = db as unknown as { run: (query: ReturnType<typeof sql>) => Promise<void> | void };
     const pragmaResult = sqliteDb.run(sql`PRAGMA foreign_keys = ON`);
     if (pragmaResult instanceof Promise) {

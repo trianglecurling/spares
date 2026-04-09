@@ -70,7 +70,6 @@ export default function Feedback() {
       setCaptchaToken(null);
       setCaptchaAnswer('');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
 
   const handleSubmit = async (e: React.FormEvent) => {

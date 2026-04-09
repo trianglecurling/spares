@@ -4,12 +4,10 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isServerAdmin } from '../utils/auth.js';
 import { getCurrentDateStringAsync, invalidateTestTimeCache } from '../utils/time.js';
-import { Member } from '../types.js';
 import { sendEmail } from '../services/email.js';
 import { sendSMS } from '../services/sms.js';
 import { getDatabaseConfig, saveDatabaseConfig } from '../db/config.js';
 import { resetDatabaseState, testDatabaseConnection } from '../db/index.js';
-import type { DatabaseConfig } from '../db/config.js';
 import { setBackendLogCaptureEnabled } from '../otel.js';
 import {
   configResponseSchema,

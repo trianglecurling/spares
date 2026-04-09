@@ -134,7 +134,7 @@ export class PostgresAdapter implements DatabaseAdapter {
   }
 
   // Convert SQLite ? placeholders to PostgreSQL $1, $2, etc.
-  private convertParameters(sql: string, paramCount: number): { convertedSql: string; paramMapping: number[] } {
+  private convertParameters(sql: string, _paramCount: number): { convertedSql: string; paramMapping: number[] } {
     let convertedSql = sql;
     const paramMapping: number[] = [];
     let paramIndex = 1;

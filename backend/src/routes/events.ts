@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin } from '../utils/auth.js';
@@ -6,7 +6,6 @@ import { createPaymentService, PaymentServiceError } from '../services/paymentSe
 import {
   sendEventRegistrationConfirmationEmail,
   sendEventRegistrationCancelledEmail,
-  sendEventWaitlistPromotionEmail,
   sendEventOwnerNewRegistrationEmail,
 } from '../services/email.js';
 import {
@@ -40,8 +39,44 @@ import {
 } from '../services/eventService.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { sendApiError, sendValidationError } from '../api/errors.js';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Member } from '../types.js';
+
+interface AuthenticatedRequest extends FastifyRequest {
+  member?: Member;
+}
+
+/** Event row or aggregate used by list/detail helpers (mixed snake_case + joined arrays). */
+interface EventFormattingSource {
+  id: number;
+  title: string;
+  slug: string;
+  article_id: number | null;
+  image_file_id: number | null;
+  visibility: string;
+  calendar_type_id: string | null;
+  published: number;
+  capacity: number | null;
+  fee_minor: number;
+  member_fee_minor: number | null;
+  currency: string;
+  registration_start: string | null;
+  registration_cutoff: string | null;
+  cancellation_cutoff: string | null;
+  allow_group_registration: number;
+  max_group_size: number | null;
+  enable_waitlist: number;
+  terms_article_id: number | null;
+  created_by_member_id: number | null;
+  created_at: string;
+  updated_at: string;
+  timespans?: unknown[];
+  locations?: unknown[];
+  categoryIds?: number[];
+  ownerMemberIds?: number[];
+  registrationFields?: unknown[];
+}
 
 const locationSchema = z.union([
   z.object({ locationType: z.literal('sheet'), sheetId: z.number() }),
@@ -169,7 +204,7 @@ function canManageEvent(member: Member, eventId?: number): Promise<boolean> | bo
   return false;
 }
 
-function formatEventDate(timespans: any[]): string {
+function formatEventDate(timespans: Array<{ start_dt: string; end_dt: string }>): string {
   if (!timespans || timespans.length === 0) return 'TBD';
   const first = timespans[0];
   try {
@@ -301,10 +336,10 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
     async (request, reply) => {
       const event = await getEventBySlug(request.params.slug);
       if (!event) {
-        return reply.code(404).send({ error: 'Event not found' });
+        return sendApiError(reply, 404, 'Event not found');
       }
 
-      const slk = (request.query as any).slk;
+      const slk = (request.query as { slk?: string }).slk;
       let hasValidSpecialLink = false;
       let specialLinkOverrideMinor: number | null | undefined;
       if (slk) {
@@ -316,7 +351,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       }
 
       if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
-        return reply.code(404).send({ error: 'Event not found' });
+        return sendApiError(reply, 404, 'Event not found');
       }
 
       const confirmedCount = await getConfirmedRegistrationCount(event.id);
@@ -357,7 +392,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         return reply.code(404).send({ error: 'Event not found' });
       }
 
-      const body = request.body as any;
+      const body = request.body as { specialLinkToken?: string };
       let hasValidSpecialLink = false;
       if (body?.specialLinkToken) {
         const link = await getSpecialLinkByToken(body.specialLinkToken);
@@ -372,7 +407,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
 
       const parsed = registerSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: 'Invalid registration data', details: parsed.error.flatten() });
+        return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
       }
 
       const regMember = (request as { member?: Member }).member;
@@ -385,7 +420,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         });
 
         if (result.needsPayment && result.status !== 'waitlisted') {
-          return createCheckoutForRegistration(event, result, parsed.data.contactEmail, reply);
+          return createCheckoutForRegistration(event, result, parsed.data.contactEmail);
         }
 
         sendEventRegistrationConfirmationEmail(
@@ -408,7 +443,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         };
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -421,11 +456,11 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const event = await getEventBySlug(request.params.slug);
-      if (!event) return reply.code(404).send({ error: 'Event not found' });
+      if (!event) return sendApiError(reply, 404, 'Event not found');
 
       const link = await getSpecialLinkByToken(request.params.token);
       if (!link || link.event_id !== event.id) {
-        return reply.code(404).send({ error: 'Invalid or expired link' });
+        return sendApiError(reply, 404, 'Invalid or expired link');
       }
 
       if (link.used) {
@@ -496,7 +531,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
 export async function protectedEventRoutes(fastify: FastifyInstance): Promise<void> {
   // List events visible to authenticated member
   fastify.get('/events', { schema: { tags: ['events'] } }, async (request) => {
-    const member = (request as any).member as Member;
+    const member = (request as AuthenticatedRequest).member as Member;
     const query = request.query as { category?: string; from?: string; to?: string };
 
     const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public', 'active_members'];
@@ -525,7 +560,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       const event = await getEventById(eventId);
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!event.published && !(await canManageEvent(member, eventId))) {
         return reply.code(404).send({ error: 'Event not found' });
       }
@@ -543,7 +578,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       const event = await getEventBySlug(request.params.slug);
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!event.published && !(await canManageEvent(member, event.id))) {
         return reply.code(404).send({ error: 'Event not found' });
       }
@@ -558,14 +593,14 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     '/events',
     { schema: { tags: ['events'] } },
     async (request, reply) => {
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!isEventsAdmin(member)) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       const parsed = createEventSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: 'Invalid event data', details: parsed.error.flatten() });
+        return sendValidationError(reply, 'Invalid event data', parsed.error.flatten());
       }
 
       try {
@@ -580,7 +615,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return reply.code(201).send(result);
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -593,16 +628,16 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       const parsed = updateEventSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: 'Invalid event data', details: parsed.error.flatten() });
+        return sendValidationError(reply, 'Invalid event data', parsed.error.flatten());
       }
 
       try {
@@ -617,7 +652,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return formatEventResponse(updated!);
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -630,11 +665,11 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       await deleteEvent(eventId);
@@ -648,11 +683,11 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!isEventsAdmin(member)) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       try {
@@ -660,7 +695,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return reply.code(201).send(result);
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -673,17 +708,17 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       const event = await getEventById(eventId);
       if (!event || !event.published) {
-        return reply.code(404).send({ error: 'Event not found' });
+        return sendApiError(reply, 404, 'Event not found');
       }
 
       const parsed = registerSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: 'Invalid registration data', details: parsed.error.flatten() });
+        return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
       }
 
       try {
@@ -694,7 +729,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         });
 
         if (result.needsPayment && result.status !== 'waitlisted') {
-          return createCheckoutForRegistration(event, result, parsed.data.contactEmail, reply);
+          return createCheckoutForRegistration(event, result, parsed.data.contactEmail);
         }
 
         sendEventRegistrationConfirmationEmail(
@@ -717,7 +752,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         };
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -730,15 +765,15 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const registrationId = parseInt(request.params.registrationId, 10);
-      if (isNaN(registrationId)) return reply.code(400).send({ error: 'Invalid registration id' });
+      if (isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid registration id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       const reg = await getRegistrationById(registrationId);
-      if (!reg) return reply.code(404).send({ error: 'Registration not found' });
+      if (!reg) return sendApiError(reply, 404, 'Registration not found');
 
       const isOwnerOrAdmin = reg.member_id === member.id || isEventsAdmin(member) || (await isEventOwner(reg.event_id, member.id));
       if (!isOwnerOrAdmin) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       try {
@@ -756,13 +791,13 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
             if (order && order.status === 'succeeded') {
               await refDb.insert(refSchema.refunds).values({
                 payment_order_id: order.id,
-                provider: order.provider as any,
+                provider: order.provider,
                 amount_minor: order.amount_minor,
                 currency: order.currency,
                 reason: 'Event registration cancelled',
-                status: 'requested' as any,
+                status: 'requested',
                 requested_by_member_id: member.id,
-              } as any);
+              });
               refundIssued = true;
             }
           } catch (err) {
@@ -780,7 +815,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return { success: true, refundIssued };
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -793,11 +828,11 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       return getRegistrationsForEvent(eventId);
@@ -811,16 +846,16 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
       const registrationId = parseInt(request.params.registrationId, 10);
-      if (isNaN(eventId) || isNaN(registrationId)) return reply.code(400).send({ error: 'Invalid id' });
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       const registration = await getRegistrationForEvent(eventId, registrationId);
       if (!registration) {
-        return reply.code(404).send({ error: 'Registration not found' });
+        return sendApiError(reply, 404, 'Registration not found');
       }
       const payment = await getRegistrationPaymentSummary(registration.payment_order_id ?? null);
       return { ...registration, payment };
@@ -833,20 +868,20 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       const parsed = adminUpsertRegistrationSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: 'Invalid registration data', details: parsed.error.flatten() });
+        return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
       }
 
       const event = await getEventById(eventId);
-      if (!event) return reply.code(404).send({ error: 'Event not found' });
+      if (!event) return sendApiError(reply, 404, 'Event not found');
 
       try {
         const result = await registerForEvent({
@@ -883,7 +918,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         });
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -897,16 +932,16 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
       const registrationId = parseInt(request.params.registrationId, 10);
-      if (isNaN(eventId) || isNaN(registrationId)) return reply.code(400).send({ error: 'Invalid id' });
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       const parsed = adminUpsertRegistrationSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: 'Invalid registration data', details: parsed.error.flatten() });
+        return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
       }
 
       try {
@@ -919,7 +954,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return updated;
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -933,19 +968,19 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
       const registrationId = parseInt(request.params.registrationId, 10);
-      if (isNaN(eventId) || isNaN(registrationId)) return reply.code(400).send({ error: 'Invalid id' });
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       const parsed = adminCancelRegistrationSchema.safeParse(request.body ?? {});
-      if (!parsed.success) return reply.code(400).send({ error: 'Invalid request body', details: parsed.error.flatten() });
+      if (!parsed.success) return sendValidationError(reply, 'Invalid request body', parsed.error.flatten());
       const shouldRefund = parsed.data.refund === true;
 
       const reg = await getRegistrationById(registrationId);
-      if (!reg || reg.event_id !== eventId) return reply.code(404).send({ error: 'Registration not found' });
+      if (!reg || reg.event_id !== eventId) return sendApiError(reply, 404, 'Registration not found');
 
       try {
         const { event } = await cancelRegistration(registrationId);
@@ -979,7 +1014,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return { success: true, refundIssued, refundStatus, refundError };
       } catch (err) {
         if (err instanceof EventServiceError) {
-          return reply.code(err.statusCode).send({ error: err.message });
+          return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;
       }
@@ -992,11 +1027,11 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       return getSpecialLinksForEvent(eventId);
@@ -1008,16 +1043,16 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return reply.code(400).send({ error: 'Invalid event id' });
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       const parsed = createSpecialLinkSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: 'Invalid data', details: parsed.error.flatten() });
+        return sendValidationError(reply, 'Invalid data', parsed.error.flatten());
       }
 
       const result = await createSpecialLink(eventId, parsed.data);
@@ -1032,11 +1067,11 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
       const linkId = parseInt(request.params.linkId, 10);
-      if (isNaN(eventId) || isNaN(linkId)) return reply.code(400).send({ error: 'Invalid id' });
+      if (isNaN(eventId) || isNaN(linkId)) return sendApiError(reply, 400, 'Invalid id');
 
-      const member = (request as any).member as Member;
+      const member = (request as AuthenticatedRequest).member as Member;
       if (!(await canManageEvent(member, eventId))) {
-        return reply.code(403).send({ error: 'Insufficient permissions' });
+        return sendApiError(reply, 403, 'Forbidden');
       }
 
       await invalidateSpecialLink(linkId);
@@ -1051,11 +1086,11 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     '/events/categories',
     { schema: { tags: ['events'] } },
     async (request, reply) => {
-      const member = (request as any).member as Member;
-      if (!isEventsAdmin(member)) return reply.code(403).send({ error: 'Insufficient permissions' });
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!isEventsAdmin(member)) return sendApiError(reply, 403, 'Forbidden');
 
       const parsed = categorySchema.safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: 'Invalid data', details: parsed.error.flatten() });
+      if (!parsed.success) return sendValidationError(reply, 'Invalid data', parsed.error.flatten());
 
       const result = await createCategory(parsed.data);
       return reply.code(201).send(result);
@@ -1067,13 +1102,13 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const categoryId = parseInt(request.params.categoryId, 10);
-      if (isNaN(categoryId)) return reply.code(400).send({ error: 'Invalid category id' });
+      if (isNaN(categoryId)) return sendApiError(reply, 400, 'Invalid category id');
 
-      const member = (request as any).member as Member;
-      if (!isEventsAdmin(member)) return reply.code(403).send({ error: 'Insufficient permissions' });
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!isEventsAdmin(member)) return sendApiError(reply, 403, 'Forbidden');
 
       const parsed = categorySchema.partial().safeParse(request.body);
-      if (!parsed.success) return reply.code(400).send({ error: 'Invalid data', details: parsed.error.flatten() });
+      if (!parsed.success) return sendValidationError(reply, 'Invalid data', parsed.error.flatten());
 
       await updateCategory(categoryId, parsed.data);
       return { success: true };
@@ -1085,10 +1120,10 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { tags: ['events'] } },
     async (request, reply) => {
       const categoryId = parseInt(request.params.categoryId, 10);
-      if (isNaN(categoryId)) return reply.code(400).send({ error: 'Invalid category id' });
+      if (isNaN(categoryId)) return sendApiError(reply, 400, 'Invalid category id');
 
-      const member = (request as any).member as Member;
-      if (!isEventsAdmin(member)) return reply.code(403).send({ error: 'Insufficient permissions' });
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!isEventsAdmin(member)) return sendApiError(reply, 403, 'Forbidden');
 
       await deleteCategory(categoryId);
       return { success: true };
@@ -1098,7 +1133,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
 
 // Helpers
 
-function summarizeEvent(event: any) {
+function summarizeEvent(event: EventFormattingSource) {
   return {
     id: event.id,
     title: event.title,
@@ -1122,7 +1157,7 @@ function summarizeEvent(event: any) {
   };
 }
 
-function formatEventResponse(event: any) {
+function formatEventResponse(event: EventFormattingSource) {
   return {
     id: event.id,
     title: event.title,
@@ -1155,10 +1190,9 @@ function formatEventResponse(event: any) {
 }
 
 async function createCheckoutForRegistration(
-  event: any,
+  event: EventFormattingSource,
   registrationResult: { registrationId: number; totalFee: number },
-  contactEmail: string,
-  reply: any
+  contactEmail: string
 ) {
   const paymentService = createPaymentService();
   const order = await paymentService.createPaymentOrder({
@@ -1181,7 +1215,6 @@ async function createCheckoutForRegistration(
     .set({ payment_order_id: order.id })
     .where(eq(schema.eventRegistrations.id, registrationResult.registrationId));
 
-  const orderTokenEncoded = encodeURIComponent(order.orderToken);
   const successUrl = `${frontendBaseUrl()}/events/${encodeURIComponent(event.slug)}/register/success?registrationId=${registrationResult.registrationId}&session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${frontendBaseUrl()}/events/${encodeURIComponent(event.slug)}/register?cancelled=true`;
 
@@ -1199,7 +1232,13 @@ async function createCheckoutForRegistration(
   };
 }
 
-async function notifyEventOwners(event: any, registrantName: string, registrantEmail: string, groupSize: number, status: string) {
+async function notifyEventOwners(
+  event: EventFormattingSource,
+  registrantName: string,
+  registrantEmail: string,
+  groupSize: number,
+  status: string
+) {
   if (!event.ownerMemberIds || event.ownerMemberIds.length === 0) return;
 
   const { db, schema } = getDrizzleDb();

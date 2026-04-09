@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../../components/Layout';
+import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post, put } from '../../api/client';
 import { formatApiError } from '../../utils/api';
+import AppStateCard from '../../components/AppStateCard';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
+import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import LeagueTabs from '../../components/LeagueTabs';
+import MemberAutocomplete from '../../components/MemberAutocomplete';
 import LeagueSchedule from './LeagueSchedule';
 import LeagueScheduleGeneration from './LeagueScheduleGeneration';
 import LeagueStandings from './LeagueStandings';
@@ -54,7 +58,7 @@ interface Team {
 interface MemberSearchResult {
   id: number;
   name: string;
-  email: string | null;
+  email?: string | null;
 }
 
 type TeamRole = 'lead' | 'second' | 'third' | 'fourth';
@@ -213,13 +217,6 @@ export default function LeagueDetail() {
   const [leagueSubmitting, setLeagueSubmitting] = useState(false);
 
   const [rosterMembers, setRosterMembers] = useState<LeagueRosterMember[]>([]);
-  const [rosterSearchQuery, setRosterSearchQuery] = useState('');
-  const [rosterSearchResults, setRosterSearchResults] = useState<MemberSearchResult[]>([]);
-  const [rosterSearchLoading, setRosterSearchLoading] = useState(false);
-  const [rosterDropdownOpen, setRosterDropdownOpen] = useState(false);
-  const rosterDropdownRef = useRef<HTMLDivElement>(null);
-  const [rosterHighlightedIndex, setRosterHighlightedIndex] = useState(-1);
-  const rosterInputRef = useRef<HTMLInputElement>(null);
   const [bulkRosterModalOpen, setBulkRosterModalOpen] = useState(false);
   const [bulkRosterNames, setBulkRosterNames] = useState('');
   const [bulkRosterSubmitting, setBulkRosterSubmitting] = useState(false);
@@ -235,21 +232,8 @@ export default function LeagueDetail() {
     Array<{ name: string; candidates: MemberSearchResult[] }>
   >([]);
   const [bulkRosterSelection, setBulkRosterSelection] = useState<MemberSearchResult | null>(null);
-  const [bulkRosterQuery, setBulkRosterQuery] = useState('');
-  const [bulkRosterResults, setBulkRosterResults] = useState<MemberSearchResult[]>([]);
-  const [bulkRosterLoading, setBulkRosterLoading] = useState(false);
-  const [bulkRosterDropdownOpen, setBulkRosterDropdownOpen] = useState(false);
-  const [bulkRosterHighlightedIndex, setBulkRosterHighlightedIndex] = useState(-1);
-  const bulkRosterSearchTimeout = useRef<number | null>(null);
 
   const [managers, setManagers] = useState<LeagueManager[]>([]);
-  const [managerSearchQuery, setManagerSearchQuery] = useState('');
-  const [managerSearchResults, setManagerSearchResults] = useState<MemberSearchResult[]>([]);
-  const [managerSearchLoading, setManagerSearchLoading] = useState(false);
-  const [managerDropdownOpen, setManagerDropdownOpen] = useState(false);
-  const managerDropdownRef = useRef<HTMLDivElement>(null);
-  const [managerHighlightedIndex, setManagerHighlightedIndex] = useState(-1);
-  const managerInputRef = useRef<HTMLInputElement>(null);
 
   const [divisionModalOpen, setDivisionModalOpen] = useState(false);
   const [editingDivision, setEditingDivision] = useState<Division | null>(null);
@@ -276,37 +260,11 @@ export default function LeagueDetail() {
   const [roleMembers, setRoleMembers] = useState<Record<TeamRole, MemberSearchResult | null>>(
     createRoleRecord(null)
   );
-  const [roleQueries, setRoleQueries] = useState<Record<TeamRole, string>>(createRoleRecord(''));
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState<Record<TeamRole, boolean>>(
-    createRoleRecord(false)
-  );
-  const [roleHighlightedIndex, setRoleHighlightedIndex] = useState<Record<TeamRole, number>>(
-    createRoleRecord(-1)
-  );
-  const roleDropdownRefs = useRef<Record<TeamRole, HTMLDivElement | null>>(createRoleRecord(null));
-  const roleInputRefs = useRef<Record<TeamRole, HTMLInputElement | null>>(createRoleRecord(null));
   const [skipRole, setSkipRole] = useState<TeamRole>('fourth');
   const [viceRole, setViceRole] = useState<TeamRole>('third');
-  const [focusedRole, setFocusedRole] = useState<TeamRole | null>(null);
   const [doublesMembers, setDoublesMembers] = useState<
     Record<DoublesRole, MemberSearchResult | null>
   >(createDoublesRecord(null));
-  const [doublesQueries, setDoublesQueries] = useState<Record<DoublesRole, string>>(
-    createDoublesRecord('')
-  );
-  const [doublesDropdownOpen, setDoublesDropdownOpen] = useState<Record<DoublesRole, boolean>>(
-    createDoublesRecord(false)
-  );
-  const [doublesHighlightedIndex, setDoublesHighlightedIndex] = useState<
-    Record<DoublesRole, number>
-  >(createDoublesRecord(-1));
-  const doublesDropdownRefs = useRef<Record<DoublesRole, HTMLDivElement | null>>(
-    createDoublesRecord(null)
-  );
-  const doublesInputRefs = useRef<Record<DoublesRole, HTMLInputElement | null>>(
-    createDoublesRecord(null)
-  );
-  const [focusedDoublesRole, setFocusedDoublesRole] = useState<DoublesRole | null>(null);
 
   const numericLeagueId = useMemo(() => parseInt(leagueId || '', 10), [leagueId]);
   const unassignedRosterMembers = useMemo(
@@ -360,15 +318,6 @@ export default function LeagueDetail() {
       .filter((id): id is number => Number.isFinite(id));
   }, [doublesMembers]);
 
-  const rosterSearchOptions = useMemo(() => {
-    return rosterMembers.map((member) => ({
-      id: member.memberId,
-      name: member.name,
-      email: member.email,
-      assignedTeamId: member.assignedTeamId,
-    }));
-  }, [rosterMembers]);
-
   const rosterAssignmentsByMemberId = useMemo(() => {
     return new Map(rosterMembers.map((member) => [member.memberId, member.assignedTeamId]));
   }, [rosterMembers]);
@@ -389,34 +338,6 @@ export default function LeagueDetail() {
     }
   }, [leagueId, tab, navigate]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (rosterDropdownRef.current && !rosterDropdownRef.current.contains(target)) {
-        setRosterDropdownOpen(false);
-      }
-      if (managerDropdownRef.current && !managerDropdownRef.current.contains(target)) {
-        setManagerDropdownOpen(false);
-      }
-      teamRoles.forEach((role) => {
-        const ref = roleDropdownRefs.current[role];
-        if (ref && !ref.contains(target)) {
-          setRoleDropdownOpen((prev) => ({ ...prev, [role]: false }));
-        }
-      });
-      doublesRoles.forEach((role) => {
-        const ref = doublesDropdownRefs.current[role];
-        if (ref && !ref.contains(target)) {
-          setDoublesDropdownOpen((prev) => ({ ...prev, [role]: false }));
-        }
-      });
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   const loadRoster = async () => {
     const rosterResponse = await get('/leagues/{id}/roster', undefined, {
@@ -662,34 +583,28 @@ export default function LeagueDetail() {
       });
       if (league.format === 'teams') {
         const nextRoleMembers = createRoleRecord<MemberSearchResult | null>(null);
-        const nextRoleQueries = createRoleRecord<string>('');
         let nextSkip: TeamRole | null = null;
         let nextVice: TeamRole | null = null;
         team.roster.forEach((member) => {
           if (teamRoles.includes(member.role as TeamRole)) {
             const role = member.role as TeamRole;
             nextRoleMembers[role] = { id: member.memberId, name: member.name, email: null };
-            nextRoleQueries[role] = member.name;
             if (member.isSkip) nextSkip = role;
             if (member.isVice) nextVice = role;
           }
         });
         setRoleMembers(nextRoleMembers);
-        setRoleQueries(nextRoleQueries);
         setSkipRole(nextSkip ?? 'fourth');
         setViceRole(nextVice ?? 'third');
       } else {
         const nextDoublesMembers = createDoublesRecord<MemberSearchResult | null>(null);
-        const nextDoublesQueries = createDoublesRecord<string>('');
         team.roster.forEach((member) => {
           if (member.role === 'player1' || member.role === 'player2') {
             const role = member.role as DoublesRole;
             nextDoublesMembers[role] = { id: member.memberId, name: member.name, email: null };
-            nextDoublesQueries[role] = member.name;
           }
         });
         setDoublesMembers(nextDoublesMembers);
-        setDoublesQueries(nextDoublesQueries);
       }
     } else {
       setEditingTeam(null);
@@ -699,12 +614,10 @@ export default function LeagueDetail() {
       });
       if (league.format === 'teams') {
         setRoleMembers(createRoleRecord<MemberSearchResult | null>(null));
-        setRoleQueries(createRoleRecord(''));
         setSkipRole('fourth');
         setViceRole('third');
       } else {
         setDoublesMembers(createDoublesRecord<MemberSearchResult | null>(null));
-        setDoublesQueries(createDoublesRecord(''));
       }
     }
 
@@ -721,17 +634,9 @@ export default function LeagueDetail() {
       divisionId: 0,
     });
     setRoleMembers(createRoleRecord<MemberSearchResult | null>(null));
-    setRoleQueries(createRoleRecord(''));
-    setRoleDropdownOpen(createRoleRecord(false));
-    setRoleHighlightedIndex(createRoleRecord(-1));
     setSkipRole('fourth');
     setViceRole('third');
-    setFocusedRole(null);
     setDoublesMembers(createDoublesRecord<MemberSearchResult | null>(null));
-    setDoublesQueries(createDoublesRecord(''));
-    setDoublesDropdownOpen(createDoublesRecord(false));
-    setDoublesHighlightedIndex(createDoublesRecord(-1));
-    setFocusedDoublesRole(null);
     setTeamFormOpen(false);
   };
 
@@ -832,36 +737,6 @@ export default function LeagueDetail() {
     }
   };
 
-  useEffect(() => {
-    const query = rosterSearchQuery.trim();
-    if (query.length < 2) {
-      setRosterSearchResults([]);
-      setRosterDropdownOpen(false);
-      return;
-    }
-
-    setRosterDropdownOpen(true);
-    setRosterHighlightedIndex(-1);
-    const handle = window.setTimeout(async () => {
-      setRosterSearchLoading(true);
-      try {
-        const response = await get(
-          '/leagues/{id}/roster/search',
-          { query },
-          { id: String(numericLeagueId) }
-        );
-        setRosterSearchResults(response);
-      } catch (error: unknown) {
-        console.error('Failed to search roster candidates:', error);
-        showAlert(formatApiError(error, 'Failed to search members'), 'error');
-      } finally {
-        setRosterSearchLoading(false);
-      }
-    }, 200);
-
-    return () => window.clearTimeout(handle);
-  }, [rosterSearchQuery, numericLeagueId]);
-
   const handleAddToRoster = async (candidate: MemberSearchResult) => {
     try {
       await post(
@@ -870,9 +745,6 @@ export default function LeagueDetail() {
         { id: String(numericLeagueId) }
       );
       await loadRoster();
-      setRosterSearchResults([]);
-      setRosterSearchQuery('');
-      setRosterDropdownOpen(false);
     } catch (error: unknown) {
       console.error('Failed to add roster member:', error);
       showAlert(formatApiError(error, 'Failed to add to roster'), 'error');
@@ -899,11 +771,6 @@ export default function LeagueDetail() {
     setBulkRosterMatchedNames([]);
     setBulkRosterUnmatched([]);
     setBulkRosterSelection(null);
-    setBulkRosterQuery('');
-    setBulkRosterResults([]);
-    setBulkRosterLoading(false);
-    setBulkRosterDropdownOpen(false);
-    setBulkRosterHighlightedIndex(-1);
   };
 
   const handleCloseBulkRosterModal = () => {
@@ -932,11 +799,6 @@ export default function LeagueDetail() {
       setBulkRosterMatchedNames(response.matchedNames || []);
       setBulkRosterUnmatched(response.unmatched || []);
       setBulkRosterSelection(null);
-      setBulkRosterQuery('');
-      setBulkRosterResults([]);
-      setBulkRosterLoading(false);
-      setBulkRosterDropdownOpen(false);
-      setBulkRosterHighlightedIndex(-1);
       await loadRoster();
     } catch (error: unknown) {
       console.error('Failed to bulk add roster members:', error);
@@ -946,76 +808,8 @@ export default function LeagueDetail() {
     }
   };
 
-  const handleBulkRosterSearchChange = (value: string) => {
-    setBulkRosterQuery(value);
-    if (bulkRosterSearchTimeout.current) {
-      window.clearTimeout(bulkRosterSearchTimeout.current);
-    }
-
-    if (value.trim().length < 2) {
-      setBulkRosterResults([]);
-      setBulkRosterDropdownOpen(false);
-      setBulkRosterLoading(false);
-      return;
-    }
-
-    setBulkRosterDropdownOpen(true);
-    setBulkRosterHighlightedIndex(-1);
-    bulkRosterSearchTimeout.current = window.setTimeout(async () => {
-      setBulkRosterLoading(true);
-      try {
-        const response = await get(
-          '/leagues/{id}/roster/search',
-          { query: value.trim() },
-          { id: String(numericLeagueId) }
-        );
-        setBulkRosterResults(
-          response.filter((result: MemberSearchResult) => !rosterMemberIds.has(result.id))
-        );
-      } catch (error: unknown) {
-        console.error('Failed to search members:', error);
-        showAlert(formatApiError(error, 'Failed to search members'), 'error');
-      } finally {
-        setBulkRosterLoading(false);
-      }
-    }, 200);
-  };
-
   const handleSelectBulkRosterCandidate = (candidate: MemberSearchResult) => {
     setBulkRosterSelection(candidate);
-    setBulkRosterQuery(candidate.name);
-    setBulkRosterResults([]);
-    setBulkRosterDropdownOpen(false);
-  };
-
-  const handleBulkRosterKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!(bulkRosterDropdownOpen && bulkRosterResults.length > 0)) return;
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setBulkRosterHighlightedIndex((prev) =>
-          prev < bulkRosterResults.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setBulkRosterHighlightedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter':
-        event.preventDefault();
-        if (
-          bulkRosterHighlightedIndex >= 0 &&
-          bulkRosterHighlightedIndex < bulkRosterResults.length
-        ) {
-          handleSelectBulkRosterCandidate(bulkRosterResults[bulkRosterHighlightedIndex]);
-        }
-        break;
-      case 'Escape':
-        setBulkRosterDropdownOpen(false);
-        setBulkRosterHighlightedIndex(-1);
-        break;
-    }
   };
 
   const handleBulkRosterResolve = async () => {
@@ -1040,10 +834,6 @@ export default function LeagueDetail() {
       await loadRoster();
       setBulkRosterUnmatched((prev) => prev.slice(1));
       setBulkRosterSelection(null);
-      setBulkRosterQuery('');
-      setBulkRosterResults([]);
-      setBulkRosterDropdownOpen(false);
-      setBulkRosterHighlightedIndex(-1);
     } catch (error: unknown) {
       console.error('Failed to add selected roster member:', error);
       showAlert(formatApiError(error, 'Failed to add roster member'), 'error');
@@ -1056,10 +846,6 @@ export default function LeagueDetail() {
     if (bulkRosterUnmatched.length === 0) return;
     setBulkRosterUnmatched((prev) => prev.slice(1));
     setBulkRosterSelection(null);
-    setBulkRosterQuery('');
-    setBulkRosterResults([]);
-    setBulkRosterDropdownOpen(false);
-    setBulkRosterHighlightedIndex(-1);
   };
 
   useEffect(() => {
@@ -1081,36 +867,6 @@ export default function LeagueDetail() {
       .catch(() => setSelectedTeamStats(null));
   }, [selectedTeam]);
 
-  useEffect(() => {
-    const query = managerSearchQuery.trim();
-    if (query.length < 2) {
-      setManagerSearchResults([]);
-      setManagerDropdownOpen(false);
-      return;
-    }
-
-    setManagerDropdownOpen(true);
-    setManagerHighlightedIndex(-1);
-    const handle = window.setTimeout(async () => {
-      setManagerSearchLoading(true);
-      try {
-        const response = await get(
-          '/leagues/{id}/managers/search',
-          { query },
-          { id: String(numericLeagueId) }
-        );
-        setManagerSearchResults(response);
-      } catch (error: unknown) {
-        console.error('Failed to search managers:', error);
-        showAlert(formatApiError(error, 'Failed to search members'), 'error');
-      } finally {
-        setManagerSearchLoading(false);
-      }
-    }, 200);
-
-    return () => window.clearTimeout(handle);
-  }, [managerSearchQuery, numericLeagueId]);
-
   const handleAddManager = async (candidate: MemberSearchResult) => {
     try {
       await post(
@@ -1119,9 +875,6 @@ export default function LeagueDetail() {
         { id: String(numericLeagueId) }
       );
       await loadManagers();
-      setManagerSearchResults([]);
-      setManagerSearchQuery('');
-      setManagerDropdownOpen(false);
     } catch (error: unknown) {
       console.error('Failed to add manager:', error);
       showAlert(formatApiError(error, 'Failed to add manager'), 'error');
@@ -1141,165 +894,16 @@ export default function LeagueDetail() {
     }
   };
 
-  const handleRosterKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!rosterDropdownOpen || rosterSearchResults.length === 0) return;
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setRosterHighlightedIndex((prev) =>
-          prev < rosterSearchResults.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setRosterHighlightedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter':
-        event.preventDefault();
-        if (rosterHighlightedIndex >= 0 && rosterHighlightedIndex < rosterSearchResults.length) {
-          const selected = rosterSearchResults[rosterHighlightedIndex];
-          handleAddToRoster(selected);
-        }
-        break;
-      case 'Escape':
-        setRosterDropdownOpen(false);
-        setRosterHighlightedIndex(-1);
-        break;
-    }
-  };
-
-  const handleManagerKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!managerDropdownOpen || managerSearchResults.length === 0) return;
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setManagerHighlightedIndex((prev) =>
-          prev < managerSearchResults.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setManagerHighlightedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter':
-        event.preventDefault();
-        if (managerHighlightedIndex >= 0 && managerHighlightedIndex < managerSearchResults.length) {
-          const selected = managerSearchResults[managerHighlightedIndex];
-          handleAddManager(selected);
-        }
-        break;
-      case 'Escape':
-        setManagerDropdownOpen(false);
-        setManagerHighlightedIndex(-1);
-        break;
-    }
-  };
-
-  const getAvailableRoleResults = (role: TeamRole) => {
-    const query = roleQueries[role].trim().toLowerCase();
-    const currentMemberId = roleMembers[role]?.id;
-    const results = rosterSearchOptions.filter((candidate) => {
-      const matches =
-        query.length === 0 ||
-        candidate.name.toLowerCase().includes(query) ||
-        (candidate.email || '').toLowerCase().includes(query);
-      if (!matches) return false;
-      const assignedTeamId = rosterAssignmentsByMemberId.get(candidate.id);
-      if (assignedTeamId && assignedTeamId !== editingTeam?.id) {
-        return false;
-      }
-      if (candidate.id === currentMemberId) return true;
-      return !selectedRoleMemberIds.includes(candidate.id);
-    });
-    return results.slice(0, 8);
-  };
-
   const handleSelectRoleMember = (role: TeamRole, selected: MemberSearchResult) => {
     if (selectedRoleMemberIds.includes(selected.id) && roleMembers[role]?.id !== selected.id) {
       showAlert('Member is already selected for another role.', 'warning');
       return;
     }
     setRoleMembers((prev) => ({ ...prev, [role]: selected }));
-    setRoleQueries((prev) => ({ ...prev, [role]: selected.name }));
-    setRoleDropdownOpen((prev) => ({ ...prev, [role]: false }));
-    setRoleHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-    setFocusedRole(role);
-    roleInputRefs.current[role]?.focus();
   };
 
   const handleClearRoleMember = (role: TeamRole) => {
     setRoleMembers((prev) => ({ ...prev, [role]: null }));
-    setRoleQueries((prev) => ({ ...prev, [role]: '' }));
-    setRoleDropdownOpen((prev) => ({ ...prev, [role]: false }));
-    setRoleHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-  };
-
-  const handleRoleBlur = (role: TeamRole) => {
-    setFocusedRole((current) => (current === role ? null : current));
-    setRoleDropdownOpen((prev) => ({ ...prev, [role]: false }));
-    setRoleHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-
-    const selected = roleMembers[role];
-    const query = roleQueries[role].trim();
-    if (!selected || query !== selected.name) {
-      handleClearRoleMember(role);
-    }
-  };
-
-  const handleRoleKeyDown = (role: TeamRole, event: React.KeyboardEvent<HTMLInputElement>) => {
-    const availableResults = getAvailableRoleResults(role);
-    if (!roleDropdownOpen[role] || availableResults.length === 0) return;
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setRoleHighlightedIndex((prev) => ({
-          ...prev,
-          [role]: prev[role] < availableResults.length - 1 ? prev[role] + 1 : prev[role],
-        }));
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setRoleHighlightedIndex((prev) => ({
-          ...prev,
-          [role]: prev[role] > 0 ? prev[role] - 1 : 0,
-        }));
-        break;
-      case 'Enter':
-        event.preventDefault();
-        if (
-          roleHighlightedIndex[role] >= 0 &&
-          roleHighlightedIndex[role] < availableResults.length
-        ) {
-          handleSelectRoleMember(role, availableResults[roleHighlightedIndex[role]]);
-        }
-        break;
-      case 'Escape':
-        setRoleDropdownOpen((prev) => ({ ...prev, [role]: false }));
-        setRoleHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-        break;
-    }
-  };
-
-  const getAvailableDoublesResults = (role: DoublesRole) => {
-    const query = doublesQueries[role].trim().toLowerCase();
-    const currentMemberId = doublesMembers[role]?.id;
-    const results = rosterSearchOptions.filter((candidate) => {
-      const matches =
-        query.length === 0 ||
-        candidate.name.toLowerCase().includes(query) ||
-        (candidate.email || '').toLowerCase().includes(query);
-      if (!matches) return false;
-      const assignedTeamId = rosterAssignmentsByMemberId.get(candidate.id);
-      if (assignedTeamId && assignedTeamId !== editingTeam?.id) {
-        return false;
-      }
-      if (candidate.id === currentMemberId) return true;
-      return !selectedDoublesMemberIds.includes(candidate.id);
-    });
-    return results.slice(0, 8);
   };
 
   const handleSelectDoublesMember = (role: DoublesRole, selected: MemberSearchResult) => {
@@ -1311,68 +915,10 @@ export default function LeagueDetail() {
       return;
     }
     setDoublesMembers((prev) => ({ ...prev, [role]: selected }));
-    setDoublesQueries((prev) => ({ ...prev, [role]: selected.name }));
-    setDoublesDropdownOpen((prev) => ({ ...prev, [role]: false }));
-    setDoublesHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-    setFocusedDoublesRole(role);
-    doublesInputRefs.current[role]?.focus();
   };
 
   const handleClearDoublesMember = (role: DoublesRole) => {
     setDoublesMembers((prev) => ({ ...prev, [role]: null }));
-    setDoublesQueries((prev) => ({ ...prev, [role]: '' }));
-    setDoublesDropdownOpen((prev) => ({ ...prev, [role]: false }));
-    setDoublesHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-  };
-
-  const handleDoublesBlur = (role: DoublesRole) => {
-    setFocusedDoublesRole((current) => (current === role ? null : current));
-    setDoublesDropdownOpen((prev) => ({ ...prev, [role]: false }));
-    setDoublesHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-
-    const selected = doublesMembers[role];
-    const query = doublesQueries[role].trim();
-    if (!selected || query !== selected.name) {
-      handleClearDoublesMember(role);
-    }
-  };
-
-  const handleDoublesKeyDown = (
-    role: DoublesRole,
-    event: React.KeyboardEvent<HTMLInputElement>
-  ) => {
-    const availableResults = getAvailableDoublesResults(role);
-    if (!doublesDropdownOpen[role] || availableResults.length === 0) return;
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setDoublesHighlightedIndex((prev) => ({
-          ...prev,
-          [role]: prev[role] < availableResults.length - 1 ? prev[role] + 1 : prev[role],
-        }));
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setDoublesHighlightedIndex((prev) => ({
-          ...prev,
-          [role]: prev[role] > 0 ? prev[role] - 1 : 0,
-        }));
-        break;
-      case 'Enter':
-        event.preventDefault();
-        if (
-          doublesHighlightedIndex[role] >= 0 &&
-          doublesHighlightedIndex[role] < availableResults.length
-        ) {
-          handleSelectDoublesMember(role, availableResults[doublesHighlightedIndex[role]]);
-        }
-        break;
-      case 'Escape':
-        setDoublesDropdownOpen((prev) => ({ ...prev, [role]: false }));
-        setDoublesHighlightedIndex((prev) => ({ ...prev, [role]: -1 }));
-        break;
-    }
   };
 
   const buildTeamRoster = () => {
@@ -1613,7 +1159,9 @@ export default function LeagueDetail() {
   if (loading) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+        <AppPage>
+          <AppStateCard title="Loading league..." />
+        </AppPage>
       </Layout>
     );
   }
@@ -1621,23 +1169,21 @@ export default function LeagueDetail() {
   if (!league) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">League not found.</div>
+        <AppPage>
+          <AppStateCard title="League not found." />
+        </AppPage>
       </Layout>
     );
   }
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="app-page-title">{league.name}</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">League details</p>
-          </div>
-          <Button variant="secondary" onClick={() => navigate('/leagues')}>
-            Back to leagues
-          </Button>
-        </div>
+      <AppPage>
+        <AppPageHeader
+          title={league.name}
+          description="League details"
+          actions={<BackButton label="Leagues" onClick={() => navigate('/leagues')} />}
+        />
 
         {leagueId && (
           <LeagueTabs
@@ -1953,7 +1499,6 @@ export default function LeagueDetail() {
                       {league.format === 'teams' ? (
                         <div className="space-y-4">
                           {teamRoles.map((role) => {
-                            const availableResults = getAvailableRoleResults(role);
                             return (
                               <div key={role} className="space-y-2">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1997,67 +1542,29 @@ export default function LeagueDetail() {
                                     </label>
                                   </div>
                                 </div>
-                                <div
-                                  className="relative"
-                                  ref={(el) => (roleDropdownRefs.current[role] = el)}
-                                >
-                                  <input
-                                    ref={(el) => (roleInputRefs.current[role] = el)}
-                                    type="text"
-                                    value={roleQueries[role]}
-                                    onChange={(e) => {
-                                      const nextValue = e.target.value;
-                                      setRoleQueries((prev) => ({ ...prev, [role]: nextValue }));
-                                      if (
-                                        roleMembers[role] &&
-                                        nextValue !== roleMembers[role]?.name
-                                      ) {
-                                        setRoleMembers((prev) => ({ ...prev, [role]: null }));
-                                      }
-                                      setRoleDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                    }}
-                                    onFocus={() => {
-                                      setFocusedRole(role);
-                                      setRoleDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                    }}
-                                    onBlur={() => handleRoleBlur(role)}
-                                    onKeyDown={(e) => handleRoleKeyDown(role, e)}
-                                    placeholder={`Select ${roleLabels[role].toLowerCase()}`}
-                                    className="app-input"
-                                  />
-                                  {focusedRole === role && roleDropdownOpen[role] && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                      {availableResults.length === 0 ? (
-                                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                                          No members found
-                                        </div>
-                                      ) : (
-                                        availableResults.map((result, index) => (
-                                          <button
-                                            type="button"
-                                            key={result.id}
-                                            onMouseDown={(event) => event.preventDefault()}
-                                            onClick={() => handleSelectRoleMember(role, result)}
-                                            className={`w-full text-left px-3 py-2 text-sm ${
-                                              index === roleHighlightedIndex[role]
-                                                ? 'bg-gray-100 dark:bg-gray-700'
-                                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                                            }`}
-                                          >
-                                            <div className="font-medium text-gray-800 dark:text-gray-200">
-                                              {result.name}
-                                            </div>
-                                            {result.email && (
-                                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                {result.email}
-                                              </div>
-                                            )}
-                                          </button>
-                                        ))
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                                <MemberAutocomplete
+                                  value={roleMembers[role]?.id ?? ''}
+                                  onChange={(nextValue) => {
+                                    if (nextValue === '') {
+                                      handleClearRoleMember(role);
+                                    }
+                                  }}
+                                  selectedOption={roleMembers[role]}
+                                  onSelectOption={(option) => handleSelectRoleMember(role, option)}
+                                  placeholder={`Select ${roleLabels[role].toLowerCase()}`}
+                                  minQueryLength={0}
+                                  noMatchesText="No members found"
+                                  filterOption={(option) => {
+                                    const currentMemberId = roleMembers[role]?.id;
+                                    if (!rosterMemberIds.has(option.id)) return false;
+                                    const assignedTeamId = rosterAssignmentsByMemberId.get(option.id);
+                                    if (assignedTeamId && assignedTeamId !== editingTeam?.id) {
+                                      return false;
+                                    }
+                                    if (option.id === currentMemberId) return true;
+                                    return !selectedRoleMemberIds.includes(option.id);
+                                  }}
+                                />
                               </div>
                             );
                           })}
@@ -2070,73 +1577,34 @@ export default function LeagueDetail() {
                       ) : (
                         <div className="space-y-4">
                           {doublesRoles.map((role) => {
-                            const availableResults = getAvailableDoublesResults(role);
                             return (
                               <div key={role} className="space-y-2">
                                 <label className="text-xs text-gray-500 dark:text-gray-400">
                                   {roleLabels[role]}
                                 </label>
-                                <div
-                                  className="relative"
-                                  ref={(el) => (doublesDropdownRefs.current[role] = el)}
-                                >
-                                  <input
-                                    ref={(el) => (doublesInputRefs.current[role] = el)}
-                                    type="text"
-                                    value={doublesQueries[role]}
-                                    onChange={(e) => {
-                                      const nextValue = e.target.value;
-                                      setDoublesQueries((prev) => ({ ...prev, [role]: nextValue }));
-                                      if (
-                                        doublesMembers[role] &&
-                                        nextValue !== doublesMembers[role]?.name
-                                      ) {
-                                        setDoublesMembers((prev) => ({ ...prev, [role]: null }));
-                                      }
-                                      setDoublesDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                    }}
-                                    onFocus={() => {
-                                      setFocusedDoublesRole(role);
-                                      setDoublesDropdownOpen((prev) => ({ ...prev, [role]: true }));
-                                    }}
-                                    onBlur={() => handleDoublesBlur(role)}
-                                    onKeyDown={(e) => handleDoublesKeyDown(role, e)}
-                                    placeholder={`Select ${roleLabels[role].toLowerCase()}`}
-                                    className="app-input"
-                                  />
-                                  {focusedDoublesRole === role && doublesDropdownOpen[role] && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                      {availableResults.length === 0 ? (
-                                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                                          No members found
-                                        </div>
-                                      ) : (
-                                        availableResults.map((result, index) => (
-                                          <button
-                                            type="button"
-                                            key={result.id}
-                                            onMouseDown={(event) => event.preventDefault()}
-                                            onClick={() => handleSelectDoublesMember(role, result)}
-                                            className={`w-full text-left px-3 py-2 text-sm ${
-                                              index === doublesHighlightedIndex[role]
-                                                ? 'bg-gray-100 dark:bg-gray-700'
-                                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                                            }`}
-                                          >
-                                            <div className="font-medium text-gray-800 dark:text-gray-200">
-                                              {result.name}
-                                            </div>
-                                            {result.email && (
-                                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                {result.email}
-                                              </div>
-                                            )}
-                                          </button>
-                                        ))
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                                <MemberAutocomplete
+                                  value={doublesMembers[role]?.id ?? ''}
+                                  onChange={(nextValue) => {
+                                    if (nextValue === '') {
+                                      handleClearDoublesMember(role);
+                                    }
+                                  }}
+                                  selectedOption={doublesMembers[role]}
+                                  onSelectOption={(option) => handleSelectDoublesMember(role, option)}
+                                  placeholder={`Select ${roleLabels[role].toLowerCase()}`}
+                                  minQueryLength={0}
+                                  noMatchesText="No members found"
+                                  filterOption={(option) => {
+                                    const currentMemberId = doublesMembers[role]?.id;
+                                    if (!rosterMemberIds.has(option.id)) return false;
+                                    const assignedTeamId = rosterAssignmentsByMemberId.get(option.id);
+                                    if (assignedTeamId && assignedTeamId !== editingTeam?.id) {
+                                      return false;
+                                    }
+                                    if (option.id === currentMemberId) return true;
+                                    return !selectedDoublesMemberIds.includes(option.id);
+                                  }}
+                                />
                               </div>
                             );
                           })}
@@ -2292,56 +1760,18 @@ export default function LeagueDetail() {
                     Search any member to add as a league manager.
                   </p>
                 </div>
-                <div className="relative" ref={managerDropdownRef}>
-                  <input
-                    ref={managerInputRef}
-                    type="text"
-                    value={managerSearchQuery}
-                    onChange={(e) => {
-                      setManagerSearchQuery(e.target.value);
-                      setManagerDropdownOpen(true);
-                    }}
-                    onFocus={() => setManagerDropdownOpen(true)}
-                    onKeyDown={handleManagerKeyDown}
-                    placeholder="Search members by name or email"
-                    className="app-input"
-                  />
-                  {managerDropdownOpen && managerSearchQuery.trim().length >= 2 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                      {managerSearchLoading ? (
-                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                          Searching...
-                        </div>
-                      ) : managerSearchResults.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                          No members found
-                        </div>
-                      ) : (
-                        managerSearchResults.map((result, index) => (
-                          <button
-                            type="button"
-                            key={result.id}
-                            onClick={() => handleAddManager(result)}
-                            className={`w-full text-left px-3 py-2 text-sm ${
-                              index === managerHighlightedIndex
-                                ? 'bg-gray-100 dark:bg-gray-700'
-                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            <div className="font-medium text-gray-800 dark:text-gray-200">
-                              {result.name}
-                            </div>
-                            {result.email && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {result.email}
-                              </div>
-                            )}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                <MemberAutocomplete
+                  value=""
+                  onChange={() => {}}
+                  onSelectOption={handleAddManager}
+                  placeholder="Search members by name or email"
+                  minQueryLength={2}
+                  openOnFocus={false}
+                  noMatchesText="No members found"
+                  filterOption={(option) =>
+                    !managers.some((managerEntry) => managerEntry.memberId === option.id)
+                  }
+                />
               </div>
             )}
           </div>
@@ -2391,56 +1821,16 @@ export default function LeagueDetail() {
                     Bulk add
                   </Button>
                 </div>
-                <div className="relative" ref={rosterDropdownRef}>
-                  <input
-                    ref={rosterInputRef}
-                    type="text"
-                    value={rosterSearchQuery}
-                    onChange={(e) => {
-                      setRosterSearchQuery(e.target.value);
-                      setRosterDropdownOpen(true);
-                    }}
-                    onFocus={() => setRosterDropdownOpen(true)}
-                    onKeyDown={handleRosterKeyDown}
-                    placeholder="Search members by name or email"
-                    className="app-input"
-                  />
-                  {rosterDropdownOpen && rosterSearchQuery.trim().length >= 2 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                      {rosterSearchLoading ? (
-                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                          Searching...
-                        </div>
-                      ) : rosterSearchResults.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                          No members found
-                        </div>
-                      ) : (
-                        rosterSearchResults.map((result, index) => (
-                          <button
-                            type="button"
-                            key={result.id}
-                            onClick={() => handleAddToRoster(result)}
-                            className={`w-full text-left px-3 py-2 text-sm ${
-                              index === rosterHighlightedIndex
-                                ? 'bg-gray-100 dark:bg-gray-700'
-                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            <div className="font-medium text-gray-800 dark:text-gray-200">
-                              {result.name}
-                            </div>
-                            {result.email && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {result.email}
-                              </div>
-                            )}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                <MemberAutocomplete
+                  value=""
+                  onChange={() => {}}
+                  onSelectOption={handleAddToRoster}
+                  placeholder="Search members by name or email"
+                  minQueryLength={2}
+                  openOnFocus={false}
+                  noMatchesText="No members found"
+                  filterOption={(option) => !rosterMemberIds.has(option.id)}
+                />
               </div>
             )}
 
@@ -2493,7 +1883,7 @@ export default function LeagueDetail() {
             </div>
           </div>
         )}
-      </div>
+      </AppPage>
 
       {canManageSetup && (
         <Modal
@@ -2995,52 +2385,21 @@ export default function LeagueDetail() {
                           ))}
                       </div>
                     )}
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={bulkRosterQuery}
-                        onChange={(e) => handleBulkRosterSearchChange(e.target.value)}
-                        onFocus={() => setBulkRosterDropdownOpen(true)}
-                        onKeyDown={handleBulkRosterKeyDown}
-                        placeholder="Search members by name or email"
-                        className="app-input"
-                      />
-                      {bulkRosterDropdownOpen && bulkRosterQuery.trim().length >= 2 && (
-                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                          {bulkRosterLoading ? (
-                            <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                              Searching...
-                            </div>
-                          ) : bulkRosterResults.length === 0 ? (
-                            <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                              No members found
-                            </div>
-                          ) : (
-                            bulkRosterResults.map((result, resultIndex) => (
-                              <button
-                                type="button"
-                                key={result.id}
-                                onClick={() => handleSelectBulkRosterCandidate(result)}
-                                className={`w-full text-left px-3 py-2 text-sm ${
-                                  resultIndex === bulkRosterHighlightedIndex
-                                    ? 'bg-gray-100 dark:bg-gray-700'
-                                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                                }`}
-                              >
-                                <div className="font-medium text-gray-800 dark:text-gray-200">
-                                  {result.name}
-                                </div>
-                                {result.email && (
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                                    {result.email}
-                                  </div>
-                                )}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <MemberAutocomplete
+                      value={bulkRosterSelection?.id ?? ''}
+                      onChange={(nextValue) => {
+                        if (nextValue === '') {
+                          setBulkRosterSelection(null);
+                        }
+                      }}
+                      selectedOption={bulkRosterSelection}
+                      onSelectOption={handleSelectBulkRosterCandidate}
+                      placeholder="Search members by name or email"
+                      minQueryLength={2}
+                      openOnFocus={false}
+                      noMatchesText="No members found"
+                      filterOption={(option) => !rosterMemberIds.has(option.id)}
+                    />
                     {bulkRosterSelection && (
                       <div className="text-xs text-gray-500 dark:text-gray-400">
                         Selected: {bulkRosterSelection.name}

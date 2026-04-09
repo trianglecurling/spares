@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
 import PublicLayout from '../components/PublicLayout';
+import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -186,7 +187,13 @@ export default function PublicHomePage() {
       >
         <section className="public-section">
           <div className="public-container">
-            <div className="public-card p-6 text-red-700">{error}</div>
+            <div className="public-content">
+              <PublicStateCard
+                title="Unable to load homepage"
+                description={error}
+                tone="error"
+              />
+            </div>
           </div>
         </section>
       </PublicLayout>
@@ -219,7 +226,12 @@ export default function PublicHomePage() {
         {!data ? (
           showDelayedLoading ? (
             <section className="public-section">
-              <div className="public-card p-6 text-gray-600">Loading homepage...</div>
+              <div className="public-content">
+                <PublicStateCard
+                  title="Loading homepage..."
+                  description="Pulling in the latest public content, featured updates, and club highlights."
+                />
+              </div>
             </section>
           ) : null
         ) : (
@@ -325,7 +337,12 @@ export default function PublicHomePage() {
             <section className="public-section pt-2">
               <h2 className="public-subheading">Latest updates</h2>
               {data.featuredArticles.length === 0 ? (
-                <div className="public-card mt-4 p-5 text-gray-600">No featured resources are available yet. Please check back soon.</div>
+                <div className="mt-4">
+                  <PublicStateCard
+                    title="No featured resources yet."
+                    description="Check back soon for club updates, guides, and highlighted articles."
+                  />
+                </div>
               ) : (
                 <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {data.featuredArticles.map((article) => (

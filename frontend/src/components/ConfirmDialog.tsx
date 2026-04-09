@@ -93,17 +93,18 @@ export default function ConfirmDialog({
             <button
               onClick={onCancel}
               className="ml-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+              aria-label="Close confirmation dialog"
             >
               <HiXMark className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="mt-6 flex justify-between space-x-3">
-            <Button variant={styles.buttonVariant} onClick={onConfirm}>
-              {confirmText}
-            </Button>
+          <div className="mt-6 flex justify-end gap-3">
             <Button variant="secondary" onClick={onCancel}>
               {cancelText}
+            </Button>
+            <Button variant={styles.buttonVariant} onClick={onConfirm}>
+              {confirmText}
             </Button>
           </div>
         </div>

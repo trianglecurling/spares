@@ -1,0 +1,17 @@
+---
+description: Backend API conventions for route and contract consistency
+globs: backend/src/**/*.ts
+alwaysApply: false
+---
+
+# Backend API Conventions
+
+- Keep live API registration and OpenAPI generation aligned through the shared route-registration module.
+- Keep API routes under `/api` and update shared registration when adding a new route plugin.
+- Use `ApiErrorResponse` from `backend/src/api/types.ts` as the default error envelope.
+- Prefer shared helpers such as `backend/src/api/errors.ts` for common error replies instead of hand-rolling similar payloads.
+- Use `400` for validation or malformed input, `401` for auth failures, `403` for permission denial, `404` for missing or hidden resources, `409` for conflicts, and `500` or `503` for server failures.
+- Prefer `Unauthorized` for auth failures and `Forbidden` for generic permission failures unless a domain-specific message clearly helps the UI.
+- Include structured `details` on validation failures when the frontend may need field-level feedback.
+- Prefer `frontend/src/api/client.ts` as the consumer path when the endpoint is covered by generated OpenAPI types.
+- Prefer these references: `backend/src/api/types.ts`, `backend/src/api/errors.ts`, and `backend/src/registerRoutes.ts`.

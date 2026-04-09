@@ -6,6 +6,7 @@ import { get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
+import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 
@@ -218,7 +219,7 @@ export default function Leagues() {
       let data;
       try {
         data = JSON.parse(importJson);
-      } catch (e) {
+      } catch {
         showAlert('Invalid JSON. Please check your data.', 'error');
         setImporting(false);
         return;
@@ -292,16 +293,12 @@ export default function Leagues() {
         />
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <AppStateCard title="Loading leagues..." />
         ) : leagues.length === 0 ? (
-          <div className="app-card py-12 text-center">
-            <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">
-              No leagues configured yet.
-            </p>
-            {canManageLeagueDetails && (
-              <Button onClick={() => handleOpenModal()}>Create your first league</Button>
-            )}
-          </div>
+          <AppStateCard
+            title="No leagues configured yet."
+            action={canManageLeagueDetails ? <Button onClick={() => handleOpenModal()}>Create your first league</Button> : undefined}
+          />
         ) : (
           <div className="grid gap-4">
             {leagues.map((league) => (

@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, and, sql, asc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { Member, MemberAvailability } from '../types.js';
+import { MemberAvailability } from '../types.js';
 import {
   availabilityMembersResponseSchema,
   availabilityResponseSchema,

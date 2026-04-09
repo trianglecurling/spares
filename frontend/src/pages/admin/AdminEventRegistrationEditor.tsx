@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { HiArrowLeft } from 'react-icons/hi2';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import api, { formatApiError } from '../../utils/api';
@@ -392,15 +392,10 @@ export default function AdminEventRegistrationEditor() {
           title={pageTitle}
           description={isNew ? 'Create a manual registration. Payment is bypassed for admin-created records.' : 'View and edit full registration details.'}
           actions={
-            <Button
-              type="button"
-              variant="secondary"
+            <BackButton
+              label="Registrations"
               onClick={() => navigate(`/admin/events/${event.id}/registrations`)}
-              className="inline-flex items-center gap-2"
-            >
-              <HiArrowLeft className="h-4 w-4" />
-              Registrations
-            </Button>
+            />
           }
         />
 

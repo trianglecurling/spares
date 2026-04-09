@@ -3,6 +3,7 @@ import { HiCalendarDays, HiCheckCircle, HiXCircle } from 'react-icons/hi2';
 import { get, put } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
+import InlineStateMessage from '../../components/InlineStateMessage';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 
@@ -192,9 +193,9 @@ export default function LeagueSheets({ leagueId }: LeagueSheetsProps) {
   return (
     <div className="space-y-4">
       {loading ? (
-        <div className="text-sm text-gray-500 dark:text-gray-400">Loading...</div>
+        <InlineStateMessage title="Loading draws..." />
       ) : drawSlots.length === 0 ? (
-        <div className="text-sm text-gray-500 dark:text-gray-400">No draws configured yet.</div>
+        <InlineStateMessage title="No draws configured yet." />
       ) : (
         <div className="space-y-3">
           {drawsWithCounts.map(({ draw, message, scheduledSheetIds }) => (

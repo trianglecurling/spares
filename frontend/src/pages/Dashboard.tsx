@@ -17,9 +17,10 @@ import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import api from '../utils/api';
 import { formatApiError } from '../utils/api';
+import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
-import NotificationModal from '../components/NotificationModal';
+import AppStateCard from '../components/AppStateCard';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -138,11 +139,6 @@ export default function Dashboard() {
   const [cancelRequest, setCancelRequest] = useState<SpareRequest | null>(null);
   const [cancelComment, setCancelComment] = useState('');
   const [canceling, setCanceling] = useState(false);
-  const [notification, setNotification] = useState<{
-    isOpen: boolean;
-    message: string;
-    variant: 'success' | 'error';
-  }>({ isOpen: false, message: '', variant: 'success' });
   const [dashboardAlert, setDashboardAlert] = useState<{
     title?: string;
     body?: string;
@@ -286,24 +282,20 @@ export default function Dashboard() {
                 ? 'Sorry, this spare request has already been filled. See your dashboard for any unfilled spare requests.'
                 : 'Sorry, this spare request has been deleted and is no longer available. See your dashboard for any unfilled spare requests.';
 
-            setNotification({ isOpen: true, message, variant: 'error' });
+            showAlert(message, 'error');
           } catch (error: unknown) {
             const status = axios.isAxiosError(error) ? error.response?.status : undefined;
             // 404 -> deleted; 403 -> not available to this user (treat as deleted for UX)
             if (status === 404 || status === 403) {
-              setNotification({
-                isOpen: true,
-                message:
-                  'Sorry, this spare request has been deleted and is no longer available. See your dashboard for any unfilled spare requests.',
-                variant: 'error',
-              });
+              showAlert(
+                'Sorry, this spare request has been deleted and is no longer available. See your dashboard for any unfilled spare requests.',
+                'error'
+              );
             } else {
-              setNotification({
-                isOpen: true,
-                message:
-                  'Sorry, we could not load that spare request. See your dashboard for any unfilled spare requests.',
-                variant: 'error',
-              });
+              showAlert(
+                'Sorry, we could not load that spare request. See your dashboard for any unfilled spare requests.',
+                'error'
+              );
             }
           } finally {
             searchParams.delete('requestId');
@@ -410,12 +402,7 @@ export default function Dashboard() {
       setSelectedRequest(null);
       setComment('');
 
-      // Show success notification
-      setNotification({
-        isOpen: true,
-        message: `You've successfully signed up to spare for ${selectedRequest.requestedForName}!`,
-        variant: 'success',
-      });
+      showAlert(`You've successfully signed up to spare for ${selectedRequest.requestedForName}!`, 'success');
 
       // If this user just came through first-login via a spare accept link, optionally prompt them
       // to set their availability after they've successfully accepted.
@@ -448,32 +435,20 @@ export default function Dashboard() {
 
       // Check for specific error cases
       if (status === 404) {
-        setNotification({
-          isOpen: true,
-          message: 'This spare request has been deleted and is no longer available.',
-          variant: 'error',
-        });
+        showAlert('This spare request has been deleted and is no longer available.', 'error');
         // Reload data to remove the deleted request from the list
         await loadAllData();
         setSelectedRequest(null);
         setComment('');
       } else if (status === 400) {
         const errorMessage = data?.error || 'This spare request is no longer open.';
-        setNotification({
-          isOpen: true,
-          message: errorMessage,
-          variant: 'error',
-        });
+        showAlert(errorMessage, 'error');
         // Reload data to update the request status
         await loadAllData();
         setSelectedRequest(null);
         setComment('');
       } else {
-        setNotification({
-          isOpen: true,
-          message: formatApiError(error, 'Failed to respond'),
-          variant: 'error',
-        });
+        showAlert(formatApiError(error, 'Failed to respond'), 'error');
       }
     } finally {
       setSubmitting(false);
@@ -501,19 +476,10 @@ export default function Dashboard() {
       setCancelRequest(null);
       setCancelComment('');
 
-      // Show success notification
-      setNotification({
-        isOpen: true,
-        message: `You've successfully canceled sparing for ${cancelRequest.requestedForName}.`,
-        variant: 'success',
-      });
+      showAlert(`You've successfully canceled sparing for ${cancelRequest.requestedForName}.`, 'success');
     } catch (error) {
       console.error('Failed to cancel sparing:', error);
-      setNotification({
-        isOpen: true,
-        message: formatApiError(error, 'Failed to cancel sparing'),
-        variant: 'error',
-      });
+      showAlert(formatApiError(error, 'Failed to cancel sparing'), 'error');
     } finally {
       setCanceling(false);
     }
@@ -537,11 +503,7 @@ export default function Dashboard() {
       await loadAllData();
       setDeclineRequest(null);
       setDeclineComment('');
-      setNotification({
-        isOpen: true,
-        message: `You declined the private spare request for ${declineRequest.requestedForName}.`,
-        variant: 'success',
-      });
+      showAlert(`You declined the private spare request for ${declineRequest.requestedForName}.`, 'success');
 
       // If this user just came through first-login via a decline link, optionally prompt them
       // to set their availability after they've declined.
@@ -566,11 +528,7 @@ export default function Dashboard() {
       }
     } catch (error: unknown) {
       console.error('Failed to decline spare request:', error);
-      setNotification({
-        isOpen: true,
-        message: formatApiError(error, 'Failed to decline'),
-        variant: 'error',
-      });
+      showAlert(formatApiError(error, 'Failed to decline'), 'error');
     } finally {
       setDeclining(false);
     }
@@ -715,7 +673,7 @@ export default function Dashboard() {
                   {renderMe(request.filledByName, member?.name)}
                 </p>
               )}
-              {showMessage && request.message && <p className="italic mt-2">"{request.message}"</p>}
+              {showMessage && request.message && <p className="italic mt-2">&quot;{request.message}&quot;</p>}
             </div>
           </div>
 
@@ -828,7 +786,7 @@ export default function Dashboard() {
         )}
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <AppStateCard title="Loading dashboard..." />
         ) : (
           <div className="space-y-6">
             {/* My Upcoming Games */}
@@ -1008,7 +966,7 @@ export default function Dashboard() {
                                   {renderMe(request.requesterName, member?.name)}
                                 </p>
                               )}
-                            {request.message && <p className="italic mt-2">"{request.message}"</p>}
+                            {request.message && <p className="italic mt-2">&quot;{request.message}&quot;</p>}
                             {request.status === 'filled' && request.filledByName && (
                               <>
                                 <p className="text-green-700 dark:text-green-400 font-medium mt-2">
@@ -1042,7 +1000,7 @@ export default function Dashboard() {
                                   Message from {renderMe(request.filledByName, member?.name)}:
                                 </p>
                                 <p className="text-sm text-gray-600 dark:text-gray-400 italic">
-                                  "{request.sparerComment}"
+                                  &quot;{request.sparerComment}&quot;
                                 </p>
                               </div>
                             )}
@@ -1059,7 +1017,7 @@ export default function Dashboard() {
             {ccRequests.length > 0 && (
               <div>
                 <h2 className="app-section-title mb-4">
-                  Requests I've been CC&apos;d on
+                  Requests I&apos;ve been CC&apos;d on
                 </h2>
                 <div className="space-y-4">
                   {ccRequests.map((request) => (
@@ -1099,7 +1057,7 @@ export default function Dashboard() {
                               </p>
                             )}
                             {request.message ? (
-                              <p className="italic mt-2">"{request.message}"</p>
+                              <p className="italic mt-2">&quot;{request.message}&quot;</p>
                             ) : null}
                           </div>
                         </div>
@@ -1207,7 +1165,7 @@ export default function Dashboard() {
         {selectedRequest && (
           <div className="space-y-4">
             <p className="text-gray-700 dark:text-gray-300">
-              You're signing up to spare for <strong>{selectedRequest.requestedForName}</strong> on{' '}
+              You&apos;re signing up to spare for <strong>{selectedRequest.requestedForName}</strong> on{' '}
               {formatDate(selectedRequest.gameDate)} at {formatTime(selectedRequest.gameTime)}
               {selectedRequest.leagueName ? ` • ${selectedRequest.leagueName}` : ''}.
             </p>
@@ -1280,9 +1238,9 @@ export default function Dashboard() {
         {opponentRosterModal && (
           <div className="space-y-4">
             {opponentRosterLoading ? (
-              <div className="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+              <InlineStateMessage title="Loading roster..." />
             ) : opponentRoster.length === 0 ? (
-              <div className="text-sm text-gray-600 dark:text-gray-400">No roster set.</div>
+              <InlineStateMessage title="No roster set." />
             ) : (
               <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
                 {opponentRoster.map((member) => (
@@ -1416,13 +1374,6 @@ export default function Dashboard() {
         )}
       </Modal>
 
-      <NotificationModal
-        isOpen={notification.isOpen}
-        message={notification.message}
-        variant={notification.variant}
-        onClose={() => setNotification({ ...notification, isOpen: false })}
-        autoCloseMs={notification.variant === 'success' ? 3000 : 0}
-      />
     </Layout>
   );
 }

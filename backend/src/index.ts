@@ -6,34 +6,10 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import fastifyRawBody from 'fastify-raw-body';
 import { config } from './config.js';
-import { initializeDatabase, resetDatabaseState, getDatabaseAsync } from './db/index.js';
+import { apiErrorPayload } from './api/errors.js';
+import { initializeDatabase, resetDatabaseState } from './db/index.js';
 import { authMiddleware } from './middleware/auth.js';
-import { publicAuthRoutes, protectedAuthRoutes } from './routes/auth.js';
-import { memberRoutes } from './routes/members.js';
-import { leagueRoutes } from './routes/leagues.js';
-import { leagueSetupRoutes } from './routes/leagueSetup.js';
-import { gameRoutes } from './routes/games.js';
-import { resultsRoutes } from './routes/results.js';
-import { schedulingRoutes } from './routes/scheduling.js';
-import { availabilityRoutes } from './routes/availability.js';
-import { spareRoutes } from './routes/spares.js';
-import { configRoutes } from './routes/config.js';
-import { calendarRoutes } from './routes/calendar.js';
-import { iceBookingRoutes } from './routes/iceBookings.js';
-import { installRoutes } from './routes/install.js';
-import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
-import { publicConfigRoutes } from './routes/publicConfig.js';
-import { publicRoutes } from './routes/public.js';
-import { contactRoutes } from './routes/contact.js';
-import { donationRoutes } from './routes/donations.js';
-import { paymentWebhookRoutes } from './routes/paymentWebhooks.js';
-import { paymentRoutes } from './routes/payments.js';
-import { contentRoutes } from './routes/content.js';
-import { fileRoutes } from './routes/files.js';
-import { sponsorshipRoutes } from './routes/sponsorship.js';
-import { governanceRoutes } from './routes/governance.js';
-import { rbacRoutes } from './routes/rbac.js';
-import { publicEventRoutes, protectedEventRoutes } from './routes/events.js';
+import { registerProtectedApiRoutes, registerPublicApiRoutes } from './registerRoutes.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
@@ -75,9 +51,6 @@ await fastify.register(fastifyRawBody, {
   runFirst: true,
 });
 
-// Install routes (always available)
-fastify.register(installRoutes, { prefix: '/api' });
-
 // Track database initialization state
 let dbInitialized = false;
 let dbInitError: Error | null = null;
@@ -109,7 +82,7 @@ async function ensureAdminMembersExist(): Promise<void> {
     const { getDrizzleDb } = await import('./db/drizzle-db.js');
     const { getDatabaseConfig } = await import('./db/config.js');
     const { normalizeEmail } = await import('./utils/auth.js');
-    const { eq, sql } = await import('drizzle-orm');
+    const { sql } = await import('drizzle-orm');
     
     const { db, schema } = getDrizzleDb();
     const memberCountResult = await db
@@ -187,9 +160,9 @@ fastify.addHook('onRequest', async (request, reply) => {
 
   // Check if database is configured (re-check on each request)
   if (!isDatabaseConfigured()) {
-    return reply.code(503).send({ 
-      error: 'Database not configured', 
-      requiresInstallation: true 
+    return reply.code(503).send({
+      ...apiErrorPayload('Database not configured'),
+      requiresInstallation: true,
     });
   }
 
@@ -220,7 +193,7 @@ fastify.addHook('onRequest', async (request, reply) => {
     
     // If initialization failed, block the request
     return reply.code(503).send({
-      error: 'Database initialization failed',
+      ...apiErrorPayload('Database initialization failed'),
       message: dbInitError?.message || 'Please check your database configuration. Run "npm run db:init" in the backend directory for details.',
       requiresInstallation: true,
     });
@@ -241,47 +214,13 @@ fastify.get('/api/health', async () => {
   return { status: 'ok' };
 });
 
-// Auth routes (no auth required)
-fastify.register(publicAuthRoutes, { prefix: '/api' });
-// Feedback routes (no auth required; may still accept optional auth header)
-fastify.register(publicFeedbackRoutes, { prefix: '/api' });
-// Public site content (no auth required)
-fastify.register(publicRoutes, { prefix: '/api' });
-// Public contact form workflow (no auth required)
-fastify.register(contactRoutes, { prefix: '/api' });
-// Public donations checkout + status (no auth required)
-fastify.register(donationRoutes, { prefix: '/api' });
-// Public events (listing, detail, registration - no auth required)
-fastify.register(publicEventRoutes, { prefix: '/api' });
-// Public payment webhooks (provider signature verified in-route)
-fastify.register(paymentWebhookRoutes, { prefix: '/api' });
+await registerPublicApiRoutes(fastify);
 
 // Protected routes
 fastify.register(
   async (instance) => {
     instance.addHook('onRequest', authMiddleware);
-    
-    await instance.register(protectedAuthRoutes, { prefix: '/api' });
-    await instance.register(memberRoutes, { prefix: '/api' });
-    await instance.register(leagueRoutes, { prefix: '/api' });
-    await instance.register(leagueSetupRoutes, { prefix: '/api' });
-    await instance.register(gameRoutes, { prefix: '/api' });
-    await instance.register(resultsRoutes, { prefix: '/api' });
-    await instance.register(schedulingRoutes, { prefix: '/api' });
-    await instance.register(availabilityRoutes, { prefix: '/api' });
-    await instance.register(spareRoutes, { prefix: '/api' });
-    await instance.register(publicConfigRoutes, { prefix: '/api' });
-    await instance.register(configRoutes, { prefix: '/api' });
-    await instance.register(calendarRoutes, { prefix: '/api' });
-    await instance.register(iceBookingRoutes, { prefix: '/api' });
-    await instance.register(contentRoutes, { prefix: '/api' });
-    await instance.register(fileRoutes, { prefix: '/api' });
-    await instance.register(sponsorshipRoutes, { prefix: '/api' });
-    await instance.register(governanceRoutes, { prefix: '/api' });
-    await instance.register(paymentRoutes, { prefix: '/api' });
-    await instance.register(rbacRoutes, { prefix: '/api' });
-    await instance.register(protectedEventRoutes, { prefix: '/api' });
-    await instance.register(protectedFeedbackRoutes, { prefix: '/api' });
+    await registerProtectedApiRoutes(instance);
   }
 );
 

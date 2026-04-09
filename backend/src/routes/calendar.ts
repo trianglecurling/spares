@@ -71,7 +71,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    async (request, reply) => {
+    async (request, _reply) => {
       const q = request.query as { start: string; end: string };
       const rangeStart = new Date(q.start);
       const rangeEnd = new Date(q.end);
@@ -156,8 +156,6 @@ export async function calendarRoutes(fastify: FastifyInstance) {
       const { db, schema } = getDrizzleDb();
 
       const recurrenceRule = body.recurrence?.rrule ?? null;
-      const recurrenceEndDate = body.recurrence?.endDate ?? null;
-      const recurrenceCount = body.recurrence?.count ?? null;
 
       const [inserted] = await db
         .insert(schema.calendarEvents)

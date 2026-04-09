@@ -1,6 +1,7 @@
-import { FormEvent, KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useId, useMemo, useState } from 'react';
 import Button from '../../components/Button';
 import Layout from '../../components/Layout';
+import MemberAutocomplete from '../../components/MemberAutocomplete';
 import Modal from '../../components/Modal';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { useAlert } from '../../contexts/AlertContext';
@@ -17,12 +18,6 @@ import {
   GovernanceSummaryResponse,
   OFFICER_LABELS,
 } from '../../types/governance';
-
-interface MemberOption {
-  id: number;
-  name: string;
-  email?: string | null;
-}
 
 const OFFICER_POSITIONS: GovernanceOfficerPosition[] = ['president', 'vice_president', 'treasurer', 'secretary'];
 
@@ -112,87 +107,6 @@ function MonthDaySelect({
   );
 }
 
-function MemberAutocomplete({
-  value,
-  onChange,
-  options,
-  placeholder = 'Search members...',
-  disabled = false,
-}: {
-  value: number | '';
-  onChange: (value: number | '') => void;
-  options: { id: number; label: string }[];
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const selected = options.find((o) => o.id === value);
-  const displayValue = query || selected?.label || '';
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(needle));
-  }, [options, query]);
-
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <input
-        value={displayValue}
-        onFocus={() => {
-          setOpen(true);
-          setQuery('');
-        }}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          if (!open) setOpen(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            setOpen(false);
-            setQuery('');
-          }
-        }}
-        disabled={disabled}
-        placeholder={placeholder}
-        className={inputClass}
-      />
-      {open && !disabled && (
-        <div className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
-          {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No matches</p>
-          ) : (
-            filtered.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  onChange(o.id);
-                  setOpen(false);
-                  setQuery('');
-                }}
-                className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                {o.label}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function TokenInput({
   label,
   tokens,
@@ -272,7 +186,6 @@ export default function AdminGovernance() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const [data, setData] = useState<GovernanceSummaryResponse | null>(null);
-  const [members, setMembers] = useState<MemberOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -338,10 +251,6 @@ export default function AdminGovernance() {
     email: string;
   } | null>(null);
 
-  const memberOptions = useMemo(
-    () => members.map((m) => ({ id: m.id, label: `${m.name}${m.email ? ` (${m.email})` : ''}` })),
-    [members]
-  );
   const boardMemberOptions = useMemo(
     () =>
       (data?.boardMembers ?? []).map((bm) => ({
@@ -384,12 +293,8 @@ export default function AdminGovernance() {
     setLoading(true);
     setError(null);
     try {
-      const [governanceResponse, membersResponse] = await Promise.all([
-        api.get<GovernanceSummaryResponse>('/governance'),
-        api.get<MemberOption[]>('/members'),
-      ]);
+      const governanceResponse = await api.get<GovernanceSummaryResponse>('/governance');
       setData(governanceResponse.data);
-      setMembers(membersResponse.data);
       const mmFiscal = governanceResponse.data.settings.fiscalYearStartMmdd.split('-');
       setSettingsMonth(mmFiscal[0] ?? '09');
       setSettingsDay(mmFiscal[1] ?? '01');
@@ -777,7 +682,6 @@ export default function AdminGovernance() {
                           onChange={(next) =>
                             setNewChairMemberIds((prev) => ({ ...prev, [committee.id]: next }))
                           }
-                          options={memberOptions}
                           placeholder="Search members..."
                         />
                       </div>
@@ -883,7 +787,6 @@ export default function AdminGovernance() {
             <MemberAutocomplete
               value={newBoardMemberId}
               onChange={setNewBoardMemberId}
-              options={memberOptions}
               placeholder="Search members..."
             />
           </div>

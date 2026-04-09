@@ -5,6 +5,7 @@ import { del, get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 
@@ -131,14 +132,12 @@ export default function AdminSheets() {
         />
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <AppStateCard title="Loading sheets..." />
         ) : sheets.length === 0 ? (
-          <div className="app-card py-12 text-center">
-            <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">
-              No sheets configured yet.
-            </p>
-            <Button onClick={() => handleOpenModal()}>Create your first sheet</Button>
-          </div>
+          <AppStateCard
+            title="No sheets configured yet."
+            action={<Button onClick={() => handleOpenModal()}>Create your first sheet</Button>}
+          />
         ) : (
           <div className="grid gap-4">
             {sheets.map((sheet) => (

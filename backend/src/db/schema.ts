@@ -2752,7 +2752,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   try {
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id ON spare_requests(game_id);');
-  } catch (e: unknown) {
+  } catch {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
 
@@ -2760,7 +2760,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   try {
     await execSQL(db, 'DROP INDEX IF EXISTS idx_team_bye_requests_draw;');
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_team_bye_requests_draw_date ON team_bye_requests(draw_date);');
-  } catch (e: unknown) {
+  } catch {
     // Ignore - index may not exist or already replaced
   }
 
@@ -2778,7 +2778,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       await runPrepared(migrateStmt);
       console.log(`Migrated ${count} existing admin(s) to server admin(s)`);
     }
-  } catch (e) {
+  } catch {
     // Ignore migration errors - column might not exist yet or already migrated
     console.log('Admin migration skipped (may already be complete)');
   }
@@ -2801,7 +2801,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       
       // Note: twilio_auth_token migration would need similar handling if it exists
     }
-  } catch (e) {
+  } catch {
     // Ignore migration errors
   }
 
@@ -2838,7 +2838,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   // Index for claimed_at (after the column exists)
   try {
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_notification_queue_claimed ON spare_request_notification_queue(spare_request_id, claimed_at);');
-  } catch (e: unknown) {
+  } catch {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
 
@@ -3808,7 +3808,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       migrateStmt.run();
       console.log(`Migrated ${count} existing admin(s) to server admin(s)`);
     }
-  } catch (e) {
+  } catch {
     // Ignore migration errors - column might not exist yet or already migrated
     console.log('Admin migration skipped (may already be complete)');
   }

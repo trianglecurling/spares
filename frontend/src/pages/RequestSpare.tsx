@@ -5,6 +5,10 @@ import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
+import MemberAutocomplete from '../components/MemberAutocomplete';
+import MemberMultiSelect from '../components/MemberMultiSelect';
+import FormField from '../components/FormField';
+import FormSection from '../components/FormSection';
 import { get, post } from '../api/client';
 import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
@@ -76,7 +80,6 @@ export default function RequestSpare() {
   const [showCc, setShowCc] = useState(false);
 
   // Data State
-  const [members, setMembers] = useState<Member[]>([]);
   const [leagues, setLeagues] = useState<League[]>([]);
   const [upcomingGames, setUpcomingGames] = useState<GameSlot[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
@@ -106,40 +109,19 @@ export default function RequestSpare() {
     selectedLeagueIdRef.current = selectedLeagueId;
   }, [selectedLeagueId]);
 
-  // Autocomplete state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const positionRef = useRef<HTMLSelectElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
-
-  // "Someone else" autocomplete state (person who needs the spare)
-  const [otherIsDropdownOpen, setOtherIsDropdownOpen] = useState(false);
-  const [otherHighlightedIndex, setOtherHighlightedIndex] = useState(-1);
-  const otherDropdownRef = useRef<HTMLDivElement>(null);
-  const otherInputRef = useRef<HTMLInputElement>(null);
-
-  // CC autocomplete state
-  const [ccSearchTerm, setCcSearchTerm] = useState('');
-  const [ccIsDropdownOpen, setCcIsDropdownOpen] = useState(false);
-  const [ccHighlightedIndex, setCcHighlightedIndex] = useState(-1);
-  const ccDropdownRef = useRef<HTMLDivElement>(null);
-  const ccInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (cannotCreateSpareRequest) {
       setLoading(false);
       return;
     }
-    // Load members and leagues
+    // Load leagues
     const initData = async () => {
       setLoading(true);
       try {
-        const [membersRes, leaguesRes] = await Promise.all([get('/members'), get('/leagues')]);
-        setMembers(membersRes.filter((m: Member) => m.id !== member?.id));
-        setLeagues(leaguesRes);
+        setLeagues(await get('/leagues'));
       } catch (error) {
         console.error('Failed to load data:', error);
       } finally {
@@ -205,18 +187,6 @@ export default function RequestSpare() {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      const clickedInInvites = dropdownRef.current && dropdownRef.current.contains(target);
-      const clickedInOther = otherDropdownRef.current && otherDropdownRef.current.contains(target);
-      const clickedInCc = ccDropdownRef.current && ccDropdownRef.current.contains(target);
-      if (!clickedInInvites) {
-        setIsDropdownOpen(false);
-      }
-      if (!clickedInOther) {
-        setOtherIsDropdownOpen(false);
-      }
-      if (!clickedInCc) {
-        setCcIsDropdownOpen(false);
-      }
       if (leaguePickerRef.current && !leaguePickerRef.current.contains(target)) {
         // Close + commit draft selection
         setLeaguePickerOpen(false);
@@ -277,7 +247,12 @@ export default function RequestSpare() {
         requestedForMode === 'me' ? (member?.name || '').trim() : otherRequestedForName.trim();
 
       if (!effectiveRequestedForName) {
-        showAlert('Please enter the name of the person who needs the spare.', 'warning');
+        showAlert(
+          requestedForMode === 'other'
+            ? 'Please select the member who needs the spare.'
+            : 'Please enter the name of the person who needs the spare.',
+          'warning'
+        );
         setSubmitting(false);
         return;
       }
@@ -372,143 +347,9 @@ export default function RequestSpare() {
   };
 
   const addMember = (memberId: number) => {
-    if (!selectedMembers.includes(memberId)) {
-      setSelectedMembers([...selectedMembers, memberId]);
-    }
-    setSearchTerm('');
-    setIsDropdownOpen(false);
-    setHighlightedIndex(-1);
-    inputRef.current?.focus();
+    if (selectedMembers.includes(memberId)) return;
+    setSelectedMembers([...selectedMembers, memberId]);
   };
-
-  const removeMember = (memberId: number) => {
-    setSelectedMembers(selectedMembers.filter((id) => id !== memberId));
-  };
-
-  const addCcMember = (memberId: number) => {
-    if (ccMemberIds.includes(memberId)) return;
-    if (ccMemberIds.length >= 4) return;
-    setCcMemberIds([...ccMemberIds, memberId]);
-    setCcSearchTerm('');
-    setCcIsDropdownOpen(false);
-    setCcHighlightedIndex(-1);
-    ccInputRef.current?.focus();
-  };
-
-  const removeCcMember = (memberId: number) => {
-    setCcMemberIds(ccMemberIds.filter((id) => id !== memberId));
-  };
-
-  // Filter members for "someone else" autocomplete (match name only, like private invites)
-  const otherFilteredMembers = members.filter((m) =>
-    m.name.toLowerCase().includes(otherRequestedForName.toLowerCase())
-  );
-
-  const ccFilteredMembers = members.filter(
-    (m) => m.name.toLowerCase().includes(ccSearchTerm.toLowerCase()) && !ccMemberIds.includes(m.id)
-  );
-
-  // Filter members for autocomplete
-  const filteredMembers = members.filter(
-    (m) =>
-      m.name.toLowerCase().includes(searchTerm.toLowerCase()) && !selectedMembers.includes(m.id)
-  );
-
-  const handleOtherKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (!otherIsDropdownOpen || otherFilteredMembers.length === 0) return;
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setOtherHighlightedIndex((prev) =>
-          prev < otherFilteredMembers.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setOtherHighlightedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (otherHighlightedIndex >= 0 && otherHighlightedIndex < otherFilteredMembers.length) {
-          const selected = otherFilteredMembers[otherHighlightedIndex];
-          setOtherRequestedForName(selected.name);
-          setOtherRequestedForMemberId(selected.id);
-          setRequestedForMode('other');
-          setOtherIsDropdownOpen(false);
-          setOtherHighlightedIndex(-1);
-        }
-        break;
-      case 'Escape':
-        setOtherIsDropdownOpen(false);
-        setOtherHighlightedIndex(-1);
-        break;
-    }
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (!isDropdownOpen || filteredMembers.length === 0) return;
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setHighlightedIndex((prev) => (prev < filteredMembers.length - 1 ? prev + 1 : prev));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (highlightedIndex >= 0 && highlightedIndex < filteredMembers.length) {
-          addMember(filteredMembers[highlightedIndex].id);
-        }
-        break;
-      case 'Escape':
-        setIsDropdownOpen(false);
-        setHighlightedIndex(-1);
-        break;
-    }
-  };
-
-  const handleCcKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (!ccIsDropdownOpen || ccFilteredMembers.length === 0) return;
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setCcHighlightedIndex((prev) => (prev < ccFilteredMembers.length - 1 ? prev + 1 : prev));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setCcHighlightedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (ccHighlightedIndex >= 0 && ccHighlightedIndex < ccFilteredMembers.length) {
-          addCcMember(ccFilteredMembers[ccHighlightedIndex].id);
-        }
-        break;
-      case 'Escape':
-        setCcIsDropdownOpen(false);
-        setCcHighlightedIndex(-1);
-        break;
-    }
-  };
-
-  // Reset highlight when search changes
-  useEffect(() => {
-    setHighlightedIndex(-1);
-  }, [searchTerm]);
-
-  useEffect(() => {
-    setCcHighlightedIndex(-1);
-  }, [ccSearchTerm]);
-
-  // Reset highlight when "someone else" name changes
-  useEffect(() => {
-    setOtherHighlightedIndex(-1);
-  }, [otherRequestedForName]);
 
   const formatGameSlot = (slot: GameSlot) => {
     const date = new Date(`${slot.date}T${slot.time}`);
@@ -598,7 +439,6 @@ export default function RequestSpare() {
         leagueOptionRefs.current[initialIndex]?.focus();
       }
     }, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaguePickerOpen]);
 
   // Keep refs array in sync with rendered options
@@ -802,133 +642,82 @@ export default function RequestSpare() {
 
         <form
           onSubmit={handleSubmit}
-          className="app-card p-6 space-y-6"
+          className="app-card p-6 space-y-8"
         >
-          <div>
-            <label className="app-label">
-              Person who needs the spare <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="flex items-center gap-3 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <input
-                  type="radio"
-                  name="requestedForMode"
-                  value="me"
-                  checked={requestedForMode === 'me'}
-                  onChange={() => {
-                    setRequestedForMode('me');
-                    setOtherIsDropdownOpen(false);
-                    setOtherRequestedForMemberId(null);
-                  }}
-                  className="mt-0.5"
-                />
-                <div className="min-w-0 flex items-center justify-between gap-2 w-full">
-                  <div className="font-medium text-gray-900 dark:text-gray-100">Me</div>
-                  {member?.name && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                      {member.name}
-                    </div>
-                  )}
-                </div>
-              </label>
-
-              <div className="relative" ref={otherDropdownRef}>
-                <label
-                  className="flex items-center gap-3 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                  onClick={() => {
-                    setRequestedForMode('other');
-                    // focus input even if user clicks the radio/label area
-                    setTimeout(() => otherInputRef.current?.focus(), 0);
-                  }}
-                >
+          <FormSection
+            title="Request details"
+            description="Choose who needs the spare and which game the request applies to."
+          >
+            <FormField
+              label="Person who needs the spare"
+              required
+              helperText="You can request a spare for yourself or on behalf of someone else."
+            >
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex items-center gap-3 rounded-md border border-gray-300 px-4 py-2 cursor-pointer hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700/50">
                   <input
                     type="radio"
                     name="requestedForMode"
-                    value="other"
-                    checked={requestedForMode === 'other'}
+                    value="me"
+                    checked={requestedForMode === 'me'}
                     onChange={() => {
-                      setRequestedForMode('other');
-                      setTimeout(() => otherInputRef.current?.focus(), 0);
+                      setRequestedForMode('me');
+                      setOtherRequestedForName('');
+                      setOtherRequestedForMemberId(null);
                     }}
                     className="mt-0.5"
                   />
-                  <input
-                    ref={otherInputRef}
-                    type="text"
-                    value={otherRequestedForName}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setOtherRequestedForName(next);
-                      setOtherRequestedForMemberId(null);
-                      // Avoid changing form state just by tabbing into this input.
-                      // Only select "Someone else" once the user actually types.
-                      if (next.trim().length > 0) {
-                        setRequestedForMode('other');
-                        setOtherIsDropdownOpen(true);
-                      } else {
-                        setOtherIsDropdownOpen(false);
-                      }
-                    }}
-                    onFocus={() => {
-                      // Do not auto-select "Someone else" just by focusing (e.g. tabbing through the form).
-                      // We only open suggestions once there's input (or if already in "other" mode with text).
-                      if (requestedForMode === 'other' && otherRequestedForName.trim().length > 0) {
-                        setOtherIsDropdownOpen(true);
-                      }
-                    }}
-                    onKeyDown={handleOtherKeyDown}
-                    placeholder="Someone else"
-                    required={requestedForMode === 'other'}
-                    className="w-full bg-transparent outline-none text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                    disabled={loading}
-                    aria-label="Someone else"
-                  />
+                  <div className="min-w-0 flex items-center justify-between gap-2 w-full">
+                    <div className="font-medium text-gray-900 dark:text-gray-100">Me</div>
+                    {member?.name ? (
+                      <div className="truncate text-sm text-gray-600 dark:text-gray-400">
+                        {member.name}
+                      </div>
+                    ) : null}
+                  </div>
                 </label>
 
-                {otherIsDropdownOpen && otherRequestedForName && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {otherFilteredMembers.length > 0 ? (
-                      otherFilteredMembers.map((m, index) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            setOtherRequestedForName(m.name);
-                            setOtherRequestedForMemberId(m.id);
-                            setRequestedForMode('other');
-                            setOtherIsDropdownOpen(false);
-                            setOtherHighlightedIndex(-1);
-                          }}
-                          onMouseEnter={() => setOtherHighlightedIndex(index)}
-                          className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                            index === otherHighlightedIndex ? 'bg-gray-100 dark:bg-gray-700' : ''
-                          }`}
-                        >
-                          <div className="font-medium text-gray-900 dark:text-gray-100">
-                            {m.name}
-                          </div>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-4 py-2 text-gray-500 dark:text-gray-400">
-                        No members found
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="space-y-2 rounded-md border border-gray-300 px-4 py-3 dark:border-gray-600">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="requestedForMode"
+                      value="other"
+                      checked={requestedForMode === 'other'}
+                      onChange={() => {
+                        setRequestedForMode('other');
+                      }}
+                      className="mt-0.5"
+                    />
+                    <span className="text-gray-900 dark:text-gray-100">Someone else</span>
+                  </label>
+                  <MemberAutocomplete
+                    value={otherRequestedForMemberId ?? ''}
+                    onChange={(nextValue) => {
+                      if (nextValue === '') {
+                        setOtherRequestedForName('');
+                        setOtherRequestedForMemberId(null);
+                        return;
+                      }
+                      setOtherRequestedForMemberId(nextValue);
+                    }}
+                    onSelectOption={(option) => {
+                      setRequestedForMode('other');
+                      setOtherRequestedForName(option.name);
+                      setOtherRequestedForMemberId(option.id);
+                    }}
+                    placeholder="Search members by name"
+                    minQueryLength={1}
+                    noMatchesText="No members found"
+                    disabled={loading || requestedForMode !== 'other'}
+                    filterOption={(option) => option.id !== member?.id}
+                  />
+                </div>
               </div>
-            </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              You can request a spare for yourself or on behalf of someone else.
-            </p>
-          </div>
+            </FormField>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
-            <div className="flex flex-col h-full">
-              <label className="app-label">
-                League <span className="text-red-500">*</span>
-              </label>
-              <div className="flex-1 flex items-center">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 items-stretch">
+              <FormField label="League" required>
                 <div className="relative w-full" ref={leaguePickerRef}>
                   <button
                     ref={leagueTriggerRef}
@@ -943,7 +732,7 @@ export default function RequestSpare() {
                       }
                     }}
                     disabled={loading}
-                    className="app-input text-left disabled:opacity-50 flex items-center justify-between gap-3"
+                    className="app-input flex items-center justify-between gap-3 text-left"
                     aria-haspopup="dialog"
                     aria-expanded={leaguePickerOpen}
                   >
@@ -958,7 +747,7 @@ export default function RequestSpare() {
                               {dayNames[displayedLeague.dayOfWeek]}
                             </span>
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-300 mt-0.5">
+                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-300">
                             {displayedLeague.format === 'teams' ? 'Teams' : 'Doubles'}
                             {displayedLeague.drawTimes?.length
                               ? ` • ${displayedLeague.drawTimes.map(formatTimeShort).join(', ')}`
@@ -974,22 +763,20 @@ export default function RequestSpare() {
                     />
                   </button>
 
-                  {leaguePickerOpen && (
+                  {leaguePickerOpen ? (
                     <div
-                      className="absolute z-20 mt-2 w-[min(44rem,calc(100vw-2rem))] max-w-[44rem] left-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-4"
+                      className="absolute left-0 z-20 mt-2 w-[min(44rem,calc(100vw-2rem))] max-w-[44rem] rounded-lg border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800"
                       role="dialog"
                       aria-label="Choose a league"
                       onKeyDown={handleLeaguePickerKeyDown}
                     >
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            Choose a league
-                          </div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          Choose a league
                         </div>
                         <button
                           type="button"
-                          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                          className="text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
                           onClick={() => setLeaguePickerOpen(false)}
                         >
                           Close
@@ -998,23 +785,23 @@ export default function RequestSpare() {
 
                       <div
                         ref={leagueDayGridRef}
-                        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+                        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
                       >
                         {dayNames.map((dayName, day) => {
                           const list = dayLists[day] || [];
                           return (
                             <div
                               key={dayName}
-                              className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden"
+                              className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-700"
                             >
-                              <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700/40 border-b border-gray-200 dark:border-gray-700">
+                              <div className="border-b border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-700/40">
                                 <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                                   {dayName}
                                 </div>
                               </div>
-                              <div className="p-2 space-y-1">
+                              <div className="space-y-1 p-2">
                                 {list.length === 0 ? (
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 px-1 py-2">
+                                  <div className="px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
                                     No leagues
                                   </div>
                                 ) : (
@@ -1037,7 +824,6 @@ export default function RequestSpare() {
                                         const idx = leagueIndexById.get(league.id);
                                         if (idx !== undefined) {
                                           setLeaguePickerActiveIndex(idx);
-                                          // Draft selection while navigating; commit when popover closes
                                           setLeagueDraftId(league.id.toString());
                                         }
                                       }}
@@ -1045,7 +831,7 @@ export default function RequestSpare() {
                                         const idx = leagueIndexById.get(league.id);
                                         if (idx !== undefined) setLeaguePickerActiveIndex(idx);
                                       }}
-                                      className={`w-full text-left px-2 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+                                      className={`w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-700 ${
                                         selectedLeagueId === league.id.toString() ||
                                         leaguePickerActiveIndex === leagueIndexById.get(league.id)
                                           ? 'bg-gray-100 dark:bg-gray-700'
@@ -1081,391 +867,258 @@ export default function RequestSpare() {
                         })}
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
-              </div>
-            </div>
+              </FormField>
 
-            <div className="flex flex-col h-full">
-              <label
+              <FormField
+                label="Game date and time"
                 htmlFor="gameSlot"
-                className="app-label"
+                required
+                state={!selectedLeagueId || loadingGames ? 'disabled' : 'default'}
+                stateMessage={
+                  !selectedLeagueId
+                    ? 'Select a league first.'
+                    : loadingGames
+                      ? 'Loading available games...'
+                      : undefined
+                }
               >
-                Game date & time <span className="text-red-500">*</span>
-              </label>
-              <div className="flex-1 flex items-center">
+                {({ describedBy, invalid }) => (
+                  <select
+                    ref={gameSlotRef}
+                    id="gameSlot"
+                    value={selectedGameSlot}
+                    onChange={(e) => setSelectedGameSlot(e.target.value)}
+                    className="app-input"
+                    required
+                    disabled={!selectedLeagueId || loadingGames}
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid || undefined}
+                  >
+                    <option value="">
+                      {loadingGames
+                        ? 'Loading games...'
+                        : !selectedLeagueId
+                          ? 'Select a league first'
+                          : 'Select a game'}
+                    </option>
+                    {upcomingGames.map((slot) => {
+                      const value = `${slot.date}|${slot.time}`;
+                      return (
+                        <option key={value} value={value}>
+                          {formatGameSlot(slot)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+              </FormField>
+            </div>
+          </FormSection>
+
+          <FormSection
+            title="Request preferences"
+            description="Add optional context and decide who can respond."
+          >
+            {showPosition ? (
+              <FormField label="Position" htmlFor="position" optional>
                 <select
-                  ref={gameSlotRef}
-                  id="gameSlot"
-                  value={selectedGameSlot}
-                  onChange={(e) => setSelectedGameSlot(e.target.value)}
+                  ref={positionRef}
+                  id="position"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value as PositionOption)}
                   className="app-input"
-                  required
-                  disabled={!selectedLeagueId || loadingGames}
                 >
-                  <option value="">
-                    {loadingGames
-                      ? 'Loading games...'
-                      : !selectedLeagueId
-                        ? 'Select a league first'
-                        : 'Select a game'}
-                  </option>
-                  {upcomingGames.map((slot) => {
-                    const value = `${slot.date}|${slot.time}`;
-                    return (
-                      <option key={value} value={value}>
-                        {formatGameSlot(slot)}
-                      </option>
-                    );
-                  })}
+                  <option value="">Any position</option>
+                  <option value="lead">Lead</option>
+                  <option value="second">Second</option>
+                  <option value="vice">Vice</option>
+                  <option value="skip">Skip</option>
                 </select>
-              </div>
-            </div>
-          </div>
-
-          {showPosition ? (
-            <div>
-              <label
-                htmlFor="position"
-                className="app-label"
-              >
-                Position (optional)
-              </label>
-              <select
-                ref={positionRef}
-                id="position"
-                value={position}
-                onChange={(e) => setPosition(e.target.value as PositionOption)}
-                className="app-input"
-              >
-                <option value="">Any position</option>
-                <option value="lead">Lead</option>
-                <option value="second">Second</option>
-                <option value="vice">Vice</option>
-                <option value="skip">Skip</option>
-              </select>
-            </div>
-          ) : (
-            <div>
-              <button
-                type="button"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                onClick={() => {
-                  setShowPosition(true);
-                  setTimeout(() => positionRef.current?.focus(), 0);
-                }}
-              >
-                Specify a position
-              </button>
-            </div>
-          )}
-
-          {showMessage ? (
-            <div>
-              <label
-                htmlFor="message"
-                className="app-label"
-              >
-                Personal message (optional)
-              </label>
-              <textarea
-                ref={messageRef}
-                id="message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                className="app-input"
-                rows={3}
-                placeholder="Any additional details, such as who is on your team, who the opponent is, what are the stakes of this game, etc."
-              />
-            </div>
-          ) : (
-            <div>
-              <button
-                type="button"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                onClick={() => {
-                  setShowMessage(true);
-                  setTimeout(() => messageRef.current?.focus(), 0);
-                }}
-              >
-                Write a personal message
-              </button>
-            </div>
-          )}
-
-          <div>
-            <label className="app-label">
-              Request type <span className="text-red-500">*</span>
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-start p-4 border border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <input
-                  type="radio"
-                  name="requestType"
-                  value="public"
-                  checked={requestType === 'public'}
-                  onChange={(e) => setRequestType(e.target.value as 'public')}
-                  className="mt-1 mr-3"
-                />
-                <div>
-                  <div className="font-medium dark:text-gray-100">Public</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Open to all members
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-start p-4 border border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <input
-                  type="radio"
-                  name="requestType"
-                  value="private"
-                  checked={requestType === 'private'}
-                  onChange={(e) => setRequestType(e.target.value as 'private')}
-                  className="mt-1 mr-3"
-                />
-                <div>
-                  <div className="font-medium dark:text-gray-100">Private</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Invite specific members only
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {requestType === 'private' && (
-            <div className="space-y-3">
-              <label className="app-label">
-                Select members to invite <span className="text-red-500">*</span>
-              </label>
-
-              {/* Selected Members Pills */}
-              <div className="flex flex-wrap gap-2 mb-2">
-                {selectedMembers.map((id) => {
-                  const member = members.find((m) => m.id === id);
-                  if (!member) return null;
-                  return (
-                    <div
-                      key={id}
-                      className="bg-primary-teal text-white text-sm rounded-full px-3 py-1 flex items-center focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-teal"
-                    >
-                      <span>{member.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeMember(id)}
-                        className="ml-2 hover:text-gray-200 focus:outline-none rounded-full p-0.5"
-                        aria-label={`Remove ${member.name}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Autocomplete Input */}
-              <div className="relative" ref={dropdownRef}>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setIsDropdownOpen(true);
+              </FormField>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                  onClick={() => {
+                    setShowPosition(true);
+                    setTimeout(() => positionRef.current?.focus(), 0);
                   }}
-                  onFocus={() => setIsDropdownOpen(true)}
-                  onKeyDown={handleKeyDown}
-                  className="app-input"
-                  placeholder="Search for members..."
-                  disabled={loading}
-                />
-
-                {isDropdownOpen && searchTerm && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {filteredMembers.length > 0 ? (
-                      filteredMembers.map((m, index) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => addMember(m.id)}
-                          className={`w-full text-left px-4 py-2 focus:outline-none ${
-                            index === highlightedIndex
-                              ? 'bg-gray-100 dark:bg-gray-700'
-                              : 'hover:bg-gray-50 dark:hover:bg-gray-700'
-                          }`}
-                        >
-                          <div className="font-medium dark:text-gray-100">{m.name}</div>
-                          {m.email && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {m.email}
-                            </div>
-                          )}
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-4 py-2 text-gray-500 dark:text-gray-400 text-sm">
-                        No members found
-                      </div>
-                    )}
-                  </div>
-                )}
+                >
+                  Specify a position
+                </button>
               </div>
+            )}
 
-              {/* Available Members Box */}
-              {selectedLeagueId && (
-                <div className="border border-gray-300 dark:border-gray-600 rounded-md p-4 bg-gray-50 dark:bg-gray-700/50">
-                  <label className="app-label mb-3">
-                    Members available during{' '}
-                    {leagues.find((l) => l.id.toString() === selectedLeagueId)?.name ||
-                      'this league'}
-                  </label>
-                  {loadingAvailableMembers ? (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
-                      Loading...
+            {showMessage ? (
+              <FormField label="Personal message" htmlFor="message" optional>
+                <textarea
+                  ref={messageRef}
+                  id="message"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="app-input"
+                  rows={3}
+                  placeholder="Any additional details, such as who is on your team, who the opponent is, or what makes this game important."
+                />
+              </FormField>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                  onClick={() => {
+                    setShowMessage(true);
+                    setTimeout(() => messageRef.current?.focus(), 0);
+                  }}
+                >
+                  Write a personal message
+                </button>
+              </div>
+            )}
+
+            <FormField
+              label="Request type"
+              required
+              helperText="Public requests are visible to all eligible members. Private requests only notify the members you choose."
+            >
+              <div className="space-y-2">
+                <label className="flex items-start rounded-md border border-gray-300 p-4 cursor-pointer hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700/50">
+                  <input
+                    type="radio"
+                    name="requestType"
+                    value="public"
+                    checked={requestType === 'public'}
+                    onChange={(e) => setRequestType(e.target.value as 'public')}
+                    className="mt-1 mr-3"
+                  />
+                  <div>
+                    <div className="font-medium dark:text-gray-100">Public</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Open to all members
                     </div>
-                  ) : availableMembers.filter((m) => !selectedMembers.includes(m.id)).length ===
-                    0 ? (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
-                      {availableMembers.length === 0
-                        ? 'No members have set availability for this league'
-                        : 'All available members have been selected'}
+                  </div>
+                </label>
+
+                <label className="flex items-start rounded-md border border-gray-300 p-4 cursor-pointer hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700/50">
+                  <input
+                    type="radio"
+                    name="requestType"
+                    value="private"
+                    checked={requestType === 'private'}
+                    onChange={(e) => setRequestType(e.target.value as 'private')}
+                    className="mt-1 mr-3"
+                  />
+                  <div>
+                    <div className="font-medium dark:text-gray-100">Private</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Invite specific members only
                     </div>
-                  ) : (
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {availableMembers
-                        .filter((m) => !selectedMembers.includes(m.id))
-                        .map((m) => (
-                          <div
-                            key={m.id}
-                            className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600 hover:border-primary-teal transition-colors"
-                          >
-                            <div className="flex-1">
-                              <div className="font-medium text-sm dark:text-gray-100">{m.name}</div>
-                              {m.email && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                  {m.email}
+                  </div>
+                </label>
+              </div>
+            </FormField>
+
+            {requestType === 'private' ? (
+              <FormField
+                label="Select members to invite"
+                required
+                helperText="Only invited members can claim a private request."
+              >
+                <>
+                  <MemberMultiSelect
+                    selectedIds={selectedMembers}
+                    onChange={setSelectedMembers}
+                    placeholder="Search for members..."
+                    disabled={loading}
+                    noMatchesText="No members found"
+                    filterOption={(option) => option.id !== member?.id}
+                  />
+
+                  {selectedLeagueId ? (
+                    <div className="mt-3 rounded-md border border-gray-300 bg-gray-50 p-4 dark:border-gray-600 dark:bg-gray-700/50">
+                      <div className="app-label mb-3">
+                        Members available during{' '}
+                        {leagues.find((l) => l.id.toString() === selectedLeagueId)?.name ||
+                          'this league'}
+                      </div>
+                      {loadingAvailableMembers ? (
+                        <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                          Loading...
+                        </div>
+                      ) : availableMembers.filter((m) => !selectedMembers.includes(m.id)).length ===
+                        0 ? (
+                        <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                          {availableMembers.length === 0
+                            ? 'No members have set availability for this league'
+                            : 'All available members have been selected'}
+                        </div>
+                      ) : (
+                        <div className="max-h-48 space-y-2 overflow-y-auto">
+                          {availableMembers
+                            .filter((m) => !selectedMembers.includes(m.id))
+                            .map((m) => (
+                              <div
+                                key={m.id}
+                                className="flex items-center justify-between rounded border border-gray-200 bg-white p-2 transition-colors hover:border-primary-teal dark:border-gray-600 dark:bg-gray-800"
+                              >
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium dark:text-gray-100">
+                                    {m.name}
+                                  </div>
+                                  {m.email ? (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                      {m.email}
+                                    </div>
+                                  ) : null}
                                 </div>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => addMember(m.id)}
-                              className="ml-3 px-3 py-1 bg-primary-teal text-white rounded text-sm hover:bg-opacity-80 transition-colors"
-                            >
-                              +
-                            </button>
-                          </div>
-                        ))}
+                                <button
+                                  type="button"
+                                  onClick={() => addMember(m.id)}
+                                  className="ml-3 rounded bg-primary-teal px-3 py-1 text-sm text-white transition-colors hover:bg-opacity-80"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                  ) : null}
+                </>
+              </FormField>
+            ) : null}
 
-              {loading && (
-                <div className="text-sm text-gray-500 dark:text-gray-400">Loading members...</div>
-              )}
-            </div>
-          )}
-
-          {showCc ? (
-            <div>
-              <label className="app-label">
-                Let your teammates know? (optional)
-              </label>
-
-              {ccMemberIds.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {ccMemberIds.map((id) => {
-                    const m = members.find((mem) => mem.id === id);
-                    if (!m) return null;
-                    return (
-                      <div
-                        key={id}
-                        className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm rounded-full px-3 py-1 flex items-center"
-                      >
-                        <span>{m.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeCcMember(id)}
-                          className="ml-2 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none rounded-full p-0.5"
-                          aria-label={`Remove ${m.name}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="relative" ref={ccDropdownRef}>
-                <input
-                  ref={ccInputRef}
-                  type="text"
-                  value={ccSearchTerm}
-                  onChange={(e) => {
-                    setCcSearchTerm(e.target.value);
-                    setCcIsDropdownOpen(true);
-                  }}
-                  onFocus={() => setCcIsDropdownOpen(true)}
-                  onKeyDown={handleCcKeyDown}
-                  className="app-input"
-                  placeholder={
-                    ccMemberIds.length >= 4 ? 'CC limit reached (4)' : 'Search for members to CC...'
-                  }
-                  disabled={loading || ccMemberIds.length >= 4}
-                />
-
-                {ccIsDropdownOpen && ccSearchTerm && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {ccFilteredMembers.length > 0 ? (
-                      ccFilteredMembers.map((m, index) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => addCcMember(m.id)}
-                          className={`w-full text-left px-4 py-2 focus:outline-none ${
-                            index === ccHighlightedIndex
-                              ? 'bg-gray-100 dark:bg-gray-700'
-                              : 'hover:bg-gray-50 dark:hover:bg-gray-700'
-                          }`}
-                        >
-                          <div className="font-medium dark:text-gray-100">{m.name}</div>
-                          {m.email && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {m.email}
-                            </div>
-                          )}
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-4 py-2 text-gray-500 dark:text-gray-400 text-sm">
-                        No members found
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                CC up to 4 members. They’ll get a copy of the confirmation and updates.
-              </p>
-            </div>
-          ) : (
-            <div>
-              <button
-                type="button"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                onClick={() => {
-                  setShowCc(true);
-                  setTimeout(() => ccInputRef.current?.focus(), 0);
-                }}
+            {showCc ? (
+              <FormField
+                label="Let your teammates know?"
+                optional
+                helperText="CC up to 4 members. They’ll get a copy of the confirmation and updates."
               >
-                Notify your teammates
-              </button>
-            </div>
-          )}
+                <MemberMultiSelect
+                  selectedIds={ccMemberIds}
+                  onChange={setCcMemberIds}
+                  placeholder="Search for members to notify..."
+                  disabled={loading}
+                  maxSelections={4}
+                  noMatchesText="No members found"
+                  filterOption={(option) => option.id !== member?.id}
+                />
+              </FormField>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                  onClick={() => setShowCc(true)}
+                >
+                  Notify your teammates
+                </button>
+              </div>
+            )}
+          </FormSection>
 
           <div className="flex space-x-3">
             <Button type="submit" disabled={submitting || cannotCreateSpareRequest} className="flex-1">

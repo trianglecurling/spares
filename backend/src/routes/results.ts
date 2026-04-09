@@ -7,14 +7,12 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { and, asc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { successResponseSchema } from '../api/schemas.js';
 import {
   gameLineupsPutBodySchema,
   gameLineupsSchema,
   gameListWithResultsResponseSchema,
   gameResultsPutBodySchema,
   gameResultsSchema,
-  gameWithResultSchema,
   leagueSettingsPutBodySchema,
   leagueSettingsSchema,
   leagueStandingsResponseSchema,
@@ -795,7 +793,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
         for (let o = 0; o < maxOrder; o++) {
           const v1 = g.team1_values[o] ?? 0;
           const v2 = g.team2_values[o] ?? 0;
-          for (const [teamId, vals] of [
+          for (const [teamId] of [
             [g.team1_id, g.team1_values] as const,
             [g.team2_id, g.team2_values] as const,
           ]) {

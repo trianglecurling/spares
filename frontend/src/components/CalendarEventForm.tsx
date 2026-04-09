@@ -7,8 +7,12 @@ import {
 import { RRule } from 'rrule';
 import api from '../utils/api';
 import Button from './Button';
+import PageTabs from './PageTabs';
 import ArticleAutocomplete, { type ArticleOption } from './ArticleAutocomplete';
+import FormField from './FormField';
+import FormSection from './FormSection';
 import MarkdownDescriptionEditor, { type MarkdownDescriptionEditorRef } from './MarkdownDescriptionEditor';
+import { useAlert } from '../contexts/AlertContext';
 import { useTheme } from '../contexts/ThemeContext';
 import type { CalendarEvent, CalendarEventType } from '../pages/Calendar';
 import {
@@ -37,6 +41,7 @@ export default function CalendarEventForm({
   onCancel,
   onSaved,
 }: CalendarEventFormProps) {
+  const { showAlert } = useAlert();
   const base = event
     ? { start: event.start, end: event.end }
     : (() => {
@@ -329,122 +334,128 @@ export default function CalendarEventForm({
       }
       onSaved();
     } catch {
+      showAlert('Failed to save event', 'error');
       setSaving(false);
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-      <div className="flex shrink-0 border-b border-gray-200 dark:border-gray-600">
-        <button
-          type="button"
-          onClick={() => setActiveTab('details')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'details'
-              ? 'border-primary-teal text-primary-teal dark:text-primary-teal'
-              : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-          }`}
-        >
-          Event details
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('description')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'description'
-              ? 'border-primary-teal text-primary-teal dark:text-primary-teal'
-              : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-          }`}
-        >
-          Description
-        </button>
-      </div>
+      <PageTabs
+        className="shrink-0"
+        items={[
+          {
+            key: 'details',
+            label: 'Event details',
+            isActive: activeTab === 'details',
+            onClick: () => setActiveTab('details'),
+          },
+          {
+            key: 'description',
+            label: 'Description',
+            isActive: activeTab === 'description',
+            onClick: () => setActiveTab('description'),
+          },
+        ]}
+      />
 
       <div className="flex min-h-[min(28rem,55dvh)] shrink-0 flex-col overflow-y-auto">
         {activeTab === 'details' && (
           <div className="space-y-4">
-            <div>
-              <label className="app-label">Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-                className="app-input"
-              />
-            </div>
-            <div>
-              <label className="app-label">Type</label>
-              <select
-                value={typeId}
-                onChange={(e) => setTypeId(e.target.value)}
-                className="app-input"
-              >
-                {eventTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="app-label">Linked article</label>
-              <ArticleAutocomplete
-                value={linkedArticle}
-                onChange={setLinkedArticle}
-                placeholder="Search for an article"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="app-label">Start</label>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="app-input flex-1"
+            <FormSection
+              title="Basics"
+              description="Set the event name, classification, and any linked article."
+            >
+              <FormField label="Title" htmlFor="calendar-event-title" required>
+                <input
+                  id="calendar-event-title"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                  className="app-input"
+                />
+              </FormField>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField label="Type" htmlFor="calendar-event-type" required>
+                  <select
+                    id="calendar-event-type"
+                    value={typeId}
+                    onChange={(e) => setTypeId(e.target.value)}
+                    className="app-input"
+                  >
+                    {eventTypes.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField
+                  label="Linked article"
+                  helperText="Leave this empty when the event does not need a related article page."
+                >
+                  <ArticleAutocomplete
+                    value={linkedArticle}
+                    onChange={setLinkedArticle}
+                    placeholder="Search for an article"
                   />
-                  {!allDay && (
+                </FormField>
+              </div>
+            </FormSection>
+
+            <FormSection
+              title="Schedule"
+              description="Choose when the event starts and ends. Entered values stay in place if saving fails."
+            >
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField label="Start" required helperText="Choose the first occurrence start time.">
+                  <div className="flex gap-2">
                     <input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => handleStartTimeChange(e.target.value)}
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => handleStartDateChange(e.target.value)}
                       className="app-input flex-1"
                     />
-                  )}
-                </div>
-              </div>
-              <div>
-                <label className="app-label">End</label>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="app-input flex-1"
-                  />
-                  {!allDay && (
+                    {!allDay ? (
+                      <input
+                        type="time"
+                        value={startTime}
+                        onChange={(e) => handleStartTimeChange(e.target.value)}
+                        className="app-input flex-1"
+                      />
+                    ) : null}
+                  </div>
+                </FormField>
+                <FormField label="End" required helperText={`Duration: ${durationLabel}`}>
+                  <div className="flex gap-2">
                     <input
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
                       className="app-input flex-1"
                     />
-                  )}
-                </div>
+                    {!allDay ? (
+                      <input
+                        type="time"
+                        value={endTime}
+                        onChange={(e) => setEndTime(e.target.value)}
+                        className="app-input flex-1"
+                      />
+                    ) : null}
+                  </div>
+                </FormField>
               </div>
-            </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Duration: {durationLabel}</p>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={allDay}
-                onChange={(e) => setAllDay(e.target.checked)}
-                className="rounded"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-300">All day</span>
-            </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={allDay}
+                  onChange={(e) => setAllDay(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">All day</span>
+              </label>
+            </FormSection>
             <div>
               <label className="app-label">Locations</label>
               <div className="space-y-2">

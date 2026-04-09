@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import DragHandle from '../../components/dragDrop/DragHandle';
+import SortableList from '../../components/dragDrop/SortableList';
+import SortableRow from '../../components/dragDrop/SortableRow';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import Button from '../../components/Button';
@@ -99,8 +102,6 @@ export default function AdminSponsorship() {
   useEffect(() => {
     loadAll();
   }, []);
-
-  const levelIdOrder = useMemo(() => levels.map((l) => l.id), [levels]);
 
   async function saveLevel() {
     setSaving(true);
@@ -215,14 +216,9 @@ export default function AdminSponsorship() {
     }
   }
 
-  async function reorderLevels(fromIndex: number, toIndex: number) {
-    const next = [...levelIdOrder];
-    const [moved] = next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, moved);
-    setLevels((prev) => {
-      const byId = new Map(prev.map((l) => [l.id, l]));
-      return next.map((id, idx) => ({ ...byId.get(id)!, sortOrder: idx }));
-    });
+  async function reorderLevels(nextLevels: Level[]) {
+    const next = nextLevels.map((level) => level.id);
+    setLevels(nextLevels.map((level, idx) => ({ ...level, sortOrder: idx })));
     try {
       await api.post('/sponsorship/levels/reorder', { ids: next });
     } catch {
@@ -288,69 +284,82 @@ export default function AdminSponsorship() {
                 </div>
               ) : null}
               {expandedSections.levels ? (
-                <div className="space-y-2">
-                  {levels.map((level, idx) => (
-                    <div
-                      key={level.id}
-                      draggable
-                      onDragStart={(e) => e.dataTransfer.setData('text/plain', String(idx))}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        const from = Number.parseInt(e.dataTransfer.getData('text/plain'), 10);
-                        if (!Number.isNaN(from) && from !== idx) reorderLevels(from, idx);
-                      }}
-                      className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
+                <SortableList
+                  items={levels}
+                  getId={(level) => level.id}
+                  getItemLabel={(level) => level.name}
+                  itemNoun="sponsorship level"
+                  onReorder={(nextLevels) => void reorderLevels(nextLevels)}
+                  renderItem={({ item: level, index: idx, isDragging, isOverlay, dragHandle }) => (
+                    <SortableRow
+                      isDragging={isDragging}
+                      isOverlay={isOverlay}
+                      className="border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
                     >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          {dragHandle}
+                          <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                            Rank {idx + 1}
+                          </span>
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
+                            {level.name}
+                            {level.amount !== null ? ` ($${level.amount.toLocaleString()})` : ''}
+                          </div>
+                        </div>
+                        <div className="space-x-2">
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingLevel(level);
+                              setLevelForm({
+                                name: level.name,
+                                amount: level.amount !== null ? String(level.amount) : '',
+                              });
+                              setLevelModalOpen(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="danger"
+                            onClick={async () => {
+                              if (
+                                !(await confirm({
+                                  title: 'Delete level',
+                                  message: `Delete ${level.name}?`,
+                                  confirmText: 'Delete',
+                                  variant: 'danger',
+                                }))
+                              ) {
+                                return;
+                              }
+                              try {
+                                await api.delete(`/sponsorship/levels/${level.id}`);
+                                await loadAll();
+                              } catch {
+                                showAlert('Failed to delete level', 'error');
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </SortableRow>
+                  )}
+                  renderOverlay={(level) => (
+                    <SortableRow isDragging isOverlay className="border-primary-teal/60 bg-gray-50 dark:bg-gray-900">
                       <div className="flex items-center gap-3">
-                        <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
-                          Rank {idx + 1}
-                        </span>
+                        <DragHandle label={`Reorder ${level.name}`} disabled />
                         <div className="font-medium text-gray-900 dark:text-gray-100">
                           {level.name}
                           {level.amount !== null ? ` ($${level.amount.toLocaleString()})` : ''}
                         </div>
                       </div>
-                      <div className="space-x-2">
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setEditingLevel(level);
-                            setLevelForm({
-                              name: level.name,
-                              amount: level.amount !== null ? String(level.amount) : '',
-                            });
-                            setLevelModalOpen(true);
-                          }}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          onClick={async () => {
-                            if (
-                              !(await confirm({
-                                title: 'Delete level',
-                                message: `Delete ${level.name}?`,
-                                confirmText: 'Delete',
-                                variant: 'danger',
-                              }))
-                            ) {
-                              return;
-                            }
-                            try {
-                              await api.delete(`/sponsorship/levels/${level.id}`);
-                              await loadAll();
-                            } catch {
-                              showAlert('Failed to delete level', 'error');
-                            }
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    </SortableRow>
+                  )}
+                />
               ) : null}
             </section>
 

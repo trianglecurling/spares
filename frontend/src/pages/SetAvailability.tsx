@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
+import AppStateCard from '../components/AppStateCard';
 import { get, post } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -112,7 +113,9 @@ export default function SetAvailability() {
   if (loading) {
     return (
       <Layout>
-        <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+        <AppPage narrow>
+          <AppStateCard title="Loading sparing availability..." />
+        </AppPage>
       </Layout>
     );
   }
@@ -145,7 +148,7 @@ export default function SetAvailability() {
             <div>
               <h3 className="app-section-title">Comfortable skipping?</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Check this if you're comfortable sparing as a skip
+                Check this if you&apos;re comfortable sparing as a skip
               </p>
             </div>
             <button
@@ -210,7 +213,7 @@ export default function SetAvailability() {
                             available ? 'opacity-100' : 'opacity-0'
                           }`}
                         >
-                          ✓ You're available to spare for this league
+                          ✓ You&apos;re available to spare for this league
                         </p>
                       </div>
                     </div>

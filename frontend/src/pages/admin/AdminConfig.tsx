@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
+import AppStateCard from '../../components/AppStateCard';
 import { get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import Button from '../../components/Button';
@@ -357,7 +359,7 @@ export default function AdminConfig() {
     return (
       <Layout>
         <AppPage>
-          <div className="app-card text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <AppStateCard title="Loading server configuration..." />
         </AppPage>
       </Layout>
     );
@@ -366,10 +368,11 @@ export default function AdminConfig() {
   return (
     <Layout>
       <AppPage>
-        <AppPageHeader
-          title="Server configuration"
-          actions={
-            <div className="flex items-center gap-4">
+        <AppPageHeader title="Server configuration" />
+
+        <AppPageControlsRow
+          left={
+            <div className="flex flex-wrap items-center gap-4">
               <Link
                 to="/admin/observability"
                 className="text-primary-teal hover:text-opacity-80 text-sm font-medium"

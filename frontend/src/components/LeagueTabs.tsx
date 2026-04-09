@@ -1,4 +1,5 @@
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import PageTabs from './PageTabs';
 
 interface LeagueTabsProps {
   leagueId: string;
@@ -26,32 +27,21 @@ export default function LeagueTabs({
 }: LeagueTabsProps) {
   const location = useLocation();
   const basePath = `/leagues/${leagueId}`;
+  const items = leagueTabs
+    .filter((tab) => {
+      if (tab.requiresManager) return showSheetsTab;
+      if (tab.requiresAdmin) return showMaintenanceTab;
+      return true;
+    })
+    .map((tab) => {
+      const to = tab.path ? `${basePath}/${tab.path}` : basePath;
+      return {
+        key: tab.path || 'overview',
+        label: tab.label,
+        to,
+        isActive: location.pathname === to,
+      };
+    });
 
-  return (
-    <div className="flex flex-wrap gap-2">
-      {leagueTabs
-        .filter((tab) => {
-          if (tab.requiresManager) return showSheetsTab;
-          if (tab.requiresAdmin) return showMaintenanceTab;
-          return true;
-        })
-        .map((tab) => {
-          const to = tab.path ? `${basePath}/${tab.path}` : basePath;
-          const isActive = location.pathname === to;
-          return (
-            <Link
-              key={tab.label}
-              to={to}
-              className={`px-3 py-2 rounded-md text-sm font-medium ${
-                isActive
-                  ? 'bg-primary-teal text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-    </div>
-  );
+  return <PageTabs items={items} />;
 }

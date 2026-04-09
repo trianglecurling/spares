@@ -42,9 +42,30 @@ export default [
       ...react.configs.recommended.rules,
       'react/react-in-jsx-scope': 'off',
       'react/jsx-uses-react': 'off',
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true },
+      // Many effects intentionally omit stable callbacks or use mount-only patterns; enable locally when tightening a flow.
+      'react-hooks/exhaustive-deps': 'off',
+      // Context and route modules often export hooks alongside providers; splitting only for this rule is low value.
+      'react-refresh/only-export-components': 'off',
+      // Allow straight quotes and apostrophes in JSX text; still flag `>` and `}`.
+      'react/no-unescaped-entities': ['error', { forbid: ['>', '}'] }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/NotificationModal', '**/NotificationModal.*'],
+              message: 'Use useAlert() for routine success and error feedback.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'window',
+          property: 'confirm',
+          message: 'Use useConfirm() from ConfirmContext instead of window.confirm().',
+        },
       ],
       '@typescript-eslint/no-unused-vars': [
         'error',
