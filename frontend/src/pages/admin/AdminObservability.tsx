@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { get } from '../../api/client';
+import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 
@@ -68,24 +68,22 @@ export default function AdminObservability() {
       <AppPage>
         <AppPageHeader
           title="Observability"
-          description={
-            <Link
-              to="/admin/config"
+          actions={
+            <BackButton label="Server config" to="/admin/config" />
+          }
+        />
+
+        <div className="app-card p-6">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <a
+              href="https://observability.tccnc.club"
+              target="_blank"
+              rel="noreferrer"
               className="text-primary-teal hover:underline text-sm font-medium"
             >
-              ← Back to Server Config
-            </Link>
-          }
-          actions={
-            <div className="flex items-center gap-3">
-              <a
-                href="https://observability.tccnc.club"
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary-teal hover:underline text-sm font-medium"
-              >
-                Grafana dashboard ↗
-              </a>
+              Grafana dashboard ↗
+            </a>
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <select
                 value={obsRangeDays}
                 onChange={(e) => loadObservability(parseInt(e.target.value, 10))}
@@ -104,10 +102,8 @@ export default function AdminObservability() {
                 {obsLoading ? 'Refreshing...' : 'Refresh'}
               </Button>
             </div>
-          }
-        />
+          </div>
 
-        <div className="app-card p-6">
           {obsLoading && (
             <div className="text-sm text-gray-500 dark:text-gray-400">Loading metrics…</div>
           )}

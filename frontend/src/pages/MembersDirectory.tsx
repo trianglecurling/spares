@@ -3,9 +3,13 @@ import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get } from '../api/client';
 import { formatPhone } from '../utils/phone';
+import AppPageControlsRow from '../components/AppPageControlsRow';
+import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
 import { HiCheckCircle } from 'react-icons/hi2';
+import PageTabs from '../components/PageTabs';
+import AppStateCard from '../components/AppStateCard';
 
 interface Member {
   id: number;
@@ -168,10 +172,11 @@ export default function MembersDirectory() {
   return (
     <Layout>
       <AppPage>
-        <AppPageHeader
-          title="Member directory"
-          actions={
-            <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
+        <AppPageHeader title="Member directory" />
+
+        <AppPageControlsRow
+          right={
+            <>
               <div className="w-full sm:w-72">
                 <select
                   value={leagueFilterId}
@@ -200,12 +205,12 @@ export default function MembersDirectory() {
                   className="app-input"
                 />
               </div>
-            </div>
+            </>
           }
         />
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <AppStateCard title="Loading members..." />
         ) : (
           <div className="app-table-shell">
               <table className="app-table">
@@ -304,27 +309,29 @@ export default function MembersDirectory() {
         >
           {selectedMember && (
             <div className="flex flex-col min-h-[400px]">
-              {/* Tabs */}
-              <div className="flex gap-1 mb-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-                {(['profile', 'sparing', 'leagues'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                      activeTab === tab
-                        ? 'border-primary-teal text-primary-teal'
-                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                    }`}
-                  >
-                    {tab === 'profile'
-                      ? 'Profile'
-                      : tab === 'sparing'
-                        ? 'Sparing availability'
-                        : 'Leagues'}
-                  </button>
-                ))}
-              </div>
+              <PageTabs
+                className="mb-4 shrink-0"
+                items={[
+                  {
+                    key: 'profile',
+                    label: 'Profile',
+                    isActive: activeTab === 'profile',
+                    onClick: () => setActiveTab('profile'),
+                  },
+                  {
+                    key: 'sparing',
+                    label: 'Sparing availability',
+                    isActive: activeTab === 'sparing',
+                    onClick: () => setActiveTab('sparing'),
+                  },
+                  {
+                    key: 'leagues',
+                    label: 'Leagues',
+                    isActive: activeTab === 'leagues',
+                    onClick: () => setActiveTab('leagues'),
+                  },
+                ]}
+              />
 
               {/* Tab content */}
               <div className="overflow-y-auto flex-1 min-h-0">
@@ -445,7 +452,7 @@ export default function MembersDirectory() {
                       Leagues & Teams
                     </h3>
                     {loadingLeagues ? (
-                      <div className="text-gray-500 dark:text-gray-400">Loading leagues...</div>
+                      <InlineStateMessage title="Loading leagues..." />
                     ) : memberLeagues && memberLeagues.length > 0 ? (
                       <ul className="space-y-3">
                         {memberLeagues.map((entry) => (
@@ -483,9 +490,7 @@ export default function MembersDirectory() {
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-gray-500 dark:text-gray-400">
-                        Not on any league rosters.
-                      </p>
+                      <InlineStateMessage title="Not on any league rosters." />
                     )}
                   </div>
                 )}

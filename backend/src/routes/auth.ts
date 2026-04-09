@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, desc, sql, like, gt } from 'drizzle-orm';
+import { eq, and, desc, sql, like } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import {
   generateAuthCode,

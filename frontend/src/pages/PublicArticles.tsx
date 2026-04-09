@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
 import PublicLayout from '../components/PublicLayout';
+import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 
 interface ArticleSummary {
@@ -38,7 +39,11 @@ export default function PublicArticles() {
         <section className="public-section">
           <div className="public-container">
             <div className="public-content">
-              <div className="public-card p-6 text-red-700">{error}</div>
+              <PublicStateCard
+                title="Unable to load resources"
+                description={error}
+                tone="error"
+              />
             </div>
           </div>
         </section>
@@ -60,9 +65,15 @@ export default function PublicArticles() {
               Learning resources
             </h1>
             {loading ? (
-              <div className="public-card p-6 text-gray-600">Loading resources...</div>
+              <PublicStateCard
+                title="Loading resources..."
+                description="Gathering the latest articles and guides."
+              />
             ) : articles.length === 0 ? (
-              <div className="public-card p-6 text-gray-600">No published resources are available yet.</div>
+              <PublicStateCard
+                title="No published resources yet."
+                description="Check back soon for club guides, updates, and beginner-friendly curling resources."
+              />
             ) : (
               <ul className="space-y-4">
                 {articles.map((a) => (

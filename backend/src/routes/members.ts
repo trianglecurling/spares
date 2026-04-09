@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { isAdmin, isServerAdmin, isCalendarAdmin, isInServerAdminsList, isSponsorAdmin } from '../utils/auth.js';
+import { isAdmin, isServerAdmin, isInServerAdminsList, isSponsorAdmin } from '../utils/auth.js';
 import { hasScope } from '../utils/rbac.js';
 import { Member } from '../types.js';
 import {
@@ -858,11 +858,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
       count: insertedIds.length,
       ids: insertedIds,
     };
-      return {
-        success: true,
-        count: insertedIds.length,
-        ids: insertedIds,
-      };
     }
   );
 
@@ -1039,17 +1034,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
       emailSubscribed: updatedMember.email_subscribed === 1,
       optedInSms: updatedMember.opted_in_sms === 1,
     };
-      return {
-        id: updatedMember.id,
-        name: updatedMember.name,
-        email: updatedMember.email,
-        phone: updatedMember.phone,
-        validThrough: normalizeDateString(updatedMember.valid_through),
-        isAdmin: isAdmin(updatedMember),
-        isServerAdmin: isServerAdmin(updatedMember),
-        emailSubscribed: updatedMember.email_subscribed === 1,
-        optedInSms: updatedMember.opted_in_sms === 1,
-      };
     }
   );
 
@@ -1118,7 +1102,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .where(eq(schema.members.id, memberId));
 
     return { success: true };
-      return { success: true };
     }
   );
 
@@ -1201,7 +1184,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
     });
 
     return { success: true, deletedCount: deletableIds.length };
-      return { success: true, deletedCount: deletableIds.length };
     }
   );
 
@@ -1248,7 +1230,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const loginLink = `${config.frontendUrl}?token=${token}`;
 
     return { loginLink };
-      return { loginLink };
     }
   );
 
@@ -1298,7 +1279,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
     });
 
     return { success: true };
-      return { success: true };
     }
   );
 
@@ -1352,10 +1332,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
       success: true,
       sent: targetMembers.length,
     };
-      return {
-        success: true,
-        sent: targetMembers.length,
-      };
     }
   );
 }

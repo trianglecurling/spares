@@ -142,7 +142,7 @@ export type ApiErrorResponse = {
   requiresInstallation?: boolean;
 };
 
-export type ApiErrorStatusCode = 400 | 401 | 403 | 404 | 409 | 500;
+export type ApiErrorStatusCode = 400 | 401 | 403 | 404 | 409 | 500 | 503;
 
 export type ApiReply<TSuccess, TExtraStatus extends number = never> = {
   200: TSuccess;

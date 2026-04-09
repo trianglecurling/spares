@@ -77,7 +77,7 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
  * When a Bearer token is present and valid, sets `request.member` (and authz) like {@link authMiddleware}.
  * Missing, invalid, or expired membership leaves the request unauthenticated without an error response.
  */
-export async function optionalAuthMiddleware(request: FastifyRequest, reply: FastifyReply) {
+export async function optionalAuthMiddleware(request: FastifyRequest, _reply: FastifyReply) {
   const authHeader = request.headers.authorization;
   const tokenFromQuery = (() => {
     if (request.query && typeof request.query === 'object' && 'token' in request.query) {

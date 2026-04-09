@@ -47,6 +47,7 @@ import Button from '../components/Button';
 import Layout from '../components/Layout';
 import PublicLayout from '../components/PublicLayout';
 import Modal from '../components/Modal';
+import PageTabs from '../components/PageTabs';
 import type { ArticleOption } from '../components/ArticleAutocomplete';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
@@ -908,30 +909,23 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
             return (
               <div className="flex flex-col min-h-[680px] space-y-3">
                 {showDescriptionTab && (
-                  <div className="flex border-b border-gray-200 dark:border-gray-600 mb-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setViewEventActiveTab('details')}
-                      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                        viewEventActiveTab === 'details'
-                          ? 'border-primary-teal text-primary-teal dark:text-primary-teal'
-                          : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
-                    >
-                      Event details
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewEventActiveTab('description')}
-                      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                        viewEventActiveTab === 'description'
-                          ? 'border-primary-teal text-primary-teal dark:text-primary-teal'
-                          : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
-                    >
-                      Description
-                    </button>
-                  </div>
+                  <PageTabs
+                    className="mb-2 shrink-0"
+                    items={[
+                      {
+                        key: 'details',
+                        label: 'Event details',
+                        isActive: viewEventActiveTab === 'details',
+                        onClick: () => setViewEventActiveTab('details'),
+                      },
+                      {
+                        key: 'description',
+                        label: 'Description',
+                        isActive: viewEventActiveTab === 'description',
+                        onClick: () => setViewEventActiveTab('description'),
+                      },
+                    ]}
+                  />
                 )}
 
                 {(viewEventActiveTab === 'details' || !showDescriptionTab) && (

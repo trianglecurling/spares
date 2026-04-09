@@ -3,8 +3,11 @@ import { del, get, patch, post, put } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import InlineStateMessage from '../../components/InlineStateMessage';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
+import PageTabs from '../../components/PageTabs';
+import AppStateCard from '../../components/AppStateCard';
 
 interface Team {
   id: number;
@@ -609,7 +612,7 @@ export default function LeagueSchedule({
   };
 
   if (loadingDraws || loadingGames) {
-    return <div className="text-sm text-gray-500 dark:text-gray-400">Loading schedule...</div>;
+    return <AppStateCard compact title="Loading schedule..." />;
   }
 
   return (
@@ -649,7 +652,10 @@ export default function LeagueSchedule({
         </div>
 
         {drawSlots.length === 0 ? (
-          <div className="text-sm text-gray-500 dark:text-gray-400">No draws configured yet.</div>
+          <InlineStateMessage
+            title="No draws configured yet."
+            description="Add draw slots before scheduling games."
+          />
         ) : (
           (() => {
             // Group draw slots by date
@@ -992,30 +998,23 @@ export default function LeagueSchedule({
           className={editingGame ? 'flex flex-col flex-1 min-h-0 gap-4' : 'space-y-4'}
         >
           {editingGame && (
-            <div className="flex shrink-0 border-b border-gray-200 dark:border-gray-700 -mx-4 px-4">
-              <button
-                type="button"
-                onClick={() => setEditTab('details')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  editTab === 'details'
-                    ? 'border-primary-teal text-primary-teal'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
-              >
-                Game details
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditTab('results')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  editTab === 'results'
-                    ? 'border-primary-teal text-primary-teal'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
-              >
-                Results
-              </button>
-            </div>
+            <PageTabs
+              className="-mx-4 px-4 shrink-0"
+              items={[
+                {
+                  key: 'details',
+                  label: 'Game details',
+                  isActive: editTab === 'details',
+                  onClick: () => setEditTab('details'),
+                },
+                {
+                  key: 'results',
+                  label: 'Results',
+                  isActive: editTab === 'results',
+                  onClick: () => setEditTab('results'),
+                },
+              ]}
+            />
           )}
 
           <div

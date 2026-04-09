@@ -1,0 +1,12 @@
+---
+description: Plan-first workflow for nontrivial feature work
+alwaysApply: true
+---
+
+# Feature Planning Workflow
+
+- For nontrivial work, identify existing patterns and closest analog files before coding.
+- Summarize the intended loading, empty, error, success, and permission-denied states before implementation.
+- Note accessibility requirements and API contracts involved in the change.
+- Explicitly call out deviations from existing patterns and do not introduce them silently.
+- Use these docs as the default planning set: `docs/ux-constitution.md`, `docs/api-conventions.md`, `docs/accessibility-checklist.md`, `docs/golden-examples.md`, and `docs/ai-feature-prompt-template.md`.

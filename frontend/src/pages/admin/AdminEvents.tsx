@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
@@ -118,12 +119,17 @@ export default function AdminEvents() {
           }
         />
 
-        {loading && <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>}
+        {loading && <AppStateCard title="Loading events..." />}
 
         {!loading && events.length === 0 && (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            <p>No events yet.</p>
-          </div>
+          <AppStateCard
+            title="No events yet."
+            action={
+              <Link to="/admin/events/new">
+                <Button type="button" variant="primary">Create event</Button>
+              </Link>
+            }
+          />
         )}
 
         {!loading && events.length > 0 && (

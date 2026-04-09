@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { and, desc, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { Member } from '../types.js';
 import { successResponseSchema } from '../api/schemas.js';
 import {
   divisionCreateBodySchema,
@@ -44,9 +43,6 @@ type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
 type DrizzleTx = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 type SheetRow = DrizzleSchema['sheets']['$inferSelect'];
 type DivisionRow = DrizzleSchema['leagueDivisions']['$inferSelect'];
-type LeagueRosterRow = DrizzleSchema['leagueRoster']['$inferSelect'];
-type TeamRow = DrizzleSchema['leagueTeams']['$inferSelect'];
-type TeamMemberRow = DrizzleSchema['teamMembers']['$inferSelect'];
 
 /** YYYY-MM-DD for today (UTC date). Used to exclude expired members from add/search. */
 function todayDateString(): string {

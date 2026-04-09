@@ -2,8 +2,8 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendSpareRequestEmail } from './email.js';
 import { sendSpareRequestSMS } from './sms.js';
 import { buildJwtPayloadForMember, generateEmailLinkToken } from '../utils/auth.js';
-import { getCurrentTime, getCurrentTimestamp, getCurrentTimeAsync } from '../utils/time.js';
-import { eq, and, or, sql, asc, isNull, isNotNull, lte, lt } from 'drizzle-orm';
+import { getCurrentTimeAsync } from '../utils/time.js';
+import { eq, and, or, sql, asc, isNull, lte, lt } from 'drizzle-orm';
 import { Member } from '../types.js';
 import { sendOnceWithDeliveryClaim } from './spareRequestDelivery.js';
 
@@ -36,14 +36,6 @@ function isTransientDbDisconnectError(error: unknown): boolean {
     msg.includes('Connection terminated') ||
     msg.includes('Connection refused')
   );
-}
-
-interface NotificationQueueItem {
-  id: number;
-  spare_request_id: number;
-  member_id: number;
-  queue_order: number;
-  notified_at: string | null;
 }
 
 interface SpareRequest {

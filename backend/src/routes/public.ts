@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { eq, and, or, sql, asc, desc, gte, isNotNull } from 'drizzle-orm';
+import { eq, and, or, sql, asc, desc, isNotNull } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
 import { publicFileUrl, sanitizeFilename, shouldUseInlineContentDisposition } from '../utils/managedFiles.js';

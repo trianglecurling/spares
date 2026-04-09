@@ -6,7 +6,6 @@ import { hasLeagueSetupAccess } from '../utils/leagueAccess.js';
 import {
   leagueByeRequestsResponseSchema,
   teamByeRequestCreateBodySchema,
-  teamByeRequestListResponseSchema,
   teamByeRequestsReplaceBodySchema,
   teamByeRequestUpdateBodySchema,
   teamByeRequestsWithPreferenceResponseSchema,

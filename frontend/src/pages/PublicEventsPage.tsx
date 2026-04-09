@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PublicLayout from '../components/PublicLayout';
+import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import api from '../utils/api';
 
@@ -86,14 +87,17 @@ export default function PublicEventsPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Upcoming Events</h1>
 
         {loading && (
-          <div className="text-center py-12 text-gray-500">Loading events...</div>
+          <PublicStateCard
+            title="Loading events..."
+            description="Fetching upcoming events and bonspiels."
+          />
         )}
 
         {!loading && upcomingEvents.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            <p className="text-lg">No upcoming events at the moment.</p>
-            <p className="mt-2">Check back soon!</p>
-          </div>
+          <PublicStateCard
+            title="No upcoming events right now."
+            description="Check back soon for upcoming bonspiels, socials, clinics, and other club events."
+          />
         )}
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

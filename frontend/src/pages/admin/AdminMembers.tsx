@@ -3,6 +3,8 @@ import axios from 'axios';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post } from '../../api/client';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
+import AppStateCard from '../../components/AppStateCard';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -761,9 +763,29 @@ export default function AdminMembers() {
         <AppPageHeader
           title="Manage members"
           actions={
+            <Button onClick={() => handleOpenModal()}>Add member</Button>
+          }
+        />
+
+        <AppPageControlsRow
+          left={
+            selectedMemberIds.length > 0 ? (
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                {selectedMemberIds.length} member{selectedMemberIds.length === 1 ? '' : 's'} selected
+              </p>
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Export the member list, import updates, or run bulk actions on selected rows.
+              </p>
+            )
+          }
+          right={
             <>
               <Button onClick={handleOpenExportTsv} variant="secondary">
                 Export TSV
+              </Button>
+              <Button onClick={handleOpenBulkModal} variant="secondary">
+                Bulk import
               </Button>
               {selectedMemberIds.length > 0 && (
                 <>
@@ -775,16 +797,12 @@ export default function AdminMembers() {
                   </Button>
                 </>
               )}
-              <Button onClick={handleOpenBulkModal} variant="secondary">
-                Bulk import
-              </Button>
-              <Button onClick={() => handleOpenModal()}>Add member</Button>
             </>
           }
         />
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <AppStateCard title="Loading members..." />
         ) : (
           <div className="app-table-shell">
               <table className="app-table">

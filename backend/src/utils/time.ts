@@ -1,4 +1,5 @@
 import { getDatabaseConfig } from '../db/config.js';
+import { SQLiteAdapter } from '../db/sqlite-adapter.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 
@@ -144,7 +145,6 @@ export function getCurrentTime(): Date {
   const config = getDatabaseConfig();
   if (config?.type === 'sqlite') {
     // Use SQLite adapter synchronously
-    const { SQLiteAdapter } = require('../db/sqlite-adapter.js');
     const dbPath = config.sqlite?.path || './data/spares.sqlite';
     const db = new SQLiteAdapter(dbPath);
     const serverConfig = db.prepare('SELECT test_current_time FROM server_config WHERE id = 1').get() as {

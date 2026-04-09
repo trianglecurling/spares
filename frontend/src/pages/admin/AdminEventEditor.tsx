@@ -1,17 +1,26 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { HiArrowLeft, HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiBars3 } from 'react-icons/hi2';
+import { HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiChevronDown } from 'react-icons/hi2';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
+import DragHandle from '../../components/dragDrop/DragHandle';
+import SortableList from '../../components/dragDrop/SortableList';
+import SortableRow from '../../components/dragDrop/SortableRow';
+import FormCheckbox from '../../components/FormCheckbox';
+import FormField from '../../components/FormField';
+import FormSection from '../../components/FormSection';
+import MemberAutocomplete from '../../components/MemberAutocomplete';
 import Modal from '../../components/Modal';
+import PageTabs from '../../components/PageTabs';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import { LOCATION_OPTIONS } from '../calendarEventFormShared';
 import {
   CUSTOM_FIELD_TYPES,
-  PRESET_FIELD_TYPES,
   PRESET_LABELS,
   isPresetFieldType,
   isSubheadingFieldType,
@@ -20,12 +29,6 @@ import {
   TEAM_POSITIONS_FOUR,
   type PresetFieldType,
 } from '../../utils/eventRegistrationFieldPresets';
-
-interface MemberOption {
-  id: number;
-  name: string;
-  email?: string | null;
-}
 
 interface Timespan {
   startDt: string;
@@ -74,6 +77,55 @@ interface SpecialLink {
   created_at: string;
 }
 
+/** Rows returned from GET /events/:id for timespans and registration fields */
+interface ApiEventTimespanRow {
+  start_dt: string;
+  end_dt: string;
+}
+
+interface ApiRegistrationFieldRow {
+  id?: number;
+  label: string;
+  field_type: string;
+  scope?: string;
+  required?: number | boolean;
+  options?: string;
+  sort_order?: number;
+}
+
+type EventEditorSavePayload = {
+  title: string;
+  slug: string | undefined;
+  visibility: string;
+  calendarTypeId: string;
+  published: boolean;
+  capacity: number | null;
+  feeMinor: number;
+  memberFeeMinor: number | null;
+  registrationStart: string | null;
+  registrationCutoff: string | null;
+  cancellationCutoff: string | null;
+  allowGroupRegistration: boolean;
+  maxGroupSize: number | null;
+  enableWaitlist: boolean;
+  timespans: Array<{ startDt: string; endDt: string }>;
+  locations: Array<
+    | { locationType: 'sheet'; sheetId: number }
+    | { locationType: 'warm-room' | 'exterior' | 'offsite' | 'virtual' }
+  >;
+  categoryIds: number[];
+  ownerMemberIds: number[];
+  registrationFields: Array<{
+    id?: number;
+    label: string;
+    fieldType: string;
+    scope: string;
+    required: boolean;
+    options: string | null;
+    sortOrder: number;
+  }>;
+};
+
 const EVENT_CALENDAR_TYPE_OPTIONS: { id: string; label: string }[] = [
   { id: 'bonspiel', label: 'Bonspiel' },
   { id: 'clinic', label: 'Clinic' },
@@ -93,84 +145,6 @@ function toDollars(minor: number): string {
   return (minor / 100).toFixed(2);
 }
 
-function MemberAutocomplete({
-  value,
-  onChange,
-  options,
-  placeholder = 'Search members...',
-}: {
-  value: number | '';
-  onChange: (value: number | '') => void;
-  options: { id: number; label: string }[];
-  placeholder?: string;
-}) {
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const selected = options.find((o) => o.id === value);
-  const displayValue = query || selected?.label || '';
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(needle));
-  }, [options, query]);
-
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <input
-        value={displayValue}
-        onFocus={() => {
-          setOpen(true);
-          setQuery('');
-        }}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          if (!open) setOpen(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            setOpen(false);
-            setQuery('');
-          }
-        }}
-        placeholder={placeholder}
-        className="app-input"
-      />
-      {open && (
-        <div className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
-          {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No matches</p>
-          ) : (
-            filtered.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  onChange(o.id);
-                  setOpen(false);
-                  setQuery('');
-                }}
-                className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                {o.label}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AdminEventEditor() {
   const { id, tab } = useParams<{ id: string; tab?: string }>();
   const isNew = id === 'new';
@@ -188,8 +162,7 @@ export default function AdminEventEditor() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
 
-  // Members & sheets for pickers
-  const [members, setMembers] = useState<MemberOption[]>([]);
+  // Sheets for pickers
   const [sheets, setSheets] = useState<Array<{ id: number; name: string }>>([]);
 
   const [title, setTitle] = useState('');
@@ -244,29 +217,41 @@ export default function AdminEventEditor() {
   const [detailLink, setDetailLink] = useState<SpecialLink | null>(null);
 
   const [showScopePrompt, setShowScopePrompt] = useState(false);
+  const [addFieldMenuOpen, setAddFieldMenuOpen] = useState(false);
+  const addFieldMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Owner picker
   const [addingOwner, setAddingOwner] = useState<number | ''>('');
+  const { options: memberOptions } = useMemberOptions();
 
-  const memberOptions = useMemo(
-    () => members.map((m) => ({ id: m.id, label: `${m.name}${m.email ? ` (${m.email})` : ''}` })),
-    [members],
-  );
-
-  const availableOwnerOptions = useMemo(
-    () => memberOptions.filter((o) => !ownerMemberIds.includes(o.id)),
-    [memberOptions, ownerMemberIds],
-  );
+  const presetMenuItems: PresetFieldType[] = [
+    'preset_address',
+    'preset_phone',
+    'preset_dob',
+    'preset_team_four',
+    'preset_team_doubles',
+  ];
 
   useEffect(() => {
-    Promise.all([
-      api.get<MemberOption[]>('/members').catch(() => ({ data: [] as MemberOption[] })),
-      api.get<Array<{ id: number; name: string; isActive?: boolean }>>('/sheets').catch(() => ({ data: [] as Array<{ id: number; name: string }> })),
-    ]).then(([membersRes, sheetsRes]) => {
-      setMembers(membersRes.data || []);
-      const active = (sheetsRes.data ?? []).filter((s: any) => s.isActive !== false);
-      setSheets(active.map((s: any) => ({ id: s.id, name: s.name })));
-    });
+    if (!addFieldMenuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!addFieldMenuRef.current) return;
+      if (addFieldMenuRef.current.contains(event.target as Node)) return;
+      setAddFieldMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [addFieldMenuOpen]);
+
+  useEffect(() => {
+    api
+      .get<Array<{ id: number; name: string; isActive?: boolean }>>('/sheets')
+      .catch(() => ({ data: [] as Array<{ id: number; name: string; isActive?: boolean }> }))
+      .then((sheetsRes) => {
+        const rows = sheetsRes.data ?? [];
+        const active = rows.filter((s) => s.isActive !== false);
+        setSheets(active.map((s) => ({ id: s.id, name: s.name })));
+      });
   }, []);
 
   useEffect(() => {
@@ -296,7 +281,7 @@ export default function AdminEventEditor() {
         setMaxGroupSize(e.maxGroupSize !== null ? String(e.maxGroupSize) : '');
         setEnableWaitlist(e.enableWaitlist !== 0);
         setTimespans(
-          (e.timespans || []).map((ts: any) => ({
+          (e.timespans || []).map((ts: ApiEventTimespanRow) => ({
             startDt: toDateTimeLocal(ts.start_dt),
             endDt: toDateTimeLocal(ts.end_dt),
           })),
@@ -316,14 +301,14 @@ export default function AdminEventEditor() {
         setOwnerMemberIds(e.ownerMemberIds || []);
         setRegistrationFields(
           (e.registrationFields || [])
-            .map((f: any) => ({
+            .map((f: ApiRegistrationFieldRow) => ({
               id: f.id,
               label: f.label,
               fieldType: f.field_type,
               scope: f.scope || 'group',
               required: f.required === 1,
               options: f.options || '',
-              sortOrder: f.sort_order,
+              sortOrder: f.sort_order ?? 0,
             }))
             .sort((a: RegistrationField, b: RegistrationField) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
         );
@@ -384,7 +369,7 @@ export default function AdminEventEditor() {
       ...selectedFixedLocs.map((type) => ({ locationType: type })),
     ];
 
-    const payload: any = {
+    const payload: EventEditorSavePayload = {
       title,
       slug: slug || undefined,
       visibility,
@@ -496,15 +481,6 @@ export default function AdminEventEditor() {
     ]);
   };
   const removeField = (i: number) => setRegistrationFields(registrationFields.filter((_, idx) => idx !== i));
-  const moveField = (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
-    setRegistrationFields((prev) => {
-      const next = [...prev];
-      const [removed] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, removed);
-      return next;
-    });
-  };
   const updateField = (i: number, updates: Partial<RegistrationField>) => {
     const updated = [...registrationFields];
     updated[i] = { ...updated[i], ...updates };
@@ -872,70 +848,70 @@ export default function AdminEventEditor() {
           title={pageTitle}
           description={pageSubtitle}
           actions={
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => navigate('/admin/events')}
-              className="inline-flex items-center gap-2"
-            >
-              <HiArrowLeft className="h-4 w-4" />
-              Events
-            </Button>
+            <BackButton label="Events" onClick={() => navigate('/admin/events')} />
           }
         />
 
         {tabs.length > 1 && (
-          <div className="border-b border-gray-200 dark:border-gray-600 mb-6">
-            <nav className="flex gap-4">
-              {tabs.map((t) => {
-                const to = t.key === 'details'
-                  ? `/admin/events/${id}`
-                  : `/admin/events/${id}/${t.key}`;
-                return (
-                  <Link
-                    key={t.key}
-                    to={to}
-                    className={`pb-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                      activeTab === t.key
-                        ? 'border-primary-teal text-primary-teal dark:text-primary-teal'
-                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                    }`}
-                  >
-                    {t.label}
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
+          <PageTabs
+            items={tabs.map((tab) => ({
+              key: tab.key,
+              label: tab.label,
+              to: tab.key === 'details' ? `/admin/events/${id}` : `/admin/events/${id}/${tab.key}`,
+              isActive: activeTab === tab.key,
+            }))}
+          />
         )}
 
         {activeTab === 'details' && (
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-6">
             <form onSubmit={handleSave} className="flex flex-col gap-6">
               {/* Basic info */}
-              <section className="space-y-4">
+              <FormSection
+                title="Basic info"
+                description="Set the event identity and visibility before configuring registration details."
+                surface="panel"
+              >
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="app-label">Title</label>
-                    <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} className="app-input" />
-                  </div>
-                  <div>
-                    <label className="app-label">Slug</label>
-                    <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="Auto-generated" className="app-input" />
-                  </div>
-                  <div>
-                    <label className="app-label">Visibility</label>
-                    <select value={visibility} onChange={(e) => setVisibility(e.target.value)} className="app-input">
+                  <FormField label="Title" htmlFor="admin-event-title" required className="sm:col-span-2">
+                    <input
+                      id="admin-event-title"
+                      type="text"
+                      required
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="app-input"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Slug"
+                    htmlFor="admin-event-slug"
+                    helperText="Leave this blank to auto-generate a slug from the title."
+                  >
+                    <input
+                      id="admin-event-slug"
+                      type="text"
+                      value={slug}
+                      onChange={(e) => setSlug(e.target.value)}
+                      placeholder="Auto-generated"
+                      className="app-input"
+                    />
+                  </FormField>
+                  <FormField label="Visibility" htmlFor="admin-event-visibility" required>
+                    <select
+                      id="admin-event-visibility"
+                      value={visibility}
+                      onChange={(e) => setVisibility(e.target.value)}
+                      className="app-input"
+                    >
                       <option value="public">Public</option>
                       <option value="active_members">Active members</option>
                       <option value="ice_members">Ice members</option>
                     </select>
-                  </div>
+                  </FormField>
                 </div>
                 <div className="max-w-md">
-                  <label className="app-label" htmlFor="event-calendar-type">
-                    Event type
-                  </label>
+                  <FormField label="Event type" htmlFor="event-calendar-type" required>
                   <select
                     id="event-calendar-type"
                     value={calendarTypeId}
@@ -948,43 +924,89 @@ export default function AdminEventEditor() {
                       </option>
                     ))}
                   </select>
+                  </FormField>
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={published} onChange={(e) => setPublished(e.target.checked)} className="rounded" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Published</span>
-                </label>
-              </section>
+                <FormCheckbox
+                  label="Published"
+                  checked={published}
+                  onChange={setPublished}
+                  helperText="Published events can appear on public or member-facing event lists based on visibility."
+                />
+              </FormSection>
 
               {/* Schedule */}
-              <section className="space-y-4">
+              <FormSection
+                title="Schedule"
+                description="Timespans are required. Use multiple rows when the event runs across separate sessions."
+                surface="panel"
+              >
                 <div className="flex items-center justify-between">
-                  <label className="app-label !mb-0">Schedule</label>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Enter at least one start and end time.
+                  </div>
                   <button type="button" onClick={addTimespan} className="text-sm text-primary-teal hover:underline">
                     + Add timespan
                   </button>
                 </div>
                 {timespans.map((ts, i) => (
-                  <div key={i} className="flex gap-2 items-end">
-                    <div className="flex-1">
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Start</label>
-                      <input type="datetime-local" value={ts.startDt} onChange={(e) => updateTimespan(i, 'startDt', e.target.value)} className="app-input" required />
+                  <div
+                    key={i}
+                    className={`space-y-3 ${i === 0 ? '' : 'border-t border-gray-200 pt-4 dark:border-gray-700'}`}
+                  >
+                    {timespans.length > 1 ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          Timespan {i + 1}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeTimespan(i)}
+                          className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : null}
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <FormField
+                        label="Start"
+                        htmlFor={`admin-event-timespan-start-${i}`}
+                        required
+                      >
+                        <input
+                          id={`admin-event-timespan-start-${i}`}
+                          type="datetime-local"
+                          value={ts.startDt}
+                          onChange={(e) => updateTimespan(i, 'startDt', e.target.value)}
+                          className="app-input"
+                          required
+                        />
+                      </FormField>
+                      <FormField
+                        label="End"
+                        htmlFor={`admin-event-timespan-end-${i}`}
+                        required
+                      >
+                        <input
+                          id={`admin-event-timespan-end-${i}`}
+                          type="datetime-local"
+                          value={ts.endDt}
+                          onChange={(e) => updateTimespan(i, 'endDt', e.target.value)}
+                          className="app-input"
+                          required
+                        />
+                      </FormField>
                     </div>
-                    <div className="flex-1">
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">End</label>
-                      <input type="datetime-local" value={ts.endDt} onChange={(e) => updateTimespan(i, 'endDt', e.target.value)} className="app-input" required />
-                    </div>
-                    {timespans.length > 1 && (
-                      <button type="button" onClick={() => removeTimespan(i)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-2 py-2">
-                        ×
-                      </button>
-                    )}
                   </div>
                 ))}
-              </section>
+              </FormSection>
 
               {/* Locations — pill toggles matching the calendar event form */}
-              <section className="space-y-4">
-                <label className="app-label !mb-0">Locations</label>
+              <FormSection
+                title="Locations"
+                description="Choose the sheets and any off-ice locations that belong on the event."
+                surface="panel"
+              >
                 <div className="space-y-2">
                   {sheets.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="On ice">
@@ -1041,19 +1063,33 @@ export default function AdminEventEditor() {
                     })}
                   </div>
                 </div>
-              </section>
+              </FormSection>
 
               {/* Registration settings */}
-              <section className="space-y-4">
-                <label className="app-label !mb-0">Registration settings</label>
+              <FormSection
+                title="Registration settings"
+                description="Use disabled fields only when settings are temporarily unavailable, not as a substitute for hiding irrelevant inputs."
+                surface="panel"
+              >
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="app-label">Capacity</label>
-                    <input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="Unlimited" className="app-input" />
-                  </div>
-                  <div>
-                    <label className="app-label">Registration fee ($)</label>
+                  <FormField
+                    label="Capacity"
+                    htmlFor="admin-event-capacity"
+                    helperText="Leave this blank if the event should not have a registration cap."
+                  >
                     <input
+                      id="admin-event-capacity"
+                      type="number"
+                      min="1"
+                      value={capacity}
+                      onChange={(e) => setCapacity(e.target.value)}
+                      placeholder="Unlimited"
+                      className="app-input"
+                    />
+                  </FormField>
+                  <FormField label="Registration fee ($)" htmlFor="admin-event-fee">
+                    <input
+                      id="admin-event-fee"
                       type="number"
                       min="0"
                       step="0.01"
@@ -1062,10 +1098,14 @@ export default function AdminEventEditor() {
                       placeholder="0.00 (free)"
                       className="app-input"
                     />
-                  </div>
-                  <div>
-                    <label className="app-label">Member registration fee ($)</label>
+                  </FormField>
+                  <FormField
+                    label="Member registration fee ($)"
+                    htmlFor="admin-event-member-fee"
+                    helperText="If set, logged-in members pay this rate instead of the regular fee."
+                  >
                     <input
+                      id="admin-event-member-fee"
                       type="number"
                       min="0"
                       step="0.01"
@@ -1074,66 +1114,90 @@ export default function AdminEventEditor() {
                       placeholder="Same as regular (leave blank)"
                       className="app-input"
                     />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      If set, members who are logged in when they register pay this rate instead of the regular fee.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="app-label">Registration opens</label>
-                    <input type="datetime-local" value={registrationStart} onChange={(e) => setRegistrationStart(e.target.value)} className="app-input" />
-                  </div>
-                  <div>
-                    <label className="app-label">Registration cutoff</label>
-                    <input type="datetime-local" value={registrationCutoff} onChange={(e) => setRegistrationCutoff(e.target.value)} className="app-input" />
-                  </div>
-                  <div>
-                    <label className="app-label">Cancellation cutoff</label>
-                    <input type="datetime-local" value={cancellationCutoff} onChange={(e) => setCancellationCutoff(e.target.value)} className="app-input" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={enableWaitlist} onChange={(e) => setEnableWaitlist(e.target.checked)} className="rounded" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Enable waitlist when full</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  </FormField>
+                  <FormField label="Registration opens" htmlFor="admin-event-registration-start">
                     <input
-                      type="checkbox"
-                      checked={allowGroupRegistration}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setAllowGroupRegistration(checked);
-                        if (checked && registrationFields.length > 0) {
-                          setShowScopePrompt(true);
-                        } else {
-                          setShowScopePrompt(false);
-                        }
-                        if (!checked) {
-                          setRegistrationFields((prev) =>
-                            prev.map((f) => ({ ...f, scope: 'group' })),
-                          );
-                        }
-                      }}
-                      className="rounded"
+                      id="admin-event-registration-start"
+                      type="datetime-local"
+                      value={registrationStart}
+                      onChange={(e) => setRegistrationStart(e.target.value)}
+                      className="app-input"
                     />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Allow group registration</span>
-                  </label>
+                  </FormField>
+                  <FormField label="Registration cutoff" htmlFor="admin-event-registration-cutoff">
+                    <input
+                      id="admin-event-registration-cutoff"
+                      type="datetime-local"
+                      value={registrationCutoff}
+                      onChange={(e) => setRegistrationCutoff(e.target.value)}
+                      className="app-input"
+                    />
+                  </FormField>
+                  <FormField label="Cancellation cutoff" htmlFor="admin-event-cancellation-cutoff">
+                    <input
+                      id="admin-event-cancellation-cutoff"
+                      type="datetime-local"
+                      value={cancellationCutoff}
+                      onChange={(e) => setCancellationCutoff(e.target.value)}
+                      className="app-input"
+                    />
+                  </FormField>
+                </div>
+                <div className="space-y-3">
+                  <FormCheckbox
+                    label="Enable waitlist when full"
+                    checked={enableWaitlist}
+                    onChange={setEnableWaitlist}
+                  />
+                  <FormCheckbox
+                    label="Allow group registration"
+                    checked={allowGroupRegistration}
+                    onChange={(checked) => {
+                      setAllowGroupRegistration(checked);
+                      if (checked && registrationFields.length > 0) {
+                        setShowScopePrompt(true);
+                      } else {
+                        setShowScopePrompt(false);
+                      }
+                      if (!checked) {
+                        setRegistrationFields((prev) =>
+                          prev.map((f) => ({ ...f, scope: 'group' })),
+                        );
+                      }
+                    }}
+                    helperText="Turn this on when one registration can include multiple people."
+                  />
                   {allowGroupRegistration && (
-                    <div className="ml-6">
-                      <label className="app-label">Max group size</label>
-                      <input type="number" min="2" value={maxGroupSize} onChange={(e) => setMaxGroupSize(e.target.value)} placeholder="No limit" className="app-input w-48" />
-                    </div>
+                    <FormField
+                      label="Max group size"
+                      htmlFor="admin-event-max-group-size"
+                      className="ml-6 max-w-xs"
+                      helperText="Leave this blank if groups should not have a size limit."
+                    >
+                      <input
+                        id="admin-event-max-group-size"
+                        type="number"
+                        min="2"
+                        value={maxGroupSize}
+                        onChange={(e) => setMaxGroupSize(e.target.value)}
+                        placeholder="No limit"
+                        className="app-input"
+                      />
+                    </FormField>
                   )}
                 </div>
-              </section>
+              </FormSection>
 
               {/* Owners */}
-              <section className="space-y-4">
-                <label className="app-label !mb-0">Owners</label>
+              <FormSection
+                title="Owners"
+                description="Owners can manage the event and registration settings."
+                surface="panel"
+              >
                 {ownerMemberIds.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {ownerMemberIds.map((mid) => {
-                      const m = members.find((mem) => mem.id === mid);
+                      const m = memberOptions.find((mem) => mem.id === mid);
                       return (
                         <span
                           key={mid}
@@ -1154,46 +1218,106 @@ export default function AdminEventEditor() {
                 )}
                 <div className="flex gap-2 items-end max-w-sm">
                   <div className="flex-1">
+                    <FormField
+                      label="Add owner"
+                      helperText="Search for a member who should be able to edit this event."
+                    >
                     <MemberAutocomplete
                       value={addingOwner}
                       onChange={setAddingOwner}
-                      options={availableOwnerOptions}
                       placeholder="Search members..."
+                      filterOption={(option) => !ownerMemberIds.includes(option.id)}
                     />
+                    </FormField>
                   </div>
                   <Button type="button" variant="secondary" onClick={addOwner} disabled={addingOwner === ''}>
                     Add
                   </Button>
                 </div>
-              </section>
+              </FormSection>
 
               {/* Custom registration fields */}
-              <section className="space-y-4">
+              <FormSection
+                title="Custom registration fields"
+                description="Keep labels clear and use required text consistently so the public registration form stays predictable."
+                surface="panel"
+              >
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                  <label className="app-label !mb-0">Custom registration fields</label>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <button type="button" onClick={addField} className="text-sm text-primary-teal hover:underline">
-                      + Add field
-                    </button>
-                    <button type="button" onClick={addSubheading} className="text-sm text-primary-teal hover:underline">
-                      + Add subheading
-                    </button>
-                    <select
-                      className="app-input text-sm py-1 min-w-[12rem]"
-                      defaultValue=""
-                      onChange={(e) => {
-                        const v = e.target.value as PresetFieldType;
-                        if (v) addPreset(v);
-                        e.target.value = '';
-                      }}
+                  <div className="relative" ref={addFieldMenuRef}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setAddFieldMenuOpen((open) => !open)}
+                      aria-haspopup="menu"
+                      aria-expanded={addFieldMenuOpen}
+                      className="gap-2"
                     >
-                      <option value="">+ Add pre-defined field…</option>
-                      {PRESET_FIELD_TYPES.filter((pt) => !registrationFields.some((f) => f.fieldType === pt)).map((pt) => (
-                        <option key={pt} value={pt}>
-                          {PRESET_LABELS[pt]}
-                        </option>
-                      ))}
-                    </select>
+                      Add
+                      <HiChevronDown className={`h-4 w-4 transition-transform ${addFieldMenuOpen ? 'rotate-180' : ''}`} />
+                    </Button>
+                    {addFieldMenuOpen ? (
+                      <div
+                        role="menu"
+                        aria-label="Add registration field"
+                        className="absolute left-0 z-20 mt-2 min-w-[18rem] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+                      >
+                        <div className="py-1">
+                          {presetMenuItems.map((preset) => {
+                            const alreadyAdded = registrationFields.some((f) => f.fieldType === preset);
+                            return (
+                              <button
+                                key={preset}
+                                type="button"
+                                role="menuitem"
+                                disabled={alreadyAdded}
+                                onClick={() => {
+                                  addPreset(preset);
+                                  setAddFieldMenuOpen(false);
+                                }}
+                                className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm ${
+                                  alreadyAdded
+                                    ? 'cursor-not-allowed text-gray-400 dark:text-gray-500'
+                                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                <span>{PRESET_LABELS[preset]}</span>
+                                {alreadyAdded ? (
+                                  <span className="text-xs text-gray-400 dark:text-gray-500">Added</span>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="border-t border-gray-200 dark:border-gray-700" />
+                        <div className="py-1">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              addField();
+                              setAddFieldMenuOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                          >
+                            Custom field
+                          </button>
+                        </div>
+                        <div className="border-t border-gray-200 dark:border-gray-700" />
+                        <div className="py-1">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              addSubheading();
+                              setAddFieldMenuOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                          >
+                            Subheading
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 {showScopePrompt && allowGroupRegistration && registrationFields.length > 0 && (
@@ -1210,35 +1334,26 @@ export default function AdminEventEditor() {
                     </button>
                   </div>
                 )}
-                {registrationFields.map((field, i) => (
-                  <div
-                    key={field.id ?? `row-${i}`}
-                    className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50/80 dark:bg-gray-900/30"
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                      if (Number.isNaN(from)) return;
-                      moveField(from, i);
-                    }}
-                  >
-                    <div className="space-y-3">
+                <SortableList
+                  items={registrationFields}
+                  getId={(field) => field.id ?? `row-${field.sortOrder}-${field.label}-${field.fieldType}`}
+                  getItemLabel={(field) =>
+                    isSubheadingFieldType(field.fieldType)
+                      ? 'subheading'
+                      : isPresetFieldType(field.fieldType)
+                        ? PRESET_LABELS[field.fieldType]
+                        : field.label.trim() || 'custom field'
+                  }
+                  itemNoun="registration field"
+                  onReorder={(nextFields) => setRegistrationFields(nextFields)}
+                  renderItem={({ item: field, index: i, isDragging, isOverlay, dragHandle }) => (
+                    <SortableRow
+                      isDragging={isDragging}
+                      isOverlay={isOverlay}
+                      className="space-y-3 border-gray-200/90 bg-transparent dark:border-gray-700/90"
+                    >
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('text/plain', String(i));
-                            e.dataTransfer.effectAllowed = 'move';
-                          }}
-                          className="shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-grab active:cursor-grabbing rounded"
-                          aria-label="Drag to reorder"
-                        >
-                          <HiBars3 className="w-5 h-5" />
-                        </button>
+                        {dragHandle}
                         <div className="flex flex-1 min-w-0 items-center justify-between gap-2">
                           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {isSubheadingFieldType(field.fieldType)
@@ -1250,37 +1365,45 @@ export default function AdminEventEditor() {
                           <button
                             type="button"
                             onClick={() => removeField(i)}
-                            className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 shrink-0"
+                            className="shrink-0 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                           >
                             Remove
                           </button>
                         </div>
                       </div>
-                        {isSubheadingFieldType(field.fieldType) && (
-                          <div>
-                            <input
-                              type="text"
-                              placeholder="Heading text (shown on registration form)"
-                              value={field.label}
-                              onChange={(e) => updateField(i, { label: e.target.value })}
-                              className="app-input"
-                              required
-                            />
-                          </div>
-                        )}
-                        {isPresetFieldType(field.fieldType) && (
-                          <div className="space-y-2">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={field.required}
-                                onChange={(e) => updateField(i, { required: e.target.checked })}
-                                className="rounded"
-                              />
-                              <span className="text-sm text-gray-700 dark:text-gray-300">Required</span>
-                            </label>
-                            {allowGroupRegistration && !presetScopeLocked(field.fieldType) && (
+                      {isSubheadingFieldType(field.fieldType) && (
+                        <FormField
+                          label="Subheading text"
+                          htmlFor={`registration-field-heading-${i}`}
+                          required
+                          helperText="This displays as section copy on the public registration form."
+                        >
+                          <input
+                            id={`registration-field-heading-${i}`}
+                            type="text"
+                            placeholder="Heading text shown on the registration form"
+                            value={field.label}
+                            onChange={(e) => updateField(i, { label: e.target.value })}
+                            className="app-input"
+                            required
+                          />
+                        </FormField>
+                      )}
+                      {isPresetFieldType(field.fieldType) && (
+                        <div className="space-y-2">
+                          <FormCheckbox
+                            label="Required"
+                            checked={field.required}
+                            onChange={(checked) => updateField(i, { required: checked })}
+                          />
+                          {allowGroupRegistration && !presetScopeLocked(field.fieldType) && (
+                            <FormField
+                              label="Field scope"
+                              htmlFor={`registration-field-preset-scope-${i}`}
+                              helperText="Choose whether this preset appears once per registration or once per person."
+                            >
                               <select
+                                id={`registration-field-preset-scope-${i}`}
                                 value={field.scope}
                                 onChange={(e) => updateField(i, { scope: e.target.value })}
                                 className={`app-input max-w-xs ${showScopePrompt ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''}`}
@@ -1288,25 +1411,38 @@ export default function AdminEventEditor() {
                                 <option value="group">Per group</option>
                                 <option value="individual">Per person</option>
                               </select>
-                            )}
-                          </div>
-                        )}
-                        {!isSubheadingFieldType(field.fieldType) && !isPresetFieldType(field.fieldType) && (
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="col-span-2">
-                              <input
-                                type="text"
-                                placeholder="Label"
-                                value={field.label}
-                                onChange={(e) => updateField(i, { label: e.target.value })}
-                                className="app-input"
-                                required
-                              />
-                            </div>
+                            </FormField>
+                          )}
+                        </div>
+                      )}
+                      {!isSubheadingFieldType(field.fieldType) && !isPresetFieldType(field.fieldType) && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <FormField
+                            label="Label"
+                            htmlFor={`registration-field-label-${i}`}
+                            required
+                            className="col-span-2"
+                          >
+                            <input
+                              id={`registration-field-label-${i}`}
+                              type="text"
+                              placeholder="Label"
+                              value={field.label}
+                              onChange={(e) => updateField(i, { label: e.target.value })}
+                              className="app-input"
+                              required
+                            />
+                          </FormField>
+                          <FormField
+                            label="Field type"
+                            htmlFor={`registration-field-type-${i}`}
+                            className={allowGroupRegistration ? '' : 'col-span-2'}
+                          >
                             <select
+                              id={`registration-field-type-${i}`}
                               value={field.fieldType}
                               onChange={(e) => updateField(i, { fieldType: e.target.value })}
-                              className={`app-input ${allowGroupRegistration ? '' : 'col-span-2'}`}
+                              className="app-input"
                             >
                               {CUSTOM_FIELD_TYPES.map((ft) => (
                                 <option key={ft} value={ft}>
@@ -1314,8 +1450,14 @@ export default function AdminEventEditor() {
                                 </option>
                               ))}
                             </select>
-                            {allowGroupRegistration && (
+                          </FormField>
+                          {allowGroupRegistration && (
+                            <FormField
+                              label="Field scope"
+                              htmlFor={`registration-field-scope-${i}`}
+                            >
                               <select
+                                id={`registration-field-scope-${i}`}
                                 value={field.scope}
                                 onChange={(e) => updateField(i, { scope: e.target.value })}
                                 className={`app-input ${showScopePrompt ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''}`}
@@ -1323,36 +1465,63 @@ export default function AdminEventEditor() {
                                 <option value="group">Per group</option>
                                 <option value="individual">Per person</option>
                               </select>
-                            )}
-                            {(field.fieldType === 'dropdown' || field.fieldType === 'radio') && (
-                              <div className="col-span-2">
-                                <input
-                                  type="text"
-                                  placeholder="Options (comma-separated)"
-                                  value={field.options}
-                                  onChange={(e) => updateField(i, { options: e.target.value })}
-                                  className="app-input"
-                                />
-                              </div>
-                            )}
-                            <label className="flex items-center gap-2 cursor-pointer col-span-2">
+                            </FormField>
+                          )}
+                          {(field.fieldType === 'dropdown' || field.fieldType === 'radio') && (
+                            <FormField
+                              label="Options"
+                              htmlFor={`registration-field-options-${i}`}
+                              helperText="Separate each option with a comma."
+                              className="col-span-2"
+                            >
                               <input
-                                type="checkbox"
-                                checked={field.required}
-                                onChange={(e) => updateField(i, { required: e.target.checked })}
-                                className="rounded"
+                                id={`registration-field-options-${i}`}
+                                type="text"
+                                placeholder="Options (comma-separated)"
+                                value={field.options}
+                                onChange={(e) => updateField(i, { options: e.target.value })}
+                                className="app-input"
                               />
-                              <span className="text-sm text-gray-700 dark:text-gray-300">Required</span>
-                            </label>
-                          </div>
-                        )}
-                    </div>
-                  </div>
-                ))}
+                            </FormField>
+                          )}
+                          <FormCheckbox
+                            label="Required"
+                            checked={field.required}
+                            onChange={(checked) => updateField(i, { required: checked })}
+                            className="col-span-2"
+                          />
+                        </div>
+                      )}
+                    </SortableRow>
+                  )}
+                  renderOverlay={(field) => (
+                    <SortableRow isDragging isOverlay className="space-y-3 border-primary-teal/60 bg-white/95 dark:bg-gray-800/95">
+                      <div className="flex items-center gap-2">
+                        <DragHandle
+                          label={`Reorder ${
+                            isSubheadingFieldType(field.fieldType)
+                              ? 'subheading'
+                              : isPresetFieldType(field.fieldType)
+                                ? PRESET_LABELS[field.fieldType]
+                                : field.label.trim() || 'custom field'
+                          }`}
+                          disabled
+                        />
+                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {isSubheadingFieldType(field.fieldType)
+                            ? 'Subheading'
+                            : isPresetFieldType(field.fieldType)
+                              ? PRESET_LABELS[field.fieldType]
+                              : field.label.trim() || 'Custom field'}
+                        </div>
+                      </div>
+                    </SortableRow>
+                  )}
+                />
                 {registrationFields.length === 0 && (
                   <p className="text-sm text-gray-500 dark:text-gray-400">No custom fields configured.</p>
                 )}
-              </section>
+              </FormSection>
 
               {/* Actions */}
               <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-600">
@@ -1360,7 +1529,7 @@ export default function AdminEventEditor() {
                   Cancel
                 </Button>
                 <Button type="submit" variant="primary" disabled={saving}>
-                  {saving ? 'Saving…' : isNew ? 'Create event' : 'Save'}
+                  {saving ? 'Saving...' : isNew ? 'Create event' : 'Save'}
                 </Button>
               </div>
             </form>
@@ -1399,15 +1568,22 @@ export default function AdminEventEditor() {
             </div>
 
             <div className="max-w-lg">
-              <label className="app-label !mb-1">Search</label>
-              <input
-                type="text"
-                value={registrationSearch}
-                onChange={(e) => setRegistrationSearch(e.target.value)}
-                className="app-input"
-                placeholder="Search all text columns..."
-                disabled={!registrationsLoaded}
-              />
+              <FormField
+                label="Search"
+                htmlFor="event-registration-search"
+                state={!registrationsLoaded ? 'disabled' : 'default'}
+                stateMessage={!registrationsLoaded ? 'Registration data is still loading.' : undefined}
+              >
+                <input
+                  id="event-registration-search"
+                  type="text"
+                  value={registrationSearch}
+                  onChange={(e) => setRegistrationSearch(e.target.value)}
+                  className="app-input"
+                  placeholder="Search all text columns..."
+                  disabled={!registrationsLoaded}
+                />
+              </FormField>
             </div>
 
             {!registrationsLoaded && showRegistrationsSlowLoader && (
@@ -1549,53 +1725,79 @@ export default function AdminEventEditor() {
 
         {activeTab === 'links' && (
           <div className="space-y-6">
-            <div className="app-card-subtle space-y-4">
-              <h4 className="font-medium text-gray-900 dark:text-gray-100">Create special registration link</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="app-label">Label</label>
-                  <input type="text" placeholder="e.g. Sponsor invite" value={newLinkLabel} onChange={(e) => setNewLinkLabel(e.target.value)} className="app-input" />
-                </div>
-                <div>
-                  <label className="app-label">Registration fee override ($)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Leave blank for default"
-                    value={newLinkFee}
-                    onChange={(e) => setNewLinkFee(e.target.value)}
-                    className="app-input"
-                  />
-                </div>
-                {allowGroupRegistration && (
-                  <div>
-                    <label className="app-label">Max group size</label>
+            <div className="app-card-subtle">
+              <FormSection
+                title="Create special registration link"
+                description="Special links can override event defaults for fee, dates, capacity, and group size."
+              >
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField
+                    label="Label"
+                    htmlFor="special-link-label"
+                    helperText="Use a short internal label so staff can recognize the purpose of the link."
+                  >
                     <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="Leave blank for event default"
-                      value={newLinkMaxGroupSize}
-                      onChange={(e) => setNewLinkMaxGroupSize(e.target.value)}
+                      id="special-link-label"
+                      type="text"
+                      placeholder="e.g. Sponsor invite"
+                      value={newLinkLabel}
+                      onChange={(e) => setNewLinkLabel(e.target.value)}
                       className="app-input"
                     />
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={newLinkBypassCapacity} onChange={(e) => setNewLinkBypassCapacity(e.target.checked)} className="rounded" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Bypass capacity</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={newLinkIgnoreDates} onChange={(e) => setNewLinkIgnoreDates(e.target.checked)} className="rounded" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Ignore registration dates</span>
-                </label>
-              </div>
-              <Button type="button" variant="primary" onClick={handleCreateSpecialLink}>
-                Create link
-              </Button>
+                  </FormField>
+                  <FormField
+                    label="Registration fee override ($)"
+                    htmlFor="special-link-fee"
+                    helperText="Leave blank to use the event’s standard registration fee."
+                  >
+                    <input
+                      id="special-link-fee"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Leave blank for default"
+                      value={newLinkFee}
+                      onChange={(e) => setNewLinkFee(e.target.value)}
+                      className="app-input"
+                    />
+                  </FormField>
+                  {allowGroupRegistration ? (
+                    <FormField
+                      label="Max group size"
+                      htmlFor="special-link-max-group-size"
+                      helperText="Leave blank to use the event’s default group size."
+                    >
+                      <input
+                        id="special-link-max-group-size"
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Leave blank for event default"
+                        value={newLinkMaxGroupSize}
+                        onChange={(e) => setNewLinkMaxGroupSize(e.target.value)}
+                        className="app-input"
+                      />
+                    </FormField>
+                  ) : null}
+                </div>
+                <div className="space-y-3">
+                  <FormCheckbox
+                    label="Bypass capacity"
+                    checked={newLinkBypassCapacity}
+                    onChange={setNewLinkBypassCapacity}
+                  />
+                  <FormCheckbox
+                    label="Ignore registration dates"
+                    checked={newLinkIgnoreDates}
+                    onChange={setNewLinkIgnoreDates}
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button type="button" variant="primary" onClick={handleCreateSpecialLink}>
+                    Create link
+                  </Button>
+                </div>
+              </FormSection>
             </div>
 
             {specialLinks.length > 0 && (
@@ -1744,11 +1946,20 @@ export default function AdminEventEditor() {
             <div className="text-sm text-gray-600 dark:text-gray-400">
               Copy and paste this into a spreadsheet (tab-separated values).
             </div>
-            <textarea
-              className="app-input flex-1 min-h-0 font-mono text-xs"
-              value={exportTsv}
-              readOnly
-            />
+            <FormField
+              label="TSV export"
+              htmlFor="event-export-tsv"
+              state="readonly"
+              stateMessage="This export is read-only. Copy it into your spreadsheet tool."
+              className="flex-1 min-h-0"
+            >
+              <textarea
+                id="event-export-tsv"
+                className="app-input flex-1 min-h-0 font-mono text-xs"
+                value={exportTsv}
+                readOnly
+              />
+            </FormField>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setIsExportModalOpen(false)}>
                 Close

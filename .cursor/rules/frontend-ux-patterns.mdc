@@ -1,0 +1,37 @@
+---
+description: Frontend UX patterns for React pages and components
+globs: frontend/src/**/*.tsx
+alwaysApply: false
+---
+
+# Frontend UX Patterns
+
+- Default to sentence case for product-facing UI copy unless a proper noun, acronym, or third-party label requires different casing.
+- For authenticated pages, prefer `Layout` + `AppPage` + `AppPageHeader`.
+- Use `frontend/src/components/AppPageControlsRow.tsx` for search, filters, utility links, and dense secondary action clusters below the header.
+- Reuse `app-card`, `app-section-title`, `app-label`, `app-input`, `app-table-*`, and `app-alert-*` before adding one-off wrappers.
+- Use `frontend/src/components/AutocompleteInput.tsx` for suggestion-based autocomplete/listbox inputs before creating custom combobox logic.
+- Use `frontend/src/components/MemberAutocomplete.tsx` and `frontend/src/components/MemberMultiSelect.tsx` for member/user picking instead of hand-rolled search dropdowns.
+- Use `frontend/src/contexts/MemberOptionsContext.tsx` and `useMemberOptions()` as the default shared cached member source instead of fetching member lists separately in page components.
+- Keep `MemberAutocomplete` as the member-specific wrapper over the generic autocomplete primitive.
+- Use `frontend/src/components/PageTabs.tsx` for page-level tabs and section navigation.
+- Use `frontend/src/components/BackButton.tsx` for authenticated page-level back actions.
+- Use `frontend/src/components/AppStateCard.tsx` for standard authenticated loading and empty states unless a richer custom empty state is clearly warranted.
+- Use `frontend/src/components/InlineStateMessage.tsx` for compact loading, empty, and explanatory states inside cards, modals, and subsection panels.
+- Default to `PublicLayout` for public pages unless the route is a documented exception.
+- Use `frontend/src/components/PublicStateCard.tsx` for standard public-page loading, empty, and not-found/error states unless a richer custom public treatment is clearly warranted.
+- Use `useAlert()` for routine success, warning, and error feedback.
+- Use `useConfirm()` for confirmations. Do not use `window.confirm()`.
+- Do not introduce new `NotificationModal` usages.
+- Use `frontend/src/components/FormField.tsx`, `frontend/src/components/FormFieldMessage.tsx`, `frontend/src/components/FormSection.tsx`, and `frontend/src/components/FormCheckbox.tsx` as the default shared form layer for new or edited forms.
+- Do not introduce a form library by default. Reuse the shared form primitives first, and only revisit a library for unusually dynamic, nested, validation-heavy flows.
+- Keep labels above inputs, mark required fields with text, and preserve entered values on validation or save failure.
+- Use `disabled` only for temporarily unavailable fields, `readOnly` for visible immutable values, and hide fields only when they do not apply.
+- Disabled controls should look muted and non-interactive, with an explanation when the reason is not obvious.
+- Use `@dnd-kit/core`, `@dnd-kit/sortable`, and shared components in `frontend/src/components/dragDrop/` for row-based drag and drop.
+- Do not add new native HTML5 drag-and-drop reorder code for lists or trees.
+- Drag-and-drop rows should use visible handles, keyboard reordering, drag overlays, and reduced-motion-safe animation defaults.
+- Every form field should have a label with very few exceptions. Placeholders are optional and should only be used for example data, not as descriptors.
+- Render loading, empty, and error states inside the normal page shell and make them actionable when possible.
+- Every control needs an accessible name. Do not rely on color alone for required, error, or status meaning.
+- Prefer these golden examples: `frontend/src/components/AppPage.tsx`, `frontend/src/pages/admin/AdminMembers.tsx`, `frontend/src/pages/admin/AdminEvents.tsx`, `frontend/src/pages/admin/AdminEventEditor.tsx`, and `frontend/src/components/PublicLayout.tsx`.

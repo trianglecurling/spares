@@ -5,6 +5,7 @@ import { AppPage, AppPageHeader } from '../../components/AppPage';
 import axios from 'axios';
 import { get, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
+import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 
 export default function AdminDatabaseConfig() {
@@ -147,9 +148,7 @@ export default function AdminDatabaseConfig() {
   return (
     <Layout>
       <AppPage narrow>
-        <Button variant="secondary" onClick={() => navigate('/admin/config')} className="mb-4">
-          ← Back to Server Config
-        </Button>
+        <BackButton label="Server config" onClick={() => navigate('/admin/config')} className="mb-4" />
         <AppPageHeader
           title="Configure Database"
           description="Update your database connection settings. Changes will require a server restart."

@@ -3,6 +3,7 @@ import Layout from '../../components/Layout';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import api, { formatApiError } from '../../utils/api';
 
 type RoleRule = {
@@ -124,6 +125,7 @@ function ScopePill({
 }
 
 export default function AdminRoles() {
+  const { confirm } = useConfirm();
   const [roles, setRoles] = useState<Role[]>([]);
   const [scopeRegistry, setScopeRegistry] = useState<ScopeRegistryEntry[]>([]);
   const [newRoleName, setNewRoleName] = useState('');
@@ -272,7 +274,13 @@ export default function AdminRoles() {
       setMessage({ type: 'error', text: 'System roles cannot be deleted.' });
       return;
     }
-    const confirmed = window.confirm(`Delete role "${editingRole.name}"? This action cannot be undone.`);
+    const confirmed = await confirm({
+      title: 'Delete role',
+      message: `Delete role "${editingRole.name}"? This action cannot be undone.`,
+      confirmText: 'Delete role',
+      cancelText: 'Keep role',
+      variant: 'danger',
+    });
     if (!confirmed) return;
 
     setSaving(true);

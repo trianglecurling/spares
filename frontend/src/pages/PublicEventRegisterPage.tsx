@@ -1,13 +1,17 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import AutocompleteInput from '../components/AutocompleteInput';
+import FormField from '../components/FormField';
+import FormSection from '../components/FormSection';
 import PublicLayout from '../components/PublicLayout';
+import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import api, { formatApiError } from '../utils/api';
 import { TeamPlayersField, defaultTeamPlayersJson } from '../components/eventRegistration/TeamPlayersField';
 import { isSubheadingFieldType, TEAM_POSITIONS_DOUBLES, TEAM_POSITIONS_FOUR } from '../utils/eventRegistrationFieldPresets';
 
 const publicInput =
-  'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-teal focus:outline-none focus:ring-2 focus:ring-primary-teal/20';
+  'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-teal focus:outline-none focus:ring-2 focus:ring-primary-teal/20 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:placeholder:text-gray-400 disabled:opacity-80 disabled:focus:border-gray-200 disabled:focus:ring-0 read-only:cursor-default read-only:border-gray-200 read-only:bg-gray-50 read-only:text-gray-700 read-only:focus:border-gray-300 read-only:focus:ring-0';
 
 interface EventField {
   id: number;
@@ -206,7 +210,10 @@ export default function PublicEventRegisterPage() {
     return [...event.registrationFields].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   }, [event]);
 
-  const serverNowMs = useMemo(() => Date.now() + serverOffsetMs, [serverOffsetMs, tick]);
+  const serverNowMs = useMemo(() => {
+    void tick;
+    return Date.now() + serverOffsetMs;
+  }, [serverOffsetMs, tick]);
 
   const registrationTiming = useMemo(() => {
     if (!event) {
@@ -276,7 +283,12 @@ export default function PublicEventRegisterPage() {
   if (loading) {
     return (
       <PublicLayout>
-        <div className="max-w-2xl mx-auto px-4 py-16 text-center text-gray-500">Loading...</div>
+        <div className="max-w-2xl mx-auto px-4 py-16">
+          <PublicStateCard
+            title="Loading registration..."
+            description="Preparing the event details and registration form."
+          />
+        </div>
       </PublicLayout>
     );
   }
@@ -285,9 +297,17 @@ export default function PublicEventRegisterPage() {
     return (
       <PublicLayout>
         <SeoMeta title="Event Not Found" />
-        <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Event Not Found</h1>
-          <Link to="/events" className="text-primary-teal hover:underline">Back to events</Link>
+        <div className="max-w-2xl mx-auto px-4 py-16">
+          <PublicStateCard
+            title="Event not found"
+            description="The registration page could not be loaded because this event is unavailable."
+            action={
+              <Link to="/events" className="text-sm font-medium text-primary-teal hover:underline">
+                Back to events
+              </Link>
+            }
+            tone="error"
+          />
         </div>
       </PublicLayout>
     );
@@ -687,11 +707,14 @@ function RegistrationFieldInput({
   switch (field.field_type) {
     case 'preset_phone':
       return (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {field.label} {field.required === 1 && '*'}
-          </label>
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${gk}`}
+          required={field.required === 1}
+        >
           <input
+            id={`field-${gk}`}
             type="tel"
             autoComplete="tel"
             required={field.required === 1}
@@ -700,22 +723,25 @@ function RegistrationFieldInput({
             className={publicInput}
             placeholder="Phone number"
           />
-        </div>
+        </FormField>
       );
     case 'preset_dob':
       return (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {field.label} {field.required === 1 && '*'}
-          </label>
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${gk}`}
+          required={field.required === 1}
+        >
           <input
+            id={`field-${gk}`}
             type="date"
             required={field.required === 1}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className={publicInput}
           />
-        </div>
+        </FormField>
       );
     case 'preset_address':
       return <PresetAddressField field={field} value={value} onChange={onChange} />;
@@ -775,7 +801,6 @@ function PresetAddressField({
   const streetVal = parsed.street ?? '';
   /** Avoid Nominatim calls for prefilled addresses until the user edits street. */
   const [streetDirty, setStreetDirty] = useState(false);
-  const [streetFocused, setStreetFocused] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ label: string; json: string }>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -852,140 +877,53 @@ function PresetAddressField({
     };
   }, [streetVal, streetDirty]);
 
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
-  const activeSuggestionIndexRef = useRef(-1);
-  activeSuggestionIndexRef.current = activeSuggestionIndex;
-
-  useEffect(() => {
-    setActiveSuggestionIndex(-1);
-  }, [suggestions, lookupLoading]);
-
   const idPrefix = `reg-addr-${field.id}`;
   const trimmedStreet = streetVal.trim();
-  const showStreetDropdown =
-    streetFocused && streetDirty && trimmedStreet.length > 0;
+  const showStreetDropdown = streetDirty && trimmedStreet.length > 0;
 
   const applyStreetSuggestion = (s: { label: string; json: string }) => {
     setStreetDirty(false);
     setLookupLoading(false);
     onChange(s.json);
     setSuggestions([]);
-    setStreetFocused(false);
-    setActiveSuggestionIndex(-1);
   };
 
-  useEffect(() => {
-    if (activeSuggestionIndex < 0 || !showStreetDropdown) return;
-    document.getElementById(`${idPrefix}-suggest-${activeSuggestionIndex}`)?.scrollIntoView({
-      block: 'nearest',
-    });
-  }, [activeSuggestionIndex, idPrefix, showStreetDropdown]);
-
   return (
-    <fieldset className="space-y-3">
-      <legend className="text-sm font-medium text-gray-800 mb-1">
-        {field.label} {field.required === 1 && '*'}
-      </legend>
-      <div>
-        <label htmlFor={`${idPrefix}-street`} className="block text-sm font-medium text-gray-700 mb-1">
-          Street {field.required === 1 && '*'}
-        </label>
+    <FormSection
+      tone="public"
+      title={field.label}
+      description={field.required === 1 ? 'Required' : 'Optional'}
+      className="space-y-3"
+    >
+      <FormField tone="public" label="Street" htmlFor={`${idPrefix}-street`} required={field.required === 1}>
         <div className="relative">
-          <input
-            id={`${idPrefix}-street`}
-            type="text"
-            required={field.required === 1}
-            value={streetVal}
-            onChange={(e) => {
-              const v = e.target.value;
+          <AutocompleteInput
+            inputId={`${idPrefix}-street`}
+            inputValue={streetVal}
+            onInputValueChange={(v) => {
               setStreetDirty(true);
               setPart('street', v);
               if (v.trim().length >= 1) setLookupLoading(true);
             }}
-            onFocus={() => setStreetFocused(true)}
-            onBlur={() => {
-              window.setTimeout(() => setStreetFocused(false), 150);
-            }}
-            onKeyDown={(e) => {
-              if (!showStreetDropdown || lookupLoading || suggestions.length === 0) return;
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setActiveSuggestionIndex((i) => {
-                  const n = i < 0 ? 0 : Math.min(i + 1, suggestions.length - 1);
-                  activeSuggestionIndexRef.current = n;
-                  return n;
-                });
-              } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setActiveSuggestionIndex((i) => {
-                  const n = i <= 0 ? -1 : i - 1;
-                  activeSuggestionIndexRef.current = n;
-                  return n;
-                });
-              } else if (e.key === 'Enter') {
-                const idx = activeSuggestionIndexRef.current;
-                const s = idx >= 0 ? suggestions[idx] : undefined;
-                if (s) {
-                  e.preventDefault();
-                  applyStreetSuggestion(s);
-                }
-              }
-            }}
-            className={publicInput}
-            autoComplete="off"
+            options={suggestions}
+            onSelectOption={applyStreetSuggestion}
+            getOptionKey={(suggestion) => suggestion.json}
+            renderOption={(suggestion) => <span>{suggestion.label}</span>}
             placeholder="Street"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={showStreetDropdown && suggestions.length > 0}
-            aria-controls={`${idPrefix}-street-listbox`}
-            aria-activedescendant={
-              activeSuggestionIndex >= 0 ? `${idPrefix}-suggest-${activeSuggestionIndex}` : undefined
-            }
+            disabled={false}
+            loading={lookupLoading}
+            loadingText="Loading..."
+            noMatchesText={trimmedStreet.length >= 3 ? 'No results' : 'Keep typing to search.'}
+            listboxLabel="Street suggestions"
+            shouldShowDropdown={showStreetDropdown}
+            inputClassName={publicInput}
+            required={field.required === 1}
+            autoComplete="off"
           />
-          {showStreetDropdown && (
-            <ul
-              id={`${idPrefix}-street-listbox`}
-              role="listbox"
-              className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg text-sm"
-            >
-              {lookupLoading ? (
-                <li className="px-3 py-2 text-gray-500">Loading...</li>
-              ) : suggestions.length > 0 ? (
-                suggestions.map((s, i) => (
-                  <li key={i} role="presentation">
-                    <button
-                      id={`${idPrefix}-suggest-${i}`}
-                      type="button"
-                      role="option"
-                      aria-selected={activeSuggestionIndex === i}
-                      className={`w-full px-3 py-2 text-left ${
-                        activeSuggestionIndex === i ? 'bg-gray-100' : 'hover:bg-gray-50'
-                      }`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onMouseEnter={() => {
-                        activeSuggestionIndexRef.current = i;
-                        setActiveSuggestionIndex(i);
-                      }}
-                      onClick={() => applyStreetSuggestion(s)}
-                    >
-                      {s.label}
-                    </button>
-                  </li>
-                ))
-              ) : trimmedStreet.length >= 3 ? (
-                <li className="px-3 py-2 text-gray-500">No results</li>
-              ) : (
-                <li className="px-3 py-2 text-gray-500">Keep typing to search.</li>
-              )}
-            </ul>
-          )}
         </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div>
-          <label htmlFor={`${idPrefix}-city`} className="block text-sm font-medium text-gray-700 mb-1">
-            City {field.required === 1 && '*'}
-          </label>
+      </FormField>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <FormField tone="public" label="City" htmlFor={`${idPrefix}-city`} required={field.required === 1}>
           <input
             id={`${idPrefix}-city`}
             type="text"
@@ -995,11 +933,8 @@ function PresetAddressField({
             className={publicInput}
             placeholder="City"
           />
-        </div>
-        <div>
-          <label htmlFor={`${idPrefix}-state`} className="block text-sm font-medium text-gray-700 mb-1">
-            State / province
-          </label>
+        </FormField>
+        <FormField tone="public" label="State / province" htmlFor={`${idPrefix}-state`}>
           <input
             id={`${idPrefix}-state`}
             type="text"
@@ -1008,13 +943,10 @@ function PresetAddressField({
             className={publicInput}
             placeholder="State / province"
           />
-        </div>
+        </FormField>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div>
-          <label htmlFor={`${idPrefix}-postal`} className="block text-sm font-medium text-gray-700 mb-1">
-            Postal code
-          </label>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <FormField tone="public" label="Postal code" htmlFor={`${idPrefix}-postal`}>
           <input
             id={`${idPrefix}-postal`}
             type="text"
@@ -1023,11 +955,8 @@ function PresetAddressField({
             className={publicInput}
             placeholder="Postal code"
           />
-        </div>
-        <div>
-          <label htmlFor={`${idPrefix}-country`} className="block text-sm font-medium text-gray-700 mb-1">
-            Country
-          </label>
+        </FormField>
+        <FormField tone="public" label="Country" htmlFor={`${idPrefix}-country`}>
           <input
             id={`${idPrefix}-country`}
             type="text"
@@ -1036,9 +965,9 @@ function PresetAddressField({
             className={publicInput}
             placeholder="Country"
           />
-        </div>
+        </FormField>
       </div>
-    </fieldset>
+    </FormSection>
   );
 }
 
@@ -1065,18 +994,24 @@ function LegacyRegistrationField({
             onChange={(e) => onChange(e.target.checked ? '1' : '0')}
           />
           <span className="text-sm text-gray-700">
-            {field.label} {field.required === 1 && '*'}
+            {field.label}
+            {field.required === 1 ? (
+              <span className="ml-2 text-xs font-medium text-gray-500">Required</span>
+            ) : null}
           </span>
         </label>
       );
 
     case 'dropdown':
       return (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {field.label} {field.required === 1 && '*'}
-          </label>
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${radioGroupName}`}
+          required={field.required === 1}
+        >
           <select
+            id={`field-${radioGroupName}`}
             required={field.required === 1}
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -1087,15 +1022,12 @@ function LegacyRegistrationField({
               <option key={opt} value={opt}>{opt}</option>
             ))}
           </select>
-        </div>
+        </FormField>
       );
 
     case 'radio':
       return (
-        <fieldset>
-          <legend className="text-sm font-medium text-gray-700 mb-2">
-            {field.label} {field.required === 1 && '*'}
-          </legend>
+        <FormField tone="public" label={field.label} required={field.required === 1}>
           <div className="space-y-1">
             {options.map((opt) => (
               <label key={opt} className="flex items-center gap-2 cursor-pointer">
@@ -1111,39 +1043,45 @@ function LegacyRegistrationField({
               </label>
             ))}
           </div>
-        </fieldset>
+        </FormField>
       );
 
     case 'number':
       return (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {field.label} {field.required === 1 && '*'}
-          </label>
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${radioGroupName}`}
+          required={field.required === 1}
+        >
           <input
+            id={`field-${radioGroupName}`}
             type="number"
             required={field.required === 1}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className={publicInput}
           />
-        </div>
+        </FormField>
       );
 
     default:
       return (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {field.label} {field.required === 1 && '*'}
-          </label>
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${radioGroupName}`}
+          required={field.required === 1}
+        >
           <input
+            id={`field-${radioGroupName}`}
             type="text"
             required={field.required === 1}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className={publicInput}
           />
-        </div>
+        </FormField>
       );
   }
 }

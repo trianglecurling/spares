@@ -119,6 +119,7 @@ function fuzzyScore(value: string, query: string): number {
   return score;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- shared PG/SQLite article version helpers; drizzle insert row types differ by driver */
 async function createArticleVersion(
   db: any,
   schema: { articleVersions: any },
@@ -184,6 +185,7 @@ async function overwriteLatestArticleVersion(
     })
     .where(eq(schema.articleVersions.id, latest.id));
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export async function contentRoutes(fastify: FastifyInstance) {
   // Articles

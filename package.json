@@ -17,6 +17,7 @@
     "prod:test": "bun run build && bunx concurrently \"bun run --filter backend start\" \"bun run --filter frontend preview\"",
     "openapi:generate": "bun run --filter backend openapi:generate && bunx openapi-typescript backend/openapi.json -o frontend/src/api/generated/types.ts",
     "openapi:check": "npm run openapi:generate",
+    "consistency:check": "bun run lint && bun run openapi:generate && bun run build",
     "lint": "bun run --filter '*' lint",
     "format": "bun run --filter '*' format"
   },
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "baseline-browser-mapping": "^2.9.14",
-    "drizzle-orm": "^0.44.7"
+    "drizzle-orm": "^0.44.7",
+    "eslint": "^9.0.0"
   }
 }

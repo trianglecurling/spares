@@ -10,6 +10,7 @@ import MarkdownDescriptionEditor, {
   type MarkdownDescriptionEditorRef,
   READ_MORE_MARKER,
 } from '../../components/MarkdownDescriptionEditor';
+import BackButton from '../../components/BackButton';
 import HtmlCodeEditor, { type HtmlCodeEditorRef } from '../../components/HtmlCodeEditor';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
@@ -300,10 +301,16 @@ th { font-weight: 600; background: #f3f4f6; }
     }
   }, [form.contentType, form.title, form.content]);
 
-  const confirmDiscardChanges = useCallback(() => {
+  const confirmDiscardChanges = useCallback(async () => {
     if (!hasUnsavedChanges()) return true;
-    return window.confirm('You have unsaved changes. Leave this page and discard them?');
-  }, [hasUnsavedChanges]);
+    return confirm({
+      title: 'Discard unsaved changes?',
+      message: 'You have unsaved changes. Leave this page and discard them?',
+      confirmText: 'Discard changes',
+      cancelText: 'Keep editing',
+      variant: 'warning',
+    });
+  }, [confirm, hasUnsavedChanges]);
 
   useEffect(() => {
     const syncDirty = () => setIsDirty(hasUnsavedChanges());
@@ -397,8 +404,8 @@ th { font-weight: 600; background: #f3f4f6; }
     setSaveDialogOpen(true);
   };
 
-  const handleBackToContent = () => {
-    if (!confirmDiscardChanges()) return;
+  const handleBackToContent = async () => {
+    if (!(await confirmDiscardChanges())) return;
     navigate('/admin/content/articles');
   };
 
@@ -406,7 +413,7 @@ th { font-weight: 600; background: #f3f4f6; }
     if (isNew || !id) return;
     const articleId = Number.parseInt(id, 10);
     if (!Number.isFinite(articleId)) return;
-    if (!confirmDiscardChanges()) return;
+    if (!(await confirmDiscardChanges())) return;
     const revisionLabel = getRevisionLabel(version);
     const ok = await confirm({
       title: 'Restore version',
@@ -474,13 +481,17 @@ th { font-weight: 600; background: #f3f4f6; }
       ) {
         return;
       }
-      if (confirmDiscardChanges()) return;
       event.preventDefault();
       event.stopPropagation();
+      void (async () => {
+        const shouldLeave = await confirmDiscardChanges();
+        if (!shouldLeave) return;
+        navigate(`${destination.pathname}${destination.search}${destination.hash}`);
+      })();
     };
     document.addEventListener('click', handleDocumentClick, true);
     return () => document.removeEventListener('click', handleDocumentClick, true);
-  }, [confirmDiscardChanges, isDirty]);
+  }, [confirmDiscardChanges, isDirty, navigate]);
 
   const handleUploadMarkdownImage = async (
     blob: Blob
@@ -533,13 +544,7 @@ th { font-weight: 600; background: #f3f4f6; }
         <div className="flex-shrink-0">
           <div className="max-w-[1600px] mx-auto px-4 pt-4 pb-2 flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <button
-                type="button"
-                onClick={handleBackToContent}
-                className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              >
-                ← Back to content
-              </button>
+              <BackButton label="Content" onClick={handleBackToContent} className="mb-2" />
               <h1 className="text-xl font-semibold truncate mt-1">
                 {isNew ? 'New article' : form.title || 'Edit article'}
               </h1>

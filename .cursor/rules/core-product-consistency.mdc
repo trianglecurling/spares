@@ -1,0 +1,13 @@
+---
+description: Core product consistency rules for all work
+alwaysApply: true
+---
+
+# Core Product Consistency
+
+- Consistency with existing product patterns is more important than novelty.
+- Reuse existing files and components before introducing a new pattern.
+- If nearby examples conflict, prefer the documented canon in `docs/ux-constitution.md`, `docs/api-conventions.md`, and `docs/golden-examples.md`.
+- Call out any intentional deviation from existing UX, API, terminology, or accessibility patterns before implementing it.
+- Prefer stable curling-domain terminology. Do not casually rename concepts like member, spare request, league, sheet, draw, bonspiel, or event.
+- For reviews, check work against `docs/consistency-review-checklist.md`.

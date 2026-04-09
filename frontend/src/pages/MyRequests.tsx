@@ -6,8 +6,10 @@ import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
+import InlineStateMessage from '../components/InlineStateMessage';
+import MemberMultiSelect from '../components/MemberMultiSelect';
 import Modal from '../components/Modal';
-import NotificationModal from '../components/NotificationModal';
+import AppStateCard from '../components/AppStateCard';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,11 +36,6 @@ interface MySpareRequest {
   invites?: { name: string; status: 'pending' | 'declined' | string }[];
   inviteCounts?: { total: number; pending: number; declined: number };
   createdAt: string;
-}
-
-interface DirectoryMember {
-  id: number;
-  name: string;
 }
 
 interface InvitationStatusRow {
@@ -73,8 +70,6 @@ export default function MyRequests() {
   const [reissueMessage, setReissueMessage] = useState('');
   const [reissuing, setReissuing] = useState(false);
   const [inviteRequest, setInviteRequest] = useState<MySpareRequest | null>(null);
-  const [invitees, setInvitees] = useState<DirectoryMember[]>([]);
-  const [inviteFilter, setInviteFilter] = useState('');
   const [selectedInviteIds, setSelectedInviteIds] = useState<Set<number>>(new Set());
   const [inviting, setInviting] = useState(false);
   const [invitationStatuses, setInvitationStatuses] = useState<InvitationStatusRow[]>([]);
@@ -83,11 +78,6 @@ export default function MyRequests() {
     Record<number, NotificationStatus>
   >({});
   const [pausing, setPausing] = useState<number | null>(null);
-  const [notification, setNotification] = useState<{
-    isOpen: boolean;
-    message: string;
-    variant: 'success' | 'error';
-  }>({ isOpen: false, message: '', variant: 'success' });
 
   useEffect(() => {
     loadRequests();
@@ -185,15 +175,13 @@ export default function MyRequests() {
         )
       );
 
-      // Show success notification
       if (request) {
-        setNotification({
-          isOpen: true,
-          message: isRequester
+        showAlert(
+          isRequester
             ? `Your spare request for ${request.requestedForName} has been successfully canceled.`
             : `The spare request for ${request.requestedForName} has been successfully canceled.`,
-          variant: 'success',
-        });
+          'success'
+        );
       }
     } catch (error) {
       console.error('Failed to cancel request:', error);
@@ -242,20 +230,13 @@ export default function MyRequests() {
 
   const openInviteModal = async (request: MySpareRequest) => {
     setInviteRequest(request);
-    setInviteFilter('');
     setSelectedInviteIds(new Set());
     setLoadingInvitations(true);
     try {
-      const [dirRes, invitesRes] = await Promise.all([
-        get('/members/directory'),
-        get('/spares/{id}/invitations', undefined, { id: String(request.id) }),
-      ]);
-      const directoryMembers = (dirRes as Array<{ id: number; name: string }> | undefined) || [];
-      setInvitees(directoryMembers.map((m) => ({ id: m.id, name: m.name })));
+      const invitesRes = await get('/spares/{id}/invitations', undefined, { id: String(request.id) });
       setInvitationStatuses(invitesRes || []);
     } catch (e) {
       console.error('Failed to load invite modal data:', e);
-      setInvitees([]);
       setInvitationStatuses([]);
       showAlert(formatApiError(e, 'Failed to load invitation data'), 'error');
     } finally {
@@ -434,7 +415,7 @@ export default function MyRequests() {
         />
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
+          <AppStateCard title="Loading spare requests..." />
         ) : requests.length === 0 ? (
           <div className="text-center py-12 app-card">
             <div className="flex justify-center mb-4">
@@ -512,7 +493,7 @@ export default function MyRequests() {
                             )}
                           </div>
                         )}
-                      {request.message && <p className="italic mt-2">"{request.message}"</p>}
+                      {request.message && <p className="italic mt-2">&quot;{request.message}&quot;</p>}
                       {request.status === 'open' &&
                         request.requesterId === member?.id &&
                         notificationStatuses[request.id] && (
@@ -654,7 +635,7 @@ export default function MyRequests() {
                           Message from {renderMe(request.filledByName, member?.name)}:
                         </p>
                         <p className="text-sm text-gray-600 dark:text-gray-400 italic">
-                          "{request.sparerComment}"
+                          &quot;{request.sparerComment}&quot;
                         </p>
                       </div>
                     )}
@@ -785,7 +766,7 @@ export default function MyRequests() {
         {reissueRequest && (
           <div className="space-y-4">
             <p className="text-gray-700 dark:text-gray-300">
-              You're about to re-send notifications for your spare request for{' '}
+              You&apos;re about to re-send notifications for your spare request for{' '}
               <strong>{reissueRequest.requestedForName}</strong> on{' '}
               {formatDate(reissueRequest.gameDate)} at {formatTime(reissueRequest.gameTime)}.
             </p>
@@ -834,7 +815,6 @@ export default function MyRequests() {
         isOpen={!!inviteRequest}
         onClose={() => {
           setInviteRequest(null);
-          setInviteFilter('');
           setSelectedInviteIds(new Set());
           setInvitationStatuses([]);
         }}
@@ -849,7 +829,7 @@ export default function MyRequests() {
             </p>
 
             {loadingInvitations ? (
-              <div className="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+              <InlineStateMessage title="Loading invites..." />
             ) : (
               <>
                 <div className="bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded-md p-3">
@@ -857,9 +837,7 @@ export default function MyRequests() {
                     Current invites
                   </div>
                   {invitationStatuses.length === 0 ? (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      No invites found.
-                    </div>
+                    <InlineStateMessage title="No invites yet." className="mt-2" />
                   ) : (
                     <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                       {invitationStatuses.map((i) => (
@@ -880,50 +858,20 @@ export default function MyRequests() {
                   <label className="app-label">
                     Add invitees
                   </label>
-                  <input
-                    type="text"
-                    value={inviteFilter}
-                    onChange={(e) => setInviteFilter(e.target.value)}
+                  <MemberMultiSelect
+                    selectedIds={[...selectedInviteIds]}
+                    onChange={(next) => setSelectedInviteIds(new Set(next))}
                     placeholder="Search members..."
-                    className="app-input"
+                    noMatchesText="No members found"
+                    isOptionDisabled={(memberOption) =>
+                      invitationStatuses.some((status) => status.memberId === memberOption.id)
+                    }
+                    getOptionStatusText={(memberOption) =>
+                      invitationStatuses.some((status) => status.memberId === memberOption.id)
+                        ? 'Already invited'
+                        : null
+                    }
                   />
-                </div>
-
-                <div className="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-md">
-                  {invitees
-                    .filter((m) => m.name.toLowerCase().includes(inviteFilter.toLowerCase()))
-                    .map((m) => {
-                      const alreadyInvited = invitationStatuses.some((i) => i.memberId === m.id);
-                      const checked = selectedInviteIds.has(m.id);
-                      return (
-                        <label
-                          key={m.id}
-                          className={`flex items-center gap-3 px-4 py-2 border-b border-gray-100 dark:border-gray-700 ${
-                            alreadyInvited
-                              ? 'opacity-60'
-                              : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            disabled={alreadyInvited}
-                            checked={checked}
-                            onChange={(e) => {
-                              const next = new Set(selectedInviteIds);
-                              if (e.target.checked) next.add(m.id);
-                              else next.delete(m.id);
-                              setSelectedInviteIds(next);
-                            }}
-                          />
-                          <span className="text-sm text-gray-800 dark:text-gray-100">{m.name}</span>
-                          {alreadyInvited && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              (already invited)
-                            </span>
-                          )}
-                        </label>
-                      );
-                    })}
                 </div>
 
                 <div className="flex space-x-3 pt-2">
@@ -938,7 +886,6 @@ export default function MyRequests() {
                     variant="secondary"
                     onClick={() => {
                       setInviteRequest(null);
-                      setInviteFilter('');
                       setSelectedInviteIds(new Set());
                       setInvitationStatuses([]);
                     }}
@@ -954,13 +901,6 @@ export default function MyRequests() {
         )}
       </Modal>
 
-      <NotificationModal
-        isOpen={notification.isOpen}
-        message={notification.message}
-        variant={notification.variant}
-        onClose={() => setNotification({ ...notification, isOpen: false })}
-        autoCloseMs={notification.variant === 'success' ? 3000 : 0}
-      />
     </Layout>
   );
 }

@@ -11,6 +11,7 @@ import {
   HiUserGroup,
 } from 'react-icons/hi2';
 import PublicLayout from '../components/PublicLayout';
+import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import api from '../utils/api';
 
@@ -286,7 +287,12 @@ export default function PublicEventDetailPage() {
   if (loading) {
     return (
       <PublicLayout>
-        <div className="max-w-4xl mx-auto px-4 py-16 text-center text-gray-500">Loading...</div>
+        <div className="max-w-4xl mx-auto px-4 py-16">
+          <PublicStateCard
+            title="Loading event..."
+            description="Gathering the latest event details and registration information."
+          />
+        </div>
       </PublicLayout>
     );
   }
@@ -295,12 +301,17 @@ export default function PublicEventDetailPage() {
     return (
       <PublicLayout>
         <SeoMeta title="Event Not Found" />
-        <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Event Not Found</h1>
-          <p className="text-gray-600 mb-6">This event may have been removed or is not available.</p>
-          <Link to="/events" className="text-primary-teal hover:underline">
-            Back to events
-          </Link>
+        <div className="max-w-4xl mx-auto px-4 py-16">
+          <PublicStateCard
+            title="Event not found"
+            description="This event may have been removed, unpublished, or is no longer available."
+            action={
+              <Link to="/events" className="text-sm font-medium text-primary-teal hover:underline">
+                Back to events
+              </Link>
+            }
+            tone="error"
+          />
         </div>
       </PublicLayout>
     );

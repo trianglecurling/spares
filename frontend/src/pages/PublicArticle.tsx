@@ -5,6 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import api from '../utils/api';
 import PublicLayout from '../components/PublicLayout';
+import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 
 /** Tracks executed script content to avoid double-run under React Strict Mode */
@@ -88,7 +89,11 @@ export default function PublicArticle() {
         <section className="public-section">
           <div className="public-container">
             <div className="public-content">
-              <div className="public-card p-6 text-red-700">{error}</div>
+              <PublicStateCard
+                title="Unable to load resource"
+                description={error}
+                tone="error"
+              />
             </div>
           </div>
         </section>
@@ -135,7 +140,10 @@ export default function PublicArticle() {
         <div className="public-container">
           <div className="public-content">
             {!article ? (
-              <div className="public-card p-6 text-gray-600">Loading article...</div>
+              <PublicStateCard
+                title="Loading resource..."
+                description="Retrieving the full article content."
+              />
             ) : (
               <article>
                 <h1 className="text-3xl font-bold text-gray-900 mb-2 text-balance">{article.title}</h1>

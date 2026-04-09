@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle row shapes and DB literal columns; prefer incremental typing over time */
 import crypto from 'crypto';
-import { and, eq, gte, lte, ne, or, sql, inArray, asc, desc, isNull } from 'drizzle-orm';
+import { and, eq, gte, lte, ne, inArray, asc, desc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { EventRegistrationStatus, EventFieldType, EventFieldScope, EventVisibility } from '../db/drizzle-schema.js';
 import {
