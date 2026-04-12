@@ -15,6 +15,8 @@ type ArticleAutocompleteProps = {
   placeholder?: string;
   disabled?: boolean;
   excludeIds?: number[];
+  /** Associates an external `<label htmlFor={inputId}>` with the combobox input. */
+  inputId?: string;
 };
 
 const EMPTY_EXCLUDE_IDS: number[] = [];
@@ -25,6 +27,7 @@ export default function ArticleAutocomplete({
   placeholder = 'Search articles...',
   disabled = false,
   excludeIds = EMPTY_EXCLUDE_IDS,
+  inputId,
 }: ArticleAutocompleteProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -66,6 +69,7 @@ export default function ArticleAutocomplete({
 
   return (
     <AutocompleteInput
+      inputId={inputId}
       inputValue={displayText}
       onInputValueChange={setQuery}
       options={options}

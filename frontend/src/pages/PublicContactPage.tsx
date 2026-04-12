@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FaFacebookF, FaInstagram, FaYoutube } from 'react-icons/fa';
 import { FaXTwitter } from 'react-icons/fa6';
+import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
 import SeoMeta from '../components/SeoMeta';
 import api, { formatApiError } from '../utils/api';
@@ -234,15 +235,12 @@ export default function PublicContactPage() {
             )}
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
-              <div>
-                <label htmlFor="recipient" className="mb-2 block text-sm font-semibold text-gray-700">
-                  Recipient
-                </label>
+              <FormField tone="public" label="Recipient" htmlFor="recipient" labelClassName="font-semibold">
                 <select
                   id="recipient"
                   value={recipient}
                   onChange={(event) => setRecipient(event.target.value as RecipientKey)}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                  className="public-contact-select w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none"
                 >
                   {recipientOptions.map((option) => (
                     <option key={option.key} value={option.key}>
@@ -250,12 +248,9 @@ export default function PublicContactPage() {
                     </option>
                   ))}
                 </select>
-              </div>
+              </FormField>
 
-              <div>
-                <label htmlFor="email" className="mb-2 block text-sm font-semibold text-gray-700">
-                  Your email
-                </label>
+              <FormField tone="public" label="Your email" htmlFor="email" required labelClassName="font-semibold">
                 <input
                   id="email"
                   type="email"
@@ -266,12 +261,9 @@ export default function PublicContactPage() {
                   placeholder="you@example.com"
                   className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
                 />
-              </div>
+              </FormField>
 
-              <div>
-                <label htmlFor="subject" className="mb-2 block text-sm font-semibold text-gray-700">
-                  Subject
-                </label>
+              <FormField tone="public" label="Subject" htmlFor="subject" required labelClassName="font-semibold">
                 <input
                   id="subject"
                   type="text"
@@ -282,12 +274,9 @@ export default function PublicContactPage() {
                   placeholder="How can we help?"
                   className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
                 />
-              </div>
+              </FormField>
 
-              <div>
-                <label htmlFor="body" className="mb-2 block text-sm font-semibold text-gray-700">
-                  Message
-                </label>
+              <FormField tone="public" label="Message" htmlFor="body" required labelClassName="font-semibold">
                 <textarea
                   id="body"
                   value={body}
@@ -298,7 +287,7 @@ export default function PublicContactPage() {
                   placeholder="Share as much detail as possible."
                   className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
                 />
-              </div>
+              </FormField>
 
               <div className="hidden">
                 <label htmlFor="website">Website</label>

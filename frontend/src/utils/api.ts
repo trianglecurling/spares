@@ -33,7 +33,12 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       const currentPath = window.location.pathname;
       // Don't redirect when on public pages - user can stay and browse
-      const isPublicPath = currentPath === '/' || currentPath.startsWith('/article/');
+      const isPublicPath =
+        currentPath === '/' ||
+        currentPath.startsWith('/article/') ||
+        currentPath === '/calendar/public' ||
+        currentPath.startsWith('/calendar/public/') ||
+        /^\/go\/[^/]+\/info(\/|$)/.test(currentPath);
       if (!currentPath.startsWith('/install') && currentPath !== '/login' && !isPublicPath) {
         localStorage.removeItem('authToken');
         window.location.href = '/login';

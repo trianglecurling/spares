@@ -1150,6 +1150,131 @@ function ensureSponsorAdminAndSponsorshipTablesSync(db: DatabaseAdapter): void {
 
 const ICE_BOOKING_PURPOSES_SQL = `('practice', 'makeup_game', 'guests_new', 'guests_experienced', 'other')`;
 
+async function ensurePermalinksTables(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS permalinks (
+        id SERIAL PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        label TEXT,
+        notes TEXT,
+        destination_url TEXT NOT NULL,
+        destination_may_change INTEGER NOT NULL DEFAULT 0,
+        legacy_click_count INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_permalinks_slug ON permalinks(slug)');
+    await execSQL(
+      db,
+      `CREATE TABLE IF NOT EXISTS permalink_hits (
+        id SERIAL PRIMARY KEY,
+        permalink_id INTEGER NOT NULL REFERENCES permalinks(id) ON DELETE CASCADE,
+        occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        visitor_id TEXT NOT NULL,
+        member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        referrer_domain TEXT
+      )`
+    );
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_permalink_hits_permalink_id ON permalink_hits(permalink_id)');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_permalink_hits_occurred_at ON permalink_hits(occurred_at)');
+    return;
+  }
+
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS permalinks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      label TEXT,
+      notes TEXT,
+      destination_url TEXT NOT NULL,
+      destination_may_change INTEGER NOT NULL DEFAULT 0,
+      legacy_click_count INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_permalinks_slug ON permalinks(slug)');
+  await execSQL(
+    db,
+    `CREATE TABLE IF NOT EXISTS permalink_hits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      permalink_id INTEGER NOT NULL REFERENCES permalinks(id) ON DELETE CASCADE,
+      occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      visitor_id TEXT NOT NULL,
+      member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      referrer_domain TEXT
+    )`
+  );
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_permalink_hits_permalink_id ON permalink_hits(permalink_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_permalink_hits_occurred_at ON permalink_hits(occurred_at)');
+}
+
+async function ensurePermalinksLegacyClickCountColumn(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      'ALTER TABLE permalinks ADD COLUMN IF NOT EXISTS legacy_click_count INTEGER NOT NULL DEFAULT 0'
+    );
+    return;
+  }
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(permalinks)`);
+  const columns = await allPrepared<{ name?: string | null }>(stmt);
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('legacy_click_count')) {
+    await execSQL(
+      db,
+      'ALTER TABLE permalinks ADD COLUMN legacy_click_count INTEGER NOT NULL DEFAULT 0'
+    );
+  }
+}
+
+function ensurePermalinksTablesSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS permalinks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      label TEXT,
+      notes TEXT,
+      destination_url TEXT NOT NULL,
+      destination_may_change INTEGER NOT NULL DEFAULT 0,
+      legacy_click_count INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_permalinks_slug ON permalinks(slug)');
+  execSQLSync(
+    db,
+    `CREATE TABLE IF NOT EXISTS permalink_hits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      permalink_id INTEGER NOT NULL REFERENCES permalinks(id) ON DELETE CASCADE,
+      occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      visitor_id TEXT NOT NULL,
+      member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+      referrer_domain TEXT
+    )`
+  );
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_permalink_hits_permalink_id ON permalink_hits(permalink_id)');
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_permalink_hits_occurred_at ON permalink_hits(occurred_at)');
+}
+
+function ensurePermalinksLegacyClickCountColumnSync(db: DatabaseAdapter): void {
+  const stmt = db.prepare(`PRAGMA table_info(permalinks)`);
+  const columns = stmt.all() as { name?: string }[];
+  const columnNames = new Set(columns.map((col) => String(col.name)));
+  if (!columnNames.has('legacy_click_count')) {
+    execSQLSync(
+      db,
+      'ALTER TABLE permalinks ADD COLUMN legacy_click_count INTEGER NOT NULL DEFAULT 0'
+    );
+  }
+}
+
 async function ensureIceBookingsTable(db: DatabaseAdapter): Promise<void> {
   if (db.isAsync()) {
     await execSQL(
@@ -3023,6 +3148,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureRbacTables(db);
   await ensurePaymentDomainTables(db);
   await ensureEventsTables(db);
+  await ensurePermalinksTables(db);
+  await ensurePermalinksLegacyClickCountColumn(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -3794,6 +3921,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureRbacTablesSync(db);
   ensurePaymentDomainTablesSync(db);
   ensureEventsTablesSync(db);
+  ensurePermalinksTablesSync(db);
+  ensurePermalinksLegacyClickCountColumnSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

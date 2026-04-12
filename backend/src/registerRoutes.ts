@@ -20,6 +20,7 @@ import { donationRoutes } from './routes/donations.js';
 import { paymentWebhookRoutes } from './routes/paymentWebhooks.js';
 import { paymentRoutes } from './routes/payments.js';
 import { contentRoutes } from './routes/content.js';
+import { permalinkAdminRoutes } from './routes/permalinksAdmin.js';
 import { fileRoutes } from './routes/files.js';
 import { sponsorshipRoutes } from './routes/sponsorship.js';
 import { governanceRoutes } from './routes/governance.js';
@@ -52,6 +53,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(calendarRoutes, { prefix: '/api' });
   await fastify.register(iceBookingRoutes, { prefix: '/api' });
   await fastify.register(contentRoutes, { prefix: '/api' });
+  await fastify.register(permalinkAdminRoutes, { prefix: '/api' });
   await fastify.register(fileRoutes, { prefix: '/api' });
   await fastify.register(sponsorshipRoutes, { prefix: '/api' });
   await fastify.register(governanceRoutes, { prefix: '/api' });

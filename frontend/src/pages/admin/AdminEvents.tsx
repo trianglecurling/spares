@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
+import DataTable from '../../components/table/DataTable';
+import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -106,6 +108,77 @@ export default function AdminEvents() {
     }
   };
 
+  const columns: Array<DataTableColumn<EventSummary>> = useMemo(
+    () => [
+      {
+        id: 'event',
+        header: 'Event',
+        cellClassName: 'min-w-[14rem]',
+        renderCell: (event) => (
+          <Link
+            to={`/admin/events/${event.id}`}
+            className="font-medium text-primary-teal hover:underline"
+          >
+            {event.title}
+          </Link>
+        ),
+      },
+      {
+        id: 'date',
+        header: 'Date',
+        cellClassName: 'text-sm text-gray-600 dark:text-gray-400',
+        renderCell: (event) => (event.timespans?.[0] ? formatDate(event.timespans[0].start_dt) : 'TBD'),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        align: 'center',
+        renderCell: (event) => (
+          <span
+            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+              event.published
+                ? 'bg-green-100 text-green-800 dark:bg-emerald-900/30 dark:text-emerald-200'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+            }`}
+          >
+            {event.published ? 'Published' : 'Draft'}
+          </span>
+        ),
+      },
+      {
+        id: 'visibility',
+        header: 'Visibility',
+        align: 'center',
+        renderCell: (event) => visibilityBadge(event.visibility),
+      },
+      {
+        id: 'fee',
+        header: 'Fee',
+        align: 'right',
+        cellClassName: 'text-sm text-gray-700 dark:text-gray-300',
+        renderCell: (event) =>
+          event.memberFeeMinor != null && event.memberFeeMinor !== event.feeMinor ? (
+            <>
+              {formatFee(event.feeMinor, event.currency)}
+              <span className="block text-xs text-gray-500 dark:text-gray-400">
+                {formatFee(event.memberFeeMinor, event.currency)} member
+              </span>
+            </>
+          ) : (
+            formatFee(event.feeMinor, event.currency)
+          ),
+      },
+      {
+        id: 'capacity',
+        header: 'Capacity',
+        align: 'right',
+        cellClassName: 'text-sm text-gray-700 dark:text-gray-300',
+        renderCell: (event) => event.capacity ?? '∞',
+      },
+    ],
+    []
+  );
+
   return (
     <Layout>
       <AppPage>
@@ -133,90 +206,39 @@ export default function AdminEvents() {
         )}
 
         {!loading && events.length > 0 && (
-          <div className="app-table-shell overflow-x-auto">
-            <table className="app-table w-full">
-              <thead className="app-table-head">
-                <tr>
-                  <th className="app-table-th text-left">Event</th>
-                  <th className="app-table-th text-left">Date</th>
-                  <th className="app-table-th text-center">Status</th>
-                  <th className="app-table-th text-center">Visibility</th>
-                  <th className="app-table-th text-right">Fee</th>
-                  <th className="app-table-th text-right">Capacity</th>
-                  <th className="app-table-th text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
-                {events.map((event) => (
-                  <tr key={event.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td className="app-table-td">
-                      <Link
-                        to={`/admin/events/${event.id}`}
-                        className="text-primary-teal hover:underline font-medium"
-                      >
-                        {event.title}
-                      </Link>
-                    </td>
-                    <td className="app-table-td text-sm text-gray-600 dark:text-gray-400">
-                      {event.timespans?.[0]
-                        ? formatDate(event.timespans[0].start_dt)
-                        : 'TBD'}
-                    </td>
-                    <td className="app-table-td text-center">
-                      <span
-                        className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
-                          event.published
-                            ? 'bg-green-100 text-green-800 dark:bg-emerald-900/30 dark:text-emerald-200'
-                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {event.published ? 'Published' : 'Draft'}
-                      </span>
-                    </td>
-                    <td className="app-table-td text-center">{visibilityBadge(event.visibility)}</td>
-                    <td className="app-table-td text-right text-sm text-gray-700 dark:text-gray-300">
-                      {event.memberFeeMinor != null && event.memberFeeMinor !== event.feeMinor ? (
-                        <>
-                          {formatFee(event.feeMinor, event.currency)}
-                          <span className="block text-xs text-gray-500 dark:text-gray-400">
-                            {formatFee(event.memberFeeMinor, event.currency)} member
-                          </span>
-                        </>
-                      ) : (
-                        formatFee(event.feeMinor, event.currency)
-                      )}
-                    </td>
-                    <td className="app-table-td text-right text-sm text-gray-700 dark:text-gray-300">{event.capacity ?? '∞'}</td>
-                    <td className="app-table-td text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleTogglePublish(event)}
-                          className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                          title={event.published ? 'Unpublish' : 'Publish'}
-                        >
-                          {event.published ? 'Unpublish' : 'Publish'}
-                        </button>
-                        <button
-                          onClick={() => handleDuplicate(event)}
-                          className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                          title="Duplicate"
-                        >
-                          Duplicate
-                        </button>
-                        <button
-                          onClick={() => handleDelete(event)}
-                          className="px-2 py-1 text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                          title="Delete"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            rows={events}
+            rowKey={(event) => event.id}
+            columns={columns}
+            actions={{
+              widthClassName: 'w-[14rem]',
+              renderActions: (event) => (
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    onClick={() => handleTogglePublish(event)}
+                    className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                    title={event.published ? 'Unpublish' : 'Publish'}
+                  >
+                    {event.published ? 'Unpublish' : 'Publish'}
+                  </button>
+                  <button
+                    onClick={() => handleDuplicate(event)}
+                    className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                    title="Duplicate"
+                  >
+                    Duplicate
+                  </button>
+                  <button
+                    onClick={() => handleDelete(event)}
+                    className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-800 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+                    title="Delete"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ),
+            }}
+          />
         )}
       </AppPage>
     </Layout>

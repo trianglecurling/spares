@@ -7,6 +7,6 @@ alwaysApply: true
 
 - For nontrivial work, identify existing patterns and closest analog files before coding.
 - Summarize the intended loading, empty, error, success, and permission-denied states before implementation.
-- Note accessibility requirements and API contracts involved in the change.
+- Note accessibility requirements and API contracts involved in the change. For UI that includes forms, plan **`FormField`** label association and **visible focus** (`app-input`, `index.css` select rules) per `docs/accessibility-checklist.md`.
 - Explicitly call out deviations from existing patterns and do not introduce them silently.
 - Use these docs as the default planning set: `docs/ux-constitution.md`, `docs/api-conventions.md`, `docs/accessibility-checklist.md`, `docs/golden-examples.md`, and `docs/ai-feature-prompt-template.md`.

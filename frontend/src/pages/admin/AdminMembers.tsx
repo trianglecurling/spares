@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
@@ -10,6 +10,8 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
+import DataTable from '../../components/table/DataTable';
+import type { DataTableColumn } from '../../components/table/tableTypes';
 import { formatPhone } from '../../utils/phone';
 import api, { formatApiError } from '../../utils/api';
 import { HiEllipsisVertical } from 'react-icons/hi2';
@@ -632,36 +634,6 @@ export default function AdminMembers() {
     }
   };
 
-  // Bulk Delete Logic
-  const handleSelectAll = () => {
-    // Get all selectable members (excluding admins, server admins for regular admins, SERVER_ADMINS users, and self)
-    const deletableMemberIds = members
-      .filter((m) => {
-        if (m.id === currentMember?.id) return false;
-        if (m.isAdmin) return false;
-        // Regular admins cannot select server admins
-        if (m.isServerAdmin && !currentMember?.isServerAdmin) return false;
-        // SERVER_ADMINS users cannot be selected
-        if (m.isInServerAdminsList) return false;
-        return true;
-      })
-      .map((m) => m.id);
-
-    if (selectedMemberIds.length === deletableMemberIds.length && deletableMemberIds.length > 0) {
-      setSelectedMemberIds([]);
-    } else {
-      setSelectedMemberIds(deletableMemberIds);
-    }
-  };
-
-  const handleToggleSelect = (id: number) => {
-    if (selectedMemberIds.includes(id)) {
-      setSelectedMemberIds(selectedMemberIds.filter((i) => i !== id));
-    } else {
-      setSelectedMemberIds([...selectedMemberIds, id]);
-    }
-  };
-
   const handleBulkDelete = async () => {
     if (selectedMemberIds.length === 0) return;
 
@@ -739,22 +711,99 @@ export default function AdminMembers() {
   };
 
   // Computed properties
-  const deletableMembersCount = members.filter((m) => {
+  const isSelectableMember = (m: Member) => {
     if (m.id === currentMember?.id) return false;
     if (m.isAdmin) return false;
-    // Regular admins cannot select server admins
     if (m.isServerAdmin && !currentMember?.isServerAdmin) return false;
-    // SERVER_ADMINS users cannot be selected
     if (m.isInServerAdminsList) return false;
     return true;
-  }).length;
-  const isAllSelected =
-    deletableMembersCount > 0 && selectedMemberIds.length === deletableMembersCount;
+  };
   const canEditRoleAccess = Boolean(
     currentMember?.isServerAdmin &&
       editingMember &&
       currentMember &&
       editingMember.id !== currentMember.id
+  );
+
+  const memberColumns: Array<DataTableColumn<Member>> = useMemo(
+    () => [
+      {
+        id: 'name',
+        header: 'Name',
+        renderCell: (member) => (
+          <div className="flex items-center">
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{member.name}</div>
+            {member.isServerAdmin ? (
+              <span className="ml-2 inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-200">
+                Server admin
+              </span>
+            ) : member.isAdmin ? (
+              <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+                Admin
+              </span>
+            ) : member.isLeagueAdministratorGlobal ? (
+              <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                League admin
+              </span>
+            ) : (member as { isSponsorAdmin?: boolean }).isSponsorAdmin ? (
+              <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                Sponsor admin
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        id: 'email',
+        header: 'Email',
+        renderCell: (member) => member.email || '-',
+      },
+      {
+        id: 'phone',
+        header: 'Phone',
+        renderCell: (member) => (member.phone ? formatPhone(member.phone) : '-'),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        renderCell: (member) => (
+          <div className="space-y-1">
+            {member.firstLoginCompleted ? (
+              <div className="text-green-600 dark:text-green-400">Registered</div>
+            ) : (
+              <div className="text-gray-400 dark:text-gray-500">Not registered</div>
+            )}
+            {member.optedInSms ? (
+              <div className="text-xs text-blue-600 dark:text-blue-400">SMS enabled</div>
+            ) : null}
+            {member.spareOnly ? (
+              <div className="text-xs text-amber-700 dark:text-amber-300">Spare-only</div>
+            ) : null}
+            {member.socialMember ? (
+              <div className="text-xs text-amber-700 dark:text-amber-300">Social member</div>
+            ) : null}
+            <div className="text-xs text-gray-400 dark:text-gray-500">
+              {member.emailVisible ? 'Email public' : 'Email hidden'} • {member.phoneVisible ? 'Phone public' : 'Phone hidden'}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'validThrough',
+        header: 'Valid through',
+        renderCell: (member) =>
+          member.isAdmin || member.isServerAdmin ? (
+            <span className="text-gray-600 dark:text-gray-400">Always valid (admin)</span>
+          ) : !member.validThrough ? (
+            <span className="text-gray-600 dark:text-gray-400">No expiry</span>
+          ) : isExpired(member.validThrough, member.isAdmin, member.isServerAdmin) ? (
+            <span className="text-red-600 dark:text-red-400">Expired ({formatDateDisplay(member.validThrough)})</span>
+          ) : (
+            <span className="text-gray-900 dark:text-gray-100">{formatDateDisplay(member.validThrough)}</span>
+          ),
+      },
+    ],
+    []
   );
 
   return (
@@ -804,207 +853,96 @@ export default function AdminMembers() {
         {loading ? (
           <AppStateCard title="Loading members..." />
         ) : (
-          <div className="app-table-shell">
-              <table className="app-table">
-                <thead className="app-table-head">
-                  <tr>
-                    <th className="app-table-th w-10">
-                      <input
-                        type="checkbox"
-                        checked={isAllSelected}
-                        onChange={handleSelectAll}
-                        className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
-                      />
-                    </th>
-                    <th className="app-table-th">
-                      Name
-                    </th>
-                    <th className="app-table-th">
-                      Email
-                    </th>
-                    <th className="app-table-th">
-                      Phone
-                    </th>
-                    <th className="app-table-th">
-                      Status
-                    </th>
-                    <th className="app-table-th">
-                      Valid through
-                    </th>
-                    <th className="app-table-th text-right">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {members.map((member) => (
-                    <tr
-                      key={member.id}
-                      className={
-                        selectedMemberIds.includes(member.id)
-                          ? 'bg-blue-50 dark:bg-blue-900/20'
-                          : ''
-                      }
-                    >
-                      <td className="app-table-td">
-                        {!member.isAdmin &&
-                          (!currentMember || member.id !== currentMember.id) &&
-                          // Regular admins cannot select server admins for deletion
-                          !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
-                          // SERVER_ADMINS users cannot be selected for deletion
-                          !member.isInServerAdminsList && (
-                            <input
-                              type="checkbox"
-                              checked={selectedMemberIds.includes(member.id)}
-                              onChange={() => handleToggleSelect(member.id)}
-                              className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
-                            />
-                          )}
-                      </td>
-                      <td className="app-table-td">
-                        <div className="flex items-center">
-                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {member.name}
-                          </div>
-                          {member.isServerAdmin ? (
-                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200">
-                              Server admin
-                            </span>
-                          ) : member.isAdmin ? (
-                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">
-                              Admin
-                            </span>
-                          ) : member.isLeagueAdministratorGlobal ? (
-                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200">
-                              League admin
-                            </span>
-                          ) : (member as { isSponsorAdmin?: boolean }).isSponsorAdmin ? (
-                            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200">
-                              Sponsor admin
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="app-table-td">
-                        {member.email || '-'}
-                      </td>
-                      <td className="app-table-td">
-                        {member.phone ? formatPhone(member.phone) : '-'}
-                      </td>
-                      <td className="app-table-td">
-                        <div className="space-y-1">
-                          {member.firstLoginCompleted ? (
-                            <div className="text-green-600 dark:text-green-400">✓ Registered</div>
-                          ) : (
-                            <div className="text-gray-400 dark:text-gray-500">Not registered</div>
-                          )}
-                          {member.optedInSms && (
-                            <div className="text-blue-600 dark:text-blue-400 text-xs">
-                              SMS enabled
-                            </div>
-                          )}
-                          {member.spareOnly && (
-                            <div className="text-xs text-amber-700 dark:text-amber-300">Spare-only</div>
-                          )}
-                          {member.socialMember && (
-                            <div className="text-xs text-amber-700 dark:text-amber-300">Social member</div>
-                          )}
-                          <div className="text-xs text-gray-400 dark:text-gray-500">
-                            {member.emailVisible ? 'Email public' : 'Email hidden'} •{' '}
-                            {member.phoneVisible ? 'Phone public' : 'Phone hidden'}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="app-table-td">
-                        {member.isAdmin || member.isServerAdmin ? (
-                          <span className="text-gray-600 dark:text-gray-400">
-                            Always valid (admin)
-                          </span>
-                        ) : !member.validThrough ? (
-                          <span className="text-gray-600 dark:text-gray-400">No expiry</span>
-                        ) : isExpired(member.validThrough, member.isAdmin, member.isServerAdmin) ? (
-                          <span className="text-red-600 dark:text-red-400">
-                            Expired ({formatDateDisplay(member.validThrough)})
-                          </span>
-                        ) : (
-                          <span className="text-gray-900 dark:text-gray-100">
-                            {formatDateDisplay(member.validThrough)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="app-table-td text-right font-medium relative">
-                        <div
-                          className="relative inline-block"
-                          ref={(el) => (menuRefs.current[member.id] = el)}
+          <DataTable
+            rows={members}
+            rowKey={(member) => member.id}
+            columns={memberColumns}
+            selection={{
+              selectedIds: selectedMemberIds,
+              isRowSelectable: isSelectableMember,
+              getRowLabel: (member) => member.name,
+              onToggleRow: (member, checked) => {
+                setSelectedMemberIds((current) =>
+                  checked ? Array.from(new Set([...current, member.id])) : current.filter((id) => id !== member.id)
+                );
+              },
+              onTogglePage: (rows, checked) => {
+                const rowIds = rows.filter(isSelectableMember).map((member) => member.id);
+                setSelectedMemberIds((current) =>
+                  checked
+                    ? Array.from(new Set([...current, ...rowIds]))
+                    : current.filter((id) => !rowIds.includes(id))
+                );
+              },
+            }}
+            actions={{
+              widthClassName: 'w-[4.5rem]',
+              renderActions: (member) => (
+                <div
+                  className="relative inline-block"
+                  ref={(el) => (menuRefs.current[member.id] = el)}
+                >
+                  <button
+                    onClick={() => setOpenMenuId(openMenuId === member.id ? null : member.id)}
+                    className="rounded-md p-1 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 dark:hover:bg-gray-700"
+                    aria-label="Actions menu"
+                  >
+                    <HiEllipsisVertical className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  </button>
+                  {openMenuId === member.id ? (
+                    <div className="absolute right-0 z-50 mt-2 w-48 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                      <div className="flex flex-col py-1">
+                        <button
+                          onClick={() => {
+                            handleOpenModal(member);
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full whitespace-nowrap px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                         >
+                          Edit
+                        </button>
+                        {currentMember?.isServerAdmin ? (
                           <button
-                            onClick={() =>
-                              setOpenMenuId(openMenuId === member.id ? null : member.id)
-                            }
-                            className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2"
-                            aria-label="Actions menu"
+                            onClick={() => {
+                              handleCopyLoginLink(member.id, member.name);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full whitespace-nowrap px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                           >
-                            <HiEllipsisVertical className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                            Copy login link
                           </button>
-                          {openMenuId === member.id && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700">
-                              <div className="py-1 flex flex-col">
-                                <button
-                                  onClick={() => {
-                                    handleOpenModal(member);
-                                    setOpenMenuId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                                >
-                                  Edit
-                                </button>
-                                {currentMember?.isServerAdmin && (
-                                  <button
-                                    onClick={() => {
-                                      handleCopyLoginLink(member.id, member.name);
-                                      setOpenMenuId(null);
-                                    }}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                                  >
-                                    Copy login link
-                                  </button>
-                                )}
-                                {member.email && (
-                                  <button
-                                    onClick={() => {
-                                      handleSendWelcome(member.id, member.name);
-                                      setOpenMenuId(null);
-                                    }}
-                                    className="w-full text-left px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                                  >
-                                    Send welcome email
-                                  </button>
-                                )}
-                                {(!currentMember || member.id !== currentMember.id) &&
-                                  // Regular admins cannot delete server admins
-                                  !(member.isServerAdmin && !currentMember?.isServerAdmin) &&
-                                  // SERVER_ADMINS users cannot be deleted by anyone
-                                  !member.isInServerAdminsList && (
-                                    <button
-                                      onClick={() => {
-                                        handleDelete(member.id, member.name);
-                                        setOpenMenuId(null);
-                                      }}
-                                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                                    >
-                                      Delete
-                                    </button>
-                                  )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-          </div>
+                        ) : null}
+                        {member.email ? (
+                          <button
+                            onClick={() => {
+                              handleSendWelcome(member.id, member.name);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full whitespace-nowrap px-4 py-2 text-left text-sm text-blue-600 hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-700"
+                          >
+                            Send welcome email
+                          </button>
+                        ) : null}
+                        {isSelectableMember(member) ? (
+                          <button
+                            onClick={() => {
+                              handleDelete(member.id, member.name);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full whitespace-nowrap px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 dark:text-red-400 dark:hover:bg-gray-700"
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ),
+            }}
+            emptyState={<AppStateCard compact title="No members yet." />}
+            getRowClassName={(member) => (selectedMemberIds.includes(member.id) ? 'bg-blue-50 dark:bg-blue-900/20' : undefined)}
+          />
         )}
       </AppPage>
 

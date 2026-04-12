@@ -34,6 +34,8 @@ Exceptions:
 ## Forms
 
 - Keep labels above inputs.
+- **Associate every visible label with its control** using **`FormField`** (`label` + `htmlFor` + matching control `id`, prefer `useId()`), **`FormCheckbox`** for standalone checkbox rows, **`inputId`** on `ChoiceInput` and autocomplete children when wrapped by `FormField`, or **`role="group"`** / **`aria-labelledby`** / **`fieldset`–`legend`** only for composite regions. Details: `docs/accessibility-checklist.md` (Label–control association).
+- **Focus styling** — Use `app-input` for default fields; `ChoiceInput` should match the same focus treatment. Legacy native `<select>` focus remains centralized in `frontend/src/index.css` while older screens are migrated. Do not add page-local select focus styles; extend `index.css` if tokens change. Details: `docs/accessibility-checklist.md` (Visible focus).
 - Mark required fields with text, not color alone.
 - Use `frontend/src/components/FormField.tsx`, `frontend/src/components/FormFieldMessage.tsx`, `frontend/src/components/FormSection.tsx`, and `frontend/src/components/FormCheckbox.tsx` as the default shared form shell for new or edited forms.
 - Do not introduce a form library by default. Reach for the shared primitives first, and only revisit a library for unusually dynamic, nested, validation-heavy workflows.
@@ -46,12 +48,14 @@ Exceptions:
 - Preserve entered values on validation or save failure.
 - Prefer inline guidance and clear field labels over placeholder-only instructions.
 
-## Autocomplete and member selection
+## Choice inputs, autocomplete, and member selection
 
-- Use `frontend/src/components/AutocompleteInput.tsx` as the generic autocomplete/listbox primitive for suggestion-based text inputs.
+- Use `frontend/src/components/ChoiceInput.tsx` as the default shared selection primitive for select, dropdown, combobox, radiogroup, and checkboxgroup scenarios.
+- Do not introduce new native `<select>` inputs for standard choice picking. If browser-native select behavior is truly required, document the exception before implementing it.
+- Use `frontend/src/components/AutocompleteInput.tsx` only as the generic autocomplete wrapper built on top of `ChoiceInput` for suggestion-based text inputs.
 - For member or user picking, prefer `frontend/src/components/MemberAutocomplete.tsx` for single-select and `frontend/src/components/MemberMultiSelect.tsx` for multi-select.
 - Use `frontend/src/contexts/MemberOptionsContext.tsx` as the shared member source. Member pickers should read from the cached `useMemberOptions()` flow by default instead of fetching their own member lists in page components.
-- `MemberAutocomplete` is the standard member-specific single-select wrapper built on top of the generic autocomplete primitive.
+- `MemberAutocomplete` is the standard member-specific single-select wrapper built on top of the shared choice-input foundation.
 - For non-member suggestion inputs such as article lookup or street/address lookup, use `AutocompleteInput` directly or through a thin domain wrapper.
 - Treat the private spare request flow in `frontend/src/pages/RequestSpare.tsx` as the behavioral reference for member-picking UX.
 - Show member name first and email as secondary context when available.
@@ -83,6 +87,15 @@ Exceptions:
 
 - Prefer `app-table-shell`, `app-table`, `app-table-th`, and `app-table-td` for dense administrative data.
 - Keep search, filters, and bulk actions near the table they affect.
+- Use the shared table layer in `frontend/src/components/table/` for sortable, paginated, selectable admin tables instead of hand-rolling table mechanics per page.
+- Keep table fetching page-owned. Shared table components should render rows, headers, selection, and pagination, while the page still owns API calls and filter definitions.
+- For server-backed tables, keep page, sort, order, and filters in the URL through a shared query-state hook.
+- Put filters on the left and primary create or bulk actions on the right of `frontend/src/components/AppPageControlsRow.tsx`.
+- Reserve the last column for row actions at a stable width. Do not add or remove the actions column based on selection state.
+- Put selected-row bulk actions in the controls row above the table rather than inside the table header to avoid layout shift.
+- Do not add page-size selectors by default. Each table should use a single page size unless a clear exception is documented.
+- Show `Showing x-y of n` below paginated tables by default.
+- Prefer truncation and richer stacked cells over horizontal scrolling when possible.
 
 ## Drag and drop
 
