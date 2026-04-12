@@ -62,6 +62,7 @@ import PublicEventsPage from './pages/PublicEventsPage';
 import PublicEventDetailPage from './pages/PublicEventDetailPage';
 import PublicEventRegisterPage from './pages/PublicEventRegisterPage';
 import PublicEventRegisterSuccessPage from './pages/PublicEventRegisterSuccessPage';
+import PublicPermalinkInfo from './pages/PublicPermalinkInfo';
 import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
@@ -116,6 +117,8 @@ function App() {
                   <Route path="/events/:slug" element={<PublicEventDetailPage />} />
                   <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
                   <Route path="/events/:slug/register/success" element={<PublicEventRegisterSuccessPage />} />
+
+                  <Route path="/go/:slug/info" element={<PublicPermalinkInfo />} />
 
                   <Route path="/calendar/public" element={<Calendar publicMode />} />
                 </Route>

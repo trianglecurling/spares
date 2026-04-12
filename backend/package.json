@@ -25,7 +25,9 @@
     "db:seed-bye-requests": "bun run src/scripts/seed-bye-requests.ts",
     "db:scrape-articles": "bun run src/scripts/scrape-articles.ts",
     "db:import-articles": "bun run src/scripts/import-articles.ts",
-    "db:scan-orphan-files": "bun run src/scripts/scan-orphan-files.ts"
+    "db:scan-orphan-files": "bun run src/scripts/scan-orphan-files.ts",
+    "db:import-yourls-permalinks": "bun run src/scripts/import-yourls-permalinks.ts",
+    "db:delete-all-permalinks": "bun run src/scripts/delete-all-permalinks.ts"
   },
   "dependencies": {
     "@azure/communication-email": "^1.0.0",

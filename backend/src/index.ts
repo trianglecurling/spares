@@ -10,6 +10,8 @@ import { apiErrorPayload } from './api/errors.js';
 import { initializeDatabase, resetDatabaseState } from './db/index.js';
 import { authMiddleware } from './middleware/auth.js';
 import { registerProtectedApiRoutes, registerPublicApiRoutes } from './registerRoutes.js';
+import { optionalAuthMiddleware } from './middleware/auth.js';
+import { goRedirectRoutes } from './routes/goRedirect.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
@@ -215,6 +217,14 @@ fastify.get('/api/health', async () => {
 });
 
 await registerPublicApiRoutes(fastify);
+
+await fastify.register(
+  async (instance) => {
+    instance.addHook('onRequest', optionalAuthMiddleware);
+    await instance.register(goRedirectRoutes);
+  },
+  { prefix: '/go' }
+);
 
 // Protected routes
 fastify.register(

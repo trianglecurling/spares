@@ -3,6 +3,9 @@ import api, { formatApiError } from '../../utils/api';
 import Layout from '../../components/Layout';
 import Button from '../../components/Button';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppStateCard from '../../components/AppStateCard';
+import DataTable from '../../components/table/DataTable';
+import type { DataTableColumn } from '../../components/table/tableTypes';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { memberHasScope } from '../../utils/permissions';
@@ -209,6 +212,51 @@ export default function AdminPayments() {
   );
   const canManagePayments = memberHasScope(member, 'payments.manage');
 
+  const orderColumns: Array<DataTableColumn<PaymentOrderSummary>> = useMemo(
+    () => [
+      {
+        id: 'order',
+        header: 'Order',
+        renderCell: (order) => (
+          <button
+            type="button"
+            onClick={() => setSelectedOrderId(order.id)}
+            className="text-left font-medium text-gray-900 hover:text-primary-teal dark:text-gray-100"
+          >
+            #{order.id}{' '}
+            <span className="text-xs text-gray-500 dark:text-gray-400">({order.provider})</span>
+          </button>
+        ),
+      },
+      {
+        id: 'subject',
+        header: 'Subject',
+        renderCell: (order) => (
+          <>
+            {order.subjectType}
+            {order.subjectId ? `:${order.subjectId}` : ''}
+          </>
+        ),
+      },
+      {
+        id: 'amount',
+        header: 'Amount',
+        renderCell: (order) => formatMoney(order.amountMinor, order.currency),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        renderCell: (order) => order.status,
+      },
+      {
+        id: 'created',
+        header: 'Created',
+        renderCell: (order) => formatDate(order.createdAt),
+      },
+    ],
+    []
+  );
+
   const resyncSelectedOrder = async () => {
     if (!selectedOrderId || !canManagePayments) return;
     setResyncingOrder(true);
@@ -296,70 +344,15 @@ export default function AdminPayments() {
             </div>
           </div>
 
-          <div className="app-table-shell mt-4">
-            <table className="app-table">
-              <thead className="app-table-head">
-                <tr>
-                  <th className="app-table-th">
-                    Order
-                  </th>
-                  <th className="app-table-th">
-                    Subject
-                  </th>
-                  <th className="app-table-th">
-                    Amount
-                  </th>
-                  <th className="app-table-th">
-                    Status
-                  </th>
-                  <th className="app-table-th">
-                    Created
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-                {loadingOrders ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                      Loading orders...
-                    </td>
-                  </tr>
-                ) : ordersData && ordersData.orders.length > 0 ? (
-                  ordersData.orders.map((order) => {
-                    const selected = order.id === selectedOrderId;
-                    return (
-                      <tr
-                        key={order.id}
-                        className={`cursor-pointer ${selected ? 'bg-teal-50 dark:bg-teal-900/20' : ''}`}
-                        onClick={() => setSelectedOrderId(order.id)}
-                      >
-                        <td className="app-table-td font-medium text-gray-900 dark:text-gray-100">
-                          #{order.id} <span className="text-xs text-gray-500 dark:text-gray-400">({order.provider})</span>
-                        </td>
-                        <td className="app-table-td">
-                          {order.subjectType}
-                          {order.subjectId ? `:${order.subjectId}` : ''}
-                        </td>
-                        <td className="app-table-td">
-                          {formatMoney(order.amountMinor, order.currency)}
-                        </td>
-                        <td className="app-table-td">{order.status}</td>
-                        <td className="app-table-td">
-                          {formatDate(order.createdAt)}
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                      No payment orders found for current filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            className="mt-4"
+            rows={ordersData?.orders ?? []}
+            rowKey={(order) => order.id}
+            columns={orderColumns}
+            loading={loadingOrders}
+            emptyState={<AppStateCard compact title="No payment orders found for current filters." />}
+            getRowClassName={(order) => (order.id === selectedOrderId ? 'bg-teal-50 dark:bg-teal-900/20' : undefined)}
+          />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">

@@ -604,6 +604,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   }, [view, currentDate]);
 
   useEffect(() => {
+    if (publicMode) return;
     api
       .get<Array<{ id: number; name: string; isActive?: boolean }>>('/sheets')
       .then((res) => {
@@ -611,7 +612,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
         setSheets(active.map((s) => ({ id: s.id, name: s.name })));
       })
       .catch(() => {});
-  }, []);
+  }, [publicMode]);
 
   useEffect(() => {
     setEventsLoading(true);
@@ -629,10 +630,34 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       article?: ArticleOption;
       source?: string;
     };
+    type PublicCalendarBundle = {
+      events: EventPayload[];
+      sheets: Array<{ id: number; name: string }>;
+      leagueEvents: EventPayload[];
+    };
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
-    const directCalendarPath = publicMode ? '/public/calendar/events' : '/calendar/events';
+
+    if (publicMode) {
+      api
+        .get<PublicCalendarBundle>(`/public/calendar/events?${rangeQuery}`)
+        .then((res) => {
+          const bundle = res.data;
+          if (!bundle) {
+            setEvents([]);
+            return;
+          }
+          setSheets(bundle.sheets.map((s) => ({ id: s.id, name: s.name })));
+          const calendarEvents = bundle.events.map(apiEventToCalendar);
+          const leagueEvents = (bundle.leagueEvents ?? []).map(apiEventToCalendar);
+          setEvents([...calendarEvents, ...leagueEvents]);
+        })
+        .catch(() => setEvents([]))
+        .finally(() => setEventsLoading(false));
+      return;
+    }
+
     Promise.allSettled([
-      api.get<EventPayload[]>(`${directCalendarPath}?${rangeQuery}`),
+      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
       api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
     ])
       .then(([eventsRes, leagueRes]) => {
@@ -648,10 +673,30 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 
   const refreshEvents = () => {
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
-    const directCalendarPath = publicMode ? '/public/calendar/events' : '/calendar/events';
     type EventPayload = Parameters<typeof apiEventToCalendar>[0];
+    type PublicCalendarBundle = {
+      events: EventPayload[];
+      sheets: Array<{ id: number; name: string }>;
+      leagueEvents: EventPayload[];
+    };
+
+    if (publicMode) {
+      api
+        .get<PublicCalendarBundle>(`/public/calendar/events?${rangeQuery}`)
+        .then((res) => {
+          const bundle = res.data;
+          if (!bundle) return;
+          setSheets(bundle.sheets.map((s) => ({ id: s.id, name: s.name })));
+          const calendarEvents = bundle.events.map(apiEventToCalendar);
+          const leagueEvents = (bundle.leagueEvents ?? []).map(apiEventToCalendar);
+          setEvents([...calendarEvents, ...leagueEvents]);
+        })
+        .catch(() => {});
+      return;
+    }
+
     Promise.allSettled([
-      api.get<EventPayload[]>(`${directCalendarPath}?${rangeQuery}`),
+      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
       api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
     ])
       .then(([eventsRes, leagueRes]) => {

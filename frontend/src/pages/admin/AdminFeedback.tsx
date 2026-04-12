@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { get } from '../../api/client';
+import AppStateCard from '../../components/AppStateCard';
+import DataTable from '../../components/table/DataTable';
+import type { DataTableColumn } from '../../components/table/tableTypes';
 import { formatApiError } from '../../utils/api';
 
 type FeedbackRow = {
@@ -53,63 +56,59 @@ export default function AdminFeedback() {
     load();
   }, []);
 
+  const columns: Array<DataTableColumn<FeedbackRow>> = useMemo(
+    () => [
+      {
+        id: 'date',
+        header: 'Date',
+        cellClassName: 'whitespace-nowrap',
+        renderCell: (row) => (row.createdAt ? new Date(row.createdAt).toLocaleString() : ''),
+      },
+      {
+        id: 'category',
+        header: 'Category',
+        cellClassName: 'whitespace-nowrap',
+        renderCell: (row) => categoryLabel(row.category),
+      },
+      {
+        id: 'from',
+        header: 'From',
+        renderCell: (row) => (
+          <>
+            <div className="font-medium">{row.memberName || row.email || 'Anonymous'}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {row.memberEmail || (row.memberId ? `Member #${row.memberId}` : null)}
+            </div>
+            {row.pagePath ? (
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Page: <span className="font-mono">{row.pagePath}</span>
+              </div>
+            ) : null}
+          </>
+        ),
+      },
+      {
+        id: 'details',
+        header: 'Details',
+        cellClassName: 'whitespace-pre-wrap',
+        renderCell: (row) => row.body,
+      },
+    ],
+    []
+  );
+
   return (
     <Layout>
       <AppPage>
         <AppPageHeader title="Feedback" />
-
-        {loading && <div className="text-gray-500 dark:text-gray-400">Loading...</div>}
-
-        {error && (
-          <div className="app-alert-error">{error}</div>
-        )}
-
-        {!loading && !error && rows.length === 0 && (
-          <div className="text-gray-500 dark:text-gray-400">No feedback yet.</div>
-        )}
-
-        {!loading && !error && rows.length > 0 && (
-          <div className="app-card overflow-hidden p-0">
-            <div className="overflow-x-auto">
-              <table className="app-table">
-                <thead className="app-table-head">
-                  <tr>
-                    <th className="app-table-th">Date</th>
-                    <th className="app-table-th">Category</th>
-                    <th className="app-table-th">From</th>
-                    <th className="app-table-th">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {rows.map((r) => (
-                    <tr key={r.id} className="align-top">
-                      <td className="app-table-td whitespace-nowrap">
-                        {r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}
-                      </td>
-                      <td className="app-table-td whitespace-nowrap">
-                        {categoryLabel(r.category)}
-                      </td>
-                      <td className="app-table-td">
-                        <div className="font-medium">{r.memberName || r.email || 'Anonymous'}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {r.memberEmail || (r.memberId ? `Member #${r.memberId}` : null)}
-                        </div>
-                        {r.pagePath && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            Page: <span className="font-mono">{r.pagePath}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="app-table-td whitespace-pre-wrap">
-                        {r.body}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        <DataTable
+          rows={rows}
+          rowKey={(row) => row.id}
+          columns={columns}
+          loading={loading}
+          error={error ? <div className="app-alert-error">{error}</div> : undefined}
+          emptyState={<AppStateCard compact title="No feedback yet." />}
+        />
       </AppPage>
     </Layout>
   );

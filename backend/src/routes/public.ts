@@ -66,7 +66,10 @@ function stripMarker(content: string): string {
 import rrule from 'rrule';
 const { RRule } = rrule;
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { fetchDirectCalendarEventsForRange } from '../services/calendarExpansion.js';
+import {
+  fetchDirectCalendarEventsForRange,
+  fetchLeagueCalendarEventsForRange,
+} from '../services/calendarExpansion.js';
 import { fetchIceBookingsAsCalendarEvents } from '../services/iceBookingsCalendar.js';
 import { getEventTimespansForCalendar } from '../services/eventService.js';
 
@@ -163,7 +166,8 @@ export async function publicRoutes(fastify: FastifyInstance) {
     return reply.send(stream);
   });
 
-  // GET /public/calendar/events?start=&end= — same shape as /calendar/events; includes anonymized member ice bookings
+  // GET /public/calendar/events?start=&end=
+  // Bundle: direct/public ice/registrable events, league draw schedule, and active sheet id/name (no auth).
   fastify.get<{ Querystring: { start: string; end: string } }>(
     '/public/calendar/events',
     {
@@ -177,6 +181,36 @@ export async function publicRoutes(fastify: FastifyInstance) {
             end: { type: 'string', description: 'ISO date or datetime' },
           },
         },
+        response: {
+          200: {
+            type: 'object',
+            required: ['events', 'sheets', 'leagueEvents'],
+            properties: {
+              events: {
+                type: 'array',
+                description: 'Calendar event payloads (same shape as GET /calendar/events for a public-only viewer).',
+                items: { type: 'object', additionalProperties: true },
+              },
+              leagueEvents: {
+                type: 'array',
+                description: 'League draw schedule (same shape as GET /calendar/league-events).',
+                items: { type: 'object', additionalProperties: true },
+              },
+              sheets: {
+                type: 'array',
+                description: 'Active ice sheets for resolving location labels.',
+                items: {
+                  type: 'object',
+                  required: ['id', 'name'],
+                  properties: {
+                    id: { type: 'number' },
+                    name: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     async (request, reply) => {
@@ -186,12 +220,20 @@ export async function publicRoutes(fastify: FastifyInstance) {
       if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime())) {
         return reply.code(400).send({ error: 'Invalid date range' });
       }
-      const [direct, ice, eventItems] = await Promise.all([
+      const [direct, ice, eventItems, leagueEvents, sheetRows] = await Promise.all([
         fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
         fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, 'public'),
         getEventTimespansForCalendar(q.start, q.end, ['public']),
+        fetchLeagueCalendarEventsForRange(rangeStart, rangeEnd),
+        db
+          .select({ id: schema.sheets.id, name: schema.sheets.name })
+          .from(schema.sheets)
+          .where(eq(schema.sheets.is_active, 1))
+          .orderBy(asc(schema.sheets.sort_order), asc(schema.sheets.name)),
       ]);
-      return [...direct, ...ice, ...eventItems];
+      const events = [...direct, ...ice, ...eventItems];
+      const sheets = sheetRows.map((row) => ({ id: row.id, name: row.name }));
+      return { events, sheets, leagueEvents };
     }
   );
 
@@ -717,5 +759,25 @@ Allow: /
 Sitemap: ${frontendBaseUrl}/api/sitemap.xml
 `;
     return reply.type('text/plain; charset=utf-8').send(body);
+  });
+
+  /** Public metadata for a permalink (used by /go/:slug/info page). */
+  fastify.get<{ Params: { slug: string } }>('/public/permalinks/:slug', async (request, reply) => {
+    const slug = request.params.slug?.trim().toLowerCase();
+    if (!slug) return reply.code(400).send({ error: 'Invalid slug' });
+    const [row] = await db
+      .select()
+      .from(schema.permalinks)
+      .where(eq(schema.permalinks.slug, slug))
+      .limit(1);
+    if (!row) return reply.code(404).send({ error: 'Permalink not found' });
+    return {
+      slug: row.slug,
+      label: row.label,
+      destinationUrl: row.destination_url,
+      destinationMayChange: row.destination_may_change === 1,
+      shortLinkUrl: `${frontendBaseUrl}/go/${row.slug}`,
+      infoUrl: `${frontendBaseUrl}/go/${row.slug}/info`,
+    };
   });
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 import { marked } from 'marked';
 import Layout from '../../components/Layout';
@@ -13,6 +13,8 @@ import MarkdownDescriptionEditor, {
 import BackButton from '../../components/BackButton';
 import HtmlCodeEditor, { type HtmlCodeEditorRef } from '../../components/HtmlCodeEditor';
 import Button from '../../components/Button';
+import FormCheckbox from '../../components/FormCheckbox';
+import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 
 type UploadedFile = { id: number; publicUrl: string };
@@ -90,6 +92,7 @@ function isoToDatetimeLocal(iso: string): string {
 }
 
 export default function AdminArticleEditor() {
+  const articleFieldId = useId();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
@@ -574,20 +577,27 @@ th { font-weight: 600; background: #f3f4f6; }
           <div className="flex-1 min-h-0 max-w-[1600px] mx-auto w-full px-4 py-4">
             <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4">
               <div className="min-h-0 flex flex-col">
-                <div className="flex-shrink-0 mb-3">
-                  <label className="block text-sm font-medium mb-1">Title</label>
+                <FormField label="Title" htmlFor={`${articleFieldId}-title`} className="mb-3 flex-shrink-0">
                   <input
+                    id={`${articleFieldId}-title`}
                     type="text"
                     value={form.title}
                     onChange={(e) => handleTitleChange(e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                    className="app-input"
                     required
                   />
-                </div>
+                </FormField>
 
-                <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                  <label className="block text-sm font-medium">Content</label>
-                  <div className="flex gap-2">
+                <div
+                  role="group"
+                  aria-labelledby={`${articleFieldId}-content-label`}
+                  className="flex min-h-0 min-w-0 flex-1 flex-col"
+                >
+                  <div className="mb-2 flex flex-shrink-0 items-center justify-between">
+                    <span id={`${articleFieldId}-content-label`} className="app-label mb-0">
+                      Content
+                    </span>
+                    <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() =>
@@ -638,9 +648,9 @@ th { font-weight: 600; background: #f3f4f6; }
                       </button>
                     )}
                   </div>
-                </div>
+                  </div>
 
-                <div className="flex-1 min-h-[460px] flex flex-col border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
+                <div className="flex min-h-[460px] flex-1 flex-col overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600">
                   {form.contentType === 'markdown' ? (
                     <MarkdownDescriptionEditor
                       key={`md-${id ?? 'new'}-${editorRevision}`}
@@ -662,10 +672,11 @@ th { font-weight: 600; background: #f3f4f6; }
                   )}
                 </div>
 
-                <div className="flex-shrink-0 mt-3 flex justify-end">
+                <div className="mt-3 flex flex-shrink-0 justify-end">
                   <Button type="submit" disabled={saving}>
                     {saving ? 'Saving...' : 'Save article'}
                   </Button>
+                </div>
                 </div>
               </div>
 
@@ -674,56 +685,53 @@ th { font-weight: 600; background: #f3f4f6; }
                   Settings
                 </h2>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Slug (URL)</label>
+                  <FormField label="Slug (URL)" htmlFor={`${articleFieldId}-slug`}>
                     <input
+                      id={`${articleFieldId}-slug`}
                       type="text"
                       value={form.slug}
                       onChange={(e) => {
                         setSlugManuallyEdited(true);
                         setForm((f) => ({ ...f, slug: e.target.value }));
                       }}
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100 font-mono text-sm"
+                      className="app-input font-mono text-sm"
                       pattern="[-a-z0-9]+"
                       required
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Publish date (empty = draft)
-                    </label>
+                  </FormField>
+                  <FormField label="Publish date (empty = draft)" htmlFor={`${articleFieldId}-published`}>
                     <input
+                      id={`${articleFieldId}-published`}
                       type="datetime-local"
                       value={form.publishedAt}
                       onChange={(e) => setForm((f) => ({ ...f, publishedAt: e.target.value }))}
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100"
+                      className="app-input"
                     />
-                  </div>
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        id="featured"
-                        checked={form.featured}
-                        onChange={(e) => setForm((f) => ({ ...f, featured: e.target.checked }))}
-                        className="rounded border-gray-300 dark:border-gray-600 text-primary-teal"
-                      />
-                      <span className="text-sm">Featured on homepage</span>
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Custom snippet ({form.contentType === 'markdown' ? 'Markdown' : 'plain text'},
-                      optional)
-                    </label>
+                  </FormField>
+                  <FormCheckbox
+                    label="Featured on homepage"
+                    checked={form.featured}
+                    onChange={(checked) => setForm((f) => ({ ...f, featured: checked }))}
+                  />
+                  <FormField
+                    label={
+                      <>
+                        Custom snippet ({form.contentType === 'markdown' ? 'Markdown' : 'plain text'},
+                        optional)
+                      </>
+                    }
+                    optional
+                    htmlFor={`${articleFieldId}-snippet`}
+                  >
                     <textarea
+                      id={`${articleFieldId}-snippet`}
                       value={form.snippet}
                       onChange={(e) => setForm((f) => ({ ...f, snippet: e.target.value }))}
                       rows={5}
                       placeholder="Overrides content above the read-more marker"
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100 text-sm"
+                      className="app-input min-h-[7.5rem] text-sm"
                     />
-                  </div>
+                  </FormField>
                   {!isNew && (
                     <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                       <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
@@ -796,23 +804,18 @@ th { font-weight: 600; background: #f3f4f6; }
               Add a revision note for this save.
             </p>
             {!isNew && (
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={saveSmallEdit}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setSaveSmallEdit(checked);
-                    if (checked) setSaveRevisionNote('');
-                  }}
-                  className="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-primary-teal"
-                />
-                <span>This is a small edit (e.g. typo fix)</span>
-              </label>
+              <FormCheckbox
+                label="This is a small edit (e.g. typo fix)"
+                checked={saveSmallEdit}
+                onChange={(checked) => {
+                  setSaveSmallEdit(checked);
+                  if (checked) setSaveRevisionNote('');
+                }}
+              />
             )}
-            <div>
-              <label className="block text-sm font-medium mb-1">Revision note</label>
+            <FormField label="Revision note" htmlFor={`${articleFieldId}-revision-note`}>
               <input
+                id={`${articleFieldId}-revision-note`}
                 type="text"
                 value={saveRevisionNote}
                 onChange={(e) => setSaveRevisionNote(e.target.value)}
@@ -823,9 +826,9 @@ th { font-weight: 600; background: #f3f4f6; }
                     ? 'Disabled for small edits'
                     : 'e.g. Updated homepage links and dates'
                 }
-                className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-800 dark:text-gray-100 text-sm disabled:opacity-60"
+                className="app-input text-sm disabled:opacity-60"
               />
-            </div>
+            </FormField>
             <div className="flex justify-end gap-2">
               <Button
                 type="button"

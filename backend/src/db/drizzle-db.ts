@@ -50,6 +50,8 @@ type PgSchema = {
   iceBookings: typeof pgSchema.iceBookingsPg;
   articles: typeof pgSchema.articlesPg;
   articleVersions: typeof pgSchema.articleVersionsPg;
+  permalinks: typeof pgSchema.permalinksPg;
+  permalinkHits: typeof pgSchema.permalinkHitsPg;
   siteConfig: typeof pgSchema.siteConfigPg;
   showcaseImages: typeof pgSchema.showcaseImagesPg;
   menuItems: typeof pgSchema.menuItemsPg;
@@ -143,6 +145,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       iceBookings: sqliteSchema.iceBookingsSqlite,
       articles: sqliteSchema.articlesSqlite,
       articleVersions: sqliteSchema.articleVersionsSqlite,
+      permalinks: sqliteSchema.permalinksSqlite,
+      permalinkHits: sqliteSchema.permalinkHitsSqlite,
       siteConfig: sqliteSchema.siteConfigSqlite,
       showcaseImages: sqliteSchema.showcaseImagesSqlite,
       menuItems: sqliteSchema.menuItemsSqlite,
@@ -227,6 +231,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       iceBookings: pgSchema.iceBookingsPg,
       articles: pgSchema.articlesPg,
       articleVersions: pgSchema.articleVersionsPg,
+      permalinks: pgSchema.permalinksPg,
+      permalinkHits: pgSchema.permalinkHitsPg,
       siteConfig: pgSchema.siteConfigPg,
       showcaseImages: pgSchema.showcaseImagesPg,
       menuItems: pgSchema.menuItemsPg,

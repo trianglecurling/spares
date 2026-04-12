@@ -13,6 +13,18 @@ export default defineConfig({
         target: 'http://localhost:3016',
         changeOrigin: true,
       },
+      '/go': {
+        target: 'http://localhost:3016',
+        changeOrigin: true,
+        bypass(req) {
+          const u = req.url ?? '';
+          // Vite: returning `false` from bypass sends404. Return the URL string to skip the proxy
+          // and let the SPA / html fallback handle `/go/:slug/info`.
+          if (/\/go\/[^/]+\/info\/?(\?|$)/.test(u)) {
+            return u;
+          }
+        },
+      },
     },
   },
 });

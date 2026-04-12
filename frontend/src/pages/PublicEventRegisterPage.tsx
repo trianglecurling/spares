@@ -13,6 +13,9 @@ import { isSubheadingFieldType, TEAM_POSITIONS_DOUBLES, TEAM_POSITIONS_FOUR } fr
 const publicInput =
   'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-teal focus:outline-none focus:ring-2 focus:ring-primary-teal/20 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:placeholder:text-gray-400 disabled:opacity-80 disabled:focus:border-gray-200 disabled:focus:ring-0 read-only:cursor-default read-only:border-gray-200 read-only:bg-gray-50 read-only:text-gray-700 read-only:focus:border-gray-300 read-only:focus:ring-0';
 
+/** Same as publicInput; ring is replaced by public-input-select so focus color matches (native select often skips ring box-shadow). */
+const publicSelect = `${publicInput.replace('focus:ring-2 focus:ring-primary-teal/20', 'focus:ring-0')} public-input-select`;
+
 interface EventField {
   id: number;
   label: string;
@@ -1015,7 +1018,7 @@ function LegacyRegistrationField({
             required={field.required === 1}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className={publicInput}
+            className={publicSelect}
           >
             <option value="">Select...</option>
             {options.map((opt) => (

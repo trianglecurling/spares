@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
+import AppStateCard from '../components/AppStateCard';
+import DataTable from '../components/table/DataTable';
+import type { DataTableColumn } from '../components/table/tableTypes';
 import api from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import { deserializeCommitteeContactInfo } from '../utils/governanceContactInfo';
@@ -12,6 +15,8 @@ import {
   GovernanceSummaryResponse,
   OFFICER_LABELS,
 } from '../types/governance';
+
+type GovernanceOfficer = GovernanceSummaryResponse['officers'][number];
 
 const OFFICER_EMAILS: Record<GovernanceOfficerPosition, string> = {
   president: 'president@trianglecurling.com',
@@ -86,6 +91,71 @@ export default function ClubGovernance() {
     return map;
   }, [data?.committees]);
 
+  const officerColumns: Array<DataTableColumn<GovernanceOfficer>> = useMemo(
+    () => [
+      {
+        id: 'position',
+        header: 'Position',
+        renderCell: (officer) => (
+          <span className="font-medium text-gray-900 dark:text-gray-100">
+            {OFFICER_LABELS[officer.position]}
+          </span>
+        ),
+      },
+      {
+        id: 'boardMember',
+        header: 'Board member',
+        renderCell: (officer) => boardMembersById.get(officer.boardMemberId)?.memberName ?? 'Unknown board member',
+      },
+      {
+        id: 'email',
+        header: 'Email',
+        renderCell: (officer) => (
+          <a
+            href={`mailto:${OFFICER_EMAILS[officer.position]}`}
+            className="text-primary-teal hover:underline"
+          >
+            {OFFICER_EMAILS[officer.position]}
+          </a>
+        ),
+      },
+    ],
+    [boardMembersById]
+  );
+
+  const boardColumns: Array<DataTableColumn<GovernanceBoardMember>> = useMemo(
+    () => [
+      {
+        id: 'name',
+        header: 'Name',
+        renderCell: (boardMember) => (
+          <span className="font-medium text-gray-900 dark:text-gray-100">{boardMember.memberName}</span>
+        ),
+      },
+      {
+        id: 'publicEmail',
+        header: 'Public email',
+        renderCell: (boardMember) => boardMember.effectivePublicEmail ?? '—',
+      },
+      {
+        id: 'term',
+        header: 'Term',
+        renderCell: (boardMember) => `${boardMember.firstFiscalYear}–${boardMember.lastFiscalYear}`,
+      },
+      {
+        id: 'liaisonTo',
+        header: 'Liaison to',
+        renderCell: (boardMember) =>
+          boardMember.committeeIds.length === 0
+            ? '—'
+            : boardMember.committeeIds
+                .map((committeeId) => committeesById.get(committeeId)?.name ?? `Committee #${committeeId}`)
+                .join(', '),
+      },
+    ],
+    [committeesById]
+  );
+
   return (
     <Layout>
       <AppPage>
@@ -104,94 +174,29 @@ export default function ClubGovernance() {
           }
         />
 
-        {loading && <p className="text-sm text-gray-600 dark:text-gray-400">Loading governance data...</p>}
+        {loading && <AppStateCard title="Loading governance data..." compact />}
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
         {!loading && !error && data && (
           <>
             <section className="space-y-3">
               <h2 className="app-section-title">Officers</h2>
-              <div className="app-table-shell">
-                <table className="app-table text-sm">
-                  <thead className="app-table-head">
-                    <tr>
-                      <th className="app-table-th">Position</th>
-                      <th className="app-table-th">Board member</th>
-                      <th className="app-table-th">Email</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {data.officers.length === 0 && (
-                      <tr>
-                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400" colSpan={3}>
-                          No officers are assigned.
-                        </td>
-                      </tr>
-                    )}
-                    {data.officers.map((officer) => (
-                      <tr key={officer.position}>
-                        <td className="app-table-td font-medium text-gray-900 dark:text-gray-100">
-                          {OFFICER_LABELS[officer.position]}
-                        </td>
-                        <td className="app-table-td">
-                          {boardMembersById.get(officer.boardMemberId)?.memberName ?? 'Unknown board member'}
-                        </td>
-                        <td className="app-table-td">
-                          <a
-                            href={`mailto:${OFFICER_EMAILS[officer.position]}`}
-                            className="text-primary-teal hover:underline"
-                          >
-                            {OFFICER_EMAILS[officer.position]}
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                rows={data.officers}
+                rowKey={(officer) => officer.position}
+                columns={officerColumns}
+                emptyState={<AppStateCard compact title="No officers are assigned." />}
+              />
             </section>
 
             <section className="space-y-3">
               <h2 className="app-section-title">Board members</h2>
-              <div className="app-table-shell">
-                <table className="app-table text-sm">
-                  <thead className="app-table-head">
-                    <tr>
-                      <th className="app-table-th">Name</th>
-                      <th className="app-table-th">Public email</th>
-                      <th className="app-table-th">Term</th>
-                      <th className="app-table-th">Liaison to</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {activeBoardMembers.length === 0 && (
-                      <tr>
-                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400" colSpan={4}>
-                          No active board members.
-                        </td>
-                      </tr>
-                    )}
-                    {activeBoardMembers.map((boardMember) => (
-                      <tr key={boardMember.id}>
-                        <td className="app-table-td font-medium text-gray-900 dark:text-gray-100">
-                          {boardMember.memberName}
-                        </td>
-                        <td className="app-table-td">{boardMember.effectivePublicEmail ?? '—'}</td>
-                        <td className="app-table-td">
-                          {boardMember.firstFiscalYear}–{boardMember.lastFiscalYear}
-                        </td>
-                        <td className="app-table-td">
-                          {boardMember.committeeIds.length === 0
-                            ? '—'
-                            : boardMember.committeeIds
-                                .map((committeeId) => committeesById.get(committeeId)?.name ?? `Committee #${committeeId}`)
-                                .join(', ')}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                rows={activeBoardMembers}
+                rowKey={(boardMember) => boardMember.id}
+                columns={boardColumns}
+                emptyState={<AppStateCard compact title="No active board members." />}
+              />
             </section>
 
             <section className="space-y-3">

@@ -1,6 +1,8 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { HiChevronDown, HiChevronRight } from 'react-icons/hi2';
+import { HiChevronDown, HiChevronRight, HiClipboardDocument, HiPencilSquare, HiTrash } from 'react-icons/hi2';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
+import AppStateCard from '../../components/AppStateCard';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
@@ -13,8 +15,14 @@ import SortableTree from '../../components/dragDrop/SortableTree';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import ArticleAutocomplete from '../../components/ArticleAutocomplete';
+import DataTable from '../../components/table/DataTable';
+import type { DataTableColumn } from '../../components/table/tableTypes';
+import useTableQueryState from '../../hooks/useTableQueryState';
+import FormCheckbox from '../../components/FormCheckbox';
+import FormField from '../../components/FormField';
+import AdminContentPermalinksPanel, { type PermalinkAdminRow } from './AdminContentPermalinksPanel';
 
-type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files';
+type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks';
 type MenuItem = {
   id: number;
   menuType: string;
@@ -68,6 +76,28 @@ type FilesListResponse = {
   pageSize: number;
 };
 
+type ArticleSortKey = 'updatedAt' | 'title' | 'slug' | 'publishedAt' | 'createdAt';
+type FileSortKey = 'createdAt' | 'name' | 'size' | 'type' | 'updatedAt';
+type FileOrphanFilter = 'all' | 'suspected';
+type FileVisibilityFilter = 'all' | 'public' | 'authenticated';
+type FileTypeFilter = 'all' | 'image' | 'video' | 'audio' | 'document' | 'other';
+
+const ARTICLES_PAGE_SIZE = 25;
+const ARTICLE_SORT_KEYS = ['updatedAt', 'title', 'slug', 'publishedAt', 'createdAt'] as const;
+const FILES_PAGE_SIZE = 25;
+const FILE_SORT_KEYS = ['createdAt', 'name', 'size', 'type', 'updatedAt'] as const;
+const FILE_ORPHAN_VALUES = ['all', 'suspected'] as const;
+const FILE_VISIBILITY_VALUES = ['all', 'public', 'authenticated'] as const;
+const FILE_TYPE_VALUES = ['all', 'image', 'video', 'audio', 'document', 'other'] as const;
+
+function parseEnumValue<Value extends string>(
+  raw: string | null,
+  values: readonly Value[],
+  fallback: Value
+): Value {
+  return raw && values.includes(raw as Value) ? (raw as Value) : fallback;
+}
+
 function sortByOrder<T extends { sortOrder: number; id: number }>(a: T, b: T) {
   return a.sortOrder - b.sortOrder || a.id - b.id;
 }
@@ -84,7 +114,7 @@ function extractReferencedFileIds(content: string): number[] {
   return Array.from(ids.values());
 }
 
-const VALID_TABS: Tab[] = ['site', 'home', 'menus', 'articles', 'showcase', 'files'];
+const VALID_TABS: Tab[] = ['site', 'home', 'menus', 'articles', 'showcase', 'files', 'permalinks'];
 
 export default function AdminContent() {
   const { tab: tabParam } = useParams<{ tab: string }>();
@@ -104,16 +134,15 @@ export default function AdminContent() {
   const [featuredHomeArticles, setFeaturedHomeArticles] = useState<Article[]>([]);
   const [selectedFeaturedArticleId, setSelectedFeaturedArticleId] = useState<number | null>(null);
   const [menuArticleOptions, setMenuArticleOptions] = useState<Article[]>([]);
-  const [articleSearch, setArticleSearch] = useState('');
-  const [articleSort, setArticleSort] = useState<'updatedAt' | 'title' | 'slug' | 'publishedAt' | 'createdAt'>('updatedAt');
-  const [articleSortOrder, setArticleSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [articlePage, setArticlePage] = useState(1);
-  const [articlePageSize, setArticlePageSize] = useState(25);
   const [articleTotal, setArticleTotal] = useState(0);
+  const [articlesLoaded, setArticlesLoaded] = useState(false);
+  const [articleLoading, setArticleLoading] = useState(false);
+  const [articleError, setArticleError] = useState<string | null>(null);
   const [showcaseImages, setShowcaseImages] = useState<ShowcaseImage[]>([]);
   const [showcaseSelectableFiles, setShowcaseSelectableFiles] = useState<ManagedFile[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [files, setFiles] = useState<ManagedFile[]>([]);
+  const [permalinks, setPermalinks] = useState<PermalinkAdminRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -144,6 +173,9 @@ export default function AdminContent() {
   const [menuExpandedIds, setMenuExpandedIds] = useState<Set<number>>(new Set());
   const loadDataRequestIdRef = useRef(0);
 
+  /** Stable id prefix for FormField htmlFor / control ids across this page */
+  const formFieldId = useId();
+
   // Files
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([]);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -152,16 +184,10 @@ export default function AdminContent() {
     description: '',
     visibility: 'public' as 'public' | 'authenticated',
   });
-  const [fileOrphanFilter, setFileOrphanFilter] = useState<'all' | 'suspected'>('all');
-  const [fileVisibilityFilter, setFileVisibilityFilter] = useState<'all' | 'public' | 'authenticated'>('all');
-  const [fileTypeFilter, setFileTypeFilter] = useState<'all' | 'image' | 'video' | 'audio' | 'document' | 'other'>('all');
-  const [fileSearch, setFileSearch] = useState('');
-  const [fileSort, setFileSort] = useState<'createdAt' | 'name' | 'size' | 'type' | 'updatedAt'>('createdAt');
-  const [fileSortOrder, setFileSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [filePage, setFilePage] = useState(1);
-  const [filePageSize, setFilePageSize] = useState(25);
   const [fileTotal, setFileTotal] = useState(0);
   const [selectedFileIds, setSelectedFileIds] = useState<number[]>([]);
+  const [filesLoaded, setFilesLoaded] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
   const [fileModalOpen, setFileModalOpen] = useState(false);
   const [fileModalTab, setFileModalTab] = useState<'details' | 'resize' | 'cropRotate'>('details');
   const [editingFile, setEditingFile] = useState<ManagedFile | null>(null);
@@ -187,54 +213,110 @@ export default function AdminContent() {
   const [cropSelection, setCropSelection] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const cropDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const uploadedPublicImages = showcaseSelectableFiles.filter((file) => file.visibility === 'public' && file.mimeType.startsWith('image/'));
+  const fileFilterConfig = useMemo(
+    () => ({
+      orphanStatus: {
+        queryKey: 'orphan',
+        defaultValue: 'all' as FileOrphanFilter,
+        parse: (raw: string | null) => parseEnumValue(raw, FILE_ORPHAN_VALUES, 'all'),
+      },
+      visibility: {
+        queryKey: 'visibility',
+        defaultValue: 'all' as FileVisibilityFilter,
+        parse: (raw: string | null) => parseEnumValue(raw, FILE_VISIBILITY_VALUES, 'all'),
+      },
+      fileType: {
+        queryKey: 'type',
+        defaultValue: 'all' as FileTypeFilter,
+        parse: (raw: string | null) => parseEnumValue(raw, FILE_TYPE_VALUES, 'all'),
+      },
+      search: {
+        queryKey: 'search',
+        defaultValue: '',
+        debounceMs: 250,
+      },
+    }),
+    []
+  );
+  const {
+    page: filePage,
+    sort: fileSort,
+    filters: fileFilters,
+    draftFilters: fileDraftFilters,
+    setPage: setFilePage,
+    setSort: setFileSort,
+    setFilter: setFileFilter,
+    setDraftFilter: setFileDraftFilter,
+  } = useTableQueryState<
+    FileSortKey,
+    {
+      orphanStatus: FileOrphanFilter;
+      visibility: FileVisibilityFilter;
+      fileType: FileTypeFilter;
+      search: string;
+    }
+  >({
+    defaultSort: { key: 'createdAt', direction: 'desc' },
+    sortKeys: FILE_SORT_KEYS,
+    filterConfig: fileFilterConfig,
+  });
+  const articleFilterConfig = useMemo(
+    () => ({
+      query: {
+        queryKey: 'articleQuery',
+        defaultValue: '',
+        debounceMs: 250,
+      },
+    }),
+    []
+  );
+  const {
+    page: articlePage,
+    sort: articleSort,
+    filters: articleFilters,
+    draftFilters: articleDraftFilters,
+    setPage: setArticlePage,
+    setSort: setArticleSort,
+    setDraftFilter: setArticleDraftFilter,
+  } = useTableQueryState<ArticleSortKey, { query: string }>({
+    defaultSort: { key: 'updatedAt', direction: 'desc' },
+    sortKeys: ARTICLE_SORT_KEYS,
+    pageParam: 'articlePage',
+    sortParam: 'articleSort',
+    orderParam: 'articleOrder',
+    filterConfig: articleFilterConfig,
+  });
 
-  const loadData = useCallback(async () => {
+  const loadContentData = useCallback(async () => {
     const requestId = loadDataRequestIdRef.current + 1;
     loadDataRequestIdRef.current = requestId;
     setLoading(true);
     try {
-      const articleParams: Record<string, string | number> = {
-        page: articlePage,
-        pageSize: articlePageSize,
-        sort: articleSort,
-        order: articleSortOrder,
-      };
-      if (articleSearch.trim()) articleParams.search = articleSearch.trim();
-      const filesParams: Record<string, string | number> = {
-        page: filePage,
-        pageSize: filePageSize,
-        sort: fileSort,
-        order: fileSortOrder,
-      };
-      if (fileSearch.trim()) filesParams.search = fileSearch.trim();
-      if (fileOrphanFilter === 'suspected') filesParams.suspectedOrphan = 'true';
-      if (fileVisibilityFilter !== 'all') filesParams.visibility = fileVisibilityFilter;
-      if (fileTypeFilter !== 'all') filesParams.type = fileTypeFilter;
-      const [configRes, articlesRes, featuredHomeRes, menuArticlesRes, showcaseRes, menuRes, filesRes, showcaseFilesRes] = await Promise.all([
+      const [
+        configRes,
+        featuredHomeRes,
+        menuArticlesRes,
+        showcaseRes,
+        menuRes,
+        showcaseFilesRes,
+        permalinksRes,
+      ] = await Promise.all([
         api.get('/content/site-config'),
-        api.get<ArticlesListResponse>('/content/articles', { params: articleParams }),
         api.get<Article[]>('/content/homepage/featured-articles'),
         api.get<ArticlesListResponse>('/content/articles', { params: { page: 1, pageSize: 1000, sort: 'title', order: 'asc' } }),
         api.get('/content/showcase-images'),
         api.get('/content/menu-items', { params: { menuType: 'navbar' } }),
-        api.get<FilesListResponse>('/content/files', { params: filesParams }),
         api.get<FilesListResponse>('/content/files', { params: { page: 1, pageSize: 1000, visibility: 'public', type: 'image' } }),
+        api.get<PermalinkAdminRow[]>('/content/permalinks'),
       ]);
       if (requestId !== loadDataRequestIdRef.current) return;
       setSiteConfig(configRes.data);
-      setArticles(articlesRes.data.items);
       setFeaturedHomeArticles(featuredHomeRes.data);
-      setArticleTotal(articlesRes.data.total);
-      setArticlePage(articlesRes.data.page);
-      setArticlePageSize(articlesRes.data.pageSize);
       setMenuArticleOptions(menuArticlesRes.data.items);
       setShowcaseImages(showcaseRes.data);
       setMenuItems(menuRes.data);
-      setFiles(filesRes.data.items);
-      setFileTotal(filesRes.data.total);
-      setFilePage(filesRes.data.page);
-      setFilePageSize(filesRes.data.pageSize);
       setShowcaseSelectableFiles(showcaseFilesRes.data.items);
+      setPermalinks(permalinksRes.data);
     } catch {
       if (requestId !== loadDataRequestIdRef.current) return;
       showAlert('Failed to load content', 'error');
@@ -243,34 +325,97 @@ export default function AdminContent() {
         setLoading(false);
       }
     }
+  }, [showAlert]);
+
+  useEffect(() => {
+    loadContentData();
+  }, [loadContentData]);
+
+  const loadArticles = useCallback(async () => {
+    setArticleLoading(true);
+    setArticleError(null);
+    try {
+      const articleParams: Record<string, string | number> = {
+        page: articlePage,
+        pageSize: ARTICLES_PAGE_SIZE,
+        sort: articleSort.key,
+        order: articleSort.direction,
+      };
+      if (articleFilters.query.trim()) articleParams.search = articleFilters.query.trim();
+      const articlesRes = await api.get<ArticlesListResponse>('/content/articles', { params: articleParams });
+      setArticles(articlesRes.data.items);
+      setArticleTotal(articlesRes.data.total);
+      setArticlesLoaded(true);
+
+      if (articlesRes.data.page !== articlePage) {
+        setArticlePage(articlesRes.data.page, { replace: true });
+      }
+    } catch {
+      setArticleError('Failed to load articles.');
+      setArticlesLoaded(true);
+    } finally {
+      setArticleLoading(false);
+    }
+  }, [articleFilters.query, articlePage, articleSort.direction, articleSort.key, setArticlePage]);
+
+  useEffect(() => {
+    if (activeTab !== 'articles') return;
+    void loadArticles();
+  }, [activeTab, loadArticles]);
+
+  const loadFiles = useCallback(async () => {
+    setFilesError(null);
+    try {
+      const filesParams: Record<string, string | number> = {
+        page: filePage,
+        pageSize: FILES_PAGE_SIZE,
+        sort: fileSort.key,
+        order: fileSort.direction,
+      };
+      if (fileFilters.search.trim()) filesParams.search = fileFilters.search.trim();
+      if (fileFilters.orphanStatus === 'suspected') filesParams.suspectedOrphan = 'true';
+      if (fileFilters.visibility !== 'all') filesParams.visibility = fileFilters.visibility;
+      if (fileFilters.fileType !== 'all') filesParams.type = fileFilters.fileType;
+
+      const filesRes = await api.get<FilesListResponse>('/content/files', { params: filesParams });
+      setFiles(filesRes.data.items);
+      setFileTotal(filesRes.data.total);
+      setFilesLoaded(true);
+
+      if (filesRes.data.page !== filePage) {
+        setFilePage(filesRes.data.page, { replace: true });
+      }
+    } catch {
+      setFilesError('Failed to load files.');
+      setFilesLoaded(true);
+    }
   }, [
-    articlePage,
-    articlePageSize,
-    articleSearch,
-    articleSort,
-    articleSortOrder,
-    fileOrphanFilter,
+    fileFilters.fileType,
+    fileFilters.orphanStatus,
+    fileFilters.search,
+    fileFilters.visibility,
     filePage,
-    filePageSize,
-    fileSearch,
-    fileSort,
-    fileSortOrder,
-    fileTypeFilter,
-    fileVisibilityFilter,
-    showAlert,
+    fileSort.direction,
+    fileSort.key,
+    setFilePage,
   ]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (activeTab !== 'files') return;
+    void loadFiles();
+  }, [activeTab, loadFiles]);
 
   useEffect(() => {
-    setArticlePage((prev) => (prev === 1 ? prev : 1));
-  }, [articleSearch, articlePageSize]);
-
-  useEffect(() => {
-    setFilePage((prev) => (prev === 1 ? prev : 1));
-  }, [fileSearch, fileOrphanFilter, fileVisibilityFilter, fileTypeFilter, filePageSize]);
+    setSelectedFileIds([]);
+  }, [
+    fileFilters.fileType,
+    fileFilters.orphanStatus,
+    fileFilters.search,
+    fileFilters.visibility,
+    filePage,
+    fileSort.direction,
+    fileSort.key,
+  ]);
 
   useEffect(() => {
     if (tabParam && !VALID_TABS.includes(tabParam as Tab)) {
@@ -324,7 +469,7 @@ export default function AdminContent() {
         await api.post('/content/files/bulk-delete', { ids: linkedImageFileIds });
       }
       showAlert('Article deleted', 'success');
-      loadData();
+      await Promise.all([loadContentData(), loadArticles()]);
     } catch {
       showAlert('Failed to delete article', 'error');
     } finally {
@@ -354,7 +499,7 @@ export default function AdminContent() {
     setSaving(true);
     try {
       await api.patch(`/content/articles/${articleId}`, { featured });
-      await loadData();
+      await loadContentData();
       if (!featured) {
         showAlert('Featured designation removed', 'success');
       }
@@ -376,7 +521,7 @@ export default function AdminContent() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to reorder featured articles', 'error');
-      await loadData();
+      await loadContentData();
     } finally {
       setSaving(false);
     }
@@ -446,7 +591,7 @@ export default function AdminContent() {
         showAlert('Image added', 'success');
       }
       closeShowcaseModal();
-      loadData();
+      loadContentData();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to save image', 'error');
@@ -600,7 +745,7 @@ export default function AdminContent() {
     try {
       await api.delete(`/content/menu-items/${item.id}`);
       showAlert('Menu item deleted', 'success');
-      loadData();
+      loadContentData();
     } catch {
       showAlert('Failed to delete menu item', 'error');
     } finally {
@@ -641,7 +786,7 @@ export default function AdminContent() {
       });
     } catch {
       showAlert('Failed to update order', 'error');
-      loadData();
+      loadContentData();
     } finally {
       setSaving(false);
     }
@@ -668,7 +813,7 @@ export default function AdminContent() {
       });
     } catch {
       showAlert('Failed to update order', 'error');
-      loadData();
+      loadContentData();
     } finally {
       setSaving(false);
     }
@@ -686,13 +831,20 @@ export default function AdminContent() {
     try {
       await api.delete(`/content/showcase-images/${img.id}`);
       showAlert('Image removed', 'success');
-      loadData();
+      loadContentData();
     } catch {
       showAlert('Failed to remove image', 'error');
     } finally {
       setSaving(false);
     }
   };
+
+  const loadShowcaseSelectableFiles = useCallback(async () => {
+    const response = await api.get<FilesListResponse>('/content/files', {
+      params: { page: 1, pageSize: 1000, visibility: 'public', type: 'image' },
+    });
+    setShowcaseSelectableFiles(response.data.items);
+  }, []);
 
   const handleSaveSiteConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -734,7 +886,7 @@ export default function AdminContent() {
       setFileUploadForm({ displayName: '', description: '', visibility: 'public' });
       setUploadModalOpen(false);
       showAlert(`${selectedUploadFiles.length} file${selectedUploadFiles.length === 1 ? '' : 's'} uploaded`, 'success');
-      loadData();
+      await Promise.all([loadFiles(), loadShowcaseSelectableFiles()]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to upload file', 'error');
@@ -792,7 +944,7 @@ export default function AdminContent() {
       });
       showAlert('File updated', 'success');
       closeFileModal();
-      loadData();
+      await Promise.all([loadFiles(), loadShowcaseSelectableFiles()]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to update file', 'error');
@@ -813,7 +965,7 @@ export default function AdminContent() {
     try {
       await api.delete(`/content/files/${file.id}`);
       showAlert('File deleted', 'success');
-      loadData();
+      await Promise.all([loadFiles(), loadShowcaseSelectableFiles()]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to delete file', 'error');
@@ -935,7 +1087,7 @@ export default function AdminContent() {
         setImagePreviewVersion((v) => v + 1);
       }
       showAlert('Image resized', 'success');
-      await loadData();
+      await Promise.all([loadFiles(), loadShowcaseSelectableFiles()]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to resize image', 'error');
@@ -1003,7 +1155,7 @@ export default function AdminContent() {
       setCropSelection(null);
       setImagePreviewVersion((v) => v + 1);
       showAlert('Image transformed', 'success');
-      await loadData();
+      await Promise.all([loadFiles(), loadShowcaseSelectableFiles()]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to transform image', 'error');
@@ -1066,6 +1218,7 @@ export default function AdminContent() {
     { id: 'articles', label: 'Articles' },
     { id: 'showcase', label: 'Showcase images' },
     { id: 'files', label: 'Files' },
+    { id: 'permalinks', label: 'Permalinks' },
   ];
 
   const handleConvertImageType = async () => {
@@ -1078,7 +1231,7 @@ export default function AdminContent() {
       setEditingFile(res.data);
       setImagePreviewVersion((v) => v + 1);
       showAlert('File type converted', 'success');
-      await loadData();
+      await Promise.all([loadFiles(), loadShowcaseSelectableFiles()]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to convert file type', 'error');
@@ -1101,7 +1254,7 @@ export default function AdminContent() {
       await api.post('/content/files/bulk-delete', { ids: selectedFileIds });
       setSelectedFileIds([]);
       showAlert('Files deleted', 'success');
-      await loadData();
+      await Promise.all([loadFiles(), loadShowcaseSelectableFiles()]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to delete files', 'error');
@@ -1110,32 +1263,162 @@ export default function AdminContent() {
     }
   };
 
-  const toggleFileSort = (column: 'createdAt' | 'name' | 'size' | 'type' | 'updatedAt') => {
-    if (fileSort === column) {
-      setFileSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-    setFileSort(column);
-    setFileSortOrder(column === 'name' ? 'asc' : 'desc');
-  };
-  const toggleArticleSort = (column: 'updatedAt' | 'title' | 'slug' | 'publishedAt' | 'createdAt') => {
-    if (articleSort === column) {
-      setArticleSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-    setArticleSort(column);
-    setArticleSortOrder(column === 'title' || column === 'slug' ? 'asc' : 'desc');
-  };
   const cropOutputDimensions = getCropOutputDimensions();
-  const fileTotalPages = Math.max(1, Math.ceil(fileTotal / filePageSize));
-  const fileRangeStart = fileTotal === 0 ? 0 : (filePage - 1) * filePageSize + 1;
-  const fileRangeEnd = fileTotal === 0 ? 0 : Math.min(fileTotal, fileRangeStart + Math.max(0, files.length - 1));
-  const filePageWindow = 2;
-  const filePageNumbers = Array.from(
-    {
-      length: Math.max(0, Math.min(fileTotalPages, filePage + filePageWindow) - Math.max(1, filePage - filePageWindow) + 1),
-    },
-    (_, index) => Math.max(1, filePage - filePageWindow) + index
+  const fileColumns: Array<DataTableColumn<ManagedFile, FileSortKey>> = useMemo(
+    () => [
+      {
+        id: 'preview',
+        header: 'Preview',
+        cellClassName: 'w-16',
+        renderCell: (file) =>
+          isImageFile(file) ? (
+            <img
+              src={getImageThumbnailUrl(file)}
+              alt=""
+              className="h-10 w-10 rounded border border-gray-200 object-cover dark:border-gray-700"
+            />
+          ) : (
+            <span className="text-gray-400 dark:text-gray-500">-</span>
+          ),
+      },
+      {
+        id: 'name',
+        header: 'Name',
+        sortable: true,
+        sortKey: 'name',
+        defaultSortDirection: 'asc',
+        cellClassName: 'min-w-[18rem]',
+        renderCell: (file) => (
+          <div className="min-w-0 space-y-1">
+            <button
+              type="button"
+              onClick={() => openFileModal(file)}
+              className="block max-w-full truncate text-left font-medium text-gray-900 transition-colors hover:text-primary-teal hover:underline dark:text-gray-100"
+            >
+              {file.displayName || file.originalFilename}
+            </button>
+            <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+              {file.originalFilename}
+            </div>
+            {file.suspectedOrphan ? (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                Suspected orphan
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        id: 'type',
+        header: 'Type',
+        sortable: true,
+        sortKey: 'type',
+        defaultSortDirection: 'desc',
+        headerClassName: 'w-40',
+        cellClassName: 'max-w-[12rem]',
+        renderCell: (file) => (
+          <span className="block truncate" title={file.mimeType}>
+            {file.mimeType}
+          </span>
+        ),
+      },
+      {
+        id: 'size',
+        header: 'Size',
+        sortable: true,
+        sortKey: 'size',
+        defaultSortDirection: 'desc',
+        renderCell: (file) => `${Math.max(1, Math.round(file.byteSize / 1024))} KB`,
+      },
+      {
+        id: 'visibility',
+        header: 'Visibility',
+        renderCell: (file) => <span className="capitalize">{file.visibility}</span>,
+      },
+      {
+        id: 'createdAt',
+        header: 'Created',
+        sortable: true,
+        sortKey: 'createdAt',
+        defaultSortDirection: 'desc',
+        renderCell: (file) => new Date(file.createdAt).toLocaleDateString(),
+      },
+    ],
+    [openFileModal, imagePreviewVersion]
+  );
+
+  const articleColumns: Array<DataTableColumn<Article, ArticleSortKey>> = useMemo(
+    () => [
+      {
+        id: 'title',
+        header: 'Title',
+        sortable: true,
+        sortKey: 'title',
+        defaultSortDirection: 'asc',
+        cellClassName: 'min-w-[14rem]',
+        renderCell: (article) => <div className="truncate font-medium">{article.title}</div>,
+      },
+      {
+        id: 'slug',
+        header: 'Slug',
+        sortable: true,
+        sortKey: 'slug',
+        defaultSortDirection: 'asc',
+        cellClassName: 'text-gray-500',
+        renderCell: (article) => (
+          <a
+            href={`/articles/${article.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary-teal hover:underline"
+          >
+            /articles/{article.slug}
+          </a>
+        ),
+      },
+      {
+        id: 'published',
+        header: 'Published',
+        renderCell: (article) => (
+          <div className="flex items-center">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(article.publishedAt)}
+              onClick={() => handleTogglePublished(article)}
+              disabled={togglingArticleId === article.id}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
+                article.publishedAt ? 'bg-primary-teal' : 'bg-gray-200 dark:bg-gray-600'
+              } ${togglingArticleId === article.id ? 'cursor-not-allowed opacity-60' : ''}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${
+                  article.publishedAt ? 'translate-x-5' : 'translate-x-1'
+                }`}
+                aria-hidden
+              />
+            </button>
+          </div>
+        ),
+      },
+      {
+        id: 'updatedAt',
+        header: 'Last edited',
+        sortable: true,
+        sortKey: 'updatedAt',
+        defaultSortDirection: 'desc',
+        renderCell: (article) => (article.updatedAt ? new Date(article.updatedAt).toLocaleDateString() : '-'),
+      },
+      {
+        id: 'publishedAt',
+        header: 'Publish date',
+        sortable: true,
+        sortKey: 'publishedAt',
+        defaultSortDirection: 'desc',
+        renderCell: (article) => (article.publishedAt ? new Date(article.publishedAt).toLocaleDateString() : '-'),
+      },
+    ],
+    [togglingArticleId]
   );
 
   return (
@@ -1152,57 +1435,57 @@ export default function AdminContent() {
           }))}
         />
 
-        {loading ? (
+        {activeTab !== 'files' && loading ? (
           <p className="text-gray-500">Loading...</p>
         ) : (
           <>
             {activeTab === 'site' && siteConfig && (
               <form onSubmit={handleSaveSiteConfig} className="space-y-4">
-                <div>
-                  <label className="app-label">Club name</label>
+                <FormField label="Club name" htmlFor={`${formFieldId}-site-club-name`}>
                   <input
+                    id={`${formFieldId}-site-club-name`}
                     type="text"
                     value={siteConfig.clubName ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, clubName: e.target.value || null })}
                     className="app-input"
                   />
-                </div>
-                <div>
-                  <label className="app-label">Logo URL</label>
+                </FormField>
+                <FormField label="Logo URL" htmlFor={`${formFieldId}-site-logo-url`}>
                   <input
+                    id={`${formFieldId}-site-logo-url`}
                     type="url"
                     value={siteConfig.logoUrl ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, logoUrl: e.target.value || null })}
                     className="app-input"
                   />
-                </div>
-                <div>
-                  <label className="app-label">Contact email</label>
+                </FormField>
+                <FormField label="Contact email" htmlFor={`${formFieldId}-site-contact-email`}>
                   <input
+                    id={`${formFieldId}-site-contact-email`}
                     type="email"
                     value={siteConfig.contactEmail ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, contactEmail: e.target.value || null })}
                     className="app-input"
                   />
-                </div>
-                <div>
-                  <label className="app-label">Contact phone</label>
+                </FormField>
+                <FormField label="Contact phone" htmlFor={`${formFieldId}-site-contact-phone`}>
                   <input
+                    id={`${formFieldId}-site-contact-phone`}
                     type="text"
                     value={siteConfig.contactPhone ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, contactPhone: e.target.value || null })}
                     className="app-input"
                   />
-                </div>
-                <div>
-                  <label className="app-label">Footer (Markdown)</label>
+                </FormField>
+                <FormField label="Footer (Markdown)" htmlFor={`${formFieldId}-site-footer-markdown`}>
                   <textarea
+                    id={`${formFieldId}-site-footer-markdown`}
                     value={siteConfig.footerMarkdown ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, footerMarkdown: e.target.value || null })}
                     rows={4}
                     className="app-input"
                   />
-                </div>
+                </FormField>
                 <Button type="submit" disabled={saving}>
                   {saving ? 'Saving...' : 'Save'}
                 </Button>
@@ -1369,9 +1652,9 @@ export default function AdminContent() {
                   title={editingMenuItem ? 'Edit menu item' : 'Add menu item'}
                 >
                   <form onSubmit={handleSaveMenuItem} className="space-y-4">
-                    <div>
-                      <label className="app-label">Link type</label>
+                    <FormField label="Link type" htmlFor={`${formFieldId}-menu-link-type`}>
                       <select
+                        id={`${formFieldId}-menu-link-type`}
                         value={menuForm.linkType ?? ''}
                         onChange={(e) => {
                           const linkType = (e.target.value || null) as 'internal' | 'external' | null;
@@ -1391,11 +1674,11 @@ export default function AdminContent() {
                         <option value="internal">Article</option>
                         <option value="external">Other (custom URL)</option>
                       </select>
-                    </div>
+                    </FormField>
                     {menuForm.linkType === 'internal' && (
-                      <div>
-                        <label className="app-label">Article</label>
+                      <FormField label="Article" htmlFor={`${formFieldId}-menu-article`}>
                         <ArticleAutocomplete
+                          inputId={`${formFieldId}-menu-article`}
                           value={
                             menuForm.selectedArticleId
                               ? {
@@ -1417,13 +1700,13 @@ export default function AdminContent() {
                           }}
                           placeholder="Search for an article"
                         />
-                      </div>
+                      </FormField>
                     )}
                     {menuForm.linkType === 'external' && (
                       <>
-                        <div>
-                          <label className="app-label">URL</label>
+                        <FormField label="URL" htmlFor={`${formFieldId}-menu-url`}>
                           <input
+                            id={`${formFieldId}-menu-url`}
                             type="text"
                             value={menuForm.url}
                             onChange={(e) => setMenuForm((f) => ({ ...f, url: e.target.value }))}
@@ -1431,25 +1714,28 @@ export default function AdminContent() {
                             className="app-input"
                             required
                           />
-                        </div>
-                        <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                          <input
-                            type="checkbox"
-                            checked={menuForm.openInNewTab}
-                            onChange={(e) =>
-                              setMenuForm((f) => ({ ...f, openInNewTab: e.target.checked }))
-                            }
-                            className="rounded border-gray-300 dark:border-gray-600"
-                          />
-                          Open in a new tab
-                        </label>
+                        </FormField>
+                        <FormCheckbox
+                          label="Open in a new tab"
+                          checked={menuForm.openInNewTab}
+                          onChange={(checked) => setMenuForm((f) => ({ ...f, openInNewTab: checked }))}
+                        />
                       </>
                     )}
-                    <div>
-                      <label className="app-label">
-                        Label {menuForm.linkType === 'internal' && menuForm.selectedArticleId && !menuForm.labelOverridden && '(from article)'}
-                      </label>
+                    <FormField
+                      label={
+                        <>
+                          Label{' '}
+                          {menuForm.linkType === 'internal' &&
+                            menuForm.selectedArticleId &&
+                            !menuForm.labelOverridden &&
+                            '(from article)'}
+                        </>
+                      }
+                      htmlFor={`${formFieldId}-menu-label`}
+                    >
                       <input
+                        id={`${formFieldId}-menu-label`}
                         type="text"
                         value={menuForm.label}
                         onChange={(e) => {
@@ -1474,10 +1760,10 @@ export default function AdminContent() {
                           )
                         }
                       />
-                    </div>
-                    <div>
-                      <label className="app-label">Parent</label>
+                    </FormField>
+                    <FormField label="Parent" htmlFor={`${formFieldId}-menu-parent`}>
                       <select
+                        id={`${formFieldId}-menu-parent`}
                         value={menuForm.parentId ?? ''}
                         onChange={(e) =>
                           setMenuForm((f) => ({
@@ -1526,7 +1812,7 @@ export default function AdminContent() {
                           ));
                         })()}
                       </select>
-                    </div>
+                    </FormField>
                     <div className="flex justify-end gap-2 pt-2">
                       <Button type="button" variant="secondary" onClick={closeMenuModal}>
                         Cancel
@@ -1543,15 +1829,19 @@ export default function AdminContent() {
             {activeTab === 'home' && (
               <div>
                 <div className="mb-4 flex flex-wrap items-end gap-3">
-                  <div className="min-w-[280px]">
-                    <label className="app-label">Add featured article</label>
+                  <FormField
+                    label="Add featured article"
+                    htmlFor={`${formFieldId}-home-featured-article`}
+                    className="min-w-[280px]"
+                  >
                     <ArticleAutocomplete
+                      inputId={`${formFieldId}-home-featured-article`}
                       value={menuArticleOptions.find((article) => article.id === selectedFeaturedArticleId) ?? null}
                       onChange={(selected) => setSelectedFeaturedArticleId(selected?.id ?? null)}
                       excludeIds={featuredHomeArticles.map((article) => article.id)}
                       placeholder="Search for an article to feature"
                     />
-                  </div>
+                  </FormField>
                   <Button
                     type="button"
                     disabled={!selectedFeaturedArticleId || saving}
@@ -1618,137 +1908,75 @@ export default function AdminContent() {
 
             {activeTab === 'articles' && (
               <div>
-                <div className="mb-4 flex flex-wrap items-end gap-3">
-                  <div className="min-w-[240px]">
-                    <label className="app-label">Search</label>
-                    <input
-                      type="text"
-                      value={articleSearch}
-                      onChange={(e) => setArticleSearch(e.target.value)}
-                      placeholder="Find by title"
-                      className="app-input"
+                <AppPageControlsRow
+                  className="mb-4"
+                  left={(
+                    <FormField
+                      label="Filter"
+                      htmlFor={`${formFieldId}-articles-query`}
+                      className="min-w-[16rem] flex-1"
+                    >
+                      <input
+                        id={`${formFieldId}-articles-query`}
+                        type="search"
+                        value={articleDraftFilters.query}
+                        onChange={(e) => setArticleDraftFilter('query', e.target.value)}
+                        placeholder="Search title or slug"
+                        className="app-input"
+                      />
+                    </FormField>
+                  )}
+                  right={(
+                    <Button onClick={() => navigate('/admin/content/articles/new')}>Add article</Button>
+                  )}
+                />
+                <DataTable
+                  rows={articles}
+                  rowKey={(article) => article.id}
+                  columns={articleColumns}
+                  sort={articleSort}
+                  onSortChange={setArticleSort}
+                  loading={!articlesLoaded || articleLoading}
+                  error={articleError ? <AppStateCard compact title={articleError} /> : undefined}
+                  actions={{
+                    widthClassName: 'w-[7rem]',
+                    renderActions: (article) => (
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/admin/content/articles/${article.id}`)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-primary-teal"
+                          aria-label={`Edit ${article.title}`}
+                          title="Edit"
+                        >
+                          <HiPencilSquare className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteArticle(article)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                          aria-label={`Delete ${article.title}`}
+                          title="Delete"
+                        >
+                          <HiTrash className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ),
+                  }}
+                  pagination={{
+                    page: articlePage,
+                    pageSize: ARTICLES_PAGE_SIZE,
+                    totalRecords: articleTotal,
+                    currentCount: articles.length,
+                    onPageChange: setArticlePage,
+                  }}
+                  emptyState={
+                    <AppStateCard
+                      compact
+                      title={articleFilters.query ? 'No articles match those filters.' : 'No articles found.'}
                     />
-                  </div>
-                  <div>
-                    <label className="app-label">Page size</label>
-                    <select
-                      value={articlePageSize}
-                      onChange={(e) => setArticlePageSize(Number.parseInt(e.target.value, 10))}
-                      className="app-input"
-                    >
-                      {[10, 25, 50, 100].map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="ml-auto">
-                    <p className="text-gray-500 text-sm mb-1">
-                      Showing {articles.length} of {articleTotal}
-                    </p>
-                  </div>
-                  <Button onClick={() => navigate('/admin/content/articles/new')}>Add article</Button>
-                </div>
-
-                <div className="app-table-shell">
-                  <table className="app-table">
-                    <thead className="app-table-head">
-                      <tr>
-                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('title')}>Title</th>
-                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('slug')}>Slug</th>
-                        <th className="app-table-th">Published</th>
-                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('updatedAt')}>Last edited</th>
-                        <th className="app-table-th cursor-pointer" onClick={() => toggleArticleSort('publishedAt')}>Publish date</th>
-                        <th className="app-table-th">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {articles.map((a) => (
-                        <tr key={a.id} className="border-t border-gray-100 dark:border-gray-800">
-                          <td className="app-table-td min-w-[220px]">
-                            <div className="font-medium truncate">{a.title}</div>
-                          </td>
-                          <td className="app-table-td text-gray-500">
-                            <a
-                              href={`/articles/${a.slug}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary-teal hover:underline"
-                            >
-                              /articles/{a.slug}
-                            </a>
-                          </td>
-                          <td className="app-table-td">
-                            <div className="flex items-center">
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={!!a.publishedAt}
-                                onClick={() => handleTogglePublished(a)}
-                                disabled={togglingArticleId === a.id}
-                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
-                                  a.publishedAt ? 'bg-primary-teal' : 'bg-gray-200 dark:bg-gray-600'
-                                } ${togglingArticleId === a.id ? 'opacity-60 cursor-not-allowed' : ''}`}
-                              >
-                                <span
-                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${
-                                    a.publishedAt ? 'translate-x-5' : 'translate-x-1'
-                                  }`}
-                                  aria-hidden
-                                />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="app-table-td">{a.updatedAt ? new Date(a.updatedAt).toLocaleDateString() : '-'}</td>
-                          <td className="app-table-td">{a.publishedAt ? new Date(a.publishedAt).toLocaleDateString() : '-'}</td>
-                          <td className="app-table-td">
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/admin/content/articles/${a.id}`)}
-                                className="text-primary-teal hover:underline"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteArticle(a)}
-                                className="text-red-600 dark:text-red-400 hover:underline"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex items-center justify-between mt-3">
-                  <p className="text-sm text-gray-500">
-                    Showing {articles.length} of {articleTotal}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setArticlePage((p) => Math.max(1, p - 1))}
-                      disabled={articlePage <= 1}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setArticlePage((p) => p + 1)}
-                      disabled={articlePage * articlePageSize >= articleTotal}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
+                  }
+                />
               </div>
             )}
 
@@ -1796,8 +2024,8 @@ export default function AdminContent() {
                   title={editingShowcase ? 'Edit image' : 'Add image'}
                 >
                   <form onSubmit={handleSaveShowcase} className="space-y-4">
-                    <div>
-                      <label className="app-label">Image source</label>
+                    <fieldset className="m-0 min-w-0 space-y-2 border-0 p-0">
+                      <legend className="app-label float-none w-full px-0">Image source</legend>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
@@ -1829,66 +2057,73 @@ export default function AdminContent() {
                           External URL
                         </button>
                       </div>
-                    </div>
+                    </fieldset>
                     <div>
                       {showcaseSourceMode === 'uploaded' ? (
                         <>
-                          <label className="app-label">Uploaded image</label>
                           {uploadedPublicImages.length > 0 ? (
-                            <select
-                              value={selectedShowcaseFileId ?? ''}
-                              onChange={(e) => {
-                                const fileId = Number(e.target.value);
-                                const selectedFile = uploadedPublicImages.find((file) => file.id === fileId);
-                                setSelectedShowcaseFileId(Number.isFinite(fileId) ? fileId : null);
-                                setShowcaseForm((f) => ({ ...f, url: selectedFile?.publicUrl ?? '' }));
-                              }}
-                              className="app-input"
-                              required
-                            >
-                              {uploadedPublicImages.map((file) => (
-                                <option key={file.id} value={file.id}>
-                                  {file.displayName || file.originalFilename}
-                                </option>
-                              ))}
-                            </select>
+                            <FormField label="Uploaded image" htmlFor={`${formFieldId}-showcase-uploaded-file`}>
+                              <select
+                                id={`${formFieldId}-showcase-uploaded-file`}
+                                value={selectedShowcaseFileId ?? ''}
+                                onChange={(e) => {
+                                  const fileId = Number(e.target.value);
+                                  const selectedFile = uploadedPublicImages.find((file) => file.id === fileId);
+                                  setSelectedShowcaseFileId(Number.isFinite(fileId) ? fileId : null);
+                                  setShowcaseForm((f) => ({ ...f, url: selectedFile?.publicUrl ?? '' }));
+                                }}
+                                className="app-input"
+                                required
+                              >
+                                {uploadedPublicImages.map((file) => (
+                                  <option key={file.id} value={file.id}>
+                                    {file.displayName || file.originalFilename}
+                                  </option>
+                                ))}
+                              </select>
+                            </FormField>
                           ) : (
-                            <p className="text-sm text-gray-600 dark:text-gray-300">
-                              No uploaded public images available. Upload an image in the Files tab, or use an external URL.
-                            </p>
+                            <>
+                              <div className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Uploaded image
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">
+                                No uploaded public images available. Upload an image in the Files tab, or use an external URL.
+                              </p>
+                            </>
                           )}
                         </>
                       ) : (
-                        <>
-                          <label className="app-label">Image URL</label>
+                        <FormField label="Image URL" htmlFor={`${formFieldId}-showcase-image-url`}>
                           <input
+                            id={`${formFieldId}-showcase-image-url`}
                             type="url"
                             value={showcaseForm.url}
                             onChange={(e) => setShowcaseForm((f) => ({ ...f, url: e.target.value }))}
                             className="app-input"
                             required
                           />
-                        </>
+                        </FormField>
                       )}
                     </div>
-                    <div>
-                      <label className="app-label">Caption</label>
+                    <FormField label="Caption" htmlFor={`${formFieldId}-showcase-caption`}>
                       <input
+                        id={`${formFieldId}-showcase-caption`}
                         type="text"
                         value={showcaseForm.caption}
                         onChange={(e) => setShowcaseForm((f) => ({ ...f, caption: e.target.value }))}
                         className="app-input"
                       />
-                    </div>
-                    <div>
-                      <label className="app-label">Sort order</label>
+                    </FormField>
+                    <FormField label="Sort order" htmlFor={`${formFieldId}-showcase-sort`}>
                       <input
+                        id={`${formFieldId}-showcase-sort`}
                         type="number"
                         value={showcaseForm.sortOrder}
                         onChange={(e) => setShowcaseForm((f) => ({ ...f, sortOrder: parseInt(e.target.value, 10) || 0 }))}
                         className="app-input"
                       />
-                    </div>
+                    </FormField>
                     <div className="flex justify-end gap-2 pt-2">
                       <Button type="button" variant="secondary" onClick={closeShowcaseModal}>
                         Cancel
@@ -1904,261 +2139,240 @@ export default function AdminContent() {
 
             {activeTab === 'files' && (
               <div className="space-y-6">
-                <div className="flex flex-wrap gap-3 items-end justify-between">
-                  <Button type="button" onClick={() => setUploadModalOpen(true)}>Upload file</Button>
-                  {selectedFileIds.length > 0 && (
-                    <Button type="button" variant="danger" onClick={handleBulkDeleteFiles} disabled={saving}>
-                      Delete selected ({selectedFileIds.length})
-                    </Button>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-3 items-end">
-                  <div>
-                    <label className="app-label">Orphan status</label>
-                    <select
-                      value={fileOrphanFilter}
-                      onChange={(e) => setFileOrphanFilter(e.target.value as 'all' | 'suspected')}
-                      className="app-input"
-                    >
-                      <option value="all">All files</option>
-                      <option value="suspected">Suspected orphan</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="app-label">Visibility</label>
-                    <select
-                      value={fileVisibilityFilter}
-                      onChange={(e) => setFileVisibilityFilter(e.target.value as 'all' | 'public' | 'authenticated')}
-                      className="app-input"
-                    >
-                      <option value="all">All</option>
-                      <option value="public">Public</option>
-                      <option value="authenticated">Authenticated</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="app-label">File type</label>
-                    <select
-                      value={fileTypeFilter}
-                      onChange={(e) => setFileTypeFilter(e.target.value as 'all' | 'image' | 'video' | 'audio' | 'document' | 'other')}
-                      className="app-input"
-                    >
-                      <option value="all">All</option>
-                      <option value="image">Image</option>
-                      <option value="video">Video</option>
-                      <option value="audio">Audio</option>
-                      <option value="document">Document</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div className="min-w-[240px]">
-                    <label className="app-label">Search</label>
-                    <input
-                      type="text"
-                      value={fileSearch}
-                      onChange={(e) => setFileSearch(e.target.value)}
-                      placeholder="Name, description, filename"
-                      className="app-input"
-                    />
-                  </div>
-                  <div>
-                    <label className="app-label">Page size</label>
-                    <select
-                      value={filePageSize}
-                      onChange={(e) => setFilePageSize(Number.parseInt(e.target.value, 10))}
-                      className="app-input"
-                    >
-                      {[10, 25, 50, 100].map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="app-table-shell">
-                  <table className="app-table">
-                    <thead className="app-table-head">
-                      <tr>
-                        <th className="app-table-th">
-                          <input
-                            type="checkbox"
-                            checked={files.length > 0 && files.every((f) => selectedFileIds.includes(f.id))}
-                            onChange={(e) => {
-                              if (e.target.checked) setSelectedFileIds(files.map((f) => f.id));
-                              else setSelectedFileIds([]);
-                            }}
-                          />
-                        </th>
-                        <th className="app-table-th">Preview</th>
-                        <th className="app-table-th cursor-pointer" onClick={() => toggleFileSort('name')}>Name</th>
-                        <th className="app-table-th cursor-pointer w-40" onClick={() => toggleFileSort('type')}>Type</th>
-                        <th className="app-table-th cursor-pointer" onClick={() => toggleFileSort('size')}>Size</th>
-                        <th className="app-table-th">Visibility</th>
-                        <th className="app-table-th cursor-pointer" onClick={() => toggleFileSort('createdAt')}>Created</th>
-                        <th className="app-table-th">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {files.map((file) => (
-                        <tr key={file.id} className="border-t border-gray-100 dark:border-gray-800">
-                          <td className="app-table-td">
-                            <input
-                              type="checkbox"
-                              checked={selectedFileIds.includes(file.id)}
-                              onChange={(e) => {
-                                setSelectedFileIds((prev) =>
-                                  e.target.checked ? [...prev, file.id] : prev.filter((id) => id !== file.id)
-                                );
-                              }}
-                            />
-                          </td>
-                          <td className="app-table-td">
-                            {isImageFile(file) ? (
-                              <img
-                                src={getImageThumbnailUrl(file)}
-                                alt=""
-                                className="w-10 h-10 object-cover rounded border border-gray-200 dark:border-gray-700"
-                              />
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="app-table-td min-w-[240px]">
-                            <div className="font-medium truncate">{file.displayName || file.originalFilename}</div>
-                            <div className="text-xs text-gray-500 truncate">{file.originalFilename}</div>
-                            {file.suspectedOrphan && (
-                              <span className="inline-block mt-1 text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                                Suspected orphan
-                              </span>
-                            )}
-                          </td>
-                          <td className="app-table-td max-w-[10rem]">
-                            <span className="block truncate" title={file.mimeType}>
-                              {file.mimeType}
-                            </span>
-                          </td>
-                          <td className="app-table-td">{Math.max(1, Math.round(file.byteSize / 1024))} KB</td>
-                          <td className="app-table-td">{file.visibility}</td>
-                          <td className="app-table-td">{new Date(file.createdAt).toLocaleDateString()}</td>
-                          <td className="app-table-td">
-                            <div className="flex items-center gap-2">
-                              <button type="button" onClick={() => handleCopyFileUrl(file)} className="text-primary-teal hover:underline">Copy URL</button>
-                              <button type="button" onClick={() => openFileModal(file)} className="text-primary-teal hover:underline">Edit</button>
-                              <button type="button" onClick={() => handleDeleteFile(file)} className="text-red-600 dark:text-red-400 hover:underline">Delete</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-500">
-                    Showing {fileRangeStart}–{fileRangeEnd} of {fileTotal}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setFilePage((p) => Math.max(1, p - 1))}
-                      disabled={filePage <= 1}
-                    >
-                      Previous
-                    </Button>
-                    {filePageNumbers[0] > 1 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setFilePage(1)}
-                          className={`px-3 py-1.5 rounded border text-sm ${
-                            filePage === 1
-                              ? 'border-primary-teal bg-primary-teal text-white'
-                              : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
-                          }`}
+                <AppPageControlsRow
+                  left={
+                    <>
+                      <FormField label="Orphan status" htmlFor={`${formFieldId}-files-filter-orphan`}>
+                        <select
+                          id={`${formFieldId}-files-filter-orphan`}
+                          value={fileFilters.orphanStatus}
+                          onChange={(event) =>
+                            setFileFilter(
+                              'orphanStatus',
+                              event.target.value as FileOrphanFilter
+                            )
+                          }
+                          className="app-input"
                         >
-                          1
-                        </button>
-                        {filePageNumbers[0] > 2 && <span className="text-sm text-gray-500">...</span>}
-                      </>
-                    )}
-                    {filePageNumbers.map((pageNumber) => (
-                      <button
-                        key={pageNumber}
-                        type="button"
-                        onClick={() => setFilePage(pageNumber)}
-                        className={`px-3 py-1.5 rounded border text-sm ${
-                          filePage === pageNumber
-                            ? 'border-primary-teal bg-primary-teal text-white'
-                            : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
-                        }`}
+                          <option value="all">All files</option>
+                          <option value="suspected">Suspected orphan</option>
+                        </select>
+                      </FormField>
+                      <FormField label="Visibility" htmlFor={`${formFieldId}-files-filter-visibility`}>
+                        <select
+                          id={`${formFieldId}-files-filter-visibility`}
+                          value={fileFilters.visibility}
+                          onChange={(event) =>
+                            setFileFilter(
+                              'visibility',
+                              event.target.value as FileVisibilityFilter
+                            )
+                          }
+                          className="app-input"
+                        >
+                          <option value="all">All</option>
+                          <option value="public">Public</option>
+                          <option value="authenticated">Authenticated</option>
+                        </select>
+                      </FormField>
+                      <FormField label="File type" htmlFor={`${formFieldId}-files-filter-type`}>
+                        <select
+                          id={`${formFieldId}-files-filter-type`}
+                          value={fileFilters.fileType}
+                          onChange={(event) =>
+                            setFileFilter('fileType', event.target.value as FileTypeFilter)
+                          }
+                          className="app-input"
+                        >
+                          <option value="all">All</option>
+                          <option value="image">Image</option>
+                          <option value="video">Video</option>
+                          <option value="audio">Audio</option>
+                          <option value="document">Document</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </FormField>
+                      <FormField
+                        label="Search"
+                        htmlFor={`${formFieldId}-files-filter-search`}
+                        className="min-w-[16rem] flex-1"
                       >
-                        {pageNumber}
-                      </button>
-                    ))}
-                    {filePageNumbers[filePageNumbers.length - 1] < fileTotalPages && (
-                      <>
-                        {filePageNumbers[filePageNumbers.length - 1] < fileTotalPages - 1 && (
-                          <span className="text-sm text-gray-500">...</span>
-                        )}
+                        <input
+                          id={`${formFieldId}-files-filter-search`}
+                          type="text"
+                          value={fileDraftFilters.search}
+                          onChange={(event) =>
+                            setFileDraftFilter('search', event.target.value)
+                          }
+                          placeholder="Name, description, filename"
+                          className="app-input"
+                        />
+                      </FormField>
+                    </>
+                  }
+                  right={
+                    <>
+                      <Button type="button" onClick={() => setUploadModalOpen(true)}>
+                        Upload file
+                      </Button>
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-[5.5rem] text-right">
+                          <span
+                            aria-hidden={selectedFileIds.length === 0}
+                            className={`text-sm text-gray-600 dark:text-gray-300 ${
+                              selectedFileIds.length > 0 ? 'visible' : 'invisible'
+                            }`}
+                          >
+                            {selectedFileIds.length} selected
+                          </span>
+                        </div>
+                        <div className="w-[12.5rem]">
+                          <Button
+                            type="button"
+                            variant="danger"
+                            onClick={handleBulkDeleteFiles}
+                            disabled={saving || selectedFileIds.length === 0}
+                            aria-hidden={selectedFileIds.length === 0}
+                            tabIndex={selectedFileIds.length === 0 ? -1 : undefined}
+                            className={`w-full ${
+                              selectedFileIds.length > 0 ? 'visible' : 'invisible pointer-events-none'
+                            }`}
+                          >
+                            Delete selected ({selectedFileIds.length})
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  }
+                />
+
+                {filesError && files.length > 0 ? (
+                  <div className="app-alert-error">
+                    {filesError}
+                  </div>
+                ) : null}
+
+                <DataTable
+                  rows={files}
+                  rowKey={(file) => file.id}
+                  columns={fileColumns}
+                  sort={fileSort}
+                  onSortChange={setFileSort}
+                  selection={{
+                    selectedIds: selectedFileIds,
+                    onToggleRow: (file, checked) => {
+                      setSelectedFileIds((prev) =>
+                        checked
+                          ? Array.from(new Set([...prev, file.id]))
+                          : prev.filter((id) => id !== file.id)
+                      );
+                    },
+                    onTogglePage: (pageRows, checked) => {
+                      setSelectedFileIds(checked ? pageRows.map((file) => file.id) : []);
+                    },
+                    getRowLabel: (file) => file.displayName || file.originalFilename,
+                  }}
+                  actions={{
+                    widthClassName: 'w-[8.5rem]',
+                    renderActions: (file) => (
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
-                          onClick={() => setFilePage(fileTotalPages)}
-                          className={`px-3 py-1.5 rounded border text-sm ${
-                            filePage === fileTotalPages
-                              ? 'border-primary-teal bg-primary-teal text-white'
-                              : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
-                          }`}
+                          onClick={() => void handleCopyFileUrl(file)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-primary-teal"
+                          aria-label={`Copy URL for ${file.displayName || file.originalFilename}`}
+                          title="Copy URL"
                         >
-                          {fileTotalPages}
+                          <HiClipboardDocument className="h-4 w-4" />
                         </button>
-                      </>
-                    )}
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setFilePage((p) => p + 1)}
-                      disabled={filePage >= fileTotalPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
+                        <button
+                          type="button"
+                          onClick={() => openFileModal(file)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-primary-teal"
+                          aria-label={`Edit ${file.displayName || file.originalFilename}`}
+                          title="Edit"
+                        >
+                          <HiPencilSquare className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteFile(file)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                          aria-label={`Delete ${file.displayName || file.originalFilename}`}
+                          title="Delete"
+                        >
+                          <HiTrash className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ),
+                  }}
+                  pagination={{
+                    page: filePage,
+                    pageSize: FILES_PAGE_SIZE,
+                    totalRecords: fileTotal,
+                    currentCount: files.length,
+                    onPageChange: (page) => setFilePage(page),
+                  }}
+                  loading={!filesLoaded}
+                  error={
+                    filesError && files.length === 0 ? (
+                      <AppStateCard compact title="Couldn't load files" description={filesError} />
+                    ) : undefined
+                  }
+                  emptyState={
+                    <AppStateCard
+                      compact
+                      title={
+                        fileFilters.search.trim() ||
+                        fileFilters.orphanStatus !== 'all' ||
+                        fileFilters.visibility !== 'all' ||
+                        fileFilters.fileType !== 'all'
+                          ? 'No files match these filters.'
+                          : 'No files uploaded yet.'
+                      }
+                      description={
+                        fileFilters.search.trim() ||
+                        fileFilters.orphanStatus !== 'all' ||
+                        fileFilters.visibility !== 'all' ||
+                        fileFilters.fileType !== 'all'
+                          ? 'Try changing the search or filters.'
+                          : 'Upload a file to start managing your media library.'
+                      }
+                    />
+                  }
+                />
 
                 <Modal isOpen={uploadModalOpen} onClose={() => setUploadModalOpen(false)} title="Upload file">
                   <form onSubmit={handleUploadFile} className="space-y-4">
-                    <div>
-                      <label className="app-label">Files</label>
+                    <FormField label="Files" htmlFor={`${formFieldId}-upload-files`}>
                       <input
+                        id={`${formFieldId}-upload-files`}
                         type="file"
                         multiple
                         onChange={(e) => setSelectedUploadFiles(e.target.files ? Array.from(e.target.files) : [])}
                         className="app-input"
                       />
-                    </div>
+                    </FormField>
                     {selectedUploadFiles.length === 1 && (
                       <>
-                        <div>
-                          <label className="app-label">Display name (optional)</label>
+                        <FormField label="Display name (optional)" optional htmlFor={`${formFieldId}-upload-display-name`}>
                           <input
+                            id={`${formFieldId}-upload-display-name`}
                             type="text"
                             value={fileUploadForm.displayName}
                             onChange={(e) => setFileUploadForm((f) => ({ ...f, displayName: e.target.value }))}
                             className="app-input"
                           />
-                        </div>
-                        <div>
-                          <label className="app-label">Description (optional)</label>
+                        </FormField>
+                        <FormField label="Description (optional)" optional htmlFor={`${formFieldId}-upload-description`}>
                           <textarea
+                            id={`${formFieldId}-upload-description`}
                             value={fileUploadForm.description}
                             onChange={(e) => setFileUploadForm((f) => ({ ...f, description: e.target.value }))}
                             rows={3}
                             className="app-input"
                           />
-                        </div>
+                        </FormField>
                       </>
                     )}
                     {selectedUploadFiles.length > 0 && (
@@ -2180,9 +2394,9 @@ export default function AdminContent() {
                         </ul>
                       </div>
                     )}
-                    <div>
-                      <label className="app-label">Visibility</label>
+                    <FormField label="Visibility" htmlFor={`${formFieldId}-upload-visibility`}>
                       <select
+                        id={`${formFieldId}-upload-visibility`}
                         value={fileUploadForm.visibility}
                         onChange={(e) => setFileUploadForm((f) => ({ ...f, visibility: e.target.value as 'public' | 'authenticated' }))}
                         className="app-input"
@@ -2190,7 +2404,7 @@ export default function AdminContent() {
                         <option value="public">Public</option>
                         <option value="authenticated">Logged-in users only</option>
                       </select>
-                    </div>
+                    </FormField>
                     <div className="flex justify-end gap-2 pt-2">
                       <Button type="button" variant="secondary" onClick={() => setUploadModalOpen(false)}>
                         Cancel
@@ -2332,38 +2546,41 @@ export default function AdminContent() {
                             </div>
                           ) : (
                             <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="number"
-                                min={1}
-                                placeholder="Width"
-                                value={resizeForm.width}
-                                onChange={(e) => setResizeForm((f) => ({ ...f, width: e.target.value }))}
-                                className="app-input"
-                              />
-                              <input
-                                type="number"
-                                min={1}
-                                placeholder="Height"
-                                value={resizeForm.height}
-                                onChange={(e) => setResizeForm((f) => ({ ...f, height: e.target.value }))}
-                                className="app-input"
-                              />
+                              <FormField label="Width" htmlFor={`${formFieldId}-resize-width`}>
+                                <input
+                                  id={`${formFieldId}-resize-width`}
+                                  type="number"
+                                  min={1}
+                                  placeholder="Width"
+                                  value={resizeForm.width}
+                                  onChange={(e) => setResizeForm((f) => ({ ...f, width: e.target.value }))}
+                                  className="app-input"
+                                />
+                              </FormField>
+                              <FormField label="Height" htmlFor={`${formFieldId}-resize-height`}>
+                                <input
+                                  id={`${formFieldId}-resize-height`}
+                                  type="number"
+                                  min={1}
+                                  placeholder="Height"
+                                  value={resizeForm.height}
+                                  onChange={(e) => setResizeForm((f) => ({ ...f, height: e.target.value }))}
+                                  className="app-input"
+                                />
+                              </FormField>
                             </div>
                           )}
 
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={resizeForm.keepOriginal}
-                              onChange={(e) =>
-                                setResizeForm((f) => ({
-                                  ...f,
-                                  keepOriginal: e.target.checked,
-                                }))
-                              }
-                            />
-                            Keep original image
-                          </label>
+                          <FormCheckbox
+                            label="Keep original image"
+                            checked={resizeForm.keepOriginal}
+                            onChange={(checked) =>
+                              setResizeForm((f) => ({
+                                ...f,
+                                keepOriginal: checked,
+                              }))
+                            }
+                          />
 
                           <Button type="submit" disabled={imageToolsBusy}>
                             {imageToolsBusy ? 'Working...' : 'Apply resize'}
@@ -2414,27 +2631,27 @@ export default function AdminContent() {
                         </form>
                       ) : (
                         <form onSubmit={handleSaveFileMetadata} className="space-y-4">
-                          <div>
-                            <label className="app-label">Display name</label>
+                          <FormField label="Display name" htmlFor={`${formFieldId}-edit-display-name`}>
                             <input
+                              id={`${formFieldId}-edit-display-name`}
                               type="text"
                               value={fileEditForm.displayName}
                               onChange={(e) => setFileEditForm((f) => ({ ...f, displayName: e.target.value }))}
                               className="app-input"
                             />
-                          </div>
-                          <div>
-                            <label className="app-label">Description</label>
+                          </FormField>
+                          <FormField label="Description" htmlFor={`${formFieldId}-edit-description`}>
                             <textarea
+                              id={`${formFieldId}-edit-description`}
                               value={fileEditForm.description}
                               onChange={(e) => setFileEditForm((f) => ({ ...f, description: e.target.value }))}
                               rows={3}
                               className="app-input"
                             />
-                          </div>
-                          <div>
-                            <label className="app-label">Visibility</label>
+                          </FormField>
+                          <FormField label="Visibility" htmlFor={`${formFieldId}-edit-visibility`}>
                             <select
+                              id={`${formFieldId}-edit-visibility`}
                               value={fileEditForm.visibility}
                               onChange={(e) => setFileEditForm((f) => ({ ...f, visibility: e.target.value as 'public' | 'authenticated' }))}
                               className="app-input"
@@ -2442,12 +2659,12 @@ export default function AdminContent() {
                               <option value="public">Public</option>
                               <option value="authenticated">Authenticated users only</option>
                             </select>
-                          </div>
+                          </FormField>
                           {isImageFile(editingFile) && (
                             <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
-                              <div>
-                                <label className="app-label">Convert image type</label>
+                              <FormField label="Convert image type" htmlFor={`${formFieldId}-edit-convert-format`}>
                                 <select
+                                  id={`${formFieldId}-edit-convert-format`}
                                   value={convertFormat}
                                   onChange={(e) => setConvertFormat(e.target.value as 'jpg' | 'png' | 'gif')}
                                   className="app-input"
@@ -2456,20 +2673,17 @@ export default function AdminContent() {
                                   <option value="png">PNG</option>
                                   <option value="gif">GIF</option>
                                 </select>
-                              </div>
+                              </FormField>
                               <Button type="button" variant="secondary" onClick={handleConvertImageType} disabled={imageToolsBusy}>
                                 {imageToolsBusy ? 'Working...' : 'Convert'}
                               </Button>
                             </div>
                           )}
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={fileEditForm.suspectedOrphan}
-                              onChange={(e) => setFileEditForm((f) => ({ ...f, suspectedOrphan: e.target.checked }))}
-                            />
-                            <span className="text-sm">Mark as suspected orphan</span>
-                          </label>
+                          <FormCheckbox
+                            label="Mark as suspected orphan"
+                            checked={fileEditForm.suspectedOrphan}
+                            onChange={(checked) => setFileEditForm((f) => ({ ...f, suspectedOrphan: checked }))}
+                          />
                           <div className="flex justify-end gap-2 pt-2">
                             <Button type="button" variant="secondary" onClick={closeFileModal}>
                               Cancel
@@ -2484,6 +2698,10 @@ export default function AdminContent() {
                   )}
                 </Modal>
               </div>
+            )}
+
+            {activeTab === 'permalinks' && (
+              <AdminContentPermalinksPanel rows={permalinks} loading={false} onRefresh={loadContentData} />
             )}
           </>
         )}

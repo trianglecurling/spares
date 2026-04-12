@@ -20,6 +20,7 @@ type MemberAutocompleteProps = {
   openOnFocus?: boolean;
   inputClassName?: string;
   filterOption?: (option: MemberPickerOption) => boolean;
+  inputId?: string;
 };
 
 export default function MemberAutocomplete({
@@ -39,6 +40,7 @@ export default function MemberAutocomplete({
   openOnFocus = true,
   inputClassName = 'app-input',
   filterOption,
+  inputId,
 }: MemberAutocompleteProps) {
   const sharedMembers = useMemberOptions({ autoLoad: options === undefined });
   const [internalQuery, setInternalQuery] = useState('');
@@ -86,6 +88,7 @@ export default function MemberAutocomplete({
 
   return (
     <AutocompleteInput
+      inputId={inputId}
       inputValue={displayText}
       onInputValueChange={(nextQuery) => {
         setQuery(nextQuery);

@@ -13,7 +13,7 @@ Use these files as the first place to look when implementing related work.
 - `frontend/src/components/PageTabs.tsx`
 
 Why:
-- These files define the default spacing, headings, secondary control rows, sentence-case back actions, standard page-level and inline states, tables, and page-level tabs used across the authenticated app.
+- These files define the default spacing, headings, secondary control rows, sentence-case back actions, standard page-level and inline states, tables, and page-level tabs used across the authenticated app. `index.css` defines **`app-input`** and legacy **native `<select>`** focus rules so focus stays consistent while older screens are migrated.
 
 ## Admin list and management flow
 
@@ -43,6 +43,18 @@ Why:
 Why:
 - These files define the shared drag-and-drop foundation for flat lists and hierarchical editors, including handle treatment, drag overlays, keyboard reordering, screen-reader announcements, and reduced-motion-aware behavior.
 
+## Table system
+
+- `frontend/src/components/table/DataTable.tsx`
+- `frontend/src/components/table/DataTableHeaderCell.tsx`
+- `frontend/src/components/table/DataTablePagination.tsx`
+- `frontend/src/components/table/DataTableSelectionCell.tsx`
+- `frontend/src/hooks/useTableQueryState.ts`
+- `frontend/src/pages/admin/AdminContent.tsx`
+
+Why:
+- These files define the canonical admin table system for server-backed sorting, URL-synced filters and pagination, stable selection behavior, fixed-width action columns, and the default `Showing x-y of n` footer. Start with the Files table in `frontend/src/pages/admin/AdminContent.tsx` when you need a full reference.
+
 ## Form system
 
 - `frontend/src/components/FormField.tsx`
@@ -53,12 +65,16 @@ Why:
 - `frontend/src/components/CalendarEventForm.tsx`
 - `frontend/src/pages/PublicEventRegisterPage.tsx`
 - `frontend/src/pages/admin/AdminEventEditor.tsx`
+- `frontend/src/pages/admin/AdminArticleEditor.tsx`
+- `frontend/src/pages/admin/AdminContent.tsx`
 
 Why:
-- These files define the canonical field shell, helper and error messaging, section layout, required text treatment, disabled and readonly behavior, and representative authenticated and public form usage. Start with `frontend/src/pages/admin/AdminEventEditor.tsx` when you need a complex form reference.
+- These files define the canonical field shell, helper and error messaging, section layout, required text treatment, disabled and readonly behavior, and representative authenticated and public form usage. Start with `frontend/src/pages/admin/AdminEventEditor.tsx` when you need a complex form reference. **`AdminArticleEditor`** and **`AdminContent`** (e.g. Files tab, showcase modal) illustrate **`FormField`** + **`app-input`**, `useId()` ids with **`htmlFor`**, and composite **`role="group"`** labeling for the article body editor.
 
-## Member picking and autocomplete
+## Choice inputs and autocomplete
 
+- `frontend/src/components/ChoiceInput.tsx`
+- `frontend/src/components/ChoiceInput.stories.tsx`
 - `frontend/src/components/AutocompleteInput.tsx`
 - `frontend/src/contexts/MemberOptionsContext.tsx`
 - `frontend/src/components/MemberAutocomplete.tsx`
@@ -69,7 +85,7 @@ Why:
 - `frontend/src/pages/PublicEventRegisterPage.tsx`
 
 Why:
-- These files define the canonical generic autocomplete primitive, the cached member source, the member-specific wrappers, and the remaining direct non-member autocomplete usages.
+- These files define the canonical shared choice-input foundation, its Storybook review surface, the generic autocomplete wrapper, the cached member source, the member-specific wrappers, and the remaining direct non-member autocomplete usages.
 
 ## Public shell
 

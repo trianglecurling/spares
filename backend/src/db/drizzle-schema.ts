@@ -740,6 +740,34 @@ export const showcaseImagesSqlite = sqliteTable('showcase_images', {
   sortIdx: index('idx_showcase_images_sort_order').on(table.sort_order),
 }));
 
+// Short permalinks → redirect to internal or external URLs (/go/:slug)
+export const permalinksSqlite = sqliteTable('permalinks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  slug: text('slug').notNull().unique(),
+  label: text('label'),
+  notes: text('notes'),
+  destination_url: text('destination_url').notNull(),
+  destination_may_change: integer('destination_may_change').default(0).notNull(),
+  /** YOURLS (or other) pre-migration click total; added to totalHits and uniqueVisitors in admin stats. */
+  legacy_click_count: integer('legacy_click_count').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  slugIdx: index('idx_permalinks_slug').on(table.slug),
+}));
+
+export const permalinkHitsSqlite = sqliteTable('permalink_hits', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  permalink_id: integer('permalink_id').notNull().references(() => permalinksSqlite.id, { onDelete: 'cascade' }),
+  occurred_at: text('occurred_at').default(sql`datetime('now')`).notNull(),
+  visitor_id: text('visitor_id').notNull(),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  referrer_domain: text('referrer_domain'),
+}, (table) => ({
+  permalinkIdx: index('idx_permalink_hits_permalink_id').on(table.permalink_id),
+  occurredIdx: index('idx_permalink_hits_occurred_at').on(table.occurred_at),
+}));
+
 // Menu items for dynamic navigation (hierarchical)
 export const menuItemsSqlite = sqliteTable('menu_items', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -1813,6 +1841,32 @@ export const showcaseImagesPg = pgTable('showcase_images', {
   sortIdx: indexPg('idx_showcase_images_sort_order').on(table.sort_order),
 }));
 
+export const permalinksPg = pgTable('permalinks', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  slug: textPg('slug').notNull().unique(),
+  label: textPg('label'),
+  notes: textPg('notes'),
+  destination_url: textPg('destination_url').notNull(),
+  destination_may_change: integerPg('destination_may_change').default(0).notNull(),
+  legacy_click_count: integerPg('legacy_click_count').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  slugIdx: indexPg('idx_permalinks_slug').on(table.slug),
+}));
+
+export const permalinkHitsPg = pgTable('permalink_hits', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  permalink_id: integerPg('permalink_id').notNull().references(() => permalinksPg.id, { onDelete: 'cascade' }),
+  occurred_at: timestamp('occurred_at', { withTimezone: false }).defaultNow().notNull(),
+  visitor_id: textPg('visitor_id').notNull(),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  referrer_domain: textPg('referrer_domain'),
+}, (table) => ({
+  permalinkIdx: indexPg('idx_permalink_hits_permalink_id').on(table.permalink_id),
+  occurredIdx: indexPg('idx_permalink_hits_occurred_at').on(table.occurred_at),
+}));
+
 // Menu items for dynamic navigation (hierarchical)
 export const menuItemsPg = pgTable('menu_items', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -2184,6 +2238,8 @@ export const sqliteSchema = {
   iceBookings: iceBookingsSqlite,
   articles: articlesSqlite,
   articleVersions: articleVersionsSqlite,
+  permalinks: permalinksSqlite,
+  permalinkHits: permalinkHitsSqlite,
   siteConfig: siteConfigSqlite,
   showcaseImages: showcaseImagesSqlite,
   menuItems: menuItemsSqlite,
@@ -2254,6 +2310,8 @@ export const pgSchema = {
   iceBookings: iceBookingsPg,
   articles: articlesPg,
   articleVersions: articleVersionsPg,
+  permalinks: permalinksPg,
+  permalinkHits: permalinkHitsPg,
   siteConfig: siteConfigPg,
   showcaseImages: showcaseImagesPg,
   menuItems: menuItemsPg,

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiChevronDown } from 'react-icons/hi2';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import DragHandle from '../../components/dragDrop/DragHandle';
@@ -14,6 +15,8 @@ import FormSection from '../../components/FormSection';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
+import DataTable from '../../components/table/DataTable';
+import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -664,20 +667,6 @@ export default function AdminEventEditor() {
     return registrationSortOrder === 'asc' ? result : -result;
   };
 
-  const toggleRegistrationSort = (nextKey: string) => {
-    if (registrationSortKey === nextKey) {
-      setRegistrationSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-    setRegistrationSortKey(nextKey);
-    setRegistrationSortOrder(nextKey === 'date' ? 'desc' : 'asc');
-  };
-
-  const registrationSortIndicator = (key: string): string => {
-    if (registrationSortKey !== key) return '';
-    return registrationSortOrder === 'asc' ? ' ▲' : ' ▼';
-  };
-
   const visibleRegistrations = useMemo(() => {
     const needle = registrationSearch.trim().toLowerCase();
     const filtered = needle
@@ -695,6 +684,167 @@ export default function AdminEventEditor() {
   ]);
 
   const activeRegistrationCount = registrations.filter((r) => r.status !== 'cancelled').length;
+
+  const registrationColumns: Array<DataTableColumn<Registration, string>> = useMemo(() => {
+    const baseColumns: Array<DataTableColumn<Registration, string>> = [
+      {
+        id: 'date',
+        header: 'Date',
+        sortable: true,
+        sortKey: 'date',
+        defaultSortDirection: 'desc',
+        cellClassName: 'whitespace-nowrap text-sm text-gray-600 dark:text-gray-400',
+        renderCell: (registration) => formatDateTime24(registration.registered_at),
+      },
+      {
+        id: 'name',
+        header: 'Name',
+        sortable: true,
+        sortKey: 'name',
+        defaultSortDirection: 'asc',
+        cellClassName: 'font-medium text-gray-900 dark:text-gray-100',
+        renderCell: (registration) => (
+          <Link to={`/admin/events/${id}/registrations/${registration.id}`} className="text-primary-teal hover:underline">
+            {registration.contact_name}
+          </Link>
+        ),
+      },
+      {
+        id: 'email',
+        header: 'Email',
+        cellClassName: 'text-sm text-gray-600 dark:text-gray-400',
+        renderCell: (registration) => registration.contact_email,
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        sortable: true,
+        sortKey: 'status',
+        defaultSortDirection: 'asc',
+        align: 'center',
+        renderCell: (registration) => (
+          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(registration.status)}`}>
+            {registration.status.replace('_', ' ')}
+          </span>
+        ),
+      },
+    ];
+
+    if (allowGroupRegistration) {
+      baseColumns.push({
+        id: 'groupSize',
+        header: 'Group size',
+        align: 'center',
+        renderCell: (registration) => registration.group_size,
+      });
+    }
+
+    return [
+      ...baseColumns,
+      ...registrationFieldsForData.map((field) => {
+        const sortKey = field.id ? `custom:${field.id}` : undefined;
+        return {
+          id: `field-${field.id ?? field.label}`,
+          header: field.label || '(untitled field)',
+          sortable: Boolean(sortKey),
+          sortKey,
+          defaultSortDirection: 'asc' as const,
+          cellClassName: 'min-w-[220px] text-sm text-gray-600 dark:text-gray-300',
+          renderCell: (registration: Registration) => {
+            const teamPreset =
+              field.fieldType === 'preset_team_four' ||
+              field.fieldType === 'preset_team_doubles';
+            const cell = getRegistrationFieldValue(registration, field);
+            const teamRaw = teamPreset ? getRegistrationFieldGroupRawValue(registration, field) : '';
+
+            if (teamPreset) {
+              return teamRaw ? (
+                <button
+                  type="button"
+                  onClick={() => setTeamFieldView({ registration, field })}
+                  className="text-sm font-medium text-primary-teal hover:underline"
+                >
+                  View
+                </button>
+              ) : (
+                <span className="text-gray-400">-</span>
+              );
+            }
+
+            return cell || <span className="text-gray-400">-</span>;
+          },
+        };
+      }),
+    ];
+  }, [allowGroupRegistration, id, registrationFieldsForData]);
+
+  const specialLinkColumns: Array<DataTableColumn<SpecialLink>> = useMemo(
+    () => [
+      {
+        id: 'label',
+        header: 'Label',
+        renderCell: (link) => (
+          <button
+            type="button"
+            onClick={() => setDetailLink(link)}
+            className="text-left font-medium text-primary-teal hover:underline"
+          >
+            {link.label || '(no label)'}
+          </button>
+        ),
+      },
+      {
+        id: 'link',
+        header: 'Link',
+        cellClassName: 'text-sm',
+        renderCell: (link) => {
+          const revealed = revealedLinks.has(link.id);
+          const copied = copiedLinkId === link.id;
+          return (
+            <div className="flex items-center gap-1.5">
+              {revealed ? (
+                <code className="select-all break-all rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-700">
+                  {getLinkUrl(link)}
+                </code>
+              ) : (
+                <span className="text-xs italic text-gray-400 dark:text-gray-500">Hidden</span>
+              )}
+              <button
+                type="button"
+                onClick={() => toggleRevealLink(link.id)}
+                className="shrink-0 rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                title={revealed ? 'Hide link' : 'Reveal link'}
+              >
+                {revealed ? <HiEyeSlash className="h-4 w-4" /> : <HiEye className="h-4 w-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => copyLinkUrl(link)}
+                className={`shrink-0 rounded p-1 ${copied ? 'text-green-600 dark:text-green-400' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                title={copied ? 'Copied!' : 'Copy link'}
+              >
+                <HiClipboardDocument className="h-4 w-4" />
+              </button>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        align: 'center',
+        renderCell: (link) =>
+          link.invalidated ? (
+            <span className="text-xs text-red-600 dark:text-red-400">Invalidated</span>
+          ) : link.used ? (
+            <span className="text-xs text-gray-600 dark:text-gray-400">Used</span>
+          ) : (
+            <span className="text-xs text-green-600 dark:text-green-400">Active</span>
+          ),
+      },
+    ],
+    [copiedLinkId, revealedLinks]
+  );
 
   const copyRegistrantEmails = async () => {
     const entries: string[] = [];
@@ -1593,133 +1743,39 @@ export default function AdminEventEditor() {
               </div>
             )}
 
-            {registrationsLoaded && visibleRegistrations.length === 0 && (
-              <p className="text-gray-500 dark:text-gray-400">
-                {registrations.length === 0 ? 'No registrations yet.' : 'No registrations match your current filters.'}
-              </p>
-            )}
-
-            {registrationsLoaded && visibleRegistrations.length > 0 && (
-              <div className="app-table-shell overflow-x-auto">
-                <table className="app-table w-full min-w-[1100px]">
-                  <thead className="app-table-head">
-                    <tr>
-                      <th className="app-table-th text-left whitespace-nowrap">Actions</th>
-                      <th
-                        className="app-table-th text-left cursor-pointer select-none whitespace-nowrap"
-                        onClick={() => toggleRegistrationSort('date')}
-                        title="Sort by registration date/time"
+            {registrationsLoaded ? (
+              <DataTable
+                rows={visibleRegistrations}
+                rowKey={(registration) => registration.id}
+                columns={registrationColumns}
+                sort={{ key: registrationSortKey, direction: registrationSortOrder }}
+                onSortChange={(sort) => {
+                  setRegistrationSortKey(sort.key);
+                  setRegistrationSortOrder(sort.direction);
+                }}
+                actions={{
+                  widthClassName: 'w-[7rem]',
+                  renderActions: (registration) =>
+                    registration.status !== 'cancelled' ? (
+                      <button
+                        type="button"
+                        onClick={() => setCancelTarget(registration)}
+                        className="text-red-600 hover:underline dark:text-red-400"
                       >
-                        Date{registrationSortIndicator('date')}
-                      </th>
-                      <th
-                        className="app-table-th text-left cursor-pointer select-none"
-                        onClick={() => toggleRegistrationSort('name')}
-                        title="Sort by registrant name"
-                      >
-                        Name{registrationSortIndicator('name')}
-                      </th>
-                      <th className="app-table-th text-left">Email</th>
-                      <th
-                        className="app-table-th text-center cursor-pointer select-none"
-                        onClick={() => toggleRegistrationSort('status')}
-                        title="Sort by registration status"
-                      >
-                        Status{registrationSortIndicator('status')}
-                      </th>
-                      {allowGroupRegistration && (
-                        <th className="app-table-th text-center">Group size</th>
-                      )}
-                      {registrationFieldsForData.map((field) => (
-                        <th
-                          key={`field-col-${field.id ?? field.label}`}
-                          className={`app-table-th text-left select-none ${field.id ? 'cursor-pointer' : ''}`}
-                          onClick={() => {
-                            if (!field.id) return;
-                            toggleRegistrationSort(`custom:${field.id}`);
-                          }}
-                          title={`Sort by ${field.label || 'custom field'}`}
-                        >
-                          {(field.label || '(untitled field)') + (field.id ? registrationSortIndicator(`custom:${field.id}`) : '')}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
-                    {visibleRegistrations.map((reg) => (
-                      <tr key={reg.id} className={reg.status === 'cancelled' ? 'opacity-60' : ''}>
-                        <td className="app-table-td text-left align-middle">
-                          <div className="flex items-center justify-start gap-3">
-                            {reg.status !== 'cancelled' && (
-                              <button
-                                type="button"
-                                onClick={() => setCancelTarget(reg)}
-                                className="text-red-600 dark:text-red-400 hover:underline"
-                              >
-                                Cancel
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="app-table-td text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                          {formatDateTime24(reg.registered_at)}
-                        </td>
-                        <td className="app-table-td font-medium text-gray-900 dark:text-gray-100">
-                          <Link
-                            to={`/admin/events/${id}/registrations/${reg.id}`}
-                            className="text-primary-teal hover:underline"
-                          >
-                            {reg.contact_name}
-                          </Link>
-                        </td>
-                        <td className="app-table-td text-sm text-gray-600 dark:text-gray-400">
-                          {reg.contact_email}
-                        </td>
-                        <td className="app-table-td text-center">
-                          <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${statusColor(reg.status)}`}>
-                            {reg.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        {allowGroupRegistration && (
-                          <td className="app-table-td text-center">{reg.group_size}</td>
-                        )}
-                        {registrationFieldsForData.map((field) => {
-                          const teamPreset =
-                            field.fieldType === 'preset_team_four' ||
-                            field.fieldType === 'preset_team_doubles';
-                          const cell = getRegistrationFieldValue(reg, field);
-                          const teamRaw = teamPreset ? getRegistrationFieldGroupRawValue(reg, field) : '';
-                          return (
-                            <td
-                              key={`field-${reg.id}-${field.id ?? field.label}`}
-                              className={`app-table-td text-sm text-gray-600 dark:text-gray-300 min-w-[220px] ${teamPreset ? 'align-middle' : 'align-top'}`}
-                            >
-                              {teamPreset ? (
-                                teamRaw ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setTeamFieldView({ registration: reg, field })}
-                                    className="text-primary-teal hover:underline text-sm font-medium"
-                                  >
-                                    View
-                                  </button>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )
-                              ) : cell ? (
-                                cell
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                        Cancel
+                      </button>
+                    ) : null,
+                }}
+                shellClassName="overflow-x-auto"
+                emptyState={
+                  <AppStateCard
+                    compact
+                    title={registrations.length === 0 ? 'No registrations yet.' : 'No registrations match your current filters.'}
+                  />
+                }
+                getRowClassName={(registration) => (registration.status === 'cancelled' ? 'opacity-60' : undefined)}
+              />
+            ) : null}
           </div>
         )}
 
@@ -1800,86 +1856,26 @@ export default function AdminEventEditor() {
               </FormSection>
             </div>
 
-            {specialLinks.length > 0 && (
-              <div className="app-table-shell overflow-x-auto">
-                <table className="app-table w-full">
-                  <thead className="app-table-head">
-                    <tr>
-                      <th className="app-table-th text-left">Actions</th>
-                      <th className="app-table-th text-left">Label</th>
-                      <th className="app-table-th text-left">Link</th>
-                      <th className="app-table-th text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
-                    {specialLinks.map((link) => {
-                      const revealed = revealedLinks.has(link.id);
-                      const copied = copiedLinkId === link.id;
-                      return (
-                        <tr key={link.id}>
-                          <td className="app-table-td text-left align-top">
-                            {!link.invalidated && !link.used && (
-                              <button
-                                type="button"
-                                onClick={() => handleInvalidateLink(link.id)}
-                                className="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-                              >
-                                Invalidate
-                              </button>
-                            )}
-                          </td>
-                          <td className="app-table-td">
-                            <button
-                              type="button"
-                              onClick={() => setDetailLink(link)}
-                              className="text-primary-teal hover:underline font-medium text-left"
-                            >
-                              {link.label || '(no label)'}
-                            </button>
-                          </td>
-                          <td className="app-table-td text-sm">
-                            <div className="flex items-center gap-1.5">
-                              {revealed ? (
-                                <code className="text-xs break-all bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded select-all">
-                                  {getLinkUrl(link)}
-                                </code>
-                              ) : (
-                                <span className="text-xs text-gray-400 dark:text-gray-500 italic">Hidden</span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => toggleRevealLink(link.id)}
-                                className="shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded"
-                                title={revealed ? 'Hide link' : 'Reveal link'}
-                              >
-                                {revealed ? <HiEyeSlash className="h-4 w-4" /> : <HiEye className="h-4 w-4" />}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => copyLinkUrl(link)}
-                                className={`shrink-0 p-1 rounded ${copied ? 'text-green-600 dark:text-green-400' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
-                                title={copied ? 'Copied!' : 'Copy link'}
-                              >
-                                <HiClipboardDocument className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="app-table-td text-center">
-                            {link.invalidated ? (
-                              <span className="text-xs text-red-600 dark:text-red-400">Invalidated</span>
-                            ) : link.used ? (
-                              <span className="text-xs text-gray-600 dark:text-gray-400">Used</span>
-                            ) : (
-                              <span className="text-xs text-green-600 dark:text-green-400">Active</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {specialLinks.length > 0 ? (
+              <DataTable
+                rows={specialLinks}
+                rowKey={(link) => link.id}
+                columns={specialLinkColumns}
+                actions={{
+                  widthClassName: 'w-[7rem]',
+                  renderActions: (link) =>
+                    !link.invalidated && !link.used ? (
+                      <button
+                        type="button"
+                        onClick={() => handleInvalidateLink(link.id)}
+                        className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                      >
+                        Invalidate
+                      </button>
+                    ) : null,
+                }}
+              />
+            ) : null}
 
             <Modal isOpen={!!detailLink} onClose={() => setDetailLink(null)} title="Special registration link details" size="sm">
               {detailLink && (
