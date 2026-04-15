@@ -11,6 +11,7 @@ import PageTabs from './PageTabs';
 import ArticleAutocomplete, { type ArticleOption } from './ArticleAutocomplete';
 import FormField from './FormField';
 import FormSection from './FormSection';
+import ChoiceInput, { type ChoiceOption } from './ChoiceInput';
 import MarkdownDescriptionEditor, { type MarkdownDescriptionEditorRef } from './MarkdownDescriptionEditor';
 import { useAlert } from '../contexts/AlertContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -203,6 +204,15 @@ export default function CalendarEventForm({
     return m === 0 ? `${h} hr` : `${h} hr ${m} min`;
   }, [allDay, startDate, startTime, endDate, endTime]);
 
+  const eventTypeChoices = useMemo<ChoiceOption<string>[]>(
+    () => eventTypes.map((t) => ({ value: t.id, label: t.label })),
+    [eventTypes]
+  );
+  const recurrenceChoices = useMemo<ChoiceOption<string>[]>(
+    () => RECURRENCE_PRESETS.map((p) => ({ value: p.value, label: p.label })),
+    []
+  );
+
   const toggleSheet = (id: number) => {
     setSelectedSheets((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   };
@@ -378,18 +388,15 @@ export default function CalendarEventForm({
               </FormField>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <FormField label="Type" htmlFor="calendar-event-type" required>
-                  <select
-                    id="calendar-event-type"
+                  <ChoiceInput<string>
+                    inputId="calendar-event-type"
+                    options={eventTypeChoices}
                     value={typeId}
-                    onChange={(e) => setTypeId(e.target.value)}
-                    className="app-input"
-                  >
-                    {eventTypes.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(next) => {
+                      if (next != null && !Array.isArray(next)) setTypeId(next);
+                    }}
+                    listboxLabel="Event type"
+                  />
                 </FormField>
                 <FormField
                   label="Linked article"
@@ -544,18 +551,19 @@ export default function CalendarEventForm({
             )}
             {!isEditingSingleInstance && (
               <div>
-                <label className="app-label">Recurrence</label>
-                <select
+                <label className="app-label" id="calendar-event-recurrence-label">
+                  Recurrence
+                </label>
+                <ChoiceInput<string>
+                  ariaLabelledBy="calendar-event-recurrence-label"
+                  options={recurrenceChoices}
                   value={recurrencePreset}
-                  onChange={(e) => setRecurrencePreset(e.target.value)}
-                  className="app-input mb-2"
-                >
-                  {RECURRENCE_PRESETS.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(next) => {
+                    if (next != null && !Array.isArray(next)) setRecurrencePreset(next);
+                  }}
+                  listboxLabel="Recurrence"
+                  inputClassName="app-input mb-2"
+                />
                 {recurrencePreset !== 'none' && (
                   <div className="space-y-2 mt-2">
                     {recurrencePreset === 'weekly' && (

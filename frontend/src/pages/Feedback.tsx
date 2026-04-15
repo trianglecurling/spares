@@ -4,11 +4,13 @@ import { formatApiError } from '../utils/api';
 import Footer from '../components/Footer';
 import HelpHeader from '../components/HelpHeader';
 import Button from '../components/Button';
+import FormField from '../components/FormField';
+import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import { useAuth } from '../contexts/AuthContext';
 
 type FeedbackCategory = 'suggestion' | 'problem' | 'question' | 'general';
 
-const categoryOptions: { value: FeedbackCategory; label: string }[] = [
+const categoryOptions: ChoiceOption<FeedbackCategory>[] = [
   { value: 'suggestion', label: 'Suggestion' },
   { value: 'problem', label: 'Problem' },
   { value: 'question', label: 'Question' },
@@ -125,22 +127,17 @@ export default function Feedback() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div>
-                <label className="app-label">
-                  Category
-                </label>
-                <select
+              <FormField label="Category" htmlFor="feedback-category">
+                <ChoiceInput<FeedbackCategory>
+                  inputId="feedback-category"
+                  options={categoryOptions}
                   value={category}
-                  onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
-                  className="app-input"
-                >
-                  {categoryOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  onChange={(next) => {
+                    if (next != null && !Array.isArray(next)) setCategory(next);
+                  }}
+                  listboxLabel="Feedback category"
+                />
+              </FormField>
 
               {!isLoggedIn && (
                 <div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, KeyboardEvent, FormEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, KeyboardEvent, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
@@ -9,6 +9,7 @@ import MemberAutocomplete from '../components/MemberAutocomplete';
 import MemberMultiSelect from '../components/MemberMultiSelect';
 import FormField from '../components/FormField';
 import FormSection from '../components/FormSection';
+import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import { get, post } from '../api/client';
 import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
@@ -37,6 +38,13 @@ interface GameSlot {
 }
 
 type PositionOption = 'lead' | 'second' | 'vice' | 'skip' | '';
+
+const POSITION_CHOICES: ChoiceOption<Exclude<PositionOption, ''>>[] = [
+  { value: 'lead', label: 'Lead' },
+  { value: 'second', label: 'Second' },
+  { value: 'vice', label: 'Vice' },
+  { value: 'skip', label: 'Skip' },
+];
 
 interface SpareRequestPayload {
   leagueId: number;
@@ -93,7 +101,6 @@ export default function RequestSpare() {
   const [leaguePickerOpen, setLeaguePickerOpen] = useState(false);
   const leaguePickerRef = useRef<HTMLDivElement>(null);
   const leagueTriggerRef = useRef<HTMLButtonElement>(null);
-  const gameSlotRef = useRef<HTMLSelectElement>(null);
   const [leaguePickerActiveIndex, setLeaguePickerActiveIndex] = useState<number>(-1);
   const leagueOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const leagueDayGridRef = useRef<HTMLDivElement>(null);
@@ -109,7 +116,6 @@ export default function RequestSpare() {
     selectedLeagueIdRef.current = selectedLeagueId;
   }, [selectedLeagueId]);
 
-  const positionRef = useRef<HTMLSelectElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -355,6 +361,21 @@ export default function RequestSpare() {
     const date = new Date(`${slot.date}T${slot.time}`);
     return `${format(date, 'EEEE, MMMM d')} at ${format(date, 'h:mm a')}`;
   };
+
+  const gameSlotOptions = useMemo(
+    () =>
+      upcomingGames.map((slot) => ({
+        value: `${slot.date}|${slot.time}`,
+        label: formatGameSlot(slot),
+      })),
+    [upcomingGames]
+  );
+
+  const gameSlotPlaceholder = loadingGames
+    ? 'Loading games...'
+    : !selectedLeagueId
+      ? 'Select a league first'
+      : 'Select a game';
 
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const committedLeague = selectedLeagueId
@@ -885,33 +906,19 @@ export default function RequestSpare() {
                 }
               >
                 {({ describedBy, invalid }) => (
-                  <select
-                    ref={gameSlotRef}
-                    id="gameSlot"
-                    value={selectedGameSlot}
-                    onChange={(e) => setSelectedGameSlot(e.target.value)}
-                    className="app-input"
+                  <ChoiceInput<string>
+                    inputId="gameSlot"
+                    options={gameSlotOptions}
+                    value={selectedGameSlot || null}
+                    onChange={(next) => setSelectedGameSlot(typeof next === 'string' ? next : '')}
+                    placeholder={gameSlotPlaceholder}
+                    listboxLabel="Game date and time"
                     required
                     disabled={!selectedLeagueId || loadingGames}
-                    aria-describedby={describedBy}
-                    aria-invalid={invalid || undefined}
-                  >
-                    <option value="">
-                      {loadingGames
-                        ? 'Loading games...'
-                        : !selectedLeagueId
-                          ? 'Select a league first'
-                          : 'Select a game'}
-                    </option>
-                    {upcomingGames.map((slot) => {
-                      const value = `${slot.date}|${slot.time}`;
-                      return (
-                        <option key={value} value={value}>
-                          {formatGameSlot(slot)}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    loading={loadingGames}
+                    ariaDescribedBy={describedBy}
+                    ariaInvalid={invalid}
+                  />
                 )}
               </FormField>
             </div>
@@ -921,21 +928,25 @@ export default function RequestSpare() {
             title="Request preferences"
             description="Add optional context and decide who can respond."
           >
-            {showPosition ? (
+                       {showPosition ? (
               <FormField label="Position" htmlFor="position" optional>
-                <select
-                  ref={positionRef}
-                  id="position"
-                  value={position}
-                  onChange={(e) => setPosition(e.target.value as PositionOption)}
-                  className="app-input"
-                >
-                  <option value="">Any position</option>
-                  <option value="lead">Lead</option>
-                  <option value="second">Second</option>
-                  <option value="vice">Vice</option>
-                  <option value="skip">Skip</option>
-                </select>
+                <ChoiceInput<Exclude<PositionOption, ''>>
+                  inputId="position"
+                  options={POSITION_CHOICES}
+                  value={position === '' ? null : position}
+                  onChange={(next) =>
+                    setPosition(
+                      next == null || Array.isArray(next) ? '' : (next as PositionOption)
+                    )
+                  }
+                  placeholder="Any position"
+                  listboxLabel="Position"
+                  clearButton={{
+                    visible: position !== '',
+                    label: 'Use any position',
+                    onClear: () => setPosition(''),
+                  }}
+                />
               </FormField>
             ) : (
               <div>
@@ -944,7 +955,7 @@ export default function RequestSpare() {
                   className="text-sm text-blue-600 hover:underline dark:text-blue-400"
                   onClick={() => {
                     setShowPosition(true);
-                    setTimeout(() => positionRef.current?.focus(), 0);
+                    setTimeout(() => document.getElementById('position')?.focus(), 0);
                   }}
                 >
                   Specify a position

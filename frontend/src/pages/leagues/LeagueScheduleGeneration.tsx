@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { get, post, put } from '../../api/client';
+import { formatApiError } from '../../utils/api';
+import { useAlert } from '../../contexts/AlertContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
+import Button from '../../components/Button';
+import Modal from '../../components/Modal';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+import { useScheduleGenerator } from '../../scheduling/useScheduleGenerator';
+import type { ScheduleInput } from '../../scheduling/types';
 
 function nextStrategyLocalId(): string {
   return `strategy-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -29,13 +37,11 @@ interface HardConstraintMatchup {
 }
 
 type HardConstraint = HardConstraintBye | HardConstraintMatchup;
-import { formatApiError } from '../../utils/api';
-import { useAlert } from '../../contexts/AlertContext';
-import { useConfirm } from '../../contexts/ConfirmContext';
-import Button from '../../components/Button';
-import Modal from '../../components/Modal';
-import { useScheduleGenerator } from '../../scheduling/useScheduleGenerator';
-import type { ScheduleInput } from '../../scheduling/types';
+
+const HARD_CONSTRAINT_TYPE_OPTIONS: ChoiceOption<'bye' | 'matchup'>[] = [
+  { value: 'bye', label: 'Bye week' },
+  { value: 'matchup', label: 'Match-up' },
+];
 
 interface Division {
   id: number;
@@ -191,6 +197,33 @@ export default function LeagueScheduleGeneration({
   const teamNameMap = useMemo(
     () => new Map(teams.map((t) => [t.id, t.name ?? `Team ${t.id}`])),
     [teams]
+  );
+
+  const sortedTeamChoiceOptions = useMemo(
+    () =>
+      teams
+        .slice()
+        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+        .map((t) => ({
+          value: t.id,
+          label: t.name ?? `Team ${t.id}`,
+        })),
+    [teams]
+  );
+
+  const hardConstraintDrawChoiceOptions = useMemo(
+    () =>
+      drawSlots
+        .slice()
+        .sort((a, b) => {
+          const d = (a.date ?? '').localeCompare(b.date ?? '');
+          return d !== 0 ? d : (a.time ?? '').localeCompare(b.time ?? '');
+        })
+        .map((slot) => ({
+          value: `${slot.date}|${slot.time}`,
+          label: `${formatDateDisplay(slot.date)} ${formatTime(slot.time)}`,
+        })),
+    [drawSlots]
   );
 
   /** All unique sheet objects across draw slots, sorted by id. */
@@ -894,25 +927,25 @@ export default function LeagueScheduleGeneration({
           <form onSubmit={handleAddHardConstraint} className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-              <select
+              <ChoiceInput<'bye' | 'matchup'>
+                ariaLabel="Constraint type"
+                options={HARD_CONSTRAINT_TYPE_OPTIONS}
                 value={hardConstraintForm.type}
-                onChange={(e) =>
+                onChange={(next) => {
+                  if (next == null || Array.isArray(next)) return;
                   setHardConstraintForm((f) => ({
                     ...f,
-                    type: e.target.value as 'bye' | 'matchup',
+                    type: next,
                     teamId: '',
                     team1Id: '',
                     team2Id: '',
                     drawDate: '',
                     drawTime: '',
                     sheetId: '',
-                  }))
-                }
-                className="app-input"
-              >
-                <option value="bye">Bye week</option>
-                <option value="matchup">Match-up</option>
-              </select>
+                  }));
+                }}
+                listboxLabel="Constraint type"
+              />
             </div>
             {hardConstraintForm.type === 'bye' ? (
               <div className="flex flex-wrap items-end gap-3">
@@ -920,42 +953,40 @@ export default function LeagueScheduleGeneration({
                   <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                     Team
                   </label>
-                  <select
-                    value={hardConstraintForm.teamId}
-                    onChange={(e) =>
-                      setHardConstraintForm((f) => ({ ...f, teamId: e.target.value }))
+                  <ChoiceInput<number>
+                    options={sortedTeamChoiceOptions}
+                    value={hardConstraintForm.teamId === '' ? null : Number(hardConstraintForm.teamId)}
+                    onChange={(next) =>
+                      setHardConstraintForm((f) => ({
+                        ...f,
+                        teamId: next == null || Array.isArray(next) ? '' : String(next),
+                      }))
                     }
-                    className="app-input min-w-[140px]"
-                  >
-                    <option value="">Select team</option>
-                    {teams
-                      .slice()
-                      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name ?? `Team ${t.id}`}
-                        </option>
-                      ))}
-                  </select>
+                    placeholder="Select team"
+                    listboxLabel="Team"
+                    inputClassName="app-input min-w-[140px]"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                     Bye date
                   </label>
-                  <select
-                    value={hardConstraintForm.drawDate}
-                    onChange={(e) =>
-                      setHardConstraintForm((f) => ({ ...f, drawDate: e.target.value }))
+                  <ChoiceInput<string>
+                    options={uniqueDrawDates.map((d) => ({
+                      value: d,
+                      label: formatDateDisplay(d),
+                    }))}
+                    value={hardConstraintForm.drawDate || null}
+                    onChange={(next) =>
+                      setHardConstraintForm((f) => ({
+                        ...f,
+                        drawDate: next == null || Array.isArray(next) ? '' : next,
+                      }))
                     }
-                    className="app-input min-w-[140px]"
-                  >
-                    <option value="">Select date</option>
-                    {uniqueDrawDates.map((d) => (
-                      <option key={d} value={d}>
-                        {formatDateDisplay(d)}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select date"
+                    listboxLabel="Bye date"
+                    inputClassName="app-input min-w-[140px]"
+                  />
                 </div>
               </div>
             ) : (
@@ -965,45 +996,37 @@ export default function LeagueScheduleGeneration({
                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                       Team 1
                     </label>
-                    <select
-                      value={hardConstraintForm.team1Id}
-                      onChange={(e) =>
-                        setHardConstraintForm((f) => ({ ...f, team1Id: e.target.value }))
+                    <ChoiceInput<number>
+                      options={sortedTeamChoiceOptions}
+                      value={hardConstraintForm.team1Id === '' ? null : Number(hardConstraintForm.team1Id)}
+                      onChange={(next) =>
+                        setHardConstraintForm((f) => ({
+                          ...f,
+                          team1Id: next == null || Array.isArray(next) ? '' : String(next),
+                        }))
                       }
-                      className="app-input min-w-[140px]"
-                    >
-                      <option value="">Select team</option>
-                      {teams
-                        .slice()
-                        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name ?? `Team ${t.id}`}
-                          </option>
-                        ))}
-                    </select>
+                      placeholder="Select team"
+                      listboxLabel="Team 1"
+                      inputClassName="app-input min-w-[140px]"
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                       Team 2
                     </label>
-                    <select
-                      value={hardConstraintForm.team2Id}
-                      onChange={(e) =>
-                        setHardConstraintForm((f) => ({ ...f, team2Id: e.target.value }))
+                    <ChoiceInput<number>
+                      options={sortedTeamChoiceOptions}
+                      value={hardConstraintForm.team2Id === '' ? null : Number(hardConstraintForm.team2Id)}
+                      onChange={(next) =>
+                        setHardConstraintForm((f) => ({
+                          ...f,
+                          team2Id: next == null || Array.isArray(next) ? '' : String(next),
+                        }))
                       }
-                      className="app-input min-w-[140px]"
-                    >
-                      <option value="">Select team</option>
-                      {teams
-                        .slice()
-                        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name ?? `Team ${t.id}`}
-                          </option>
-                        ))}
-                    </select>
+                      placeholder="Select team"
+                      listboxLabel="Team 2"
+                      inputClassName="app-input min-w-[140px]"
+                    />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -1011,14 +1034,15 @@ export default function LeagueScheduleGeneration({
                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                       Draw
                     </label>
-                    <select
+                    <ChoiceInput<string>
+                      options={hardConstraintDrawChoiceOptions}
                       value={
                         hardConstraintForm.drawDate && hardConstraintForm.drawTime
                           ? `${hardConstraintForm.drawDate}|${hardConstraintForm.drawTime}`
-                          : ''
+                          : null
                       }
-                      onChange={(e) => {
-                        const v = e.target.value;
+                      onChange={(next) => {
+                        const v = next == null || Array.isArray(next) ? '' : next;
                         if (!v) {
                           setHardConstraintForm((f) => ({
                             ...f,
@@ -1036,24 +1060,10 @@ export default function LeagueScheduleGeneration({
                           sheetId: '',
                         }));
                       }}
-                      className="app-input min-w-[180px]"
-                    >
-                      <option value="">Select draw</option>
-                      {drawSlots
-                        .slice()
-                        .sort((a, b) => {
-                          const d = (a.date ?? '').localeCompare(b.date ?? '');
-                          return d !== 0 ? d : (a.time ?? '').localeCompare(b.time ?? '');
-                        })
-                        .map((slot) => (
-                          <option
-                            key={`${slot.date}|${slot.time}`}
-                            value={`${slot.date}|${slot.time}`}
-                          >
-                            {formatDateDisplay(slot.date)} {formatTime(slot.time)}
-                          </option>
-                        ))}
-                    </select>
+                      placeholder="Select draw"
+                      listboxLabel="Draw"
+                      inputClassName="app-input min-w-[180px]"
+                    />
                   </div>
                   {(() => {
                     const slot = drawSlots.find(
@@ -1067,21 +1077,20 @@ export default function LeagueScheduleGeneration({
                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                           Sheet (optional)
                         </label>
-                        <select
-                          value={hardConstraintForm.sheetId}
-                          onChange={(e) =>
-                            setHardConstraintForm((f) => ({ ...f, sheetId: e.target.value }))
+                        <ChoiceInput<number>
+                          options={sheets.map((s) => ({ value: s.id, label: s.name }))}
+                          value={hardConstraintForm.sheetId === '' ? null : Number(hardConstraintForm.sheetId)}
+                          onChange={(next) =>
+                            setHardConstraintForm((f) => ({
+                              ...f,
+                              sheetId: next == null || Array.isArray(next) ? '' : String(next),
+                            }))
                           }
                           disabled={sheets.length === 0}
-                          className="app-input min-w-[120px]"
-                        >
-                          <option value="">Any sheet</option>
-                          {sheets.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
+                          placeholder="Any sheet"
+                          listboxLabel="Sheet"
+                          inputClassName="app-input min-w-[120px]"
+                        />
                       </div>
                     );
                   })()}
@@ -1578,20 +1587,18 @@ export default function LeagueScheduleGeneration({
                 <label className="app-label">
                   Division
                 </label>
-                <select
-                  value={strategyForm.divisionId}
-                  onChange={(e) =>
-                    setStrategyForm((prev) => ({ ...prev, divisionId: e.target.value }))
+                <ChoiceInput<number>
+                  options={divisions.map((d) => ({ value: d.id, label: d.name }))}
+                  value={strategyForm.divisionId === '' ? null : parseInt(strategyForm.divisionId, 10)}
+                  onChange={(next) =>
+                    setStrategyForm((prev) => ({
+                      ...prev,
+                      divisionId: next == null || Array.isArray(next) ? '' : String(next),
+                    }))
                   }
-                  className="app-input"
-                >
-                  <option value="">Select division</option>
-                  {divisions.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Select division"
+                  listboxLabel="Division"
+                />
               </div>
             )}
             <div>

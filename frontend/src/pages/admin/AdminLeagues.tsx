@@ -9,6 +9,22 @@ import { useAuth } from '../../contexts/AuthContext';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+
+const WEEKDAY_CHOICES: ChoiceOption<number>[] = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+].map((label, index) => ({ value: index, label }));
+
+const LEAGUE_FORMAT_CHOICES: ChoiceOption<'teams' | 'doubles'>[] = [
+  { value: 'teams', label: 'Teams' },
+  { value: 'doubles', label: 'Doubles' },
+];
 
 interface League {
   id: number;
@@ -374,21 +390,17 @@ export default function Leagues() {
             >
               Day of week <span className="text-red-500">*</span>
             </label>
-            <select
-              id="dayOfWeek"
+            <ChoiceInput<number>
+              inputId="dayOfWeek"
+              options={WEEKDAY_CHOICES}
               value={formData.dayOfWeek}
-              onChange={(e) => setFormData({ ...formData, dayOfWeek: parseInt(e.target.value) })}
-              className="app-input"
+              onChange={(next) => {
+                if (next != null && !Array.isArray(next))
+                  setFormData({ ...formData, dayOfWeek: next });
+              }}
+              listboxLabel="Day of week"
               required
-            >
-              {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(
-                (day, index) => (
-                  <option key={index} value={index}>
-                    {day}
-                  </option>
-                )
-              )}
-            </select>
+            />
           </div>
 
           <div>
@@ -431,18 +443,17 @@ export default function Leagues() {
             >
               Format <span className="text-red-500">*</span>
             </label>
-            <select
-              id="format"
+            <ChoiceInput<'teams' | 'doubles'>
+              inputId="format"
+              options={LEAGUE_FORMAT_CHOICES}
               value={formData.format}
-              onChange={(e) =>
-                setFormData({ ...formData, format: e.target.value as 'teams' | 'doubles' })
-              }
-              className="app-input"
+              onChange={(next) => {
+                if (next != null && !Array.isArray(next))
+                  setFormData({ ...formData, format: next });
+              }}
+              listboxLabel="League format"
               required
-            >
-              <option value="teams">Teams</option>
-              <option value="doubles">Doubles</option>
-            </select>
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -496,10 +507,15 @@ export default function Leagues() {
               </Button>
 
               {showExceptionPicker && (
-                <select
-                  value={exceptionToAdd}
-                  onChange={(e) => {
-                    const selected = e.target.value;
+                <ChoiceInput<string>
+                  ariaLabel="Add league exception date"
+                  options={availableExceptionDates.map((d) => ({
+                    value: d,
+                    label: formatDateDisplay(d),
+                  }))}
+                  value={exceptionToAdd || null}
+                  onChange={(next) => {
+                    const selected = next == null || Array.isArray(next) ? '' : next;
                     setExceptionToAdd(selected);
                     if (!selected) return;
                     if (!formData.exceptions.includes(selected)) {
@@ -510,19 +526,15 @@ export default function Leagues() {
                     }
                     setExceptionToAdd('');
                   }}
-                  className="app-input w-full sm:w-auto"
-                >
-                  <option value="">
-                    {availableExceptionDates.length === 0
+                  placeholder={
+                    availableExceptionDates.length === 0
                       ? 'No dates available'
-                      : 'Select a date...'}
-                  </option>
-                  {availableExceptionDates.map((d) => (
-                    <option key={d} value={d}>
-                      {formatDateDisplay(d)}
-                    </option>
-                  ))}
-                </select>
+                      : 'Select a date...'
+                  }
+                  listboxLabel="Exception date"
+                  disabled={availableExceptionDates.length === 0}
+                  inputClassName="app-input w-full sm:w-auto"
+                />
               )}
             </div>
 

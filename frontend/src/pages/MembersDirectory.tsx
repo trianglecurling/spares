@@ -12,6 +12,7 @@ import PageTabs from '../components/PageTabs';
 import AppStateCard from '../components/AppStateCard';
 import DataTable from '../components/table/DataTable';
 import type { DataTableColumn } from '../components/table/tableTypes';
+import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 
 interface Member {
   id: number;
@@ -246,6 +247,15 @@ export default function MembersDirectory() {
     setTeamRosterModal(null);
   };
 
+  const leagueFilterOptions = useMemo<ChoiceOption<number>[]>(
+    () =>
+      leagues.map((l) => ({
+        value: l.id,
+        label: `${l.name} (${DAY_NAMES[l.dayOfWeek]})`,
+      })),
+    [leagues]
+  );
+
   return (
     <Layout>
       <AppPage>
@@ -255,23 +265,22 @@ export default function MembersDirectory() {
           right={
             <>
               <div className="w-full sm:w-72">
-                <select
-                  value={leagueFilterId}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setLeagueFilterId(value);
-                    const parsed = value ? parseInt(value, 10) : undefined;
-                    loadMembers(parsed);
+                <ChoiceInput<number>
+                  ariaLabel="Filter members by league availability"
+                  options={leagueFilterOptions}
+                  value={leagueFilterId === '' ? null : parseInt(leagueFilterId, 10)}
+                  onChange={(next) => {
+                    if (next == null || Array.isArray(next)) {
+                      setLeagueFilterId('');
+                      loadMembers(undefined);
+                      return;
+                    }
+                    setLeagueFilterId(String(next));
+                    loadMembers(next);
                   }}
-                  className="app-input"
-                >
-                  <option value="">Filter by league availability (all)</option>
-                  {leagues.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} ({DAY_NAMES[l.dayOfWeek]})
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Filter by league availability (all)"
+                  listboxLabel="League availability filter"
+                />
               </div>
               <div className="w-full sm:w-64">
                 <input

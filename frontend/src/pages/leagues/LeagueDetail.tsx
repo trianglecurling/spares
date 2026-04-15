@@ -18,6 +18,22 @@ import LeagueStandings from './LeagueStandings';
 import LeagueSheets from './LeagueSheets';
 import LeagueMaintenance from './LeagueMaintenance';
 import Modal from '../../components/Modal';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+
+const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+].map((label, index) => ({ value: index, label }));
+
+const LEAGUE_FORMAT_SELECT_OPTIONS: ChoiceOption<'teams' | 'doubles'>[] = [
+  { value: 'teams', label: 'Teams (4 players)' },
+  { value: 'doubles', label: 'Doubles (2 players)' },
+];
 
 interface League {
   id: number;
@@ -1467,20 +1483,19 @@ export default function LeagueDetail() {
                         >
                           Division
                         </label>
-                        <select
-                          id="teamDivisionInline"
+                        <ChoiceInput<number>
+                          inputId="teamDivisionInline"
+                          options={divisions.map((division) => ({
+                            value: division.id,
+                            label: division.name,
+                          }))}
                           value={teamForm.divisionId}
-                          onChange={(e) =>
-                            setTeamForm({ ...teamForm, divisionId: parseInt(e.target.value, 10) })
-                          }
-                          className="app-input"
-                        >
-                          {divisions.map((division) => (
-                            <option key={division.id} value={division.id}>
-                              {division.name}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next))
+                              setTeamForm({ ...teamForm, divisionId: next });
+                          }}
+                          listboxLabel="Division"
+                        />
                       </div>
                     )}
 
@@ -1958,23 +1973,17 @@ export default function LeagueDetail() {
               >
                 Day of week <span className="text-red-500">*</span>
               </label>
-              <select
-                id="leagueDayOfWeek"
+              <ChoiceInput<number>
+                inputId="leagueDayOfWeek"
+                options={WEEKDAY_SELECT_OPTIONS}
                 value={leagueForm.dayOfWeek}
-                onChange={(e) =>
-                  setLeagueForm({ ...leagueForm, dayOfWeek: parseInt(e.target.value, 10) })
-                }
-                className="app-input"
+                onChange={(next) => {
+                  if (next != null && !Array.isArray(next))
+                    setLeagueForm({ ...leagueForm, dayOfWeek: next });
+                }}
+                listboxLabel="Day of week"
                 required
-              >
-                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(
-                  (day, index) => (
-                    <option key={day} value={index}>
-                      {day}
-                    </option>
-                  )
-                )}
-              </select>
+              />
             </div>
 
             <div>
@@ -2043,18 +2052,17 @@ export default function LeagueDetail() {
               >
                 Format <span className="text-red-500">*</span>
               </label>
-              <select
-                id="leagueFormat"
+              <ChoiceInput<'teams' | 'doubles'>
+                inputId="leagueFormat"
+                options={LEAGUE_FORMAT_SELECT_OPTIONS}
                 value={leagueForm.format}
-                onChange={(e) =>
-                  setLeagueForm({ ...leagueForm, format: e.target.value as League['format'] })
-                }
-                className="app-input"
+                onChange={(next) => {
+                  if (next != null && !Array.isArray(next))
+                    setLeagueForm({ ...leagueForm, format: next });
+                }}
+                listboxLabel="League format"
                 required
-              >
-                <option value="teams">Teams (4 players)</option>
-                <option value="doubles">Doubles (2 players)</option>
-              </select>
+              />
             </div>
 
             <div>
@@ -2088,18 +2096,20 @@ export default function LeagueDetail() {
 
                 {showExceptionPicker && (
                   <div className="flex items-center space-x-2">
-                    <select
-                      value={exceptionToAdd}
-                      onChange={(e) => setExceptionToAdd(e.target.value)}
-                      className="app-input flex-1"
-                    >
-                      <option value="">Select date</option>
-                      {availableExceptionDates.map((date) => (
-                        <option key={date} value={date}>
-                          {formatDateDisplay(date)}
-                        </option>
-                      ))}
-                    </select>
+                    <ChoiceInput<string>
+                      ariaLabel="Exception date to add"
+                      options={availableExceptionDates.map((date) => ({
+                        value: date,
+                        label: formatDateDisplay(date),
+                      }))}
+                      value={exceptionToAdd || null}
+                      onChange={(next) =>
+                        setExceptionToAdd(next == null || Array.isArray(next) ? '' : next)
+                      }
+                      placeholder="Select date"
+                      listboxLabel="Exception date"
+                      inputClassName="app-input flex-1"
+                    />
                     <Button
                       type="button"
                       variant="secondary"
@@ -2225,20 +2235,20 @@ export default function LeagueDetail() {
               >
                 Team
               </label>
-              <select
-                id="bye-requests-team"
-                value={byeRequestsTeamId ?? ''}
-                onChange={(e) => handleByeRequestsTeamChange(Number(e.target.value))}
-                className="app-input"
-              >
-                {teams
+              <ChoiceInput<number>
+                inputId="bye-requests-team"
+                options={teams
                   .filter((t) => memberTeamIds.includes(t.id))
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name ?? `Team ${t.id}`}
-                    </option>
-                  ))}
-              </select>
+                  .map((t) => ({
+                    value: t.id,
+                    label: t.name ?? `Team ${t.id}`,
+                  }))}
+                value={byeRequestsTeamId}
+                onChange={(next) => {
+                  if (next != null && !Array.isArray(next)) void handleByeRequestsTeamChange(next);
+                }}
+                listboxLabel="Team"
+              />
             </div>
           )}
           {byeRequestsLoading ? (

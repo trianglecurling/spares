@@ -20,6 +20,7 @@ import type { DataTableColumn } from '../../components/table/tableTypes';
 import useTableQueryState from '../../hooks/useTableQueryState';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import AdminContentPermalinksPanel, { type PermalinkAdminRow } from './AdminContentPermalinksPanel';
 
 type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks';
@@ -81,6 +82,88 @@ type FileSortKey = 'createdAt' | 'name' | 'size' | 'type' | 'updatedAt';
 type FileOrphanFilter = 'all' | 'suspected';
 type FileVisibilityFilter = 'all' | 'public' | 'authenticated';
 type FileTypeFilter = 'all' | 'image' | 'video' | 'audio' | 'document' | 'other';
+
+type MenuLinkTypeChoice = 'none' | 'internal' | 'external';
+
+const MENU_LINK_TYPE_CHOICES: ChoiceOption<MenuLinkTypeChoice>[] = [
+  { value: 'none', label: '— None (dropdown parent only) —' },
+  { value: 'internal', label: 'Article' },
+  { value: 'external', label: 'Other (custom URL)' },
+];
+
+const FILE_ORPHAN_FILTER_OPTIONS: ChoiceOption<FileOrphanFilter>[] = [
+  { value: 'all', label: 'All files' },
+  { value: 'suspected', label: 'Suspected orphan' },
+];
+
+const FILE_VISIBILITY_FILTER_OPTIONS: ChoiceOption<FileVisibilityFilter>[] = [
+  { value: 'all', label: 'All' },
+  { value: 'public', label: 'Public' },
+  { value: 'authenticated', label: 'Authenticated' },
+];
+
+const FILE_TYPE_FILTER_OPTIONS: ChoiceOption<FileTypeFilter>[] = [
+  { value: 'all', label: 'All' },
+  { value: 'image', label: 'Image' },
+  { value: 'video', label: 'Video' },
+  { value: 'audio', label: 'Audio' },
+  { value: 'document', label: 'Document' },
+  { value: 'other', label: 'Other' },
+];
+
+const FILE_VISIBILITY_STRICT_OPTIONS: ChoiceOption<'public' | 'authenticated'>[] = [
+  { value: 'public', label: 'Public' },
+  { value: 'authenticated', label: 'Logged-in users only' },
+];
+
+const FILE_EDIT_VISIBILITY_OPTIONS: ChoiceOption<'public' | 'authenticated'>[] = [
+  { value: 'public', label: 'Public' },
+  { value: 'authenticated', label: 'Authenticated users only' },
+];
+
+const IMAGE_CONVERT_FORMAT_OPTIONS: ChoiceOption<'jpg' | 'png' | 'gif'>[] = [
+  { value: 'jpg', label: 'JPG' },
+  { value: 'png', label: 'PNG' },
+  { value: 'gif', label: 'GIF' },
+];
+
+function buildMenuParentChoiceOptions(
+  menuItems: MenuItem[],
+  editingMenuItem: MenuItem | null
+): ChoiceOption<number>[] {
+  const byParent = new Map<number | null, MenuItem[]>();
+  for (const m of menuItems) {
+    const pid = m.parentId ?? null;
+    if (!byParent.has(pid)) byParent.set(pid, []);
+    byParent.get(pid)!.push(m);
+  }
+  for (const [, items] of byParent) {
+    items.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  }
+  const excludeIds = new Set<number>();
+  if (editingMenuItem) {
+    excludeIds.add(editingMenuItem.id);
+    const collectDescendants = (id: number) => {
+      for (const c of byParent.get(id) ?? []) {
+        excludeIds.add(c.id);
+        collectDescendants(c.id);
+      }
+    };
+    collectDescendants(editingMenuItem.id);
+  }
+  const flatten = (parentId: number | null, depth: number): ChoiceOption<number>[] => {
+    const items = byParent.get(parentId) ?? [];
+    const result: ChoiceOption<number>[] = [];
+    for (const m of items) {
+      if (excludeIds.has(m.id)) continue;
+      const prefix = depth > 0 ? '\u00A0\u00A0'.repeat(depth) + '- ' : '';
+      result.push({ value: m.id, label: `${prefix}${m.label}` });
+      result.push(...flatten(m.id, depth + 1));
+    }
+    return result;
+  };
+  return flatten(null, 0);
+}
 
 const ARTICLES_PAGE_SIZE = 25;
 const ARTICLE_SORT_KEYS = ['updatedAt', 'title', 'slug', 'publishedAt', 'createdAt'] as const;
@@ -1653,11 +1736,19 @@ export default function AdminContent() {
                 >
                   <form onSubmit={handleSaveMenuItem} className="space-y-4">
                     <FormField label="Link type" htmlFor={`${formFieldId}-menu-link-type`}>
-                      <select
-                        id={`${formFieldId}-menu-link-type`}
-                        value={menuForm.linkType ?? ''}
-                        onChange={(e) => {
-                          const linkType = (e.target.value || null) as 'internal' | 'external' | null;
+                      <ChoiceInput<MenuLinkTypeChoice>
+                        inputId={`${formFieldId}-menu-link-type`}
+                        options={MENU_LINK_TYPE_CHOICES}
+                        value={
+                          menuForm.linkType === null
+                            ? 'none'
+                            : menuForm.linkType === 'internal'
+                              ? 'internal'
+                              : 'external'
+                        }
+                        onChange={(next) => {
+                          if (next == null || Array.isArray(next)) return;
+                          const linkType = next === 'none' ? null : next;
                           setMenuForm((f) => ({
                             ...f,
                             linkType,
@@ -1668,12 +1759,8 @@ export default function AdminContent() {
                             selectedArticleSlug: linkType === 'internal' ? f.selectedArticleSlug : '',
                           }));
                         }}
-                        className="app-input"
-                      >
-                        <option value="">— None (dropdown parent only) —</option>
-                        <option value="internal">Article</option>
-                        <option value="external">Other (custom URL)</option>
-                      </select>
+                        listboxLabel="Link type"
+                      />
                     </FormField>
                     {menuForm.linkType === 'internal' && (
                       <FormField label="Article" htmlFor={`${formFieldId}-menu-article`}>
@@ -1762,56 +1849,19 @@ export default function AdminContent() {
                       />
                     </FormField>
                     <FormField label="Parent" htmlFor={`${formFieldId}-menu-parent`}>
-                      <select
-                        id={`${formFieldId}-menu-parent`}
-                        value={menuForm.parentId ?? ''}
-                        onChange={(e) =>
+                      <ChoiceInput<number>
+                        inputId={`${formFieldId}-menu-parent`}
+                        options={buildMenuParentChoiceOptions(menuItems, editingMenuItem)}
+                        value={menuForm.parentId}
+                        onChange={(next) =>
                           setMenuForm((f) => ({
                             ...f,
-                            parentId: e.target.value ? parseInt(e.target.value, 10) : null,
+                            parentId: next == null || Array.isArray(next) ? null : next,
                           }))
                         }
-                        className="app-input"
-                      >
-                        <option value="">— None (top level) —</option>
-                        {(() => {
-                          const byParent = new Map<number | null, MenuItem[]>();
-                          for (const m of menuItems) {
-                            const pid = m.parentId ?? null;
-                            if (!byParent.has(pid)) byParent.set(pid, []);
-                            byParent.get(pid)!.push(m);
-                          }
-                          for (const [, items] of byParent) {
-                            items.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
-                          }
-                          const excludeIds = new Set<number>();
-                          if (editingMenuItem) {
-                            excludeIds.add(editingMenuItem.id);
-                            const collectDescendants = (id: number) => {
-                              for (const c of byParent.get(id) ?? []) {
-                                excludeIds.add(c.id);
-                                collectDescendants(c.id);
-                              }
-                            };
-                            collectDescendants(editingMenuItem.id);
-                          }
-                          const flatten = (parentId: number | null, depth: number): { item: MenuItem; depth: number }[] => {
-                            const items = byParent.get(parentId) ?? [];
-                            const result: { item: MenuItem; depth: number }[] = [];
-                            for (const m of items) {
-                              if (excludeIds.has(m.id)) continue;
-                              result.push({ item: m, depth });
-                              result.push(...flatten(m.id, depth + 1));
-                            }
-                            return result;
-                          };
-                          return flatten(null, 0).map(({ item: m, depth }) => (
-                            <option key={m.id} value={m.id}>
-                              {depth > 0 ? '\u00A0\u00A0'.repeat(depth) + '- ' : ''}{m.label}
-                            </option>
-                          ));
-                        })()}
-                      </select>
+                        placeholder="— None (top level) —"
+                        listboxLabel="Parent menu item"
+                      />
                     </FormField>
                     <div className="flex justify-end gap-2 pt-2">
                       <Button type="button" variant="secondary" onClick={closeMenuModal}>
@@ -2063,24 +2113,22 @@ export default function AdminContent() {
                         <>
                           {uploadedPublicImages.length > 0 ? (
                             <FormField label="Uploaded image" htmlFor={`${formFieldId}-showcase-uploaded-file`}>
-                              <select
-                                id={`${formFieldId}-showcase-uploaded-file`}
-                                value={selectedShowcaseFileId ?? ''}
-                                onChange={(e) => {
-                                  const fileId = Number(e.target.value);
+                              <ChoiceInput<number>
+                                inputId={`${formFieldId}-showcase-uploaded-file`}
+                                options={uploadedPublicImages.map((file) => ({
+                                  value: file.id,
+                                  label: file.displayName || file.originalFilename,
+                                }))}
+                                value={selectedShowcaseFileId}
+                                onChange={(next) => {
+                                  const fileId = next == null || Array.isArray(next) ? null : next;
                                   const selectedFile = uploadedPublicImages.find((file) => file.id === fileId);
-                                  setSelectedShowcaseFileId(Number.isFinite(fileId) ? fileId : null);
+                                  setSelectedShowcaseFileId(fileId);
                                   setShowcaseForm((f) => ({ ...f, url: selectedFile?.publicUrl ?? '' }));
                                 }}
-                                className="app-input"
+                                listboxLabel="Uploaded image"
                                 required
-                              >
-                                {uploadedPublicImages.map((file) => (
-                                  <option key={file.id} value={file.id}>
-                                    {file.displayName || file.originalFilename}
-                                  </option>
-                                ))}
-                              </select>
+                              />
                             </FormField>
                           ) : (
                             <>
@@ -2143,54 +2191,40 @@ export default function AdminContent() {
                   left={
                     <>
                       <FormField label="Orphan status" htmlFor={`${formFieldId}-files-filter-orphan`}>
-                        <select
-                          id={`${formFieldId}-files-filter-orphan`}
+                        <ChoiceInput<FileOrphanFilter>
+                          inputId={`${formFieldId}-files-filter-orphan`}
+                          options={FILE_ORPHAN_FILTER_OPTIONS}
                           value={fileFilters.orphanStatus}
-                          onChange={(event) =>
-                            setFileFilter(
-                              'orphanStatus',
-                              event.target.value as FileOrphanFilter
-                            )
-                          }
-                          className="app-input"
-                        >
-                          <option value="all">All files</option>
-                          <option value="suspected">Suspected orphan</option>
-                        </select>
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next))
+                              setFileFilter('orphanStatus', next);
+                          }}
+                          listboxLabel="Orphan status"
+                        />
                       </FormField>
                       <FormField label="Visibility" htmlFor={`${formFieldId}-files-filter-visibility`}>
-                        <select
-                          id={`${formFieldId}-files-filter-visibility`}
+                        <ChoiceInput<FileVisibilityFilter>
+                          inputId={`${formFieldId}-files-filter-visibility`}
+                          options={FILE_VISIBILITY_FILTER_OPTIONS}
                           value={fileFilters.visibility}
-                          onChange={(event) =>
-                            setFileFilter(
-                              'visibility',
-                              event.target.value as FileVisibilityFilter
-                            )
-                          }
-                          className="app-input"
-                        >
-                          <option value="all">All</option>
-                          <option value="public">Public</option>
-                          <option value="authenticated">Authenticated</option>
-                        </select>
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next))
+                              setFileFilter('visibility', next);
+                          }}
+                          listboxLabel="File visibility filter"
+                        />
                       </FormField>
                       <FormField label="File type" htmlFor={`${formFieldId}-files-filter-type`}>
-                        <select
-                          id={`${formFieldId}-files-filter-type`}
+                        <ChoiceInput<FileTypeFilter>
+                          inputId={`${formFieldId}-files-filter-type`}
+                          options={FILE_TYPE_FILTER_OPTIONS}
                           value={fileFilters.fileType}
-                          onChange={(event) =>
-                            setFileFilter('fileType', event.target.value as FileTypeFilter)
-                          }
-                          className="app-input"
-                        >
-                          <option value="all">All</option>
-                          <option value="image">Image</option>
-                          <option value="video">Video</option>
-                          <option value="audio">Audio</option>
-                          <option value="document">Document</option>
-                          <option value="other">Other</option>
-                        </select>
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next))
+                              setFileFilter('fileType', next);
+                          }}
+                          listboxLabel="File type filter"
+                        />
                       </FormField>
                       <FormField
                         label="Search"
@@ -2212,36 +2246,24 @@ export default function AdminContent() {
                   }
                   right={
                     <>
-                      <Button type="button" onClick={() => setUploadModalOpen(true)}>
-                        Upload file
-                      </Button>
-                      <div className="flex items-center gap-3">
-                        <div className="min-w-[5.5rem] text-right">
-                          <span
-                            aria-hidden={selectedFileIds.length === 0}
-                            className={`text-sm text-gray-600 dark:text-gray-300 ${
-                              selectedFileIds.length > 0 ? 'visible' : 'invisible'
-                            }`}
-                          >
+                      {selectedFileIds.length > 0 && (
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-600 dark:text-gray-300">
                             {selectedFileIds.length} selected
                           </span>
-                        </div>
-                        <div className="w-[12.5rem]">
                           <Button
                             type="button"
                             variant="danger"
                             onClick={handleBulkDeleteFiles}
-                            disabled={saving || selectedFileIds.length === 0}
-                            aria-hidden={selectedFileIds.length === 0}
-                            tabIndex={selectedFileIds.length === 0 ? -1 : undefined}
-                            className={`w-full ${
-                              selectedFileIds.length > 0 ? 'visible' : 'invisible pointer-events-none'
-                            }`}
+                            disabled={saving}
                           >
                             Delete selected ({selectedFileIds.length})
                           </Button>
                         </div>
-                      </div>
+                      )}
+                      <Button type="button" onClick={() => setUploadModalOpen(true)}>
+                        Upload file
+                      </Button>
                     </>
                   }
                 />
@@ -2395,15 +2417,16 @@ export default function AdminContent() {
                       </div>
                     )}
                     <FormField label="Visibility" htmlFor={`${formFieldId}-upload-visibility`}>
-                      <select
-                        id={`${formFieldId}-upload-visibility`}
+                      <ChoiceInput<'public' | 'authenticated'>
+                        inputId={`${formFieldId}-upload-visibility`}
+                        options={FILE_VISIBILITY_STRICT_OPTIONS}
                         value={fileUploadForm.visibility}
-                        onChange={(e) => setFileUploadForm((f) => ({ ...f, visibility: e.target.value as 'public' | 'authenticated' }))}
-                        className="app-input"
-                      >
-                        <option value="public">Public</option>
-                        <option value="authenticated">Logged-in users only</option>
-                      </select>
+                        onChange={(next) => {
+                          if (next != null && !Array.isArray(next))
+                            setFileUploadForm((f) => ({ ...f, visibility: next }));
+                        }}
+                        listboxLabel="Upload visibility"
+                      />
                     </FormField>
                     <div className="flex justify-end gap-2 pt-2">
                       <Button type="button" variant="secondary" onClick={() => setUploadModalOpen(false)}>
@@ -2650,29 +2673,29 @@ export default function AdminContent() {
                             />
                           </FormField>
                           <FormField label="Visibility" htmlFor={`${formFieldId}-edit-visibility`}>
-                            <select
-                              id={`${formFieldId}-edit-visibility`}
+                            <ChoiceInput<'public' | 'authenticated'>
+                              inputId={`${formFieldId}-edit-visibility`}
+                              options={FILE_EDIT_VISIBILITY_OPTIONS}
                               value={fileEditForm.visibility}
-                              onChange={(e) => setFileEditForm((f) => ({ ...f, visibility: e.target.value as 'public' | 'authenticated' }))}
-                              className="app-input"
-                            >
-                              <option value="public">Public</option>
-                              <option value="authenticated">Authenticated users only</option>
-                            </select>
+                              onChange={(next) => {
+                                if (next != null && !Array.isArray(next))
+                                  setFileEditForm((f) => ({ ...f, visibility: next }));
+                              }}
+                              listboxLabel="File visibility"
+                            />
                           </FormField>
                           {isImageFile(editingFile) && (
                             <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
                               <FormField label="Convert image type" htmlFor={`${formFieldId}-edit-convert-format`}>
-                                <select
-                                  id={`${formFieldId}-edit-convert-format`}
+                                <ChoiceInput<'jpg' | 'png' | 'gif'>
+                                  inputId={`${formFieldId}-edit-convert-format`}
+                                  options={IMAGE_CONVERT_FORMAT_OPTIONS}
                                   value={convertFormat}
-                                  onChange={(e) => setConvertFormat(e.target.value as 'jpg' | 'png' | 'gif')}
-                                  className="app-input"
-                                >
-                                  <option value="jpg">JPG</option>
-                                  <option value="png">PNG</option>
-                                  <option value="gif">GIF</option>
-                                </select>
+                                  onChange={(next) => {
+                                    if (next != null && !Array.isArray(next)) setConvertFormat(next);
+                                  }}
+                                  listboxLabel="Convert image type"
+                                />
                               </FormField>
                               <Button type="button" variant="secondary" onClick={handleConvertImageType} disabled={imageToolsBusy}>
                                 {imageToolsBusy ? 'Working...' : 'Convert'}

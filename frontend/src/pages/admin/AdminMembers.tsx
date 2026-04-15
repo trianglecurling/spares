@@ -9,6 +9,7 @@ import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/Button';
+import ChoiceInput from '../../components/ChoiceInput';
 import Modal from '../../components/Modal';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
@@ -1205,20 +1206,21 @@ export default function AdminMembers() {
                         className="rounded-lg border border-gray-200 bg-white p-3 space-y-2 dark:border-gray-700 dark:bg-gray-800"
                       >
                         <div className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_auto]">
-                          <select
+                          <ChoiceInput<number>
+                            options={assignableRoles.map((role) => ({
+                              value: role.id,
+                              label: role.name,
+                            }))}
                             value={assignment.roleId}
-                            onChange={(e) =>
-                              updateAssignmentDraft(assignment.id, { roleId: Number(e.target.value) })
-                            }
+                            onChange={(next) => {
+                              if (next != null && !Array.isArray(next))
+                                updateAssignmentDraft(assignment.id, { roleId: next });
+                            }}
+                            ariaLabel={`Role for assignment ${assignment.id}`}
+                            listboxLabel="Role"
                             disabled={!canEditRoleAccess}
-                            className="app-input disabled:opacity-60"
-                          >
-                            {assignableRoles.map((role) => (
-                              <option key={role.id} value={role.id}>
-                                {role.name}
-                              </option>
-                            ))}
-                          </select>
+                            inputClassName="app-input disabled:opacity-60"
+                          />
                           <input
                             type="text"
                             value={assignment.resourceType}
