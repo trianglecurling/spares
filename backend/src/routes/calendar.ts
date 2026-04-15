@@ -3,12 +3,7 @@ import { z } from 'zod';
 import { eq, and, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isCalendarAdmin } from '../utils/auth.js';
-import {
-  fetchDirectCalendarEventsForRange,
-  fetchLeagueCalendarEventsForRange,
-} from '../services/calendarExpansion.js';
-import { fetchIceBookingsAsCalendarEvents } from '../services/iceBookingsCalendar.js';
-import { getEventTimespansForCalendar } from '../services/eventService.js';
+import { getCalendarFeed, getLeagueCalendarFeed } from '../domains/calendar/queries/calendarReadFacade.js';
 import type { Member } from '../types.js';
 
 type LocationType = 'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual';
@@ -73,23 +68,11 @@ export async function calendarRoutes(fastify: FastifyInstance) {
     },
     async (request, _reply) => {
       const q = request.query as { start: string; end: string };
-      const rangeStart = new Date(q.start);
-      const rangeEnd = new Date(q.end);
-      const member = request.member as Member | undefined;
-      const iceViewer = member && isCalendarAdmin(member) ? 'admin' : 'member';
-      const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public'];
-      if (member) {
-        visibilityFilter.push('active_members');
-        if (member.spare_only !== 1 && member.social_member !== 1) {
-          visibilityFilter.push('ice_members');
-        }
-      }
-      const [direct, ice, eventItems] = await Promise.all([
-        fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
-        fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, iceViewer),
-        getEventTimespansForCalendar(q.start, q.end, visibilityFilter),
-      ]);
-      return [...direct, ...ice, ...eventItems];
+      return getCalendarFeed({
+        start: q.start,
+        end: q.end,
+        member: request.member as Member | undefined,
+      });
     }
   );
 
@@ -117,9 +100,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
       }
 
       const q = request.query as { start: string; end: string };
-      const rangeStart = new Date(q.start);
-      const rangeEnd = new Date(q.end);
-      return fetchLeagueCalendarEventsForRange(rangeStart, rangeEnd);
+      return getLeagueCalendarFeed(q.start, q.end);
     }
   );
 
