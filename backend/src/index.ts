@@ -7,7 +7,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import fastifyRawBody from 'fastify-raw-body';
 import { config } from './config.js';
 import { apiErrorPayload } from './api/errors.js';
-import { initializeDatabase, resetDatabaseState } from './db/index.js';
+import { connectDatabase, resetDatabaseState, verifyDatabaseSchema } from './db/index.js';
 import { authMiddleware } from './middleware/auth.js';
 import { registerProtectedApiRoutes, registerPublicApiRoutes } from './registerRoutes.js';
 import { optionalAuthMiddleware } from './middleware/auth.js';
@@ -57,21 +57,34 @@ await fastify.register(fastifyRawBody, {
 let dbInitialized = false;
 let dbInitError: Error | null = null;
 let adminMembersCreated = false;
+let backgroundProcessorsStarted = false;
+
+function startBackgroundProcessorsIfReady(): void {
+  if (backgroundProcessorsStarted || !dbInitialized) {
+    return;
+  }
+
+  startNotificationProcessor();
+  startPaymentReconciliationProcessor();
+  backgroundProcessorsStarted = true;
+}
 
 // Try to initialize database on startup if configured
 if (isDatabaseConfigured()) {
   try {
-    await initializeDatabase();
+    await connectDatabase();
+    await verifyDatabaseSchema();
     dbInitialized = true;
-    console.log('Database initialized successfully');
+    console.log('Database connection verified successfully');
     await loadBackendLogCaptureFromDb();
     
     // Create admin members if none exist
     await ensureAdminMembersExist();
+    startBackgroundProcessorsIfReady();
   } catch (error: unknown) {
     const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
     dbInitError = initError;
-    console.error('Failed to initialize database:', error);
+    console.error('Failed to verify database startup state:', error);
     console.error('Error details:', initError.message);
   }
 }
@@ -170,33 +183,32 @@ fastify.addHook('onRequest', async (request, reply) => {
 
   // Database is configured - check if it's initialized
   if (!dbInitialized) {
-    // Try to initialize if not already initialized
-    if (!dbInitError) {
-      try {
-        // Reset any previous state before initializing
-        resetDatabaseState();
-        await initializeDatabase();
-        dbInitialized = true;
-        dbInitError = null;
-        console.log('Database initialized on first request');
-        await loadBackendLogCaptureFromDb();
-        
-        // Create admin members if none exist
-        await ensureAdminMembersExist();
-        
-        // Allow request to proceed
-        return;
-      } catch (error: unknown) {
-        const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
-        dbInitError = initError;
-        console.error('Failed to initialize database on request:', error);
-      }
+    try {
+      // Reset any previous state before initializing
+      resetDatabaseState();
+      await connectDatabase();
+      await verifyDatabaseSchema();
+      dbInitialized = true;
+      dbInitError = null;
+      console.log('Database verified on first request');
+      await loadBackendLogCaptureFromDb();
+      
+      // Create admin members if none exist
+      await ensureAdminMembersExist();
+      startBackgroundProcessorsIfReady();
+      
+      // Allow request to proceed
+      return;
+    } catch (error: unknown) {
+      const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
+      dbInitError = initError;
+      console.error('Failed to verify database on request:', error);
     }
     
     // If initialization failed, block the request
     return reply.code(503).send({
       ...apiErrorPayload('Database initialization failed'),
-      message: dbInitError?.message || 'Please check your database configuration. Run "npm run db:init" in the backend directory for details.',
+      message: dbInitError?.message || 'Please check your database configuration and run "bun run db:migrate".',
       requiresInstallation: true,
     });
   }
@@ -204,12 +216,6 @@ fastify.addHook('onRequest', async (request, reply) => {
   // Database is configured and initialized - allow request
   return;
 });
-
-// Start notification processor for staggered notifications (only if DB configured)
-if (isDatabaseConfigured()) {
-  startNotificationProcessor();
-  startPaymentReconciliationProcessor();
-}
 
 // Health check
 fastify.get('/api/health', async () => {

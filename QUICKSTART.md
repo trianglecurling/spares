@@ -48,7 +48,7 @@ SERVER_ADMINS=your.email@example.com
 ### 3. Initialize the Database
 
 ```bash
-npm run db:migrate --workspace=backend
+bun run db:migrate
 ```
 
 ### 4. Start the Development Servers

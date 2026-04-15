@@ -32,8 +32,8 @@
  * Rows that collide after normalization or violate slug rules are reported and skipped.
  *
  * Uses `getDrizzleDb()` only (no full `initializeDatabase()` run). Ensure the DB is already
- * initialized (`db:init` / app install) so `permalinks` exists, and run `db:init` or start the API
- * once after upgrading so the `legacy_click_count` column is applied.
+ * initialized (`bun run db:migrate` / app install) so `permalinks` exists, and rerun
+ * `bun run db:migrate` after upgrading so the `legacy_click_count` column is applied.
  */
 
 import * as fs from 'fs';

@@ -9,8 +9,8 @@
  * Or: bun run db:delete-all-permalinks -- --dry-run
  *
  * Note: This connects with `getDrizzleDb()` only. It does not call `initializeDatabase()`, which
- * re-runs the full schema/migration pipeline and can take tens of seconds. Run `db:init` if the DB
- * has never been initialized.
+ * re-runs the full schema/migration pipeline and can take tens of seconds. Run `bun run db:migrate`
+ * if the DB has never been initialized or needs schema updates.
  */
 
 import { sql } from 'drizzle-orm';
