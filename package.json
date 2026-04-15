@@ -11,6 +11,7 @@
     "dev": "bun run --elide-lines=0 --filter '*' dev",
     "dev:frontend": "bun run --filter frontend dev",
     "dev:backend": "bun run --filter backend dev",
+    "db:migrate": "bun run --filter backend db:init",
     "build": "bun run --filter frontend build && bun run --filter backend build",
     "build:frontend": "bun run --filter frontend build",
     "build:backend": "bun run --filter backend build",

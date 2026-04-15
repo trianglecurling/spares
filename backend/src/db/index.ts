@@ -12,6 +12,38 @@ const __dirname = path.dirname(__filename);
 
 let dbConfig: DatabaseConfig | null = null;
 
+function resolveDatabaseConfig(config?: DatabaseConfig): DatabaseConfig {
+  const configToUse = config || getDbConfigFromFile();
+
+  if (!configToUse) {
+    throw new Error('Database configuration not found');
+  }
+
+  return configToUse;
+}
+
+function ensureDatabaseStorage(config: DatabaseConfig): void {
+  if (config.type !== 'sqlite') {
+    return;
+  }
+
+  const dbPath = config.sqlite?.path || path.join(__dirname, '../data/spares.sqlite');
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+}
+
+function configureDatabase(config?: DatabaseConfig): DatabaseConfig {
+  const configToUse = resolveDatabaseConfig(config);
+
+  dbConfig = configToUse;
+  resetDrizzleDb();
+  ensureDatabaseStorage(configToUse);
+
+  return configToUse;
+}
+
 // Reset database state (useful when reinitializing)
 export function resetDatabaseState(): void {
   dbConfig = null;
@@ -25,18 +57,32 @@ export function getDatabaseConfig(): DatabaseConfig | null {
   return getDbConfigFromFile();
 }
 
-export async function initializeDatabase(config?: DatabaseConfig): Promise<void> {
-  const configToUse = config || getDbConfigFromFile();
-  
-  if (!configToUse) {
-    throw new Error('Database configuration not found');
-  }
+export async function connectDatabase(config?: DatabaseConfig): Promise<void> {
+  const configToUse = configureDatabase(config);
+  const { db } = getDrizzleDb();
 
-  dbConfig = configToUse;
-  
-  // Reset Drizzle DB to pick up new config
-  resetDrizzleDb();
-  
+  if (configToUse.type === 'postgres') {
+    await db.execute(sql`SELECT 1`);
+  }
+}
+
+export async function verifyDatabaseSchema(): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+
+  try {
+    await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(schema.members)
+      .limit(1);
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    throw new Error(`Database schema is not initialized or is missing migrations. Run "bun run db:migrate". (${details})`);
+  }
+}
+
+export async function initializeDatabase(config?: DatabaseConfig): Promise<void> {
+  const configToUse = configureDatabase(config);
+
   // Get Drizzle instance (this will initialize the connection)
   const { db } = getDrizzleDb();
 
@@ -52,10 +98,6 @@ export async function initializeDatabase(config?: DatabaseConfig): Promise<void>
     // since it handles migrations better
     const { SQLiteAdapter } = await import('./sqlite-adapter.js');
     const dbPath = configToUse.sqlite?.path || path.join(__dirname, '../data/spares.sqlite');
-    const dbDir = path.dirname(dbPath);
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-    }
     const adapter = new SQLiteAdapter(dbPath);
     await createSchema(adapter);
     adapter.close();

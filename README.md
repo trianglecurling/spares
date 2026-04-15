@@ -101,10 +101,10 @@ bun run dev:backend
 
 ### Database Setup
 
-Initialize the database:
+Run the explicit database migration/setup command before starting the dev servers, and again after schema-affecting changes:
 
 ```bash
-bun run --filter backend db:init
+bun run db:migrate
 ```
 
 ### Building for Production
