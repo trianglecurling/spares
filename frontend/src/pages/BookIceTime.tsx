@@ -8,6 +8,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import api from '../utils/api';
 import { formatApiError } from '../utils/api';
+import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
+
+type PurposeOption = { value: Purpose; label: string };
 
 type Sheet = { id: number; name: string; isActive?: boolean };
 
@@ -18,7 +21,7 @@ function toDatetimeLocalValue(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const PURPOSE_OPTIONS: { value: Purpose; label: string }[] = [
+const PURPOSE_OPTIONS: PurposeOption[] = [
   { value: 'practice', label: 'Practice' },
   { value: 'makeup_game', label: 'Make-up game' },
   { value: 'guests_new', label: 'Bringing guests: new curlers' },
@@ -58,6 +61,10 @@ export default function BookIceTime() {
   } | null>(null);
 
   const minLocal = useMemo(() => toDatetimeLocalValue(new Date()), []);
+  const sheetOptions = useMemo<ChoiceOption<number>[]>(
+    () => sheets.map((s) => ({ value: s.id, label: s.name })),
+    [sheets]
+  );
   const maxLocal = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 7);
@@ -264,19 +271,17 @@ export default function BookIceTime() {
             ) : sheets.length === 0 ? (
               <p className="text-sm text-amber-700 dark:text-amber-300">No active sheets are configured.</p>
             ) : (
-              <select
-                id="ice-sheet"
-                value={sheetId}
-                onChange={(e) => setSheetId(e.target.value)}
-                className="app-input"
+              <ChoiceInput<number>
+                inputId="ice-sheet"
+                options={sheetOptions}
+                value={sheetId === '' ? null : Number(sheetId)}
+                onChange={(next) => {
+                  if (next != null && !Array.isArray(next)) setSheetId(String(next));
+                }}
+                placeholder="Select a sheet"
+                listboxLabel="Sheet"
                 required
-              >
-                {sheets.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              />
             )}
           </div>
 

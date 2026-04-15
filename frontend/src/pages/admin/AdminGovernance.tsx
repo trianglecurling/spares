@@ -18,6 +18,7 @@ import {
   GovernanceSummaryResponse,
   OFFICER_LABELS,
 } from '../../types/governance';
+import ChoiceInput from '../../components/ChoiceInput';
 
 const OFFICER_POSITIONS: GovernanceOfficerPosition[] = ['president', 'vice_president', 'treasurer', 'secretary'];
 
@@ -82,26 +83,38 @@ function MonthDaySelect({
   onMonthChange: (value: string) => void;
   onDayChange: (value: string) => void;
 }) {
+  const monthPickerId = useId();
+  const dayPickerId = useId();
   const maxDay = daysInMonth(month);
   const days = Array.from({ length: maxDay }, (_, i) => String(i + 1).padStart(2, '0'));
+  const dayOptions = days.map((d) => ({
+    value: d,
+    label: String(parseInt(d, 10)),
+  }));
   return (
     <div>
       <span className={labelClass}>{label}</span>
       <div className="flex gap-2">
-        <select value={month} onChange={(e) => onMonthChange(e.target.value)} className={selectClass}>
-          {MONTHS.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-        <select value={day} onChange={(e) => onDayChange(e.target.value)} className={selectClass + ' max-w-[80px]'}>
-          {days.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
+        <ChoiceInput<string>
+          inputId={monthPickerId}
+          options={MONTHS.map((m) => ({ value: m.value, label: m.label }))}
+          value={month}
+          onChange={(next) => {
+            if (next != null && !Array.isArray(next)) onMonthChange(next);
+          }}
+          listboxLabel={`${label} month`}
+          inputClassName={selectClass}
+        />
+        <ChoiceInput<string>
+          inputId={dayPickerId}
+          options={dayOptions}
+          value={day}
+          onChange={(next) => {
+            if (next != null && !Array.isArray(next)) onDayChange(next);
+          }}
+          listboxLabel={`${label} day`}
+          inputClassName={`${selectClass} max-w-[80px]`}
+        />
       </div>
     </div>
   );
@@ -582,24 +595,24 @@ export default function AdminGovernance() {
                           </span>
                         )}
                       </label>
-                      <select
-                        className={selectClass}
-                        value={officerAssignments[position]}
-                        onChange={(e) =>
+                      <ChoiceInput<number>
+                        options={activeBoardMemberOptions.map((o) => ({
+                          value: o.id,
+                          label: o.label,
+                        }))}
+                        value={officerAssignments[position] === '' ? null : officerAssignments[position]}
+                        onChange={(next) =>
                           setOfficerAssignments((prev) => ({
                             ...prev,
-                            [position]: e.target.value ? Number.parseInt(e.target.value, 10) : '',
+                            [position]:
+                              next == null || Array.isArray(next) ? '' : next,
                           }))
                         }
+                        placeholder="Unassigned"
+                        listboxLabel={OFFICER_LABELS[position]}
                         disabled={saving}
-                      >
-                        <option value="">Unassigned</option>
-                        {activeBoardMemberOptions.map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                        inputClassName={selectClass}
+                      />
                     </div>
                   );
                 })}
@@ -965,20 +978,18 @@ export default function AdminGovernance() {
           </div>
           <div>
             <label className={labelClass}>Liaison</label>
-            <select
-              value={newCommitteeLiaisonId}
-              onChange={(e) =>
-                setNewCommitteeLiaisonId(e.target.value ? Number.parseInt(e.target.value, 10) : '')
+            <ChoiceInput<number>
+              options={boardMemberOptions.map((o) => ({ value: o.id, label: o.label }))}
+              value={newCommitteeLiaisonId === '' ? null : newCommitteeLiaisonId}
+              onChange={(next) =>
+                setNewCommitteeLiaisonId(
+                  next == null || Array.isArray(next) ? '' : next
+                )
               }
-              className={selectClass}
-            >
-              <option value="">None</option>
-              {boardMemberOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              placeholder="None"
+              listboxLabel="Liaison"
+              inputClassName={selectClass}
+            />
           </div>
           <TokenInput
             label="Contact emails"
@@ -1038,20 +1049,16 @@ export default function AdminGovernance() {
           </div>
           <div>
             <label className={labelClass}>Liaison</label>
-            <select
-              value={cmEditorLiaisonId}
-              onChange={(e) =>
-                setCmEditorLiaisonId(e.target.value ? Number.parseInt(e.target.value, 10) : '')
+            <ChoiceInput<number>
+              options={boardMemberOptions.map((o) => ({ value: o.id, label: o.label }))}
+              value={cmEditorLiaisonId === '' ? null : cmEditorLiaisonId}
+              onChange={(next) =>
+                setCmEditorLiaisonId(next == null || Array.isArray(next) ? '' : next)
               }
-              className={selectClass}
-            >
-              <option value="">None</option>
-              {boardMemberOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              placeholder="None"
+              listboxLabel="Liaison"
+              inputClassName={selectClass}
+            />
           </div>
           <TokenInput
             label="Contact emails"

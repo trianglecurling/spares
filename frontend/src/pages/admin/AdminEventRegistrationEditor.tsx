@@ -13,6 +13,7 @@ import {
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
 } from '../../utils/eventRegistrationFieldPresets';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 
 type EventRegistrationField = {
   id: number;
@@ -726,20 +727,21 @@ function FieldInput({
     );
   }
   if (field.field_type === 'dropdown') {
+    const dropdownOptions: ChoiceOption<string>[] = options.map((option) => ({
+      value: option,
+      label: option,
+    }));
     return (
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={className}
+      <ChoiceInput<string>
+        options={dropdownOptions}
+        value={value || null}
+        onChange={(next) => onChange(next == null || Array.isArray(next) ? '' : next)}
+        placeholder="Select..."
+        listboxLabel={field.label}
         required={field.required === 1}
-      >
-        <option value="">Select...</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+        inputClassName={className}
+        ariaLabel={field.label}
+      />
     );
   }
   if (field.field_type === 'preset_phone') {

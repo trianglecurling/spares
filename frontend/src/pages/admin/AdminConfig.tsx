@@ -10,6 +10,23 @@ import Button from '../../components/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhone } from '../../utils/phone';
 import { setFrontendLogCaptureEnabled } from '../../otel';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+
+const DASHBOARD_ALERT_VARIANT_OPTIONS: ChoiceOption<string>[] = [
+  { value: 'info', label: 'Info (blue)' },
+  { value: 'warning', label: 'Warning (amber)' },
+  { value: 'success', label: 'Success (green)' },
+  { value: 'danger', label: 'Danger (red)' },
+];
+
+const DASHBOARD_ALERT_ICON_OPTIONS: ChoiceOption<string>[] = [
+  { value: 'announcement', label: 'Announcement' },
+  { value: 'info', label: 'Info' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'success', label: 'Success' },
+  { value: 'error', label: 'Error' },
+  { value: 'none', label: 'No icon' },
+];
 
 interface ServerConfig {
   twilioApiKeySid: string | null;
@@ -545,19 +562,16 @@ export default function AdminConfig() {
                     >
                       Alert color
                     </label>
-                    <select
-                      id="dashboardAlertVariant"
+                    <ChoiceInput<string>
+                      inputId="dashboardAlertVariant"
+                      options={DASHBOARD_ALERT_VARIANT_OPTIONS}
                       value={formData.dashboardAlertVariant}
-                      onChange={(e) =>
-                        setFormData({ ...formData, dashboardAlertVariant: e.target.value })
-                      }
-                      className="app-input"
-                    >
-                      <option value="info">Info (blue)</option>
-                      <option value="warning">Warning (amber)</option>
-                      <option value="success">Success (green)</option>
-                      <option value="danger">Danger (red)</option>
-                    </select>
+                      onChange={(next) => {
+                        if (next != null && !Array.isArray(next))
+                          setFormData({ ...formData, dashboardAlertVariant: next });
+                      }}
+                      listboxLabel="Alert color"
+                    />
                   </div>
                   <div>
                     <label
@@ -566,21 +580,16 @@ export default function AdminConfig() {
                     >
                       Alert icon
                     </label>
-                    <select
-                      id="dashboardAlertIcon"
+                    <ChoiceInput<string>
+                      inputId="dashboardAlertIcon"
+                      options={DASHBOARD_ALERT_ICON_OPTIONS}
                       value={formData.dashboardAlertIcon}
-                      onChange={(e) =>
-                        setFormData({ ...formData, dashboardAlertIcon: e.target.value })
-                      }
-                      className="app-input"
-                    >
-                      <option value="announcement">Announcement</option>
-                      <option value="info">Info</option>
-                      <option value="warning">Warning</option>
-                      <option value="success">Success</option>
-                      <option value="error">Error</option>
-                      <option value="none">No icon</option>
-                    </select>
+                      onChange={(next) => {
+                        if (next != null && !Array.isArray(next))
+                          setFormData({ ...formData, dashboardAlertIcon: next });
+                      }}
+                      listboxLabel="Alert icon"
+                    />
                   </div>
                 </div>
               </div>

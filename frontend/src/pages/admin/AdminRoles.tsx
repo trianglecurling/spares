@@ -5,6 +5,7 @@ import Modal from '../../components/Modal';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api, { formatApiError } from '../../utils/api';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 
 type RoleRule = {
   scope: string;
@@ -37,6 +38,11 @@ type RuleDraftRow = {
 
 const CUSTOM_SENTINEL = '__custom__';
 const INTERNAL_SCOPES = new Set(['member.active', 'member.ice_privileges']);
+
+const RULE_EFFECT_OPTIONS: ChoiceOption<'allow' | 'deny'>[] = [
+  { value: 'allow', label: 'Allow' },
+  { value: 'deny', label: 'Deny' },
+];
 
 function normalizeScope(scope: string): string {
   return scope.trim().toLowerCase();
@@ -163,6 +169,19 @@ export default function AdminRoles() {
     }
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [visibleScopeRegistry]);
+
+  const scopeRegistryChoiceOptions = useMemo((): ChoiceOption<string>[] => {
+    const out: ChoiceOption<string>[] = [];
+    for (const [category, entries] of registryByCategory) {
+      out.push({ type: 'divider', label: category });
+      for (const entry of entries.slice().sort((a, b) => a.scope.localeCompare(b.scope))) {
+        out.push({ value: entry.scope, label: entry.scope });
+      }
+    }
+    out.push({ type: 'divider', label: 'Other' });
+    out.push({ value: CUSTOM_SENTINEL, label: 'Custom scope…' });
+    return out;
+  }, [registryByCategory]);
 
   useEffect(() => {
     void loadInitialData();
@@ -477,16 +496,16 @@ export default function AdminRoles() {
                       className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <select
+                        <ChoiceInput<'allow' | 'deny'>
+                          options={RULE_EFFECT_OPTIONS}
                           value={row.effect}
-                          onChange={(event) =>
-                            updateDraftRow(row.id, { effect: event.target.value as 'allow' | 'deny' })
-                          }
-                          className="app-input min-w-[6rem] px-2 py-1.5"
-                        >
-                          <option value="allow">Allow</option>
-                          <option value="deny">Deny</option>
-                        </select>
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next))
+                              updateDraftRow(row.id, { effect: next });
+                          }}
+                          listboxLabel="Rule effect"
+                          inputClassName="app-input min-w-[6rem] px-2 py-1.5"
+                        />
 
                         {row.useCustomInput || selectValue === CUSTOM_SENTINEL ? (
                           <input
@@ -497,30 +516,24 @@ export default function AdminRoles() {
                             className="app-input min-w-[14rem] flex-1 px-2 py-1.5"
                           />
                         ) : (
-                          <select
-                            value={selectValue}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              if (value === CUSTOM_SENTINEL) {
+                          <ChoiceInput<string>
+                            options={scopeRegistryChoiceOptions}
+                            value={selectValue || null}
+                            onChange={(next) => {
+                              if (next == null || Array.isArray(next)) {
+                                updateDraftRow(row.id, { useCustomInput: false, scope: '' });
+                                return;
+                              }
+                              if (next === CUSTOM_SENTINEL) {
                                 updateDraftRow(row.id, { useCustomInput: true, scope: '' });
                               } else {
-                                updateDraftRow(row.id, { useCustomInput: false, scope: value });
+                                updateDraftRow(row.id, { useCustomInput: false, scope: next });
                               }
                             }}
-                            className="app-input min-w-[14rem] flex-1 px-2 py-1.5"
-                          >
-                            <option value="">Select scope…</option>
-                            {registryByCategory.map(([category, entries]) => (
-                              <optgroup key={category} label={category}>
-                                {entries.map((entry) => (
-                                  <option key={entry.scope} value={entry.scope}>
-                                    {entry.scope}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                            <option value={CUSTOM_SENTINEL}>Custom scope…</option>
-                          </select>
+                            placeholder="Select scope…"
+                            listboxLabel="Documented scope"
+                            inputClassName="app-input min-w-[14rem] flex-1 px-2 py-1.5"
+                          />
                         )}
 
                         <Button type="button" variant="danger" onClick={() => removeDraftRow(row.id)}>

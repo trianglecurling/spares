@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { FaFacebookF, FaInstagram, FaYoutube } from 'react-icons/fa';
 import { FaXTwitter } from 'react-icons/fa6';
 import FormField from '../components/FormField';
+import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import PublicLayout from '../components/PublicLayout';
 import SeoMeta from '../components/SeoMeta';
 import api, { formatApiError } from '../utils/api';
@@ -19,17 +20,17 @@ type RecipientKey =
   | 'web'
   | 'president';
 
-const recipientOptions: Array<{ key: RecipientKey; label: string }> = [
-  { key: 'general', label: 'General info and questions' },
-  { key: 'membership', label: 'Leagues and membership inquiries' },
-  { key: 'marketing', label: 'Media inquiries, advertising, merchandise' },
-  { key: 'rentals', label: 'Private events, team building, corporate outings' },
-  { key: 'juniors', label: 'Youth & junior programs' },
-  { key: 'operations', label: 'Facilities & contractors' },
-  { key: 'learntocurl', label: 'Learn-to-curl events' },
-  { key: 'pickupandpizza', label: 'Pick-Up and Pizza/Pick-Up and Play' },
-  { key: 'web', label: 'Website issues' },
-  { key: 'president', label: 'Contact the president' },
+const recipientChoiceOptions: ChoiceOption<RecipientKey>[] = [
+  { value: 'general', label: 'General info and questions' },
+  { value: 'membership', label: 'Leagues and membership inquiries' },
+  { value: 'marketing', label: 'Media inquiries, advertising, merchandise' },
+  { value: 'rentals', label: 'Private events, team building, corporate outings' },
+  { value: 'juniors', label: 'Youth & junior programs' },
+  { value: 'operations', label: 'Facilities & contractors' },
+  { value: 'learntocurl', label: 'Learn-to-curl events' },
+  { value: 'pickupandpizza', label: 'Pick-Up and Pizza/Pick-Up and Play' },
+  { value: 'web', label: 'Website issues' },
+  { value: 'president', label: 'Contact the president' },
 ];
 
 const facilityDetails: Array<{ title: string; body: string }> = [
@@ -236,18 +237,17 @@ export default function PublicContactPage() {
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               <FormField tone="public" label="Recipient" htmlFor="recipient" labelClassName="font-semibold">
-                <select
-                  id="recipient"
+                <ChoiceInput<RecipientKey>
+                  inputId="recipient"
+                  options={recipientChoiceOptions}
                   value={recipient}
-                  onChange={(event) => setRecipient(event.target.value as RecipientKey)}
-                  className="public-contact-select w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none"
-                >
-                  {recipientOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(next) => {
+                    if (next != null && !Array.isArray(next)) setRecipient(next);
+                  }}
+                  placeholder="Choose a recipient"
+                  listboxLabel="Recipient"
+                  inputClassName="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                />
               </FormField>
 
               <FormField tone="public" label="Your email" htmlFor="email" required labelClassName="font-semibold">

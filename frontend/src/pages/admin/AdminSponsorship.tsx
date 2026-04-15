@@ -10,6 +10,7 @@ import Modal from '../../components/Modal';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { HiChevronDown, HiChevronUp } from 'react-icons/hi2';
+import ChoiceInput from '../../components/ChoiceInput';
 
 type Level = { id: number; name: string; amount: number | null; sortOrder: number };
 type Sponsor = {
@@ -709,20 +710,23 @@ export default function AdminSponsorship() {
               >
                 Use existing image
               </label>
-              <select
-                id="sponsor-logo-file"
-                className="app-input"
-                value={sponsorForm.logoFileId}
+              <ChoiceInput<number>
+                inputId="sponsor-logo-file"
+                options={logoFiles.map((file) => ({
+                  value: file.id,
+                  label: file.displayName || file.originalFilename,
+                }))}
+                value={sponsorForm.logoFileId === '' ? null : Number(sponsorForm.logoFileId)}
                 disabled={Boolean(logoUploadFile) || uploadingLogo || saving}
-                onChange={(e) => setSponsorForm((p) => ({ ...p, logoFileId: e.target.value }))}
-              >
-                <option value="">No logo selected</option>
-                {logoFiles.map((file) => (
-                  <option key={file.id} value={file.id}>
-                    {file.displayName || file.originalFilename}
-                  </option>
-                ))}
-              </select>
+                onChange={(next) =>
+                  setSponsorForm((p) => ({
+                    ...p,
+                    logoFileId: next == null || Array.isArray(next) ? '' : String(next),
+                  }))
+                }
+                placeholder="No logo selected"
+                listboxLabel="Sponsor logo file"
+              />
             </div>
 
             <div className="mt-3">
@@ -814,19 +818,19 @@ export default function AdminSponsorship() {
             >
               Sponsor
             </label>
-            <select
-              id="sponsorship-sponsor"
-              className="app-input"
-              value={sponsorshipForm.sponsorId}
-              onChange={(e) => setSponsorshipForm((p) => ({ ...p, sponsorId: e.target.value }))}
-            >
-              <option value="">Choose sponsor</option>
-              {sponsors.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <ChoiceInput<number>
+              inputId="sponsorship-sponsor"
+              options={sponsors.map((s) => ({ value: s.id, label: s.name }))}
+              value={sponsorshipForm.sponsorId === '' ? null : Number(sponsorshipForm.sponsorId)}
+              onChange={(next) =>
+                setSponsorshipForm((p) => ({
+                  ...p,
+                  sponsorId: next == null || Array.isArray(next) ? '' : String(next),
+                }))
+              }
+              placeholder="Choose sponsor"
+              listboxLabel="Sponsor"
+            />
           </div>
           <div>
             <label
@@ -835,24 +839,24 @@ export default function AdminSponsorship() {
             >
               Sponsorship level
             </label>
-            <select
-              id="sponsorship-level"
-              className="app-input"
-              value={sponsorshipForm.sponsorshipLevelId}
-              onChange={(e) =>
+            <ChoiceInput<number>
+              inputId="sponsorship-level"
+              options={levels.map((l) => ({ value: l.id, label: l.name }))}
+              value={
+                sponsorshipForm.sponsorshipLevelId === ''
+                  ? null
+                  : Number(sponsorshipForm.sponsorshipLevelId)
+              }
+              onChange={(next) =>
                 setSponsorshipForm((p) => ({
                   ...p,
-                  sponsorshipLevelId: e.target.value,
+                  sponsorshipLevelId:
+                    next == null || Array.isArray(next) ? '' : String(next),
                 }))
               }
-            >
-              <option value="">Choose level</option>
-              {levels.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Choose level"
+              listboxLabel="Sponsorship level"
+            />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>

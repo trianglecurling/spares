@@ -4,6 +4,13 @@ import { get } from '../../api/client';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+
+const OBS_RANGE_OPTIONS: ChoiceOption<number>[] = [
+  { value: 7, label: 'Last 7 days' },
+  { value: 30, label: 'Last 30 days' },
+  { value: 90, label: 'Last 90 days' },
+];
 
 interface ObservabilityTotals {
   membersTotal: number;
@@ -84,15 +91,16 @@ export default function AdminObservability() {
               Grafana dashboard ↗
             </a>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <select
+              <ChoiceInput<number>
+                ariaLabel="Observability date range"
+                options={OBS_RANGE_OPTIONS}
                 value={obsRangeDays}
-                onChange={(e) => loadObservability(parseInt(e.target.value, 10))}
-                className="app-input w-auto min-w-[10rem]"
-              >
-                <option value={7}>Last 7 days</option>
-                <option value={30}>Last 30 days</option>
-                <option value={90}>Last 90 days</option>
-              </select>
+                onChange={(next) => {
+                  if (next != null && !Array.isArray(next)) loadObservability(next);
+                }}
+                listboxLabel="Date range"
+                inputClassName="app-input w-auto min-w-[10rem]"
+              />
               <Button
                 type="button"
                 variant="secondary"

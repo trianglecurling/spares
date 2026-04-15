@@ -9,6 +9,7 @@ import type { DataTableColumn } from '../../components/table/tableTypes';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { memberHasScope } from '../../utils/permissions';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 
 type PaymentProvider = 'stripe' | 'paypal' | 'square';
 type PaymentSubjectType = 'donation' | 'membership' | 'event_registration';
@@ -113,6 +114,34 @@ function formatDate(value: unknown): string {
 function valueOfRecord(record: Record<string, unknown>, key: string): unknown {
   return record[key];
 }
+
+const PAYMENT_PROVIDER_OPTIONS: ChoiceOption<PaymentProvider>[] = [
+  { value: 'stripe', label: 'Stripe' },
+  { value: 'paypal', label: 'PayPal' },
+  { value: 'square', label: 'Square' },
+];
+
+const PAYMENT_SUBJECT_OPTIONS: ChoiceOption<PaymentSubjectType>[] = [
+  { value: 'donation', label: 'Donation' },
+  { value: 'membership', label: 'Membership' },
+  { value: 'event_registration', label: 'Event registration' },
+];
+
+const PAYMENT_ORDER_STATUS_OPTIONS: ChoiceOption<PaymentOrderStatus>[] = [
+  { value: 'created', label: 'Created' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'succeeded', label: 'Succeeded' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'partially_refunded', label: 'Partially refunded' },
+  { value: 'refunded', label: 'Refunded' },
+];
+
+const PAYMENT_EVENT_STATUS_OPTIONS: ChoiceOption<PaymentEventStatus>[] = [
+  { value: 'received', label: 'Received' },
+  { value: 'processed', label: 'Processed' },
+  { value: 'ignored', label: 'Ignored' },
+  { value: 'failed', label: 'Failed' },
+];
 
 export default function AdminPayments() {
   const { member } = useAuth();
@@ -306,39 +335,39 @@ export default function AdminPayments() {
         <div className="app-card">
           <h2 className="app-section-title">Payment orders</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <select
-              value={providerFilter}
-              onChange={(e) => setProviderFilter(e.target.value as '' | PaymentProvider)}
-              className="app-input"
-            >
-              <option value="">All providers</option>
-              <option value="stripe">Stripe</option>
-              <option value="paypal">PayPal</option>
-              <option value="square">Square</option>
-            </select>
-            <select
-              value={subjectTypeFilter}
-              onChange={(e) => setSubjectTypeFilter(e.target.value as '' | PaymentSubjectType)}
-              className="app-input"
-            >
-              <option value="">All subjects</option>
-              <option value="donation">Donation</option>
-              <option value="membership">Membership</option>
-              <option value="event_registration">Event registration</option>
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as '' | PaymentOrderStatus)}
-              className="app-input"
-            >
-              <option value="">All statuses</option>
-              <option value="created">Created</option>
-              <option value="pending">Pending</option>
-              <option value="succeeded">Succeeded</option>
-              <option value="failed">Failed</option>
-              <option value="partially_refunded">Partially refunded</option>
-              <option value="refunded">Refunded</option>
-            </select>
+            <ChoiceInput<PaymentProvider>
+              ariaLabel="Filter orders by provider"
+              options={PAYMENT_PROVIDER_OPTIONS}
+              value={providerFilter === '' ? null : providerFilter}
+              onChange={(next) =>
+                setProviderFilter(next == null || Array.isArray(next) ? '' : next)
+              }
+              placeholder="All providers"
+              listboxLabel="Provider"
+              inputClassName="app-input"
+            />
+            <ChoiceInput<PaymentSubjectType>
+              ariaLabel="Filter orders by subject"
+              options={PAYMENT_SUBJECT_OPTIONS}
+              value={subjectTypeFilter === '' ? null : subjectTypeFilter}
+              onChange={(next) =>
+                setSubjectTypeFilter(next == null || Array.isArray(next) ? '' : next)
+              }
+              placeholder="All subjects"
+              listboxLabel="Subject"
+              inputClassName="app-input"
+            />
+            <ChoiceInput<PaymentOrderStatus>
+              ariaLabel="Filter orders by status"
+              options={PAYMENT_ORDER_STATUS_OPTIONS}
+              value={statusFilter === '' ? null : statusFilter}
+              onChange={(next) =>
+                setStatusFilter(next == null || Array.isArray(next) ? '' : next)
+              }
+              placeholder="All statuses"
+              listboxLabel="Order status"
+              inputClassName="app-input"
+            />
             <div className="flex items-center app-section-subtitle">
               Total: {ordersData?.total ?? 0}
             </div>
@@ -419,27 +448,28 @@ export default function AdminPayments() {
           <div className="app-card">
             <h2 className="app-section-title">Recent webhook events</h2>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <select
-                value={eventProviderFilter}
-                onChange={(e) => setEventProviderFilter(e.target.value as '' | PaymentProvider)}
-                className="app-input"
-              >
-                <option value="">All providers</option>
-                <option value="stripe">Stripe</option>
-                <option value="paypal">PayPal</option>
-                <option value="square">Square</option>
-              </select>
-              <select
-                value={eventStatusFilter}
-                onChange={(e) => setEventStatusFilter(e.target.value as '' | PaymentEventStatus)}
-                className="app-input"
-              >
-                <option value="">All statuses</option>
-                <option value="received">Received</option>
-                <option value="processed">Processed</option>
-                <option value="ignored">Ignored</option>
-                <option value="failed">Failed</option>
-              </select>
+              <ChoiceInput<PaymentProvider>
+                ariaLabel="Filter payment events by provider"
+                options={PAYMENT_PROVIDER_OPTIONS}
+                value={eventProviderFilter === '' ? null : eventProviderFilter}
+                onChange={(next) =>
+                  setEventProviderFilter(next == null || Array.isArray(next) ? '' : next)
+                }
+                placeholder="All providers"
+                listboxLabel="Event provider"
+                inputClassName="app-input"
+              />
+              <ChoiceInput<PaymentEventStatus>
+                ariaLabel="Filter payment events by status"
+                options={PAYMENT_EVENT_STATUS_OPTIONS}
+                value={eventStatusFilter === '' ? null : eventStatusFilter}
+                onChange={(next) =>
+                  setEventStatusFilter(next == null || Array.isArray(next) ? '' : next)
+                }
+                placeholder="All statuses"
+                listboxLabel="Event status"
+                inputClassName="app-input"
+              />
               <div className="flex items-center app-section-subtitle">
                 Total: {eventsData?.total ?? 0}
               </div>

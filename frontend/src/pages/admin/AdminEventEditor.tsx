@@ -12,6 +12,7 @@ import SortableRow from '../../components/dragDrop/SortableRow';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
@@ -136,6 +137,27 @@ const EVENT_CALENDAR_TYPE_OPTIONS: { id: string; label: string }[] = [
   { id: 'social', label: 'Social' },
   { id: 'other', label: 'Other' },
 ];
+
+const EVENT_CALENDAR_CHOICE_OPTIONS: ChoiceOption<string>[] = EVENT_CALENDAR_TYPE_OPTIONS.map((o) => ({
+  value: o.id,
+  label: o.label,
+}));
+
+const EVENT_VISIBILITY_OPTIONS: ChoiceOption<string>[] = [
+  { value: 'public', label: 'Public' },
+  { value: 'active_members', label: 'Active members' },
+  { value: 'ice_members', label: 'Ice members' },
+];
+
+const REGISTRATION_SCOPE_OPTIONS: ChoiceOption<string>[] = [
+  { value: 'group', label: 'Per group' },
+  { value: 'individual', label: 'Per person' },
+];
+
+const CUSTOM_FIELD_TYPE_OPTIONS: ChoiceOption<string>[] = CUSTOM_FIELD_TYPES.map((ft) => ({
+  value: ft,
+  label: ft,
+}));
 
 function toMinor(dollars: string): number {
   const parsed = Number.parseFloat(dollars);
@@ -1048,32 +1070,28 @@ export default function AdminEventEditor() {
                     />
                   </FormField>
                   <FormField label="Visibility" htmlFor="admin-event-visibility" required>
-                    <select
-                      id="admin-event-visibility"
+                    <ChoiceInput<string>
+                      inputId="admin-event-visibility"
+                      options={EVENT_VISIBILITY_OPTIONS}
                       value={visibility}
-                      onChange={(e) => setVisibility(e.target.value)}
-                      className="app-input"
-                    >
-                      <option value="public">Public</option>
-                      <option value="active_members">Active members</option>
-                      <option value="ice_members">Ice members</option>
-                    </select>
+                      onChange={(next) => {
+                        if (next != null && !Array.isArray(next)) setVisibility(next);
+                      }}
+                      listboxLabel="Event visibility"
+                    />
                   </FormField>
                 </div>
                 <div className="max-w-md">
                   <FormField label="Event type" htmlFor="event-calendar-type" required>
-                  <select
-                    id="event-calendar-type"
-                    value={calendarTypeId}
-                    onChange={(e) => setCalendarTypeId(e.target.value)}
-                    className="app-input"
-                  >
-                    {EVENT_CALENDAR_TYPE_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    <ChoiceInput<string>
+                      inputId="event-calendar-type"
+                      options={EVENT_CALENDAR_CHOICE_OPTIONS}
+                      value={calendarTypeId}
+                      onChange={(next) => {
+                        if (next != null && !Array.isArray(next)) setCalendarTypeId(next);
+                      }}
+                      listboxLabel="Event type"
+                    />
                   </FormField>
                 </div>
                 <FormCheckbox
@@ -1552,15 +1570,17 @@ export default function AdminEventEditor() {
                               htmlFor={`registration-field-preset-scope-${i}`}
                               helperText="Choose whether this preset appears once per registration or once per person."
                             >
-                              <select
-                                id={`registration-field-preset-scope-${i}`}
+                              <ChoiceInput<string>
+                                inputId={`registration-field-preset-scope-${i}`}
+                                options={REGISTRATION_SCOPE_OPTIONS}
                                 value={field.scope}
-                                onChange={(e) => updateField(i, { scope: e.target.value })}
-                                className={`app-input max-w-xs ${showScopePrompt ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''}`}
-                              >
-                                <option value="group">Per group</option>
-                                <option value="individual">Per person</option>
-                              </select>
+                                onChange={(next) => {
+                                  if (next != null && !Array.isArray(next))
+                                    updateField(i, { scope: next });
+                                }}
+                                listboxLabel="Field scope"
+                                inputClassName={`app-input max-w-xs ${showScopePrompt ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''}`}
+                              />
                             </FormField>
                           )}
                         </div>
@@ -1588,33 +1608,33 @@ export default function AdminEventEditor() {
                             htmlFor={`registration-field-type-${i}`}
                             className={allowGroupRegistration ? '' : 'col-span-2'}
                           >
-                            <select
-                              id={`registration-field-type-${i}`}
+                            <ChoiceInput<string>
+                              inputId={`registration-field-type-${i}`}
+                              options={CUSTOM_FIELD_TYPE_OPTIONS}
                               value={field.fieldType}
-                              onChange={(e) => updateField(i, { fieldType: e.target.value })}
-                              className="app-input"
-                            >
-                              {CUSTOM_FIELD_TYPES.map((ft) => (
-                                <option key={ft} value={ft}>
-                                  {ft}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={(next) => {
+                                if (next != null && !Array.isArray(next))
+                                  updateField(i, { fieldType: next });
+                              }}
+                              listboxLabel="Field type"
+                            />
                           </FormField>
                           {allowGroupRegistration && (
                             <FormField
                               label="Field scope"
                               htmlFor={`registration-field-scope-${i}`}
                             >
-                              <select
-                                id={`registration-field-scope-${i}`}
+                              <ChoiceInput<string>
+                                inputId={`registration-field-scope-${i}`}
+                                options={REGISTRATION_SCOPE_OPTIONS}
                                 value={field.scope}
-                                onChange={(e) => updateField(i, { scope: e.target.value })}
-                                className={`app-input ${showScopePrompt ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''}`}
-                              >
-                                <option value="group">Per group</option>
-                                <option value="individual">Per person</option>
-                              </select>
+                                onChange={(next) => {
+                                  if (next != null && !Array.isArray(next))
+                                    updateField(i, { scope: next });
+                                }}
+                                listboxLabel="Field scope"
+                                inputClassName={`app-input ${showScopePrompt ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''}`}
+                              />
                             </FormField>
                           )}
                           {(field.fieldType === 'dropdown' || field.fieldType === 'radio') && (

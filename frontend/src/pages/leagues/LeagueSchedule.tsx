@@ -8,6 +8,7 @@ import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import AppStateCard from '../../components/AppStateCard';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 
 interface Team {
   id: number;
@@ -178,6 +179,16 @@ export default function LeagueSchedule({
     if (!selectedDrawKey) return null;
     return drawSlots.find((slot) => `${slot.date}|${slot.time}` === selectedDrawKey) ?? null;
   }, [drawSlots, selectedDrawKey]);
+
+  const drawTimeChoiceOptions = useMemo((): ChoiceOption<string>[] => {
+    return [
+      ...drawSlots.map((slot) => ({
+        value: `${slot.date}|${slot.time}`,
+        label: `${formatDateDisplay(slot.date)} · ${formatTime(slot.time)}${slot.isExtra ? ' (Extra)' : ''}`,
+      })),
+      { value: '__add__', label: 'Add draw time' },
+    ];
+  }, [drawSlots]);
 
   const teamLabelById = useMemo(() => {
     const map = new Map<number, string>();
@@ -1051,12 +1062,26 @@ export default function LeagueSchedule({
                     <label className="app-label">
                       Draw time
                     </label>
-                    <select
-                      value={addingDrawTime ? '__add__' : selectedDrawKey}
-                      onChange={(event) => {
-                        const value = event.target.value;
+                    <ChoiceInput<string>
+                      ariaLabel="Draw time"
+                      options={drawTimeChoiceOptions}
+                      value={
+                        addingDrawTime ? '__add__' : selectedDrawKey || null
+                      }
+                      onChange={(next) => {
+                        const value = next == null || Array.isArray(next) ? '' : next;
                         if (value === '__add__') {
                           setAddingDrawTime(true);
+                          setGameForm((prev) => ({
+                            ...prev,
+                            gameDate: '',
+                            gameTime: '',
+                            sheetId: '',
+                          }));
+                          return;
+                        }
+                        if (!value) {
+                          setAddingDrawTime(false);
                           setGameForm((prev) => ({
                             ...prev,
                             gameDate: '',
@@ -1087,20 +1112,9 @@ export default function LeagueSchedule({
                           team2Id: drawTeamIds.has(Number(prev.team2Id)) ? '' : prev.team2Id,
                         }));
                       }}
-                      className="app-input"
-                    >
-                      <option value="">Select draw time</option>
-                      {drawSlots.map((slot) => (
-                        <option
-                          key={`${slot.date}|${slot.time}`}
-                          value={`${slot.date}|${slot.time}`}
-                        >
-                          {formatDateDisplay(slot.date)} · {formatTime(slot.time)}
-                          {slot.isExtra ? ' (Extra)' : ''}
-                        </option>
-                      ))}
-                      <option value="__add__">Add draw time</option>
-                    </select>
+                      placeholder="Select draw time"
+                      listboxLabel="Draw time"
+                    />
                   </div>
 
                   {addingDrawTime && (
@@ -1226,50 +1240,54 @@ export default function LeagueSchedule({
                 <label className="app-label">
                   Team 1
                 </label>
-                <select
-                  value={gameForm.team1Id}
-                  onChange={(event) =>
-                    setGameForm((prev) => ({
-                      ...prev,
-                      team1Id: event.target.value,
-                      team2Id: prev.team2Id === event.target.value ? '' : prev.team2Id,
-                    }))
+                <ChoiceInput<number>
+                  ariaLabel="Team 1"
+                  options={filteredTeam1Options.map((team) => ({
+                    value: team.id,
+                    label: team.label,
+                  }))}
+                  value={gameForm.team1Id === '' ? null : Number(gameForm.team1Id)}
+                  onChange={(next) =>
+                    setGameForm((prev) => {
+                      const idStr = next == null || Array.isArray(next) ? '' : String(next);
+                      return {
+                        ...prev,
+                        team1Id: idStr,
+                        team2Id: prev.team2Id === idStr ? '' : prev.team2Id,
+                      };
+                    })
                   }
-                  className="app-input"
+                  placeholder="Select team"
+                  listboxLabel="Team 1"
                   required
-                >
-                  <option value="">Select team</option>
-                  {filteredTeam1Options.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div>
                 <label className="app-label">
                   Team 2
                 </label>
-                <select
-                  value={gameForm.team2Id}
-                  onChange={(event) =>
-                    setGameForm((prev) => ({
-                      ...prev,
-                      team2Id: event.target.value,
-                      team1Id: prev.team1Id === event.target.value ? '' : prev.team1Id,
-                    }))
+                <ChoiceInput<number>
+                  ariaLabel="Team 2"
+                  options={filteredTeam2Options.map((team) => ({
+                    value: team.id,
+                    label: team.label,
+                  }))}
+                  value={gameForm.team2Id === '' ? null : Number(gameForm.team2Id)}
+                  onChange={(next) =>
+                    setGameForm((prev) => {
+                      const idStr = next == null || Array.isArray(next) ? '' : String(next);
+                      return {
+                        ...prev,
+                        team2Id: idStr,
+                        team1Id: prev.team1Id === idStr ? '' : prev.team1Id,
+                      };
+                    })
                   }
-                  className="app-input"
+                  placeholder="Select team"
+                  listboxLabel="Team 2"
                   required
-                >
-                  <option value="">Select team</option>
-                  {filteredTeam2Options.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
           )}

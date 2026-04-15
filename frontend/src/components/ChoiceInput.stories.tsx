@@ -26,14 +26,19 @@ Shared selection primitive for dropdown/select, combobox, radiogroup, and checkb
 
 Use \`layout="popover"\` for dropdown-style interactions and \`layout="inline"\` / \`layout="block"\` for always-visible radio or checkbox groups.
 
-The \`multiSelection\` prop controls both whether multiple values are allowed and how that multi-select state is presented:
+\`maxSelectedItems\` controls how many values may be selected: default \`1\` is single-select; \`null\`, \`0\`, or \`NaN\` means no limit; a positive integer caps the selection (with disabled add/checkbox affordances until something is removed). When the cap is greater than 1, a short \`{count} of {max} selected\` hint is shown.
 
-- \`none\`: single selection
-- \`checkboxes\`: multi-select with checkbox rows in the popover
-- \`pills\`: multi-select with removable pills above the trigger; selected items are hidden from the popover
-- \`both\`: multi-select with both removable pills and checkbox rows
+When multi-select is active, \`multiSelectionIndicatorStyle\` chooses the presentation:
+
+- \`checkboxes\`: checkbox rows in the popover (or native checkboxes for inline/block)
+- \`pills\`: removable pills above the popover trigger; selected items are hidden from the popover list
+- \`both\`: pills and checkbox rows together
 
 For text-entry scenarios, provide \`inputValue\` and \`onInputValueChange\` to use the editable combobox path. For select-like scenarios, the trigger behaves like a button-backed chooser rather than a text field.
+
+Use \`onComboboxInput\` and \`onComboboxTextBlur\` when the parent should filter options only while the user is actively typing (see combobox stories).
+
+With \`allowCustomValue\`, multi-select popovers can append typed values (and show them as removable pills and/or list rows). Inline/block layouts add an **Other** row (radio + field) or an **Additional choices** group (checkbox flows) for custom entries.
         `,
       },
     },
@@ -48,14 +53,24 @@ For text-entry scenarios, provide \`inputValue\` and \`onInputValueChange\` to u
         defaultValue: { summary: 'popover' },
       },
     },
-    multiSelection: {
+    maxSelectedItems: {
       description:
-        'Controls whether multiple values are allowed and whether the popover uses checkboxes, pills, or both.',
-      control: 'inline-radio',
-      options: ['none', 'pills', 'checkboxes', 'both'],
+        'Maximum selections: omit or `1` for single-select; `null`, `0`, or `NaN` for unlimited multi; integer > 1 for a capped multi-select.',
+      control: 'number',
       table: {
         category: 'Selection',
-        defaultValue: { summary: 'none' },
+        defaultValue: { summary: '1 (single)' },
+        type: { summary: 'number | null' },
+      },
+    },
+    multiSelectionIndicatorStyle: {
+      description:
+        'Multi-select presentation when `maxSelectedItems` is unlimited or greater than 1 (ignored for single-select).',
+      control: 'inline-radio',
+      options: ['pills', 'checkboxes', 'both'],
+      table: {
+        category: 'Selection',
+        defaultValue: { summary: 'checkboxes' },
       },
     },
     allowCustomValue: {
@@ -78,6 +93,14 @@ For text-entry scenarios, provide \`inputValue\` and \`onInputValueChange\` to u
         category: 'Text entry',
         type: { summary: '(value: string) => void' },
       },
+    },
+    onComboboxInput: {
+      description: 'Native input event: use to turn on option filtering while typing.',
+      table: { category: 'Text entry' },
+    },
+    onComboboxTextBlur: {
+      description: 'Blur leaving the combobox shell: use to turn off filtering until the next input event.',
+      table: { category: 'Text entry' },
     },
     value: {
       description: 'Controlled selected value or values.',
@@ -170,6 +193,12 @@ const singleSelectOptions: ChoiceOption<string>[] = [
   { value: 'archived', label: 'Archived', description: 'Hidden from normal listings', icon: <HiFlag /> },
 ]
 
+/** Stable list for stress-testing popover behavior with a long flat option set. */
+const manySingleSelectOptions: ChoiceOption<string>[] = Array.from({ length: 100 }, (_, i) => {
+  const n = i + 1
+  return { value: `option-${n}`, label: `Option ${n}` }
+})
+
 const multiSelectOptions: ChoiceOption<string>[] = [
   { value: 'skip', label: 'Skip', description: 'Strategy and calling the game', icon: <HiUsers /> },
   { value: 'vice', label: 'Vice', description: 'Supports line calls and tactics', icon: <HiUsers /> },
@@ -229,6 +258,27 @@ function SingleSelectPopoverExample() {
   )
 }
 
+function SingleSelectManyOptionsExample() {
+  const [value, setValue] = useState<string | null>('option-1')
+
+  return (
+    <FormField
+      label="Long list (100 options)"
+      htmlFor="storybook-choiceinput-many"
+      helperText="Single-select popover with 100 plain options. Use this story to reproduce scrolling, focus, and performance issues."
+    >
+      <ChoiceInput
+        inputId="storybook-choiceinput-many"
+        options={manySingleSelectOptions}
+        value={value}
+        onChange={(nextValue) => setValue(typeof nextValue === 'string' ? nextValue : null)}
+        placeholder="Choose one of 100 options"
+        listboxLabel="Long option list"
+      />
+    </FormField>
+  )
+}
+
 function MultiSelectPopoverExample() {
   const [value, setValue] = useState<string[]>(['skip', 'lead'])
   const [lastAction, setLastAction] = useState('None yet')
@@ -275,7 +325,8 @@ function MultiSelectPopoverExample() {
           options={options}
           value={value}
           onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
-          multiSelection="checkboxes"
+          maxSelectedItems={null}
+          multiSelectionIndicatorStyle="checkboxes"
           placeholder="Select one or more positions"
           listboxLabel="Preferred positions"
         />
@@ -299,7 +350,8 @@ function MultiSelectPillsExample() {
         options={multiSelectOptions.slice(0, 4)}
         value={value}
         onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
-        multiSelection="pills"
+        maxSelectedItems={null}
+        multiSelectionIndicatorStyle="pills"
         placeholder="Add positions"
         listboxLabel="Preferred positions"
       />
@@ -321,7 +373,8 @@ function MultiSelectPillsAndCheckboxesExample() {
         options={multiSelectOptions.slice(0, 4)}
         value={value}
         onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
-        multiSelection="both"
+        maxSelectedItems={null}
+        multiSelectionIndicatorStyle="both"
         placeholder="Choose positions"
         listboxLabel="Roster preferences"
       />
@@ -329,11 +382,13 @@ function MultiSelectPillsAndCheckboxesExample() {
   )
 }
 
-function ComboboxExample() {
+function MultiCustomComboboxExample() {
   const [query, setQuery] = useState('')
-  const [value, setValue] = useState<string | null>('published')
+  const [value, setValue] = useState<string[]>(['published', 'custom-tag'])
+  const [comboboxFiltering, setComboboxFiltering] = useState(false)
 
   const options = useMemo<ChoiceOption<string>[]>(() => {
+    if (!comboboxFiltering) return singleSelectOptions
     const needle = query.trim().toLowerCase()
     if (!needle) return singleSelectOptions
     return singleSelectOptions.filter((option) => {
@@ -341,13 +396,97 @@ function ComboboxExample() {
       const text = `${option.label} ${option.description ?? ''}`.toLowerCase()
       return text.includes(needle)
     })
-  }, [query])
+  }, [comboboxFiltering, query])
+
+  return (
+    <FormField
+      label="Tags"
+      htmlFor="storybook-choiceinput-multi-custom"
+      helperText="Options filter only while you type; leaving the field restores the full list. Add custom tags with Enter or the Add row."
+    >
+      <ChoiceInput<string>
+        inputId="storybook-choiceinput-multi-custom"
+        options={options}
+        value={value}
+        onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
+        maxSelectedItems={null}
+        multiSelectionIndicatorStyle="both"
+        inputValue={query}
+        onInputValueChange={setQuery}
+        onComboboxInput={() => setComboboxFiltering(true)}
+        onComboboxTextBlur={() => setComboboxFiltering(false)}
+        allowCustomValue
+        createCustomValue={(raw) => raw.trim() || null}
+        placeholder="Search or add a tag"
+        listboxLabel="Tag suggestions"
+      />
+    </FormField>
+  )
+}
+
+function MultiCustomComboboxCappedExample() {
+  const [query, setQuery] = useState('')
+  const [value, setValue] = useState<string[]>(['published', 'draft'])
+  const [comboboxFiltering, setComboboxFiltering] = useState(false)
+
+  const options = useMemo<ChoiceOption<string>[]>(() => {
+    if (!comboboxFiltering) return singleSelectOptions
+    const needle = query.trim().toLowerCase()
+    if (!needle) return singleSelectOptions
+    return singleSelectOptions.filter((option) => {
+      if (option.type === 'divider') return false
+      const text = `${option.label} ${option.description ?? ''}`.toLowerCase()
+      return text.includes(needle)
+    })
+  }, [comboboxFiltering, query])
+
+  return (
+    <FormField
+      label="Tags (max 3)"
+      htmlFor="storybook-choiceinput-multi-custom-capped"
+      helperText="Same combobox filtering as the unlimited example, but at most three tags. Add row, Enter, and list picks respect the cap."
+    >
+      <ChoiceInput<string>
+        inputId="storybook-choiceinput-multi-custom-capped"
+        options={options}
+        value={value}
+        onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
+        maxSelectedItems={3}
+        multiSelectionIndicatorStyle="both"
+        inputValue={query}
+        onInputValueChange={setQuery}
+        onComboboxInput={() => setComboboxFiltering(true)}
+        onComboboxTextBlur={() => setComboboxFiltering(false)}
+        allowCustomValue
+        createCustomValue={(raw) => raw.trim() || null}
+        placeholder="Search or add a tag"
+        listboxLabel="Tag suggestions"
+      />
+    </FormField>
+  )
+}
+
+function ComboboxExample() {
+  const [query, setQuery] = useState('Published')
+  const [value, setValue] = useState<string | null>('published')
+  const [comboboxFiltering, setComboboxFiltering] = useState(false)
+
+  const options = useMemo<ChoiceOption<string>[]>(() => {
+    if (!comboboxFiltering) return singleSelectOptions
+    const needle = query.trim().toLowerCase()
+    if (!needle) return singleSelectOptions
+    return singleSelectOptions.filter((option) => {
+      if (option.type === 'divider') return false
+      const text = `${option.label} ${option.description ?? ''}`.toLowerCase()
+      return text.includes(needle)
+    })
+  }, [comboboxFiltering, query])
 
   return (
     <FormField
       label="Custom tag"
       htmlFor="storybook-choiceinput-combobox"
-      helperText="Combobox mode keeps filtering page-owned and allows freeform entry when no option fits."
+      helperText="The list filters only after you type; tabbing or clicking away restores the full option list until you type again."
     >
       <ChoiceInput
         inputId="storybook-choiceinput-combobox"
@@ -356,6 +495,8 @@ function ComboboxExample() {
         onChange={(nextValue) => setValue(typeof nextValue === 'string' ? nextValue : null)}
         inputValue={query}
         onInputValueChange={setQuery}
+        onComboboxInput={() => setComboboxFiltering(true)}
+        onComboboxTextBlur={() => setComboboxFiltering(false)}
         allowCustomValue
         createCustomValue={(inputValue) => inputValue.trim() || null}
         placeholder="Search or type a custom tag"
@@ -392,9 +533,105 @@ function BlockCheckboxExample() {
         value={value}
         onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
         layout="block"
-        multiSelection="checkboxes"
+        maxSelectedItems={null}
+        multiSelectionIndicatorStyle="checkboxes"
         ariaLabel="Preferred positions"
         name="storybook-block-positions"
+      />
+    </FormSection>
+  )
+}
+
+function InlineOtherRadioExample() {
+  const [value, setValue] = useState<string | null>(null)
+
+  return (
+    <FormField
+      label="Publishing status"
+      htmlFor="storybook-inline-other"
+      helperText="Choose a preset or select Other and type a custom status."
+    >
+      <ChoiceInput<string>
+        inputId="storybook-inline-other"
+        layout="inline"
+        options={singleSelectOptions.slice(0, 3)}
+        value={value}
+        onChange={(next) => setValue(typeof next === 'string' ? next : null)}
+        allowCustomValue
+        createCustomValue={(raw) => raw.trim() || null}
+        placeholder="Custom status"
+        ariaLabel="Publishing status"
+        name="storybook-inline-other-status"
+      />
+    </FormField>
+  )
+}
+
+function BlockCheckboxWithCustomExample() {
+  const [value, setValue] = useState<string[]>(['vice', 'weekend volunteer'])
+
+  return (
+    <FormSection
+      title="Block checkboxes with custom choices"
+      description="Predefined rows plus an add field for values not in the list."
+    >
+      <ChoiceInput<string>
+        options={multiSelectOptions.slice(0, 4)}
+        value={value}
+        onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
+        layout="block"
+        maxSelectedItems={null}
+        multiSelectionIndicatorStyle="checkboxes"
+        allowCustomValue
+        createCustomValue={(raw) => raw.trim() || null}
+        placeholder="Add another role"
+        ariaLabel="Preferred positions and custom roles"
+        name="storybook-block-custom-positions"
+      />
+    </FormSection>
+  )
+}
+
+function LimitedMultiSelectPopoverExample() {
+  const [value, setValue] = useState<string[]>(['skip', 'lead'])
+
+  return (
+    <FormField
+      label="Capped multi-select (popover)"
+      htmlFor="storybook-choiceinput-capped-popover"
+      helperText="Up to three selections; extra rows stay disabled until you remove one."
+    >
+      <ChoiceInput
+        inputId="storybook-choiceinput-capped-popover"
+        options={multiSelectOptions.slice(0, 4)}
+        value={value}
+        onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
+        maxSelectedItems={3}
+        multiSelectionIndicatorStyle="both"
+        placeholder="Choose up to three"
+        listboxLabel="Preferred positions"
+      />
+    </FormField>
+  )
+}
+
+function LimitedMultiSelectInlineExample() {
+  const [value, setValue] = useState<string[]>(['vice', 'second'])
+
+  return (
+    <FormSection
+      title="Inline checkboxes with a selection cap"
+      description="Same limit behavior as the popover: unselected options are disabled at the cap."
+    >
+      <ChoiceInput
+        options={multiSelectOptions.slice(0, 4)}
+        value={value}
+        onChange={(nextValue) => setValue(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])}
+        layout="inline"
+        maxSelectedItems={2}
+        multiSelectionIndicatorStyle="checkboxes"
+        ariaLabel="Preferred positions"
+        name="storybook-inline-capped-positions"
       />
     </FormSection>
   )
@@ -550,7 +787,7 @@ function LoadingAndEmptyExample() {
   )
 }
 
-export const Showcase: Story = {
+export const Showcase = {
   render: () => (
     <StoryShell>
       <div className="space-y-2">
@@ -572,7 +809,10 @@ export const Showcase: Story = {
         </StoryCard>
 
         <StoryCard title="Multi-select popover" description="Checkbox-style rows inside the popover.">
-          <MultiSelectPopoverExample />
+          <div className="space-y-6">
+            <MultiSelectPopoverExample />
+            <LimitedMultiSelectPopoverExample />
+          </div>
         </StoryCard>
 
         <StoryCard
@@ -593,6 +833,19 @@ export const Showcase: Story = {
           <div className="space-y-6">
             <InlineRadioExample />
             <BlockCheckboxExample />
+            <LimitedMultiSelectInlineExample />
+            <InlineOtherRadioExample />
+            <BlockCheckboxWithCustomExample />
+          </div>
+        </StoryCard>
+
+        <StoryCard
+          title="Multi-select combobox with custom values"
+          description="Typed values join the selection; removable via pills and list rows. The second field uses a selection cap."
+        >
+          <div className="space-y-6">
+            <MultiCustomComboboxExample />
+            <MultiCustomComboboxCappedExample />
           </div>
         </StoryCard>
 
@@ -602,9 +855,9 @@ export const Showcase: Story = {
       </div>
     </StoryShell>
   ),
-}
+} as unknown as Story
 
-export const SingleSelectPopover: Story = {
+export const SingleSelectPopover = {
   render: () => (
     <StoryShell>
       <StoryCard
@@ -615,22 +868,38 @@ export const SingleSelectPopover: Story = {
       </StoryCard>
     </StoryShell>
   ),
-}
+} as unknown as Story
 
-export const MultiSelectPopover: Story = {
+export const SingleSelectManyOptions = {
+  render: () => (
+    <StoryShell>
+      <StoryCard
+        title="Single-select with 100 options"
+        description="Stress test for long flat lists: open the popover, scroll, keyboard navigate, and select near the end of the list."
+      >
+        <SingleSelectManyOptionsExample />
+      </StoryCard>
+    </StoryShell>
+  ),
+} as unknown as Story
+
+export const MultiSelectPopover = {
   render: () => (
     <StoryShell>
       <StoryCard
         title="Multi-select popover"
-        description="Checkbox rows, custom actions, and range-selection support."
+        description="Checkbox rows, custom actions, range-selection support, and optional selection caps."
       >
-        <MultiSelectPopoverExample />
+        <div className="space-y-6">
+          <MultiSelectPopoverExample />
+          <LimitedMultiSelectPopoverExample />
+        </div>
       </StoryCard>
     </StoryShell>
   ),
-}
+} as unknown as Story
 
-export const MultiSelectPills: Story = {
+export const MultiSelectPills = {
   render: () => (
     <StoryShell>
       <StoryCard
@@ -644,9 +913,9 @@ export const MultiSelectPills: Story = {
       </StoryCard>
     </StoryShell>
   ),
-}
+} as unknown as Story
 
-export const Combobox: Story = {
+export const Combobox = {
   render: () => (
     <StoryShell>
       <StoryCard
@@ -657,9 +926,35 @@ export const Combobox: Story = {
       </StoryCard>
     </StoryShell>
   ),
-}
+} as unknown as Story
 
-export const InlineAndBlockGroups: Story = {
+export const MultiCustomCombobox = {
+  render: () => (
+    <StoryShell>
+      <StoryCard
+        title="Multi-select combobox with custom values"
+        description="Combine pills/checkbox popover with freeform tags via Enter or the Add action."
+      >
+        <MultiCustomComboboxExample />
+      </StoryCard>
+    </StoryShell>
+  ),
+} as unknown as Story
+
+export const MultiCustomComboboxCapped = {
+  render: () => (
+    <StoryShell>
+      <StoryCard
+        title="Multi-select combobox with a selection cap"
+        description="Filtering and custom tags like the unlimited combobox, with max selections enforced on list picks, Add, and Enter."
+      >
+        <MultiCustomComboboxCappedExample />
+      </StoryCard>
+    </StoryShell>
+  ),
+} as unknown as Story
+
+export const InlineAndBlockGroups = {
   render: () => (
     <StoryShell>
       <StoryCard
@@ -669,13 +964,16 @@ export const InlineAndBlockGroups: Story = {
         <div className="space-y-6">
           <InlineRadioExample />
           <BlockCheckboxExample />
+          <LimitedMultiSelectInlineExample />
+          <InlineOtherRadioExample />
+          <BlockCheckboxWithCustomExample />
         </div>
       </StoryCard>
     </StoryShell>
   ),
-}
+} as unknown as Story
 
-export const NestedOptionsAndActions: Story = {
+export const NestedOptionsAndActions = {
   render: () => (
     <StoryShell>
       <StoryCard
@@ -686,9 +984,9 @@ export const NestedOptionsAndActions: Story = {
       </StoryCard>
     </StoryShell>
   ),
-}
+} as unknown as Story
 
-export const LoadingAndEmptyStates: Story = {
+export const LoadingAndEmptyStates = {
   render: () => (
     <StoryShell>
       <StoryCard
@@ -699,4 +997,4 @@ export const LoadingAndEmptyStates: Story = {
       </StoryCard>
     </StoryShell>
   ),
-}
+} as unknown as Story
