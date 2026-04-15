@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, or, sql, asc, desc, isNull, isNotNull, inArray, gte, ne } from 'drizzle-orm';
+import { eq, and, sql, desc, isNull, inArray, ne } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member, SpareRequest } from '../types.js';
 import {
@@ -18,7 +18,7 @@ import {
 } from '../services/email.js';
 import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } from '../services/sms.js';
 import { buildJwtPayloadForMember, generateToken, generateEmailLinkToken } from '../utils/auth.js';
-import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
+import { getCurrentTimeAsync } from '../utils/time.js';
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
 import { processAllNotificationsForRequest } from '../services/notificationProcessor.js';
@@ -38,6 +38,18 @@ import {
   successResponseSchema,
 } from '../api/schemas.js';
 import type { ApiReply } from '../api/types.js';
+import {
+  getNotificationStatusForRequester,
+  getSpareStatusForViewer,
+  listAvailableSpareRequestsForMember,
+  listCcSpareRequestsForMember,
+  listFilledUpcomingSpareRequests,
+  listInvitationsForRequester,
+  listPastOwnSpareRequests,
+  listUpcomingOwnSpareRequests,
+  listUpcomingSparingAssignments,
+  SpareQueryError,
+} from '../domains/spares/queries/spareRequestQueries.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
@@ -213,79 +225,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const today = await getCurrentDateStringAsync();
-
-    const rowsRaw = await db
-      .select({
-        id: schema.spareRequests.id,
-        league_name: schema.leagues.name,
-        requester_name: schema.members.name,
-        requester_email: schema.members.email,
-        requester_phone: schema.members.phone,
-        requested_for_name: schema.spareRequests.requested_for_name,
-        game_date: schema.spareRequests.game_date,
-        game_time: schema.spareRequests.game_time,
-        position: schema.spareRequests.position,
-        message: schema.spareRequests.message,
-        request_type: schema.spareRequests.request_type,
-        status: schema.spareRequests.status,
-        filled_by_member_id: schema.spareRequests.filled_by_member_id,
-        filled_at: schema.spareRequests.filled_at,
-        created_at: schema.spareRequests.created_at,
-      })
-      .from(schema.spareRequestCcs)
-      .innerJoin(schema.spareRequests, eq(schema.spareRequestCcs.spare_request_id, schema.spareRequests.id))
-      .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
-      .where(
-        and(
-          eq(schema.spareRequestCcs.member_id, member.id),
-          gte(schema.spareRequests.game_date, today),
-          or(
-            isNull(schema.spareRequests.requested_for_member_id),
-            ne(schema.spareRequests.requested_for_member_id, member.id)
-          )!
-        )
-      )
-      .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
-
-    // Resolve filled-by names separately (avoids joining members twice)
-    const filledByIds = rowsRaw
-      .map((r) => r.filled_by_member_id)
-      .filter((id): id is number => id !== null);
-
-    const filledByMembers = filledByIds.length > 0
-      ? await db
-          .select({ id: schema.members.id, name: schema.members.name })
-          .from(schema.members)
-          .where(inArray(schema.members.id, filledByIds))
-      : [];
-
-    const filledByNameMap = new Map(filledByMembers.map((m) => [m.id, m.name]));
-
-    return rowsRaw.map((req) => ({
-      id: req.id,
-      requesterName: req.requester_name,
-      requesterEmail: req.requester_email,
-      requesterPhone: req.requester_phone,
-      requestedForName: req.requested_for_name,
-      gameDate: req.game_date,
-      gameTime: req.game_time,
-      leagueName: req.league_name || null,
-      position: req.position,
-      message: req.message,
-      requestType: req.request_type,
-      status: req.status,
-      filledByName: req.filled_by_member_id ? filledByNameMap.get(req.filled_by_member_id) || null : null,
-      filledAt: req.filled_at,
-      createdAt: req.created_at,
-    }));
+      return listCcSpareRequestsForMember(member.id);
     }
   );
 
@@ -301,129 +246,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const today = await getCurrentDateStringAsync();
-    
-    // Check if member can skip
-    const memberAvailability = await db
-      .select({ can_skip: schema.memberAvailability.can_skip })
-      .from(schema.memberAvailability)
-      .where(eq(schema.memberAvailability.member_id, member.id))
-      .limit(1);
-    const canSkip = memberAvailability[0]?.can_skip === 1;
-    
-    // Get all open public spare requests
-    const publicConditions = [
-      eq(schema.spareRequests.status, 'open'),
-      eq(schema.spareRequests.request_type, 'public'),
-      gte(schema.spareRequests.game_date, today),
-      ne(schema.spareRequests.requester_id, member.id),
-      or(
-        isNull(schema.spareRequests.requested_for_member_id),
-        ne(schema.spareRequests.requested_for_member_id, member.id)
-      )!,
-    ];
-    
-    // Filter out skip requests if member can't skip
-    if (!canSkip) {
-      publicConditions.push(
-        or(
-          isNull(schema.spareRequests.position),
-          ne(schema.spareRequests.position, 'skip')
-        )!
-      );
-    }
-    
-    const publicRequests = await db
-      .select({
-        id: schema.spareRequests.id,
-        league_name: schema.leagues.name,
-        requester_name: schema.members.name,
-        requester_email: schema.members.email,
-        requester_phone: schema.members.phone,
-        requested_for_name: schema.spareRequests.requested_for_name,
-        game_date: schema.spareRequests.game_date,
-        game_time: schema.spareRequests.game_time,
-        position: schema.spareRequests.position,
-        message: schema.spareRequests.message,
-        request_type: schema.spareRequests.request_type,
-        created_at: schema.spareRequests.created_at,
-      })
-      .from(schema.spareRequests)
-      .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
-      .where(and(...publicConditions))
-      .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
-
-    // Get private requests the member was invited to
-    const privateConditions = [
-      eq(schema.spareRequests.status, 'open'),
-      eq(schema.spareRequests.request_type, 'private'),
-      eq(schema.spareRequestInvitations.member_id, member.id),
-      gte(schema.spareRequests.game_date, today),
-      ne(schema.spareRequests.requester_id, member.id),
-      or(
-        isNull(schema.spareRequests.requested_for_member_id),
-        ne(schema.spareRequests.requested_for_member_id, member.id)
-      )!,
-    ];
-    
-    // Filter out skip requests if member can't skip
-    if (!canSkip) {
-      privateConditions.push(
-        or(
-          isNull(schema.spareRequests.position),
-          ne(schema.spareRequests.position, 'skip')
-        )!
-      );
-    }
-    
-    const privateRequests = await db
-      .select({
-        id: schema.spareRequests.id,
-        league_name: schema.leagues.name,
-        requester_name: schema.members.name,
-        requester_email: schema.members.email,
-        requester_phone: schema.members.phone,
-        requested_for_name: schema.spareRequests.requested_for_name,
-        game_date: schema.spareRequests.game_date,
-        game_time: schema.spareRequests.game_time,
-        position: schema.spareRequests.position,
-        message: schema.spareRequests.message,
-        request_type: schema.spareRequests.request_type,
-        created_at: schema.spareRequests.created_at,
-        invite_declined_at: schema.spareRequestInvitations.declined_at,
-      })
-      .from(schema.spareRequests)
-      .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .innerJoin(schema.spareRequestInvitations, eq(schema.spareRequests.id, schema.spareRequestInvitations.spare_request_id))
-      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
-      .where(and(...privateConditions))
-      .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
-
-    const allRequests = [...publicRequests, ...privateRequests];
-
-    return allRequests.map((req) => {
-      const inviteDeclinedAt = 'invite_declined_at' in req ? req.invite_declined_at : null;
-      return {
-      id: req.id,
-      requesterName: req.requester_name,
-      requestedForName: req.requested_for_name,
-      gameDate: req.game_date,
-      gameTime: req.game_time,
-      leagueName: req.league_name || null,
-      position: req.position,
-      message: req.message,
-      requestType: req.request_type,
-      inviteStatus: req.request_type === 'private' ? (inviteDeclinedAt ? 'declined' : 'pending') : undefined,
-      createdAt: req.created_at,
-      };
-    });
+      return listAvailableSpareRequestsForMember(member);
     }
   );
 
@@ -590,46 +418,19 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+      const member = request.member;
+      if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
-    const { id } = request.params as { id: string };
-    const requestId = parseInt(id, 10);
-    const { db, schema } = getDrizzleDb();
-
-    const spareRequests = await db
-      .select()
-      .from(schema.spareRequests)
-      .where(eq(schema.spareRequests.id, requestId))
-      .limit(1);
-    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
-    if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
-    if (spareRequest.requester_id !== member.id) return reply.code(403).send({ error: 'Forbidden' });
-    if (spareRequest.request_type !== 'private') return reply.code(400).send({ error: 'Not a private request' });
-
-    const rows = await db
-      .select({
-        member_id: schema.members.id,
-        name: schema.members.name,
-        email: schema.members.email,
-        declined_at: schema.spareRequestInvitations.declined_at,
-        decline_comment: schema.spareRequestInvitations.decline_comment,
-        created_at: schema.spareRequestInvitations.created_at,
-      })
-      .from(schema.spareRequestInvitations)
-      .innerJoin(schema.members, eq(schema.spareRequestInvitations.member_id, schema.members.id))
-      .where(eq(schema.spareRequestInvitations.spare_request_id, requestId))
-      .orderBy(asc(schema.members.name));
-
-    return rows.map((r) => ({
-      memberId: r.member_id,
-      name: r.name,
-      email: r.email,
-      status: r.declined_at ? 'declined' : 'pending',
-      declinedAt: r.declined_at || null,
-      declineComment: r.decline_comment || null,
-      invitedAt: r.created_at,
-    }));
+      const { id } = request.params as { id: string };
+      const requestId = parseInt(id, 10);
+      try {
+        return await listInvitationsForRequester(requestId, member.id);
+      } catch (error) {
+        if (error instanceof SpareQueryError) {
+          return reply.code(error.statusCode as 400 | 404).send({ error: error.message });
+        }
+        throw error;
+      }
     }
   );
 
@@ -646,67 +447,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+      const member = request.member;
+      if (!member) return reply.code(401).send({ error: 'Unauthorized' });
 
-    const { id } = request.params as { id: string };
-    const requestId = parseInt(id, 10);
-    if (!Number.isFinite(requestId)) {
-      return reply.code(400).send({ error: 'Invalid request id' });
-    }
+      const { id } = request.params as { id: string };
+      const requestId = parseInt(id, 10);
+      if (!Number.isFinite(requestId)) {
+        return reply.code(400).send({ error: 'Invalid request id' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-
-    const rows = await db
-      .select({
-        id: schema.spareRequests.id,
-        requester_id: schema.spareRequests.requester_id,
-        request_type: schema.spareRequests.request_type,
-        status: schema.spareRequests.status,
-      })
-      .from(schema.spareRequests)
-      .where(eq(schema.spareRequests.id, requestId))
-      .limit(1);
-
-    const spareRequest = rows[0];
-    if (!spareRequest) return reply.code(404).send({ error: 'Spare request not found' });
-
-    // Public requests: any authenticated member can check status.
-    if (spareRequest.request_type === 'public') {
-      return { id: spareRequest.id, status: spareRequest.status };
-    }
-
-    // Private requests: only requester, invited members, or CC members can check status.
-    if (spareRequest.requester_id === member.id) {
-      return { id: spareRequest.id, status: spareRequest.status };
-    }
-
-    const invite = await db
-      .select({ id: schema.spareRequestInvitations.id })
-      .from(schema.spareRequestInvitations)
-      .where(
-        and(
-          eq(schema.spareRequestInvitations.spare_request_id, requestId),
-          eq(schema.spareRequestInvitations.member_id, member.id)
-        )
-      )
-      .limit(1);
-    if (invite.length > 0) {
-      return { id: spareRequest.id, status: spareRequest.status };
-    }
-
-    const cc = await db
-      .select({ id: schema.spareRequestCcs.id })
-      .from(schema.spareRequestCcs)
-      .where(
-        and(eq(schema.spareRequestCcs.spare_request_id, requestId), eq(schema.spareRequestCcs.member_id, member.id))
-      )
-      .limit(1);
-    if (cc.length > 0) {
-      return { id: spareRequest.id, status: spareRequest.status };
-    }
-
-    return reply.code(403).send({ error: 'Forbidden' });
+      try {
+        return await getSpareStatusForViewer(requestId, member.id);
+      } catch (error) {
+        if (error instanceof SpareQueryError) {
+          return reply.code(error.statusCode as 403 | 404).send({ error: error.message });
+        }
+        throw error;
+      }
     }
   );
 
@@ -1100,143 +857,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-
-    const { db, schema } = getDrizzleDb();
-    const today = await getCurrentDateStringAsync();
-    
-    const requests = await db
-      .select({
-        id: schema.spareRequests.id,
-        league_name: schema.leagues.name,
-        requester_id: schema.spareRequests.requester_id,
-        requested_for_name: schema.spareRequests.requested_for_name,
-        requested_for_member_id: schema.spareRequests.requested_for_member_id,
-        game_date: schema.spareRequests.game_date,
-        game_time: schema.spareRequests.game_time,
-        position: schema.spareRequests.position,
-        message: schema.spareRequests.message,
-        request_type: schema.spareRequests.request_type,
-        status: schema.spareRequests.status,
-        filled_by_name: schema.members.name,
-        filled_by_email: schema.members.email,
-        filled_by_phone: schema.members.phone,
-        filled_at: schema.spareRequests.filled_at,
-        cancelled_by_member_id: schema.spareRequests.cancelled_by_member_id,
-        notifications_sent_at: schema.spareRequests.notifications_sent_at,
-        had_cancellation: schema.spareRequests.had_cancellation,
-        created_at: schema.spareRequests.created_at,
-        sparer_comment: schema.spareResponses.comment,
-      })
-      .from(schema.spareRequests)
-      .leftJoin(schema.members, eq(schema.spareRequests.filled_by_member_id, schema.members.id))
-      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
-      .leftJoin(
-        schema.spareResponses,
-        eq(schema.spareRequests.id, schema.spareResponses.spare_request_id)
-      )
-      .where(
-        and(
-          or(
-            eq(schema.spareRequests.requester_id, member.id),
-            eq(schema.spareRequests.requested_for_member_id, member.id)
-          )!,
-          gte(schema.spareRequests.game_date, today)
-        )
-      )
-      .orderBy(
-        sql`CASE 
-          WHEN ${schema.spareRequests.status} = 'open' THEN 1
-          WHEN ${schema.spareRequests.status} = 'filled' THEN 2
-          WHEN ${schema.spareRequests.status} = 'cancelled' THEN 3
-          ELSE 4
-        END`,
-        asc(schema.spareRequests.game_date),
-        asc(schema.spareRequests.game_time)
-      );
-
-    const privateRequestIds = requests
-      .filter((r) => r.request_type === 'private')
-      .map((r) => r.id);
-
-    const inviteMap = new Map<number, { name: string; status: 'pending' | 'declined' }[]>();
-    if (privateRequestIds.length > 0) {
-      const inviteRows = await db
-        .select({
-          request_id: schema.spareRequestInvitations.spare_request_id,
-          name: schema.members.name,
-          declined_at: schema.spareRequestInvitations.declined_at,
-        })
-        .from(schema.spareRequestInvitations)
-        .innerJoin(schema.members, eq(schema.spareRequestInvitations.member_id, schema.members.id))
-        .where(inArray(schema.spareRequestInvitations.spare_request_id, privateRequestIds))
-        .orderBy(asc(schema.members.name));
-
-      for (const row of inviteRows) {
-        const reqId = Number(row.request_id);
-        const list = inviteMap.get(reqId) || [];
-        list.push({ name: String(row.name), status: row.declined_at ? 'declined' : 'pending' });
-        inviteMap.set(reqId, list);
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
       }
-    }
 
-    const requesterIds = Array.from(new Set(requests.map((req) => req.requester_id)));
-    const requesterRows = requesterIds.length > 0
-      ? await db
-          .select({ id: schema.members.id, name: schema.members.name })
-          .from(schema.members)
-          .where(inArray(schema.members.id, requesterIds))
-      : [];
-    const requesterNameMap = new Map(requesterRows.map((row) => [row.id, row.name]));
-
-    const cancellerIds = Array.from(
-      new Set(requests.map((req) => req.cancelled_by_member_id).filter(Boolean))
-    ) as number[];
-    const cancellerRows = cancellerIds.length > 0
-      ? await db
-          .select({ id: schema.members.id, name: schema.members.name })
-          .from(schema.members)
-          .where(inArray(schema.members.id, cancellerIds))
-      : [];
-    const cancellerNameMap = new Map(cancellerRows.map((row) => [row.id, row.name]));
-
-    return requests.map((req) => {
-      const invites = req.request_type === 'private' ? inviteMap.get(req.id) || [] : undefined;
-      const declinedCount = invites ? invites.filter((i) => i.status === 'declined').length : 0;
-      const pendingCount = invites ? invites.filter((i) => i.status === 'pending').length : 0;
-      return {
-        id: req.id,
-        requestedForName: req.requested_for_name,
-        requestedForMemberId: req.requested_for_member_id,
-        gameDate: req.game_date,
-        gameTime: req.game_time,
-        leagueName: req.league_name || null,
-        position: req.position,
-        message: req.message,
-        requestType: req.request_type,
-        status: req.status,
-        requesterId: req.requester_id,
-        requesterName: requesterNameMap.get(req.requester_id) || null,
-        cancelledByName: req.cancelled_by_member_id
-          ? cancellerNameMap.get(req.cancelled_by_member_id) || null
-          : null,
-        filledByName: req.filled_by_name,
-        filledByEmail: req.filled_by_email,
-        filledByPhone: req.filled_by_phone,
-        filledAt: req.filled_at,
-        sparerComment: req.sparer_comment,
-        notificationsSentAt: req.notifications_sent_at,
-        hadCancellation: req.had_cancellation === 1,
-        invites,
-        inviteCounts: invites
-          ? { total: invites.length, pending: pendingCount, declined: declinedCount }
-          : undefined,
-        createdAt: req.created_at,
-      };
-    });
+      return listUpcomingOwnSpareRequests(member.id);
     }
   );
 
@@ -1252,107 +878,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const today = await getCurrentDateStringAsync();
-    const now = await getCurrentTimeAsync();
-    const nowTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    const requests = await db
-      .select({
-        id: schema.spareRequests.id,
-        requester_id: schema.spareRequests.requester_id,
-        requested_for_name: schema.spareRequests.requested_for_name,
-        requested_for_member_id: schema.spareRequests.requested_for_member_id,
-        game_date: schema.spareRequests.game_date,
-        game_time: schema.spareRequests.game_time,
-        position: schema.spareRequests.position,
-        message: schema.spareRequests.message,
-        request_type: schema.spareRequests.request_type,
-        status: schema.spareRequests.status,
-        filled_by_name: schema.members.name,
-        filled_by_email: schema.members.email,
-        filled_by_phone: schema.members.phone,
-        filled_at: schema.spareRequests.filled_at,
-        cancelled_by_member_id: schema.spareRequests.cancelled_by_member_id,
-        notifications_sent_at: schema.spareRequests.notifications_sent_at,
-        had_cancellation: schema.spareRequests.had_cancellation,
-        created_at: schema.spareRequests.created_at,
-        sparer_comment: schema.spareResponses.comment,
-      })
-      .from(schema.spareRequests)
-      .leftJoin(schema.members, eq(schema.spareRequests.filled_by_member_id, schema.members.id))
-      .leftJoin(
-        schema.spareResponses,
-        eq(schema.spareRequests.id, schema.spareResponses.spare_request_id)
-      )
-      .where(
-        and(
-          or(
-            eq(schema.spareRequests.requester_id, member.id),
-            eq(schema.spareRequests.requested_for_member_id, member.id)
-          )!,
-          or(
-            sql`${schema.spareRequests.game_date} < ${today}`,
-            and(
-              eq(schema.spareRequests.game_date, today),
-              sql`${schema.spareRequests.game_time} < ${nowTime}`
-            )
-          )
-        )
-      )
-      .orderBy(desc(schema.spareRequests.game_date), desc(schema.spareRequests.game_time));
-
-    const requesterIds = Array.from(new Set(requests.map((req) => req.requester_id)));
-    const requesterRows = requesterIds.length > 0
-      ? await db
-          .select({ id: schema.members.id, name: schema.members.name })
-          .from(schema.members)
-          .where(inArray(schema.members.id, requesterIds))
-      : [];
-    const requesterNameMap = new Map(requesterRows.map((row) => [row.id, row.name]));
-
-    const cancellerIds = Array.from(
-      new Set(requests.map((req) => req.cancelled_by_member_id).filter(Boolean))
-    ) as number[];
-    const cancellerRows = cancellerIds.length > 0
-      ? await db
-          .select({ id: schema.members.id, name: schema.members.name })
-          .from(schema.members)
-          .where(inArray(schema.members.id, cancellerIds))
-      : [];
-    const cancellerNameMap = new Map(cancellerRows.map((row) => [row.id, row.name]));
-
-    return requests.map((req) => {
-      return {
-        id: req.id,
-        requestedForName: req.requested_for_name,
-        requestedForMemberId: req.requested_for_member_id,
-        gameDate: req.game_date,
-        gameTime: req.game_time,
-        position: req.position,
-        message: req.message,
-        requestType: req.request_type,
-        status: req.status,
-        requesterId: req.requester_id,
-        requesterName: requesterNameMap.get(req.requester_id) || null,
-        cancelledByName: req.cancelled_by_member_id
-          ? cancellerNameMap.get(req.cancelled_by_member_id) || null
-          : null,
-        filledByName: req.filled_by_name,
-        filledByEmail: req.filled_by_email,
-        filledByPhone: req.filled_by_phone,
-        filledAt: req.filled_at,
-        sparerComment: req.sparer_comment,
-        notificationsSentAt: req.notifications_sent_at,
-        hadCancellation: req.had_cancellation === 1,
-        createdAt: req.created_at,
-      };
-    });
+      return listPastOwnSpareRequests(member.id);
     }
   );
 
@@ -1368,55 +899,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const today = await getCurrentDateStringAsync();
-    
-    const requests = await db
-      .select({
-        id: schema.spareRequests.id,
-        league_name: schema.leagues.name,
-        requester_name: schema.members.name,
-        requester_email: schema.members.email,
-        requester_phone: schema.members.phone,
-        requested_for_name: schema.spareRequests.requested_for_name,
-        game_date: schema.spareRequests.game_date,
-        game_time: schema.spareRequests.game_time,
-        position: schema.spareRequests.position,
-        message: schema.spareRequests.message,
-        request_type: schema.spareRequests.request_type,
-        created_at: schema.spareRequests.created_at,
-      })
-      .from(schema.spareRequests)
-      .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
-      .where(
-        and(
-          eq(schema.spareRequests.filled_by_member_id, member.id),
-          eq(schema.spareRequests.status, 'filled'),
-          gte(schema.spareRequests.game_date, today)
-        )
-      )
-      .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
-
-    return requests.map((req) => ({
-      id: req.id,
-      requesterName: req.requester_name,
-      requesterEmail: req.requester_email,
-      requesterPhone: req.requester_phone,
-      requestedForName: req.requested_for_name,
-      gameDate: req.game_date,
-      gameTime: req.game_time,
-      leagueName: req.league_name || null,
-      position: req.position,
-      message: req.message,
-      requestType: req.request_type,
-      createdAt: req.created_at,
-    }));
+      return listUpcomingSparingAssignments(member.id);
     }
   );
 
@@ -1432,90 +920,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const today = await getCurrentDateStringAsync();
-    
-    // Get filled requests that are upcoming, excluding ones the user filled
-    // Use a subquery approach since we need to join members twice
-    const requestsRaw = await db
-      .select({
-        id: schema.spareRequests.id,
-        league_name: schema.leagues.name,
-        requester_name: schema.members.name,
-        filled_by_member_id: schema.spareRequests.filled_by_member_id,
-        requested_for_name: schema.spareRequests.requested_for_name,
-        game_date: schema.spareRequests.game_date,
-        game_time: schema.spareRequests.game_time,
-        position: schema.spareRequests.position,
-        message: schema.spareRequests.message,
-        request_type: schema.spareRequests.request_type,
-        filled_at: schema.spareRequests.filled_at,
-        created_at: schema.spareRequests.created_at,
-      })
-      .from(schema.spareRequests)
-      .innerJoin(schema.members, eq(schema.spareRequests.requester_id, schema.members.id))
-      .leftJoin(schema.leagues, eq(schema.spareRequests.league_id, schema.leagues.id))
-      .where(
-        and(
-          eq(schema.spareRequests.status, 'filled'),
-          eq(schema.spareRequests.request_type, 'public'),
-          gte(schema.spareRequests.game_date, today),
-          // Exclude any requests the user is involved with (requester or sparer)
-          ne(schema.spareRequests.requester_id, member.id),
-          ne(schema.spareRequests.filled_by_member_id, member.id),
-          or(
-            isNull(schema.spareRequests.requested_for_member_id),
-            ne(schema.spareRequests.requested_for_member_id, member.id)
-          )!,
-          // Also exclude private requests where the user was invited
-          sql`NOT EXISTS (
-            SELECT 1
-            FROM ${schema.spareRequestInvitations}
-            WHERE ${schema.spareRequestInvitations.spare_request_id} = ${schema.spareRequests.id}
-              AND ${schema.spareRequestInvitations.member_id} = ${member.id}
-          )`
-        )
-      )
-      .orderBy(asc(schema.spareRequests.game_date), asc(schema.spareRequests.game_time));
-    
-    // Get filled_by names separately
-    const filledByIds = requestsRaw
-      .map((r) => r.filled_by_member_id)
-      .filter((id): id is number => id !== null);
-    
-    const filledByMembers = filledByIds.length > 0
-      ? await db
-          .select({ id: schema.members.id, name: schema.members.name })
-          .from(schema.members)
-          .where(inArray(schema.members.id, filledByIds))
-      : [];
-    
-    const filledByNameMap = new Map(filledByMembers.map((m) => [m.id, m.name]));
-    
-    const requests = requestsRaw.map((req) => ({
-      ...req,
-      filled_by_name: req.filled_by_member_id ? filledByNameMap.get(req.filled_by_member_id) || null : null,
-    }));
-
-    return requests.map((req) => ({
-      id: req.id,
-      requesterName: req.requester_name,
-      requestedForName: req.requested_for_name,
-      gameDate: req.game_date,
-      gameTime: req.game_time,
-      leagueName: req.league_name || null,
-      position: req.position,
-      message: req.message,
-      requestType: req.request_type,
-      filledByName: req.filled_by_name,
-      filledAt: req.filled_at,
-      createdAt: req.created_at,
-    }));
+      return listFilledUpcomingSpareRequests(member.id);
     }
   );
 
@@ -2989,131 +2399,21 @@ export async function spareRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-
-    const { id } = request.params as { id: string };
-    const requestId = parseInt(id, 10);
-    const { db, schema } = getDrizzleDb();
-
-    // Verify the request belongs to the member
-    const spareRequests = await db
-      .select()
-      .from(schema.spareRequests)
-      .where(
-        and(
-          eq(schema.spareRequests.id, requestId),
-          eq(schema.spareRequests.requester_id, member.id)
-        )
-      )
-      .limit(1);
-    
-    const spareRequest = spareRequests[0] as SpareRequestDb | undefined;
-
-    if (!spareRequest) {
-      return reply.code(404).send({ error: 'Spare request not found' });
-    }
-
-    // Get notification status
-    const totalInQueueResult = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(schema.spareRequestNotificationQueue)
-      .where(eq(schema.spareRequestNotificationQueue.spare_request_id, requestId));
-    
-    const totalInQueue = { count: Number(totalInQueueResult[0]?.count || 0) };
-
-    const notifiedCountResult = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(schema.spareRequestNotificationQueue)
-      .where(
-        and(
-          eq(schema.spareRequestNotificationQueue.spare_request_id, requestId),
-          isNotNull(schema.spareRequestNotificationQueue.notified_at)
-        )
-      );
-    
-    const notifiedCount = { count: Number(notifiedCountResult[0]?.count || 0) };
-
-    // If notification_status is 'completed' but there's no queue, it means notifications were sent immediately
-    // In this case, we need to estimate how many members were notified based on matching availability
-    let totalMembers = totalInQueue.count;
-    let notifiedMembers = notifiedCount.count;
-    
-    if (spareRequest.notification_status === 'completed' && totalInQueue.count === 0) {
-      if (spareRequest.request_type === 'private') {
-        // For private requests, count the invited members
-        const invitationsResult = await db
-          .select({ count: sql<number>`COUNT(*)` })
-          .from(schema.spareRequestInvitations)
-          .where(eq(schema.spareRequestInvitations.spare_request_id, requestId));
-        
-        const invitations = { count: Number(invitationsResult[0]?.count || 0) };
-        
-        if (invitations.count > 0) {
-          totalMembers = invitations.count;
-          notifiedMembers = invitations.count; // All invited members were notified immediately
-        }
-      } else if (spareRequest.request_type === 'public') {
-        // For immediate notifications, estimate based on matching members
-        // This is an approximation - we can't know the exact count without storing it
-        // But we can check how many members would have matched
-        const [year, month, day] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
-        const gameDateObj = new Date(year, month - 1, day);
-        const dayOfWeek = gameDateObj.getDay();
-
-        const matchingLeagues = await db
-          .select()
-          .from(schema.leagues)
-          .where(
-            and(
-              eq(schema.leagues.day_of_week, dayOfWeek),
-              sql`date(${schema.leagues.start_date}) <= date(${normalizeDateString(spareRequest.game_date)})`,
-              sql`date(${schema.leagues.end_date}) >= date(${normalizeDateString(spareRequest.game_date)})`
-            )
-        );
-
-        if (matchingLeagues.length > 0) {
-          const leagueIds = matchingLeagues.map((l) => l.id);
-          
-          let conditions = [
-            inArray(schema.memberAvailability.league_id, leagueIds),
-            eq(schema.memberAvailability.available, 1),
-            eq(schema.members.email_subscribed, 1),
-            eq(schema.members.social_member, 0),
-            ne(schema.members.id, spareRequest.requester_id),
-          ];
-          
-          if (spareRequest.position === 'skip') {
-            conditions.push(eq(schema.memberAvailability.can_skip, 1));
-          }
-
-          const matchingCountResult = await db
-            .select({ count: sql<number>`COUNT(DISTINCT ${schema.members.id})` })
-            .from(schema.members)
-            .innerJoin(
-              schema.memberAvailability,
-              eq(schema.members.id, schema.memberAvailability.member_id)
-            )
-            .where(and(...conditions));
-          
-          const matchingCount = { count: Number(matchingCountResult[0]?.count || 0) };
-          if (matchingCount.count > 0) {
-            totalMembers = matchingCount.count;
-            notifiedMembers = matchingCount.count; // All were notified immediately
-          }
-        }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
       }
-    }
 
-    return {
-      notificationStatus: spareRequest.notification_status || null,
-      totalMembers: totalMembers,
-      notifiedMembers: notifiedMembers,
-      nextNotificationAt: spareRequest.next_notification_at || null,
-      notificationPaused: spareRequest.notification_paused === 1,
-    };
+      const { id } = request.params as { id: string };
+      const requestId = parseInt(id, 10);
+      try {
+        return await getNotificationStatusForRequester(requestId, member.id);
+      } catch (error) {
+        if (error instanceof SpareQueryError) {
+          return reply.code(error.statusCode as 404).send({ error: error.message });
+        }
+        throw error;
+      }
     }
   );
 
