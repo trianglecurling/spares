@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { eq, and, sql, desc, isNotNull } from 'drizzle-orm';
+import { eq, and, sql, desc, isNotNull, notExists } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
 import { publicFileUrl, sanitizeFilename, shouldUseInlineContentDisposition } from '../utils/managedFiles.js';
@@ -8,6 +8,7 @@ import { getPublicCalendarBundle, getUpcomingBonspiels } from '../domains/calend
 import {
   getMenuTree,
   getPublicArticleBySlug,
+  getPublicArticleBodyByIdForPublishedPublicEvent,
   getPublicBootstrap,
   getPublicHomeData,
   getPublicSiteConfig,
@@ -159,6 +160,19 @@ export async function publicRoutes(fastify: FastifyInstance) {
     return listPublicArticles(featuredParam === 'true');
   });
 
+  // GET /public/articles/by-id/:id — event detail body (linked published public event only)
+  fastify.get<{ Params: { id: string } }>('/public/articles/by-id/:id', async (request, reply) => {
+    const id = Number.parseInt(request.params.id, 10);
+    if (!Number.isFinite(id)) {
+      return reply.code(400).send({ error: 'Invalid id' });
+    }
+    const article = await getPublicArticleBodyByIdForPublishedPublicEvent(id);
+    if (!article) {
+      return reply.code(404).send({ error: 'Article not found' });
+    }
+    return article;
+  });
+
   // GET /public/articles/:slug - Single article
   fastify.get<{ Params: { slug: string } }>('/public/articles/:slug', async (request, reply) => {
     const article = await getPublicArticleBySlug(request.params.slug);
@@ -176,6 +190,12 @@ export async function publicRoutes(fastify: FastifyInstance) {
   // GET /sitemap.xml - Sitemap for search engines
   fastify.get('/sitemap.xml', async (_request, reply) => {
     const now = new Date().toISOString();
+    const notEventBodyArticle = notExists(
+      db
+        .select({ one: sql`1` })
+        .from(schema.events)
+        .where(eq(schema.events.article_id, schema.articles.id)),
+    );
     const articleRows = await db
       .select({
         slug: schema.articles.slug,
@@ -186,7 +206,8 @@ export async function publicRoutes(fastify: FastifyInstance) {
       .where(
         and(
           isNotNull(schema.articles.published_at),
-          sql`${schema.articles.published_at} <= ${now}`
+          sql`${schema.articles.published_at} <= ${now}`,
+          notEventBodyArticle,
         )
       )
       .orderBy(desc(schema.articles.published_at))

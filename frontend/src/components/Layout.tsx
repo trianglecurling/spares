@@ -70,6 +70,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const isCalendarActive = isNavLinkActive('/calendar') || isNavLinkActive('/book-ice');
   const isAdminActive =
     isNavLinkActive('/admin/members') ||
+    isNavLinkActive('/admin/waivers') ||
     isNavLinkActive('/admin/sheets') ||
     isNavLinkActive('/admin/governance') ||
     isNavLinkActive('/admin/sponsorship') ||
@@ -87,8 +88,13 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const canManageEvents = Boolean(member && memberHasScope(member, 'events.manage'));
   const canReadPayments = Boolean(member && memberHasScope(member, 'payments.read'));
   const canManageServerConfig = Boolean(member?.isServerAdmin);
+  const canManageWaivers = Boolean(
+    member &&
+      (memberHasScope(member, 'members.manage') || memberHasScope(member, 'events.manage'))
+  );
   const adminLinks = [
     ...(canManageMembers ? [{ to: '/admin/members', label: 'Manage members' }] : []),
+    ...(canManageWaivers ? [{ to: '/admin/waivers', label: 'Manage waivers' }] : []),
     ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Manage sheets' }] : []),
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),

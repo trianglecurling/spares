@@ -1379,6 +1379,25 @@
         }
       }
     },
+    "/public/articles/by-id/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/articles/{slug}": {
       "get": {
         "parameters": [
@@ -1531,6 +1550,28 @@
       }
     },
     "/public/events/{slug}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/events/{slug}/tournament-teams": {
       "get": {
         "tags": [
           "events"
@@ -11306,6 +11347,15 @@
         }
       }
     },
+    "/content/permalinks/suggest-label": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/content/permalinks/{id}": {
       "patch": {
         "parameters": [
@@ -15365,6 +15415,106 @@
         }
       }
     },
+    "/events/{id}/tournament-teams": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/events/{id}/tournament-teams/{teamId}": {
+      "patch": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "teamId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "teamId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/events/by-slug/{slug}": {
       "get": {
         "tags": [
@@ -15715,6 +15865,217 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waivers/admin/bulk-lookup": {
+      "post": {
+        "tags": [
+          "waivers"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "rawList",
+                  "validFrom"
+                ],
+                "properties": {
+                  "rawList": {
+                    "type": "string"
+                  },
+                  "validFrom": {
+                    "type": "string"
+                  },
+                  "templateId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "validFrom",
+                    "timeZone",
+                    "startDateUnix",
+                    "rows"
+                  ],
+                  "properties": {
+                    "validFrom": {
+                      "type": "string"
+                    },
+                    "timeZone": {
+                      "type": "string"
+                    },
+                    "startDateUnix": {
+                      "type": "number"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "lineIndex",
+                          "input",
+                          "searchMode",
+                          "error",
+                          "candidates"
+                        ],
+                        "properties": {
+                          "lineIndex": {
+                            "type": "number"
+                          },
+                          "searchMode": {
+                            "type": "string",
+                            "enum": [
+                              "last_name",
+                              "skipped"
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "input": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "rawLine",
+                              "firstName",
+                              "lastName",
+                              "email"
+                            ],
+                            "properties": {
+                              "rawLine": {
+                                "type": "string"
+                              },
+                              "firstName": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "lastName": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "email": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            }
+                          },
+                          "candidates": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": true,
+                              "required": [
+                                "waiverId",
+                                "templateId",
+                                "templateHeader",
+                                "templateUrl",
+                                "signedDate",
+                                "displayName",
+                                "email",
+                                "isMinor",
+                                "minorAge",
+                                "firstNameMatchScore",
+                                "fetchError"
+                              ],
+                              "properties": {
+                                "waiverId": {
+                                  "type": "string"
+                                },
+                                "templateId": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "templateHeader": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "templateUrl": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "signedDate": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "displayName": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "email": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "isMinor": {
+                                  "type": [
+                                    "null",
+                                    "boolean"
+                                  ]
+                                },
+                                "minorAge": {
+                                  "type": [
+                                    "null",
+                                    "number"
+                                  ]
+                                },
+                                "firstNameMatchScore": {
+                                  "type": "number"
+                                },
+                                "fetchError": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "detail": {}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

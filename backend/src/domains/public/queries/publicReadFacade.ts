@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { getUpcomingBonspiels } from '../../calendar/queries/calendarReadFacade.js';
 import { publicFileUrl } from '../../../utils/managedFiles.js';
@@ -171,7 +171,24 @@ export async function getPublicHomeData() {
   const now = new Date().toISOString();
   const todayDate = now.split('T')[0];
 
-  const [siteConfig, featuredArticles, showcaseRows, sponsorshipRows, upcomingBonspiels] = await Promise.all([
+  const featuredPublishedNormally = and(
+    isNotNull(schema.articles.published_at),
+    sql`${schema.articles.published_at} <= ${now}`,
+  );
+  const featuredViaPublishedPublicEvent = exists(
+    db
+      .select({ one: sql`1` })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.article_id, schema.articles.id),
+          eq(schema.events.published, 1),
+          eq(schema.events.visibility, 'public'),
+        ),
+      ),
+  );
+
+  const [siteConfig, featuredArticleRows, showcaseRows, sponsorshipRows, upcomingBonspiels] = await Promise.all([
     getPublicSiteConfig(),
     db
       .select({
@@ -186,11 +203,13 @@ export async function getPublicHomeData() {
       .where(
         and(
           eq(schema.articles.featured, 1),
-          isNotNull(schema.articles.published_at),
-          sql`${schema.articles.published_at} <= ${now}`,
+          or(featuredPublishedNormally, featuredViaPublishedPublicEvent),
         ),
       )
-      .orderBy(asc(schema.articles.featured_sort_order), desc(schema.articles.published_at))
+      .orderBy(
+        asc(schema.articles.featured_sort_order),
+        desc(sql`coalesce(${schema.articles.published_at}, ${schema.articles.updated_at})`),
+      )
       .limit(6),
     db
       .select()
@@ -223,9 +242,27 @@ export async function getPublicHomeData() {
     getUpcomingBonspiels(),
   ]);
 
+  const featuredIds = featuredArticleRows.map((a) => a.id);
+  const eventSlugByArticleId = new Map<number, string>();
+  if (featuredIds.length > 0) {
+    const eventLinkRows = await db
+      .select({
+        articleId: schema.events.article_id,
+        slug: schema.events.slug,
+      })
+      .from(schema.events)
+      .where(and(isNotNull(schema.events.article_id), inArray(schema.events.article_id, featuredIds)));
+
+    for (const row of eventLinkRows) {
+      if (row.articleId != null && !eventSlugByArticleId.has(row.articleId)) {
+        eventSlugByArticleId.set(row.articleId, row.slug);
+      }
+    }
+  }
+
   return {
     siteConfig,
-    featuredArticles: featuredArticles.map((article) => {
+    featuredArticles: featuredArticleRows.map((article) => {
       const { snippet, hasMore } = getEffectiveSnippet(
         article.content ?? '',
         article.snippet,
@@ -237,6 +274,7 @@ export async function getPublicHomeData() {
         slug: article.slug,
         snippet,
         hasMore,
+        eventSlug: eventSlugByArticleId.get(article.id) ?? null,
       };
     }),
     showcaseImages: showcaseRows.map((img) => ({
@@ -283,7 +321,17 @@ export async function getPublicBootstrap(includeHome: boolean) {
 export async function listPublicArticles(featuredOnly: boolean) {
   const { db, schema } = getDrizzleDb();
   const now = new Date().toISOString();
-  const conditions = [isNotNull(schema.articles.published_at), sql`${schema.articles.published_at} <= ${now}`];
+  const notOwnedByEvent = notExists(
+    db
+      .select({ one: sql`1` })
+      .from(schema.events)
+      .where(eq(schema.events.article_id, schema.articles.id)),
+  );
+  const conditions = [
+    isNotNull(schema.articles.published_at),
+    sql`${schema.articles.published_at} <= ${now}`,
+    notOwnedByEvent,
+  ];
   if (featuredOnly) {
     conditions.push(eq(schema.articles.featured, 1));
   }
@@ -323,9 +371,51 @@ export async function listPublicArticles(featuredOnly: boolean) {
   });
 }
 
+/**
+ * Article body for an event detail page: no standalone publish date required;
+ * visibility is gated by a linked published public event.
+ */
+export async function getPublicArticleBodyByIdForPublishedPublicEvent(articleId: number) {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      title: schema.articles.title,
+      content_type: schema.articles.content_type,
+      content: schema.articles.content,
+    })
+    .from(schema.articles)
+    .innerJoin(schema.events, eq(schema.events.article_id, schema.articles.id))
+    .where(
+      and(
+        eq(schema.articles.id, articleId),
+        eq(schema.events.published, 1),
+        eq(schema.events.visibility, 'public'),
+      ),
+    )
+    .limit(1);
+
+  const article = rows[0];
+  if (!article) {
+    return null;
+  }
+
+  const contentType = (article.content_type as 'markdown' | 'html') ?? 'markdown';
+  return {
+    title: article.title,
+    contentType,
+    content: contentType === 'markdown' ? stripMarker(article.content ?? '') : article.content ?? '',
+  };
+}
+
 export async function getPublicArticleBySlug(slug: string) {
   const { db, schema } = getDrizzleDb();
   const now = new Date().toISOString();
+  const notOwnedByEvent = notExists(
+    db
+      .select({ one: sql`1` })
+      .from(schema.events)
+      .where(eq(schema.events.article_id, schema.articles.id)),
+  );
   const rows = await db
     .select({
       id: schema.articles.id,
@@ -342,6 +432,7 @@ export async function getPublicArticleBySlug(slug: string) {
         eq(schema.articles.slug, slug),
         isNotNull(schema.articles.published_at),
         sql`${schema.articles.published_at} <= ${now}`,
+        notOwnedByEvent,
       ),
     )
     .limit(1);

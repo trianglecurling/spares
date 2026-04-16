@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { isUniqueConstraintViolation } from '../api/errors.js';
 import { isContentAdmin } from '../utils/auth.js';
 import type { Member } from '../types.js';
 
@@ -22,28 +23,6 @@ const slugSchema = z.string()
   .min(1)
   .max(120)
   .regex(/^[a-z0-9-]+$/, 'Use lowercase letters, numbers, and hyphens only');
-
-/** Postgres23505 = unique_violation; also handles SQLite and wrapped driver errors. */
-function isUniqueConstraintViolation(err: unknown): boolean {
-  const visit = (e: unknown, depth: number): boolean => {
-    if (depth > 8 || e == null) return false;
-    if (typeof e !== 'object') return false;
-    const o = e as { message?: unknown; code?: unknown; cause?: unknown };
-    const msg = String(o.message ?? '').toLowerCase();
-    const code = String(o.code ?? '');
-    if (code === '23505') return true;
-    if (
-      msg.includes('unique') ||
-      msg.includes('duplicate key') ||
-      msg.includes('sql_constraint_unique') ||
-      msg.includes('sqlite_constraint')
-    ) {
-      return true;
-    }
-    return visit(o.cause, depth + 1);
-  };
-  return visit(err, 0);
-}
 
 function isAllowedDestination(raw: string): boolean {
   const t = raw.trim();

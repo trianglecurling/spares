@@ -1116,3 +1116,76 @@ export const governanceSummaryResponseSchema = {
   },
   required: ['today', 'currentFiscalYear', 'currentBoardYear', 'settings', 'boardMembers', 'officers', 'committees'],
 } as const;
+
+export const waiversAdminWaiverCandidateSchema = {
+  type: 'object',
+  additionalProperties: true,
+  required: [
+    'waiverId',
+    'templateId',
+    'templateHeader',
+    'templateUrl',
+    'signedDate',
+    'displayName',
+    'email',
+    'isMinor',
+    'minorAge',
+    'firstNameMatchScore',
+    'fetchError',
+  ],
+  properties: {
+    waiverId: { type: 'string' },
+    templateId: { type: ['string', 'null'] },
+    templateHeader: { type: ['string', 'null'] },
+    templateUrl: { type: ['string', 'null'] },
+    signedDate: { type: ['string', 'null'] },
+    displayName: { type: ['string', 'null'] },
+    email: { type: ['string', 'null'] },
+    isMinor: { type: ['boolean', 'null'] },
+    minorAge: { type: ['number', 'null'] },
+    firstNameMatchScore: { type: 'number' },
+    fetchError: { type: ['string', 'null'] },
+    detail: {},
+  },
+} as const;
+
+export const waiversAdminBulkLookupRowSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['lineIndex', 'input', 'searchMode', 'error', 'candidates'],
+  properties: {
+    lineIndex: { type: 'number' },
+    searchMode: { type: 'string', enum: ['last_name', 'skipped'] },
+    error: { type: ['string', 'null'] },
+    input: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['rawLine', 'firstName', 'lastName', 'email'],
+      properties: {
+        rawLine: { type: 'string' },
+        firstName: { type: ['string', 'null'] },
+        lastName: { type: ['string', 'null'] },
+        email: { type: ['string', 'null'] },
+      },
+    },
+    candidates: {
+      type: 'array',
+      items: waiversAdminWaiverCandidateSchema,
+    },
+  },
+} as const;
+
+export const waiversAdminBulkLookupResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['validFrom', 'timeZone', 'startDateUnix', 'rows'],
+  properties: {
+    validFrom: { type: 'string' },
+    timeZone: { type: 'string' },
+    startDateUnix: { type: 'number' },
+    rows: {
+      type: 'array',
+      items: waiversAdminBulkLookupRowSchema,
+    },
+  },
+} as const;

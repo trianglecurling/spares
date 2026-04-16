@@ -16,6 +16,8 @@ import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
+import AdminEventDetailsArticlePanel from './AdminEventDetailsArticlePanel';
+import AdminEventTournamentPanel from './AdminEventTournamentPanel';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
@@ -33,6 +35,7 @@ import {
   TEAM_POSITIONS_FOUR,
   type PresetFieldType,
 } from '../../utils/eventRegistrationFieldPresets';
+import type { TournamentFormat } from '../../utils/tournamentDisplay';
 
 interface Timespan {
   startDt: string;
@@ -178,12 +181,6 @@ export default function AdminEventEditor() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
 
-  const validTabs = ['registrations', 'links'] as const;
-  type TabKey = 'details' | typeof validTabs[number];
-  const activeTab: TabKey = !isNew && tab && (validTabs as readonly string[]).includes(tab)
-    ? (tab as TabKey)
-    : 'details';
-
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
 
@@ -194,6 +191,9 @@ export default function AdminEventEditor() {
   const [slug, setSlug] = useState('');
   const [visibility, setVisibility] = useState('public');
   const [calendarTypeId, setCalendarTypeId] = useState('other');
+  const [tournamentTeamsPublished, setTournamentTeamsPublished] = useState(false);
+  const [tournamentDrawPublished, setTournamentDrawPublished] = useState(false);
+  const [tournamentFormat, setTournamentFormat] = useState<TournamentFormat | null>(null);
   const [published, setPublished] = useState(false);
   const [capacity, setCapacity] = useState('');
   const [feeDollars, setFeeDollars] = useState('');
@@ -240,6 +240,22 @@ export default function AdminEventEditor() {
   const [revealedLinks, setRevealedLinks] = useState<Set<number>>(new Set());
   const [copiedLinkId, setCopiedLinkId] = useState<number | null>(null);
   const [detailLink, setDetailLink] = useState<SpecialLink | null>(null);
+  const [linkedArticleId, setLinkedArticleId] = useState<number | null>(null);
+
+  const isBonspielEvent = calendarTypeId === 'bonspiel';
+  const secondaryTabKeys = useMemo(() => {
+    if (isNew) return [] as const;
+    const tail = ['registrations', 'links'] as const;
+    if (isBonspielEvent) {
+      return ['details', 'tournament', ...tail] as const;
+    }
+    return ['details', ...tail] as const;
+  }, [isNew, isBonspielEvent]);
+
+  type SecondaryTabKey = (typeof secondaryTabKeys)[number];
+  type TabKey = 'settings' | SecondaryTabKey;
+  const activeTab: TabKey =
+    !isNew && tab && (secondaryTabKeys as readonly string[]).includes(tab) ? (tab as TabKey) : 'settings';
 
   const [showScopePrompt, setShowScopePrompt] = useState(false);
   const [addFieldMenuOpen, setAddFieldMenuOpen] = useState(false);
@@ -293,6 +309,11 @@ export default function AdminEventEditor() {
             ? e.calendarTypeId
             : 'other',
         );
+        setTournamentTeamsPublished((e.tournamentTeamsPublished ?? 0) === 1);
+        setTournamentDrawPublished((e.tournamentDrawPublished ?? 0) === 1);
+        setTournamentFormat(
+          e.tournamentFormat === 'fours' || e.tournamentFormat === 'doubles' ? e.tournamentFormat : null,
+        );
         setPublished(!!e.published);
         setCapacity(e.capacity !== null ? String(e.capacity) : '');
         setFeeDollars(toDollars(e.feeMinor ?? 0));
@@ -324,6 +345,7 @@ export default function AdminEventEditor() {
         );
         setCategoryIds(e.categoryIds || []);
         setOwnerMemberIds(e.ownerMemberIds || []);
+        setLinkedArticleId(e.articleId ?? null);
         setRegistrationFields(
           (e.registrationFields || [])
             .map((f: ApiRegistrationFieldRow) => ({
@@ -343,10 +365,10 @@ export default function AdminEventEditor() {
   }, [eventId, isNew]);
 
   useEffect(() => {
-    if (id && tab && !(validTabs as readonly string[]).includes(tab)) {
+    if (id && tab && !(secondaryTabKeys as readonly string[]).includes(tab)) {
       navigate(`/admin/events/${id}`, { replace: true });
     }
-  }, [id, tab, navigate]);
+  }, [id, tab, navigate, secondaryTabKeys]);
 
   useEffect(() => {
     setRegistrations([]);
@@ -1001,12 +1023,14 @@ export default function AdminEventEditor() {
   const pageTitle = isNew ? 'New event' : `Edit: ${title}`;
   const pageSubtitle = isNew
     ? 'Create a new registrable club event.'
-    : 'Update event details, registrations, and links.';
+    : 'Update event settings, public page content, registrations, and links.';
 
   const tabs = [
-    { key: 'details' as const, label: 'Details' },
+    { key: 'settings' as const, label: 'Settings' },
     ...(!isNew
       ? [
+          { key: 'details' as const, label: 'Details' },
+          ...(isBonspielEvent ? [{ key: 'tournament' as const, label: 'Tournament' }] : []),
           { key: 'registrations' as const, label: 'Registrations' },
           { key: 'links' as const, label: 'Special registration links' },
         ]
@@ -1015,7 +1039,7 @@ export default function AdminEventEditor() {
 
   return (
     <Layout>
-      <AppPage narrow={activeTab !== 'registrations'}>
+      <AppPage narrow={activeTab !== 'registrations' && activeTab !== 'details' && activeTab !== 'tournament'}>
         <AppPageHeader
           title={pageTitle}
           description={pageSubtitle}
@@ -1029,13 +1053,13 @@ export default function AdminEventEditor() {
             items={tabs.map((tab) => ({
               key: tab.key,
               label: tab.label,
-              to: tab.key === 'details' ? `/admin/events/${id}` : `/admin/events/${id}/${tab.key}`,
+              to: tab.key === 'settings' ? `/admin/events/${id}` : `/admin/events/${id}/${tab.key}`,
               isActive: activeTab === tab.key,
             }))}
           />
         )}
 
-        {activeTab === 'details' && (
+        {activeTab === 'settings' && (
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-6">
             <form onSubmit={handleSave} className="flex flex-col gap-6">
               {/* Basic info */}
@@ -1704,6 +1728,30 @@ export default function AdminEventEditor() {
               </div>
             </form>
           </div>
+        )}
+
+        {activeTab === 'details' && !isNew && eventId != null && (
+          <AdminEventDetailsArticlePanel
+            eventId={eventId}
+            eventTitle={title}
+            eventSlug={slug}
+            articleId={linkedArticleId}
+            onArticleIdChange={setLinkedArticleId}
+          />
+        )}
+
+        {activeTab === 'tournament' && !isNew && eventId != null && isBonspielEvent && (
+          <AdminEventTournamentPanel
+            eventId={eventId}
+            initialTournamentFormat={tournamentFormat}
+            onTournamentFormatChange={setTournamentFormat}
+            initialTeamsPublished={tournamentTeamsPublished}
+            initialDrawPublished={tournamentDrawPublished}
+            onSaved={(teams, draw) => {
+              setTournamentTeamsPublished(teams);
+              setTournamentDrawPublished(draw);
+            }}
+          />
         )}
 
         {activeTab === 'registrations' && (

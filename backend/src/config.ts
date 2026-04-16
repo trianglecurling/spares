@@ -76,5 +76,12 @@ export const config = {
       batchSize: Math.max(1, Math.min(200, parseIntEnv(process.env.PAYMENT_RECONCILE_BATCH_SIZE, 25))),
     },
   },
+
+  cleverWaiver: {
+    baseUrl: (process.env.CLEVERWAIVER_BASE_URL || 'https://app.cleverwaiver.com').replace(/\/$/, ''),
+    appName: process.env.CLEVERWAIVER_APP_NAME || '',
+    clientId: process.env.CLEVERWAIVER_CLIENT_ID || '',
+    accessToken: process.env.CLEVERWAIVER_ACCESS_TOKEN || '',
+  },
 };
 

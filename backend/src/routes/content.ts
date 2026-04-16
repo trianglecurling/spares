@@ -1,7 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, asc, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray, notExists, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { isUniqueConstraintViolation } from '../api/errors.js';
 import { isContentAdmin } from '../utils/auth.js';
 import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
@@ -215,52 +216,40 @@ export async function contentRoutes(fastify: FastifyInstance) {
       updatedAt: schema.articles.updated_at,
     } as const;
     const sortColumn = sortMap[sort as keyof typeof sortMap] ?? sortMap.updatedAt;
-    const whereClause = search
+    const notEventOwnedArticle = notExists(
+      db
+        .select({ one: sql`1` })
+        .from(schema.events)
+        .where(eq(schema.events.article_id, schema.articles.id)),
+    );
+    const searchClause = search
       ? sql`lower(${schema.articles.title}) like ${`%${search}%`}`
       : undefined;
+    const listWhere = searchClause ? and(searchClause, notEventOwnedArticle) : notEventOwnedArticle;
 
-    const [totalRow] = whereClause
-      ? await db
-          .select({ count: sql<number>`count(*)` })
-          .from(schema.articles)
-          .where(whereClause)
-      : await db.select({ count: sql<number>`count(*)` }).from(schema.articles);
+    const [totalRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.articles)
+      .where(listWhere);
     const total = Number(totalRow?.count ?? 0);
 
-    const rows = whereClause
-      ? await db
-          .select({
-            id: schema.articles.id,
-            title: schema.articles.title,
-            slug: schema.articles.slug,
-            snippet: schema.articles.snippet,
-            featured: schema.articles.featured,
-            featuredSortOrder: schema.articles.featured_sort_order,
-            publishedAt: schema.articles.published_at,
-            createdAt: schema.articles.created_at,
-            updatedAt: schema.articles.updated_at,
-          })
-          .from(schema.articles)
-          .where(whereClause)
-          .orderBy(order === 'asc' ? asc(sortColumn) : desc(sortColumn), desc(schema.articles.updated_at))
-          .limit(pageSize)
-          .offset((page - 1) * pageSize)
-      : await db
-          .select({
-            id: schema.articles.id,
-            title: schema.articles.title,
-            slug: schema.articles.slug,
-            snippet: schema.articles.snippet,
-            featured: schema.articles.featured,
-            featuredSortOrder: schema.articles.featured_sort_order,
-            publishedAt: schema.articles.published_at,
-            createdAt: schema.articles.created_at,
-            updatedAt: schema.articles.updated_at,
-          })
-          .from(schema.articles)
-          .orderBy(order === 'asc' ? asc(sortColumn) : desc(sortColumn), desc(schema.articles.updated_at))
-          .limit(pageSize)
-          .offset((page - 1) * pageSize);
+    const rows = await db
+      .select({
+        id: schema.articles.id,
+        title: schema.articles.title,
+        slug: schema.articles.slug,
+        snippet: schema.articles.snippet,
+        featured: schema.articles.featured,
+        featuredSortOrder: schema.articles.featured_sort_order,
+        publishedAt: schema.articles.published_at,
+        createdAt: schema.articles.created_at,
+        updatedAt: schema.articles.updated_at,
+      })
+      .from(schema.articles)
+      .where(listWhere)
+      .orderBy(order === 'asc' ? asc(sortColumn) : desc(sortColumn), desc(schema.articles.updated_at))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
 
     return {
       items: rows.map((r) => ({
@@ -292,6 +281,13 @@ export async function contentRoutes(fastify: FastifyInstance) {
     const limitRaw = Number.parseInt(request.query.limit ?? '10', 10) || 10;
     const limit = Math.max(1, Math.min(25, limitRaw));
 
+    const notEventOwnedArticle = notExists(
+      db
+        .select({ one: sql`1` })
+        .from(schema.events)
+        .where(eq(schema.events.article_id, schema.articles.id)),
+    );
+
     if (!q) {
       const rows = await db
         .select({
@@ -301,6 +297,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
           updatedAt: schema.articles.updated_at,
         })
         .from(schema.articles)
+        .where(notEventOwnedArticle)
         .orderBy(desc(schema.articles.updated_at), desc(schema.articles.id))
         .limit(limit);
       return rows.map((row) => ({
@@ -320,7 +317,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
       })
       .from(schema.articles)
       .where(
-        sql`lower(${schema.articles.title}) like ${`%${q.toLowerCase()}%`} OR lower(${schema.articles.slug}) like ${`%${q.toLowerCase()}%`}`
+        and(
+          notEventOwnedArticle,
+          sql`lower(${schema.articles.title}) like ${`%${q.toLowerCase()}%`} OR lower(${schema.articles.slug}) like ${`%${q.toLowerCase()}%`}`,
+        ),
       )
       .limit(250);
 
@@ -431,20 +431,29 @@ export async function contentRoutes(fastify: FastifyInstance) {
         .where(eq(schema.articles.featured, 1));
       featuredSortOrder = Number(maxFeaturedRow?.maxSort ?? 0) + 1;
     }
-    const [row] = await db
-      .insert(schema.articles)
-      .values({
-        title: body.title,
-        slug: body.slug,
-        content_type: contentType,
-        content,
-        snippet: body.snippet ?? null,
-        featured: body.featured ? 1 : 0,
-        featured_sort_order: body.featured ? featuredSortOrder : 0,
-        published_at: body.publishedAt ? new Date(body.publishedAt) : null,
-        created_by_member_id: member.id,
-      })
-      .returning();
+    let row: typeof schema.articles.$inferSelect | undefined;
+    try {
+      const inserted = await db
+        .insert(schema.articles)
+        .values({
+          title: body.title,
+          slug: body.slug,
+          content_type: contentType,
+          content,
+          snippet: body.snippet ?? null,
+          featured: body.featured ? 1 : 0,
+          featured_sort_order: body.featured ? featuredSortOrder : 0,
+          published_at: body.publishedAt ? new Date(body.publishedAt) : null,
+          created_by_member_id: member.id,
+        })
+        .returning();
+      row = inserted[0];
+    } catch (err) {
+      if (isUniqueConstraintViolation(err)) {
+        return reply.code(409).send({ error: 'An article with this slug already exists' });
+      }
+      throw err;
+    }
     if (row) {
       await createArticleVersion(
         db,

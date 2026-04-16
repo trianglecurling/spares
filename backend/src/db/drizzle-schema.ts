@@ -988,6 +988,12 @@ export const eventsSqlite = sqliteTable('events', {
   enable_waitlist: integer('enable_waitlist').default(1).notNull(),
   /** Matches calendar DEFAULT_EVENT_TYPES ids shown on the club calendar. */
   calendar_type_id: text('calendar_type_id').default('other').notNull(),
+  /** When 1, bonspiel team list is shown on the public event page (when type is bonspiel). */
+  tournament_teams_published: integer('tournament_teams_published').default(0).notNull(),
+  /** When 1, bonspiel draw is shown on the public event page (when type is bonspiel). */
+  tournament_draw_published: integer('tournament_draw_published').default(0).notNull(),
+  /** Bonspiel roster shape: fours (5 positions) or doubles (2). */
+  tournament_format: text('tournament_format').$type<'fours' | 'doubles' | null>(),
   terms_article_id: integer('terms_article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
@@ -1110,6 +1116,32 @@ export const eventSpecialLinksSqlite = sqliteTable('event_special_links', {
 }, (table) => ({
   eventIdx: index('idx_event_special_links_event_id').on(table.event_id),
   tokenIdx: uniqueIndex('event_special_links_token_unique').on(table.token),
+}));
+
+export const eventTournamentTeamsSqlite = sqliteTable('event_tournament_teams', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  sort_order: integer('sort_order').default(0).notNull(),
+  team_name: text('team_name'),
+  home_club: text('home_club'),
+  vice_slot_code: text('vice_slot_code').notNull(),
+  skip_slot_code: text('skip_slot_code').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  eventIdx: index('idx_event_tournament_teams_event_id').on(table.event_id),
+}));
+
+export const eventTournamentRosterSlotsSqlite = sqliteTable('event_tournament_roster_slots', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  team_id: integer('team_id').notNull().references(() => eventTournamentTeamsSqlite.id, { onDelete: 'cascade' }),
+  slot_code: text('slot_code').notNull(),
+  player_name: text('player_name'),
+  email: text('email'),
+  notes: text('notes'),
+}, (table) => ({
+  teamIdx: index('idx_event_tournament_roster_team_id').on(table.team_id),
+  uniqueSlot: uniqueIndex('event_tournament_roster_team_slot_unique').on(table.team_id, table.slot_code),
 }));
 
 // ========== PostgreSQL Schema ==========
@@ -2069,6 +2101,9 @@ export const eventsPg = pgTable('events', {
   max_group_size: integerPg('max_group_size'),
   enable_waitlist: integerPg('enable_waitlist').default(1).notNull(),
   calendar_type_id: textPg('calendar_type_id').default('other').notNull(),
+  tournament_teams_published: integerPg('tournament_teams_published').default(0).notNull(),
+  tournament_draw_published: integerPg('tournament_draw_published').default(0).notNull(),
+  tournament_format: textPg('tournament_format').$type<'fours' | 'doubles' | null>(),
   terms_article_id: integerPg('terms_article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
@@ -2193,6 +2228,32 @@ export const eventSpecialLinksPg = pgTable('event_special_links', {
   tokenIdx: uniqueIndexPg('event_special_links_token_unique_pg').on(table.token),
 }));
 
+export const eventTournamentTeamsPg = pgTable('event_tournament_teams', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  team_name: textPg('team_name'),
+  home_club: textPg('home_club'),
+  vice_slot_code: textPg('vice_slot_code').notNull(),
+  skip_slot_code: textPg('skip_slot_code').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_tournament_teams_event_id').on(table.event_id),
+}));
+
+export const eventTournamentRosterSlotsPg = pgTable('event_tournament_roster_slots', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  team_id: integerPg('team_id').notNull().references(() => eventTournamentTeamsPg.id, { onDelete: 'cascade' }),
+  slot_code: textPg('slot_code').notNull(),
+  player_name: textPg('player_name'),
+  email: textPg('email'),
+  notes: textPg('notes'),
+}, (table) => ({
+  teamIdx: indexPg('idx_event_tournament_roster_team_id').on(table.team_id),
+  uniqueSlot: uniqueIndexPg('event_tournament_roster_team_slot_unique_pg').on(table.team_id, table.slot_code),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -2264,6 +2325,8 @@ export const sqliteSchema = {
   eventRegistrationMembers: eventRegistrationMembersSqlite,
   eventRegistrationFieldValues: eventRegistrationFieldValuesSqlite,
   eventSpecialLinks: eventSpecialLinksSqlite,
+  eventTournamentTeams: eventTournamentTeamsSqlite,
+  eventTournamentRosterSlots: eventTournamentRosterSlotsSqlite,
 };
 
 export const pgSchema = {
@@ -2336,4 +2399,6 @@ export const pgSchema = {
   eventRegistrationMembers: eventRegistrationMembersPg,
   eventRegistrationFieldValues: eventRegistrationFieldValuesPg,
   eventSpecialLinks: eventSpecialLinksPg,
+  eventTournamentTeams: eventTournamentTeamsPg,
+  eventTournamentRosterSlots: eventTournamentRosterSlotsPg,
 };

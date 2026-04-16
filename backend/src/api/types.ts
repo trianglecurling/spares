@@ -639,3 +639,44 @@ export type GovernanceCreateCommitteeChairBody = {
 export type GovernanceUpdateCommitteeChairBody = {
   publicEmail?: string | null;
 };
+
+export type WaiversAdminBulkLookupBody = {
+  rawList: string;
+  validFrom: string;
+  templateId?: string;
+};
+
+export type WaiversAdminWaiverCandidate = {
+  waiverId: string;
+  templateId: string | null;
+  templateHeader: string | null;
+  templateUrl: string | null;
+  signedDate: string | null;
+  displayName: string | null;
+  email: string | null;
+  isMinor: boolean | null;
+  minorAge: number | null;
+  firstNameMatchScore: number;
+  detail?: unknown;
+  fetchError: string | null;
+};
+
+export type WaiversAdminBulkLookupRow = {
+  lineIndex: number;
+  input: {
+    rawLine: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+  };
+  searchMode: 'last_name' | 'skipped';
+  error: string | null;
+  candidates: WaiversAdminWaiverCandidate[];
+};
+
+export type WaiversAdminBulkLookupResponse = {
+  validFrom: string;
+  timeZone: string;
+  startDateUnix: number;
+  rows: WaiversAdminBulkLookupRow[];
+};

@@ -11,6 +11,8 @@ interface ProtectedRouteProps {
   contentAdminOnly?: boolean;
   sponsorAdminOnly?: boolean;
   requiredScope?: string;
+  /** When set, allows access if the member has any of these scopes (OR). */
+  anyOfScopes?: string[];
   unauthenticatedRedirectTo?: string;
 }
 
@@ -23,6 +25,7 @@ export function ProtectedRoute({
   contentAdminOnly = false,
   sponsorAdminOnly = false,
   requiredScope,
+  anyOfScopes,
   unauthenticatedRedirectTo = '/login',
 }: ProtectedRouteProps) {
   const { member, token, isLoading } = useAuth();
@@ -68,6 +71,10 @@ export function ProtectedRoute({
   }
 
   if (requiredScope && !memberHasScope(member, requiredScope)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (anyOfScopes?.length && !anyOfScopes.some((scope) => memberHasScope(member, scope))) {
     return <Navigate to="/dashboard" replace />;
   }
 

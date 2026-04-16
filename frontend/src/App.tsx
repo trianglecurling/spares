@@ -18,6 +18,7 @@ import Unsubscribe from './pages/Unsubscribe';
 import MembersDirectory from './pages/MembersDirectory';
 import Profile from './pages/Profile';
 import AdminMembers from './pages/admin/AdminMembers';
+import AdminWaivers from './pages/admin/AdminWaivers';
 import AdminSheets from './pages/admin/AdminSheets';
 import AdminConfig from './pages/admin/AdminConfig';
 import AdminDatabaseConfig from './pages/admin/AdminDatabaseConfig';
@@ -245,6 +246,14 @@ function App() {
                   element={
                     <ProtectedRoute adminOnly>
                       <AdminMembers />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/waivers"
+                  element={
+                    <ProtectedRoute anyOfScopes={['members.manage', 'events.manage']}>
+                      <AdminWaivers />
                     </ProtectedRoute>
                   }
                 />

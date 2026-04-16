@@ -529,6 +529,30 @@ async function ensureEventsTables(db: DatabaseAdapter): Promise<void> {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_event_special_links_event_id ON event_special_links(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_tournament_teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      team_name TEXT,
+      home_club TEXT,
+      vice_slot_code TEXT NOT NULL,
+      skip_slot_code TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_tournament_teams_event_id ON event_tournament_teams(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_tournament_roster_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL REFERENCES event_tournament_teams(id) ON DELETE CASCADE,
+      slot_code TEXT NOT NULL,
+      player_name TEXT,
+      email TEXT,
+      notes TEXT,
+      UNIQUE(team_id, slot_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_tournament_roster_team_id ON event_tournament_roster_slots(team_id);
   `;
 
   if (db.isAsync()) {
@@ -772,6 +796,30 @@ function ensureEventsTablesSync(db: DatabaseAdapter): void {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_event_special_links_event_id ON event_special_links(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_tournament_teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      team_name TEXT,
+      home_club TEXT,
+      vice_slot_code TEXT NOT NULL,
+      skip_slot_code TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_tournament_teams_event_id ON event_tournament_teams(event_id);
+
+    CREATE TABLE IF NOT EXISTS event_tournament_roster_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL REFERENCES event_tournament_teams(id) ON DELETE CASCADE,
+      slot_code TEXT NOT NULL,
+      player_name TEXT,
+      email TEXT,
+      notes TEXT,
+      UNIQUE(team_id, slot_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_tournament_roster_team_id ON event_tournament_roster_slots(team_id);
     `
   );
   ensureSpecialLinksMaxGroupSizeColumnSync(db);
@@ -2857,6 +2905,17 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       column: 'calendar_type_id',
     },
     { sql: 'ALTER TABLE events ADD COLUMN member_fee_minor INTEGER', table: 'events', column: 'member_fee_minor' },
+    {
+      sql: 'ALTER TABLE events ADD COLUMN tournament_teams_published INTEGER NOT NULL DEFAULT 0',
+      table: 'events',
+      column: 'tournament_teams_published',
+    },
+    {
+      sql: 'ALTER TABLE events ADD COLUMN tournament_draw_published INTEGER NOT NULL DEFAULT 0',
+      table: 'events',
+      column: 'tournament_draw_published',
+    },
+    { sql: 'ALTER TABLE events ADD COLUMN tournament_format TEXT', table: 'events', column: 'tournament_format' },
   ];
 
   for (const migration of migrations) {
@@ -3672,6 +3731,9 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     "ALTER TABLE articles ADD COLUMN content_type TEXT DEFAULT 'markdown'",
     "ALTER TABLE events ADD COLUMN calendar_type_id TEXT NOT NULL DEFAULT 'other'",
     'ALTER TABLE events ADD COLUMN member_fee_minor INTEGER',
+    'ALTER TABLE events ADD COLUMN tournament_teams_published INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE events ADD COLUMN tournament_draw_published INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE events ADD COLUMN tournament_format TEXT',
   ];
 
   for (const migrationSQL of migrations) {

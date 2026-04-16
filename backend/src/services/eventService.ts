@@ -8,6 +8,11 @@ import {
   normalizeRegistrationFieldRow,
   validateRegistrationFieldValues,
 } from './eventRegistrationFieldDefinitions.js';
+import {
+  copyTournamentTeamsBetweenEvents,
+  countTournamentTeams,
+  normalizeTournamentFormat,
+} from './eventTournamentTeamsService.js';
 import { EventServiceError } from './eventServiceError.js';
 
 export { EventServiceError };
@@ -79,6 +84,10 @@ export interface CreateEventInput {
   termsArticleId?: number | null;
   /** Calendar color category (club calendar `typeId`). */
   calendarTypeId?: string;
+  tournamentTeamsPublished?: boolean;
+  tournamentDrawPublished?: boolean;
+  /** Bonspiel: fours vs doubles roster shape. */
+  tournamentFormat?: 'fours' | 'doubles' | null;
   createdByMemberId?: number | null;
   timespans: Array<{ startDt: string; endDt: string; sortOrder?: number }>;
   locations?: Array<{ locationType: string; sheetId?: number | null }>;
@@ -113,6 +122,9 @@ export interface UpdateEventInput {
   enableWaitlist?: boolean;
   termsArticleId?: number | null;
   calendarTypeId?: string;
+  tournamentTeamsPublished?: boolean;
+  tournamentDrawPublished?: boolean;
+  tournamentFormat?: 'fours' | 'doubles' | null;
   timespans?: Array<{ startDt: string; endDt: string; sortOrder?: number }>;
   locations?: Array<{ locationType: string; sheetId?: number | null }>;
   categoryIds?: number[];
@@ -194,6 +206,12 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
       max_group_size: input.maxGroupSize ?? null,
       enable_waitlist: input.enableWaitlist !== false ? 1 : 0,
       calendar_type_id: normalizeCalendarTypeId(input.calendarTypeId),
+      tournament_teams_published: input.tournamentTeamsPublished ? 1 : 0,
+      tournament_draw_published: input.tournamentDrawPublished ? 1 : 0,
+      tournament_format:
+        input.tournamentFormat === undefined
+          ? null
+          : normalizeTournamentFormat(input.tournamentFormat as string),
       terms_article_id: input.termsArticleId ?? null,
       created_by_member_id: input.createdByMemberId ?? null,
     } as any)
@@ -290,6 +308,29 @@ export async function updateEvent(eventId: number, input: UpdateEventInput): Pro
   if (input.enableWaitlist !== undefined) updateValues.enable_waitlist = input.enableWaitlist ? 1 : 0;
   if (input.termsArticleId !== undefined) updateValues.terms_article_id = input.termsArticleId;
   if (input.calendarTypeId !== undefined) updateValues.calendar_type_id = normalizeCalendarTypeId(input.calendarTypeId);
+  if (input.tournamentTeamsPublished !== undefined) {
+    updateValues.tournament_teams_published = input.tournamentTeamsPublished ? 1 : 0;
+  }
+  if (input.tournamentDrawPublished !== undefined) {
+    updateValues.tournament_draw_published = input.tournamentDrawPublished ? 1 : 0;
+  }
+  if (input.tournamentFormat !== undefined) {
+    const [row] = await db
+      .select({ tournament_format: schema.events.tournament_format })
+      .from(schema.events)
+      .where(eq(schema.events.id, eventId))
+      .limit(1);
+    const prev = normalizeTournamentFormat(row?.tournament_format as string | null);
+    const next =
+      input.tournamentFormat === null ? null : normalizeTournamentFormat(input.tournamentFormat as string);
+    if (prev !== next) {
+      const n = await countTournamentTeams(eventId);
+      if (n > 0) {
+        throw new EventServiceError('Remove all tournament teams before changing the tournament format', 409);
+      }
+    }
+    updateValues.tournament_format = next;
+  }
 
   if (Object.keys(updateValues).length > 0) {
     await db.update(schema.events).set(updateValues).where(eq(schema.events.id, eventId));
@@ -916,7 +957,7 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
   const event = await getEventById(eventId);
   if (!event) throw new EventServiceError('Event not found', 404);
 
-  return createEvent({
+  const created = await createEvent({
     title: `${event.title} (Copy)`,
     calendarTypeId: normalizeCalendarTypeId(event.calendar_type_id),
     articleId: event.article_id,
@@ -930,6 +971,9 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
     maxGroupSize: event.max_group_size,
     enableWaitlist: event.enable_waitlist === 1,
     termsArticleId: event.terms_article_id,
+    tournamentTeamsPublished: event.tournament_teams_published === 1,
+    tournamentDrawPublished: event.tournament_draw_published === 1,
+    tournamentFormat: normalizeTournamentFormat(event.tournament_format as string | null) ?? null,
     createdByMemberId,
     timespans: (event.timespans || []).map((ts: any) => ({
       startDt: ts.start_dt,
@@ -951,6 +995,11 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
       sortOrder: f.sort_order,
     })),
   });
+
+  if (normalizeCalendarTypeId(event.calendar_type_id) === 'bonspiel') {
+    await copyTournamentTeamsBetweenEvents(eventId, created.id);
+  }
+  return created;
 }
 
 export async function createSpecialLink(
