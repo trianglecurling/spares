@@ -21,6 +21,8 @@ interface HomeData {
     slug: string;
     snippet: string;
     hasMore: boolean;
+    /** When set, this featured item is an event detail article; link to the event page. */
+    eventSlug?: string | null;
   }>;
   showcaseImages: Array<{
     id: number;
@@ -345,26 +347,31 @@ export default function PublicHomePage() {
                 </div>
               ) : (
                 <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {data.featuredArticles.map((article) => (
-                    <article key={article.id} className="public-card p-5 bg-gradient-to-b from-white to-sky-50/30">
-                      <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
-                        <Link to={`/articles/${article.slug}`} className="hover:text-primary-teal">
-                          {article.title}
-                        </Link>
-                      </h3>
-                      {article.snippet && (
-                        <p className="mt-2 text-sm text-gray-600 line-clamp-4">{snippetPreview(article.snippet)}</p>
-                      )}
-                      {article.hasMore && (
-                        <Link
-                          to={`/articles/${article.slug}`}
-                          className="mt-3 inline-block text-sm font-medium text-primary-teal hover:underline"
-                        >
-                          Read more
-                        </Link>
-                      )}
-                    </article>
-                  ))}
+                  {data.featuredArticles.map((article) => {
+                    const featuredHref = article.eventSlug
+                      ? `/events/${article.eventSlug}`
+                      : `/articles/${article.slug}`;
+                    return (
+                      <article key={article.id} className="public-card p-5 bg-gradient-to-b from-white to-sky-50/30">
+                        <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
+                          <Link to={featuredHref} className="hover:text-primary-teal">
+                            {article.title}
+                          </Link>
+                        </h3>
+                        {article.snippet && (
+                          <p className="mt-2 text-sm text-gray-600 line-clamp-4">{snippetPreview(article.snippet)}</p>
+                        )}
+                        {article.hasMore && (
+                          <Link
+                            to={featuredHref}
+                            className="mt-3 inline-block text-sm font-medium text-primary-teal hover:underline"
+                          >
+                            Read more
+                          </Link>
+                        )}
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </section>

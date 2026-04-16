@@ -150,7 +150,7 @@ export default function PublicArticle() {
                 {article.contentType === 'html' ? (
                   <ArticleHtmlContent content={article.content} />
                 ) : (
-                  <div className="markdown-content text-gray-700 space-y-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_a]:text-primary-teal [&_a]:underline [&_table]:border-collapse [&_table]:w-full [&_table]:my-4 [&_th]:border [&_th]:border-gray-300 [&_th]:px-4 [&_th]:py-2 [&_th]:text-left [&_th]:font-semibold [&_th]:bg-gray-100 [&_td]:border [&_td]:border-gray-300 [&_td]:px-4 [&_td]:py-2">
+                  <div className="markdown-content max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>{article.content}</ReactMarkdown>
                   </div>
                 )}

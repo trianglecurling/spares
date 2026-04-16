@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -12,8 +12,17 @@ import {
 } from 'react-icons/hi2';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
+import PageTabs from '../components/PageTabs';
 import SeoMeta from '../components/SeoMeta';
 import api from '../utils/api';
+import {
+  formatPositionCell,
+  formatTeamDisplayName,
+  foursTableLegendText,
+  slotLabel,
+  tableSlotsForFormat,
+  type TournamentFormat,
+} from '../utils/tournamentDisplay';
 
 interface EventDetail {
   id: number;
@@ -23,6 +32,9 @@ interface EventDetail {
   imageFileId: number | null;
   visibility: string;
   published: number;
+  calendarTypeId?: string;
+  tournamentTeamsPublished?: number;
+  tournamentDrawPublished?: number;
   capacity: number | null;
   feeMinor: number;
   memberFeeMinor?: number | null;
@@ -48,6 +60,16 @@ interface EventDetail {
   }>;
   confirmedCount: number;
   serverNow?: string;
+}
+
+interface PublicTournamentTeam {
+  id: number;
+  sortOrder: number;
+  teamName: string | null;
+  homeClub: string | null;
+  viceSlotCode: string;
+  skipSlotCode: string;
+  roster: Array<{ slotCode: string; playerName: string | null }>;
 }
 
 interface ArticleData {
@@ -221,12 +243,17 @@ function DetailRow({
 
 export default function PublicEventDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [tick, setTick] = useState(0);
+  const [publicTeams, setPublicTeams] = useState<PublicTournamentTeam[]>([]);
+  const [publicTeamsFormat, setPublicTeamsFormat] = useState<TournamentFormat | null>(null);
+  const [publicTeamsLoading, setPublicTeamsLoading] = useState(false);
+  const [publicTeamsError, setPublicTeamsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -253,6 +280,28 @@ export default function PublicEventDetailPage() {
       .catch(() => setError('Event not found'))
       .finally(() => setLoading(false));
   }, [slug]);
+
+  useEffect(() => {
+    if (!event || loading) return;
+    const cal = event.calendarTypeId ?? 'other';
+    const showT = cal === 'bonspiel' && (event.tournamentTeamsPublished ?? 0) === 1;
+    const showD = cal === 'bonspiel' && (event.tournamentDrawPublished ?? 0) === 1;
+    const showBar = showT || showD;
+    const t = searchParams.get('tab');
+    if (t && t !== 'teams' && t !== 'draw') {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (!showBar && t) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (t === 'teams' && !showT) {
+      setSearchParams({}, { replace: true });
+    } else if (t === 'draw' && !showD) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [event, loading, searchParams, setSearchParams]);
 
   const serverNowMs = useMemo(() => Date.now() + serverOffsetMs, [serverOffsetMs, tick]);
 
@@ -283,6 +332,48 @@ export default function PublicEventDetailPage() {
     }, 1000);
     return () => window.clearInterval(id);
   }, [event?.registrationStart, event?.id, serverOffsetMs]);
+
+  const tabParamForTeams = searchParams.get('tab');
+  const shouldLoadPublicTeams =
+    !!slug &&
+    !!event &&
+    tabParamForTeams === 'teams' &&
+    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    (event.tournamentTeamsPublished ?? 0) === 1;
+
+  useEffect(() => {
+    if (!shouldLoadPublicTeams || !slug) {
+      setPublicTeams([]);
+      setPublicTeamsFormat(null);
+      setPublicTeamsError(null);
+      return;
+    }
+    setPublicTeamsLoading(true);
+    setPublicTeamsError(null);
+    api
+      .get<{ tournamentFormat: TournamentFormat | null; teams: PublicTournamentTeam[] }>(
+        `/public/events/${slug}/tournament-teams`,
+      )
+      .then((res) => {
+        setPublicTeamsFormat(
+          res.data.tournamentFormat === 'fours' || res.data.tournamentFormat === 'doubles'
+            ? res.data.tournamentFormat
+            : null,
+        );
+        setPublicTeams(res.data.teams ?? []);
+      })
+      .catch(() => {
+        setPublicTeamsError('Unable to load teams.');
+        setPublicTeams([]);
+        setPublicTeamsFormat(null);
+      })
+      .finally(() => setPublicTeamsLoading(false));
+  }, [slug, shouldLoadPublicTeams]);
+
+  const publicFoursLegend = useMemo(() => {
+    if (publicTeamsFormat !== 'fours' || publicTeams.length === 0) return null;
+    return foursTableLegendText(publicTeams);
+  }, [publicTeamsFormat, publicTeams]);
 
   if (loading) {
     return (
@@ -331,145 +422,282 @@ export default function PublicEventDetailPage() {
       ? formatRegistrationClosedAt(closedAtIso)
       : null;
 
+  const calendarTypeId = event.calendarTypeId ?? 'other';
+  const showPublicTeams = calendarTypeId === 'bonspiel' && (event.tournamentTeamsPublished ?? 0) === 1;
+  const showPublicDraw = calendarTypeId === 'bonspiel' && (event.tournamentDrawPublished ?? 0) === 1;
+  const showEventTabs = showPublicTeams || showPublicDraw;
+  const tabParam = searchParams.get('tab');
+  const publicView: 'details' | 'teams' | 'draw' =
+    tabParam === 'teams' && showPublicTeams
+      ? 'teams'
+      : tabParam === 'draw' && showPublicDraw
+        ? 'draw'
+        : 'details';
+
+  /** Sidebar competes with wide tournament tables; full-width main on Teams and Draw. */
+  const showEventInfoSidebar = publicView === 'details';
+
   return (
     <PublicLayout>
       <SeoMeta title={event.title} />
-      <div className="max-w-4xl mx-auto px-4 py-10">
+      <div className="max-w-6xl mx-auto px-4 py-10">
         <Link to="/events" className="text-sm text-primary-teal hover:underline mb-6 inline-block">
           &larr; All Events
         </Link>
 
-        {event.imageFileId && (
-          <div className="rounded-lg overflow-hidden mb-8 max-h-96">
-            <img
-              src={`/api/public/files/${event.imageFileId}`}
-              alt={event.title}
-              className="w-full h-full object-cover"
-            />
-          </div>
-        )}
+        {showEventTabs ? (
+          <PageTabs
+            className="mb-6"
+            items={[
+              {
+                key: 'details',
+                label: 'Details',
+                to: `/events/${event.slug}`,
+                isActive: publicView === 'details',
+              },
+              ...(showPublicTeams
+                ? [
+                    {
+                      key: 'teams',
+                      label: 'Teams',
+                      to: `/events/${event.slug}?tab=teams`,
+                      isActive: publicView === 'teams',
+                    },
+                  ]
+                : []),
+              ...(showPublicDraw
+                ? [
+                    {
+                      key: 'draw',
+                      label: 'Draw',
+                      to: `/events/${event.slug}?tab=draw`,
+                      isActive: publicView === 'draw',
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        ) : null}
 
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">{event.title}</h1>
-
-        <div className="bg-gray-50 rounded-lg p-6 mb-8 space-y-4">
-          {event.timespans.map((ts) => (
-            <DetailRow key={ts.id} icon={HiCalendarDays}>
-              <p className="text-gray-900 font-medium">
-                {formatTimespanRange(ts.start_dt, ts.end_dt)}
-              </p>
-            </DetailRow>
-          ))}
-
-          <DetailRow icon={HiMapPin}>
-            <p className="text-gray-700">{formatPublicLocation(event.locations)}</p>
-          </DetailRow>
-
-          <DetailRow icon={HiCurrencyDollar}>
-            <div className="text-gray-700">
-              {event.memberFeeMinor != null && event.memberFeeMinor !== event.feeMinor ? (
-                <>
-                  <p>{formatFee(event.feeMinor, event.currency)} general</p>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    {formatFee(event.memberFeeMinor, event.currency)} for members when logged in
-                  </p>
-                </>
-              ) : (
-                <p>{formatFee(event.feeMinor, event.currency)}</p>
-              )}
-            </div>
-          </DetailRow>
-
-          {event.capacity !== null && (
-            <DetailRow icon={HiUserGroup}>
-              <div className="text-gray-700 space-y-1">
-                <p>
-                  {event.confirmedCount} of {event.capacity} registered
-                </p>
-                {isFull && (
-                  <p className="text-sm">
-                    {isRegistrationOpen && event.enableWaitlist === 1
-                      ? 'Event is full – waitlist available'
-                      : 'Event is full'}
-                  </p>
+        <div className="lg:grid lg:grid-cols-12 lg:gap-x-10 lg:items-start">
+          <div
+            className={`space-y-6 mb-8 lg:mb-0 ${showEventInfoSidebar ? 'lg:col-span-8' : 'lg:col-span-12'}`}
+          >
+            {publicView === 'details' && (
+              <>
+                {event.imageFileId && (
+                  <div className="rounded-lg overflow-hidden max-h-96">
+                    <img
+                      src={`/api/public/files/${event.imageFileId}`}
+                      alt={event.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
                 )}
-                {!isFull && spotsRemaining !== null && (
-                  <p className="text-sm text-gray-600">{spotsRemaining} spots remaining</p>
+
+                {article && (
+                  <div className="markdown-content max-w-none">
+                    {article.contentType === 'html' ? (
+                      <div dangerouslySetInnerHTML={{ __html: article.content }} />
+                    ) : (
+                      <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
+                        {article.content}
+                      </ReactMarkdown>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {publicView === 'teams' && (
+              <div className="public-card p-6 text-gray-700 dark:text-gray-300">
+                <h2 className="public-subheading text-xl mb-4">Teams</h2>
+                {publicTeamsLoading ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Loading teams…</p>
+                ) : publicTeamsError ? (
+                  <p className="text-sm text-red-700 dark:text-red-300">{publicTeamsError}</p>
+                ) : !publicTeamsFormat ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">No team format is configured yet.</p>
+                ) : (
+                  <div className="overflow-x-auto -mx-2 px-2">
+                    <table className="min-w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-200 dark:border-gray-600 text-left">
+                          <th className="py-2 pr-4 font-semibold text-gray-900 dark:text-gray-100">Team</th>
+                          <th className="py-2 pr-4 font-semibold text-gray-900 dark:text-gray-100">Home club</th>
+                          {tableSlotsForFormat(publicTeamsFormat).map((slotCode) => (
+                            <th
+                              key={slotCode}
+                              className="py-2 pr-4 font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap"
+                            >
+                              {slotLabel(publicTeamsFormat, slotCode)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...publicTeams]
+                          .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+                          .map((t) => (
+                            <tr
+                              key={t.id}
+                              className="border-b border-gray-100 dark:border-gray-700/80 align-top"
+                            >
+                              <td className="py-3 pr-4 font-medium text-gray-900 dark:text-gray-100">
+                                {formatTeamDisplayName(t.teamName, t.sortOrder)}
+                              </td>
+                              <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
+                                {t.homeClub?.trim() || '—'}
+                              </td>
+                              {tableSlotsForFormat(publicTeamsFormat).map((slotCode) => (
+                                <td
+                                  key={slotCode}
+                                  className="py-3 pr-4 text-gray-700 dark:text-gray-300 whitespace-nowrap"
+                                >
+                                  {formatPositionCell(
+                                    publicTeamsFormat,
+                                    t.roster,
+                                    slotCode,
+                                    t.viceSlotCode,
+                                    t.skipSlotCode,
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                    {publicFoursLegend ? (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">{publicFoursLegend}</p>
+                    ) : null}
+                    {publicTeams.length === 0 ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-4">No teams listed yet.</p>
+                    ) : null}
+                  </div>
                 )}
               </div>
-            </DetailRow>
-          )}
-        </div>
+            )}
 
-        <div className="mb-8 space-y-4">
-          {opensCopy && opensCopy.kind === 'datePhrase' && (
-            <p className="text-gray-700">{opensCopy.phrase}</p>
-          )}
-          {opensCopy && opensCopy.kind !== 'datePhrase' && (
-            <p className="text-gray-700">
-              Registration opens in{' '}
-              <span
-                className="font-medium text-gray-900 tabular-nums"
-                style={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                {opensCopy.kind === 'hours'
-                  ? `${opensCopy.hours} ${opensCopy.hours === 1 ? 'hour' : 'hours'}`
-                  : opensCopy.value}
-              </span>
-            </p>
-          )}
-
-          {opensCopy?.kind === 'mmss' && hasNotOpenedYet && msUntilOpen > 0 && (
-            <div className="space-y-2 pt-1">
-              <Link
-                to={`/events/${event.slug}/register`}
-                className="inline-block px-8 py-3 bg-white border-2 border-primary-teal text-primary-teal font-medium rounded-lg hover:bg-teal-50 transition-colors"
-              >
-                Prefill registration form
-              </Link>
-              <p className="text-sm text-gray-600 max-w-lg">
-                You may prefill your registration form. As soon as registration opens, you will be able to submit your
-                registration
-                {event.feeMinor > 0 ? ' and pay the registration fee' : ''}.
-              </p>
-            </div>
-          )}
-
-          {isPastCutoff && !hasNotOpenedYet && closedAtFormatted && (
-            <p className="text-gray-700">
-              Registration closed on {closedAtFormatted.date} at {closedAtFormatted.time}
-            </p>
-          )}
-
-          {isRegistrationOpen && !isFull && (
-            <Link
-              to={`/events/${event.slug}/register`}
-              className="inline-block px-8 py-3 bg-primary-teal text-white font-medium rounded-lg hover:bg-teal-700 transition-colors"
-            >
-              Register Now
-            </Link>
-          )}
-
-          {isRegistrationOpen && isFull && event.enableWaitlist === 1 && (
-            <Link
-              to={`/events/${event.slug}/register`}
-              className="inline-block px-8 py-3 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              Join Waitlist
-            </Link>
-          )}
-        </div>
-
-        {article && (
-          <div className="prose max-w-none">
-            {article.contentType === 'html' ? (
-              <div dangerouslySetInnerHTML={{ __html: article.content }} />
-            ) : (
-              <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
-                {article.content}
-              </ReactMarkdown>
+            {publicView === 'draw' && (
+              <div className="public-card p-6 text-gray-700 dark:text-gray-300">
+                <h2 className="public-subheading text-xl mb-2">Draw</h2>
+                <p className="text-sm">The competition draw will appear here.</p>
+              </div>
             )}
           </div>
-        )}
+
+          {showEventInfoSidebar ? (
+            <aside className="lg:col-span-4 lg:sticky lg:top-6 mb-8 lg:mb-0 self-start">
+              <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+                {event.timespans.map((ts) => (
+                  <DetailRow key={ts.id} icon={HiCalendarDays}>
+                    <p className="text-gray-900 font-medium">
+                      {formatTimespanRange(ts.start_dt, ts.end_dt)}
+                    </p>
+                  </DetailRow>
+                ))}
+
+                <DetailRow icon={HiMapPin}>
+                  <p className="text-gray-700">{formatPublicLocation(event.locations)}</p>
+                </DetailRow>
+
+                <DetailRow icon={HiCurrencyDollar}>
+                  <div className="text-gray-700">
+                    {event.memberFeeMinor != null && event.memberFeeMinor !== event.feeMinor ? (
+                      <>
+                        <p>{formatFee(event.feeMinor, event.currency)} general</p>
+                        <p className="text-sm text-gray-600 mt-0.5">
+                          {formatFee(event.memberFeeMinor, event.currency)} for members when logged in
+                        </p>
+                      </>
+                    ) : (
+                      <p>{formatFee(event.feeMinor, event.currency)}</p>
+                    )}
+                  </div>
+                </DetailRow>
+
+                {event.capacity !== null && (
+                  <DetailRow icon={HiUserGroup}>
+                    <div className="text-gray-700 space-y-1">
+                      <p>
+                        {event.confirmedCount} of {event.capacity} registered
+                      </p>
+                      {isFull && (
+                        <p className="text-sm">
+                          {isRegistrationOpen && event.enableWaitlist === 1
+                            ? 'Event is full – waitlist available'
+                            : 'Event is full'}
+                        </p>
+                      )}
+                      {!isFull && spotsRemaining !== null && (
+                        <p className="text-sm text-gray-600">{spotsRemaining} spots remaining</p>
+                      )}
+                    </div>
+                  </DetailRow>
+                )}
+
+                <div className="border-t border-gray-200 pt-4 mt-1 space-y-4">
+                  {opensCopy && opensCopy.kind === 'datePhrase' && (
+                    <p className="text-sm text-gray-700">{opensCopy.phrase}</p>
+                  )}
+                  {opensCopy && opensCopy.kind !== 'datePhrase' && (
+                    <p className="text-sm text-gray-700">
+                      Registration opens in{' '}
+                      <span
+                        className="font-medium text-gray-900 tabular-nums"
+                        style={{ fontVariantNumeric: 'tabular-nums' }}
+                      >
+                        {opensCopy.kind === 'hours'
+                          ? `${opensCopy.hours} ${opensCopy.hours === 1 ? 'hour' : 'hours'}`
+                          : opensCopy.value}
+                      </span>
+                    </p>
+                  )}
+
+                  {opensCopy?.kind === 'mmss' && hasNotOpenedYet && msUntilOpen > 0 && (
+                    <div className="space-y-2">
+                      <Link
+                        to={`/events/${event.slug}/register`}
+                        className="block w-full text-center px-4 py-3 bg-white border-2 border-primary-teal text-primary-teal font-medium rounded-lg hover:bg-teal-50 transition-colors"
+                      >
+                        Prefill registration form
+                      </Link>
+                      <p className="text-xs text-gray-600">
+                        You may prefill your registration form. As soon as registration opens, you will be able to submit
+                        your registration
+                        {event.feeMinor > 0 ? ' and pay the registration fee' : ''}.
+                      </p>
+                    </div>
+                  )}
+
+                  {isPastCutoff && !hasNotOpenedYet && closedAtFormatted && (
+                    <p className="text-sm text-gray-700">
+                      Registration closed on {closedAtFormatted.date} at {closedAtFormatted.time}
+                    </p>
+                  )}
+
+                  {isRegistrationOpen && !isFull && (
+                    <Link
+                      to={`/events/${event.slug}/register`}
+                      className="block w-full text-center px-4 py-3 bg-primary-teal text-white font-medium rounded-lg hover:bg-teal-700 transition-colors"
+                    >
+                      Register Now
+                    </Link>
+                  )}
+
+                  {isRegistrationOpen && isFull && event.enableWaitlist === 1 && (
+                    <Link
+                      to={`/events/${event.slug}/register`}
+                      className="block w-full text-center px-4 py-3 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                    >
+                      Join Waitlist
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </aside>
+          ) : null}
+        </div>
       </div>
     </PublicLayout>
   );
