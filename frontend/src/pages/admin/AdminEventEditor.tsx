@@ -365,10 +365,11 @@ export default function AdminEventEditor() {
   }, [eventId, isNew]);
 
   useEffect(() => {
+    if (isNew || loading) return;
     if (id && tab && !(secondaryTabKeys as readonly string[]).includes(tab)) {
       navigate(`/admin/events/${id}`, { replace: true });
     }
-  }, [id, tab, navigate, secondaryTabKeys]);
+  }, [id, tab, navigate, secondaryTabKeys, isNew, loading]);
 
   useEffect(() => {
     setRegistrations([]);
@@ -1039,7 +1040,14 @@ export default function AdminEventEditor() {
 
   return (
     <Layout>
-      <AppPage narrow={activeTab !== 'registrations' && activeTab !== 'details' && activeTab !== 'tournament'}>
+      <AppPage
+        narrow={activeTab !== 'registrations' && activeTab !== 'details' && activeTab !== 'tournament'}
+        className={
+          activeTab === 'tournament'
+            ? 'flex min-h-0 flex-1 flex-col !space-y-6'
+            : undefined
+        }
+      >
         <AppPageHeader
           title={pageTitle}
           description={pageSubtitle}
@@ -1741,17 +1749,20 @@ export default function AdminEventEditor() {
         )}
 
         {activeTab === 'tournament' && !isNew && eventId != null && isBonspielEvent && (
-          <AdminEventTournamentPanel
-            eventId={eventId}
-            initialTournamentFormat={tournamentFormat}
-            onTournamentFormatChange={setTournamentFormat}
-            initialTeamsPublished={tournamentTeamsPublished}
-            initialDrawPublished={tournamentDrawPublished}
-            onSaved={(teams, draw) => {
-              setTournamentTeamsPublished(teams);
-              setTournamentDrawPublished(draw);
-            }}
-          />
+          <div className="flex min-h-[calc(100dvh-12rem)] flex-1 flex-col">
+            <AdminEventTournamentPanel
+              eventId={eventId}
+              eventTitle={title}
+              initialTournamentFormat={tournamentFormat}
+              onTournamentFormatChange={setTournamentFormat}
+              initialTeamsPublished={tournamentTeamsPublished}
+              initialDrawPublished={tournamentDrawPublished}
+              onSaved={(teams, draw) => {
+                setTournamentTeamsPublished(teams);
+                setTournamentDrawPublished(draw);
+              }}
+            />
+          </div>
         )}
 
         {activeTab === 'registrations' && (

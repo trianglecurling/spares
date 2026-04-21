@@ -994,6 +994,8 @@ export const eventsSqlite = sqliteTable('events', {
   tournament_draw_published: integer('tournament_draw_published').default(0).notNull(),
   /** Bonspiel roster shape: fours (5 positions) or doubles (2). */
   tournament_format: text('tournament_format').$type<'fours' | 'doubles' | null>(),
+  /** Versioned bonspiel bracket/draw graph JSON (see eventTournamentDrawSchema). */
+  tournament_draw_json: text('tournament_draw_json'),
   terms_article_id: integer('terms_article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
@@ -2104,6 +2106,7 @@ export const eventsPg = pgTable('events', {
   tournament_teams_published: integerPg('tournament_teams_published').default(0).notNull(),
   tournament_draw_published: integerPg('tournament_draw_published').default(0).notNull(),
   tournament_format: textPg('tournament_format').$type<'fours' | 'doubles' | null>(),
+  tournament_draw_json: textPg('tournament_draw_json'),
   terms_article_id: integerPg('terms_article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),

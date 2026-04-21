@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
@@ -12,9 +12,12 @@ import {
 } from 'react-icons/hi2';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
+import PublicTournamentDrawBracket from '../components/PublicTournamentDrawBracket';
 import PageTabs from '../components/PageTabs';
 import SeoMeta from '../components/SeoMeta';
+import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
+import type { TournamentDrawState } from '../utils/tournamentDrawModel';
 import {
   formatPositionCell,
   formatTeamDisplayName,
@@ -254,6 +257,11 @@ export default function PublicEventDetailPage() {
   const [publicTeamsFormat, setPublicTeamsFormat] = useState<TournamentFormat | null>(null);
   const [publicTeamsLoading, setPublicTeamsLoading] = useState(false);
   const [publicTeamsError, setPublicTeamsError] = useState<string | null>(null);
+  const [publicDraw, setPublicDraw] = useState<TournamentDrawState | null | undefined>(undefined);
+  const [publicDrawLoading, setPublicDrawLoading] = useState(false);
+  const [publicDrawError, setPublicDrawError] = useState<string | null>(null);
+  /** Aligns public bracket baseline pan with this column (tabs / max-w-6xl + horizontal padding). */
+  const publicBracketAlignColumnRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -333,16 +341,18 @@ export default function PublicEventDetailPage() {
     return () => window.clearInterval(id);
   }, [event?.registrationStart, event?.id, serverOffsetMs]);
 
-  const tabParamForTeams = searchParams.get('tab');
-  const shouldLoadPublicTeams =
+  const tabParam = searchParams.get('tab');
+  const specialLinkQuery = searchParams.get('slk');
+  /** Load roster when either tab needs it so the draw view can resolve team names on cards. */
+  const shouldLoadTournamentTeams =
     !!slug &&
     !!event &&
-    tabParamForTeams === 'teams' &&
+    (tabParam === 'teams' || tabParam === 'draw') &&
     (event.calendarTypeId ?? 'other') === 'bonspiel' &&
     (event.tournamentTeamsPublished ?? 0) === 1;
 
   useEffect(() => {
-    if (!shouldLoadPublicTeams || !slug) {
+    if (!shouldLoadTournamentTeams || !slug) {
       setPublicTeams([]);
       setPublicTeamsFormat(null);
       setPublicTeamsError(null);
@@ -368,21 +378,117 @@ export default function PublicEventDetailPage() {
         setPublicTeamsFormat(null);
       })
       .finally(() => setPublicTeamsLoading(false));
-  }, [slug, shouldLoadPublicTeams]);
+  }, [slug, shouldLoadTournamentTeams]);
+
+  const shouldLoadPublicDraw =
+    !!slug &&
+    !!event &&
+    (tabParam === 'draw' || tabParam === 'teams') &&
+    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    (event.tournamentDrawPublished ?? 0) === 1;
+
+  useEffect(() => {
+    if (!shouldLoadPublicDraw || !slug) {
+      setPublicDraw(undefined);
+      setPublicDrawError(null);
+      return;
+    }
+    setPublicDrawLoading(true);
+    setPublicDrawError(null);
+    api
+      .get<{ draw: TournamentDrawState | null }>(`/public/events/${slug}/tournament-draw`, {
+        params: specialLinkQuery ? { slk: specialLinkQuery } : undefined,
+      })
+      .then((res) => {
+        setPublicDraw(res.data.draw ?? null);
+      })
+      .catch(() => {
+        setPublicDrawError('Unable to load draw.');
+        setPublicDraw(null);
+      })
+      .finally(() => setPublicDrawLoading(false));
+  }, [slug, shouldLoadPublicDraw, specialLinkQuery]);
+
+  useEffect(() => {
+    if (!shouldLoadPublicDraw || !slug) return;
+
+    const qs = new URLSearchParams();
+    if (specialLinkQuery) qs.set('slk', specialLinkQuery);
+    const query = qs.toString();
+    const streamUrl = `/api/public/events/${encodeURIComponent(slug)}/tournament-draw/stream${
+      query ? `?${query}` : ''
+    }`;
+
+    const es = new EventSource(streamUrl);
+
+    es.onmessage = (ev: MessageEvent<string>) => {
+      try {
+        const msg = JSON.parse(ev.data) as { type?: string };
+        if (msg.type !== 'tournament_draw_updated') return;
+        api
+          .get<{ draw: TournamentDrawState | null }>(`/public/events/${slug}/tournament-draw`, {
+            params: specialLinkQuery ? { slk: specialLinkQuery } : undefined,
+          })
+          .then((res) => {
+            setPublicDraw(res.data.draw ?? null);
+            setPublicDrawError(null);
+          })
+          .catch(() => {
+            setPublicDrawError('Unable to load draw.');
+          });
+      } catch {
+        // Ignore malformed SSE payloads.
+      }
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [slug, shouldLoadPublicDraw, specialLinkQuery]);
+
+  const drawTabTeamsById = useMemo(
+    () =>
+      new Map(
+        publicTeams.map((t) => [t.id, { teamName: t.teamName, sortOrder: t.sortOrder }] as const),
+      ),
+    [publicTeams],
+  );
 
   const publicFoursLegend = useMemo(() => {
     if (publicTeamsFormat !== 'fours' || publicTeams.length === 0) return null;
     return foursTableLegendText(publicTeams);
   }, [publicTeamsFormat, publicTeams]);
 
+  const loadingDelayMs = 2000;
+  const drawLoadPending =
+    !!event &&
+    !loading &&
+    tabParam === 'draw' &&
+    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    (event.tournamentDrawPublished ?? 0) === 1 &&
+    (publicDrawLoading || publicDraw === undefined);
+  const teamsLoadPending =
+    !!event &&
+    !loading &&
+    tabParam === 'teams' &&
+    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    (event.tournamentTeamsPublished ?? 0) === 1 &&
+    publicTeamsLoading;
+
+  const showInitialLoadingCard = useDelayedTrueWhile(loading, loadingDelayMs);
+  const showDrawLoadingCard = useDelayedTrueWhile(drawLoadPending, loadingDelayMs);
+  const showTeamsLoadingCard = useDelayedTrueWhile(teamsLoadPending, loadingDelayMs);
+
   if (loading) {
     return (
       <PublicLayout>
+        <SeoMeta title="Loading…" />
         <div className="max-w-4xl mx-auto px-4 py-16">
-          <PublicStateCard
-            title="Loading event..."
-            description="Gathering the latest event details and registration information."
-          />
+          {showInitialLoadingCard ? (
+            <PublicStateCard title="Loading…" description="Please wait." />
+          ) : (
+            <div className="min-h-[min(45vh,28rem)]" aria-hidden />
+          )}
         </div>
       </PublicLayout>
     );
@@ -426,7 +532,6 @@ export default function PublicEventDetailPage() {
   const showPublicTeams = calendarTypeId === 'bonspiel' && (event.tournamentTeamsPublished ?? 0) === 1;
   const showPublicDraw = calendarTypeId === 'bonspiel' && (event.tournamentDrawPublished ?? 0) === 1;
   const showEventTabs = showPublicTeams || showPublicDraw;
-  const tabParam = searchParams.get('tab');
   const publicView: 'details' | 'teams' | 'draw' =
     tabParam === 'teams' && showPublicTeams
       ? 'teams'
@@ -439,16 +544,20 @@ export default function PublicEventDetailPage() {
 
   return (
     <PublicLayout>
-      <SeoMeta title={event.title} />
-      <div className="max-w-6xl mx-auto px-4 py-10">
-        <Link to="/events" className="text-sm text-primary-teal hover:underline mb-6 inline-block">
-          &larr; All Events
-        </Link>
+      <div className="flex flex-1 min-h-0 flex-col w-full min-w-0">
+        <SeoMeta title={event.title} />
+        <div
+          ref={publicBracketAlignColumnRef}
+          className="shrink-0 w-full max-w-6xl min-w-0 mx-auto px-4 sm:px-6 pt-10 pb-4"
+        >
+          <Link to="/events" className="text-sm text-primary-teal hover:underline mb-6 inline-block">
+            &larr; All Events
+          </Link>
 
-        {showEventTabs ? (
-          <PageTabs
-            className="mb-6"
-            items={[
+          {showEventTabs ? (
+            <PageTabs
+              className="w-full"
+              items={[
               {
                 key: 'details',
                 label: 'Details',
@@ -476,14 +585,47 @@ export default function PublicEventDetailPage() {
                   ]
                 : []),
             ]}
-          />
-        ) : null}
+            />
+          ) : null}
+        </div>
 
-        <div className="lg:grid lg:grid-cols-12 lg:gap-x-10 lg:items-start">
-          <div
-            className={`space-y-6 mb-8 lg:mb-0 ${showEventInfoSidebar ? 'lg:col-span-8' : 'lg:col-span-12'}`}
-          >
-            {publicView === 'details' && (
+        {publicView === 'draw' ? (
+          publicDrawLoading || publicDraw === undefined ? (
+            showDrawLoadingCard ? (
+              <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 shrink-0 text-gray-700 dark:text-gray-300">
+                <div className="max-w-4xl mx-auto">
+                  <PublicStateCard title="Loading…" description="Please wait." />
+                </div>
+              </div>
+            ) : (
+              <div className="min-h-[min(40vh,24rem)] shrink-0" aria-hidden />
+            )
+          ) : publicDrawError ? (
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 shrink-0 text-gray-700 dark:text-gray-300">
+              <p className="text-sm text-red-700 dark:text-red-300">{publicDrawError}</p>
+            </div>
+          ) : publicDraw === null ? (
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 shrink-0 text-gray-700 dark:text-gray-300">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                The draw has not been set up yet. Check back later.
+              </p>
+            </div>
+          ) : publicDraw != null ? (
+            <div className="flex flex-1 min-h-0 flex-col w-full min-w-0 text-gray-700 dark:text-gray-300">
+              <PublicTournamentDrawBracket
+                draw={publicDraw}
+                teamsById={drawTabTeamsById}
+                alignContentColumnRef={publicBracketAlignColumnRef}
+              />
+            </div>
+          ) : null
+        ) : (
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 w-full min-w-0">
+          <div className="lg:grid lg:grid-cols-12 lg:gap-x-10 lg:items-start">
+            <div
+              className={`space-y-6 mb-8 lg:mb-0 ${showEventInfoSidebar ? 'lg:col-span-8' : 'lg:col-span-12'}`}
+            >
+              {publicView === 'details' && (
               <>
                 {event.imageFileId && (
                   <div className="rounded-lg overflow-hidden max-h-96">
@@ -513,7 +655,11 @@ export default function PublicEventDetailPage() {
               <div className="public-card p-6 text-gray-700 dark:text-gray-300">
                 <h2 className="public-subheading text-xl mb-4">Teams</h2>
                 {publicTeamsLoading ? (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Loading teams…</p>
+                  showTeamsLoadingCard ? (
+                    <PublicStateCard title="Loading…" description="Please wait." />
+                  ) : (
+                    <div className="min-h-[min(24vh,16rem)]" aria-hidden />
+                  )
                 ) : publicTeamsError ? (
                   <p className="text-sm text-red-700 dark:text-red-300">{publicTeamsError}</p>
                 ) : !publicTeamsFormat ? (
@@ -544,7 +690,16 @@ export default function PublicEventDetailPage() {
                               className="border-b border-gray-100 dark:border-gray-700/80 align-top"
                             >
                               <td className="py-3 pr-4 font-medium text-gray-900 dark:text-gray-100">
-                                {formatTeamDisplayName(t.teamName, t.sortOrder)}
+                                <Link
+                                  to={
+                                    specialLinkQuery
+                                      ? `/events/${event.slug}/teams/${t.id}?${new URLSearchParams({ slk: specialLinkQuery }).toString()}`
+                                      : `/events/${event.slug}/teams/${t.id}`
+                                  }
+                                  className="text-left text-primary-teal hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
+                                >
+                                  {formatTeamDisplayName(t.teamName, t.sortOrder)}
+                                </Link>
                               </td>
                               <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
                                 {t.homeClub?.trim() || '—'}
@@ -577,16 +732,9 @@ export default function PublicEventDetailPage() {
                 )}
               </div>
             )}
+            </div>
 
-            {publicView === 'draw' && (
-              <div className="public-card p-6 text-gray-700 dark:text-gray-300">
-                <h2 className="public-subheading text-xl mb-2">Draw</h2>
-                <p className="text-sm">The competition draw will appear here.</p>
-              </div>
-            )}
-          </div>
-
-          {showEventInfoSidebar ? (
+            {showEventInfoSidebar ? (
             <aside className="lg:col-span-4 lg:sticky lg:top-6 mb-8 lg:mb-0 self-start">
               <div className="bg-gray-50 rounded-lg p-6 space-y-4">
                 {event.timespans.map((ts) => (
@@ -697,7 +845,9 @@ export default function PublicEventDetailPage() {
               </div>
             </aside>
           ) : null}
+          </div>
         </div>
+        )}
       </div>
     </PublicLayout>
   );

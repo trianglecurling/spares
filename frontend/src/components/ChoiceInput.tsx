@@ -579,6 +579,8 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   const submenuPanelRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [open, setOpen] = useState(false)
   const [rootPosition, setRootPosition] = useState<PositionStyle>({})
+  /** Viewport-aware cap for the root listbox; always set from `getPanelPosition` so the list scrolls even when CSS-anchor `calc()` max-height is unreliable. */
+  const [rootListMaxHeight, setRootListMaxHeight] = useState<number | undefined>(undefined)
   const [rootPlaceBelow, setRootPlaceBelow] = useState(true)
   const [submenuPositions, setSubmenuPositions] = useState<Record<string, PositionStyle>>({})
   const [submenuOpenRight, setSubmenuOpenRight] = useState<Record<string, boolean>>({})
@@ -708,6 +710,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   const closePopover = (restoreFocus = true) => {
     setOpenSubmenuPaths([])
     setFocusedSubmenuPath(null)
+    setRootListMaxHeight(undefined)
     if (isTextInput) {
       lastRootListHighlightRef.current = null
       setPanelHighlight('', null)
@@ -727,12 +730,16 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   const syncRootPosition = useCallback(() => {
     if (!triggerRef.current) return
     const rect = triggerRef.current.getBoundingClientRect()
+    const panelPos = getPanelPosition(rect)
+    const nextMax =
+      panelPos.maxHeight !== undefined ? Number(panelPos.maxHeight) : undefined
+    setRootListMaxHeight(Number.isFinite(nextMax) ? nextMax : undefined)
     if (SUPPORTS_CSS_ANCHOR_POSITIONING) {
       setRootPlaceBelow(getRootPanelPlaceBelow(rect))
       setRootPosition({})
       return
     }
-    setRootPosition(getPanelPosition(rect))
+    setRootPosition(panelPos)
   }, [])
 
   const openPopover = () => {
@@ -2065,20 +2072,9 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   }, [popoverAnchorCssName, rootPlaceBelow, rootPosition])
 
   const rootPopoverScrollStyle = useMemo((): CSSProperties | undefined => {
-    if (!SUPPORTS_CSS_ANCHOR_POSITIONING) {
-      return rootPosition.maxHeight !== undefined ? { maxHeight: rootPosition.maxHeight } : undefined
-    }
-    const pad = VIEWPORT_PADDING
-    const gap = PANEL_GAP
-    if (rootPlaceBelow) {
-      return {
-        maxHeight: `min(${POPOVER_PANEL_MAX_HEIGHT}px, calc(100svh - anchor(bottom) - ${pad + gap}px))`,
-      }
-    }
-    return {
-      maxHeight: `min(${POPOVER_PANEL_MAX_HEIGHT}px, calc(anchor(top) - ${pad + gap}px))`,
-    }
-  }, [rootPlaceBelow, rootPosition.maxHeight])
+    if (rootListMaxHeight === undefined) return undefined
+    return { maxHeight: rootListMaxHeight }
+  }, [rootListMaxHeight])
 
   if (layout !== 'popover') {
     const inlineCustomValues = selection.filter((v) => !knownValueKeys.has(String(v)))
@@ -2418,7 +2414,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
         style={rootPopoverSurfaceStyle}
       >
         <div
-          className="overflow-y-auto overscroll-y-contain"
+          className="min-h-0 overflow-y-auto overscroll-y-contain"
           style={rootPopoverScrollStyle}
         >
           {renderPopoverPanel(popoverListOptions)}

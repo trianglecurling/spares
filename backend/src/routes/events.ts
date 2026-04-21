@@ -46,6 +46,23 @@ import {
   type RosterSlotPayload,
   type TournamentTeamRow,
 } from '../services/eventTournamentTeamsService.js';
+import { tournamentDrawStateSchema, tournamentGameResultSchema } from '../services/eventTournamentDrawSchema.js';
+import {
+  getTournamentDrawForEvent,
+  saveTournamentDrawForEvent,
+  coerceTournamentDrawIncomingSlots,
+  validateTournamentDrawSemantics,
+  patchTournamentDrawGameResult,
+} from '../services/eventTournamentDrawService.js';
+import {
+  broadcastTournamentDrawUpdated,
+  subscribeTournamentDrawLive,
+} from '../services/tournamentDrawPublicLive.js';
+import { PassThrough } from 'node:stream';
+
+const patchTournamentGameResultBodySchema = z.object({
+  result: tournamentGameResultSchema.nullable(),
+});
 import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendApiError, sendValidationError } from '../api/errors.js';
@@ -254,6 +271,40 @@ function formatEventDate(timespans: Array<{ start_dt: string; end_dt: string }>)
   }
 }
 
+/**
+ * Same access as GET `/public/events/:slug/tournament-draw` (public bonspiel with published draw,
+ * or valid `slk` special link).
+ */
+async function getPublicPublishedTournamentDrawEventId(
+  slug: string,
+  slk: string | undefined,
+): Promise<number | null> {
+  const event = await getEventBySlug(slug);
+  if (!event) return null;
+
+  let hasValidSpecialLink = false;
+  if (slk) {
+    const link = await getSpecialLinkByToken(slk);
+    if (link && link.event_id === event.id && !link.used && !link.invalidated) {
+      hasValidSpecialLink = true;
+    }
+  }
+
+  if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+    return null;
+  }
+
+  if (normalizeCalendarTypeId(event.calendar_type_id) !== 'bonspiel') {
+    return null;
+  }
+
+  if (event.tournament_draw_published !== 1) {
+    return null;
+  }
+
+  return event.id;
+}
+
 // Public routes (no auth required)
 export async function publicEventRoutes(fastify: FastifyInstance): Promise<void> {
   // List published public events
@@ -359,6 +410,86 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
         throw err;
       }
+    }
+  );
+
+  fastify.get<{ Params: { slug: string }; Querystring: { slk?: string } }>(
+    '/public/events/:slug/tournament-draw',
+    { preHandler: optionalAuthMiddleware, schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const slk = (request.query as { slk?: string }).slk;
+      const eventId = await getPublicPublishedTournamentDrawEventId(request.params.slug, slk);
+      if (eventId == null) {
+        return sendApiError(reply, 404, 'Event not found');
+      }
+
+      try {
+        const draw = await getTournamentDrawForEvent(eventId);
+        return { draw };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  fastify.get<{ Params: { slug: string }; Querystring: { slk?: string } }>(
+    '/public/events/:slug/tournament-draw/stream',
+    {
+      preHandler: optionalAuthMiddleware,
+      schema: {
+        tags: ['events'],
+        hide: true,
+        description:
+          'Server-Sent Events stream: emits tournament_draw_updated when the draw changes; clients should refetch GET /public/events/:slug/tournament-draw.',
+      },
+    },
+    async (request, reply) => {
+      const slk = (request.query as { slk?: string }).slk;
+      const eventId = await getPublicPublishedTournamentDrawEventId(request.params.slug, slk);
+      if (eventId == null) {
+        return sendApiError(reply, 404, 'Event not found');
+      }
+
+      const stream = new PassThrough();
+      reply
+        .header('Content-Type', 'text/event-stream; charset=utf-8')
+        .header('Cache-Control', 'no-cache, no-transform')
+        .header('Connection', 'keep-alive')
+        .header('X-Accel-Buffering', 'no');
+
+      const send = (chunk: string) => {
+        if (!stream.writableEnded) {
+          stream.write(chunk);
+        }
+      };
+
+      const unsubscribe = subscribeTournamentDrawLive(eventId, send);
+
+      const payload = JSON.stringify({ type: 'connected', eventId });
+      send(`data: ${payload}\n\n`);
+
+      const pingTimer = setInterval(() => {
+        send(': ping\n\n');
+      }, 30000);
+
+      let cleanedUp = false;
+      const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        clearInterval(pingTimer);
+        unsubscribe();
+        if (!stream.writableEnded) {
+          stream.end();
+        }
+      };
+
+      request.raw.on('close', cleanup);
+      stream.on('close', cleanup);
+
+      return reply.send(stream);
     }
   );
 
@@ -670,6 +801,95 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         throw err;
       }
     }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/events/:id/tournament-draw',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      try {
+        const draw = await getTournamentDrawForEvent(eventId);
+        return { draw };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  fastify.put<{ Params: { id: string }; Body: unknown }>(
+    '/events/:id/tournament-draw',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsed = tournamentDrawStateSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid tournament draw', parsed.error.flatten());
+      }
+
+      try {
+        const coerced = coerceTournamentDrawIncomingSlots(parsed.data);
+        validateTournamentDrawSemantics(coerced);
+        await saveTournamentDrawForEvent(eventId, coerced);
+        broadcastTournamentDrawUpdated(eventId);
+        return { draw: coerced };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  fastify.patch<{ Params: { id: string; gameId: string }; Body: unknown }>(
+    '/events/:id/tournament-draw/games/:gameId/result',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsedBody = patchTournamentGameResultBodySchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return sendValidationError(reply, 'Invalid body', parsedBody.error.flatten());
+      }
+
+      const gameId = request.params.gameId?.trim() ?? '';
+      if (!gameId) return sendApiError(reply, 400, 'Invalid game id');
+
+      try {
+        const draw = await patchTournamentDrawGameResult(eventId, gameId, parsedBody.data.result);
+        broadcastTournamentDrawUpdated(eventId);
+        return { draw };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    },
   );
 
   // Get event by slug (authenticated)

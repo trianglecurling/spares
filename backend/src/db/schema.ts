@@ -2916,6 +2916,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       column: 'tournament_draw_published',
     },
     { sql: 'ALTER TABLE events ADD COLUMN tournament_format TEXT', table: 'events', column: 'tournament_format' },
+    { sql: 'ALTER TABLE events ADD COLUMN tournament_draw_json TEXT', table: 'events', column: 'tournament_draw_json' },
   ];
 
   for (const migration of migrations) {
@@ -3734,6 +3735,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE events ADD COLUMN tournament_teams_published INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE events ADD COLUMN tournament_draw_published INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE events ADD COLUMN tournament_format TEXT',
+    'ALTER TABLE events ADD COLUMN tournament_draw_json TEXT',
   ];
 
   for (const migrationSQL of migrations) {

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Drizzle row shapes and DB literal columns; prefer incremental typing over time */
 import crypto from 'crypto';
-import { and, eq, gte, lte, ne, inArray, asc, desc } from 'drizzle-orm';
+import { and, eq, gte, lte, ne, inArray, asc, desc, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { EventRegistrationStatus, EventFieldType, EventFieldScope, EventVisibility } from '../db/drizzle-schema.js';
 import {
@@ -999,6 +999,19 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
   if (normalizeCalendarTypeId(event.calendar_type_id) === 'bonspiel') {
     await copyTournamentTeamsBetweenEvents(eventId, created.id);
   }
+
+  const drawJson = (event as { tournament_draw_json?: string | null }).tournament_draw_json;
+  if (drawJson != null && drawJson !== '') {
+    const { db, schema } = getDrizzleDb();
+    await db
+      .update(schema.events)
+      .set({
+        tournament_draw_json: drawJson,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      } as Record<string, unknown>)
+      .where(eq(schema.events.id, created.id));
+  }
+
   return created;
 }
 
