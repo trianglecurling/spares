@@ -64,7 +64,7 @@ export default function Modal({
       : 'max-h-[calc(100dvh-2rem)]';
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-[110] overflow-hidden">
       <div
         className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={onClose}

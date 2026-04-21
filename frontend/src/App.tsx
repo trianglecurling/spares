@@ -61,6 +61,7 @@ import AdminEventEditor from './pages/admin/AdminEventEditor';
 import AdminEventRegistrationEditor from './pages/admin/AdminEventRegistrationEditor';
 import PublicEventsPage from './pages/PublicEventsPage';
 import PublicEventDetailPage from './pages/PublicEventDetailPage';
+import PublicEventTeamPage from './pages/PublicEventTeamPage';
 import PublicEventRegisterPage from './pages/PublicEventRegisterPage';
 import PublicEventRegisterSuccessPage from './pages/PublicEventRegisterSuccessPage';
 import PublicPermalinkInfo from './pages/PublicPermalinkInfo';
@@ -115,6 +116,7 @@ function App() {
                   <Route path="/article/:slug" element={<PublicArticle />} />
 
                   <Route path="/events" element={<PublicEventsPage />} />
+                  <Route path="/events/:slug/teams/:teamId" element={<PublicEventTeamPage />} />
                   <Route path="/events/:slug" element={<PublicEventDetailPage />} />
                   <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
                   <Route path="/events/:slug/register/success" element={<PublicEventRegisterSuccessPage />} />
