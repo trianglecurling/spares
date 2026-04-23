@@ -24,13 +24,13 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: npm install
+        run: bun install --frozen-lockfile
 
       - name: Build frontend
-        run: npm run build:frontend
+        run: bun run build:frontend
 
       - name: Build backend
-        run: npm run build:backend
+        run: bun run build:backend
 
       - name: Setup SSH
         run: |
@@ -80,7 +80,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
             cd /srv/tccnc-web-preview/backend
-            sudo -u www-data npm install --production
+            sudo -u www-data bun install --production
             sudo systemctl restart spares-staging
           EOF
 
