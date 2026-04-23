@@ -15,6 +15,7 @@ import {
   getEventById,
   getEventBySlug,
   listEvents,
+  listPublicSeasonStartYearsWithEvents,
   registerForEvent,
   cancelRegistration,
   confirmRegistrationPayment,
@@ -160,7 +161,7 @@ const createEventSchema = z.object({
   maxGroupSize: z.number().int().positive().nullable().optional(),
   enableWaitlist: z.boolean().optional(),
   termsArticleId: z.number().int().nullable().optional(),
-  calendarTypeId: z.enum(['bonspiel', 'clinic', 'maintenance', 'social', 'other']).optional(),
+  calendarTypeId: z.enum(['bonspiel', 'learn-to-curl', 'juniors', 'other']).optional(),
   tournamentTeamsPublished: z.boolean().optional(),
   tournamentDrawPublished: z.boolean().optional(),
   tournamentFormat: z.enum(['fours', 'doubles']).nullable().optional(),
@@ -318,6 +319,12 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       toDate: query.to,
     });
     return events.map(summarizeEvent);
+  });
+
+  /** Season start years (e.g. 2025 for 2025-26) that have ≥1 published public event in that season. */
+  fastify.get('/public/events/seasons', { schema: { tags: ['events'] } }, async () => {
+    const seasonStartYears = await listPublicSeasonStartYearsWithEvents();
+    return { seasonStartYears };
   });
 
   // Get public event by slug

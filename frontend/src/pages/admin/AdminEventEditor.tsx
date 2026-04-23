@@ -135,9 +135,8 @@ type EventEditorSavePayload = {
 
 const EVENT_CALENDAR_TYPE_OPTIONS: { id: string; label: string }[] = [
   { id: 'bonspiel', label: 'Bonspiel' },
-  { id: 'clinic', label: 'Clinic' },
-  { id: 'maintenance', label: 'Maintenance' },
-  { id: 'social', label: 'Social' },
+  { id: 'learn-to-curl', label: 'Learn to Curl' },
+  { id: 'juniors', label: 'Juniors' },
   { id: 'other', label: 'Other' },
 ];
 

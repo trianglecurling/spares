@@ -134,7 +134,7 @@ export default function FirstLogin() {
               Logout
             </button>
             <h1 className="app-page-title mb-2">
-              Welcome to Triangle Curling Spares!
+              Welcome to Triangle Curling Club!
             </h1>
             <p className="app-page-subtitle mb-8">Let's get your profile set up.</p>
 

@@ -881,7 +881,9 @@ export default function AdminMembers() {
               renderActions: (member) => (
                 <div
                   className="relative inline-block"
-                  ref={(el) => (menuRefs.current[member.id] = el)}
+                  ref={(el) => {
+                    menuRefs.current[member.id] = el;
+                  }}
                 >
                   <button
                     onClick={() => setOpenMenuId(openMenuId === member.id ? null : member.id)}
@@ -946,7 +948,6 @@ export default function AdminMembers() {
           />
         )}
       </AppPage>
-
       {/* Edit/Create Member Modal */}
       <Modal
         isOpen={isModalOpen}
@@ -1301,7 +1302,6 @@ export default function AdminMembers() {
           </div>
         </form>
       </Modal>
-
       {/* Bulk Import Modal */}
       <Modal
         isOpen={isBulkAddModalOpen}
@@ -1506,7 +1506,6 @@ export default function AdminMembers() {
           )}
         </div>
       </Modal>
-
       {/* Export TSV Modal */}
       <Modal
         isOpen={isExportModalOpen}

@@ -10,6 +10,8 @@ interface SiteConfig {
   contactPhone: string | null;
   footerMarkdown: string | null;
   disableSms?: boolean;
+  /** `MM-DD`; from governance fiscal year start (public site config). */
+  fiscalYearStartMmdd?: string;
 }
 
 interface MenuItemNode {
@@ -480,6 +482,9 @@ export default function PublicLayout({
             </div>
           </div>
         </div>
+        <p className="public-container mt-8 border-t border-gray-200 pt-6 text-center text-xs text-gray-500">
+          Website powered by The Broom Stack
+        </p>
       </footer>
     </div>
   );

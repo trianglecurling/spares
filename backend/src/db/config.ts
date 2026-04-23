@@ -19,7 +19,7 @@ export interface DatabaseConfig {
 
 // Resolve config file path relative to the backend directory (where process.cwd() points)
 // This works both in development (src/) and production (dist/)
-// In production, process.cwd() is /srv/spares/backend, so data/db-config.json resolves correctly
+// In production, process.cwd() is /srv/tccnc-web/backend, so data/db-config.json resolves correctly
 const CONFIG_FILE_PATH = path.resolve(process.cwd(), 'data/db-config.json');
 
 export function getDatabaseConfig(): DatabaseConfig | null {

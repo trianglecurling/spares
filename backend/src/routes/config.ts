@@ -575,10 +575,10 @@ export async function configRoutes(fastify: FastifyInstance) {
     try {
       await sendEmail({
         to: member.email,
-        subject: 'Test Email from Triangle Curling Spares',
+        subject: 'Test Email from Triangle Curling',
         htmlContent: `
           <h2>Test Email</h2>
-          <p>This is a test email from the Triangle Curling Spares server configuration page.</p>
+          <p>This is a test email from the Triangle Curling server configuration page.</p>
           <p>If you received this email, your Azure Communication Services configuration is working correctly!</p>
           <p><strong>Sent at:</strong> ${new Date().toLocaleString()}</p>
         `,
@@ -618,7 +618,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const testMessage = `Test SMS from Triangle Curling Spares. Sent at ${new Date().toLocaleString()}. Your Twilio configuration is working correctly!`;
+      const testMessage = `Test SMS from Triangle Curling. Sent at ${new Date().toLocaleString()}. Your Twilio configuration is working correctly!`;
       await sendSMS(member.phone, testMessage);
 
       return { success: true, message: `Test SMS sent to ${member.phone}` };

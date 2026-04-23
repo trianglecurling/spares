@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "Backend API for Triangle Curling Spares",
+  "description": "Backend API for Triangle Curling Club",
   "type": "module",
   "engines": {
     "bun": ">=1.0.0"

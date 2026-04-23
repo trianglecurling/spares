@@ -225,7 +225,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   Triangle Curling
                 </span>
                 <span className="text-xs font-medium tracking-wide uppercase text-gray-600 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
-                  Spare Management
+                  Members Area
                 </span>
               </Link>
 

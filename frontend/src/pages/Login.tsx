@@ -175,7 +175,7 @@ export default function Login() {
             <h1 className="text-4xl font-bold mb-2 text-[#121033] dark:text-gray-100">
               Triangle Curling
             </h1>
-            <p className="text-gray-600 dark:text-gray-400">Spare Management System</p>
+            <p className="text-gray-600 dark:text-gray-400">Member Login</p>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">

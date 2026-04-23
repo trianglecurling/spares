@@ -40,15 +40,15 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             --exclude='node_modules' \
             --exclude='.git' \
-            frontend/dist/ ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }}:/srv/spares-preview/dist/
+            frontend/dist/ ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }}:/srv/tccnc-web-preview/dist/
 
       - name: Prepare backend directory for deployment
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
             # Create backend directory if it doesn't exist
-            sudo mkdir -p /srv/spares-preview/backend
+            sudo mkdir -p /srv/tccnc-web-preview/backend
             # Temporarily change ownership to deployment user so rsync can write
-            sudo chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} /srv/spares-preview/backend || true
+            sudo chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} /srv/tccnc-web-preview/backend || true
           EOF
 
       - name: Deploy backend
@@ -58,23 +58,23 @@ jobs:
             --exclude='node_modules' \
             --exclude='.git' \
             backend/dist/ backend/package.json \
-            ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }}:/srv/spares-preview/backend/
+            ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }}:/srv/tccnc-web-preview/backend/
 
       - name: Setup directories and permissions
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
             # Create data directory if it doesn't exist
-            sudo mkdir -p /srv/spares-preview/backend/data
+            sudo mkdir -p /srv/tccnc-web-preview/backend/data
             # Change ownership of backend directory to www-data (after deployment)
-            sudo chown -R www-data:www-data /srv/spares-preview/backend
+            sudo chown -R www-data:www-data /srv/tccnc-web-preview/backend
             # Ensure data directory has correct permissions
-            sudo chmod 755 /srv/spares-preview/backend/data
+            sudo chmod 755 /srv/tccnc-web-preview/backend/data
           EOF
 
       - name: Install production dependencies and restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
-            cd /srv/spares-preview/backend
+            cd /srv/tccnc-web-preview/backend
             sudo -u www-data npm install --production
             sudo systemctl restart spares-staging
           EOF
