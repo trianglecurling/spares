@@ -36,8 +36,8 @@
     "axios": "^1.6.5",
     "eslint-plugin-react": "^7.37.5",
     "marked": "^14.0.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "react-icons": "^5.5.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.21.1",
@@ -55,6 +55,7 @@
     "@types/react-dom": "^19.2.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",
+    "@typescript/native-preview": "beta",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.16",
     "eslint": "^9.0.0",
@@ -66,7 +67,6 @@
     "prettier": "^3.1.1",
     "storybook": "^10.3.5",
     "tailwindcss": "^3.4.0",
-    "@typescript/native-preview": "beta",
     "typescript": "6.0.3",
     "vite": "^7.2.2"
   }

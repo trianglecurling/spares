@@ -7,6 +7,12 @@
     "frontend",
     "backend"
   ],
+  "overrides": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
+  },
   "scripts": {
     "dev": "bun run --elide-lines=0 --filter '*' dev",
     "dev:frontend": "bun run --filter frontend dev",
@@ -35,9 +41,13 @@
   "license": "MIT",
   "dependencies": {
     "@opentelemetry/exporter-logs-otlp-http": "^0.211.0",
-    "date-fns": "^4.1.0"
+    "date-fns": "^4.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "baseline-browser-mapping": "^2.9.14",
     "drizzle-orm": "^0.44.7",
     "eslint": "^9.0.0"
