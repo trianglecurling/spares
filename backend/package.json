@@ -9,7 +9,9 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "build": "tsc",
+    "build": "tsgo",
+    "typecheck": "tsgo --noEmit",
+    "typecheck-legacy": "tsc --noEmit",
     "start": "bun run dist/index.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -75,6 +77,7 @@
     "globals": "^15.0.0",
     "prettier": "^3.1.1",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "@typescript/native-preview": "beta",
+    "typescript": "6.0.3"
   }
 }

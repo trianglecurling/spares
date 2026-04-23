@@ -21,6 +21,8 @@
     "openapi:generate": "bun run --filter backend openapi:generate && bunx openapi-typescript backend/openapi.json -o frontend/src/api/generated/types.ts",
     "openapi:check": "npm run openapi:generate",
     "consistency:check": "bun run lint && bun run openapi:generate && bun run build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck-legacy": "bun run --filter '*' typecheck-legacy",
     "lint": "bun run --filter '*' lint",
     "format": "bun run --filter '*' format"
   },
