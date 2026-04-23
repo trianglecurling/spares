@@ -845,7 +845,7 @@ function PresetAddressField({
             signal: ac.signal,
             headers: {
               Accept: 'application/json',
-              'User-Agent': 'TriangleCurlingSpares/1.0 (event registration)',
+              'User-Agent': 'BroomStack/1.0 (event registration)',
             },
           });
           const data = (await res.json()) as Array<{

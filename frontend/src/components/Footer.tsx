@@ -50,6 +50,9 @@ export default function Footer({ simple = false }: FooterProps) {
             )}
           </div>
         </div>
+        <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
+          Website powered by The Broom Stack
+        </p>
       </div>
     </footer>
   );

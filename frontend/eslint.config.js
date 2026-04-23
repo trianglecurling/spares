@@ -8,7 +8,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/**'],
+    ignores: ['dist/**', 'storybook-static/**'],
   },
   {
     files: ['**/*.ts', '**/*.tsx'],

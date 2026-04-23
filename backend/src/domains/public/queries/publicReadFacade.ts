@@ -19,6 +19,8 @@ type PublicSiteConfig = {
   contactPhone: string | null;
   footerMarkdown: string | null;
   disableSms: boolean;
+  /** `MM-DD` (month-day) fiscal year start from governance; used for public season labels (e.g. 2025-26). */
+  fiscalYearStartMmdd: string;
 };
 
 function findMarkerIndex(content: string): number {
@@ -134,17 +136,23 @@ export async function getMenuTree(menuType: string): Promise<MenuItemNode[]> {
 
 export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
   const { db, schema } = getDrizzleDb();
-  const [siteConfigRows, serverConfigRows] = await Promise.all([
+  const [siteConfigRows, serverConfigRows, governanceRows] = await Promise.all([
     db.select().from(schema.siteConfig).where(eq(schema.siteConfig.id, 1)).limit(1),
     db
       .select({ disable_sms: schema.serverConfig.disable_sms })
       .from(schema.serverConfig)
       .where(eq(schema.serverConfig.id, 1))
       .limit(1),
+    db
+      .select({ mmdd: schema.governanceSettings.fiscal_year_start_mmdd })
+      .from(schema.governanceSettings)
+      .where(eq(schema.governanceSettings.id, 1))
+      .limit(1),
   ]);
 
   const siteConfig = siteConfigRows[0];
   const serverConfig = serverConfigRows[0];
+  const fiscalYearStartMmdd = governanceRows[0]?.mmdd?.trim() || '09-01';
   if (!siteConfig) {
     return {
       clubName: null,
@@ -153,6 +161,7 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
       contactPhone: null,
       footerMarkdown: null,
       disableSms: serverConfig?.disable_sms === 1,
+      fiscalYearStartMmdd,
     };
   }
 
@@ -163,6 +172,7 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
     contactPhone: siteConfig.contact_phone ?? null,
     footerMarkdown: siteConfig.footer_markdown ?? null,
     disableSms: serverConfig?.disable_sms === 1,
+    fiscalYearStartMmdd,
   };
 }
 

@@ -36,6 +36,7 @@ import {
   HiOutlineCalendarDays as HiOutlineDay,
   HiPencil,
   HiPlus,
+  HiSparkles,
   HiStar,
   HiSun,
   HiTrash,
@@ -299,6 +300,13 @@ export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
     icon: HiCalendarDays,
   },
   {
+    id: 'juniors',
+    label: 'Juniors',
+    color:
+      'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-900/50 dark:bg-fuchsia-600 dark:text-white dark:border-white/25',
+    icon: HiSparkles,
+  },
+  {
     id: 'practice',
     label: 'Practice',
     color:
@@ -372,6 +380,7 @@ const WEEK_ALL_DAY_COLUMN_TINT: Record<string, string> = {
   maintenance: 'bg-slate-100/40 dark:bg-slate-900/35',
   leagues: 'bg-teal-50/50 dark:bg-teal-950/35',
   bonspiel: 'bg-violet-50/50 dark:bg-violet-950/35',
+  juniors: 'bg-fuchsia-50/50 dark:bg-fuchsia-950/35',
   practice: 'bg-amber-50/50 dark:bg-amber-950/35',
   'group-event': 'bg-emerald-50/50 dark:bg-emerald-950/35',
   clinic: 'bg-sky-50/50 dark:bg-sky-950/35',

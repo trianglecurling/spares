@@ -1,7 +1,7 @@
 {
   "name": "triangle-curling-spares",
   "version": "1.0.0",
-  "description": "Spare management system for Triangle Curling Club",
+  "description": "Member and club management for Triangle Curling Club",
   "private": true,
   "workspaces": [
     "frontend",

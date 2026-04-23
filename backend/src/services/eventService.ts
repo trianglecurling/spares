@@ -14,6 +14,8 @@ import {
   normalizeTournamentFormat,
 } from './eventTournamentTeamsService.js';
 import { EventServiceError } from './eventServiceError.js';
+import { getSeasonStartYearForUtcDate, parseFiscalYearStartMmdd, seasonStartYearsTouchingRangeUtc } from '../utils/fiscalSeason.js';
+import { getCurrentTimeAsync } from '../utils/time.js';
 
 export { EventServiceError };
 
@@ -29,10 +31,20 @@ function eventTimeMs(value: string | Date | null | undefined): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-const CALENDAR_EVENT_TYPE_IDS = new Set(['bonspiel', 'clinic', 'maintenance', 'social', 'other']);
+const CALENDAR_EVENT_TYPE_IDS = new Set(['bonspiel', 'learn-to-curl', 'juniors', 'other']);
+
+const LEGACY_CALENDAR_TYPE_ID: Record<string, string> = {
+  clinic: 'learn-to-curl',
+  social: 'other',
+  maintenance: 'other',
+  learn_to_curl: 'learn-to-curl',
+};
 
 export function normalizeCalendarTypeId(raw: string | null | undefined): string {
-  if (raw && CALENDAR_EVENT_TYPE_IDS.has(raw)) return raw;
+  if (raw == null || raw === '') return 'other';
+  if (CALENDAR_EVENT_TYPE_IDS.has(raw)) return raw;
+  const mapped = LEGACY_CALENDAR_TYPE_ID[raw];
+  if (mapped) return mapped;
   return 'other';
 }
 
@@ -549,6 +561,65 @@ export async function listEvents(options: {
 
   const enrichedEvents = await Promise.all(eventRows.map(enrichEvent));
   return enrichedEvents;
+}
+
+/**
+ * Distinct fiscal season start years (e.g. 2025 for "2025-26") where:
+ * - At least one published public event has **fully ended** (latest timespan end &lt; now), and
+ * - Some timespan of that event overlaps that season, and
+ * - The season has already started (year ≤ current fiscal season start year), so e.g. 2026-27 is not listed while we are still in 2025-26.
+ *
+ * One indexed join, then group by event in memory (same cost order as counting timespans).
+ */
+export async function listPublicSeasonStartYearsWithEvents(): Promise<number[]> {
+  const { db, schema } = getDrizzleDb();
+  const now = await getCurrentTimeAsync();
+  const nowMs = now.getTime();
+
+  const [govRow] = await db
+    .select({ mmdd: schema.governanceSettings.fiscal_year_start_mmdd })
+    .from(schema.governanceSettings)
+    .where(eq(schema.governanceSettings.id, 1))
+    .limit(1);
+
+  const fiscal = parseFiscalYearStartMmdd(govRow?.mmdd);
+  const currentSeasonStartYear = getSeasonStartYearForUtcDate(now, fiscal);
+
+  const rows = await db
+    .select({
+      event_id: schema.eventTimespans.event_id,
+      start_dt: schema.eventTimespans.start_dt,
+      end_dt: schema.eventTimespans.end_dt,
+    })
+    .from(schema.eventTimespans)
+    .innerJoin(schema.events, eq(schema.eventTimespans.event_id, schema.events.id))
+    .where(and(eq(schema.events.published, 1), eq(schema.events.visibility, 'public')));
+
+  const byEvent = new Map<number, Array<{ start_dt: string; end_dt: string }>>();
+  for (const r of rows) {
+    const list = byEvent.get(r.event_id) ?? [];
+    list.push({ start_dt: r.start_dt, end_dt: r.end_dt });
+    byEvent.set(r.event_id, list);
+  }
+
+  const years = new Set<number>();
+  for (const spans of byEvent.values()) {
+    if (spans.length === 0) continue;
+    const latestEnd = spans.reduce((max, s) => (s.end_dt > max ? s.end_dt : max), spans[0].end_dt);
+    if (new Date(latestEnd).getTime() >= nowMs) {
+      continue;
+    }
+
+    for (const s of spans) {
+      for (const y of seasonStartYearsTouchingRangeUtc(s.start_dt, s.end_dt, fiscal)) {
+        if (y <= currentSeasonStartYear) {
+          years.add(y);
+        }
+      }
+    }
+  }
+
+  return Array.from(years).sort((a, b) => b - a);
 }
 
 export async function getConfirmedRegistrationCount(eventId: number): Promise<number> {

@@ -42,7 +42,7 @@ export default function Unsubscribe() {
               You've been unsubscribed
             </h1>
             <p className="text-gray-600 mb-4">
-              You will no longer receive email notifications from Triangle Curling Spares.
+              You will no longer receive email notifications from Triangle Curling Club.
             </p>
             <p className="text-sm text-gray-500">
               You have also been removed from all spare lists. If you'd like to receive
@@ -59,7 +59,7 @@ export default function Unsubscribe() {
       <div className="max-w-md w-full">
         <div className="bg-white rounded-lg shadow-md p-8">
           <h1 className="text-2xl font-bold mb-4" style={{ color: '#121033' }}>
-            Unsubscribe from Triangle Curling Spares
+            Unsubscribe from Triangle Curling Club emails
           </h1>
 
           <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
@@ -87,7 +87,7 @@ export default function Unsubscribe() {
           </div>
 
           <p className="text-gray-600 mb-6">
-            Are you sure you want to unsubscribe from all Triangle Curling Spares emails?
+            Are you sure you want to unsubscribe from all Triangle Curling Club emails?
           </p>
 
           {error && <div className="text-red-600 text-sm bg-red-50 p-3 rounded mb-4">{error}</div>}

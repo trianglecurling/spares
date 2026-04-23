@@ -36,7 +36,7 @@ await fastify.register(multipart, {
 await fastify.register(swagger, {
   openapi: {
     info: {
-      title: 'Triangle Curling Spares API',
+      title: 'Triangle Curling API',
       version: '1.0.0',
     },
   },

@@ -89,8 +89,8 @@ export default function Help() {
                   Help & Documentation
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400 mb-8">
-                  Welcome to the Triangle Curling Spare Management System help center. Use the
-                  navigation menu to find information about specific features.
+                  Welcome to the Triangle Curling help center. Use the navigation menu to find
+                  information about specific features.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

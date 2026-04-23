@@ -831,9 +831,9 @@ export async function sendWelcomeEmail(
   loginToken: string
 ): Promise<void> {
   const htmlContent = `
-    <h2>Welcome to Triangle Curling Spares</h2>
+    <h2>Welcome to Triangle Curling</h2>
     <p>Hi ${name},</p>
-    <p>Welcome to the Triangle Curling Club spare management system! This application makes it easy to find spares when you can't make your game, and to sign up to spare for others.</p>
+    <p>Your Triangle Curling Club member account gives you access to leagues, events, and other club resources—including finding spares when you can&rsquo;t make your game, and signing up to spare for others.</p>
     <p>To get started, click the link below to set up your profile and availability:</p>
     <p>
       <a href="${config.frontendUrl}?token=${loginToken}" 
@@ -847,7 +847,7 @@ export async function sendWelcomeEmail(
   await sendEmail(
     {
       to: email,
-      subject: 'Welcome to Triangle Curling Spares',
+      subject: 'Welcome to Triangle Curling',
       htmlContent,
       recipientName: name,
     },

@@ -14,6 +14,7 @@ interface HomeData {
     contactPhone: string | null;
     footerMarkdown: string | null;
     disableSms?: boolean;
+    fiscalYearStartMmdd?: string;
   } | null;
   featuredArticles: Array<{
     id: number;
@@ -53,6 +54,7 @@ interface SiteConfig {
   contactPhone: string | null;
   footerMarkdown: string | null;
   disableSms?: boolean;
+  fiscalYearStartMmdd?: string;
 }
 
 interface MenuItemNode {
