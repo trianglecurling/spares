@@ -39,6 +39,13 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.PROD_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
+      - name: Prepare frontend directory for deployment
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << 'EOF'
+            sudo mkdir -p /srv/tccnc-web/dist
+            sudo chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} /srv/tccnc-web/dist || true
+          EOF
+
       - name: Deploy frontend
         run: |
           rsync -avz --delete \
