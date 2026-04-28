@@ -1481,6 +1481,19 @@
         }
       }
     },
+    "/public/mailing-list/subscribe": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "description": "Subscribe an email to a Mautic segment (public mailing list).",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/donations/checkout": {
       "post": {
         "tags": [
@@ -1538,6 +1551,18 @@
       }
     },
     "/public/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/events/seasons": {
       "get": {
         "tags": [
           "events"

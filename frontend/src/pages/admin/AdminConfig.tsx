@@ -442,8 +442,10 @@ export default function AdminConfig() {
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
-                  When enabled, emails and SMS messages will be printed to the console instead of
-                  being sent. This is useful for testing without sending actual messages.
+                  When enabled, email is sent through the test mailer SMTP server (default{' '}
+                  <code className="text-xs">127.0.0.1:1025</code>, e.g. Mailpit) so you can inspect
+                  messages without using production email. SMS messages are still printed to the
+                  server console instead of being sent.
                 </p>
 
                 <div className="flex items-center mt-4">

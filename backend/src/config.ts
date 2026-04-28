@@ -39,7 +39,30 @@ export const config = {
     connectionString: process.env.AZURE_COMMUNICATION_CONNECTION_STRING || '',
     senderEmail: process.env.AZURE_COMMUNICATION_SENDER_EMAIL || 'noreply@tccnc.club',
   },
-  
+
+  /**
+   * Optional SMTP (e.g. local Mailpit: host 127.0.0.1, port 1025).
+   * When `smtp.host` is set, outgoing mail uses this transport and takes precedence over Azure.
+   */
+  smtp: {
+    host: (process.env.SMTP_HOST || '').trim(),
+    port: parseIntEnv(process.env.SMTP_PORT, 1025),
+    secure: parseBooleanEnv(process.env.SMTP_SECURE, false),
+    user: (process.env.SMTP_USER || '').trim(),
+    pass: (process.env.SMTP_PASS || '').trim(),
+    /** Defaults to the Azure sender email env so one address can serve both paths */
+    from: (process.env.SMTP_FROM || process.env.AZURE_COMMUNICATION_SENDER_EMAIL || 'noreply@tccnc.club').trim(),
+  },
+
+  /**
+   * When server test mode is on, email is sent via SMTP to this host:port (e.g. Mailpit).
+   * Defaults match local Mailpit: 127.0.0.1:1025.
+   */
+  testMailer: {
+    smtpHost: (process.env.TEST_MAILER_SMTP_HOST || '127.0.0.1').trim() || '127.0.0.1',
+    smtpPort: parseIntEnv(process.env.TEST_MAILER_SMTP_PORT, 1025),
+  },
+
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID || '',
     authToken: process.env.TWILIO_AUTH_TOKEN || '',
@@ -82,6 +105,23 @@ export const config = {
     appName: process.env.CLEVERWAIVER_APP_NAME || '',
     clientId: process.env.CLEVERWAIVER_CLIENT_ID || '',
     accessToken: process.env.CLEVERWAIVER_ACCESS_TOKEN || '',
+  },
+
+  /**
+   * Mautic (https://mautic.org) — public mailing-list sign-ups via OAuth2 client credentials.
+   * Full base URL of the Mautic web app, **including a path** if Mautic is not at the domain root
+   * (e.g. `https://mail.example.com` or `https://example.com/mautic`). No trailing slash.
+   * Segment IDs are Mautic segment (static list) IDs.
+   */
+  mautic: {
+    baseUrl: (process.env.MAUTIC_BASE_URL || '').trim().replace(/\/$/, ''),
+    oauthClientId: (process.env.MAUTIC_OAUTH_CLIENT_ID || '').trim(),
+    oauthClientSecret: (process.env.MAUTIC_OAUTH_CLIENT_SECRET || '').trim(),
+    segmentIds: {
+      bonspiels: parseIntEnv(process.env.MAUTIC_SEGMENT_ID_BONSPIELS, 0),
+      membership: parseIntEnv(process.env.MAUTIC_SEGMENT_ID_MEMBERSHIP, 0),
+      learnToCurl: parseIntEnv(process.env.MAUTIC_SEGMENT_ID_LEARN_TO_CURL, 0),
+    },
   },
 };
 

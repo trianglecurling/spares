@@ -38,6 +38,7 @@ api.interceptors.response.use(
         currentPath.startsWith('/article/') ||
         currentPath === '/calendar/public' ||
         currentPath.startsWith('/calendar/public/') ||
+        currentPath.startsWith('/mailing-list/') ||
         /^\/go\/[^/]+\/info(\/|$)/.test(currentPath);
       if (!currentPath.startsWith('/install') && currentPath !== '/login' && !isPublicPath) {
         localStorage.removeItem('authToken');

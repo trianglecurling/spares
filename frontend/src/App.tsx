@@ -52,6 +52,7 @@ import PublicContactConfirmPage from './pages/PublicContactConfirmPage';
 import PublicDonatePage from './pages/PublicDonatePage';
 import PublicDonateSuccessPage from './pages/PublicDonateSuccessPage';
 import PublicDonateCancelPage from './pages/PublicDonateCancelPage';
+import PublicMailingListPage from './pages/PublicMailingListPage';
 import ClubGovernance from './pages/ClubGovernance';
 import AdminGovernance from './pages/admin/AdminGovernance';
 import AdminRoles from './pages/admin/AdminRoles';
@@ -111,6 +112,7 @@ function App() {
                   <Route path="/donate" element={<PublicDonatePage />} />
                   <Route path="/donate/success" element={<PublicDonateSuccessPage />} />
                   <Route path="/donate/cancel" element={<PublicDonateCancelPage />} />
+                  <Route path="/mailing-list/:listSlug" element={<PublicMailingListPage />} />
                   <Route path="/articles" element={<Navigate to="/" replace />} />
                   <Route path="/articles/:slug" element={<PublicArticle />} />
                   <Route path="/article/:slug" element={<PublicArticle />} />
