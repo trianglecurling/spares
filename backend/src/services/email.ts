@@ -1,4 +1,6 @@
 import { EmailClient, EmailMessage } from '@azure/communication-email';
+import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
@@ -6,6 +8,8 @@ import { formatDateForEmail, formatTimeForEmail } from '../utils/dateFormat.js';
 import { logEvent } from './observability.js';
 
 let emailClient: EmailClient | null = null;
+let smtpTransporter: Transporter | null = null;
+let testModeSmtpTransporter: Transporter | null = null;
 let cachedConfig: { connectionString: string; senderEmail: string; disableEmail: boolean; testMode: boolean } | null = null;
 let configCacheTimestamp = 0;
 const CONFIG_CACHE_TTL = 5000; // Cache for 5 seconds
@@ -63,6 +67,62 @@ async function getConfigFromDatabase() {
 
 export function clearEmailClient() {
   emailClient = null;
+  smtpTransporter = null;
+  testModeSmtpTransporter = null;
+}
+
+function getTestModeSmtpTransporter(): Transporter {
+  if (!testModeSmtpTransporter) {
+    testModeSmtpTransporter = nodemailer.createTransport({
+      host: config.testMailer.smtpHost,
+      port: config.testMailer.smtpPort,
+      secure: false,
+    });
+  }
+  return testModeSmtpTransporter;
+}
+
+function getSmtpTransporter(): Transporter {
+  if (!config.smtp.host) {
+    throw new Error('SMTP is not configured');
+  }
+  if (!smtpTransporter) {
+    smtpTransporter = nodemailer.createTransport({
+      host: config.smtp.host,
+      port: config.smtp.port,
+      secure: config.smtp.secure,
+      ...(config.smtp.user
+        ? { auth: { user: config.smtp.user, pass: config.smtp.pass } }
+        : {}),
+    });
+  }
+  return smtpTransporter;
+}
+
+async function sendWithSmtp(
+  options: EmailOptions,
+  fullHtmlContent: string,
+  senderAddress: string
+): Promise<void> {
+  const transporter = getSmtpTransporter();
+  await sendMailWithTransporter(transporter, options, fullHtmlContent, senderAddress);
+}
+
+async function sendMailWithTransporter(
+  transporter: Transporter,
+  options: EmailOptions,
+  fullHtmlContent: string,
+  senderAddress: string
+): Promise<void> {
+  await transporter.sendMail({
+    from: senderAddress,
+    to: options.to,
+    subject: options.subject,
+    html: fullHtmlContent,
+    ...(options.replyTo && options.replyTo.trim().length > 0
+      ? { replyTo: options.replyTo.trim() }
+      : {}),
+  });
 }
 
 async function getEmailClient(): Promise<EmailClient> {
@@ -148,45 +208,73 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
 
   const dbConfig = await getConfigFromDatabase();
   console.log(`[Email Service] Config: disableEmail=${dbConfig.disableEmail}, testMode=${dbConfig.testMode}`);
-  
-  // If email is disabled or in test mode, print to console instead of sending
-  if (dbConfig.disableEmail || dbConfig.testMode) {
-    console.log(`[Email Service] Email disabled or test mode - logging email instead of sending`);
-    logEmail(options, fullHtmlContent, 'TEST MODE');
-    logEvent({ eventType: 'email.logged', meta: { reason: dbConfig.disableEmail ? 'disabled' : 'test_mode' } }).catch(() => {});
+
+  if (dbConfig.disableEmail) {
+    console.log(`[Email Service] Email disabled - logging email instead of sending`);
+    logEmail(options, fullHtmlContent, 'DISABLED');
+    logEvent({ eventType: 'email.logged', meta: { reason: 'disabled' } }).catch(() => {});
     return;
   }
-  
-  if (!dbConfig.connectionString) {
+
+  const smtpFrom = config.smtp.from || dbConfig.senderEmail;
+
+  if (dbConfig.testMode) {
+    try {
+      const transporter = getTestModeSmtpTransporter();
+      await sendMailWithTransporter(transporter, options, fullHtmlContent, smtpFrom);
+      console.log(
+        `[Email Service] Test mode: sent via SMTP to ${config.testMailer.smtpHost}:${config.testMailer.smtpPort}`
+      );
+      logEvent({ eventType: 'email.sent', meta: { test_mode: true } }).catch(() => {});
+    } catch (error) {
+      console.error(
+        '[Email Service] Test mode SMTP send failed - logging to console instead:',
+        error
+      );
+      logEmail(options, fullHtmlContent, 'TEST MODE SMTP FAILED - LOGGED');
+      logEvent({ eventType: 'email.logged', meta: { reason: 'test_mode_smtp_failed' } }).catch(
+        () => {}
+      );
+    }
+    return;
+  }
+
+  const useSmtp = Boolean(config.smtp.host);
+  if (!useSmtp && !dbConfig.connectionString) {
     console.log('Email not configured. Would send:', options);
     logEvent({ eventType: 'email.logged', meta: { reason: 'not_configured' } }).catch(() => {});
     return;
   }
 
   try {
-    const client = await getEmailClient();
+    if (useSmtp) {
+      await sendWithSmtp(options, fullHtmlContent, smtpFrom);
+      logEvent({ eventType: 'email.sent' }).catch(() => {});
+    } else {
+      const client = await getEmailClient();
 
-    // senderAddress must be just the email address, not formatted with display name
-    // Display name is not directly supported in the Azure Email SDK senderAddress field
-    const message: EmailMessage = {
-      senderAddress: dbConfig.senderEmail,
-      content: {
-        subject: options.subject,
-        html: fullHtmlContent,
-      },
-      recipients: {
-        to: [{ address: options.to, displayName: options.recipientName }],
-      },
-    };
-    if (options.replyTo && options.replyTo.trim().length > 0) {
-      (message as EmailMessage & { replyTo: Array<{ address: string }> }).replyTo = [
-        { address: options.replyTo.trim() },
-      ];
+      // senderAddress must be just the email address, not formatted with display name
+      // Display name is not directly supported in the Azure Email SDK senderAddress field
+      const message: EmailMessage = {
+        senderAddress: dbConfig.senderEmail,
+        content: {
+          subject: options.subject,
+          html: fullHtmlContent,
+        },
+        recipients: {
+          to: [{ address: options.to, displayName: options.recipientName }],
+        },
+      };
+      if (options.replyTo && options.replyTo.trim().length > 0) {
+        (message as EmailMessage & { replyTo: Array<{ address: string }> }).replyTo = [
+          { address: options.replyTo.trim() },
+        ];
+      }
+
+      const poller = await client.beginSend(message);
+      await poller.pollUntilDone();
+      logEvent({ eventType: 'email.sent' }).catch(() => {});
     }
-
-    const poller = await client.beginSend(message);
-    await poller.pollUntilDone();
-    logEvent({ eventType: 'email.sent' }).catch(() => {});
   } catch (error) {
     // If sending fails for any reason (misconfiguration, transient outage, etc),
     // fall back to logging so auth/login flows can continue.
