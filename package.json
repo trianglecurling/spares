@@ -42,14 +42,14 @@
   "dependencies": {
     "@opentelemetry/exporter-logs-otlp-http": "^0.211.0",
     "date-fns": "^4.1.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   },
   "devDependencies": {
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "baseline-browser-mapping": "^2.9.14",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "baseline-browser-mapping": "^2.10.27",
     "drizzle-orm": "^0.44.7",
-    "eslint": "^9.0.0"
+    "eslint": "^9.39.4"
   }
 }
