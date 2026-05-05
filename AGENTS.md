@@ -20,6 +20,7 @@ This repo has explicit consistency rules. Follow existing product patterns befor
 
 ## Frontend Defaults
 
+- Prefer **`preventDefault()`** and **`defaultPrevented`** checks over **`stopPropagation()`** for nested interactions; reserve **`stopPropagation()`** for documented third-party DOM integration exceptions per **`docs/ux-constitution.md`** (DOM events and bubbling).
 - Default to sentence case for product-facing UI copy unless a proper noun, acronym, or external label requires different casing.
 - For authenticated pages, prefer `Layout` + `AppPage` + `AppPageHeader`.
 - Use `frontend/src/components/AppPageControlsRow.tsx` for search, filters, utility links, and dense secondary action clusters below the header.

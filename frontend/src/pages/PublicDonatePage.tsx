@@ -66,7 +66,9 @@ export default function PublicDonatePage() {
             <p className="inline-flex rounded-full bg-emerald-600/10 px-3 py-1 text-sm font-semibold text-emerald-800">
               501(c)(3) nonprofit • Donations are tax-deductible
             </p>
-            <h1 className="public-heading text-balance">Support curling in the Triangle</h1>
+            <div className="public-page-title-rule">
+              <h1 className="public-heading text-balance">Support curling in the Triangle</h1>
+            </div>
             <p className="public-body text-base sm:text-lg">
               Your donation helps us grow learn-to-curl programs, maintain our dedicated facility, and keep the sport
               accessible for our community.

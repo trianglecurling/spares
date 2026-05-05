@@ -4,6 +4,7 @@ import { FaFacebookF, FaInstagram, FaYoutube } from 'react-icons/fa';
 import { FaXTwitter } from 'react-icons/fa6';
 import FormField from '../components/FormField';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
+import Modal from '../components/Modal';
 import PublicLayout from '../components/PublicLayout';
 import SeoMeta from '../components/SeoMeta';
 import api, { formatApiError } from '../utils/api';
@@ -56,7 +57,8 @@ export default function PublicContactPage() {
   const [body, setBody] = useState('');
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const [emailNextStepModalOpen, setEmailNextStepModalOpen] = useState(false);
 
   const canSubmit =
     email.trim().length > 0 && subject.trim().length >= 2 && body.trim().length >= 10 && !submitting;
@@ -72,7 +74,8 @@ export default function PublicContactPage() {
     if (!canSubmit) return;
 
     setSubmitting(true);
-    setResult(null);
+    setInlineError(null);
+    setEmailNextStepModalOpen(false);
 
     try {
       await api.post('/public/contact/request', {
@@ -83,19 +86,12 @@ export default function PublicContactPage() {
         website: website.trim(),
       });
 
-      setResult({
-        kind: 'success',
-        message:
-          'Check your email for a confirmation message. Click the "Send now" button there to deliver your message.',
-      });
+      setEmailNextStepModalOpen(true);
       setSubject('');
       setBody('');
       setWebsite('');
     } catch (error: unknown) {
-      setResult({
-        kind: 'error',
-        message: formatApiError(error, 'Unable to submit contact form'),
-      });
+      setInlineError(formatApiError(error, 'Unable to submit contact form'));
     } finally {
       setSubmitting(false);
     }
@@ -103,6 +99,28 @@ export default function PublicContactPage() {
 
   return (
     <PublicLayout>
+      <Modal
+        isOpen={emailNextStepModalOpen}
+        onClose={() => setEmailNextStepModalOpen(false)}
+        title="Check your email"
+        size="md"
+        verticalAlign="start"
+      >
+        <p className="text-sm leading-relaxed text-gray-700">
+          Check your email for a confirmation message. Click the &quot;Send now&quot; button there to deliver your
+          message.
+        </p>
+        <div className="mt-6 flex justify-end border-t border-gray-200 pt-4">
+          <button
+            type="button"
+            onClick={() => setEmailNextStepModalOpen(false)}
+            className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2"
+          >
+            OK
+          </button>
+        </div>
+      </Modal>
+
       <SeoMeta
         title="Facility & Contact Info"
         description="Get in touch with Triangle Curling Club by email, review facility details, and connect through our social media channels."
@@ -114,7 +132,9 @@ export default function PublicContactPage() {
           <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-teal-200/40 blur-3xl" />
           <div className="pointer-events-none absolute -left-24 bottom-0 h-52 w-52 rounded-full bg-sky-200/50 blur-3xl" />
           <div className="relative space-y-4">
-            <h1 className="public-heading text-balance">Facility & contact info</h1>
+            <div className="public-page-title-rule">
+              <h1 className="public-heading text-balance">Facility & contact info</h1>
+            </div>
             <p className="public-body max-w-3xl text-base sm:text-lg">
               The best way to reach us is via email using the form below. General inquiries can also be sent to
               info@trianglecurling.com. As our team is staffed exclusively by volunteers, please allow up to 48 hours for
@@ -223,17 +243,11 @@ export default function PublicContactPage() {
               Click that button to deliver your message.
             </p>
 
-            {result && (
-              <div
-                className={`mt-5 rounded-xl border p-4 text-sm ${
-                  result.kind === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                    : 'border-red-200 bg-red-50 text-red-800'
-                }`}
-              >
-                {result.message}
+            {inlineError ? (
+              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                {inlineError}
               </div>
-            )}
+            ) : null}
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               <FormField tone="public" label="Recipient" htmlFor="recipient" labelClassName="font-semibold">

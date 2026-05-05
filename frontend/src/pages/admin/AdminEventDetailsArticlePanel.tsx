@@ -507,7 +507,6 @@ th { font-weight: 600; background: #f3f4f6; }
           const popup = document.activeElement?.closest('.toastui-editor-popup');
           if (!popup) return;
           e.preventDefault();
-          e.stopPropagation();
           const okBtn = popup.querySelector('.toastui-editor-ok-button') as HTMLButtonElement | null;
           if (okBtn && !okBtn.disabled) okBtn.click();
         }}
@@ -603,6 +602,7 @@ th { font-weight: 600; background: #f3f4f6; }
                       dark={resolvedTheme === 'dark'}
                       fill
                       readMoreInToolbar
+                      enableManagedFileImageEdit
                       onUploadImage={handleUploadMarkdownImage}
                     />
                   ) : (

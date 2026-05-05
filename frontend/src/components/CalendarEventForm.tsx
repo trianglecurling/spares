@@ -314,7 +314,8 @@ export default function CalendarEventForm({
       }
     }
 
-    const description = descriptionEditorRef.current?.getMarkdown?.() ?? '';
+    const description =
+      descriptionEditorRef.current?.getMarkdown?.() ?? event?.description ?? '';
     const payload = {
       typeId,
       title,

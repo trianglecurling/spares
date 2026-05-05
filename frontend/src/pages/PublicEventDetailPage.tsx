@@ -1,9 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
 import {
   HiCalendarDays,
   HiCurrencyDollar,
@@ -14,6 +11,7 @@ import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import PublicTournamentDrawBracket from '../components/PublicTournamentDrawBracket';
 import PageTabs from '../components/PageTabs';
+import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import SeoMeta from '../components/SeoMeta';
 import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
@@ -503,7 +501,7 @@ export default function PublicEventDetailPage() {
             title="Event not found"
             description="This event may have been removed, unpublished, or is no longer available."
             action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal hover:underline">
+              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
                 Back to events
               </Link>
             }
@@ -550,7 +548,7 @@ export default function PublicEventDetailPage() {
           ref={publicBracketAlignColumnRef}
           className="shrink-0 w-full max-w-6xl min-w-0 mx-auto px-4 sm:px-6 pt-10 pb-4"
         >
-          <Link to="/events" className="text-sm text-primary-teal hover:underline mb-6 inline-block">
+          <Link to="/events" className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
             &larr; All Events
           </Link>
 
@@ -638,13 +636,13 @@ export default function PublicEventDetailPage() {
                 )}
 
                 {article && (
-                  <div className="markdown-content max-w-none">
+                  <div>
                     {article.contentType === 'html' ? (
-                      <div dangerouslySetInnerHTML={{ __html: article.content }} />
+                      <div className="markdown-content max-w-none">
+                        <div dangerouslySetInnerHTML={{ __html: article.content }} />
+                      </div>
                     ) : (
-                      <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
-                        {article.content}
-                      </ReactMarkdown>
+                      <ArticleMarkdown markdown={article.content} />
                     )}
                   </div>
                 )}
@@ -696,7 +694,7 @@ export default function PublicEventDetailPage() {
                                       ? `/events/${event.slug}/teams/${t.id}?${new URLSearchParams({ slk: specialLinkQuery }).toString()}`
                                       : `/events/${event.slug}/teams/${t.id}`
                                   }
-                                  className="text-left text-primary-teal hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
+                                  className="text-left text-primary-teal-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
                                 >
                                   {formatTeamDisplayName(t.teamName, t.sortOrder)}
                                 </Link>
@@ -806,7 +804,7 @@ export default function PublicEventDetailPage() {
                     <div className="space-y-2">
                       <Link
                         to={`/events/${event.slug}/register`}
-                        className="block w-full text-center px-4 py-3 bg-white border-2 border-primary-teal text-primary-teal font-medium rounded-lg hover:bg-teal-50 transition-colors"
+                        className="block w-full text-center px-4 py-3 bg-white border-2 border-primary-teal text-primary-teal-link font-medium rounded-lg hover:bg-teal-50 transition-colors"
                       >
                         Prefill registration form
                       </Link>

@@ -146,8 +146,7 @@ export async function contactRoutes(fastify: FastifyInstance) {
 
     const htmlContent = `
       <h2>Confirm your contact message</h2>
-      <p>We received your draft message for <strong>${escapeHtml(recipientInfo.label)}</strong> (${escapeHtml(recipientInfo.email)}).</p>
-      <p>Please confirm before it is sent to Triangle Curling Club.</p>
+      <p>Please click &quot;Send now&quot; to confirm sending your message below.</p>
 
       <div style="margin: 18px 0;">
         <a href="${confirmUrl}" style="display: inline-block; background-color: #0f766e; color: #ffffff; padding: 14px 24px; text-decoration: none; font-weight: 700; border-radius: 8px; font-size: 16px;">
@@ -158,7 +157,7 @@ export async function contactRoutes(fastify: FastifyInstance) {
       <p style="font-size: 13px; color: #555;">This link expires in 30 minutes.</p>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
       <p><strong>From:</strong> ${safeSenderEmail}</p>
-      <p><strong>To:</strong> ${escapeHtml(recipientInfo.label)} (${escapeHtml(recipientInfo.email)})</p>
+      <p><strong>To:</strong> ${escapeHtml(recipientInfo.label)}</p>
       <p><strong>Subject:</strong> ${safeSubject}</p>
       <p><strong>Message:</strong></p>
       <pre style="white-space: pre-wrap; padding: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px;">${safeBody}</pre>

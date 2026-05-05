@@ -128,7 +128,6 @@ export function useBracketCanvasView({
       }
 
       e.preventDefault();
-      e.stopPropagation();
       const rect = el.getBoundingClientRect();
       const delta = e.deltaY > 0 ? -0.08 : 0.08;
       const oldZ = zoomRef.current;
@@ -169,6 +168,7 @@ export function useBracketCanvasView({
 
   const beginCanvasPan = useCallback(
     (e: React.PointerEvent) => {
+      if (e.defaultPrevented) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
 
       const t = e.target;

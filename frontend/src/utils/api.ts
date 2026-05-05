@@ -35,6 +35,8 @@ api.interceptors.response.use(
       // Don't redirect when on public pages - user can stay and browse
       const isPublicPath =
         currentPath === '/' ||
+        currentPath === '/contact' ||
+        currentPath.startsWith('/contact/') ||
         currentPath.startsWith('/article/') ||
         currentPath === '/calendar/public' ||
         currentPath.startsWith('/calendar/public/') ||

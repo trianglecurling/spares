@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { HiXMark } from 'react-icons/hi2';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
@@ -44,6 +45,7 @@ export default function Modal({
 
   if (!isOpen) return null;
 
+  /** Render at document body so dialogs are never nested inside page <form> elements (invalid HTML, breaks submit / navigation). */
   const sizeClasses = {
     sm: 'max-w-sm',
     md: 'max-w-md',
@@ -63,7 +65,7 @@ export default function Modal({
       ? 'max-h-[calc(100dvh-6rem)]'
       : 'max-h-[calc(100dvh-2rem)]';
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[110] overflow-hidden">
       <div
         className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"
@@ -85,6 +87,7 @@ export default function Modal({
           <div className="flex justify-between items-center mb-4 flex-shrink-0">
             <h3 className="text-lg font-semibold text-[#121033] dark:text-gray-100">{title}</h3>
             <button
+              type="button"
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
             >
@@ -98,6 +101,7 @@ export default function Modal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

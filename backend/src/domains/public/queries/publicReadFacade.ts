@@ -417,6 +417,33 @@ export async function getPublicArticleBodyByIdForPublishedPublicEvent(articleId:
   };
 }
 
+/**
+ * When `/articles/:slug` is requested but there is no standalone published article with that
+ * slug (event detail articles are excluded from that list), still allow navigation if a
+ * published public event uses the same path segment as its `slug` or its linked article's slug.
+ * Returns the event's canonical `slug` for redirect to `/events/:slug`.
+ */
+export async function getPublishedPublicEventSlugForArticlePathAlias(slug: string): Promise<string | null> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ slug: schema.events.slug })
+    .from(schema.events)
+    .leftJoin(schema.articles, eq(schema.events.article_id, schema.articles.id))
+    .where(
+      and(
+        eq(schema.events.published, 1),
+        eq(schema.events.visibility, 'public'),
+        or(
+          eq(schema.events.slug, slug),
+          and(isNotNull(schema.events.article_id), eq(schema.articles.slug, slug)),
+        ),
+      ),
+    )
+    .limit(1);
+
+  return rows[0]?.slug ?? null;
+}
+
 export async function getPublicArticleBySlug(slug: string) {
   const { db, schema } = getDrizzleDb();
   const now = new Date().toISOString();

@@ -41,7 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Check for token in URL (from email links)
-    const urlToken = searchParams.get('token');
+    // /contact/confirm uses `token` for the public contact confirmation flow, not member JWT.
+    const pathname = window.location.pathname;
+    const urlToken = pathname === '/contact/confirm' ? null : searchParams.get('token');
     if (urlToken) {
       localStorage.setItem('authToken', urlToken);
       setToken(urlToken);

@@ -244,10 +244,12 @@ export default function PublicHomePage() {
               <div className="rounded-3xl border border-teal-100 bg-gradient-to-br from-teal-50 via-sky-50 to-white p-5 sm:p-8 lg:p-10 shadow-sm">
                 <div className="grid gap-8 lg:grid-cols-[1.05fr_1fr] lg:items-start">
                   <div className="space-y-6">
-                    <p className="inline-flex items-center rounded-full bg-primary-teal/10 px-3 py-1 text-sm font-medium text-primary-teal">
+                    <p className="inline-flex items-center rounded-full bg-primary-teal/10 px-3 py-1 text-sm font-medium text-primary-teal-link">
                       Raleigh, Durham, and Chapel Hill area of North Carolina
                     </p>
-                    <h1 className="public-heading text-balance">{HOMEPAGE_COPY.title}</h1>
+                    <div className="public-page-title-rule">
+                      <h1 className="public-heading text-balance">{HOMEPAGE_COPY.title}</h1>
+                    </div>
                     <p className="public-body text-lg">{HOMEPAGE_COPY.subtitle}</p>
                     <div className="flex flex-wrap gap-3">
                       <Link
@@ -356,7 +358,7 @@ export default function PublicHomePage() {
                     return (
                       <article key={article.id} className="public-card p-5 bg-gradient-to-b from-white to-sky-50/30">
                         <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
-                          <Link to={featuredHref} className="hover:text-primary-teal">
+                          <Link to={featuredHref} className="hover:text-primary-teal-link">
                             {article.title}
                           </Link>
                         </h3>
@@ -366,7 +368,7 @@ export default function PublicHomePage() {
                         {article.hasMore && (
                           <Link
                             to={featuredHref}
-                            className="mt-3 inline-block text-sm font-medium text-primary-teal hover:underline"
+                            className="mt-3 inline-block text-sm font-medium text-primary-teal-link hover:underline"
                           >
                             Read more
                           </Link>
@@ -383,7 +385,7 @@ export default function PublicHomePage() {
                 <h2 className="public-subheading">Upcoming bonspiels</h2>
                 <Link
                   to="/calendar/public"
-                  className="text-sm font-medium text-primary-teal hover:underline whitespace-nowrap"
+                  className="text-sm font-medium text-primary-teal-link hover:underline whitespace-nowrap"
                 >
                   Full calendar
                 </Link>

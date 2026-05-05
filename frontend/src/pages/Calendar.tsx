@@ -50,9 +50,7 @@ import PublicLayout from '../components/PublicLayout';
 import Modal from '../components/Modal';
 import PageTabs from '../components/PageTabs';
 import type { ArticleOption } from '../components/ArticleAutocomplete';
-import ReactMarkdown from 'react-markdown';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
+import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { useAuth } from '../contexts/AuthContext';
 
 export type CalendarView = 'day' | 'week' | 'month';
@@ -1071,9 +1069,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                               Booking details
                             </div>
                             <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal [&_a]:underline hover:[&_a]:opacity-80">
-                              <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
-                                {descriptionText}
-                              </ReactMarkdown>
+                              <ArticleMarkdown markdown={descriptionText} className="markdown-content max-w-none" />
                             </div>
                           </div>
                         )}
@@ -1107,9 +1103,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                 )}
                 {showDescriptionTab && viewEventActiveTab === 'description' && (
                   <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal [&_a]:underline hover:[&_a]:opacity-80 min-h-[120px] flex-1">
-                    <ReactMarkdown remarkPlugins={[remarkBreaks, remarkGfm]}>
-                      {descriptionText}
-                    </ReactMarkdown>
+                    <ArticleMarkdown markdown={descriptionText} className="markdown-content max-w-none" />
                   </div>
                 )}
                 <div className="pt-4 mt-auto flex justify-end shrink-0">
@@ -1342,11 +1336,19 @@ function MonthDayEvents({
         data-events-area
         className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-0.5 ${onEmptyCellClick ? 'cursor-pointer [&:hover:not(:has(*:hover))]:bg-gray-100 dark:[&:hover:not(:has(*:hover))]:bg-gray-700/50 transition-colors' : ''}`}
         onClick={(e) => {
+          if (e.defaultPrevented) return;
           if (e.target === e.currentTarget) onEmptyCellClick?.(day);
         }}
         role={onEmptyCellClick ? 'button' : undefined}
         tabIndex={onEmptyCellClick ? 0 : undefined}
-        onKeyDown={onEmptyCellClick ? (e) => e.key === 'Enter' && onEmptyCellClick(day) : undefined}
+        onKeyDown={
+          onEmptyCellClick
+            ? (e) => {
+                if (e.defaultPrevented || e.key !== 'Enter') return;
+                onEmptyCellClick(day);
+              }
+            : undefined
+        }
       >
         {Array.from({ length: continuingCount }, (_, i) => (
           <div
@@ -1365,10 +1367,13 @@ function MonthDayEvents({
               role="button"
               tabIndex={0}
               onClick={(e) => {
-                e.stopPropagation();
+                e.preventDefault();
                 onEventClick?.(ev);
               }}
-              onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(ev)}
+              onKeyDown={(e) => {
+                if (e.defaultPrevented || e.key !== 'Enter') return;
+                onEventClick?.(ev);
+              }}
               className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-sm truncate shrink-0 border cursor-pointer hover:opacity-90 ${type.color}`}
               title={ev.title}
             >
@@ -1386,7 +1391,7 @@ function MonthDayEvents({
         <button
           type="button"
           onClick={(e) => {
-            e.stopPropagation();
+            e.preventDefault();
             onDayClick?.(day);
           }}
           className="shrink-0 text-xs text-gray-500 dark:text-gray-400 py-0.5 hover:text-primary-teal dark:hover:text-primary-teal/80 cursor-pointer underline-offset-2 hover:underline text-left w-full"
@@ -1606,10 +1611,13 @@ function MonthView({
                 role="button"
                 tabIndex={0}
                 onClick={(e) => {
-                  e.stopPropagation();
+                  e.preventDefault();
                   onEventClick?.(seg.ev);
                 }}
-                onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(seg.ev)}
+                onKeyDown={(e) => {
+                  if (e.defaultPrevented || e.key !== 'Enter') return;
+                  onEventClick?.(seg.ev);
+                }}
                 title={seg.ev.title}
               >
                 <EventBandRowContent
@@ -1808,19 +1816,22 @@ function WeekView({
               tabIndex={onEmptySlotClick ? 0 : undefined}
               onClick={
                 onEmptySlotClick
-                  ? () =>
+                  ? (e) => {
+                      if (e.defaultPrevented) return;
                       onEmptySlotClick(
                         new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0)
-                      )
+                      );
+                    }
                   : undefined
               }
               onKeyDown={
                 onEmptySlotClick
-                  ? (e) =>
-                      e.key === 'Enter' &&
+                  ? (e) => {
+                      if (e.defaultPrevented || e.key !== 'Enter') return;
                       onEmptySlotClick(
                         new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0)
-                      )
+                      );
+                    }
                   : undefined
               }
               className={`min-w-0 border-r border-gray-300 dark:border-gray-600 p-1 ${onEmptySlotClick ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors' : ''}`}
@@ -1853,10 +1864,13 @@ function WeekView({
                       role="button"
                       tabIndex={0}
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e.preventDefault();
                         onEventClick?.(ev);
                       }}
-                      onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(ev)}
+                      onKeyDown={(e) => {
+                        if (e.defaultPrevented || e.key !== 'Enter') return;
+                        onEventClick?.(ev);
+                      }}
                       className={`flex w-full min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 px-2 py-1 rounded text-sm border cursor-pointer hover:opacity-90 ${type.color}`}
                     >
                       <EventBandRowContent
@@ -1892,10 +1906,13 @@ function WeekView({
                 role="button"
                 tabIndex={0}
                 onClick={(e) => {
-                  e.stopPropagation();
+                  e.preventDefault();
                   onEventClick?.(seg.ev);
                 }}
-                onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(seg.ev)}
+                onKeyDown={(e) => {
+                  if (e.defaultPrevented || e.key !== 'Enter') return;
+                  onEventClick?.(seg.ev);
+                }}
               >
                 <EventBandRowContent
                   ev={seg.ev}

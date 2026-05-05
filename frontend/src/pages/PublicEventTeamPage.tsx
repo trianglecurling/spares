@@ -191,7 +191,7 @@ export default function PublicEventTeamPage() {
             title="Invalid link"
             description="This team link is not valid."
             action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal hover:underline">
+              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
                 All events
               </Link>
             }
@@ -226,7 +226,7 @@ export default function PublicEventTeamPage() {
             title="Event not found"
             description="This event may have been removed or is no longer available."
             action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal hover:underline">
+              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
                 All events
               </Link>
             }
@@ -248,7 +248,7 @@ export default function PublicEventTeamPage() {
             action={
               <Link
                 to={`/events/${event.slug}`}
-                className="text-sm font-medium text-primary-teal hover:underline"
+                className="text-sm font-medium text-primary-teal-link hover:underline"
               >
                 Event details
               </Link>
@@ -268,7 +268,7 @@ export default function PublicEventTeamPage() {
             title="Unable to load team"
             description={publicTeamsError ?? 'No team format is configured for this event.'}
             action={
-              <Link to={teamsListHref} className="text-sm font-medium text-primary-teal hover:underline">
+              <Link to={teamsListHref} className="text-sm font-medium text-primary-teal-link hover:underline">
                 Back to teams
               </Link>
             }
@@ -288,7 +288,7 @@ export default function PublicEventTeamPage() {
             title="Team not found"
             description="This team is not listed for this event."
             action={
-              <Link to={teamsListHref} className="text-sm font-medium text-primary-teal hover:underline">
+              <Link to={teamsListHref} className="text-sm font-medium text-primary-teal-link hover:underline">
                 Back to teams
               </Link>
             }
@@ -319,23 +319,25 @@ export default function PublicEventTeamPage() {
         >
           <Link
             to={teamsListHref}
-            className="text-sm text-primary-teal hover:underline mb-3 inline-block"
+            className="text-sm text-primary-teal-link hover:underline mb-3 inline-block"
           >
             &larr; Teams for {event.title}
           </Link>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="public-heading text-2xl sm:text-3xl text-gray-900 dark:text-gray-100 min-w-0 flex-1">
-              {headingText}
-            </h1>
-            {showBracketDiagram ? (
-              <button
-                type="button"
-                className="shrink-0 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
-                onClick={() => resetBracketPathRef.current?.()}
-              >
-                Reset view
-              </button>
-            ) : null}
+          <div className="public-page-title-rule">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h1 className="public-heading text-2xl sm:text-3xl min-w-0 flex-1">
+                {headingText}
+              </h1>
+              {showBracketDiagram ? (
+                <button
+                  type="button"
+                  className="shrink-0 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                  onClick={() => resetBracketPathRef.current?.()}
+                >
+                  Reset view
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
 

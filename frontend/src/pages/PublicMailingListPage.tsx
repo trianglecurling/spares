@@ -92,7 +92,7 @@ export default function PublicMailingListPage() {
             title="Mailing list not found"
             description="This page does not exist. Use a link from our website, or return home to browse programs and events."
             action={
-              <Link to="/" className="text-sm font-medium text-primary-teal hover:underline">
+              <Link to="/" className="text-sm font-medium text-primary-teal-link hover:underline">
                 Back to home
               </Link>
             }
@@ -116,7 +116,9 @@ export default function PublicMailingListPage() {
           <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-teal-200/40 blur-3xl" />
           <div className="pointer-events-none absolute -left-24 bottom-0 h-52 w-52 rounded-full bg-sky-200/50 blur-3xl" />
           <div className="relative max-w-3xl space-y-4">
-            <h1 className="public-heading text-balance">{listInfo.title}</h1>
+            <div className="public-page-title-rule">
+              <h1 className="public-heading text-balance">{listInfo.title}</h1>
+            </div>
             <p className="public-body text-base sm:text-lg">{listInfo.description}</p>
             <p className="text-sm text-gray-600">
               We only use your name and email to send messages related to <strong>{listInfo.subscribeLabel}</strong>.

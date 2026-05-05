@@ -43,4 +43,5 @@ alwaysApply: false
 - **Visible focus** — Use `app-input` for standard fields. `ChoiceInput` should match that focus treatment. Legacy native `<select>` focus remains centralized in **`frontend/src/index.css`** during migration; do not add ad hoc select focus CSS in pages. See `docs/accessibility-checklist.md` (Visible focus).
 - Render loading, empty, and error states inside the normal page shell and make them actionable when possible.
 - Every control needs an accessible name. Do not rely on color alone for required, error, or status meaning.
+- Prefer **`preventDefault()`** plus ancestor checks for **`event.defaultPrevented`** over **`stopPropagation()`** when nesting interactive surfaces; reserve **`stopPropagation()`** only when third-party native listeners cannot honor **`defaultPrevented`** (document inline). Canonical guidance: **`docs/ux-constitution.md`** (DOM events and bubbling).
 - Prefer these golden examples: `frontend/src/components/AppPage.tsx`, `frontend/src/pages/admin/AdminMembers.tsx`, `frontend/src/pages/admin/AdminEvents.tsx`, `frontend/src/pages/admin/AdminEventEditor.tsx`, and `frontend/src/components/PublicLayout.tsx`.

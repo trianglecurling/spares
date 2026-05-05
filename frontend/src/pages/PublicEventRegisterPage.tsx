@@ -303,7 +303,7 @@ export default function PublicEventRegisterPage() {
             title="Event not found"
             description="The registration page could not be loaded because this event is unavailable."
             action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal hover:underline">
+              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
                 Back to events
               </Link>
             }
@@ -340,7 +340,7 @@ export default function PublicEventRegisterPage() {
       <PublicLayout>
         <SeoMeta title={`Registration: ${event.title}`} />
         <div className="max-w-2xl mx-auto px-4 py-10">
-          <Link to={`/events/${slug}`} className="text-sm text-primary-teal hover:underline mb-6 inline-block">
+          <Link to={`/events/${slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
             &larr; Back to event
           </Link>
           <p className="text-gray-800 text-lg leading-relaxed">
@@ -357,7 +357,7 @@ export default function PublicEventRegisterPage() {
       <PublicLayout>
         <SeoMeta title={`Registration: ${event.title}`} />
         <div className="max-w-2xl mx-auto px-4 py-10">
-          <Link to={`/events/${slug}`} className="text-sm text-primary-teal hover:underline mb-6 inline-block">
+          <Link to={`/events/${slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
             &larr; Back to event
           </Link>
           <p className="text-gray-800 text-lg leading-relaxed">
@@ -461,7 +461,7 @@ export default function PublicEventRegisterPage() {
                 A confirmation email has been sent to {contactEmail}.
               </p>
             )}
-            <Link to={`/events/${slug}`} className="mt-6 inline-block text-primary-teal hover:underline">
+            <Link to={`/events/${slug}`} className="mt-6 inline-block text-primary-teal-link hover:underline">
               Back to event
             </Link>
           </div>
@@ -474,7 +474,7 @@ export default function PublicEventRegisterPage() {
     <PublicLayout>
       <SeoMeta title={registeringAsWaitlist ? `Waitlist: ${event.title}` : `Register: ${event.title}`} />
       <div className="max-w-2xl mx-auto px-4 py-10">
-        <Link to={`/events/${slug}`} className="text-sm text-primary-teal hover:underline mb-6 inline-block">
+        <Link to={`/events/${slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
           &larr; Back to event
         </Link>
 
@@ -558,7 +558,7 @@ export default function PublicEventRegisterPage() {
                   type="button"
                   onClick={addGroupMember}
                   disabled={effectiveMaxGroupSize ? groupSize >= effectiveMaxGroupSize : false}
-                  className="text-sm text-primary-teal hover:underline disabled:opacity-50"
+                  className="text-sm text-primary-teal-link hover:underline disabled:opacity-50"
                 >
                   + Add member
                 </button>
@@ -651,7 +651,7 @@ export default function PublicEventRegisterPage() {
                   href={`/articles/${event.termsArticleId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-primary-teal hover:underline"
+                  className="text-primary-teal-link hover:underline"
                 >
                   terms and conditions
                 </a>

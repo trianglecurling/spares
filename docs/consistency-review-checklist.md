@@ -3,6 +3,7 @@
 Use this checklist in human or AI-assisted review.
 
 - Does the change reuse the documented page shell and shared components?
+- Does it avoid `event.stopPropagation()` unless integrating third-party listeners that ignore `defaultPrevented`, with an inline rationale when used?
 - Does it avoid deprecated interaction patterns such as `window.confirm()` and `NotificationModal`?
 - Does it follow the documented success, warning, and error feedback pattern?
 - Does it preserve keyboard access and obvious labeling?
