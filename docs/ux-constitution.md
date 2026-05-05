@@ -133,6 +133,12 @@ Exceptions:
 - Destructive and confirmation dialogs must remain keyboard operable.
 - Focus should land somewhere meaningful after dialogs open and close.
 
+## DOM events and bubbling
+
+- Prefer **`event.preventDefault()`** when cancelling default browser behavior or marking an interaction as handled; rely on **`event.defaultPrevented`** in ancestor or delegated listeners instead of **`event.stopPropagation()`**.
+- Container handlers for **`click`**, **`keydown`**, **`pointerdown`**, **`wheel`**, and similar bubbled events should **return early when `event.defaultPrevented`** so nested controls can opt out without cutting off the rest of the tree.
+- **`stopPropagation()`** is reserved for narrow exceptions—typically third-party code that attaches native DOM listeners which ignore **`defaultPrevented`**. When it is truly necessary, document the reason inline at the callsite (see **`MarkdownDescriptionEditor`** managed-image **`dblclick`** on Toast UI’s editing surface).
+
 ## New pattern rule
 
 - If an existing component or flow is close, use it.

@@ -42,7 +42,7 @@ export default function PublicEventRegisterSuccessPage() {
             <p className="text-green-700 mb-6">
               Your payment has been processed and your spot is confirmed. A confirmation email has been sent.
             </p>
-            <Link to={`/events/${slug}`} className="text-primary-teal hover:underline">
+            <Link to={`/events/${slug}`} className="text-primary-teal-link hover:underline">
               Back to event
             </Link>
           </div>
@@ -54,7 +54,7 @@ export default function PublicEventRegisterSuccessPage() {
             <p className="text-yellow-700 mb-6">
               {error || 'Your payment is being processed. You will receive a confirmation email once complete.'}
             </p>
-            <Link to={`/events/${slug}`} className="text-primary-teal hover:underline">
+            <Link to={`/events/${slug}`} className="text-primary-teal-link hover:underline">
               Back to event
             </Link>
           </div>

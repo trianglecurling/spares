@@ -27,7 +27,7 @@ export default function PublicContactConfirmPage() {
       .post('/public/contact/confirm', { token })
       .then(() => {
         setState('success');
-        setMessage('Your message has been sent to Triangle Curling Club.');
+        setMessage('');
       })
       .catch((error: unknown) => {
         setState('error');
@@ -35,10 +35,15 @@ export default function PublicContactConfirmPage() {
       });
   }, [searchParams]);
 
+  const pageTitle =
+    state === 'success'
+      ? 'Message sent | Triangle Curling Club'
+      : 'Contact Confirmation | Triangle Curling Club';
+
   return (
     <PublicLayout>
       <SeoMeta
-        title="Contact Confirmation | Triangle Curling Club"
+        title={pageTitle}
         description="Confirmation status for your Triangle Curling Club contact message."
         canonicalPath="/contact/confirm"
       />
@@ -46,18 +51,30 @@ export default function PublicContactConfirmPage() {
       <div className="public-container public-section">
         <div className="mx-auto max-w-2xl">
           <section className="public-card p-7 sm:p-9">
-            <h1 className="public-heading text-3xl">Contact Confirmation</h1>
-            <p
-              className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
-                state === 'success'
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                  : state === 'error'
+            <div className="public-page-title-rule">
+              <h1 className="public-heading">
+                {state === 'success' ? 'Message sent' : 'Contact Confirmation'}
+              </h1>
+            </div>
+
+            {state === 'success' ? (
+              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-emerald-900">
+                <p className="text-sm font-medium">Your message was sent successfully.</p>
+                <p className="mt-3 text-sm">
+                  If you need a reply, you should typically hear back within 48 hours.
+                </p>
+              </div>
+            ) : (
+              <p
+                className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+                  state === 'error'
                     ? 'border-red-200 bg-red-50 text-red-800'
                     : 'border-sky-200 bg-sky-50 text-sky-800'
-              }`}
-            >
-              {message}
-            </p>
+                }`}
+              >
+                {message}
+              </p>
+            )}
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link

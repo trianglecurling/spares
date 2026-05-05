@@ -605,7 +605,6 @@ export default function AdminTournamentDrawEditor({
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
       void (async () => {
         const shouldLeave = await confirmDiscardChanges();
         if (!shouldLeave) return;

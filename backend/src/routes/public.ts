@@ -8,6 +8,7 @@ import { getPublicCalendarBundle, getUpcomingBonspiels } from '../domains/calend
 import {
   getMenuTree,
   getPublicArticleBySlug,
+  getPublishedPublicEventSlugForArticlePathAlias,
   getPublicArticleBodyByIdForPublishedPublicEvent,
   getPublicBootstrap,
   getPublicHomeData,
@@ -173,13 +174,18 @@ export async function publicRoutes(fastify: FastifyInstance) {
     return article;
   });
 
-  // GET /public/articles/:slug - Single article
+  // GET /public/articles/:slug - Single article (or hint to redirect to a public event page)
   fastify.get<{ Params: { slug: string } }>('/public/articles/:slug', async (request, reply) => {
-    const article = await getPublicArticleBySlug(request.params.slug);
-    if (!article) {
-      return reply.code(404).send({ error: 'Article not found' });
+    const { slug } = request.params;
+    const article = await getPublicArticleBySlug(slug);
+    if (article) {
+      return article;
     }
-    return article;
+    const eventSlug = await getPublishedPublicEventSlugForArticlePathAlias(slug);
+    if (eventSlug) {
+      return reply.code(404).send({ error: 'Article not found', redirectToEventSlug: eventSlug });
+    }
+    return reply.code(404).send({ error: 'Article not found' });
   });
 
   // GET /public/upcoming-bonspiels

@@ -206,7 +206,9 @@ export default function PublicEventsPage() {
         description="Upcoming and past public events, bonspiels, and programs at the club"
       />
       <div className="public-container">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Events</h1>
+        <div className="public-page-title-rule">
+          <h1 className="public-heading">Events</h1>
+        </div>
 
         <div className="mb-6 flex w-full flex-row flex-wrap items-end justify-end gap-3">
           <div className="w-full min-w-0 max-w-[12rem]">
@@ -217,7 +219,7 @@ export default function PublicEventsPage() {
               }}
               tabIndex={showUpcomingLink ? 0 : -1}
               aria-hidden={!showUpcomingLink}
-              className={`text-left text-sm font-medium text-primary-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded ${
+              className={`text-left text-sm font-medium text-primary-teal-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded ${
                 showUpcomingLink
                   ? 'hover:underline'
                   : 'invisible pointer-events-none cursor-default'
@@ -322,7 +324,7 @@ export default function PublicEventsPage() {
                     <p className={`text-sm text-gray-600 ${timeLine ? 'mb-0.5' : 'mb-3'}`}>{dateLine}</p>
                     {timeLine ? <p className="mb-3 text-sm text-gray-500">{timeLine}</p> : null}
                     <div className="mt-auto flex items-center justify-between">
-                      <span className="text-sm font-medium text-primary-teal">
+                      <span className="text-sm font-medium text-primary-teal-link">
                         {event.memberFeeMinor != null && event.memberFeeMinor !== event.feeMinor ? (
                           <>
                             {formatFee(event.feeMinor, event.currency)}{' '}

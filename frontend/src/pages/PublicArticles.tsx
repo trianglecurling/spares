@@ -79,7 +79,7 @@ export default function PublicArticles() {
                 {articles.map((a) => (
                   <li key={a.id} className="public-card p-5">
                     <h2 className="text-lg font-semibold text-gray-900 line-clamp-2">
-                      <Link to={`/articles/${a.slug}`} className="hover:text-primary-teal">
+                      <Link to={`/articles/${a.slug}`} className="hover:text-primary-teal-link">
                         {a.title}
                       </Link>
                     </h2>
@@ -87,7 +87,7 @@ export default function PublicArticles() {
                     {a.hasMore && (
                       <Link
                         to={`/articles/${a.slug}`}
-                        className="mt-3 inline-block text-sm font-medium text-primary-teal hover:underline"
+                        className="mt-3 inline-block text-sm font-medium text-primary-teal-link hover:underline"
                       >
                         Read details
                       </Link>

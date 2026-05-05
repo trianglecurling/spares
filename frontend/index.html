@@ -13,14 +13,37 @@
       (function() {
         // Apply theme immediately before React loads to prevent flash.
         // Source of truth: localStorage('themePreference') with values 'light' | 'dark' | 'system'.
-        var stored = localStorage.getItem('themePreference');
+        //
+        // Public marketing routes always use light UI (see PublicLightThemeOutlet in App.tsx).
+        // If we only read OS dark here, the first paint is dark until React runs — match those
+        // routes here so the initial background matches the public shell.
+        var path = window.location.pathname;
+        function isPublicLightPath(p) {
+          if (p === '/' || p === '/feedback' || p === '/calendar/public') return true;
+          if (p === '/help' || p.indexOf('/help/') === 0) return true;
+          if (p === '/contact' || p.indexOf('/contact/') === 0) return true;
+          if (p === '/donate' || p.indexOf('/donate/') === 0) return true;
+          if (p.indexOf('/mailing-list/') === 0) return true;
+          if (p === '/articles' || p.indexOf('/articles/') === 0) return true;
+          if (p.indexOf('/article/') === 0) return true;
+          if (p === '/events' || p.indexOf('/events/') === 0) return true;
+          if (p.indexOf('/go/') === 0) return true;
+          return false;
+        }
+
         var root = document.documentElement;
-        var resolved =
-          stored === 'dark'
-            ? 'dark'
-            : stored === 'light'
-              ? 'light'
-              : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        var resolved;
+        if (isPublicLightPath(path)) {
+          resolved = 'light';
+        } else {
+          var stored = localStorage.getItem('themePreference');
+          resolved =
+            stored === 'dark'
+              ? 'dark'
+              : stored === 'light'
+                ? 'light'
+                : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        }
 
         root.classList.remove('dark');
         if (resolved === 'dark') root.classList.add('dark');

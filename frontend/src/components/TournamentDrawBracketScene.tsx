@@ -383,7 +383,6 @@ export default function TournamentDrawBracketScene({
               data-text-drag-handle
               className="flex shrink-0 cursor-grab items-center gap-1 border-b border-amber-200/80 bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-medium text-amber-900/90 active:cursor-grabbing dark:border-amber-800/60 dark:bg-amber-900/50 dark:text-amber-100/90"
               onPointerDown={(e) => {
-                e.stopPropagation();
                 e.preventDefault();
                 if (e.button !== 0) return;
                 const z = viewZoom;
@@ -431,7 +430,6 @@ export default function TournamentDrawBracketScene({
               className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-white text-[11px] shadow-sm hover:bg-amber-50 dark:border-amber-700 dark:bg-amber-950 dark:hover:bg-amber-900"
               aria-label="Anchor to node"
               onPointerDown={(e) => {
-                e.stopPropagation();
                 e.preventDefault();
                 if (e.button !== 0) return;
                 const textId = tn.id;

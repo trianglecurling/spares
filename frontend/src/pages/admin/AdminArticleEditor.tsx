@@ -16,6 +16,8 @@ import Button from '../../components/Button';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
+import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
+import { htmlReplaceYoutubeMarkdownImagesWithEmbeds } from '../../utils/youtubeMarkdown';
 
 type UploadedFile = { id: number; publicUrl: string };
 type ArticleResponse = {
@@ -25,7 +27,6 @@ type ArticleResponse = {
   contentType?: 'markdown' | 'html';
   content: string;
   snippet: string | null;
-  featured: boolean;
   publishedAt: string | null;
 };
 type ArticleVersion = {
@@ -37,7 +38,6 @@ type ArticleVersion = {
   revisionNote: string | null;
   isSmallEdit: boolean;
   snippet: string | null;
-  featured: boolean;
   publishedAt: string | null;
   savedByMemberId: number | null;
   savedByName: string | null;
@@ -114,7 +114,6 @@ export default function AdminArticleEditor() {
     content: '',
     htmlContent: '',
     snippet: '',
-    featured: false,
     publishedAt: '',
   });
   const editorRef = useRef<MarkdownDescriptionEditorRef>(null);
@@ -138,7 +137,6 @@ export default function AdminArticleEditor() {
       content: contentType === 'markdown' ? content : '',
       htmlContent: contentType === 'html' ? content : '',
       snippet: article.snippet ?? '',
-      featured: article.featured ?? false,
       publishedAt: article.publishedAt ? isoToDatetimeLocal(article.publishedAt) : '',
     });
     setEditorRevision((v) => v + 1);
@@ -149,7 +147,6 @@ export default function AdminArticleEditor() {
       content,
       htmlContent: contentType === 'html' ? (article.content ?? '') : '',
       snippet: article.snippet ?? '',
-      featured: article.featured ?? false,
       publishedAt: article.publishedAt ? isoToDatetimeLocal(article.publishedAt) : '',
     });
   }, []);
@@ -178,7 +175,6 @@ export default function AdminArticleEditor() {
         content: '',
         htmlContent: '',
         snippet: '',
-        featured: false,
         publishedAt: '',
       });
       setSlugManuallyEdited(false);
@@ -193,7 +189,6 @@ export default function AdminArticleEditor() {
         content: '',
         htmlContent: '',
         snippet: '',
-        featured: false,
         publishedAt: '',
       });
       return;
@@ -235,7 +230,8 @@ export default function AdminArticleEditor() {
     });
     if (!ok) return;
     const markdown = editorRef.current?.getMarkdown?.() ?? form.content;
-    const html = (await marked.parse(markdown)) as string;
+    let html = (await marked.parse(markdown)) as string;
+    html = htmlReplaceYoutubeMarkdownImagesWithEmbeds(html);
     const defaultCss = `/* Basic typography - edit as needed */
 .content { max-width: 42rem; margin: 0 auto; }
 h1 { font-size: 1.5rem; font-weight: 700; margin: 1em 0 0.5em; }
@@ -249,6 +245,9 @@ a { color: #0d9488; text-decoration: underline; }
 table { border-collapse: collapse; width: 100%; margin: 1em 0; }
 th, td { border: 1px solid #d1d5db; padding: 0.5rem 1rem; text-align: left; }
 th { font-weight: 600; background: #f3f4f6; }
+.markdown-youtube-embed { display: block; width: 100%; max-width: 560px; margin: 1rem 0; min-width: 0; }
+.markdown-youtube-inner { position: relative; width: 100%; height: 0; padding-bottom: 56.25%; overflow: hidden; border-radius: 0.5rem; background: #111827; }
+.markdown-youtube-inner iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
 `;
     setForm((f) => ({
       ...f,
@@ -267,7 +266,25 @@ th { font-weight: 600; background: #f3f4f6; }
       ? (editorRef.current?.getMarkdown?.() ?? form.content)
       : JSON.stringify(htmlEditorRef.current?.getValue?.() ?? { html: '', css: '', js: '' });
 
+  const handleDraftPreview = () => {
+    const content = getCurrentEditorContent();
+    const k = storeArticleDraftPreview({
+      title: form.title,
+      slug: form.slug,
+      contentType: form.contentType,
+      content,
+      snippet: form.snippet.trim() || null,
+    });
+    if (!k) {
+      showAlert('Could not open preview. Allow storage for this site or try again.', 'error');
+      return;
+    }
+    const url = `/admin/content/articles/draft-preview?k=${encodeURIComponent(k)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   const hasUnsavedChanges = useCallback(() => {
+    if (savedSnapshotRef.current === null) return false;
     const currentSnapshot = JSON.stringify({
       title: form.title,
       slug: form.slug,
@@ -275,11 +292,25 @@ th { font-weight: 600; background: #f3f4f6; }
       content: getCurrentEditorContent(),
       htmlContent: form.htmlContent,
       snippet: form.snippet,
-      featured: form.featured,
       publishedAt: form.publishedAt,
     });
     return currentSnapshot !== savedSnapshotRef.current;
   }, [form]);
+
+  /** Toast UI can normalize markdown vs the API snapshot; align baseline once the editor is ready. */
+  const reconcileMarkdownBaselineFromEditor = useCallback(() => {
+    if (form.contentType !== 'markdown' || savedSnapshotRef.current === null) return;
+    try {
+      const parsed = JSON.parse(savedSnapshotRef.current) as Record<string, unknown>;
+      const md = editorRef.current?.getMarkdown?.();
+      if (md === undefined) return;
+      parsed.content = md;
+      savedSnapshotRef.current = JSON.stringify(parsed);
+      setIsDirty(false);
+    } catch {
+      /* ignore */
+    }
+  }, [form.contentType]);
 
   const hasVersionRelevantChanges = useCallback(() => {
     if (!savedSnapshotRef.current) return true;
@@ -339,7 +370,6 @@ th { font-weight: 600; background: #f3f4f6; }
         ? {
             slug: form.slug.trim(),
             snippet: form.snippet.trim() || null,
-            featured: form.featured,
             publishedAt: form.publishedAt ? new Date(form.publishedAt).toISOString() : null,
           }
         : {
@@ -350,7 +380,6 @@ th { font-weight: 600; background: #f3f4f6; }
             revisionNote: saveSmallEdit ? null : saveRevisionNote.trim() || null,
             smallEdit: !isNew && saveSmallEdit,
             snippet: form.snippet.trim() || null,
-            featured: form.featured,
             publishedAt: form.publishedAt ? new Date(form.publishedAt).toISOString() : null,
           };
       if (isNew) {
@@ -372,7 +401,6 @@ th { font-weight: 600; background: #f3f4f6; }
         content,
         htmlContent: form.htmlContent,
         snippet: form.snippet,
-        featured: form.featured,
         publishedAt: form.publishedAt,
       });
       if (!settingsOnly) {
@@ -485,7 +513,6 @@ th { font-weight: 600; background: #f3f4f6; }
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
       void (async () => {
         const shouldLeave = await confirmDiscardChanges();
         if (!shouldLeave) return;
@@ -546,15 +573,22 @@ th { font-weight: 600; background: #f3f4f6; }
       <div className="h-[calc(100vh-4rem)] flex flex-col">
         <div className="flex-shrink-0">
           <div className="max-w-[1600px] mx-auto px-4 pt-4 pb-2 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <BackButton label="Content" onClick={handleBackToContent} className="mb-2" />
-              <h1 className="text-xl font-semibold truncate mt-1">
-                {isNew ? 'New article' : form.title || 'Edit article'}
-              </h1>
+            <div className="min-w-0 flex-1">
+              <label htmlFor={`${articleFieldId}-title`} className="sr-only">
+                Title (required)
+              </label>
+              <input
+                id={`${articleFieldId}-title`}
+                form="article-form"
+                type="text"
+                value={form.title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder={isNew ? 'New article' : 'Article title'}
+                required
+                className="w-full min-w-0 rounded-md border border-transparent bg-transparent px-1 py-1 -mx-1 text-xl font-semibold text-gray-900 placeholder:text-gray-400 outline-none hover:border-gray-200 dark:text-gray-100 dark:placeholder:text-gray-500 dark:hover:border-gray-600 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-primary-teal/40"
+              />
             </div>
-            <Button type="submit" form="article-form" className="shrink-0" disabled={saving}>
-              {saving ? 'Saving...' : 'Save article'}
-            </Button>
+            <BackButton label="Content" onClick={handleBackToContent} className="shrink-0" />
           </div>
         </div>
 
@@ -566,7 +600,6 @@ th { font-weight: 600; background: #f3f4f6; }
             const popup = document.activeElement?.closest('.toastui-editor-popup');
             if (!popup) return;
             e.preventDefault();
-            e.stopPropagation();
             const okBtn = popup.querySelector(
               '.toastui-editor-ok-button'
             ) as HTMLButtonElement | null;
@@ -577,17 +610,6 @@ th { font-weight: 600; background: #f3f4f6; }
           <div className="flex-1 min-h-0 max-w-[1600px] mx-auto w-full px-4 py-4">
             <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4">
               <div className="min-h-0 flex flex-col">
-                <FormField label="Title" htmlFor={`${articleFieldId}-title`} className="mb-3 flex-shrink-0">
-                  <input
-                    id={`${articleFieldId}-title`}
-                    type="text"
-                    value={form.title}
-                    onChange={(e) => handleTitleChange(e.target.value)}
-                    className="app-input"
-                    required
-                  />
-                </FormField>
-
                 <div
                   role="group"
                   aria-labelledby={`${articleFieldId}-content-label`}
@@ -659,7 +681,9 @@ th { font-weight: 600; background: #f3f4f6; }
                       dark={resolvedTheme === 'dark'}
                       fill
                       readMoreInToolbar
+                      enableManagedFileImageEdit
                       onUploadImage={handleUploadMarkdownImage}
+                      onWysiwygReady={reconcileMarkdownBaselineFromEditor}
                     />
                   ) : (
                     <HtmlCodeEditor
@@ -672,7 +696,10 @@ th { font-weight: 600; background: #f3f4f6; }
                   )}
                 </div>
 
-                <div className="mt-3 flex flex-shrink-0 justify-end">
+                <div className="mt-3 flex flex-shrink-0 justify-end gap-2">
+                  <Button type="button" variant="secondary" onClick={handleDraftPreview}>
+                    Preview
+                  </Button>
                   <Button type="submit" disabled={saving}>
                     {saving ? 'Saving...' : 'Save article'}
                   </Button>
@@ -708,11 +735,6 @@ th { font-weight: 600; background: #f3f4f6; }
                       className="app-input"
                     />
                   </FormField>
-                  <FormCheckbox
-                    label="Featured on homepage"
-                    checked={form.featured}
-                    onChange={(checked) => setForm((f) => ({ ...f, featured: checked }))}
-                  />
                   <FormField
                     label={
                       <>

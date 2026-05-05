@@ -36,6 +36,7 @@ import Install from './pages/Install';
 import Feedback from './pages/Feedback';
 import AdminFeedback from './pages/admin/AdminFeedback';
 import AdminContent from './pages/admin/AdminContent';
+import AdminArticleDraftPreview from './pages/admin/AdminArticleDraftPreview';
 import AdminArticleEditor from './pages/admin/AdminArticleEditor';
 import AdminArticleVersionPreview from './pages/admin/AdminArticleVersionPreview';
 import AdminObservability from './pages/admin/AdminObservability';
@@ -408,6 +409,14 @@ function App() {
                   element={
                     <ProtectedRoute contentAdminOnly>
                       <AdminArticleVersionPreview />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/content/articles/draft-preview"
+                  element={
+                    <ProtectedRoute contentAdminOnly>
+                      <AdminArticleDraftPreview />
                     </ProtectedRoute>
                   }
                 />

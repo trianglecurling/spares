@@ -168,7 +168,9 @@ export default function PublicDonateSuccessPage() {
       <div className="public-container public-section">
         <div className="mx-auto max-w-2xl">
           <section className="public-card p-7 sm:p-9">
-            <h1 className="public-heading text-3xl">{isSuccess ? 'Thank you' : 'Donation update'}</h1>
+            <div className="public-page-title-rule">
+              <h1 className="public-heading">{isSuccess ? 'Thank you' : 'Donation update'}</h1>
+            </div>
 
             {showProcessingScreen && (
               <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">

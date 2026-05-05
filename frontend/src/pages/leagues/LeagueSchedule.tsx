@@ -816,7 +816,7 @@ export default function LeagueSchedule({
                                             <button
                                               type="button"
                                               onClick={(e) => {
-                                                e.stopPropagation();
+                                                e.preventDefault();
                                                 openGameModal(game);
                                               }}
                                               className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
@@ -913,7 +913,7 @@ export default function LeagueSchedule({
                           <button
                             type="button"
                             onClick={(e) => {
-                              e.stopPropagation();
+                              e.preventDefault();
                               openGameModal(game);
                             }}
                             className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
@@ -964,7 +964,7 @@ export default function LeagueSchedule({
                         <button
                           type="button"
                           onClick={(e) => {
-                            e.stopPropagation();
+                            e.preventDefault();
                             openGameModal(game);
                           }}
                           className="rounded p-1 text-amber-600 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-800"

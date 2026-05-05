@@ -9,6 +9,8 @@ export default {
           dark: '#121033',
           orange: '#fa4c06',
           teal: '#01B9BC',
+          /** Inline links on white: slightly muted vs brand teal for contrast without too much weight. */
+          'teal-link': '#0dabaf',
         },
       },
     },
