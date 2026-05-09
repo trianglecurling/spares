@@ -12,7 +12,7 @@ import { memberHasScope } from '../../utils/permissions';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 
 type PaymentProvider = 'stripe' | 'paypal' | 'square';
-type PaymentSubjectType = 'donation' | 'membership' | 'event_registration';
+type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
 type PaymentOrderStatus =
   | 'created'
   | 'pending'
@@ -125,6 +125,7 @@ const PAYMENT_SUBJECT_OPTIONS: ChoiceOption<PaymentSubjectType>[] = [
   { value: 'donation', label: 'Donation' },
   { value: 'membership', label: 'Membership' },
   { value: 'event_registration', label: 'Event registration' },
+  { value: 'curling_registration', label: 'Curling registration' },
 ];
 
 const PAYMENT_ORDER_STATUS_OPTIONS: ChoiceOption<PaymentOrderStatus>[] = [

@@ -9,7 +9,7 @@ const listOrdersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   provider: z.enum(['stripe', 'paypal', 'square']).optional(),
-  subjectType: z.enum(['donation', 'membership', 'event_registration']).optional(),
+  subjectType: z.enum(['donation', 'membership', 'event_registration', 'curling_registration']).optional(),
   status: z.enum(['created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded']).optional(),
 });
 
@@ -64,7 +64,7 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
             limit: { type: 'number' },
             offset: { type: 'number' },
             provider: { type: 'string', enum: ['stripe', 'paypal', 'square'] },
-            subjectType: { type: 'string', enum: ['donation', 'membership', 'event_registration'] },
+            subjectType: { type: 'string', enum: ['donation', 'membership', 'event_registration', 'curling_registration'] },
             status: { type: 'string', enum: ['created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded'] },
           },
         },

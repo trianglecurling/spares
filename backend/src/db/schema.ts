@@ -1,4 +1,5 @@
 import { DatabaseAdapter } from './adapter.js';
+import { ensureCurlingRegistrationBootstrap, ensureCurlingRegistrationBootstrapSync } from './registrationSchemaBootstrap.js';
 import type { DatabaseResult, PreparedStatement } from './adapter.js';
 
 // Helper to execute SQL that may be sync or async
@@ -227,7 +228,7 @@ async function ensurePaymentDomainTables(db: DatabaseAdapter): Promise<void> {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_token TEXT NOT NULL UNIQUE,
         provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
-        subject_type TEXT NOT NULL CHECK(subject_type IN ('donation', 'membership', 'event_registration')),
+        subject_type TEXT NOT NULL CHECK(subject_type IN ('donation', 'membership', 'event_registration', 'curling_registration')),
         subject_id INTEGER,
         amount_minor INTEGER NOT NULL,
         currency TEXT NOT NULL DEFAULT 'usd',
@@ -312,7 +313,7 @@ function ensurePaymentDomainTablesSync(db: DatabaseAdapter): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_token TEXT NOT NULL UNIQUE,
         provider TEXT NOT NULL CHECK(provider IN ('stripe', 'paypal', 'square')),
-        subject_type TEXT NOT NULL CHECK(subject_type IN ('donation', 'membership', 'event_registration')),
+        subject_type TEXT NOT NULL CHECK(subject_type IN ('donation', 'membership', 'event_registration', 'curling_registration')),
         subject_id INTEGER,
         amount_minor INTEGER NOT NULL,
         currency TEXT NOT NULL DEFAULT 'usd',
@@ -3268,6 +3269,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureGovernanceTables(db);
   await ensureRbacTables(db);
   await ensurePaymentDomainTables(db);
+  await ensureCurlingRegistrationBootstrap(db, execSQL);
   await ensureEventsTables(db);
   await ensurePermalinksTables(db);
   await ensurePermalinksLegacyClickCountColumn(db);
@@ -4046,6 +4048,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureGovernanceTablesSync(db);
   ensureRbacTablesSync(db);
   ensurePaymentDomainTablesSync(db);
+  ensureCurlingRegistrationBootstrapSync(db, execSQLSync);
   ensureEventsTablesSync(db);
   ensurePermalinksTablesSync(db);
   ensurePermalinksLegacyClickCountColumnSync(db);

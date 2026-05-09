@@ -14,7 +14,25 @@ type PgSchema = {
   roleScopeRules: typeof pgSchema.roleScopeRulesPg;
   memberRoleAssignments: typeof pgSchema.memberRoleAssignmentsPg;
   memberAccountAccessDelegations: typeof pgSchema.memberAccountAccessDelegationsPg;
+  curlingSeasons: typeof pgSchema.curlingSeasonsPg;
+  curlingSessions: typeof pgSchema.curlingSessionsPg;
   leagues: typeof pgSchema.leaguesPg;
+  registrationPeriods: typeof pgSchema.registrationPeriodsPg;
+  curlingRegistrations: typeof pgSchema.curlingRegistrationsPg;
+  curlingLeagueSabbaticals: typeof pgSchema.curlingLeagueSabbaticalsPg;
+  registrationPolicyAcceptances: typeof pgSchema.registrationPolicyAcceptancesPg;
+  registrationSelections: typeof pgSchema.registrationSelectionsPg;
+  financialAssistanceRequests: typeof pgSchema.financialAssistanceRequestsPg;
+  registrationInvoices: typeof pgSchema.registrationInvoicesPg;
+  registrationInvoiceLineItems: typeof pgSchema.registrationInvoiceLineItemsPg;
+  registrationPriceConfigs: typeof pgSchema.registrationPriceConfigsPg;
+  registrationDiscountConfigs: typeof pgSchema.registrationDiscountConfigsPg;
+  seasonMemberships: typeof pgSchema.seasonMembershipsPg;
+  curlingIcePrivileges: typeof pgSchema.curlingIcePrivilegesPg;
+  curlingSabbaticalSessions: typeof pgSchema.curlingSabbaticalSessionsPg;
+  waitlistEntries: typeof pgSchema.waitlistEntriesPg;
+  waitlistOffers: typeof pgSchema.waitlistOffersPg;
+  waitlistAuditEvents: typeof pgSchema.waitlistAuditEventsPg;
   leagueDrawTimes: typeof pgSchema.leagueDrawTimesPg;
   leagueExceptions: typeof pgSchema.leagueExceptionsPg;
   sheets: typeof pgSchema.sheetsPg;
@@ -112,7 +130,25 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       roleScopeRules: sqliteSchema.roleScopeRulesSqlite,
       memberRoleAssignments: sqliteSchema.memberRoleAssignmentsSqlite,
       memberAccountAccessDelegations: sqliteSchema.memberAccountAccessDelegationsSqlite,
+      curlingSeasons: sqliteSchema.curlingSeasonsSqlite,
+      curlingSessions: sqliteSchema.curlingSessionsSqlite,
       leagues: sqliteSchema.leaguesSqlite,
+      registrationPeriods: sqliteSchema.registrationPeriodsSqlite,
+      curlingRegistrations: sqliteSchema.curlingRegistrationsSqlite,
+      curlingLeagueSabbaticals: sqliteSchema.curlingLeagueSabbaticalsSqlite,
+      registrationPolicyAcceptances: sqliteSchema.registrationPolicyAcceptancesSqlite,
+      registrationSelections: sqliteSchema.registrationSelectionsSqlite,
+      financialAssistanceRequests: sqliteSchema.financialAssistanceRequestsSqlite,
+      registrationInvoices: sqliteSchema.registrationInvoicesSqlite,
+      registrationInvoiceLineItems: sqliteSchema.registrationInvoiceLineItemsSqlite,
+      registrationPriceConfigs: sqliteSchema.registrationPriceConfigsSqlite,
+      registrationDiscountConfigs: sqliteSchema.registrationDiscountConfigsSqlite,
+      seasonMemberships: sqliteSchema.seasonMembershipsSqlite,
+      curlingIcePrivileges: sqliteSchema.curlingIcePrivilegesSqlite,
+      curlingSabbaticalSessions: sqliteSchema.curlingSabbaticalSessionsSqlite,
+      waitlistEntries: sqliteSchema.waitlistEntriesSqlite,
+      waitlistOffers: sqliteSchema.waitlistOffersSqlite,
+      waitlistAuditEvents: sqliteSchema.waitlistAuditEventsSqlite,
       leagueDrawTimes: sqliteSchema.leagueDrawTimesSqlite,
       leagueExceptions: sqliteSchema.leagueExceptionsSqlite,
       sheets: sqliteSchema.sheetsSqlite,
@@ -201,7 +237,25 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       roleScopeRules: pgSchema.roleScopeRulesPg,
       memberRoleAssignments: pgSchema.memberRoleAssignmentsPg,
       memberAccountAccessDelegations: pgSchema.memberAccountAccessDelegationsPg,
+      curlingSeasons: pgSchema.curlingSeasonsPg,
+      curlingSessions: pgSchema.curlingSessionsPg,
       leagues: pgSchema.leaguesPg,
+      registrationPeriods: pgSchema.registrationPeriodsPg,
+      curlingRegistrations: pgSchema.curlingRegistrationsPg,
+      curlingLeagueSabbaticals: pgSchema.curlingLeagueSabbaticalsPg,
+      registrationPolicyAcceptances: pgSchema.registrationPolicyAcceptancesPg,
+      registrationSelections: pgSchema.registrationSelectionsPg,
+      financialAssistanceRequests: pgSchema.financialAssistanceRequestsPg,
+      registrationInvoices: pgSchema.registrationInvoicesPg,
+      registrationInvoiceLineItems: pgSchema.registrationInvoiceLineItemsPg,
+      registrationPriceConfigs: pgSchema.registrationPriceConfigsPg,
+      registrationDiscountConfigs: pgSchema.registrationDiscountConfigsPg,
+      seasonMemberships: pgSchema.seasonMembershipsPg,
+      curlingIcePrivileges: pgSchema.curlingIcePrivilegesPg,
+      curlingSabbaticalSessions: pgSchema.curlingSabbaticalSessionsPg,
+      waitlistEntries: pgSchema.waitlistEntriesPg,
+      waitlistOffers: pgSchema.waitlistOffersPg,
+      waitlistAuditEvents: pgSchema.waitlistAuditEventsPg,
       leagueDrawTimes: pgSchema.leagueDrawTimesPg,
       leagueExceptions: pgSchema.leagueExceptionsPg,
       sheets: pgSchema.sheetsPg,

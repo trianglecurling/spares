@@ -1,6 +1,17 @@
-import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { pgTable, text as textPg, integer as integerPg, timestamp, time, date, index as indexPg, uniqueIndex as uniqueIndexPg } from 'drizzle-orm/pg-core';
+import { sql, eq } from 'drizzle-orm';
+import { sqliteTable, text, integer, index, uniqueIndex, real } from 'drizzle-orm/sqlite-core';
+import {
+  pgTable,
+  text as textPg,
+  integer as integerPg,
+  timestamp,
+  time,
+  date,
+  index as indexPg,
+  uniqueIndex as uniqueIndexPg,
+  doublePrecision,
+  jsonb,
+} from 'drizzle-orm/pg-core';
 
 // We'll create schemas for both SQLite and PostgreSQL
 // The application will use the appropriate one based on database type
@@ -123,16 +134,624 @@ export const memberAccountAccessDelegationsSqlite = sqliteTable('member_account_
   granteeIdx: index('idx_member_account_access_delegations_grantee').on(table.grantee_member_id),
 }));
 
+// ---------- Curling season / league registration (Phase 1) ----------
+export type RegistrationPeriodStateSqlite = 'closed' | 'priority' | 'open';
+export type CurlingRegistrationStatusSqlite =
+  | 'draft'
+  | 'submitted'
+  | 'awaiting_staff_review'
+  | 'awaiting_placement'
+  | 'awaiting_payment'
+  | 'payment_started'
+  | 'paid'
+  | 'confirmed'
+  | 'cancelled';
+export type CurlingMembershipOptionSqlite = 'none' | 'regular' | 'social' | 'regular_spare_only' | 'junior_recreational';
+export type CurlingExperienceTypeSqlite = 'none_or_minimal' | 'specified_years' | 'known_existing';
+export type CurlingRegistrationPaymentStatusSqlite =
+  | 'unpaid'
+  | 'checkout_started'
+  | 'paid'
+  | 'deferred'
+  | 'failed'
+  | 'refunded';
+
+export type PolicyAcceptanceKindSqlite = 'code_of_conduct' | 'maapp' | 'privacy';
+export type CurlingRegistrationSelectionKindSqlite =
+  | 'guaranteed_return'
+  | 'sabbatical'
+  | 'drop'
+  | 'return_subject_to_availability'
+  | 'waitlist_add'
+  | 'waitlist_replace'
+  | 'third_league_interest'
+  | 'byot_request'
+  | 'junior_recreational'
+  | 'spare_only';
+export type CurlingRegistrationSelectionStatusSqlite =
+  | 'draft'
+  | 'pending'
+  | 'confirmed'
+  | 'waitlisted'
+  | 'offered'
+  | 'accepted'
+  | 'declined'
+  | 'placed'
+  | 'not_placed'
+  | 'dropped'
+  | 'cancelled';
+
+export type SeasonMembershipTypeSqlite = 'regular' | 'social' | 'junior_recreational';
+export type SeasonMembershipStatusSqlite = 'pending' | 'active' | 'cancelled' | 'refunded' | 'expired';
+export type IcePrivilegeSourceSqlite = 'league' | 'spare_only' | 'program' | 'staff_adjustment';
+
+export type LeagueRosterPlacementStatusSqlite = 'pending' | 'active' | 'cancelled' | 'removed' | 'completed';
+export type LeagueRosterPlacementTypeSqlite =
+  | 'guaranteed_return'
+  | 'new_placement'
+  | 'waitlist_add'
+  | 'waitlist_replace'
+  | 'byot'
+  | 'staff_manual'
+  | 'temporary_sabbatical_fill';
+
+export type CurlingLeagueSabbaticalStatusSqlite =
+  | 'active'
+  | 'returning'
+  | 'released'
+  | 'expired'
+  | 'staff_overridden'
+  | 'cancelled';
+
+export type WaitlistEntryTypeSqlite = 'add' | 'replace';
+export type WaitlistEntryStatusSqlite =
+  | 'active'
+  | 'offered'
+  | 'accepted'
+  | 'declined'
+  | 'placed'
+  | 'removed'
+  | 'moved_to_bottom'
+  | 'rolled_over'
+  | 'cancelled';
+
+export type WaitlistOfferKindSqlite = 'permanent' | 'temporary_sabbatical_fill';
+export type WaitlistOfferStatusSqlite = 'pending' | 'accepted' | 'declined' | 'expired_accepted' | 'cancelled';
+
+export type WaitlistAuditSourceSqlite =
+  | 'registration_submission'
+  | 'waitlist_rollover'
+  | 'staff_action'
+  | 'offer_response'
+  | 'offer_expiration'
+  | 'placement_process'
+  | 'system_cleanup';
+
+export type WaitlistAuditActionSqlite =
+  | 'entry_created'
+  | 'entry_removed'
+  | 'entry_reordered'
+  | 'entry_rolled_over'
+  | 'entry_converted_add_to_replace'
+  | 'entry_converted_replace_to_add'
+  | 'replacement_league_changed'
+  | 'offer_sent'
+  | 'offer_accepted'
+  | 'offer_declined'
+  | 'offer_expired_accepted'
+  | 'decline_count_changed'
+  | 'entry_moved_to_bottom'
+  | 'entry_placed'
+  | 'staff_correction';
+
+export type CurlingDiscountTypeSqlite = 'student' | 'reciprocal' | 'winter_only';
+export type CurlingDiscountAmountTypeSqlite = 'dollar' | 'percent';
+export type CurlingDiscountScopeSqlite = 'regular_membership' | 'eligible_invoice_items';
+
+export type RegistrationInvoiceStatusSqlite =
+  | 'draft'
+  | 'deferred'
+  | 'awaiting_payment'
+  | 'checkout_started'
+  | 'paid'
+  | 'failed'
+  | 'cancelled'
+  | 'refunded';
+
+export type RegistrationInvoiceLineKindSqlite =
+  | 'regular_membership_fee'
+  | 'social_membership_fee'
+  | 'league_fee'
+  | 'spare_only_fee'
+  | 'sabbatical_fee'
+  | 'junior_recreational_fee'
+  | 'student_discount'
+  | 'reciprocal_discount'
+  | 'winter_only_discount'
+  | 'sabbatical_fill_discount'
+  | 'financial_assistance_discount'
+  | 'manual_adjustment';
+
+export type FinancialAssistanceStatusSqlite = 'pending' | 'approved' | 'partially_approved' | 'denied' | 'withdrawn';
+
+export type IcePrivilegeRowStatusSqlite = 'pending' | 'active' | 'inactive' | 'cancelled';
+
+export const curlingSeasonsSqlite = sqliteTable('curling_seasons', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  start_date: text('start_date').notNull(),
+  end_date: text('end_date').notNull(),
+  membership_starts_date: text('membership_starts_date').notNull(),
+  membership_ends_date: text('membership_ends_date').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
+export const curlingSessionsSqlite = sqliteTable('curling_sessions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'restrict' }),
+  name: text('name').notNull(),
+  start_date: text('start_date').notNull(),
+  end_date: text('end_date').notNull(),
+  sort_order_within_season: integer('sort_order_within_season').default(0).notNull(),
+  is_first_session_of_season: integer('is_first_session_of_season').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  seasonIdx: index('idx_curling_sessions_season_id').on(table.season_id),
+  seasonSortIdx: index('idx_curling_sessions_season_sort').on(table.season_id, table.sort_order_within_season),
+}));
+
 export const leaguesSqlite = sqliteTable('leagues', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  session_id: integer('session_id').references(() => curlingSessionsSqlite.id, { onDelete: 'set null' }),
   name: text('name').notNull(),
   day_of_week: integer('day_of_week').notNull(),
   format: text('format').notNull().$type<'teams' | 'doubles'>(),
   start_date: text('start_date').notNull(),
   end_date: text('end_date').notNull(),
+  league_type: text('league_type').notNull().default('standard').$type<'standard' | 'bring_your_own_team'>(),
+  capacity_type: text('capacity_type').notNull().default('individual').$type<'individual' | 'team'>(),
+  capacity_value: integer('capacity_value').default(0).notNull(),
+  registration_fee_minor: integer('registration_fee_minor').default(0).notNull(),
+  requires_club_membership: integer('requires_club_membership').default(1).notNull(),
+  is_instructional: integer('is_instructional').default(0).notNull(),
+  min_experience_years: integer('min_experience_years'),
+  min_age: integer('min_age'),
+  max_age: integer('max_age'),
+  first_day_of_play: text('first_day_of_play'),
+  last_day_of_play: text('last_day_of_play'),
+  allows_waitlist: integer('allows_waitlist').default(1).notNull(),
+  allows_sabbatical: integer('allows_sabbatical').default(1).notNull(),
+  predecessor_league_id: integer('predecessor_league_id'),
+  successor_league_id: integer('successor_league_id'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
-});
+}, (table) => ({
+  sessionIdx: index('idx_leagues_session_id').on(table.session_id),
+  predIdx: index('idx_leagues_predecessor_league_id').on(table.predecessor_league_id),
+  succIdx: index('idx_leagues_successor_league_id').on(table.successor_league_id),
+  leagueTypeIdx: index('idx_leagues_league_type').on(table.league_type),
+}));
+
+export const registrationPeriodsSqlite = sqliteTable('registration_periods', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
+  session_id: integer('session_id')
+    .notNull()
+    .references(() => curlingSessionsSqlite.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  current_state: text('current_state').notNull().default('closed').$type<RegistrationPeriodStateSqlite>(),
+  priority_opens_at: text('priority_opens_at'),
+  priority_closes_at: text('priority_closes_at'),
+  open_registration_opens_at: text('open_registration_opens_at'),
+  registration_closes_at: text('registration_closes_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  seasonIdx: index('idx_registration_periods_season_id').on(table.season_id),
+  sessionIdx: index('idx_registration_periods_session_id').on(table.session_id),
+  stateIdx: index('idx_registration_periods_current_state').on(table.current_state),
+}));
+
+export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_period_id: integer('registration_period_id')
+    .notNull()
+    .references(() => registrationPeriodsSqlite.id, { onDelete: 'restrict' }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'restrict' }),
+  session_id: integer('session_id')
+    .notNull()
+    .references(() => curlingSessionsSqlite.id, { onDelete: 'restrict' }),
+  curler_member_id: integer('curler_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  submitted_by_member_id: integer('submitted_by_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  registering_for_self: integer('registering_for_self').default(1).notNull(),
+  returning_member_answer: integer('returning_member_answer'),
+  status: text('status').notNull().default('draft').$type<CurlingRegistrationStatusSqlite>(),
+  membership_option: text('membership_option')
+    .notNull()
+    .default('none')
+    .$type<CurlingMembershipOptionSqlite>(),
+  experience_type: text('experience_type')
+    .notNull()
+    .default('none_or_minimal')
+    .$type<CurlingExperienceTypeSqlite>(),
+  self_reported_experience_years: real('self_reported_experience_years'),
+  student_discount_claimed: integer('student_discount_claimed').default(0).notNull(),
+  student_institution: text('student_institution'),
+  reciprocal_discount_claimed: integer('reciprocal_discount_claimed').default(0).notNull(),
+  reciprocal_club_name: text('reciprocal_club_name'),
+  winter_only_discount_applied: integer('winter_only_discount_applied').default(0).notNull(),
+  junior_assistance_requested_percent: real('junior_assistance_requested_percent'),
+  junior_assistance_decision: text('junior_assistance_decision'),
+  deferred_payment: integer('deferred_payment').default(0).notNull(),
+  deferred_payment_reason: text('deferred_payment_reason'),
+  stripe_checkout_session_id: text('stripe_checkout_session_id'),
+  payment_status: text('payment_status')
+    .notNull()
+    .default('unpaid')
+    .$type<CurlingRegistrationPaymentStatusSqlite>(),
+  submitted_at: text('submitted_at'),
+  paid_at: text('paid_at'),
+  cancelled_at: text('cancelled_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  periodIdx: index('idx_curling_registrations_registration_period_id').on(table.registration_period_id),
+  seasonIdx: index('idx_curling_registrations_season_id').on(table.season_id),
+  sessionIdx: index('idx_curling_registrations_session_id').on(table.session_id),
+  curlerIdx: index('idx_curling_registrations_curler_member_id').on(table.curler_member_id),
+  submitterIdx: index('idx_curling_registrations_submitted_by_member_id').on(table.submitted_by_member_id),
+  statusIdx: index('idx_curling_registrations_status').on(table.status),
+  payIdx: index('idx_curling_registrations_payment_status').on(table.payment_status),
+}));
+
+export const curlingLeagueSabbaticalsSqlite = sqliteTable('curling_league_sabbaticals', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  lineage_key: text('lineage_key'),
+  original_league_id: integer('original_league_id')
+    .notNull()
+    .references(() => leaguesSqlite.id, { onDelete: 'restrict' }),
+  current_league_id: integer('current_league_id')
+    .notNull()
+    .references(() => leaguesSqlite.id, { onDelete: 'restrict' }),
+  source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  first_sabbatical_league_id: integer('first_sabbatical_league_id')
+    .notNull()
+    .references(() => leaguesSqlite.id, { onDelete: 'restrict' }),
+  first_sabbatical_start_date: text('first_sabbatical_start_date').notNull(),
+  status: text('status').notNull().default('active').$type<CurlingLeagueSabbaticalStatusSqlite>(),
+  staff_override: integer('staff_override').default(0).notNull(),
+  staff_override_reason: text('staff_override_reason'),
+  released_at: text('released_at'),
+  released_reason: text('released_reason'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_curling_league_sabbaticals_member_id').on(table.member_id),
+  leagueIdx: index('idx_curling_league_sabbaticals_current_league_id').on(table.current_league_id),
+  statusIdx: index('idx_curling_league_sabbaticals_status').on(table.status),
+  firstStartIdx: index('idx_curling_league_sabbaticals_first_start').on(table.first_sabbatical_start_date),
+}));
+
+export const registrationPolicyAcceptancesSqlite = sqliteTable('registration_policy_acceptances', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_id: integer('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  policy_type: text('policy_type').notNull().$type<PolicyAcceptanceKindSqlite>(),
+  policy_url: text('policy_url').notNull(),
+  accepted_by_member_id: integer('accepted_by_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  accepted_for_member_id: integer('accepted_for_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  accepted_at: text('accepted_at').notNull(),
+  policy_version: text('policy_version'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  regIdx: index('idx_registration_policy_acceptances_registration_id').on(table.registration_id),
+}));
+
+export const registrationSelectionsSqlite = sqliteTable('registration_selections', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_id: integer('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  league_id: integer('league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  selection_type: text('selection_type').notNull().$type<CurlingRegistrationSelectionKindSqlite>(),
+  rank: integer('rank'),
+  replaces_league_id: integer('replaces_league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  related_sabbatical_id: integer('related_sabbatical_id').references(() => curlingLeagueSabbaticalsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  is_temporary_sabbatical_fill: integer('is_temporary_sabbatical_fill').default(0).notNull(),
+  byot_teammate_text: text('byot_teammate_text'),
+  status: text('status').notNull().default('draft').$type<CurlingRegistrationSelectionStatusSqlite>(),
+  fee_amount_minor_snapshot: integer('fee_amount_minor_snapshot').default(0).notNull(),
+  discount_amount_minor_snapshot: integer('discount_amount_minor_snapshot').default(0).notNull(),
+  notes: text('notes'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  regIdx: index('idx_registration_selections_registration_id').on(table.registration_id),
+  leagueIdx: index('idx_registration_selections_league_id').on(table.league_id),
+  typeIdx: index('idx_registration_selections_selection_type').on(table.selection_type),
+  statusIdx: index('idx_registration_selections_status').on(table.status),
+}));
+
+export const financialAssistanceRequestsSqlite = sqliteTable('financial_assistance_requests', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_id: integer('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  requested_percentage: real('requested_percentage').notNull(),
+  approved_percentage: real('approved_percentage'),
+  status: text('status').notNull().default('pending').$type<FinancialAssistanceStatusSqlite>(),
+  reviewed_by_member_id: integer('reviewed_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  reviewed_at: text('reviewed_at'),
+  staff_notes: text('staff_notes'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  regIdx: index('idx_financial_assistance_requests_registration_id').on(table.registration_id),
+}));
+
+export const registrationInvoicesSqlite = sqliteTable('registration_invoices', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_id: integer('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  payer_member_id: integer('payer_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  status: text('status').notNull().default('draft').$type<RegistrationInvoiceStatusSqlite>(),
+  subtotal_minor: integer('subtotal_minor').default(0).notNull(),
+  discount_minor: integer('discount_minor').default(0).notNull(),
+  total_minor: integer('total_minor').default(0).notNull(),
+  currency: text('currency').notNull().default('usd'),
+  deferred: integer('deferred').default(0).notNull(),
+  deferred_reason: text('deferred_reason'),
+  stripe_checkout_session_id: text('stripe_checkout_session_id'),
+  stripe_payment_intent_id: text('stripe_payment_intent_id'),
+  payment_order_id: integer('payment_order_id'),
+  paid_at: text('paid_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  regIdx: index('idx_registration_invoices_registration_id').on(table.registration_id),
+  payerIdx: index('idx_registration_invoices_payer_member_id').on(table.payer_member_id),
+  statusIdx: index('idx_registration_invoices_status').on(table.status),
+  checkoutIdx: index('idx_registration_invoices_stripe_checkout_session_id').on(table.stripe_checkout_session_id),
+}));
+
+export const registrationInvoiceLineItemsSqlite = sqliteTable('registration_invoice_line_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  invoice_id: integer('invoice_id')
+    .notNull()
+    .references(() => registrationInvoicesSqlite.id, { onDelete: 'cascade' }),
+  line_type: text('line_type').notNull().$type<RegistrationInvoiceLineKindSqlite>(),
+  description: text('description').notNull(),
+  related_league_id: integer('related_league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  related_selection_id: integer('related_selection_id').references(() => registrationSelectionsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  amount_minor: integer('amount_minor').notNull(),
+  discount_eligible: integer('discount_eligible').default(1).notNull(),
+  sort_order: integer('sort_order').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  invoiceIdx: index('idx_registration_invoice_line_items_invoice_id').on(table.invoice_id),
+}));
+
+export const registrationPriceConfigsSqlite = sqliteTable('registration_price_configs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
+  session_id: integer('session_id').references(() => curlingSessionsSqlite.id, { onDelete: 'cascade' }),
+  regular_membership_fee_minor: integer('regular_membership_fee_minor').default(0).notNull(),
+  social_membership_fee_minor: integer('social_membership_fee_minor').default(0).notNull(),
+  spare_only_ice_privilege_fee_minor: integer('spare_only_ice_privilege_fee_minor').default(0).notNull(),
+  sabbatical_fee_minor: integer('sabbatical_fee_minor').default(0).notNull(),
+  junior_recreational_fee_minor: integer('junior_recreational_fee_minor').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  seasonIdx: index('idx_registration_price_configs_season_id').on(table.season_id),
+  sessionIdx: index('idx_registration_price_configs_session_id').on(table.session_id),
+}));
+
+export const registrationDiscountConfigsSqlite = sqliteTable('registration_discount_configs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
+  discount_type: text('discount_type').notNull().$type<CurlingDiscountTypeSqlite>(),
+  amount_type: text('amount_type').notNull().$type<CurlingDiscountAmountTypeSqlite>(),
+  amount_value: real('amount_value').notNull(),
+  applies_to_scope: text('applies_to_scope').notNull().$type<CurlingDiscountScopeSqlite>(),
+  active: integer('active').default(1).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  seasonIdx: index('idx_registration_discount_configs_season_id').on(table.season_id),
+}));
+
+export const seasonMembershipsSqlite = sqliteTable('season_memberships', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
+  membership_type: text('membership_type').notNull().$type<SeasonMembershipTypeSqlite>(),
+  starts_at: text('starts_at').notNull(),
+  ends_at: text('ends_at').notNull(),
+  source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  payment_order_id: integer('payment_order_id'),
+  status: text('status').notNull().default('pending').$type<SeasonMembershipStatusSqlite>(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_season_memberships_member_id').on(table.member_id),
+  seasonIdx: index('idx_season_memberships_season_id').on(table.season_id),
+}));
+
+export const curlingIcePrivilegesSqlite = sqliteTable('curling_ice_privileges', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
+  session_id: integer('session_id')
+    .notNull()
+    .references(() => curlingSessionsSqlite.id, { onDelete: 'cascade' }),
+  source_type: text('source_type').notNull().$type<IcePrivilegeSourceSqlite>(),
+  source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  source_league_id: integer('source_league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('pending').$type<IcePrivilegeRowStatusSqlite>(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_curling_ice_privileges_member_id').on(table.member_id),
+}));
+
+export const curlingSabbaticalSessionsSqlite = sqliteTable('curling_sabbatical_sessions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sabbatical_id: integer('sabbatical_id')
+    .notNull()
+    .references(() => curlingLeagueSabbaticalsSqlite.id, { onDelete: 'cascade' }),
+  league_id: integer('league_id')
+    .notNull()
+    .references(() => leaguesSqlite.id, { onDelete: 'restrict' }),
+  registration_id: integer('registration_id').references(() => curlingRegistrationsSqlite.id, { onDelete: 'set null' }),
+  fee_amount_minor: integer('fee_amount_minor').default(0).notNull(),
+  payment_status: text('payment_status').notNull().default('unpaid'),
+  starts_at: text('starts_at'),
+  ends_at: text('ends_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  sabIdx: index('idx_curling_sabbatical_sessions_sabbatical_id').on(table.sabbatical_id),
+}));
+
+export const waitlistEntriesSqlite = sqliteTable('waitlist_entries', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  league_id: integer('league_id')
+    .notNull()
+    .references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  entry_type: text('entry_type').notNull().$type<WaitlistEntryTypeSqlite>(),
+  replaces_league_id: integer('replaces_league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  position_sort_key: text('position_sort_key').notNull(),
+  joined_at: text('joined_at').notNull(),
+  decline_count: integer('decline_count').default(0).notNull(),
+  status: text('status').notNull().default('active').$type<WaitlistEntryStatusSqlite>(),
+  rolled_over_from_waitlist_entry_id: integer('rolled_over_from_waitlist_entry_id'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  leagueIdx: index('idx_waitlist_entries_league_id').on(table.league_id),
+  memberIdx: index('idx_waitlist_entries_member_id').on(table.member_id),
+  statusIdx: index('idx_waitlist_entries_status').on(table.status),
+  entryTypeIdx: index('idx_waitlist_entries_entry_type').on(table.entry_type),
+  posIdx: index('idx_waitlist_entries_position_sort_key').on(table.position_sort_key),
+  joinedIdx: index('idx_waitlist_entries_joined_at').on(table.joined_at),
+  sourceRegIdx: index('idx_waitlist_entries_source_registration_id').on(table.source_registration_id),
+  replacesIdx: index('idx_waitlist_entries_replaces_league_id').on(table.replaces_league_id),
+  activeMemberLeaguePartial: uniqueIndex('idx_waitlist_entries_active_member_league').on(
+    table.member_id,
+    table.league_id
+  ).where(eq(table.status, 'active')),
+}));
+
+export const waitlistOffersSqlite = sqliteTable('waitlist_offers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  waitlist_entry_id: integer('waitlist_entry_id')
+    .notNull()
+    .references(() => waitlistEntriesSqlite.id, { onDelete: 'cascade' }),
+  league_id: integer('league_id')
+    .notNull()
+    .references(() => leaguesSqlite.id, { onDelete: 'restrict' }),
+  member_id: integer('member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  offer_type: text('offer_type').notNull().$type<WaitlistOfferKindSqlite>(),
+  status: text('status').notNull().default('pending').$type<WaitlistOfferStatusSqlite>(),
+  offered_at: text('offered_at').notNull(),
+  expires_at: text('expires_at').notNull(),
+  responded_at: text('responded_at'),
+  response_source: text('response_source'),
+  offered_by_member_id: integer('offered_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  payment_link_id: text('payment_link_id'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  entryIdx: index('idx_waitlist_offers_waitlist_entry_id').on(table.waitlist_entry_id),
+  leagueIdx: index('idx_waitlist_offers_league_id').on(table.league_id),
+  memberIdx: index('idx_waitlist_offers_member_id').on(table.member_id),
+  statusIdx: index('idx_waitlist_offers_status').on(table.status),
+  expiresIdx: index('idx_waitlist_offers_expires_at').on(table.expires_at),
+}));
+
+export const waitlistAuditEventsSqlite = sqliteTable('waitlist_audit_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  waitlist_entry_id: integer('waitlist_entry_id').references(() => waitlistEntriesSqlite.id, {
+    onDelete: 'set null',
+  }),
+  league_id: integer('league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  actor_member_id: integer('actor_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  source: text('source').notNull().$type<WaitlistAuditSourceSqlite>(),
+  action: text('action').notNull().$type<WaitlistAuditActionSqlite>(),
+  reason: text('reason'),
+  before_json: text('before_json'),
+  after_json: text('after_json'),
+  metadata_json: text('metadata_json'),
+  created_at: text('created_at').notNull(),
+}, (table) => ({
+  entryIdx: index('idx_waitlist_audit_events_waitlist_entry_id').on(table.waitlist_entry_id),
+  leagueIdx: index('idx_waitlist_audit_events_league_id').on(table.league_id),
+  memberIdx: index('idx_waitlist_audit_events_member_id').on(table.member_id),
+  actorIdx: index('idx_waitlist_audit_events_actor_member_id').on(table.actor_member_id),
+  createdIdx: index('idx_waitlist_audit_events_created_at').on(table.created_at),
+  actionIdx: index('idx_waitlist_audit_events_action').on(table.action),
+}));
 
 export const leagueDrawTimesSqlite = sqliteTable('league_draw_times', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -341,6 +960,15 @@ export const leagueRosterSqlite = sqliteTable('league_roster', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
   member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  status: text('status').default('active').notNull().$type<LeagueRosterPlacementStatusSqlite>(),
+  placement_type: text('placement_type').$type<LeagueRosterPlacementTypeSqlite>(),
+  is_temporary_sabbatical_fill: integer('is_temporary_sabbatical_fill').default(0).notNull(),
+  related_sabbatical_id: integer('related_sabbatical_id').references(() => curlingLeagueSabbaticalsSqlite.id, {
+    onDelete: 'set null',
+  }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -532,7 +1160,9 @@ export const paymentOrdersSqlite = sqliteTable('payment_orders', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   order_token: text('order_token').notNull().unique(),
   provider: text('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
-  subject_type: text('subject_type').notNull().$type<'donation' | 'membership' | 'event_registration'>(),
+  subject_type: text('subject_type').notNull().$type<
+    'donation' | 'membership' | 'event_registration' | 'curling_registration'
+  >(),
   subject_id: integer('subject_id'),
   amount_minor: integer('amount_minor').notNull(),
   currency: text('currency').notNull().default('usd'),
@@ -588,7 +1218,6 @@ export const paymentEventsSqlite = sqliteTable('payment_events', {
     .notNull()
     .default('received')
     .$type<'received' | 'processed' | 'ignored' | 'failed'>(),
-  processing_error: text('processing_error'),
   raw_payload: text('raw_payload').notNull(),
   received_at: text('received_at').default(sql`datetime('now')`).notNull(),
   processed_at: text('processed_at'),
@@ -1278,16 +1907,482 @@ export const memberAccountAccessDelegationsPg = pgTable('member_account_access_d
   granteeIdx: indexPg('idx_member_account_access_delegations_grantee').on(table.grantee_member_id),
 }));
 
+export const curlingSeasonsPg = pgTable('curling_seasons', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  start_date: date('start_date').notNull(),
+  end_date: date('end_date').notNull(),
+  membership_starts_date: date('membership_starts_date').notNull(),
+  membership_ends_date: date('membership_ends_date').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
+export const curlingSessionsPg = pgTable('curling_sessions', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'restrict' }),
+  name: textPg('name').notNull(),
+  start_date: date('start_date').notNull(),
+  end_date: date('end_date').notNull(),
+  sort_order_within_season: integerPg('sort_order_within_season').default(0).notNull(),
+  is_first_session_of_season: integerPg('is_first_session_of_season').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  seasonIdx: indexPg('idx_curling_sessions_season_id').on(table.season_id),
+  seasonSortIdx: indexPg('idx_curling_sessions_season_sort').on(table.season_id, table.sort_order_within_season),
+}));
+
 export const leaguesPg = pgTable('leagues', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  session_id: integerPg('session_id').references(() => curlingSessionsPg.id, { onDelete: 'set null' }),
   name: textPg('name').notNull(),
   day_of_week: integerPg('day_of_week').notNull(),
   format: textPg('format').notNull().$type<'teams' | 'doubles'>(),
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
+  league_type: textPg('league_type').notNull().default('standard').$type<'standard' | 'bring_your_own_team'>(),
+  capacity_type: textPg('capacity_type').notNull().default('individual').$type<'individual' | 'team'>(),
+  capacity_value: integerPg('capacity_value').default(0).notNull(),
+  registration_fee_minor: integerPg('registration_fee_minor').default(0).notNull(),
+  requires_club_membership: integerPg('requires_club_membership').default(1).notNull(),
+  is_instructional: integerPg('is_instructional').default(0).notNull(),
+  min_experience_years: integerPg('min_experience_years'),
+  min_age: integerPg('min_age'),
+  max_age: integerPg('max_age'),
+  first_day_of_play: date('first_day_of_play'),
+  last_day_of_play: date('last_day_of_play'),
+  allows_waitlist: integerPg('allows_waitlist').default(1).notNull(),
+  allows_sabbatical: integerPg('allows_sabbatical').default(1).notNull(),
+  predecessor_league_id: integerPg('predecessor_league_id'),
+  successor_league_id: integerPg('successor_league_id'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
-});
+}, (table) => ({
+  sessionIdx: indexPg('idx_leagues_session_id').on(table.session_id),
+  predIdx: indexPg('idx_leagues_predecessor_league_id').on(table.predecessor_league_id),
+  succIdx: indexPg('idx_leagues_successor_league_id').on(table.successor_league_id),
+  leagueTypeIdx: indexPg('idx_leagues_league_type').on(table.league_type),
+}));
+
+export const registrationPeriodsPg = pgTable('registration_periods', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
+  session_id: integerPg('session_id')
+    .notNull()
+    .references(() => curlingSessionsPg.id, { onDelete: 'cascade' }),
+  name: textPg('name').notNull(),
+  current_state: textPg('current_state').notNull().default('closed').$type<RegistrationPeriodStateSqlite>(),
+  priority_opens_at: timestamp('priority_opens_at', { withTimezone: false }),
+  priority_closes_at: timestamp('priority_closes_at', { withTimezone: false }),
+  open_registration_opens_at: timestamp('open_registration_opens_at', { withTimezone: false }),
+  registration_closes_at: timestamp('registration_closes_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  seasonIdx: indexPg('idx_registration_periods_season_id').on(table.season_id),
+  sessionIdx: indexPg('idx_registration_periods_session_id').on(table.session_id),
+  stateIdx: indexPg('idx_registration_periods_current_state').on(table.current_state),
+}));
+
+export const curlingRegistrationsPg = pgTable('curling_registrations', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_period_id: integerPg('registration_period_id')
+    .notNull()
+    .references(() => registrationPeriodsPg.id, { onDelete: 'restrict' }),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'restrict' }),
+  session_id: integerPg('session_id')
+    .notNull()
+    .references(() => curlingSessionsPg.id, { onDelete: 'restrict' }),
+  curler_member_id: integerPg('curler_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  submitted_by_member_id: integerPg('submitted_by_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  registering_for_self: integerPg('registering_for_self').default(1).notNull(),
+  returning_member_answer: integerPg('returning_member_answer'),
+  status: textPg('status').notNull().default('draft').$type<CurlingRegistrationStatusSqlite>(),
+  membership_option: textPg('membership_option')
+    .notNull()
+    .default('none')
+    .$type<CurlingMembershipOptionSqlite>(),
+  experience_type: textPg('experience_type')
+    .notNull()
+    .default('none_or_minimal')
+    .$type<CurlingExperienceTypeSqlite>(),
+  self_reported_experience_years: doublePrecision('self_reported_experience_years'),
+  student_discount_claimed: integerPg('student_discount_claimed').default(0).notNull(),
+  student_institution: textPg('student_institution'),
+  reciprocal_discount_claimed: integerPg('reciprocal_discount_claimed').default(0).notNull(),
+  reciprocal_club_name: textPg('reciprocal_club_name'),
+  winter_only_discount_applied: integerPg('winter_only_discount_applied').default(0).notNull(),
+  junior_assistance_requested_percent: doublePrecision('junior_assistance_requested_percent'),
+  junior_assistance_decision: textPg('junior_assistance_decision'),
+  deferred_payment: integerPg('deferred_payment').default(0).notNull(),
+  deferred_payment_reason: textPg('deferred_payment_reason'),
+  stripe_checkout_session_id: textPg('stripe_checkout_session_id'),
+  payment_status: textPg('payment_status')
+    .notNull()
+    .default('unpaid')
+    .$type<CurlingRegistrationPaymentStatusSqlite>(),
+  submitted_at: timestamp('submitted_at', { withTimezone: false }),
+  paid_at: timestamp('paid_at', { withTimezone: false }),
+  cancelled_at: timestamp('cancelled_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  periodIdx: indexPg('idx_curling_registrations_registration_period_id').on(table.registration_period_id),
+  seasonIdx: indexPg('idx_curling_registrations_season_id').on(table.season_id),
+  sessionIdx: indexPg('idx_curling_registrations_session_id').on(table.session_id),
+  curlerIdx: indexPg('idx_curling_registrations_curler_member_id').on(table.curler_member_id),
+  submitterIdx: indexPg('idx_curling_registrations_submitted_by_member_id').on(table.submitted_by_member_id),
+  statusIdx: indexPg('idx_curling_registrations_status').on(table.status),
+  payIdx: indexPg('idx_curling_registrations_payment_status').on(table.payment_status),
+}));
+
+export const curlingLeagueSabbaticalsPg = pgTable('curling_league_sabbaticals', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  lineage_key: textPg('lineage_key'),
+  original_league_id: integerPg('original_league_id')
+    .notNull()
+    .references(() => leaguesPg.id, { onDelete: 'restrict' }),
+  current_league_id: integerPg('current_league_id')
+    .notNull()
+    .references(() => leaguesPg.id, { onDelete: 'restrict' }),
+  source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  first_sabbatical_league_id: integerPg('first_sabbatical_league_id')
+    .notNull()
+    .references(() => leaguesPg.id, { onDelete: 'restrict' }),
+  first_sabbatical_start_date: date('first_sabbatical_start_date').notNull(),
+  status: textPg('status').notNull().default('active').$type<CurlingLeagueSabbaticalStatusSqlite>(),
+  staff_override: integerPg('staff_override').default(0).notNull(),
+  staff_override_reason: textPg('staff_override_reason'),
+  released_at: timestamp('released_at', { withTimezone: false }),
+  released_reason: textPg('released_reason'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_curling_league_sabbaticals_member_id').on(table.member_id),
+  leagueIdx: indexPg('idx_curling_league_sabbaticals_current_league_id').on(table.current_league_id),
+  statusIdx: indexPg('idx_curling_league_sabbaticals_status').on(table.status),
+  firstStartIdx: indexPg('idx_curling_league_sabbaticals_first_start').on(table.first_sabbatical_start_date),
+}));
+
+export const registrationPolicyAcceptancesPg = pgTable('registration_policy_acceptances', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_id: integerPg('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsPg.id, { onDelete: 'cascade' }),
+  policy_type: textPg('policy_type').notNull().$type<PolicyAcceptanceKindSqlite>(),
+  policy_url: textPg('policy_url').notNull(),
+  accepted_by_member_id: integerPg('accepted_by_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  accepted_for_member_id: integerPg('accepted_for_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  accepted_at: timestamp('accepted_at', { withTimezone: false }).notNull(),
+  policy_version: textPg('policy_version'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  regIdx: indexPg('idx_registration_policy_acceptances_registration_id').on(table.registration_id),
+}));
+
+export const registrationSelectionsPg = pgTable('registration_selections', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_id: integerPg('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsPg.id, { onDelete: 'cascade' }),
+  league_id: integerPg('league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  selection_type: textPg('selection_type').notNull().$type<CurlingRegistrationSelectionKindSqlite>(),
+  rank: integerPg('rank'),
+  replaces_league_id: integerPg('replaces_league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  related_sabbatical_id: integerPg('related_sabbatical_id').references(() => curlingLeagueSabbaticalsPg.id, {
+    onDelete: 'set null',
+  }),
+  is_temporary_sabbatical_fill: integerPg('is_temporary_sabbatical_fill').default(0).notNull(),
+  byot_teammate_text: textPg('byot_teammate_text'),
+  status: textPg('status').notNull().default('draft').$type<CurlingRegistrationSelectionStatusSqlite>(),
+  fee_amount_minor_snapshot: integerPg('fee_amount_minor_snapshot').default(0).notNull(),
+  discount_amount_minor_snapshot: integerPg('discount_amount_minor_snapshot').default(0).notNull(),
+  notes: textPg('notes'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  regIdx: indexPg('idx_registration_selections_registration_id').on(table.registration_id),
+  leagueIdx: indexPg('idx_registration_selections_league_id').on(table.league_id),
+  typeIdx: indexPg('idx_registration_selections_selection_type').on(table.selection_type),
+  statusIdx: indexPg('idx_registration_selections_status').on(table.status),
+}));
+
+export const financialAssistanceRequestsPg = pgTable('financial_assistance_requests', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_id: integerPg('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  requested_percentage: doublePrecision('requested_percentage').notNull(),
+  approved_percentage: doublePrecision('approved_percentage'),
+  status: textPg('status').notNull().default('pending').$type<FinancialAssistanceStatusSqlite>(),
+  reviewed_by_member_id: integerPg('reviewed_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  reviewed_at: timestamp('reviewed_at', { withTimezone: false }),
+  staff_notes: textPg('staff_notes'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  regIdx: indexPg('idx_financial_assistance_requests_registration_id').on(table.registration_id),
+}));
+
+export const registrationInvoicesPg = pgTable('registration_invoices', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_id: integerPg('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsPg.id, { onDelete: 'cascade' }),
+  payer_member_id: integerPg('payer_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  status: textPg('status').notNull().default('draft').$type<RegistrationInvoiceStatusSqlite>(),
+  subtotal_minor: integerPg('subtotal_minor').default(0).notNull(),
+  discount_minor: integerPg('discount_minor').default(0).notNull(),
+  total_minor: integerPg('total_minor').default(0).notNull(),
+  currency: textPg('currency').notNull().default('usd'),
+  deferred: integerPg('deferred').default(0).notNull(),
+  deferred_reason: textPg('deferred_reason'),
+  stripe_checkout_session_id: textPg('stripe_checkout_session_id'),
+  stripe_payment_intent_id: textPg('stripe_payment_intent_id'),
+  payment_order_id: integerPg('payment_order_id'),
+  paid_at: timestamp('paid_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  regIdx: indexPg('idx_registration_invoices_registration_id').on(table.registration_id),
+  payerIdx: indexPg('idx_registration_invoices_payer_member_id').on(table.payer_member_id),
+  statusIdx: indexPg('idx_registration_invoices_status').on(table.status),
+  checkoutIdx: indexPg('idx_registration_invoices_stripe_checkout_session_id').on(table.stripe_checkout_session_id),
+}));
+
+export const registrationInvoiceLineItemsPg = pgTable('registration_invoice_line_items', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  invoice_id: integerPg('invoice_id')
+    .notNull()
+    .references(() => registrationInvoicesPg.id, { onDelete: 'cascade' }),
+  line_type: textPg('line_type').notNull().$type<RegistrationInvoiceLineKindSqlite>(),
+  description: textPg('description').notNull(),
+  related_league_id: integerPg('related_league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  related_selection_id: integerPg('related_selection_id').references(() => registrationSelectionsPg.id, {
+    onDelete: 'set null',
+  }),
+  amount_minor: integerPg('amount_minor').notNull(),
+  discount_eligible: integerPg('discount_eligible').default(1).notNull(),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  invoiceIdx: indexPg('idx_registration_invoice_line_items_invoice_id').on(table.invoice_id),
+}));
+
+export const registrationPriceConfigsPg = pgTable('registration_price_configs', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
+  session_id: integerPg('session_id').references(() => curlingSessionsPg.id, { onDelete: 'cascade' }),
+  regular_membership_fee_minor: integerPg('regular_membership_fee_minor').default(0).notNull(),
+  social_membership_fee_minor: integerPg('social_membership_fee_minor').default(0).notNull(),
+  spare_only_ice_privilege_fee_minor: integerPg('spare_only_ice_privilege_fee_minor').default(0).notNull(),
+  sabbatical_fee_minor: integerPg('sabbatical_fee_minor').default(0).notNull(),
+  junior_recreational_fee_minor: integerPg('junior_recreational_fee_minor').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  seasonIdx: indexPg('idx_registration_price_configs_season_id').on(table.season_id),
+  sessionIdx: indexPg('idx_registration_price_configs_session_id').on(table.session_id),
+}));
+
+export const registrationDiscountConfigsPg = pgTable('registration_discount_configs', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
+  discount_type: textPg('discount_type').notNull().$type<CurlingDiscountTypeSqlite>(),
+  amount_type: textPg('amount_type').notNull().$type<CurlingDiscountAmountTypeSqlite>(),
+  amount_value: doublePrecision('amount_value').notNull(),
+  applies_to_scope: textPg('applies_to_scope').notNull().$type<CurlingDiscountScopeSqlite>(),
+  active: integerPg('active').default(1).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  seasonIdx: indexPg('idx_registration_discount_configs_season_id').on(table.season_id),
+}));
+
+export const seasonMembershipsPg = pgTable('season_memberships', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
+  membership_type: textPg('membership_type').notNull().$type<SeasonMembershipTypeSqlite>(),
+  starts_at: timestamp('starts_at', { withTimezone: false }).notNull(),
+  ends_at: timestamp('ends_at', { withTimezone: false }).notNull(),
+  source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  payment_order_id: integerPg('payment_order_id'),
+  status: textPg('status').notNull().default('pending').$type<SeasonMembershipStatusSqlite>(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_season_memberships_member_id').on(table.member_id),
+  seasonIdx: indexPg('idx_season_memberships_season_id').on(table.season_id),
+}));
+
+export const curlingIcePrivilegesPg = pgTable('curling_ice_privileges', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
+  session_id: integerPg('session_id')
+    .notNull()
+    .references(() => curlingSessionsPg.id, { onDelete: 'cascade' }),
+  source_type: textPg('source_type').notNull().$type<IcePrivilegeSourceSqlite>(),
+  source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  source_league_id: integerPg('source_league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  status: textPg('status').notNull().default('pending').$type<IcePrivilegeRowStatusSqlite>(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_curling_ice_privileges_member_id').on(table.member_id),
+}));
+
+export const curlingSabbaticalSessionsPg = pgTable('curling_sabbatical_sessions', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  sabbatical_id: integerPg('sabbatical_id')
+    .notNull()
+    .references(() => curlingLeagueSabbaticalsPg.id, { onDelete: 'cascade' }),
+  league_id: integerPg('league_id')
+    .notNull()
+    .references(() => leaguesPg.id, { onDelete: 'restrict' }),
+  registration_id: integerPg('registration_id').references(() => curlingRegistrationsPg.id, { onDelete: 'set null' }),
+  fee_amount_minor: integerPg('fee_amount_minor').default(0).notNull(),
+  payment_status: textPg('payment_status').notNull().default('unpaid'),
+  starts_at: timestamp('starts_at', { withTimezone: false }),
+  ends_at: timestamp('ends_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  sabIdx: indexPg('idx_curling_sabbatical_sessions_sabbatical_id').on(table.sabbatical_id),
+}));
+
+export const waitlistEntriesPg = pgTable('waitlist_entries', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'cascade' }),
+  league_id: integerPg('league_id')
+    .notNull()
+    .references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  entry_type: textPg('entry_type').notNull().$type<WaitlistEntryTypeSqlite>(),
+  replaces_league_id: integerPg('replaces_league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  position_sort_key: textPg('position_sort_key').notNull(),
+  joined_at: timestamp('joined_at', { withTimezone: false }).notNull(),
+  decline_count: integerPg('decline_count').default(0).notNull(),
+  status: textPg('status').notNull().default('active').$type<WaitlistEntryStatusSqlite>(),
+  rolled_over_from_waitlist_entry_id: integerPg('rolled_over_from_waitlist_entry_id'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  leagueIdx: indexPg('idx_waitlist_entries_league_id').on(table.league_id),
+  memberIdx: indexPg('idx_waitlist_entries_member_id').on(table.member_id),
+  statusIdx: indexPg('idx_waitlist_entries_status').on(table.status),
+  entryTypeIdx: indexPg('idx_waitlist_entries_entry_type').on(table.entry_type),
+  posIdx: indexPg('idx_waitlist_entries_position_sort_key').on(table.position_sort_key),
+  joinedIdx: indexPg('idx_waitlist_entries_joined_at').on(table.joined_at),
+  sourceRegIdx: indexPg('idx_waitlist_entries_source_registration_id').on(table.source_registration_id),
+  replacesIdx: indexPg('idx_waitlist_entries_replaces_league_id').on(table.replaces_league_id),
+  activeMemberLeaguePartial: uniqueIndexPg('idx_waitlist_entries_active_member_league').on(
+    table.member_id,
+    table.league_id
+  ).where(eq(table.status, 'active')),
+}));
+
+export const waitlistOffersPg = pgTable('waitlist_offers', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  waitlist_entry_id: integerPg('waitlist_entry_id')
+    .notNull()
+    .references(() => waitlistEntriesPg.id, { onDelete: 'cascade' }),
+  league_id: integerPg('league_id')
+    .notNull()
+    .references(() => leaguesPg.id, { onDelete: 'restrict' }),
+  member_id: integerPg('member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  offer_type: textPg('offer_type').notNull().$type<WaitlistOfferKindSqlite>(),
+  status: textPg('status').notNull().default('pending').$type<WaitlistOfferStatusSqlite>(),
+  offered_at: timestamp('offered_at', { withTimezone: false }).notNull(),
+  expires_at: timestamp('expires_at', { withTimezone: false }).notNull(),
+  responded_at: timestamp('responded_at', { withTimezone: false }),
+  response_source: textPg('response_source'),
+  offered_by_member_id: integerPg('offered_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  payment_link_id: textPg('payment_link_id'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  entryIdx: indexPg('idx_waitlist_offers_waitlist_entry_id').on(table.waitlist_entry_id),
+  leagueIdx: indexPg('idx_waitlist_offers_league_id').on(table.league_id),
+  memberIdx: indexPg('idx_waitlist_offers_member_id').on(table.member_id),
+  statusIdx: indexPg('idx_waitlist_offers_status').on(table.status),
+  expiresIdx: indexPg('idx_waitlist_offers_expires_at').on(table.expires_at),
+}));
+
+export const waitlistAuditEventsPg = pgTable('waitlist_audit_events', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  waitlist_entry_id: integerPg('waitlist_entry_id').references(() => waitlistEntriesPg.id, {
+    onDelete: 'set null',
+  }),
+  league_id: integerPg('league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  actor_member_id: integerPg('actor_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  source: textPg('source').notNull().$type<WaitlistAuditSourceSqlite>(),
+  action: textPg('action').notNull().$type<WaitlistAuditActionSqlite>(),
+  reason: textPg('reason'),
+  before_json: jsonb('before_json'),
+  after_json: jsonb('after_json'),
+  metadata_json: jsonb('metadata_json'),
+  created_at: timestamp('created_at', { withTimezone: false }).notNull(),
+}, (table) => ({
+  entryIdx: indexPg('idx_waitlist_audit_events_waitlist_entry_id').on(table.waitlist_entry_id),
+  leagueIdx: indexPg('idx_waitlist_audit_events_league_id').on(table.league_id),
+  memberIdx: indexPg('idx_waitlist_audit_events_member_id').on(table.member_id),
+  actorIdx: indexPg('idx_waitlist_audit_events_actor_member_id').on(table.actor_member_id),
+  createdIdx: indexPg('idx_waitlist_audit_events_created_at').on(table.created_at),
+  actionIdx: indexPg('idx_waitlist_audit_events_action').on(table.action),
+}));
 
 export const leagueDrawTimesPg = pgTable('league_draw_times', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -1496,6 +2591,15 @@ export const leagueRosterPg = pgTable('league_roster', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
   member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  status: textPg('status').default('active').notNull().$type<LeagueRosterPlacementStatusSqlite>(),
+  placement_type: textPg('placement_type').$type<LeagueRosterPlacementTypeSqlite>(),
+  is_temporary_sabbatical_fill: integerPg('is_temporary_sabbatical_fill').default(0).notNull(),
+  related_sabbatical_id: integerPg('related_sabbatical_id').references(() => curlingLeagueSabbaticalsPg.id, {
+    onDelete: 'set null',
+  }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -1686,7 +2790,9 @@ export const paymentOrdersPg = pgTable('payment_orders', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   order_token: textPg('order_token').notNull().unique(),
   provider: textPg('provider').notNull().$type<'stripe' | 'paypal' | 'square'>(),
-  subject_type: textPg('subject_type').notNull().$type<'donation' | 'membership' | 'event_registration'>(),
+  subject_type: textPg('subject_type').notNull().$type<
+    'donation' | 'membership' | 'event_registration' | 'curling_registration'
+  >(),
   subject_id: integerPg('subject_id'),
   amount_minor: integerPg('amount_minor').notNull(),
   currency: textPg('currency').notNull().default('usd'),
@@ -2300,7 +3406,25 @@ export const sqliteSchema = {
   roleScopeRules: roleScopeRulesSqlite,
   memberRoleAssignments: memberRoleAssignmentsSqlite,
   memberAccountAccessDelegations: memberAccountAccessDelegationsSqlite,
+  curlingSeasons: curlingSeasonsSqlite,
+  curlingSessions: curlingSessionsSqlite,
   leagues: leaguesSqlite,
+  registrationPeriods: registrationPeriodsSqlite,
+  curlingRegistrations: curlingRegistrationsSqlite,
+  curlingLeagueSabbaticals: curlingLeagueSabbaticalsSqlite,
+  registrationPolicyAcceptances: registrationPolicyAcceptancesSqlite,
+  registrationSelections: registrationSelectionsSqlite,
+  financialAssistanceRequests: financialAssistanceRequestsSqlite,
+  registrationInvoices: registrationInvoicesSqlite,
+  registrationInvoiceLineItems: registrationInvoiceLineItemsSqlite,
+  registrationPriceConfigs: registrationPriceConfigsSqlite,
+  registrationDiscountConfigs: registrationDiscountConfigsSqlite,
+  seasonMemberships: seasonMembershipsSqlite,
+  curlingIcePrivileges: curlingIcePrivilegesSqlite,
+  curlingSabbaticalSessions: curlingSabbaticalSessionsSqlite,
+  waitlistEntries: waitlistEntriesSqlite,
+  waitlistOffers: waitlistOffersSqlite,
+  waitlistAuditEvents: waitlistAuditEventsSqlite,
   leagueDrawTimes: leagueDrawTimesSqlite,
   leagueExceptions: leagueExceptionsSqlite,
   sheets: sheetsSqlite,
@@ -2375,7 +3499,25 @@ export const pgSchema = {
   roleScopeRules: roleScopeRulesPg,
   memberRoleAssignments: memberRoleAssignmentsPg,
   memberAccountAccessDelegations: memberAccountAccessDelegationsPg,
+  curlingSeasons: curlingSeasonsPg,
+  curlingSessions: curlingSessionsPg,
   leagues: leaguesPg,
+  registrationPeriods: registrationPeriodsPg,
+  curlingRegistrations: curlingRegistrationsPg,
+  curlingLeagueSabbaticals: curlingLeagueSabbaticalsPg,
+  registrationPolicyAcceptances: registrationPolicyAcceptancesPg,
+  registrationSelections: registrationSelectionsPg,
+  financialAssistanceRequests: financialAssistanceRequestsPg,
+  registrationInvoices: registrationInvoicesPg,
+  registrationInvoiceLineItems: registrationInvoiceLineItemsPg,
+  registrationPriceConfigs: registrationPriceConfigsPg,
+  registrationDiscountConfigs: registrationDiscountConfigsPg,
+  seasonMemberships: seasonMembershipsPg,
+  curlingIcePrivileges: curlingIcePrivilegesPg,
+  curlingSabbaticalSessions: curlingSabbaticalSessionsPg,
+  waitlistEntries: waitlistEntriesPg,
+  waitlistOffers: waitlistOffersPg,
+  waitlistAuditEvents: waitlistAuditEventsPg,
   leagueDrawTimes: leagueDrawTimesPg,
   leagueExceptions: leagueExceptionsPg,
   sheets: sheetsPg,

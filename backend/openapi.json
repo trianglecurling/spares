@@ -15672,7 +15672,8 @@
               "enum": [
                 "donation",
                 "membership",
-                "event_registration"
+                "event_registration",
+                "curling_registration"
               ]
             },
             "in": "query",

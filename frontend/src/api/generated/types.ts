@@ -9690,7 +9690,7 @@ export interface paths {
                     limit?: number;
                     offset?: number;
                     provider?: "stripe" | "paypal" | "square";
-                    subjectType?: "donation" | "membership" | "event_registration";
+                    subjectType?: "donation" | "membership" | "event_registration" | "curling_registration";
                     status?: "created" | "pending" | "succeeded" | "failed" | "refunded" | "partially_refunded";
                 };
                 header?: never;

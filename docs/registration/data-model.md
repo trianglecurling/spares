@@ -60,6 +60,75 @@ needed for registration.
 
 Where existing tables already exist, extend them instead of duplicating them.
 
+## Phase 1 — Physical storage reference
+
+Implementation lives in Drizzle (`backend/src/db/drizzle-schema.ts`) and the
+legacy Postgres/SQLite bootstrap (`backend/src/db/registrationSchemaBootstrap.ts`).
+Account identity continues to resolve through **`members`**; curling registration
+records use **`curler_member_id`** and **`submitted_by_member_id`**.
+
+### Hierarchy and leagues
+
+| Concept | Tables / columns |
+| --- | --- |
+| Season | `curling_seasons` |
+| Session | `curling_sessions` (`season_id` FK) |
+| League ↔ session | **`leagues.session_id`** nullable FK onto `curling_sessions` |
+
+**League** registration columns (`league_type`, `capacity_type`, `capacity_value`, `registration_fee_minor`, instructional and age guards, predecessor/successor self-FKs, `allows_waitlist`, `allows_sabbatical`, nullable `first_day_of_play` / `last_day_of_play`) live on **`leagues`**. Legacy `members` flags (`social_member`, `spare_only`, …) stay in place until later phases reconcile them.
+
+### Registration flow
+
+| Concept | Tables |
+| --- | --- |
+| Registration window | `registration_periods` (stored **`current_state`** plus schedule timestamps) |
+| Aggregate registration row | **`curling_registrations`** |
+| Accepted policies | `registration_policy_acceptances` |
+| Normalized selections | `registration_selections` |
+| Assistance workflow | **`financial_assistance_requests`** |
+
+### Placement, memberships, privileges
+
+| Concept | Tables / columns |
+| --- | --- |
+| Roster placement | Extend **`league_roster`** with `source_registration_id`, `placement_type`, `status`, `is_temporary_sabbatical_fill`, **`related_sabbatical_id`** |
+| Membership for a season | **`season_memberships`** |
+| Session-scoped ice privilege | **`curling_ice_privileges`** |
+
+### Sabbaticals
+
+| Concept | Tables |
+| --- | --- |
+| Lifecycle / lineage | **`curling_league_sabbaticals`** |
+| Per-session charges | **`curling_sabbatical_sessions`** |
+
+### Waitlist — structures only in Phase 1
+
+| Concept | Tables |
+| --- | --- |
+| Queue entry | **`waitlist_entries`** (CHECK on `entry_type` vs `replaces_league_id`; partial unique index for active member + league) |
+| Offers | **`waitlist_offers`** |
+| Audit | **`waitlist_audit_events`** |
+
+### Pricing and invoicing
+
+| Concept | Tables |
+| --- | --- |
+| Fee grid | **`registration_price_configs`** (season, optional session) |
+| Discount rules | **`registration_discount_configs`** |
+| Payable totals | **`registration_invoices`** + **`registration_invoice_line_items`** |
+
+### Payments
+
+`payment_orders.subject_type` includes **`curling_registration`**. Planned wiring for Stripe is **`subject_id` → `registration_invoices.id`**; **`registration_invoices.payment_order_id`** backs the inverse once an order exists. Phase 1 does not change checkout orchestration beyond shared enum surfaces.
+
+### Bootstrap notes
+
+PostgreSQL installs run a guarded repair: tables that clearly predate Phase 1
+(missing an expected **`season_id`**) drop with **`CASCADE`** so `CREATE TABLE IF NOT EXISTS` can recreate the full layout — safe for prototype stubs, risky if any production data depended on malformed tables. Older **SQLite** files may retain the legacy `subject_type` CHECK unless a deliberate constraint migration replaces it.
+
+---
+
 ## 3. Core existing entities that may need extension
 
 ### User

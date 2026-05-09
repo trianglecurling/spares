@@ -7,7 +7,7 @@ import { sendDonationReceiptEmail } from './email.js';
 import { logEvent } from './observability.js';
 
 export type PaymentProvider = 'stripe' | 'paypal' | 'square';
-export type PaymentSubjectType = 'donation' | 'membership' | 'event_registration';
+export type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
 export type PaymentOrderStatus = 'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded';
 export type PaymentTransactionType = 'charge' | 'capture' | 'refund' | 'adjustment';
 export type RefundStatus = 'requested' | 'approved' | 'rejected' | 'processing' | 'succeeded' | 'failed';
