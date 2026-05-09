@@ -26,17 +26,23 @@ import type {
   BulkSendWelcomeResponse,
   CreateMemberBody,
   LoginLinkResponse,
+  MemberAccountAccessDelegatesResponse,
   MemberCreateResponse,
   MemberLeaguesResponse,
   MemberProfileResponse,
   MemberSummaryResponse,
   MemberUpdateResponse,
   UpdateMemberBody,
+  UpdateMemberAccountAccessDelegatesBody,
   UpdateProfileBody,
 } from '../api/types.js';
 import { sendWelcomeEmail } from '../services/email.js';
 import { buildJwtPayloadForMember, generateEmailLinkToken } from '../utils/auth.js';
 import { config } from '../config.js';
+import {
+  listDelegateGranteesForGrantor,
+  memberIdsWithSameNormalizedEmailAs,
+} from '../services/accountAccess.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
@@ -107,6 +113,29 @@ const bulkCreateRequestSchema = z.union([
 const directoryQuerySchema = z.object({
   leagueId: z.coerce.number().int().positive().optional(),
 });
+
+const updateAccountAccessDelegatesSchema = z.object({
+  memberIds: z.array(z.number().int().positive()),
+});
+
+const memberAccountAccessDelegatesResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    delegatedToMemberIds: { type: 'array', items: { type: 'number' } },
+    implicitAccessMemberIds: { type: 'array', items: { type: 'number' } },
+  },
+  required: ['delegatedToMemberIds', 'implicitAccessMemberIds'],
+} as const;
+
+const updateAccountAccessDelegatesBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    memberIds: { type: 'array', items: { type: 'number' } },
+  },
+  required: ['memberIds'],
+} as const;
 
 const updateProfileBodySchema = {
   type: 'object',
@@ -338,6 +367,85 @@ export async function memberRoutes(fastify: FastifyInstance) {
       phoneVisible: member.phone_visible === 1,
       themePreference: member.theme_preference || 'system',
     };
+    }
+  );
+
+  fastify.get<{ Reply: MemberAccountAccessDelegatesResponse | ApiErrorResponse }>(
+    '/members/me/account-access-delegates',
+    {
+      schema: {
+        tags: ['members'],
+        response: {
+          200: memberAccountAccessDelegatesResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
+      const grantorId = (request as AuthenticatedRequest).member.id;
+      const delegatedToMemberIds = await listDelegateGranteesForGrantor(grantorId);
+      const sameEmail = await memberIdsWithSameNormalizedEmailAs(grantorId);
+      const implicitAccessMemberIds = sameEmail.filter((id) => id !== grantorId);
+      return { delegatedToMemberIds, implicitAccessMemberIds };
+    }
+  );
+
+  fastify.put<{
+    Body: UpdateMemberAccountAccessDelegatesBody;
+    Reply: MemberAccountAccessDelegatesResponse | ApiErrorResponse;
+  }>(
+    '/members/me/account-access-delegates',
+    {
+      schema: {
+        tags: ['members'],
+        body: updateAccountAccessDelegatesBodySchema,
+        response: {
+          200: memberAccountAccessDelegatesResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const grantorId = (request as AuthenticatedRequest).member.id;
+      const { memberIds } = updateAccountAccessDelegatesSchema.parse(request.body);
+      const implicit = new Set(await memberIdsWithSameNormalizedEmailAs(grantorId));
+      implicit.delete(grantorId);
+      for (const mid of memberIds) {
+        if (mid === grantorId) {
+          return reply.code(400).send({ error: 'Invalid member ID' });
+        }
+        if (implicit.has(mid)) {
+          return reply.code(400).send({
+            error: 'That member already has access because they share your email address.',
+          });
+        }
+      }
+      const unique = [...new Set(memberIds)];
+      const { db, schema } = getDrizzleDb();
+      if (unique.length > 0) {
+        const existing = await db
+          .select({ id: schema.members.id })
+          .from(schema.members)
+          .where(inArray(schema.members.id, unique));
+        if (existing.length !== unique.length) {
+          return reply.code(400).send({ error: 'One or more members were not found' });
+        }
+      }
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(schema.memberAccountAccessDelegations)
+          .where(eq(schema.memberAccountAccessDelegations.grantor_member_id, grantorId));
+        if (unique.length > 0) {
+          await tx.insert(schema.memberAccountAccessDelegations).values(
+            unique.map((grantee_member_id) => ({
+              grantor_member_id: grantorId,
+              grantee_member_id,
+            }))
+          );
+        }
+      });
+      const delegatedToMemberIds = await listDelegateGranteesForGrantor(grantorId);
+      const sameEmail = await memberIdsWithSameNormalizedEmailAs(grantorId);
+      const implicitAccessMemberIds = sameEmail.filter((id) => id !== grantorId);
+      return { delegatedToMemberIds, implicitAccessMemberIds };
     }
   );
 

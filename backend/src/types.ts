@@ -43,6 +43,8 @@ export interface Member {
   created_at: DbDate;
   updated_at: DbDate;
   authz?: AuthzClaims;
+  /** When true, permission helpers must not use legacy flags or email-based server admin outside {@link AuthzClaims}. */
+  impersonationSession?: boolean;
 }
 
 export interface AuthCode {
@@ -220,6 +222,8 @@ export interface SpareResponse {
 
 export interface JWTPayload {
   memberId: number;
+  /** Real authenticated member when {@link memberId} is an impersonation target. */
+  actorMemberId?: number;
   email: string | null;
   phone: string | null;
   isAdmin?: boolean;

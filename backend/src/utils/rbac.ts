@@ -294,6 +294,96 @@ export async function buildAuthzClaimsForMember(member: Member): Promise<AuthzCl
   }
 }
 
+/**
+ * Authorization for account switching: only computed membership roles for the impersonated member.
+ * Explicit role assignments, legacy admin flags, and league manager tables are excluded.
+ */
+export async function buildAuthzClaimsForImpersonatedMember(member: Member): Promise<AuthzClaims> {
+  try {
+    const { db, schema } = getDrizzleDb();
+    const computedRoleCodes = getComputedRoleCodes(member);
+
+    const allRoles = (await db.select({
+      id: schema.roles.id,
+      code: schema.roles.code,
+      name: schema.roles.name,
+    }).from(schema.roles)) as Array<{ id: number; code: string; name: string }>;
+
+    const roleByCode = new Map(allRoles.map((role) => [role.code, role]));
+    const roleById = new Map(allRoles.map((role) => [role.id, role]));
+
+    const effectiveAssignments: Array<{
+      roleId: number;
+      resourceType: string | null;
+      resourceId: number | null;
+    }> = [];
+
+    for (const roleCode of computedRoleCodes) {
+      const role = roleByCode.get(roleCode);
+      if (!role) continue;
+      effectiveAssignments.push({ roleId: role.id, resourceType: null, resourceId: null });
+    }
+
+    const roleIds = Array.from(new Set(effectiveAssignments.map((assignment) => assignment.roleId)));
+    const roleRules =
+      roleIds.length === 0
+        ? []
+        : (await db
+            .select({
+              roleId: schema.roleScopeRules.role_id,
+              scope: schema.roleScopeRules.scope,
+              effect: schema.roleScopeRules.effect,
+            })
+            .from(schema.roleScopeRules)
+            .where(inArray(schema.roleScopeRules.role_id, roleIds))) as Array<{
+            roleId: number;
+            scope: string;
+            effect: ScopeEffect;
+          }>;
+
+    const roleRulesByRoleId = new Map<number, Array<{ scope: string; effect: ScopeEffect }>>();
+    for (const row of roleRules) {
+      const existing = roleRulesByRoleId.get(row.roleId) ?? [];
+      existing.push({ scope: row.scope, effect: row.effect });
+      roleRulesByRoleId.set(row.roleId, existing);
+    }
+
+    const scopeRules: AuthzRule[] = [];
+    const roleCodes = new Set<string>();
+    const roleNames = new Set<string>();
+
+    for (const assignment of effectiveAssignments) {
+      const roleMeta = roleById.get(assignment.roleId);
+      if (!roleMeta) continue;
+      roleCodes.add(roleMeta.code);
+      roleNames.add(roleMeta.name);
+
+      for (const rule of roleRulesByRoleId.get(assignment.roleId) ?? []) {
+        scopeRules.push({
+          scope: rule.scope,
+          effect: rule.effect,
+          resourceType: assignment.resourceType,
+          resourceId: assignment.resourceId,
+        });
+      }
+    }
+
+    return {
+      roleCodes: Array.from(roleCodes),
+      roleNames: Array.from(roleNames),
+      scopeRules,
+      isServerAdmin: false,
+    };
+  } catch {
+    return {
+      roleCodes: [],
+      roleNames: [],
+      scopeRules: [],
+      isServerAdmin: false,
+    };
+  }
+}
+
 export function mergeAuthzClaims(
   claims: AuthzClaims,
   extraRules: AuthzRule[] = [],

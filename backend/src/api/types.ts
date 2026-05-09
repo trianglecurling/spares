@@ -39,6 +39,18 @@ export type AuthVerifyCodeResponse<TMember> =
 
 export type AuthVerifyTokenResponse<TMember> = {
   member: TMember;
+  actorMemberId: number;
+  isImpersonating: boolean;
+  accountSwitchOptions: Array<{ id: number; name: string }>;
+};
+
+export type MemberAccountAccessDelegatesResponse = {
+  delegatedToMemberIds: number[];
+  implicitAccessMemberIds: number[];
+};
+
+export type UpdateMemberAccountAccessDelegatesBody = {
+  memberIds: number[];
 };
 
 export type MemberProfileResponse = {

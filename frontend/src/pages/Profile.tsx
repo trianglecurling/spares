@@ -1,10 +1,12 @@
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent, useId } from 'react';
 import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { get, patch } from '../api/client';
+import { get, patch, put } from '../api/client';
 import Button from '../components/Button';
+import FormSection from '../components/FormSection';
+import MemberMultiSelect from '../components/MemberMultiSelect';
 
 export default function Profile() {
   const { member, updateMember } = useAuth();
@@ -20,6 +22,15 @@ export default function Profile() {
     phoneVisible: member?.phoneVisible || false,
   });
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const accessFieldId = useId();
+  const [delegateIds, setDelegateIds] = useState<number[]>([]);
+  const [implicitAccessIds, setImplicitAccessIds] = useState<number[]>([]);
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [accessMessage, setAccessMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   const normalizeThemePreference = (value?: string | null): 'light' | 'dark' | 'system' => {
     if (value === 'light' || value === 'dark' || value === 'system') return value;
@@ -40,6 +51,46 @@ export default function Profile() {
     };
     load();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAccess = async () => {
+      try {
+        const res = await get('/members/me/account-access-delegates');
+        if (!cancelled) {
+          setDelegateIds(res.delegatedToMemberIds);
+          setImplicitAccessIds(res.implicitAccessMemberIds);
+        }
+      } catch {
+        if (!cancelled) {
+          setAccessMessage({ type: 'error', text: 'Could not load account access settings.' });
+        }
+      } finally {
+        if (!cancelled) {
+          setAccessLoading(false);
+        }
+      }
+    };
+    loadAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveAccountAccessDelegates = async () => {
+    setAccessSaving(true);
+    setAccessMessage(null);
+    try {
+      const res = await put('/members/me/account-access-delegates', { memberIds: delegateIds });
+      setDelegateIds(res.delegatedToMemberIds);
+      setImplicitAccessIds(res.implicitAccessMemberIds);
+      setAccessMessage({ type: 'success', text: 'Account access list updated.' });
+    } catch {
+      setAccessMessage({ type: 'error', text: 'Could not save account access settings.' });
+    } finally {
+      setAccessSaving(false);
+    }
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -245,6 +296,62 @@ export default function Profile() {
               </Button>
             </div>
           </form>
+        </div>
+
+        <div className="app-card mt-6">
+          <FormSection
+            title="Let others access my account"
+            description="If you want to let someone else access your account, for example a spouse or parent, you can add them here."
+          >
+            {accessMessage && (
+              <div
+                className={accessMessage.type === 'success' ? 'app-alert-success' : 'app-alert-error'}
+              >
+                {accessMessage.text}
+              </div>
+            )}
+            {accessLoading ? (
+              <p className="text-sm text-gray-600 dark:text-gray-400">Loading…</p>
+            ) : (
+              <div className="space-y-4">
+                {implicitAccessIds.length > 0 && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    You have other member accounts that share your email address. Those accounts
+                    can already sign in as one another. That access is automatic and cannot be
+                    changed here.
+                  </p>
+                )}
+                <div>
+                  <label htmlFor={accessFieldId} className="app-label">
+                    Members who may use your account
+                  </label>
+                  <MemberMultiSelect
+                    inputId={accessFieldId}
+                    selectedIds={delegateIds}
+                    onChange={setDelegateIds}
+                    filterOption={(opt) => opt.id !== member?.id}
+                    isOptionDisabled={(opt) =>
+                      opt.id === member?.id || implicitAccessIds.includes(opt.id)
+                    }
+                    getOptionStatusText={(opt) =>
+                      implicitAccessIds.includes(opt.id)
+                        ? 'Already has access (same email)'
+                        : undefined
+                    }
+                  />
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void saveAccountAccessDelegates();
+                  }}
+                  disabled={accessSaving}
+                >
+                  {accessSaving ? 'Saving…' : 'Save access list'}
+                </Button>
+              </div>
+            )}
+          </FormSection>
         </div>
       </AppPage>
     </Layout>

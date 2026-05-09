@@ -13,9 +13,13 @@ import {
   isContentAdmin,
   isSponsorAdmin,
 } from '../utils/auth.js';
-import { buildAuthzClaimsForMember, hasScope } from '../utils/rbac.js';
+import { buildAuthzClaimsForMember, buildAuthzClaimsForImpersonatedMember, hasScope } from '../utils/rbac.js';
 import { sendAuthCodeEmail } from '../services/email.js';
 import { sendAuthCodeSMS } from '../services/sms.js';
+import {
+  listAccountSwitchOptions,
+  canActorImpersonateTarget,
+} from '../services/accountAccess.js';
 import { Member } from '../types.js';
 import type { AuthenticatedMember } from '../types.js';
 import type {
@@ -72,6 +76,10 @@ const verifyCodeSchema = z.object({
 const selectMemberSchema = z.object({
   memberId: z.number(),
   tempToken: z.string(),
+});
+
+const impersonateSchema = z.object({
+  targetMemberId: z.number().int().positive(),
 });
 
 const authMemberResponseSchema = {
@@ -300,13 +308,48 @@ const authSelectMemberBodySchema = {
   required: ['memberId', 'tempToken'],
 } as const;
 
+const accountSwitchOptionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+  },
+  required: ['id', 'name'],
+} as const;
+
 const authVerifyTokenResponseSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     member: authMemberResponseSchema,
+    actorMemberId: { type: 'number' },
+    isImpersonating: { type: 'boolean' },
+    accountSwitchOptions: { type: 'array', items: accountSwitchOptionSchema },
   },
-  required: ['member'],
+  required: ['member', 'actorMemberId', 'isImpersonating', 'accountSwitchOptions'],
+} as const;
+
+const authSessionTokenResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    token: { type: 'string' },
+    member: authMemberResponseSchema,
+    actorMemberId: { type: 'number' },
+    isImpersonating: { type: 'boolean' },
+    accountSwitchOptions: { type: 'array', items: accountSwitchOptionSchema },
+  },
+  required: ['token', 'member', 'actorMemberId', 'isImpersonating', 'accountSwitchOptions'],
+} as const;
+
+const authImpersonateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    targetMemberId: { type: 'number' },
+  },
+  required: ['targetMemberId'],
 } as const;
 
 export async function publicAuthRoutes(fastify: FastifyInstance) {
@@ -653,13 +696,143 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    return {
-      member: await buildAuthenticatedMember(member),
+      const actorMemberId = request.actorMemberId ?? member.id;
+      return {
+        member: await buildAuthenticatedMember(member),
+        actorMemberId,
+        isImpersonating: request.isImpersonating ?? false,
+        accountSwitchOptions: await listAccountSwitchOptions(actorMemberId),
+      };
+    }
+  );
+
+  fastify.post<{
+    Body: { targetMemberId: number };
+    Reply:
+      | {
+          token: string;
+          member: AuthenticatedMember;
+          actorMemberId: number;
+          isImpersonating: boolean;
+          accountSwitchOptions: Array<{ id: number; name: string }>;
+        }
+      | ApiErrorResponse;
+  }>(
+    '/auth/impersonate',
+    {
+      schema: {
+        tags: ['auth'],
+        body: authImpersonateBodySchema,
+        response: {
+          200: authSessionTokenResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const actorId = request.actorMemberId;
+      if (actorId === undefined) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+      const { targetMemberId } = impersonateSchema.parse(request.body);
+      if (!(await canActorImpersonateTarget(actorId, targetMemberId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const { db, schema } = getDrizzleDb();
+      const targets = await db
+        .select()
+        .from(schema.members)
+        .where(eq(schema.members.id, targetMemberId))
+        .limit(1);
+
+      const raw = targets[0];
+      if (!raw) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+
+      const targetMember = raw as Member;
+      targetMember.authz = await buildAuthzClaimsForMember(targetMember);
+      if (isMemberExpired(targetMember)) {
+        return reply.code(403).send({ error: 'Membership expired' });
+      }
+
+      const payload = await buildJwtPayloadForMember(targetMember, { actorMemberId: actorId });
+      const token = generateToken(payload);
+      targetMember.impersonationSession = actorId !== targetMemberId;
+      targetMember.authz = await buildAuthzClaimsForImpersonatedMember(targetMember);
+
+      logEvent({
+        eventType: 'auth.impersonate',
+        memberId: actorId,
+        relatedId: targetMemberId,
+      }).catch(() => {});
+
+      return {
+        token,
+        member: await buildAuthenticatedMember(targetMember),
+        actorMemberId: actorId,
+        isImpersonating: actorId !== targetMemberId,
+        accountSwitchOptions: await listAccountSwitchOptions(actorId),
+      };
+    }
+  );
+
+  fastify.post<{
+    Reply:
+      | {
+          token: string;
+          member: AuthenticatedMember;
+          actorMemberId: number;
+          isImpersonating: boolean;
+          accountSwitchOptions: Array<{ id: number; name: string }>;
+        }
+      | ApiErrorResponse;
+  }>(
+    '/auth/stop-impersonation',
+    {
+      schema: {
+        tags: ['auth'],
+        response: {
+          200: authSessionTokenResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!request.isImpersonating || request.actorMemberId === undefined) {
+        return reply.code(400).send({ error: 'Not impersonating' });
+      }
+      const actorId = request.actorMemberId;
+      const { db, schema } = getDrizzleDb();
+      const actors = await db
+        .select()
+        .from(schema.members)
+        .where(eq(schema.members.id, actorId))
+        .limit(1);
+
+      const rawActor = actors[0];
+      if (!rawActor) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+
+      const payload = await buildJwtPayloadForMember(rawActor as Member);
+      const token = generateToken(payload);
+      const actorMember = rawActor as Member;
+      actorMember.impersonationSession = false;
+      actorMember.authz = await buildAuthzClaimsForMember(actorMember);
+
+      logEvent({ eventType: 'auth.stop_impersonation', memberId: actorId }).catch(() => {});
+
+      return {
+        token,
+        member: await buildAuthenticatedMember(actorMember),
+        actorMemberId: actorId,
+        isImpersonating: false,
+        accountSwitchOptions: await listAccountSwitchOptions(actorId),
       };
     }
   );

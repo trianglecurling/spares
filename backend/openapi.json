@@ -1908,10 +1908,465 @@
                         "phoneVisible",
                         "themePreference"
                       ]
+                    },
+                    "actorMemberId": {
+                      "type": "number"
+                    },
+                    "isImpersonating": {
+                      "type": "boolean"
+                    },
+                    "accountSwitchOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "member"
+                    "member",
+                    "actorMemberId",
+                    "isImpersonating",
+                    "accountSwitchOptions"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/impersonate": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "targetMemberId": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "targetMemberId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "member": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "phone": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "spareOnly": {
+                          "type": "boolean"
+                        },
+                        "socialMember": {
+                          "type": "boolean"
+                        },
+                        "isAdmin": {
+                          "type": "boolean"
+                        },
+                        "isServerAdmin": {
+                          "type": "boolean"
+                        },
+                        "isCalendarAdmin": {
+                          "type": "boolean"
+                        },
+                        "isContentAdmin": {
+                          "type": "boolean"
+                        },
+                        "isSponsorAdmin": {
+                          "type": "boolean"
+                        },
+                        "leagueManagerLeagueIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "isLeagueAdministrator": {
+                          "type": "boolean"
+                        },
+                        "isLeagueAdministratorGlobal": {
+                          "type": "boolean"
+                        },
+                        "roleCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "roleNames": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "scopeRules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "scope": {
+                                "type": "string"
+                              },
+                              "effect": {
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              "resourceType": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "resourceId": {
+                                "type": [
+                                  "null",
+                                  "number"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "scope",
+                              "effect"
+                            ]
+                          }
+                        },
+                        "firstLoginCompleted": {
+                          "type": "boolean"
+                        },
+                        "optedInSms": {
+                          "type": "boolean"
+                        },
+                        "emailSubscribed": {
+                          "type": "boolean"
+                        },
+                        "emailVisible": {
+                          "type": "boolean"
+                        },
+                        "phoneVisible": {
+                          "type": "boolean"
+                        },
+                        "themePreference": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email",
+                        "phone",
+                        "spareOnly",
+                        "socialMember",
+                        "isAdmin",
+                        "isServerAdmin",
+                        "isCalendarAdmin",
+                        "isContentAdmin",
+                        "isSponsorAdmin",
+                        "leagueManagerLeagueIds",
+                        "isLeagueAdministrator",
+                        "isLeagueAdministratorGlobal",
+                        "roleCodes",
+                        "roleNames",
+                        "scopeRules",
+                        "firstLoginCompleted",
+                        "optedInSms",
+                        "emailSubscribed",
+                        "emailVisible",
+                        "phoneVisible",
+                        "themePreference"
+                      ]
+                    },
+                    "actorMemberId": {
+                      "type": "number"
+                    },
+                    "isImpersonating": {
+                      "type": "boolean"
+                    },
+                    "accountSwitchOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "member",
+                    "actorMemberId",
+                    "isImpersonating",
+                    "accountSwitchOptions"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/stop-impersonation": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "member": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "phone": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "spareOnly": {
+                          "type": "boolean"
+                        },
+                        "socialMember": {
+                          "type": "boolean"
+                        },
+                        "isAdmin": {
+                          "type": "boolean"
+                        },
+                        "isServerAdmin": {
+                          "type": "boolean"
+                        },
+                        "isCalendarAdmin": {
+                          "type": "boolean"
+                        },
+                        "isContentAdmin": {
+                          "type": "boolean"
+                        },
+                        "isSponsorAdmin": {
+                          "type": "boolean"
+                        },
+                        "leagueManagerLeagueIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "isLeagueAdministrator": {
+                          "type": "boolean"
+                        },
+                        "isLeagueAdministratorGlobal": {
+                          "type": "boolean"
+                        },
+                        "roleCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "roleNames": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "scopeRules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "scope": {
+                                "type": "string"
+                              },
+                              "effect": {
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              "resourceType": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "resourceId": {
+                                "type": [
+                                  "null",
+                                  "number"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "scope",
+                              "effect"
+                            ]
+                          }
+                        },
+                        "firstLoginCompleted": {
+                          "type": "boolean"
+                        },
+                        "optedInSms": {
+                          "type": "boolean"
+                        },
+                        "emailSubscribed": {
+                          "type": "boolean"
+                        },
+                        "emailVisible": {
+                          "type": "boolean"
+                        },
+                        "phoneVisible": {
+                          "type": "boolean"
+                        },
+                        "themePreference": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email",
+                        "phone",
+                        "spareOnly",
+                        "socialMember",
+                        "isAdmin",
+                        "isServerAdmin",
+                        "isCalendarAdmin",
+                        "isContentAdmin",
+                        "isSponsorAdmin",
+                        "leagueManagerLeagueIds",
+                        "isLeagueAdministrator",
+                        "isLeagueAdministratorGlobal",
+                        "roleCodes",
+                        "roleNames",
+                        "scopeRules",
+                        "firstLoginCompleted",
+                        "optedInSms",
+                        "emailSubscribed",
+                        "emailVisible",
+                        "phoneVisible",
+                        "themePreference"
+                      ]
+                    },
+                    "actorMemberId": {
+                      "type": "number"
+                    },
+                    "isImpersonating": {
+                      "type": "boolean"
+                    },
+                    "accountSwitchOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "member",
+                    "actorMemberId",
+                    "isImpersonating",
+                    "accountSwitchOptions"
                   ]
                 }
               }
@@ -2136,6 +2591,102 @@
                     "emailVisible",
                     "phoneVisible",
                     "themePreference"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/me/account-access-delegates": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "delegatedToMemberIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
+                    "implicitAccessMemberIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "required": [
+                    "delegatedToMemberIds",
+                    "implicitAccessMemberIds"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "members"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "memberIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "required": [
+                  "memberIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "delegatedToMemberIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
+                    "implicitAccessMemberIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "required": [
+                    "delegatedToMemberIds",
+                    "implicitAccessMemberIds"
                   ]
                 }
               }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useAlert } from '../contexts/AlertContext';
 import Footer from './Footer';
 import { get } from '../api/client';
 import { HiBars3, HiChevronDown, HiXMark } from 'react-icons/hi2';
@@ -38,9 +39,19 @@ const navLinkClassMobile = (active: boolean) =>
   }`;
 
 export default function Layout({ children, fullWidth }: LayoutProps) {
-  const { member, logout } = useAuth();
+  const {
+    member,
+    logout,
+    accountSwitchOptions,
+    actorMemberId,
+    isImpersonating,
+    switchToMemberAccount,
+    stopImpersonation,
+  } = useAuth();
+  const { showAlert } = useAlert();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [leaguesDropdownOpen, setLeaguesDropdownOpen] = useState(false);
   const [sparesDropdownOpen, setSparesDropdownOpen] = useState(false);
   const [directoryDropdownOpen, setDirectoryDropdownOpen] = useState(false);
@@ -54,6 +65,30 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [leaguesLoading, setLeaguesLoading] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  const showAccountSwitcher = accountSwitchOptions.length > 1;
+
+  const handleSelectAccount = async (optionId: number) => {
+    if (!member || optionId === member.id) {
+      setAccountMenuOpen(false);
+      return;
+    }
+    try {
+      if (isImpersonating && actorMemberId !== null && optionId === actorMemberId) {
+        await stopImpersonation();
+      } else {
+        await switchToMemberAccount(optionId);
+      }
+    } catch {
+      showAlert(
+        'Unable to switch accounts. Try again or refresh the page.',
+        'error'
+      );
+    } finally {
+      setAccountMenuOpen(false);
+    }
+  };
 
   const isNavLinkActive = (to: string, matchPrefix?: boolean) =>
     matchPrefix
@@ -129,6 +164,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   // Close mobile menu when route changes
   useEffect(() => {
     setMobileMenuOpen(false);
+    setAccountMenuOpen(false);
     setMobileLeaguesExpanded(false);
     setMobileSparesExpanded(false);
     setMobileDirectoryExpanded(false);
@@ -147,6 +183,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
         setAdminDropdownOpen(false);
         setCalendarDropdownOpen(false);
       }
+      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
     };
 
     if (
@@ -155,7 +194,8 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
       sparesDropdownOpen ||
       directoryDropdownOpen ||
       adminDropdownOpen ||
-      calendarDropdownOpen
+      calendarDropdownOpen ||
+      accountMenuOpen
     ) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
@@ -169,6 +209,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     directoryDropdownOpen,
     adminDropdownOpen,
     calendarDropdownOpen,
+    accountMenuOpen,
   ]);
 
   const closeDropdowns = () => {
@@ -177,6 +218,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     setDirectoryDropdownOpen(false);
     setAdminDropdownOpen(false);
     setCalendarDropdownOpen(false);
+    setAccountMenuOpen(false);
   };
 
   const MobileDropdownSection = ({
@@ -451,13 +493,80 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
             <div className="flex items-center space-x-4">
               {/* Desktop User Menu */}
               <div className="hidden md:flex items-center space-x-4">
-                <Link
-                  to="/profile"
-                  className="text-sm text-gray-700 dark:text-gray-300 hover:text-primary-teal font-medium"
-                >
-                  {member?.name}
-                </Link>
+                {showAccountSwitcher ? (
+                  <div className="relative flex items-center gap-0.5" ref={accountMenuRef}>
+                    <Link
+                      to="/profile"
+                      className="text-sm text-gray-700 dark:text-gray-300 hover:text-primary-teal font-medium max-w-[10rem] truncate"
+                    >
+                      {member?.name}
+                    </Link>
+                    <button
+                      type="button"
+                      className="p-1 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      aria-label="Switch account"
+                      aria-haspopup="menu"
+                      aria-expanded={accountMenuOpen}
+                      onClick={() => {
+                        setAccountMenuOpen((open) => !open);
+                        setLeaguesDropdownOpen(false);
+                        setSparesDropdownOpen(false);
+                        setDirectoryDropdownOpen(false);
+                        setAdminDropdownOpen(false);
+                        setCalendarDropdownOpen(false);
+                      }}
+                    >
+                      <HiChevronDown
+                        className={`w-4 h-4 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                    {accountMenuOpen && (
+                      <div
+                        role="menu"
+                        className="absolute right-0 top-full mt-1 min-w-[12rem] max-w-[20rem] bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1"
+                      >
+                        {accountSwitchOptions.map((opt) => {
+                          const isActive = opt.id === member?.id;
+                          const isLoginSelf =
+                            actorMemberId !== null && opt.id === actorMemberId;
+                          let suffix = '';
+                          if (isActive) suffix = ' (current)';
+                          else if (isLoginSelf && isImpersonating) suffix = ' — your login';
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              role="menuitem"
+                              disabled={isActive}
+                              className={`block w-full text-left px-4 py-2 text-sm ${
+                                isActive
+                                  ? 'text-gray-500 dark:text-gray-400 cursor-default'
+                                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                              }`}
+                              onClick={() => {
+                                void handleSelectAccount(opt.id);
+                              }}
+                            >
+                              <span className="block truncate">
+                                {opt.name}
+                                {suffix}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Link
+                    to="/profile"
+                    className="text-sm text-gray-700 dark:text-gray-300 hover:text-primary-teal font-medium"
+                  >
+                    {member?.name}
+                  </Link>
+                )}
                 <button
+                  type="button"
                   onClick={logout}
                   className="text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
                 >
@@ -630,7 +739,44 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   >
                     {member?.name}
                   </Link>
+                  {showAccountSwitcher && (
+                    <div className="mt-1 space-y-1 pb-2">
+                      <div className="px-3 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        Switch account
+                      </div>
+                      {accountSwitchOptions.map((opt) => {
+                        const isActive = opt.id === member?.id;
+                        const isLoginSelf =
+                          actorMemberId !== null && opt.id === actorMemberId;
+                        let suffix = '';
+                        if (isActive) suffix = ' (current)';
+                        else if (isLoginSelf && isImpersonating) suffix = ' — your login';
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            disabled={isActive}
+                            onClick={() => {
+                              void handleSelectAccount(opt.id);
+                              setMobileMenuOpen(false);
+                            }}
+                            className={`block w-full text-left px-3 py-2 rounded-md text-sm ${
+                              isActive
+                                ? 'text-gray-500 dark:text-gray-400'
+                                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            }`}
+                          >
+                            <span className="block truncate">
+                              {opt.name}
+                              {suffix}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   <button
+                    type="button"
                     onClick={() => {
                       setMobileMenuOpen(false);
                       logout();

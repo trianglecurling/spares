@@ -13,6 +13,7 @@ type PgSchema = {
   roles: typeof pgSchema.rolesPg;
   roleScopeRules: typeof pgSchema.roleScopeRulesPg;
   memberRoleAssignments: typeof pgSchema.memberRoleAssignmentsPg;
+  memberAccountAccessDelegations: typeof pgSchema.memberAccountAccessDelegationsPg;
   leagues: typeof pgSchema.leaguesPg;
   leagueDrawTimes: typeof pgSchema.leagueDrawTimesPg;
   leagueExceptions: typeof pgSchema.leagueExceptionsPg;
@@ -110,6 +111,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       roles: sqliteSchema.rolesSqlite,
       roleScopeRules: sqliteSchema.roleScopeRulesSqlite,
       memberRoleAssignments: sqliteSchema.memberRoleAssignmentsSqlite,
+      memberAccountAccessDelegations: sqliteSchema.memberAccountAccessDelegationsSqlite,
       leagues: sqliteSchema.leaguesSqlite,
       leagueDrawTimes: sqliteSchema.leagueDrawTimesSqlite,
       leagueExceptions: sqliteSchema.leagueExceptionsSqlite,
@@ -198,6 +200,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       roles: pgSchema.rolesPg,
       roleScopeRules: pgSchema.roleScopeRulesPg,
       memberRoleAssignments: pgSchema.memberRoleAssignmentsPg,
+      memberAccountAccessDelegations: pgSchema.memberAccountAccessDelegationsPg,
       leagues: pgSchema.leaguesPg,
       leagueDrawTimes: pgSchema.leagueDrawTimesPg,
       leagueExceptions: pgSchema.leagueExceptionsPg,

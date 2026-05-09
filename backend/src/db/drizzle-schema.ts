@@ -106,6 +106,23 @@ export const memberRoleAssignmentsSqlite = sqliteTable('member_role_assignments'
   ),
 }));
 
+export const memberAccountAccessDelegationsSqlite = sqliteTable('member_account_access_delegations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  grantor_member_id: integer('grantor_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  grantee_member_id: integer('grantee_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  grantorGranteeUnique: uniqueIndex('member_account_access_grantor_grantee_unique').on(
+    table.grantor_member_id,
+    table.grantee_member_id
+  ),
+  granteeIdx: index('idx_member_account_access_delegations_grantee').on(table.grantee_member_id),
+}));
+
 export const leaguesSqlite = sqliteTable('leagues', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -1244,6 +1261,23 @@ export const memberRoleAssignmentsPg = pgTable('member_role_assignments', {
   ),
 }));
 
+export const memberAccountAccessDelegationsPg = pgTable('member_account_access_delegations', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  grantor_member_id: integerPg('grantor_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'cascade' }),
+  grantee_member_id: integerPg('grantee_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  grantorGranteeUnique: uniqueIndexPg('member_account_access_grantor_grantee_unique').on(
+    table.grantor_member_id,
+    table.grantee_member_id
+  ),
+  granteeIdx: indexPg('idx_member_account_access_delegations_grantee').on(table.grantee_member_id),
+}));
+
 export const leaguesPg = pgTable('leagues', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   name: textPg('name').notNull(),
@@ -2265,6 +2299,7 @@ export const sqliteSchema = {
   roles: rolesSqlite,
   roleScopeRules: roleScopeRulesSqlite,
   memberRoleAssignments: memberRoleAssignmentsSqlite,
+  memberAccountAccessDelegations: memberAccountAccessDelegationsSqlite,
   leagues: leaguesSqlite,
   leagueDrawTimes: leagueDrawTimesSqlite,
   leagueExceptions: leagueExceptionsSqlite,
@@ -2339,6 +2374,7 @@ export const pgSchema = {
   roles: rolesPg,
   roleScopeRules: roleScopeRulesPg,
   memberRoleAssignments: memberRoleAssignmentsPg,
+  memberAccountAccessDelegations: memberAccountAccessDelegationsPg,
   leagues: leaguesPg,
   leagueDrawTimes: leagueDrawTimesPg,
   leagueExceptions: leagueExceptionsPg,

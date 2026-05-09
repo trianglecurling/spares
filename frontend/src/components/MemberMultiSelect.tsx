@@ -15,6 +15,8 @@ type MemberMultiSelectProps = {
   isOptionDisabled?: (option: MemberPickerOption) => boolean;
   getOptionStatusText?: (option: MemberPickerOption) => ReactNode;
   filterOption?: (option: MemberPickerOption) => boolean;
+  /** When set, assigns this id to the combobox input for label association (`htmlFor`). */
+  inputId?: string;
 };
 
 export default function MemberMultiSelect({
@@ -30,6 +32,7 @@ export default function MemberMultiSelect({
   isOptionDisabled,
   getOptionStatusText,
   filterOption,
+  inputId: inputIdProp,
 }: MemberMultiSelectProps) {
   const sharedMembers = useMemberOptions({ autoLoad: options === undefined });
   const [query, setQuery] = useState('');
@@ -37,6 +40,8 @@ export default function MemberMultiSelect({
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const listboxId = useId();
+  const autoInputId = useId();
+  const comboboxId = inputIdProp ?? autoInputId;
   const sourceOptions = options ?? sharedMembers.options;
   const effectiveLoading = options === undefined && sharedMembers.loading;
   const effectiveNoMatchesText =
@@ -144,6 +149,7 @@ export default function MemberMultiSelect({
 
       <div ref={boxRef} className="relative">
         <input
+          id={comboboxId}
           type="text"
           value={query}
           role="combobox"

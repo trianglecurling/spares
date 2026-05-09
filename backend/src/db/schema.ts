@@ -1393,6 +1393,67 @@ function ensureIceBookingsTableSync(db: DatabaseAdapter): void {
   );
 }
 
+async function ensureMemberAccountAccessDelegationsTable(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      `
+      CREATE TABLE IF NOT EXISTS member_account_access_delegations (
+        id SERIAL PRIMARY KEY,
+        grantor_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        grantee_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(grantor_member_id, grantee_member_id),
+        CHECK (grantor_member_id <> grantee_member_id)
+      );
+      `
+    );
+    await execSQL(
+      db,
+      'CREATE INDEX IF NOT EXISTS idx_member_account_access_delegations_grantee ON member_account_access_delegations(grantee_member_id)'
+    );
+    return;
+  }
+
+  await execSQL(
+    db,
+    `
+    CREATE TABLE IF NOT EXISTS member_account_access_delegations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      grantor_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      grantee_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(grantor_member_id, grantee_member_id),
+      CHECK (grantor_member_id != grantee_member_id)
+    );
+    `
+  );
+  await execSQL(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_member_account_access_delegations_grantee ON member_account_access_delegations(grantee_member_id)'
+  );
+}
+
+function ensureMemberAccountAccessDelegationsTableSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `
+    CREATE TABLE IF NOT EXISTS member_account_access_delegations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      grantor_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      grantee_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(grantor_member_id, grantee_member_id),
+      CHECK (grantor_member_id != grantee_member_id)
+    );
+    `
+  );
+  execSQLSync(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_member_account_access_delegations_grantee ON member_account_access_delegations(grantee_member_id)'
+  );
+}
+
 /** Migrate legacy purpose `guests` and add guest_names column (SQLite rebuild when needed). */
 async function migrateIceBookingsGuestPurposeExpand(db: DatabaseAdapter): Promise<void> {
   if (db.isAsync()) {
@@ -3210,6 +3271,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureEventsTables(db);
   await ensurePermalinksTables(db);
   await ensurePermalinksLegacyClickCountColumn(db);
+  await ensureMemberAccountAccessDelegationsTable(db);
 }
 
 // Synchronous version for SQLite (when we know it's SQLite)
@@ -3987,6 +4049,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureEventsTablesSync(db);
   ensurePermalinksTablesSync(db);
   ensurePermalinksLegacyClickCountColumnSync(db);
+  ensureMemberAccountAccessDelegationsTableSync(db);
 
   // Migrate existing admins to server admins (sync version)
   try {

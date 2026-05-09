@@ -1654,6 +1654,12 @@ export interface paths {
                                 phoneVisible: boolean;
                                 themePreference: string;
                             };
+                            actorMemberId: number;
+                            isImpersonating: boolean;
+                            accountSwitchOptions: {
+                                id: number;
+                                name: string;
+                            }[];
                         };
                     };
                 };
@@ -1661,6 +1667,160 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/impersonate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        targetMemberId: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            token: string;
+                            member: {
+                                id: number;
+                                name: string;
+                                email: null | string;
+                                phone: null | string;
+                                spareOnly: boolean;
+                                socialMember: boolean;
+                                isAdmin: boolean;
+                                isServerAdmin: boolean;
+                                isCalendarAdmin: boolean;
+                                isContentAdmin: boolean;
+                                isSponsorAdmin: boolean;
+                                leagueManagerLeagueIds: number[];
+                                isLeagueAdministrator: boolean;
+                                isLeagueAdministratorGlobal: boolean;
+                                roleCodes: string[];
+                                roleNames: string[];
+                                scopeRules: {
+                                    scope: string;
+                                    /** @enum {string} */
+                                    effect: "allow" | "deny";
+                                    resourceType?: null | string;
+                                    resourceId?: null | number;
+                                }[];
+                                firstLoginCompleted: boolean;
+                                optedInSms: boolean;
+                                emailSubscribed: boolean;
+                                emailVisible: boolean;
+                                phoneVisible: boolean;
+                                themePreference: string;
+                            };
+                            actorMemberId: number;
+                            isImpersonating: boolean;
+                            accountSwitchOptions: {
+                                id: number;
+                                name: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/stop-impersonation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            token: string;
+                            member: {
+                                id: number;
+                                name: string;
+                                email: null | string;
+                                phone: null | string;
+                                spareOnly: boolean;
+                                socialMember: boolean;
+                                isAdmin: boolean;
+                                isServerAdmin: boolean;
+                                isCalendarAdmin: boolean;
+                                isContentAdmin: boolean;
+                                isSponsorAdmin: boolean;
+                                leagueManagerLeagueIds: number[];
+                                isLeagueAdministrator: boolean;
+                                isLeagueAdministratorGlobal: boolean;
+                                roleCodes: string[];
+                                roleNames: string[];
+                                scopeRules: {
+                                    scope: string;
+                                    /** @enum {string} */
+                                    effect: "allow" | "deny";
+                                    resourceType?: null | string;
+                                    resourceId?: null | number;
+                                }[];
+                                firstLoginCompleted: boolean;
+                                optedInSms: boolean;
+                                emailSubscribed: boolean;
+                                emailVisible: boolean;
+                                phoneVisible: boolean;
+                                themePreference: string;
+                            };
+                            actorMemberId: number;
+                            isImpersonating: boolean;
+                            accountSwitchOptions: {
+                                id: number;
+                                name: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1764,6 +1924,72 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/members/me/account-access-delegates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            delegatedToMemberIds: number[];
+                            implicitAccessMemberIds: number[];
+                        };
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        memberIds: number[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            delegatedToMemberIds: number[];
+                            implicitAccessMemberIds: number[];
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/members/me/complete-first-login": {

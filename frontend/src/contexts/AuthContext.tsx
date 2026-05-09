@@ -1,16 +1,31 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { get } from '../api/client';
+import { get, post } from '../api/client';
+import api from '../utils/api';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
+
+export type AccountSwitchOption = { id: number; name: string };
+
+type SessionPayload = {
+  member: AuthenticatedMember;
+  actorMemberId: number;
+  isImpersonating: boolean;
+  accountSwitchOptions: AccountSwitchOption[];
+};
 
 interface AuthContextType {
   member: AuthenticatedMember | null;
   token: string | null;
-  login: (token: string, member: AuthenticatedMember, redirectTo?: string) => void;
+  login: (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => Promise<void>;
   logout: () => void;
   updateMember: (member: AuthenticatedMember) => void;
   isLoading: boolean;
+  actorMemberId: number | null;
+  isImpersonating: boolean;
+  accountSwitchOptions: AccountSwitchOption[];
+  switchToMemberAccount: (targetMemberId: number) => Promise<void>;
+  stopImpersonation: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,6 +34,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [member, setMember] = useState<AuthenticatedMember | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('authToken'));
   const [isLoading, setIsLoading] = useState(true);
+  const [actorMemberId, setActorMemberId] = useState<number | null>(null);
+  const [isImpersonating, setIsImpersonating] = useState(false);
+  const [accountSwitchOptions, setAccountSwitchOptions] = useState<AccountSwitchOption[]>([]);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -38,6 +56,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     roleNames: value.roleNames ?? [],
     scopeRules: value.scopeRules ?? [],
   });
+
+  const applySessionPayload = useCallback((data: SessionPayload) => {
+    setMember(
+      normalizeMember({
+        ...data.member,
+        themePreference: normalizeThemePreference(data.member.themePreference),
+      } as AuthenticatedMember)
+    );
+    setActorMemberId(data.actorMemberId);
+    setIsImpersonating(data.isImpersonating);
+    setAccountSwitchOptions(data.accountSwitchOptions);
+  }, []);
+
+  const clearAccountSwitchState = useCallback(() => {
+    setActorMemberId(null);
+    setIsImpersonating(false);
+    setAccountSwitchOptions([]);
+  }, []);
 
   useEffect(() => {
     // Check for token in URL (from email links)
@@ -72,11 +108,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (currentToken) {
         try {
           const response = await get('/auth/verify');
-          const normalizedMember = normalizeMember({
-            ...response.member,
-            themePreference: normalizeThemePreference(response.member.themePreference),
-          } as AuthenticatedMember);
-          setMember(normalizedMember);
+          applySessionPayload({
+            member: response.member as AuthenticatedMember,
+            actorMemberId: response.actorMemberId,
+            isImpersonating: response.isImpersonating,
+            accountSwitchOptions: response.accountSwitchOptions,
+          });
 
           // Redirect to first login if needed
           if (!response.member.firstLoginCompleted) {
@@ -84,23 +121,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Special-case spare accept links so we can restore the requestId flow reliably.
             const intendedPath = window.location.pathname + window.location.search;
             try {
-              const currentPath = window.location.pathname;
+              const currentPathInner = window.location.pathname;
               const currentSearch = window.location.search;
               const params = new URLSearchParams(currentSearch);
 
-              if (currentPath === '/spare-request/respond') {
+              if (currentPathInner === '/spare-request/respond') {
                 const requestId = params.get('requestId');
                 if (requestId) {
                   sessionStorage.setItem('pendingSpareAcceptRequestId', requestId);
                   sessionStorage.setItem('postFirstLoginSuggestAvailability', '1');
                 }
-              } else if (currentPath === '/spare-request/decline') {
+              } else if (currentPathInner === '/spare-request/decline') {
                 const requestId = params.get('requestId');
                 if (requestId) {
                   sessionStorage.setItem('pendingSpareDeclineRequestId', requestId);
                   sessionStorage.setItem('postFirstLoginSuggestAvailability', '1');
                 }
-              } else if (currentPath !== '/first-login' && currentPath !== '/login') {
+              } else if (currentPathInner !== '/first-login' && currentPathInner !== '/login') {
                 // Avoid storing /first-login as the redirect target (that creates a loop back to dashboard).
                 sessionStorage.setItem('postFirstLoginRedirect', intendedPath);
               }
@@ -122,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.error('Token verification failed:', error);
             localStorage.removeItem('authToken');
             setToken(null);
+            clearAccountSwitchState();
           }
         }
       }
@@ -131,10 +169,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     verifyToken();
   }, []);
 
-  const login = (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => {
+  const login = async (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => {
     localStorage.setItem('authToken', newToken);
     setToken(newToken);
     setMember(normalizeMember(newMember));
+
+    try {
+      const session = await get('/auth/verify');
+      applySessionPayload({
+        member: session.member as AuthenticatedMember,
+        actorMemberId: session.actorMemberId,
+        isImpersonating: session.isImpersonating,
+        accountSwitchOptions: session.accountSwitchOptions,
+      });
+    } catch {
+      setActorMemberId(newMember.id);
+      setIsImpersonating(false);
+      setAccountSwitchOptions([]);
+    }
 
     if (!newMember.firstLoginCompleted) {
       try {
@@ -155,15 +207,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('authToken');
     setToken(null);
     setMember(null);
+    clearAccountSwitchState();
     navigate('/login');
   };
 
   const updateMember = (updatedMember: AuthenticatedMember) => {
-    setMember(updatedMember);
+    setMember(normalizeMember(updatedMember));
+  };
+
+  const switchToMemberAccount = async (targetMemberId: number) => {
+    const response = await post('/auth/impersonate', { targetMemberId });
+    localStorage.setItem('authToken', response.token);
+    setToken(response.token);
+    applySessionPayload({
+      member: response.member as AuthenticatedMember,
+      actorMemberId: response.actorMemberId,
+      isImpersonating: response.isImpersonating,
+      accountSwitchOptions: response.accountSwitchOptions,
+    });
+  };
+
+  const stopImpersonation = async () => {
+    const { data } = await api.post<SessionPayload & { token: string }>('/auth/stop-impersonation');
+    localStorage.setItem('authToken', data.token);
+    setToken(data.token);
+    applySessionPayload({
+      member: data.member as AuthenticatedMember,
+      actorMemberId: data.actorMemberId,
+      isImpersonating: data.isImpersonating,
+      accountSwitchOptions: data.accountSwitchOptions,
+    });
   };
 
   return (
-    <AuthContext.Provider value={{ member, token, login, logout, updateMember, isLoading }}>
+    <AuthContext.Provider
+      value={{
+        member,
+        token,
+        login,
+        logout,
+        updateMember,
+        isLoading,
+        actorMemberId,
+        isImpersonating,
+        accountSwitchOptions,
+        switchToMemberAccount,
+        stopImpersonation,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

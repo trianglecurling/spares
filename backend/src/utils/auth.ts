@@ -1,16 +1,29 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { JWTPayload, Member } from '../types.js';
-import { buildAuthzClaimsForMember, hasScope, isInServerAdminListsByEmail } from './rbac.js';
+import {
+  buildAuthzClaimsForMember,
+  buildAuthzClaimsForImpersonatedMember,
+  hasScope,
+  isInServerAdminListsByEmail,
+} from './rbac.js';
 
 export function generateAuthCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-export async function buildJwtPayloadForMember(member: Member): Promise<JWTPayload> {
-  const authz = await buildAuthzClaimsForMember(member);
+export async function buildJwtPayloadForMember(
+  member: Member,
+  options?: { actorMemberId?: number }
+): Promise<JWTPayload> {
+  const actorMemberId = options?.actorMemberId ?? member.id;
+  const isImpersonating = actorMemberId !== member.id;
+  const authz = isImpersonating
+    ? await buildAuthzClaimsForImpersonatedMember(member)
+    : await buildAuthzClaimsForMember(member);
   return {
     memberId: member.id,
+    ...(isImpersonating ? { actorMemberId } : {}),
     email: member.email,
     phone: member.phone,
     isAdmin: hasScope(authz, 'admin.manage'),
@@ -38,6 +51,9 @@ export function verifyToken(token: string): JWTPayload | null {
 }
 
 export function isAdmin(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'admin.manage');
+  }
   if (isServerAdmin(member)) return true;
   if (member.authz) return hasScope(member.authz, 'admin.manage');
   // Legacy fallback
@@ -45,29 +61,44 @@ export function isAdmin(member: Member): boolean {
 }
 
 export function isCalendarAdmin(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'calendar.manage') || isAdmin(member);
+  }
   if (member.authz) return hasScope(member.authz, 'calendar.manage') || isAdmin(member);
   if (member.is_calendar_admin === 1) return true; // Legacy fallback
   return isAdmin(member);
 }
 
 export function isContentAdmin(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'content.manage') || isServerAdmin(member);
+  }
   if (member.authz) return hasScope(member.authz, 'content.manage') || isServerAdmin(member);
   if (member.is_content_admin === 1) return true; // Legacy fallback
   return isServerAdmin(member);
 }
 
 export function isSponsorAdmin(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'sponsorship.manage') || isServerAdmin(member);
+  }
   if (member.authz) return hasScope(member.authz, 'sponsorship.manage') || isServerAdmin(member);
   if (member.is_sponsor_admin === 1) return true; // Legacy fallback
   return isServerAdmin(member);
 }
 
 export function isEventsAdmin(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'events.manage') || isServerAdmin(member);
+  }
   if (member.authz) return hasScope(member.authz, 'events.manage') || isServerAdmin(member);
   return isServerAdmin(member);
 }
 
 export function isServerAdmin(member: Member): boolean {
+  if (member.impersonationSession) {
+    return member.authz?.isServerAdmin === true;
+  }
   if (member.authz?.isServerAdmin) return true;
   if (isInServerAdminsList(member)) return true;
   return member.is_server_admin === 1;

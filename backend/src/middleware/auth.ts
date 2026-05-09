@@ -5,7 +5,7 @@ import { Member } from '../types.js';
 import { eq } from 'drizzle-orm';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { recordDailyActivity } from '../services/observability.js';
-import { buildAuthzClaimsForMember } from '../utils/rbac.js';
+import { buildAuthzClaimsForMember, buildAuthzClaimsForImpersonatedMember } from '../utils/rbac.js';
 
 function normalizeDateString(value: string | Date | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -59,9 +59,16 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
     return reply.code(401).send({ error: 'Member not found' });
   }
 
-  // JWT is the authorization source of truth for request-time checks.
-  member.authz = payload.authz ?? (await buildAuthzClaimsForMember(member));
+  const actorMemberId = payload.actorMemberId ?? payload.memberId;
+  const isImpersonating = actorMemberId !== payload.memberId;
+
+  member.impersonationSession = isImpersonating;
+  member.authz = isImpersonating
+    ? await buildAuthzClaimsForImpersonatedMember(member)
+    : payload.authz ?? (await buildAuthzClaimsForMember(member));
   request.authz = member.authz;
+  request.actorMemberId = actorMemberId;
+  request.isImpersonating = isImpersonating;
 
   if (isMemberExpired(member)) {
     return reply.code(403).send({ error: 'Membership expired' });
@@ -102,8 +109,16 @@ export async function optionalAuthMiddleware(request: FastifyRequest, _reply: Fa
   const member = members[0] as Member | undefined;
   if (!member) return;
 
-  member.authz = payload.authz ?? (await buildAuthzClaimsForMember(member));
+  const actorMemberId = payload.actorMemberId ?? payload.memberId;
+  const isImpersonating = actorMemberId !== payload.memberId;
+
+  member.impersonationSession = isImpersonating;
+  member.authz = isImpersonating
+    ? await buildAuthzClaimsForImpersonatedMember(member)
+    : payload.authz ?? (await buildAuthzClaimsForMember(member));
   request.authz = member.authz;
+  request.actorMemberId = actorMemberId;
+  request.isImpersonating = isImpersonating;
 
   if (isMemberExpired(member)) return;
 

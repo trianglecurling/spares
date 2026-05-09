@@ -92,7 +92,7 @@ export default function Login() {
           ...response.member,
           themePreference: normalizeThemePreference(response.member.themePreference),
         } as AuthenticatedMember);
-        login(response.token, member, from || undefined);
+        await login(response.token, member, from || undefined);
       } else if (isSelectionResponse(response)) {
         setMultipleMembers(response.members);
         setTempToken(response.tempToken);
@@ -129,7 +129,7 @@ export default function Login() {
           ...response.member,
           themePreference: normalizeThemePreference(response.member.themePreference),
         } as AuthenticatedMember);
-        login(response.token, member, from || undefined);
+        await login(response.token, member, from || undefined);
       }
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
@@ -157,7 +157,7 @@ export default function Login() {
           ...response.member,
           themePreference: normalizeThemePreference(response.member.themePreference),
         } as AuthenticatedMember);
-        login(response.token, member, from || undefined);
+        await login(response.token, member, from || undefined);
       }
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
