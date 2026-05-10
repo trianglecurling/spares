@@ -2,9 +2,11 @@
 
 ## Purpose
 
-This document lists required business logic test cases for Phase 3.
+This document lists required business logic test cases.
 
 These tests should be implemented as unit tests or lightweight integration tests depending on existing project conventions.
+
+# Phase 3
 
 ## Registration state tests
 
@@ -448,3 +450,80 @@ Then total due is not negative
 Given an invoice has regular membership and sabbatical fee  
 When discounts are calculated  
 Then only discount-eligible items are discounted
+
+# Phase 4 - Registration Shell
+
+### Draft registration
+
+| Case | Expected result |
+| --- | --- |
+| User starts registration | Draft registration is created |
+| User abandons registration and returns | Existing draft can be resumed |
+| User has existing draft for same curler/session | App resumes or reuses existing draft instead of creating duplicate active draft |
+| User cancels draft | Draft is marked cancelled and is not resumed by default |
+
+### Returning curler identity
+
+| Case | Expected result |
+| --- | --- |
+| User says curler is returning | Login is required |
+| Returning curler logs in | User can select eligible profile |
+| User has delegated access to another profile | Delegated profile appears as selectable |
+| User lacks access to intended returning curler | Registration cannot proceed for that curler |
+| Returning curler flow completes | No duplicate account is created |
+
+### New curler registering themself
+
+| Case | Expected result |
+| --- | --- |
+| New curler registers themself | Submitted-by and curler are the same user/profile |
+| New curler is not logged in | Email-based account creation/login is required |
+| Required demographic field is missing | User cannot complete shell |
+| Date of birth is in the future | Validation error is shown |
+
+### New curler registered by someone else
+
+| Case | Expected result |
+| --- | --- |
+| Parent registers child using same email | Parent and child profiles/accounts are associated according to existing same-email behavior |
+| Parent registers child using child's email | Child profile/account is created with child's email |
+| Parent and child use different emails | Explicit delegated access is granted to parent |
+| Spouse registers spouse | Submitted-by and curler are stored separately |
+| One person registers multiple children | Each child requires a separate registration |
+
+### Policy acceptance
+
+| Case | Expected result |
+| --- | --- |
+| User accepts all three policies | Policy step is complete |
+| User misses one policy | User cannot continue |
+| Parent registers minor | Parent/registrant accepts policies on behalf of minor |
+| Policy acceptance is recorded | Timestamp, accepting user, curler, and policy identifiers are stored |
+
+### Returning curler demographics
+
+| Case | Expected result |
+| --- | --- |
+| Returning curler confirms info is current | Demographics step is complete |
+| Returning curler says info is not current | User can edit required fields |
+| Returning curler has missing required profile data | User must complete missing fields |
+
+### Minor parent/guardian information
+
+| Case | Expected result |
+| --- | --- |
+| Curler is under 18 | Parent/guardian fields are required |
+| Curler is 18 or older | Parent/guardian fields are not required |
+| User changes DOB from adult to minor | Parent/guardian step becomes required |
+| User changes DOB from minor to adult | Parent/guardian step is no longer required |
+| User copies curler email/phone | Parent/guardian fields populate correctly |
+
+### Authorization
+
+| Case | Expected result |
+| --- | --- |
+| Submitted-by user opens draft | Access allowed |
+| Curler opens draft | Access allowed |
+| Delegated user opens draft | Access allowed |
+| Unrelated user opens draft | Access denied |
+| Staff/admin opens draft | Access allowed according to RBAC |
