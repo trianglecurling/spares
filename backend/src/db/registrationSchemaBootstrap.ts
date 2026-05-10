@@ -7,8 +7,6 @@ export const curlingRegistrationDDLBase = `
     name TEXT NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    membership_starts_date DATE NOT NULL,
-    membership_ends_date DATE NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -19,34 +17,27 @@ export const curlingRegistrationDDLBase = `
     name TEXT NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    sort_order_within_season INTEGER NOT NULL DEFAULT 0,
-    is_first_session_of_season INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_curling_sessions_season_id ON curling_sessions(season_id);
-  CREATE INDEX IF NOT EXISTS idx_curling_sessions_season_sort ON curling_sessions(season_id, sort_order_within_season);
+  CREATE INDEX IF NOT EXISTS idx_curling_sessions_season_start ON curling_sessions(season_id, start_date);
 
-  CREATE TABLE IF NOT EXISTS registration_periods (
+  CREATE TABLE IF NOT EXISTS registration_state_transitions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
     session_id INTEGER NOT NULL REFERENCES curling_sessions(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    current_state TEXT NOT NULL DEFAULT 'closed' CHECK(current_state IN ('closed', 'priority', 'open')),
-    priority_opens_at DATETIME,
-    priority_closes_at DATETIME,
-    open_registration_opens_at DATETIME,
-    registration_closes_at DATETIME,
+    effective_at TIMESTAMP NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('closed', 'priority', 'open')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-  CREATE INDEX IF NOT EXISTS idx_registration_periods_season_id ON registration_periods(season_id);
-  CREATE INDEX IF NOT EXISTS idx_registration_periods_session_id ON registration_periods(session_id);
-  CREATE INDEX IF NOT EXISTS idx_registration_periods_current_state ON registration_periods(current_state);
+  CREATE INDEX IF NOT EXISTS idx_registration_state_transitions_season_id ON registration_state_transitions(season_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_state_transitions_session_id ON registration_state_transitions(session_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_state_transitions_lookup ON registration_state_transitions(season_id, session_id, effective_at);
 
   CREATE TABLE IF NOT EXISTS curling_registrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    registration_period_id INTEGER NOT NULL REFERENCES registration_periods(id) ON DELETE RESTRICT,
     season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE RESTRICT,
     session_id INTEGER NOT NULL REFERENCES curling_sessions(id) ON DELETE RESTRICT,
     curler_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
@@ -83,7 +74,6 @@ export const curlingRegistrationDDLBase = `
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-  CREATE INDEX IF NOT EXISTS idx_curling_registrations_registration_period_id ON curling_registrations(registration_period_id);
   CREATE INDEX IF NOT EXISTS idx_curling_registrations_season_id ON curling_registrations(season_id);
   CREATE INDEX IF NOT EXISTS idx_curling_registrations_session_id ON curling_registrations(session_id);
   CREATE INDEX IF NOT EXISTS idx_curling_registrations_curler_member_id ON curling_registrations(curler_member_id);
@@ -218,10 +208,8 @@ export const curlingRegistrationDDLBase = `
   );
   CREATE INDEX IF NOT EXISTS idx_registration_invoice_line_items_invoice_id ON registration_invoice_line_items(invoice_id);
 
-  CREATE TABLE IF NOT EXISTS registration_price_configs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
-    session_id INTEGER REFERENCES curling_sessions(id) ON DELETE CASCADE,
+  CREATE TABLE IF NOT EXISTS registration_price_settings (
+    scope TEXT NOT NULL PRIMARY KEY CHECK(scope = 'singleton'),
     regular_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
     social_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
     spare_only_ice_privilege_fee_minor INTEGER NOT NULL DEFAULT 0,
@@ -230,21 +218,18 @@ export const curlingRegistrationDDLBase = `
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-  CREATE INDEX IF NOT EXISTS idx_registration_price_configs_season_id ON registration_price_configs(season_id);
-  CREATE INDEX IF NOT EXISTS idx_registration_price_configs_session_id ON registration_price_configs(session_id);
 
-  CREATE TABLE IF NOT EXISTS registration_discount_configs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
-    discount_type TEXT NOT NULL CHECK(discount_type IN ('student', 'reciprocal', 'winter_only')),
-    amount_type TEXT NOT NULL CHECK(amount_type IN ('dollar', 'percent')),
-    amount_value REAL NOT NULL,
-    applies_to_scope TEXT NOT NULL CHECK(applies_to_scope IN ('regular_membership', 'eligible_invoice_items')),
-    active INTEGER NOT NULL DEFAULT 1,
+  CREATE TABLE IF NOT EXISTS registration_discount_settings (
+    scope TEXT NOT NULL PRIMARY KEY CHECK(scope = 'singleton'),
+    student_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(student_discount_amount_type IN ('dollar', 'percent')),
+    student_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+    reciprocal_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(reciprocal_discount_amount_type IN ('dollar', 'percent')),
+    reciprocal_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+    winter_only_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(winter_only_discount_amount_type IN ('dollar', 'percent')),
+    winter_only_discount_amount_value INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-  CREATE INDEX IF NOT EXISTS idx_registration_discount_configs_season_id ON registration_discount_configs(season_id);
 
   CREATE TABLE IF NOT EXISTS season_memberships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -383,10 +368,8 @@ export const curlingRegistrationDDLBase = `
 function postgresRepairRegistrationStubTablesSql(): string {
   const tablesExpectingSeasonId = [
     'curling_sessions',
-    'registration_periods',
+    'registration_state_transitions',
     'curling_registrations',
-    'registration_price_configs',
-    'registration_discount_configs',
     'season_memberships',
     'curling_ice_privileges',
   ] satisfies string[];
@@ -569,6 +552,569 @@ async function postgresEnsureLeagueRosterBootstrap(db: DatabaseAdapter, execSQL:
   }
 }
 
+async function preparedGet<T>(db: DatabaseAdapter, sql: string, ...params: unknown[]): Promise<T | null | undefined> {
+  const stmt = db.prepare<T | null, T[]>(sql);
+  const result = stmt.get(...params);
+  return result instanceof Promise ? await result : result;
+}
+
+/** Legacy `curling_seasons` stored membership year bounds; registration schedule supersedes that model. */
+async function dropCurlingSeasonMembershipDateColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  const isPg = Boolean(db.isAsync?.());
+
+  async function tableExists(name: string): Promise<boolean> {
+    if (isPg) {
+      const row = await preparedGet<{ exists: boolean }>(
+        db,
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = ?
+        ) AS "exists"`,
+        name
+      );
+      return Boolean(row?.exists);
+    }
+    const row = await preparedGet<{ name?: string }>(
+      db,
+      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
+      name
+    );
+    return row != null && row !== undefined;
+  }
+
+  if (!(await tableExists('curling_seasons'))) return;
+
+  if (isPg) {
+    const row = await preparedGet<{ exists: boolean }>(
+      db,
+      `SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'curling_seasons'
+          AND column_name = 'membership_starts_date'
+      ) AS "exists"`
+    );
+    if (!row?.exists) return;
+    await execSQL(db, `ALTER TABLE curling_seasons DROP COLUMN IF EXISTS membership_starts_date`);
+    await execSQL(db, `ALTER TABLE curling_seasons DROP COLUMN IF EXISTS membership_ends_date`);
+    return;
+  }
+
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(curling_seasons)`);
+  const rowsRaw = stmt.all();
+  const rows = rowsRaw instanceof Promise ? await rowsRaw : rowsRaw;
+  const names = new Set((rows as { name?: string | null }[]).map((c) => String(c.name)));
+  if (!names.has('membership_starts_date')) return;
+  await execSQL(db, `ALTER TABLE curling_seasons DROP COLUMN membership_starts_date`);
+  await execSQL(db, `ALTER TABLE curling_seasons DROP COLUMN membership_ends_date`);
+}
+
+function dropCurlingSeasonMembershipDateColumnsSync(db: DatabaseAdapter, execSQLSync: (d: DatabaseAdapter, s: string) => void): void {
+  const existsStmt = db.prepare<{ name?: string }>(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`);
+  const t = existsStmt.get('curling_seasons');
+  if (!t) return;
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(curling_seasons)`);
+  const rows = stmt.all() as { name?: string | null }[];
+  const names = new Set(rows.map((c) => String(c.name)));
+  if (!names.has('membership_starts_date')) return;
+  execSQLSync(db, `ALTER TABLE curling_seasons DROP COLUMN membership_starts_date`);
+  execSQLSync(db, `ALTER TABLE curling_seasons DROP COLUMN membership_ends_date`);
+}
+
+async function ensureRegistrationDiscountSettingsAmountColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  const isPg = Boolean(db.isAsync?.());
+
+  async function tableExists(name: string): Promise<boolean> {
+    if (isPg) {
+      const row = await preparedGet<{ exists: boolean }>(
+        db,
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = ?
+        ) AS "exists"`,
+        name
+      );
+      return Boolean(row?.exists);
+    }
+    const row = await preparedGet<{ name?: string }>(
+      db,
+      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
+      name
+    );
+    return row != null && row !== undefined;
+  }
+
+  async function sqliteHasColumn(table: string, column: string): Promise<boolean> {
+    const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(${table})`);
+    const rowsRaw = stmt.all();
+    const rows = rowsRaw instanceof Promise ? await rowsRaw : rowsRaw;
+    return rows.some((c: { name?: string | null }) => String(c.name) === column);
+  }
+
+  if (!(await tableExists('registration_discount_settings'))) return;
+
+  async function postgresHasColumn(table: string, column: string): Promise<boolean> {
+    const row = await preparedGet<{ exists: boolean }>(
+      db,
+      `SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = ?
+          AND column_name = ?
+      ) AS "exists"`,
+      table,
+      column
+    );
+    return Boolean(row?.exists);
+  }
+
+  const hasMinor = isPg
+    ? await postgresHasColumn('registration_discount_settings', 'student_discount_minor')
+    : await sqliteHasColumn('registration_discount_settings', 'student_discount_minor');
+  if (!hasMinor) return;
+
+  const discountAmountCols: { name: string; ddl: string }[] = [
+    {
+      name: 'student_discount_amount_type',
+      ddl: "student_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(student_discount_amount_type IN ('dollar', 'percent'))",
+    },
+    { name: 'student_discount_amount_value', ddl: 'student_discount_amount_value INTEGER NOT NULL DEFAULT 0' },
+    {
+      name: 'reciprocal_discount_amount_type',
+      ddl: "reciprocal_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(reciprocal_discount_amount_type IN ('dollar', 'percent'))",
+    },
+    { name: 'reciprocal_discount_amount_value', ddl: 'reciprocal_discount_amount_value INTEGER NOT NULL DEFAULT 0' },
+    {
+      name: 'winter_only_discount_amount_type',
+      ddl: "winter_only_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(winter_only_discount_amount_type IN ('dollar', 'percent'))",
+    },
+    { name: 'winter_only_discount_amount_value', ddl: 'winter_only_discount_amount_value INTEGER NOT NULL DEFAULT 0' },
+  ];
+
+  if (isPg) {
+    for (const col of discountAmountCols) {
+      await execSQL(
+        db,
+        `ALTER TABLE registration_discount_settings ADD COLUMN IF NOT EXISTS ${col.name} ${
+          col.name.endsWith('_type')
+            ? "TEXT NOT NULL DEFAULT 'dollar'"
+            : 'INTEGER NOT NULL DEFAULT 0'
+        }`
+      );
+    }
+  } else {
+    for (const col of discountAmountCols) {
+      await ensureSQLiteColumn(db, 'registration_discount_settings', col.name, col.ddl, execSQL);
+    }
+  }
+
+  await execSQL(
+    db,
+    `UPDATE registration_discount_settings SET
+      student_discount_amount_type = 'dollar',
+      student_discount_amount_value = student_discount_minor,
+      reciprocal_discount_amount_type = 'dollar',
+      reciprocal_discount_amount_value = reciprocal_discount_minor,
+      winter_only_discount_amount_type = 'dollar',
+      winter_only_discount_amount_value = winter_only_discount_minor`
+  );
+
+  if (isPg) {
+    await execSQL(db, `ALTER TABLE registration_discount_settings DROP COLUMN IF EXISTS student_discount_minor`);
+    await execSQL(db, `ALTER TABLE registration_discount_settings DROP COLUMN IF EXISTS reciprocal_discount_minor`);
+    await execSQL(db, `ALTER TABLE registration_discount_settings DROP COLUMN IF EXISTS winter_only_discount_minor`);
+  } else {
+    await execSQL(db, `ALTER TABLE registration_discount_settings DROP COLUMN student_discount_minor`);
+    await execSQL(db, `ALTER TABLE registration_discount_settings DROP COLUMN reciprocal_discount_minor`);
+    await execSQL(db, `ALTER TABLE registration_discount_settings DROP COLUMN winter_only_discount_minor`);
+  }
+}
+
+function ensureRegistrationDiscountSettingsAmountColumnsSync(db: DatabaseAdapter, execSQLSync: (d: DatabaseAdapter, s: string) => void): void {
+  function tableExistsSync(name: string): boolean {
+    const stmt = db.prepare<{ name?: string }>(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`);
+    const row = stmt.get(name) as { name?: string } | undefined | null;
+    return row != null && row !== undefined;
+  }
+
+  function sqliteHasColumnSync(table: string, column: string): boolean {
+    const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(${table})`);
+    const rows = stmt.all() as { name?: string | null }[];
+    return rows.some((c) => String(c.name) === column);
+  }
+
+  if (!tableExistsSync('registration_discount_settings')) return;
+  if (!sqliteHasColumnSync('registration_discount_settings', 'student_discount_minor')) return;
+
+  const cols: { name: string; ddl: string }[] = [
+    {
+      name: 'student_discount_amount_type',
+      ddl: "student_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(student_discount_amount_type IN ('dollar', 'percent'))",
+    },
+    { name: 'student_discount_amount_value', ddl: 'student_discount_amount_value INTEGER NOT NULL DEFAULT 0' },
+    {
+      name: 'reciprocal_discount_amount_type',
+      ddl: "reciprocal_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(reciprocal_discount_amount_type IN ('dollar', 'percent'))",
+    },
+    { name: 'reciprocal_discount_amount_value', ddl: 'reciprocal_discount_amount_value INTEGER NOT NULL DEFAULT 0' },
+    {
+      name: 'winter_only_discount_amount_type',
+      ddl: "winter_only_discount_amount_type TEXT NOT NULL DEFAULT 'dollar' CHECK(winter_only_discount_amount_type IN ('dollar', 'percent'))",
+    },
+    { name: 'winter_only_discount_amount_value', ddl: 'winter_only_discount_amount_value INTEGER NOT NULL DEFAULT 0' },
+  ];
+
+  const discountColStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(registration_discount_settings)`);
+  const existing = new Set((discountColStmt.all() as { name?: string | null }[]).map((c) => String(c.name)));
+  for (const col of cols) {
+    if (!existing.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE registration_discount_settings ADD COLUMN ${col.ddl}`);
+    }
+  }
+
+  execSQLSync(
+    db,
+    `UPDATE registration_discount_settings SET
+      student_discount_amount_type = 'dollar',
+      student_discount_amount_value = student_discount_minor,
+      reciprocal_discount_amount_type = 'dollar',
+      reciprocal_discount_amount_value = reciprocal_discount_minor,
+      winter_only_discount_amount_type = 'dollar',
+      winter_only_discount_amount_value = winter_only_discount_minor`
+  );
+
+  execSQLSync(db, `ALTER TABLE registration_discount_settings DROP COLUMN student_discount_minor`);
+  execSQLSync(db, `ALTER TABLE registration_discount_settings DROP COLUMN reciprocal_discount_minor`);
+  execSQLSync(db, `ALTER TABLE registration_discount_settings DROP COLUMN winter_only_discount_minor`);
+}
+
+async function migrateLegacyRegistrationAdminConfig(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  const isPg = Boolean(db.isAsync?.());
+
+  async function tableExists(name: string): Promise<boolean> {
+    if (isPg) {
+      const row = await preparedGet<{ exists: boolean }>(
+        db,
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = ?
+        ) AS "exists"`,
+        name
+      );
+      return Boolean(row?.exists);
+    }
+    const row = await preparedGet<{ name?: string }>(
+      db,
+      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
+      name
+    );
+    return row != null && row !== undefined;
+  }
+
+  async function sqliteHasColumn(table: string, column: string): Promise<boolean> {
+    const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(${table})`);
+    const rowsRaw = stmt.all();
+    const rows = rowsRaw instanceof Promise ? await rowsRaw : rowsRaw;
+    return rows.some((c: { name?: string | null }) => String(c.name) === column);
+  }
+
+  if (isPg) {
+    await execSQL(db, `DROP INDEX IF EXISTS idx_curling_sessions_season_sort`);
+    await execSQL(db, `ALTER TABLE curling_sessions DROP COLUMN IF EXISTS sort_order_within_season`);
+    await execSQL(db, `ALTER TABLE curling_sessions DROP COLUMN IF EXISTS is_first_session_of_season`);
+  } else if (await tableExists('curling_sessions')) {
+    if (await sqliteHasColumn('curling_sessions', 'sort_order_within_season')) {
+      await execSQL(db, `DROP INDEX IF EXISTS idx_curling_sessions_season_sort`);
+      await execSQL(db, `ALTER TABLE curling_sessions DROP COLUMN sort_order_within_season`);
+    }
+    if (await sqliteHasColumn('curling_sessions', 'is_first_session_of_season')) {
+      await execSQL(db, `ALTER TABLE curling_sessions DROP COLUMN is_first_session_of_season`);
+    }
+  }
+  await execSQL(db, `CREATE INDEX IF NOT EXISTS idx_curling_sessions_season_start ON curling_sessions(season_id, start_date)`);
+
+  if (await tableExists('registration_periods')) {
+    if (await tableExists('registration_state_transitions')) {
+      await execSQL(
+        db,
+        `INSERT INTO registration_state_transitions (season_id, session_id, effective_at, state)
+         SELECT season_id, session_id,
+           COALESCE(priority_opens_at, open_registration_opens_at, registration_closes_at, created_at),
+           current_state
+         FROM registration_periods`
+      );
+    }
+    await execSQL(db, `DROP INDEX IF EXISTS idx_curling_registrations_registration_period_id`);
+    if (await tableExists('curling_registrations')) {
+      if (isPg) {
+        await execSQL(db, `ALTER TABLE curling_registrations DROP COLUMN IF EXISTS registration_period_id`);
+      } else {
+        await execSQL(db, `PRAGMA foreign_keys = OFF`);
+        try {
+          if (await sqliteHasColumn('curling_registrations', 'registration_period_id')) {
+            await execSQL(db, `ALTER TABLE curling_registrations DROP COLUMN registration_period_id`);
+          }
+        } finally {
+          await execSQL(db, `PRAGMA foreign_keys = ON`);
+        }
+      }
+    }
+    await execSQL(db, `DROP TABLE registration_periods`);
+  }
+
+  if ((await tableExists('registration_price_configs')) && (await tableExists('registration_price_settings'))) {
+    await execSQL(
+      db,
+      `INSERT INTO registration_price_settings (
+        scope,
+        regular_membership_fee_minor,
+        social_membership_fee_minor,
+        spare_only_ice_privilege_fee_minor,
+        sabbatical_fee_minor,
+        junior_recreational_fee_minor
+      )
+      SELECT
+        'singleton',
+        COALESCE((SELECT regular_membership_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT social_membership_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT spare_only_ice_privilege_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT sabbatical_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT junior_recreational_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0)
+      WHERE NOT EXISTS (SELECT 1 FROM registration_price_settings WHERE scope = 'singleton')`
+    );
+    await execSQL(db, `DROP TABLE registration_price_configs`);
+  }
+
+  await ensureRegistrationDiscountSettingsAmountColumns(db, execSQL);
+
+  if ((await tableExists('registration_discount_configs')) && (await tableExists('registration_discount_settings'))) {
+    await execSQL(
+      db,
+      `INSERT INTO registration_discount_settings (
+        scope,
+        student_discount_amount_type,
+        student_discount_amount_value,
+        reciprocal_discount_amount_type,
+        reciprocal_discount_amount_value,
+        winter_only_discount_amount_type,
+        winter_only_discount_amount_value
+      )
+      SELECT
+        'singleton',
+        COALESCE((SELECT amount_type FROM registration_discount_configs WHERE discount_type = 'student' ORDER BY id DESC LIMIT 1), 'dollar'),
+        COALESCE((
+          SELECT CASE amount_type
+            WHEN 'percent' THEN CAST(ROUND(amount_value) AS INTEGER)
+            ELSE CAST(ROUND(amount_value * 100.0) AS INTEGER)
+          END
+          FROM registration_discount_configs
+          WHERE discount_type = 'student'
+          ORDER BY id DESC LIMIT 1
+        ), 0),
+        COALESCE((SELECT amount_type FROM registration_discount_configs WHERE discount_type = 'reciprocal' ORDER BY id DESC LIMIT 1), 'dollar'),
+        COALESCE((
+          SELECT CASE amount_type
+            WHEN 'percent' THEN CAST(ROUND(amount_value) AS INTEGER)
+            ELSE CAST(ROUND(amount_value * 100.0) AS INTEGER)
+          END
+          FROM registration_discount_configs
+          WHERE discount_type = 'reciprocal'
+          ORDER BY id DESC LIMIT 1
+        ), 0),
+        COALESCE((SELECT amount_type FROM registration_discount_configs WHERE discount_type = 'winter_only' ORDER BY id DESC LIMIT 1), 'dollar'),
+        COALESCE((
+          SELECT CASE amount_type
+            WHEN 'percent' THEN CAST(ROUND(amount_value) AS INTEGER)
+            ELSE CAST(ROUND(amount_value * 100.0) AS INTEGER)
+          END
+          FROM registration_discount_configs
+          WHERE discount_type = 'winter_only'
+          ORDER BY id DESC LIMIT 1
+        ), 0)
+      WHERE NOT EXISTS (SELECT 1 FROM registration_discount_settings WHERE scope = 'singleton')`
+    );
+    await execSQL(db, `DROP TABLE registration_discount_configs`);
+  }
+}
+
+async function seedRegistrationSingletonDefaults(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  await execSQL(
+    db,
+    `INSERT OR IGNORE INTO registration_price_settings (scope, regular_membership_fee_minor, social_membership_fee_minor, spare_only_ice_privilege_fee_minor, sabbatical_fee_minor, junior_recreational_fee_minor)
+     VALUES ('singleton', 0, 0, 0, 0, 0)`
+  );
+  await execSQL(
+    db,
+    `INSERT OR IGNORE INTO registration_discount_settings (
+      scope,
+      student_discount_amount_type,
+      student_discount_amount_value,
+      reciprocal_discount_amount_type,
+      reciprocal_discount_amount_value,
+      winter_only_discount_amount_type,
+      winter_only_discount_amount_value
+    )
+    VALUES ('singleton', 'dollar', 0, 'dollar', 0, 'dollar', 0)`
+  );
+}
+
+function migrateLegacyRegistrationAdminConfigSync(db: DatabaseAdapter, execSQLSync: (d: DatabaseAdapter, s: string) => void): void {
+  function tableExistsSync(name: string): boolean {
+    const stmt = db.prepare<{ name?: string }>(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`);
+    const row = stmt.get(name) as { name?: string } | undefined | null;
+    return row != null && row !== undefined;
+  }
+
+  function sqliteHasColumnSync(table: string, column: string): boolean {
+    const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(${table})`);
+    const rows = stmt.all() as { name?: string | null }[];
+    return rows.some((c) => String(c.name) === column);
+  }
+
+  if (tableExistsSync('curling_sessions')) {
+    if (sqliteHasColumnSync('curling_sessions', 'sort_order_within_season')) {
+      execSQLSync(db, `DROP INDEX IF EXISTS idx_curling_sessions_season_sort`);
+      execSQLSync(db, `ALTER TABLE curling_sessions DROP COLUMN sort_order_within_season`);
+    }
+    if (sqliteHasColumnSync('curling_sessions', 'is_first_session_of_season')) {
+      execSQLSync(db, `ALTER TABLE curling_sessions DROP COLUMN is_first_session_of_season`);
+    }
+  }
+  execSQLSync(db, `CREATE INDEX IF NOT EXISTS idx_curling_sessions_season_start ON curling_sessions(season_id, start_date)`);
+
+  if (tableExistsSync('registration_periods')) {
+    if (tableExistsSync('registration_state_transitions')) {
+      execSQLSync(
+        db,
+        `INSERT INTO registration_state_transitions (season_id, session_id, effective_at, state)
+         SELECT season_id, session_id,
+           COALESCE(priority_opens_at, open_registration_opens_at, registration_closes_at, created_at),
+           current_state
+         FROM registration_periods`
+      );
+    }
+    execSQLSync(db, `DROP INDEX IF EXISTS idx_curling_registrations_registration_period_id`);
+    if (tableExistsSync('curling_registrations')) {
+      execSQLSync(db, `PRAGMA foreign_keys = OFF`);
+      try {
+        if (sqliteHasColumnSync('curling_registrations', 'registration_period_id')) {
+          execSQLSync(db, `ALTER TABLE curling_registrations DROP COLUMN registration_period_id`);
+        }
+      } finally {
+        execSQLSync(db, `PRAGMA foreign_keys = ON`);
+      }
+    }
+    execSQLSync(db, `DROP TABLE registration_periods`);
+  }
+
+  if (tableExistsSync('registration_price_configs') && tableExistsSync('registration_price_settings')) {
+    execSQLSync(
+      db,
+      `INSERT INTO registration_price_settings (
+        scope,
+        regular_membership_fee_minor,
+        social_membership_fee_minor,
+        spare_only_ice_privilege_fee_minor,
+        sabbatical_fee_minor,
+        junior_recreational_fee_minor
+      )
+      SELECT
+        'singleton',
+        COALESCE((SELECT regular_membership_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT social_membership_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT spare_only_ice_privilege_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT sabbatical_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0),
+        COALESCE((SELECT junior_recreational_fee_minor FROM registration_price_configs ORDER BY id DESC LIMIT 1), 0)
+      WHERE NOT EXISTS (SELECT 1 FROM registration_price_settings WHERE scope = 'singleton')`
+    );
+    execSQLSync(db, `DROP TABLE registration_price_configs`);
+  }
+
+  ensureRegistrationDiscountSettingsAmountColumnsSync(db, execSQLSync);
+
+  if (tableExistsSync('registration_discount_configs') && tableExistsSync('registration_discount_settings')) {
+    execSQLSync(
+      db,
+      `INSERT INTO registration_discount_settings (
+        scope,
+        student_discount_amount_type,
+        student_discount_amount_value,
+        reciprocal_discount_amount_type,
+        reciprocal_discount_amount_value,
+        winter_only_discount_amount_type,
+        winter_only_discount_amount_value
+      )
+      SELECT
+        'singleton',
+        COALESCE((SELECT amount_type FROM registration_discount_configs WHERE discount_type = 'student' ORDER BY id DESC LIMIT 1), 'dollar'),
+        COALESCE((
+          SELECT CASE amount_type
+            WHEN 'percent' THEN CAST(ROUND(amount_value) AS INTEGER)
+            ELSE CAST(ROUND(amount_value * 100.0) AS INTEGER)
+          END
+          FROM registration_discount_configs
+          WHERE discount_type = 'student'
+          ORDER BY id DESC LIMIT 1
+        ), 0),
+        COALESCE((SELECT amount_type FROM registration_discount_configs WHERE discount_type = 'reciprocal' ORDER BY id DESC LIMIT 1), 'dollar'),
+        COALESCE((
+          SELECT CASE amount_type
+            WHEN 'percent' THEN CAST(ROUND(amount_value) AS INTEGER)
+            ELSE CAST(ROUND(amount_value * 100.0) AS INTEGER)
+          END
+          FROM registration_discount_configs
+          WHERE discount_type = 'reciprocal'
+          ORDER BY id DESC LIMIT 1
+        ), 0),
+        COALESCE((SELECT amount_type FROM registration_discount_configs WHERE discount_type = 'winter_only' ORDER BY id DESC LIMIT 1), 'dollar'),
+        COALESCE((
+          SELECT CASE amount_type
+            WHEN 'percent' THEN CAST(ROUND(amount_value) AS INTEGER)
+            ELSE CAST(ROUND(amount_value * 100.0) AS INTEGER)
+          END
+          FROM registration_discount_configs
+          WHERE discount_type = 'winter_only'
+          ORDER BY id DESC LIMIT 1
+        ), 0)
+      WHERE NOT EXISTS (SELECT 1 FROM registration_discount_settings WHERE scope = 'singleton')`
+    );
+    execSQLSync(db, `DROP TABLE registration_discount_configs`);
+  }
+}
+
+function seedRegistrationSingletonDefaultsSync(db: DatabaseAdapter, execSQLSync: (d: DatabaseAdapter, s: string) => void): void {
+  execSQLSync(
+    db,
+    `INSERT OR IGNORE INTO registration_price_settings (scope, regular_membership_fee_minor, social_membership_fee_minor, spare_only_ice_privilege_fee_minor, sabbatical_fee_minor, junior_recreational_fee_minor)
+     VALUES ('singleton', 0, 0, 0, 0, 0)`
+  );
+  execSQLSync(
+    db,
+    `INSERT OR IGNORE INTO registration_discount_settings (
+      scope,
+      student_discount_amount_type,
+      student_discount_amount_value,
+      reciprocal_discount_amount_type,
+      reciprocal_discount_amount_value,
+      winter_only_discount_amount_type,
+      winter_only_discount_amount_value
+    )
+    VALUES ('singleton', 'dollar', 0, 'dollar', 0, 'dollar', 0)`
+  );
+}
+
 /**
  * Applies Phase 1 curling registration DDL and league extension columns.
  */
@@ -580,13 +1126,18 @@ export async function ensureCurlingRegistrationBootstrap(
   if (isPg) {
     await execSQL(db, postgresRepairRegistrationStubTablesSql());
     await execSQL(db, curlingRegistrationDDLForDialect(true));
+    await migrateLegacyRegistrationAdminConfig(db, execSQL);
+    await seedRegistrationSingletonDefaults(db, execSQL);
     await ensureLeagueBootstrapPostgres(db, execSQL);
     await postgresEnsureLeagueRosterBootstrap(db, execSQL);
   } else {
     await execSQL(db, curlingRegistrationDDLForDialect(false));
+    await migrateLegacyRegistrationAdminConfig(db, execSQL);
+    await seedRegistrationSingletonDefaults(db, execSQL);
     await sqliteEnsureLeaguesRegistrationColumns(db, execSQL);
     await sqliteEnsureLeagueRosterColumns(db, execSQL);
   }
+  await dropCurlingSeasonMembershipDateColumns(db, execSQL);
 }
 
 export function ensureCurlingRegistrationBootstrapSync(
@@ -594,6 +1145,8 @@ export function ensureCurlingRegistrationBootstrapSync(
   execSQLSync: (d: DatabaseAdapter, s: string) => void
 ): void {
   execSQLSync(db, curlingRegistrationDDLForDialect(false));
+  migrateLegacyRegistrationAdminConfigSync(db, execSQLSync);
+  seedRegistrationSingletonDefaultsSync(db, execSQLSync);
   const leagueStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(leagues)`);
   const leagueCols = leagueStmt.all() as { name?: string | null }[];
   const leagueNames = new Set(leagueCols.map((c) => String(c.name)));
@@ -619,4 +1172,5 @@ export function ensureCurlingRegistrationBootstrapSync(
       execSQLSync(db, `ALTER TABLE league_roster ADD COLUMN ${c.ddl}`);
     }
   }
+  dropCurlingSeasonMembershipDateColumnsSync(db, execSQLSync);
 }

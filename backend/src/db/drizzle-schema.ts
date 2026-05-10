@@ -281,8 +281,6 @@ export const curlingSeasonsSqlite = sqliteTable('curling_seasons', {
   name: text('name').notNull(),
   start_date: text('start_date').notNull(),
   end_date: text('end_date').notNull(),
-  membership_starts_date: text('membership_starts_date').notNull(),
-  membership_ends_date: text('membership_ends_date').notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
@@ -295,13 +293,11 @@ export const curlingSessionsSqlite = sqliteTable('curling_sessions', {
   name: text('name').notNull(),
   start_date: text('start_date').notNull(),
   end_date: text('end_date').notNull(),
-  sort_order_within_season: integer('sort_order_within_season').default(0).notNull(),
-  is_first_session_of_season: integer('is_first_session_of_season').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   seasonIdx: index('idx_curling_sessions_season_id').on(table.season_id),
-  seasonSortIdx: index('idx_curling_sessions_season_sort').on(table.season_id, table.sort_order_within_season),
+  seasonStartIdx: index('idx_curling_sessions_season_start').on(table.season_id, table.start_date),
 }));
 
 export const leaguesSqlite = sqliteTable('leagues', {
@@ -336,7 +332,7 @@ export const leaguesSqlite = sqliteTable('leagues', {
   leagueTypeIdx: index('idx_leagues_league_type').on(table.league_type),
 }));
 
-export const registrationPeriodsSqlite = sqliteTable('registration_periods', {
+export const registrationStateTransitionsSqlite = sqliteTable('registration_state_transitions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   season_id: integer('season_id')
     .notNull()
@@ -344,25 +340,18 @@ export const registrationPeriodsSqlite = sqliteTable('registration_periods', {
   session_id: integer('session_id')
     .notNull()
     .references(() => curlingSessionsSqlite.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  current_state: text('current_state').notNull().default('closed').$type<RegistrationPeriodStateSqlite>(),
-  priority_opens_at: text('priority_opens_at'),
-  priority_closes_at: text('priority_closes_at'),
-  open_registration_opens_at: text('open_registration_opens_at'),
-  registration_closes_at: text('registration_closes_at'),
+  effective_at: text('effective_at').notNull(),
+  state: text('state').notNull().$type<RegistrationPeriodStateSqlite>(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
-  seasonIdx: index('idx_registration_periods_season_id').on(table.season_id),
-  sessionIdx: index('idx_registration_periods_session_id').on(table.session_id),
-  stateIdx: index('idx_registration_periods_current_state').on(table.current_state),
+  seasonIdx: index('idx_registration_state_transitions_season_id').on(table.season_id),
+  sessionIdx: index('idx_registration_state_transitions_session_id').on(table.session_id),
+  lookupIdx: index('idx_registration_state_transitions_lookup').on(table.season_id, table.session_id, table.effective_at),
 }));
 
 export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  registration_period_id: integer('registration_period_id')
-    .notNull()
-    .references(() => registrationPeriodsSqlite.id, { onDelete: 'restrict' }),
   season_id: integer('season_id')
     .notNull()
     .references(() => curlingSeasonsSqlite.id, { onDelete: 'restrict' }),
@@ -407,7 +396,6 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
-  periodIdx: index('idx_curling_registrations_registration_period_id').on(table.registration_period_id),
   seasonIdx: index('idx_curling_registrations_season_id').on(table.season_id),
   sessionIdx: index('idx_curling_registrations_session_id').on(table.session_id),
   curlerIdx: index('idx_curling_registrations_curler_member_id').on(table.curler_member_id),
@@ -563,12 +551,8 @@ export const registrationInvoiceLineItemsSqlite = sqliteTable('registration_invo
   invoiceIdx: index('idx_registration_invoice_line_items_invoice_id').on(table.invoice_id),
 }));
 
-export const registrationPriceConfigsSqlite = sqliteTable('registration_price_configs', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  season_id: integer('season_id')
-    .notNull()
-    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
-  session_id: integer('session_id').references(() => curlingSessionsSqlite.id, { onDelete: 'cascade' }),
+export const registrationPriceSettingsSqlite = sqliteTable('registration_price_settings', {
+  scope: text('scope').primaryKey().notNull().default('singleton'),
   regular_membership_fee_minor: integer('regular_membership_fee_minor').default(0).notNull(),
   social_membership_fee_minor: integer('social_membership_fee_minor').default(0).notNull(),
   spare_only_ice_privilege_fee_minor: integer('spare_only_ice_privilege_fee_minor').default(0).notNull(),
@@ -576,26 +560,28 @@ export const registrationPriceConfigsSqlite = sqliteTable('registration_price_co
   junior_recreational_fee_minor: integer('junior_recreational_fee_minor').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
-}, (table) => ({
-  seasonIdx: index('idx_registration_price_configs_season_id').on(table.season_id),
-  sessionIdx: index('idx_registration_price_configs_session_id').on(table.session_id),
-}));
+});
 
-export const registrationDiscountConfigsSqlite = sqliteTable('registration_discount_configs', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  season_id: integer('season_id')
+export const registrationDiscountSettingsSqlite = sqliteTable('registration_discount_settings', {
+  scope: text('scope').primaryKey().notNull().default('singleton'),
+  student_discount_amount_type: text('student_discount_amount_type')
     .notNull()
-    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
-  discount_type: text('discount_type').notNull().$type<CurlingDiscountTypeSqlite>(),
-  amount_type: text('amount_type').notNull().$type<CurlingDiscountAmountTypeSqlite>(),
-  amount_value: real('amount_value').notNull(),
-  applies_to_scope: text('applies_to_scope').notNull().$type<CurlingDiscountScopeSqlite>(),
-  active: integer('active').default(1).notNull(),
+    .default('dollar')
+    .$type<'dollar' | 'percent'>(),
+  student_discount_amount_value: integer('student_discount_amount_value').default(0).notNull(),
+  reciprocal_discount_amount_type: text('reciprocal_discount_amount_type')
+    .notNull()
+    .default('dollar')
+    .$type<'dollar' | 'percent'>(),
+  reciprocal_discount_amount_value: integer('reciprocal_discount_amount_value').default(0).notNull(),
+  winter_only_discount_amount_type: text('winter_only_discount_amount_type')
+    .notNull()
+    .default('dollar')
+    .$type<'dollar' | 'percent'>(),
+  winter_only_discount_amount_value: integer('winter_only_discount_amount_value').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
-}, (table) => ({
-  seasonIdx: index('idx_registration_discount_configs_season_id').on(table.season_id),
-}));
+});
 
 export const seasonMembershipsSqlite = sqliteTable('season_memberships', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -1912,8 +1898,6 @@ export const curlingSeasonsPg = pgTable('curling_seasons', {
   name: textPg('name').notNull(),
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
-  membership_starts_date: date('membership_starts_date').notNull(),
-  membership_ends_date: date('membership_ends_date').notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
@@ -1926,13 +1910,11 @@ export const curlingSessionsPg = pgTable('curling_sessions', {
   name: textPg('name').notNull(),
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
-  sort_order_within_season: integerPg('sort_order_within_season').default(0).notNull(),
-  is_first_session_of_season: integerPg('is_first_session_of_season').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   seasonIdx: indexPg('idx_curling_sessions_season_id').on(table.season_id),
-  seasonSortIdx: indexPg('idx_curling_sessions_season_sort').on(table.season_id, table.sort_order_within_season),
+  seasonStartIdx: indexPg('idx_curling_sessions_season_start').on(table.season_id, table.start_date),
 }));
 
 export const leaguesPg = pgTable('leagues', {
@@ -1967,7 +1949,7 @@ export const leaguesPg = pgTable('leagues', {
   leagueTypeIdx: indexPg('idx_leagues_league_type').on(table.league_type),
 }));
 
-export const registrationPeriodsPg = pgTable('registration_periods', {
+export const registrationStateTransitionsPg = pgTable('registration_state_transitions', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   season_id: integerPg('season_id')
     .notNull()
@@ -1975,25 +1957,18 @@ export const registrationPeriodsPg = pgTable('registration_periods', {
   session_id: integerPg('session_id')
     .notNull()
     .references(() => curlingSessionsPg.id, { onDelete: 'cascade' }),
-  name: textPg('name').notNull(),
-  current_state: textPg('current_state').notNull().default('closed').$type<RegistrationPeriodStateSqlite>(),
-  priority_opens_at: timestamp('priority_opens_at', { withTimezone: false }),
-  priority_closes_at: timestamp('priority_closes_at', { withTimezone: false }),
-  open_registration_opens_at: timestamp('open_registration_opens_at', { withTimezone: false }),
-  registration_closes_at: timestamp('registration_closes_at', { withTimezone: false }),
+  effective_at: timestamp('effective_at', { withTimezone: false }).notNull(),
+  state: textPg('state').notNull().$type<RegistrationPeriodStateSqlite>(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
-  seasonIdx: indexPg('idx_registration_periods_season_id').on(table.season_id),
-  sessionIdx: indexPg('idx_registration_periods_session_id').on(table.session_id),
-  stateIdx: indexPg('idx_registration_periods_current_state').on(table.current_state),
+  seasonIdx: indexPg('idx_registration_state_transitions_season_id').on(table.season_id),
+  sessionIdx: indexPg('idx_registration_state_transitions_session_id').on(table.session_id),
+  lookupIdx: indexPg('idx_registration_state_transitions_lookup').on(table.season_id, table.session_id, table.effective_at),
 }));
 
 export const curlingRegistrationsPg = pgTable('curling_registrations', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
-  registration_period_id: integerPg('registration_period_id')
-    .notNull()
-    .references(() => registrationPeriodsPg.id, { onDelete: 'restrict' }),
   season_id: integerPg('season_id')
     .notNull()
     .references(() => curlingSeasonsPg.id, { onDelete: 'restrict' }),
@@ -2038,7 +2013,6 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
-  periodIdx: indexPg('idx_curling_registrations_registration_period_id').on(table.registration_period_id),
   seasonIdx: indexPg('idx_curling_registrations_season_id').on(table.season_id),
   sessionIdx: indexPg('idx_curling_registrations_session_id').on(table.session_id),
   curlerIdx: indexPg('idx_curling_registrations_curler_member_id').on(table.curler_member_id),
@@ -2194,12 +2168,8 @@ export const registrationInvoiceLineItemsPg = pgTable('registration_invoice_line
   invoiceIdx: indexPg('idx_registration_invoice_line_items_invoice_id').on(table.invoice_id),
 }));
 
-export const registrationPriceConfigsPg = pgTable('registration_price_configs', {
-  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
-  season_id: integerPg('season_id')
-    .notNull()
-    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
-  session_id: integerPg('session_id').references(() => curlingSessionsPg.id, { onDelete: 'cascade' }),
+export const registrationPriceSettingsPg = pgTable('registration_price_settings', {
+  scope: textPg('scope').primaryKey().notNull().default('singleton'),
   regular_membership_fee_minor: integerPg('regular_membership_fee_minor').default(0).notNull(),
   social_membership_fee_minor: integerPg('social_membership_fee_minor').default(0).notNull(),
   spare_only_ice_privilege_fee_minor: integerPg('spare_only_ice_privilege_fee_minor').default(0).notNull(),
@@ -2207,26 +2177,19 @@ export const registrationPriceConfigsPg = pgTable('registration_price_configs', 
   junior_recreational_fee_minor: integerPg('junior_recreational_fee_minor').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
-}, (table) => ({
-  seasonIdx: indexPg('idx_registration_price_configs_season_id').on(table.season_id),
-  sessionIdx: indexPg('idx_registration_price_configs_session_id').on(table.session_id),
-}));
+});
 
-export const registrationDiscountConfigsPg = pgTable('registration_discount_configs', {
-  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
-  season_id: integerPg('season_id')
-    .notNull()
-    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
-  discount_type: textPg('discount_type').notNull().$type<CurlingDiscountTypeSqlite>(),
-  amount_type: textPg('amount_type').notNull().$type<CurlingDiscountAmountTypeSqlite>(),
-  amount_value: doublePrecision('amount_value').notNull(),
-  applies_to_scope: textPg('applies_to_scope').notNull().$type<CurlingDiscountScopeSqlite>(),
-  active: integerPg('active').default(1).notNull(),
+export const registrationDiscountSettingsPg = pgTable('registration_discount_settings', {
+  scope: textPg('scope').primaryKey().notNull().default('singleton'),
+  student_discount_amount_type: textPg('student_discount_amount_type').notNull().default('dollar').$type<'dollar' | 'percent'>(),
+  student_discount_amount_value: integerPg('student_discount_amount_value').default(0).notNull(),
+  reciprocal_discount_amount_type: textPg('reciprocal_discount_amount_type').notNull().default('dollar').$type<'dollar' | 'percent'>(),
+  reciprocal_discount_amount_value: integerPg('reciprocal_discount_amount_value').default(0).notNull(),
+  winter_only_discount_amount_type: textPg('winter_only_discount_amount_type').notNull().default('dollar').$type<'dollar' | 'percent'>(),
+  winter_only_discount_amount_value: integerPg('winter_only_discount_amount_value').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
-}, (table) => ({
-  seasonIdx: indexPg('idx_registration_discount_configs_season_id').on(table.season_id),
-}));
+});
 
 export const seasonMembershipsPg = pgTable('season_memberships', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -3409,7 +3372,7 @@ export const sqliteSchema = {
   curlingSeasons: curlingSeasonsSqlite,
   curlingSessions: curlingSessionsSqlite,
   leagues: leaguesSqlite,
-  registrationPeriods: registrationPeriodsSqlite,
+  registrationStateTransitions: registrationStateTransitionsSqlite,
   curlingRegistrations: curlingRegistrationsSqlite,
   curlingLeagueSabbaticals: curlingLeagueSabbaticalsSqlite,
   registrationPolicyAcceptances: registrationPolicyAcceptancesSqlite,
@@ -3417,8 +3380,8 @@ export const sqliteSchema = {
   financialAssistanceRequests: financialAssistanceRequestsSqlite,
   registrationInvoices: registrationInvoicesSqlite,
   registrationInvoiceLineItems: registrationInvoiceLineItemsSqlite,
-  registrationPriceConfigs: registrationPriceConfigsSqlite,
-  registrationDiscountConfigs: registrationDiscountConfigsSqlite,
+  registrationPriceSettings: registrationPriceSettingsSqlite,
+  registrationDiscountSettings: registrationDiscountSettingsSqlite,
   seasonMemberships: seasonMembershipsSqlite,
   curlingIcePrivileges: curlingIcePrivilegesSqlite,
   curlingSabbaticalSessions: curlingSabbaticalSessionsSqlite,
@@ -3502,7 +3465,7 @@ export const pgSchema = {
   curlingSeasons: curlingSeasonsPg,
   curlingSessions: curlingSessionsPg,
   leagues: leaguesPg,
-  registrationPeriods: registrationPeriodsPg,
+  registrationStateTransitions: registrationStateTransitionsPg,
   curlingRegistrations: curlingRegistrationsPg,
   curlingLeagueSabbaticals: curlingLeagueSabbaticalsPg,
   registrationPolicyAcceptances: registrationPolicyAcceptancesPg,
@@ -3510,8 +3473,8 @@ export const pgSchema = {
   financialAssistanceRequests: financialAssistanceRequestsPg,
   registrationInvoices: registrationInvoicesPg,
   registrationInvoiceLineItems: registrationInvoiceLineItemsPg,
-  registrationPriceConfigs: registrationPriceConfigsPg,
-  registrationDiscountConfigs: registrationDiscountConfigsPg,
+  registrationPriceSettings: registrationPriceSettingsPg,
+  registrationDiscountSettings: registrationDiscountSettingsPg,
   seasonMemberships: seasonMembershipsPg,
   curlingIcePrivileges: curlingIcePrivilegesPg,
   curlingSabbaticalSessions: curlingSabbaticalSessionsPg,

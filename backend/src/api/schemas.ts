@@ -267,10 +267,51 @@ export const leagueResponseSchema = {
     format: { type: 'string', enum: ['teams', 'doubles'] },
     startDate: { type: 'string' },
     endDate: { type: 'string' },
+    sessionId: { type: ['number', 'null'] },
+    leagueType: { type: 'string', enum: ['standard', 'bring_your_own_team'] },
+    capacityType: { type: 'string', enum: ['individual', 'team'] },
+    capacityValue: { type: 'number' },
+    registrationFeeMinor: { type: 'number' },
+    requiresClubMembership: { type: 'boolean' },
+    isInstructional: { type: 'boolean' },
+    minExperienceYears: { type: ['number', 'null'] },
+    minAge: { type: ['number', 'null'] },
+    maxAge: { type: ['number', 'null'] },
+    firstDayOfPlay: { type: ['string', 'null'] },
+    lastDayOfPlay: { type: ['string', 'null'] },
+    allowsWaitlist: { type: 'boolean' },
+    allowsSabbatical: { type: 'boolean' },
+    predecessorLeagueId: { type: ['number', 'null'] },
+    successorLeagueId: { type: ['number', 'null'] },
     drawTimes: { type: 'array', items: { type: 'string' } },
     exceptions: { type: 'array', items: { type: 'string' } },
   },
-  required: ['id', 'name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes', 'exceptions'],
+  required: [
+    'id',
+    'name',
+    'dayOfWeek',
+    'format',
+    'startDate',
+    'endDate',
+    'sessionId',
+    'leagueType',
+    'capacityType',
+    'capacityValue',
+    'registrationFeeMinor',
+    'requiresClubMembership',
+    'isInstructional',
+    'minExperienceYears',
+    'minAge',
+    'maxAge',
+    'firstDayOfPlay',
+    'lastDayOfPlay',
+    'allowsWaitlist',
+    'allowsSabbatical',
+    'predecessorLeagueId',
+    'successorLeagueId',
+    'drawTimes',
+    'exceptions',
+  ],
 } as const;
 
 export const leagueListResponseSchema = {
@@ -312,6 +353,121 @@ export const leagueImportResponseSchema = {
     leagues: { type: 'array', items: leagueResponseSchema },
   },
   required: ['success', 'imported', 'leagues'],
+} as const;
+
+export const registrationSeasonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+    startDate: { type: 'string' },
+    endDate: { type: 'string' },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: ['id', 'name', 'startDate', 'endDate', 'createdAt', 'updatedAt'],
+} as const;
+
+export const registrationSessionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    seasonId: { type: 'number' },
+    name: { type: 'string' },
+    startDate: { type: 'string' },
+    endDate: { type: 'string' },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: ['id', 'seasonId', 'name', 'startDate', 'endDate', 'createdAt', 'updatedAt'],
+} as const;
+
+export const registrationStateTransitionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    seasonId: { type: 'number' },
+    sessionId: { type: 'number' },
+    effectiveAt: { type: 'string' },
+    state: { type: 'string', enum: ['closed', 'priority', 'open'] },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: ['id', 'seasonId', 'sessionId', 'effectiveAt', 'state', 'createdAt', 'updatedAt'],
+} as const;
+
+export const registrationPriceSettingsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    scope: { type: 'string' },
+    regularMembershipFeeDollars: { type: 'number' },
+    socialMembershipFeeDollars: { type: 'number' },
+    spareOnlyIcePrivilegeFeeDollars: { type: 'number' },
+    sabbaticalFeeDollars: { type: 'number' },
+    juniorRecreationalFeeDollars: { type: 'number' },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: [
+    'scope',
+    'regularMembershipFeeDollars',
+    'socialMembershipFeeDollars',
+    'spareOnlyIcePrivilegeFeeDollars',
+    'sabbaticalFeeDollars',
+    'juniorRecreationalFeeDollars',
+    'createdAt',
+    'updatedAt',
+  ],
+} as const;
+
+const discountSlotResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    amountType: { type: 'string', enum: ['dollar', 'percent'] },
+    value: { type: 'number' },
+  },
+  required: ['amountType', 'value'],
+} as const;
+
+export const registrationDiscountSettingsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    scope: { type: 'string' },
+    studentDiscount: discountSlotResponseSchema,
+    reciprocalDiscount: discountSlotResponseSchema,
+    winterOnlyDiscount: discountSlotResponseSchema,
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: [
+    'scope',
+    'studentDiscount',
+    'reciprocalDiscount',
+    'winterOnlyDiscount',
+    'createdAt',
+    'updatedAt',
+  ],
+} as const;
+
+export const registrationSeasonListResponseSchema = {
+  type: 'array',
+  items: registrationSeasonSchema,
+} as const;
+
+export const registrationSessionListResponseSchema = {
+  type: 'array',
+  items: registrationSessionSchema,
+} as const;
+
+export const registrationStateTransitionListResponseSchema = {
+  type: 'array',
+  items: registrationStateTransitionSchema,
 } as const;
 
 export const upcomingGamesResponseSchema = {

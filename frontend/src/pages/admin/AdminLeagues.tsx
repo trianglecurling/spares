@@ -26,6 +26,16 @@ const LEAGUE_FORMAT_CHOICES: ChoiceOption<'teams' | 'doubles'>[] = [
   { value: 'doubles', label: 'Doubles' },
 ];
 
+const LEAGUE_TYPE_CHOICES: ChoiceOption<'standard' | 'bring_your_own_team'>[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'bring_your_own_team', label: 'Bring your own team' },
+];
+
+const CAPACITY_TYPE_CHOICES: ChoiceOption<'individual' | 'team'>[] = [
+  { value: 'individual', label: 'Individual' },
+  { value: 'team', label: 'Team' },
+];
+
 interface League {
   id: number;
   name: string;
@@ -33,9 +43,31 @@ interface League {
   format: 'teams' | 'doubles';
   startDate: string;
   endDate: string;
+  sessionId: number | null;
+  leagueType: 'standard' | 'bring_your_own_team';
+  capacityType: 'individual' | 'team';
+  capacityValue: number;
+  registrationFeeMinor: number;
+  requiresClubMembership: boolean;
+  isInstructional: boolean;
+  minExperienceYears: number | null;
+  minAge: number | null;
+  maxAge: number | null;
+  firstDayOfPlay: string | null;
+  lastDayOfPlay: string | null;
+  allowsWaitlist: boolean;
+  allowsSabbatical: boolean;
+  predecessorLeagueId: number | null;
+  successorLeagueId: number | null;
   drawTimes: string[];
   exceptions: string[];
   canManage?: boolean;
+}
+
+interface RegistrationSession {
+  id: number;
+  name: string;
+  seasonId: number;
 }
 
 export default function Leagues() {
@@ -43,6 +75,7 @@ export default function Leagues() {
   const { member } = useAuth();
   const navigate = useNavigate();
   const [leagues, setLeagues] = useState<League[]>([]);
+  const [registrationSessions, setRegistrationSessions] = useState<RegistrationSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -55,6 +88,22 @@ export default function Leagues() {
     format: 'teams' as 'teams' | 'doubles',
     startDate: '',
     endDate: '',
+    sessionId: 0,
+    leagueType: 'standard' as 'standard' | 'bring_your_own_team',
+    capacityType: 'individual' as 'individual' | 'team',
+    capacityValue: 0,
+    registrationFeeMinor: 0,
+    requiresClubMembership: true,
+    isInstructional: false,
+    minExperienceYears: '' as number | '',
+    minAge: '' as number | '',
+    maxAge: '' as number | '',
+    firstDayOfPlay: '',
+    lastDayOfPlay: '',
+    allowsWaitlist: true,
+    allowsSabbatical: true,
+    predecessorLeagueId: 0,
+    successorLeagueId: 0,
     drawTimes: [''],
     exceptions: [] as string[],
   });
@@ -65,6 +114,15 @@ export default function Leagues() {
   useEffect(() => {
     loadLeagues();
   }, []);
+
+  useEffect(() => {
+    if (!member?.isAdmin && !member?.isServerAdmin) return;
+    get('/registration-config/sessions')
+      .then((response) => setRegistrationSessions(response as RegistrationSession[]))
+      .catch(() => {
+        // League managers can still edit non-session league details.
+      });
+  }, [member]);
 
   const loadLeagues = async () => {
     try {
@@ -87,6 +145,22 @@ export default function Leagues() {
         format: league.format,
         startDate: league.startDate,
         endDate: league.endDate,
+        sessionId: league.sessionId ?? 0,
+        leagueType: league.leagueType,
+        capacityType: league.capacityType,
+        capacityValue: league.capacityValue,
+        registrationFeeMinor: league.registrationFeeMinor,
+        requiresClubMembership: league.requiresClubMembership,
+        isInstructional: league.isInstructional,
+        minExperienceYears: league.minExperienceYears ?? '',
+        minAge: league.minAge ?? '',
+        maxAge: league.maxAge ?? '',
+        firstDayOfPlay: league.firstDayOfPlay ?? '',
+        lastDayOfPlay: league.lastDayOfPlay ?? '',
+        allowsWaitlist: league.allowsWaitlist,
+        allowsSabbatical: league.allowsSabbatical,
+        predecessorLeagueId: league.predecessorLeagueId ?? 0,
+        successorLeagueId: league.successorLeagueId ?? 0,
         drawTimes: league.drawTimes,
         exceptions: league.exceptions || [],
       });
@@ -98,6 +172,22 @@ export default function Leagues() {
         format: 'teams',
         startDate: '',
         endDate: '',
+        sessionId: 0,
+        leagueType: 'standard',
+        capacityType: 'individual',
+        capacityValue: 0,
+        registrationFeeMinor: 0,
+        requiresClubMembership: true,
+        isInstructional: false,
+        minExperienceYears: '',
+        minAge: '',
+        maxAge: '',
+        firstDayOfPlay: '',
+        lastDayOfPlay: '',
+        allowsWaitlist: true,
+        allowsSabbatical: true,
+        predecessorLeagueId: 0,
+        successorLeagueId: 0,
         drawTimes: [''],
         exceptions: [],
       });
@@ -173,9 +263,28 @@ export default function Leagues() {
         drawTimes: formData.drawTimes.filter((t) => t.trim() !== ''),
         exceptions: uniqueExceptions,
       };
+      const registrationPayload = {
+        ...payload,
+        sessionId: formData.sessionId || null,
+        leagueType: formData.leagueType,
+        capacityType: formData.capacityType,
+        capacityValue: formData.capacityValue,
+        registrationFeeMinor: formData.registrationFeeMinor,
+        requiresClubMembership: formData.requiresClubMembership,
+        isInstructional: formData.isInstructional,
+        minExperienceYears: formData.minExperienceYears === '' ? null : formData.minExperienceYears,
+        minAge: formData.minAge === '' ? null : formData.minAge,
+        maxAge: formData.maxAge === '' ? null : formData.maxAge,
+        firstDayOfPlay: formData.firstDayOfPlay || null,
+        lastDayOfPlay: formData.lastDayOfPlay || null,
+        allowsWaitlist: formData.allowsWaitlist,
+        allowsSabbatical: formData.allowsSabbatical,
+        predecessorLeagueId: formData.predecessorLeagueId || null,
+        successorLeagueId: formData.successorLeagueId || null,
+      };
 
       if (editingLeague) {
-        await patch('/leagues/{id}', payload, { id: String(editingLeague.id) });
+        await patch('/leagues/{id}', registrationPayload, { id: String(editingLeague.id) });
       } else {
         await post('/leagues', payload);
       }
@@ -267,6 +376,11 @@ export default function Leagues() {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
+  const getSessionName = (sessionId: number | null) => {
+    if (!sessionId) return 'Unassigned';
+    return registrationSessions.find((session) => session.id === sessionId)?.name ?? `Session ${sessionId}`;
+  };
+
   // Helper to format date for display, handling timezone offset
   const formatDateDisplay = (dateString: string) => {
     if (!dateString) return '';
@@ -345,6 +459,10 @@ export default function Leagues() {
                         <span className="font-medium dark:text-gray-300">Season:</span>{' '}
                         {formatDateDisplay(league.startDate)} – {formatDateDisplay(league.endDate)}
                       </p>
+                      <p>
+                        <span className="font-medium dark:text-gray-300">Registration:</span>{' '}
+                        {getSessionName(league.sessionId)} - {league.leagueType === 'bring_your_own_team' ? 'BYOT' : 'Standard'} - {league.capacityValue} {league.capacityType}
+                      </p>
                       {league.exceptions?.length > 0 && (
                         <p>
                           <span className="font-medium dark:text-gray-300">Exceptions:</span>{' '}
@@ -353,6 +471,11 @@ export default function Leagues() {
                       )}
                     </div>
                   </div>
+                  {canManageLeagueDetails && (
+                    <Button variant="secondary" onClick={() => handleOpenModal(league)}>
+                      Edit
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -492,6 +615,216 @@ export default function Leagues() {
             </div>
           </div>
 
+          {editingLeague && (
+            <div className="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                Registration settings
+              </h3>
+
+              <div>
+                <label htmlFor="registrationSession" className="app-label">
+                  Session assignment
+                </label>
+                <ChoiceInput<number>
+                  inputId="registrationSession"
+                  options={[
+                    { value: 0, label: 'Unassigned' },
+                    ...registrationSessions.map((session) => ({
+                      value: session.id,
+                      label: session.name,
+                    })),
+                  ]}
+                  value={formData.sessionId}
+                  onChange={(next) => {
+                    if (next != null && !Array.isArray(next)) {
+                      setFormData({ ...formData, sessionId: next });
+                    }
+                  }}
+                  listboxLabel="Registration session"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="leagueType" className="app-label">
+                    League type
+                  </label>
+                  <ChoiceInput<'standard' | 'bring_your_own_team'>
+                    inputId="leagueType"
+                    options={LEAGUE_TYPE_CHOICES}
+                    value={formData.leagueType}
+                    onChange={(next) => {
+                      if (next != null && !Array.isArray(next)) {
+                        setFormData({
+                          ...formData,
+                          leagueType: next,
+                          ...(next === 'bring_your_own_team'
+                            ? { capacityType: 'team', allowsWaitlist: false, allowsSabbatical: false }
+                            : { capacityType: 'individual' }),
+                        });
+                      }
+                    }}
+                    listboxLabel="League type"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="capacityType" className="app-label">
+                    Capacity type
+                  </label>
+                  <ChoiceInput<'individual' | 'team'>
+                    inputId="capacityType"
+                    options={CAPACITY_TYPE_CHOICES}
+                    value={formData.capacityType}
+                    onChange={(next) => {
+                      if (next != null && !Array.isArray(next)) {
+                        setFormData({ ...formData, capacityType: next });
+                      }
+                    }}
+                    listboxLabel="Capacity type"
+                  />
+                </div>
+
+                <NumberInput
+                  id="capacityValue"
+                  label="Capacity value"
+                  value={formData.capacityValue}
+                  onChange={(capacityValue) => setFormData({ ...formData, capacityValue: capacityValue === '' ? 0 : capacityValue })}
+                />
+                <NumberInput
+                  id="registrationFeeMinor"
+                  label="Registration fee (minor units)"
+                  value={formData.registrationFeeMinor}
+                  onChange={(registrationFeeMinor) => setFormData({ ...formData, registrationFeeMinor: registrationFeeMinor === '' ? 0 : registrationFeeMinor })}
+                />
+                <NumberInput
+                  id="minExperienceYears"
+                  label="Minimum experience years"
+                  value={formData.minExperienceYears}
+                  onChange={(minExperienceYears) => setFormData({ ...formData, minExperienceYears })}
+                />
+                <NumberInput
+                  id="minAge"
+                  label="Minimum age"
+                  value={formData.minAge}
+                  onChange={(minAge) => setFormData({ ...formData, minAge })}
+                />
+                <NumberInput
+                  id="maxAge"
+                  label="Maximum age"
+                  value={formData.maxAge}
+                  onChange={(maxAge) => setFormData({ ...formData, maxAge })}
+                />
+
+                <div>
+                  <label htmlFor="firstDayOfPlay" className="app-label">
+                    First day of play
+                  </label>
+                  <input
+                    id="firstDayOfPlay"
+                    type="date"
+                    value={formData.firstDayOfPlay}
+                    onChange={(event) => setFormData({ ...formData, firstDayOfPlay: event.target.value })}
+                    className="app-input"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="lastDayOfPlay" className="app-label">
+                    Last day of play
+                  </label>
+                  <input
+                    id="lastDayOfPlay"
+                    type="date"
+                    value={formData.lastDayOfPlay}
+                    onChange={(event) => setFormData({ ...formData, lastDayOfPlay: event.target.value })}
+                    className="app-input"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.requiresClubMembership}
+                    onChange={(event) => setFormData({ ...formData, requiresClubMembership: event.target.checked })}
+                  />
+                  Requires club membership
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.isInstructional}
+                    onChange={(event) => setFormData({ ...formData, isInstructional: event.target.checked })}
+                  />
+                  Instructional league
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.allowsWaitlist}
+                    onChange={(event) => setFormData({ ...formData, allowsWaitlist: event.target.checked })}
+                  />
+                  Allows waitlist
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.allowsSabbatical}
+                    onChange={(event) => setFormData({ ...formData, allowsSabbatical: event.target.checked })}
+                  />
+                  Allows sabbaticals
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="predecessorLeagueId" className="app-label">
+                    Predecessor league
+                  </label>
+                  <ChoiceInput<number>
+                    inputId="predecessorLeagueId"
+                    options={[
+                      { value: 0, label: 'None' },
+                      ...leagues
+                        .filter((league) => league.id !== editingLeague.id)
+                        .map((league) => ({ value: league.id, label: league.name })),
+                    ]}
+                    value={formData.predecessorLeagueId}
+                    onChange={(next) => {
+                      if (next != null && !Array.isArray(next)) {
+                        setFormData({ ...formData, predecessorLeagueId: next });
+                      }
+                    }}
+                    listboxLabel="Predecessor league"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="successorLeagueId" className="app-label">
+                    Successor league
+                  </label>
+                  <ChoiceInput<number>
+                    inputId="successorLeagueId"
+                    options={[
+                      { value: 0, label: 'None' },
+                      ...leagues
+                        .filter((league) => league.id !== editingLeague.id)
+                        .map((league) => ({ value: league.id, label: league.name })),
+                    ]}
+                    value={formData.successorLeagueId}
+                    onChange={(next) => {
+                      if (next != null && !Array.isArray(next)) {
+                        setFormData({ ...formData, successorLeagueId: next });
+                      }
+                    }}
+                    listboxLabel="Successor league"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="app-label">
               Exceptions (dates the league does not run)
@@ -623,5 +956,32 @@ export default function Leagues() {
         </div>
       </Modal>
     </Layout>
+  );
+}
+
+function NumberInput({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number | '';
+  onChange: (value: number | '') => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="app-label">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="number"
+        value={value}
+        onChange={(event) => onChange(event.target.value === '' ? '' : Number(event.target.value))}
+        className="app-input"
+      />
+    </div>
   );
 }

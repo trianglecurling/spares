@@ -28,6 +28,7 @@ import { governanceRoutes } from './routes/governance.js';
 import { rbacRoutes } from './routes/rbac.js';
 import { publicEventRoutes, protectedEventRoutes } from './routes/events.js';
 import { waiversAdminRoutes } from './routes/waiversAdmin.js';
+import { registrationConfigRoutes } from './routes/registrationConfig.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(installRoutes, { prefix: '/api' });
@@ -65,4 +66,5 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(protectedEventRoutes, { prefix: '/api' });
   await fastify.register(protectedFeedbackRoutes, { prefix: '/api' });
   await fastify.register(waiversAdminRoutes, { prefix: '/api' });
+  await fastify.register(registrationConfigRoutes, { prefix: '/api' });
 }

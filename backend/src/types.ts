@@ -66,11 +66,27 @@ export interface AuthToken {
 
 export interface League {
   id: number;
+  session_id: number | null;
   name: string;
   day_of_week: number;
   format: 'teams' | 'doubles';
   start_date: DbDate;
   end_date: DbDate;
+  league_type: 'standard' | 'bring_your_own_team';
+  capacity_type: 'individual' | 'team';
+  capacity_value: number;
+  registration_fee_minor: number;
+  requires_club_membership: number;
+  is_instructional: number;
+  min_experience_years: number | null;
+  min_age: number | null;
+  max_age: number | null;
+  first_day_of_play: DbDate | null;
+  last_day_of_play: DbDate | null;
+  allows_waitlist: number;
+  allows_sabbatical: number;
+  predecessor_league_id: number | null;
+  successor_league_id: number | null;
   created_at: DbDate;
   updated_at: DbDate;
 }

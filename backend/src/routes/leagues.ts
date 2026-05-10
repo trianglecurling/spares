@@ -1,10 +1,11 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { and, eq, sql, asc, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
 import { hasScope } from '../utils/rbac.js';
+import { sendValidationError } from '../api/errors.js';
 import {
   leagueExportResponseSchema,
   leagueImportResponseSchema,
@@ -19,6 +20,11 @@ import {
   hasLeagueManagerAccess,
 } from '../utils/leagueAccess.js';
 import { config } from '../config.js';
+import {
+  RegistrationConfigValidationError,
+  assertNoLeagueContinuityCycle,
+  assertValidLeagueRegistrationSettings,
+} from '../registration/registrationConfigValidation.js';
 
 const createLeagueSchema = z.object({
   name: z.string().min(1),
@@ -36,6 +42,22 @@ const updateLeagueSchema = z.object({
   format: z.enum(['teams', 'doubles']).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  sessionId: z.number().int().positive().nullable().optional(),
+  leagueType: z.enum(['standard', 'bring_your_own_team']).optional(),
+  capacityType: z.enum(['individual', 'team']).optional(),
+  capacityValue: z.number().int().optional(),
+  registrationFeeMinor: z.number().int().optional(),
+  requiresClubMembership: z.boolean().optional(),
+  isInstructional: z.boolean().optional(),
+  minExperienceYears: z.number().int().nullable().optional(),
+  minAge: z.number().int().nullable().optional(),
+  maxAge: z.number().int().nullable().optional(),
+  firstDayOfPlay: z.string().nullable().optional(),
+  lastDayOfPlay: z.string().nullable().optional(),
+  allowsWaitlist: z.boolean().optional(),
+  allowsSabbatical: z.boolean().optional(),
+  predecessorLeagueId: z.number().int().positive().nullable().optional(),
+  successorLeagueId: z.number().int().positive().nullable().optional(),
   drawTimes: z.array(z.string()).optional(),
   exceptions: z.array(z.string()).optional(),
 });
@@ -122,6 +144,67 @@ function getTimePartsInTimeZone(timeZone: string) {
   return { hour, minute, second };
 }
 
+function toBool(value: number | boolean): boolean {
+  return value === true || value === 1;
+}
+
+function mapLeagueResponse(league: League, drawTimes: string[], exceptions: string[], canManage?: boolean) {
+  const row = league as League & {
+    session_id?: number | null;
+    league_type?: 'standard' | 'bring_your_own_team';
+    capacity_type?: 'individual' | 'team';
+    capacity_value?: number;
+    registration_fee_minor?: number;
+    requires_club_membership?: number | boolean;
+    is_instructional?: number | boolean;
+    min_experience_years?: number | null;
+    min_age?: number | null;
+    max_age?: number | null;
+    first_day_of_play?: string | Date | number | null;
+    last_day_of_play?: string | Date | number | null;
+    allows_waitlist?: number | boolean;
+    allows_sabbatical?: number | boolean;
+    predecessor_league_id?: number | null;
+    successor_league_id?: number | null;
+  };
+
+  return {
+    id: row.id,
+    name: row.name,
+    dayOfWeek: row.day_of_week,
+    format: row.format,
+    startDate: normalizeDateString(row.start_date),
+    endDate: normalizeDateString(row.end_date),
+    sessionId: row.session_id ?? null,
+    leagueType: row.league_type ?? 'standard',
+    capacityType: row.capacity_type ?? 'individual',
+    capacityValue: row.capacity_value ?? 0,
+    registrationFeeMinor: row.registration_fee_minor ?? 0,
+    requiresClubMembership: toBool(row.requires_club_membership ?? 1),
+    isInstructional: toBool(row.is_instructional ?? 0),
+    minExperienceYears: row.min_experience_years ?? null,
+    minAge: row.min_age ?? null,
+    maxAge: row.max_age ?? null,
+    firstDayOfPlay: row.first_day_of_play ? normalizeDateString(row.first_day_of_play) : null,
+    lastDayOfPlay: row.last_day_of_play ? normalizeDateString(row.last_day_of_play) : null,
+    allowsWaitlist: toBool(row.allows_waitlist ?? 1),
+    allowsSabbatical: toBool(row.allows_sabbatical ?? 1),
+    predecessorLeagueId: row.predecessor_league_id ?? null,
+    successorLeagueId: row.successor_league_id ?? null,
+    drawTimes,
+    exceptions,
+    ...(canManage === undefined ? {} : { canManage }),
+  };
+}
+
+function handleRegistrationValidationError(reply: FastifyReply, error: unknown): boolean {
+  if (error instanceof RegistrationConfigValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
+  return false;
+}
+
 export async function leagueRoutes(fastify: FastifyInstance) {
   const leagueManagerLeagueIdsFromMember = (member: Member): number[] => {
     const leagueIds = new Set<number>();
@@ -181,20 +264,14 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         .where(eq(schema.leagueExceptions.league_id, league.id))
         .orderBy(asc(schema.leagueExceptions.exception_date));
 
-      return {
-        id: league.id,
-        name: league.name,
-        dayOfWeek: league.day_of_week,
-        format: league.format,
-        startDate: league.start_date,
-        endDate: league.end_date,
-        drawTimes: drawTimes.map((dt) => dt.draw_time),
-        exceptions: exceptions.map((ex) => normalizeDateString(ex.exception_date)),
-        canManage:
-          canManageAll ||
+      return mapLeagueResponse(
+        league,
+        drawTimes.map((dt) => dt.draw_time),
+        exceptions.map((ex) => normalizeDateString(ex.exception_date)),
+        canManageAll ||
           leagueAdminInfo.isGlobal ||
-          leagueManagerInfo.leagueIds.includes(league.id),
-      };
+          leagueManagerInfo.leagueIds.includes(league.id)
+      );
     }));
 
     return result;
@@ -312,6 +389,22 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             format: { type: 'string', enum: ['teams', 'doubles'] },
             startDate: { type: 'string' },
             endDate: { type: 'string' },
+            sessionId: { type: ['number', 'null'] },
+            leagueType: { type: 'string', enum: ['standard', 'bring_your_own_team'] },
+            capacityType: { type: 'string', enum: ['individual', 'team'] },
+            capacityValue: { type: 'number' },
+            registrationFeeMinor: { type: 'number' },
+            requiresClubMembership: { type: 'boolean' },
+            isInstructional: { type: 'boolean' },
+            minExperienceYears: { type: ['number', 'null'] },
+            minAge: { type: ['number', 'null'] },
+            maxAge: { type: ['number', 'null'] },
+            firstDayOfPlay: { type: ['string', 'null'] },
+            lastDayOfPlay: { type: ['string', 'null'] },
+            allowsWaitlist: { type: 'boolean' },
+            allowsSabbatical: { type: 'boolean' },
+            predecessorLeagueId: { type: ['number', 'null'] },
+            successorLeagueId: { type: ['number', 'null'] },
             drawTimes: { type: 'array', items: { type: 'string' } },
             exceptions: { type: 'array', items: { type: 'string' } },
           },
@@ -393,16 +486,11 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .where(eq(schema.leagueExceptions.league_id, leagueId))
       .orderBy(asc(schema.leagueExceptions.exception_date));
 
-    return {
-      id: league.id,
-      name: league.name,
-      dayOfWeek: league.day_of_week,
-      format: league.format,
-      startDate: league.start_date,
-      endDate: league.end_date,
-      drawTimes: drawTimes.map((dt) => dt.draw_time),
-      exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
-    };
+    return mapLeagueResponse(
+      league,
+      drawTimes.map((dt) => dt.draw_time),
+      exceptionRows.map((ex) => normalizeDateString(ex.exception_date))
+    );
     }
   );
 
@@ -454,15 +542,60 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const { db, schema } = getDrizzleDb();
 
     const existingLeagueRows = await db
-      .select({
-        start_date: schema.leagues.start_date,
-        end_date: schema.leagues.end_date,
-        day_of_week: schema.leagues.day_of_week,
-      })
+      .select()
       .from(schema.leagues)
       .where(eq(schema.leagues.id, leagueId))
       .limit(1);
     const existingLeague = existingLeagueRows[0];
+    if (!existingLeague) {
+      return reply.code(404).send({ error: 'League not found' });
+    }
+
+    const nextLeagueRegistrationSettings = {
+      id: leagueId,
+      leagueType: body.leagueType ?? existingLeague.league_type,
+      capacityType: body.capacityType ?? existingLeague.capacity_type,
+      capacityValue: body.capacityValue ?? existingLeague.capacity_value,
+      registrationFeeMinor: body.registrationFeeMinor ?? existingLeague.registration_fee_minor,
+      minExperienceYears:
+        body.minExperienceYears === undefined ? existingLeague.min_experience_years : body.minExperienceYears,
+      minAge: body.minAge === undefined ? existingLeague.min_age : body.minAge,
+      maxAge: body.maxAge === undefined ? existingLeague.max_age : body.maxAge,
+      firstDayOfPlay: body.firstDayOfPlay === undefined ? existingLeague.first_day_of_play : body.firstDayOfPlay,
+      lastDayOfPlay: body.lastDayOfPlay === undefined ? existingLeague.last_day_of_play : body.lastDayOfPlay,
+      allowsWaitlist: body.allowsWaitlist ?? toBool(existingLeague.allows_waitlist),
+      allowsSabbatical: body.allowsSabbatical ?? toBool(existingLeague.allows_sabbatical),
+      predecessorLeagueId:
+        body.predecessorLeagueId === undefined ? existingLeague.predecessor_league_id : body.predecessorLeagueId,
+      successorLeagueId:
+        body.successorLeagueId === undefined ? existingLeague.successor_league_id : body.successorLeagueId,
+    };
+
+    try {
+      assertValidLeagueRegistrationSettings(nextLeagueRegistrationSettings);
+
+      const continuityRows = await db
+        .select({
+          id: schema.leagues.id,
+          predecessorLeagueId: schema.leagues.predecessor_league_id,
+          successorLeagueId: schema.leagues.successor_league_id,
+        })
+        .from(schema.leagues);
+      assertNoLeagueContinuityCycle(
+        continuityRows.map((row) =>
+          row.id === leagueId
+            ? {
+                ...row,
+                predecessorLeagueId: nextLeagueRegistrationSettings.predecessorLeagueId,
+                successorLeagueId: nextLeagueRegistrationSettings.successorLeagueId,
+              }
+            : row
+        )
+      );
+    } catch (error) {
+      if (handleRegistrationValidationError(reply, error)) return;
+      throw error;
+    }
 
     const updateData: Partial<{
       name: string;
@@ -470,6 +603,22 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: 'teams' | 'doubles';
       start_date: string;
       end_date: string;
+      session_id: number | null;
+      league_type: 'standard' | 'bring_your_own_team';
+      capacity_type: 'individual' | 'team';
+      capacity_value: number;
+      registration_fee_minor: number;
+      requires_club_membership: number;
+      is_instructional: number;
+      min_experience_years: number | null;
+      min_age: number | null;
+      max_age: number | null;
+      first_day_of_play: string | null;
+      last_day_of_play: string | null;
+      allows_waitlist: number;
+      allows_sabbatical: number;
+      predecessor_league_id: number | null;
+      successor_league_id: number | null;
       updated_at: SQL<unknown>;
     }> = {};
 
@@ -487,6 +636,54 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
     if (body.endDate !== undefined) {
       updateData.end_date = body.endDate;
+    }
+    if (body.sessionId !== undefined) {
+      updateData.session_id = body.sessionId;
+    }
+    if (body.leagueType !== undefined) {
+      updateData.league_type = body.leagueType;
+    }
+    if (body.capacityType !== undefined) {
+      updateData.capacity_type = body.capacityType;
+    }
+    if (body.capacityValue !== undefined) {
+      updateData.capacity_value = body.capacityValue;
+    }
+    if (body.registrationFeeMinor !== undefined) {
+      updateData.registration_fee_minor = body.registrationFeeMinor;
+    }
+    if (body.requiresClubMembership !== undefined) {
+      updateData.requires_club_membership = body.requiresClubMembership ? 1 : 0;
+    }
+    if (body.isInstructional !== undefined) {
+      updateData.is_instructional = body.isInstructional ? 1 : 0;
+    }
+    if (body.minExperienceYears !== undefined) {
+      updateData.min_experience_years = body.minExperienceYears;
+    }
+    if (body.minAge !== undefined) {
+      updateData.min_age = body.minAge;
+    }
+    if (body.maxAge !== undefined) {
+      updateData.max_age = body.maxAge;
+    }
+    if (body.firstDayOfPlay !== undefined) {
+      updateData.first_day_of_play = body.firstDayOfPlay;
+    }
+    if (body.lastDayOfPlay !== undefined) {
+      updateData.last_day_of_play = body.lastDayOfPlay;
+    }
+    if (body.allowsWaitlist !== undefined) {
+      updateData.allows_waitlist = body.allowsWaitlist ? 1 : 0;
+    }
+    if (body.allowsSabbatical !== undefined) {
+      updateData.allows_sabbatical = body.allowsSabbatical ? 1 : 0;
+    }
+    if (body.predecessorLeagueId !== undefined) {
+      updateData.predecessor_league_id = body.predecessorLeagueId;
+    }
+    if (body.successorLeagueId !== undefined) {
+      updateData.successor_league_id = body.successorLeagueId;
     }
 
     if (Object.keys(updateData).length > 0) {
@@ -611,16 +808,11 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .where(eq(schema.leagueExceptions.league_id, leagueId))
       .orderBy(asc(schema.leagueExceptions.exception_date));
 
-    return {
-      id: league.id,
-      name: league.name,
-      dayOfWeek: league.day_of_week,
-      format: league.format,
-      startDate: league.start_date,
-      endDate: league.end_date,
-      drawTimes: drawTimes.map((dt) => dt.draw_time),
-      exceptions: exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
-    };
+    return mapLeagueResponse(
+      league,
+      drawTimes.map((dt) => dt.draw_time),
+      exceptionRows.map((ex) => normalizeDateString(ex.exception_date))
+    );
     }
   );
 

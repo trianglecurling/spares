@@ -61,6 +61,7 @@ import AdminPayments from './pages/admin/AdminPayments';
 import AdminEvents from './pages/admin/AdminEvents';
 import AdminEventEditor from './pages/admin/AdminEventEditor';
 import AdminEventRegistrationEditor from './pages/admin/AdminEventRegistrationEditor';
+import AdminRegistrationConfig from './pages/admin/AdminRegistrationConfig';
 import PublicEventsPage from './pages/PublicEventsPage';
 import PublicEventDetailPage from './pages/PublicEventDetailPage';
 import PublicEventTeamPage from './pages/PublicEventTeamPage';
@@ -373,6 +374,18 @@ function App() {
                   element={
                     <ProtectedRoute requiredScope="events.manage">
                       <AdminEventRegistrationEditor />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/registration"
+                  element={<Navigate to="/admin/registration/seasons" replace />}
+                />
+                <Route
+                  path="/admin/registration/:tab"
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <AdminRegistrationConfig />
                     </ProtectedRoute>
                   }
                 />

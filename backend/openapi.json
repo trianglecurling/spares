@@ -3661,6 +3661,86 @@
                       "endDate": {
                         "type": "string"
                       },
+                      "sessionId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "leagueType": {
+                        "type": "string",
+                        "enum": [
+                          "standard",
+                          "bring_your_own_team"
+                        ]
+                      },
+                      "capacityType": {
+                        "type": "string",
+                        "enum": [
+                          "individual",
+                          "team"
+                        ]
+                      },
+                      "capacityValue": {
+                        "type": "number"
+                      },
+                      "registrationFeeMinor": {
+                        "type": "number"
+                      },
+                      "requiresClubMembership": {
+                        "type": "boolean"
+                      },
+                      "isInstructional": {
+                        "type": "boolean"
+                      },
+                      "minExperienceYears": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "minAge": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "maxAge": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "firstDayOfPlay": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "lastDayOfPlay": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "allowsWaitlist": {
+                        "type": "boolean"
+                      },
+                      "allowsSabbatical": {
+                        "type": "boolean"
+                      },
+                      "predecessorLeagueId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "successorLeagueId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
                       "drawTimes": {
                         "type": "array",
                         "items": {
@@ -3681,6 +3761,22 @@
                       "format",
                       "startDate",
                       "endDate",
+                      "sessionId",
+                      "leagueType",
+                      "capacityType",
+                      "capacityValue",
+                      "registrationFeeMinor",
+                      "requiresClubMembership",
+                      "isInstructional",
+                      "minExperienceYears",
+                      "minAge",
+                      "maxAge",
+                      "firstDayOfPlay",
+                      "lastDayOfPlay",
+                      "allowsWaitlist",
+                      "allowsSabbatical",
+                      "predecessorLeagueId",
+                      "successorLeagueId",
                       "drawTimes",
                       "exceptions"
                     ]
@@ -3722,6 +3818,86 @@
                   },
                   "endDate": {
                     "type": "string"
+                  },
+                  "sessionId": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "leagueType": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "bring_your_own_team"
+                    ]
+                  },
+                  "capacityType": {
+                    "type": "string",
+                    "enum": [
+                      "individual",
+                      "team"
+                    ]
+                  },
+                  "capacityValue": {
+                    "type": "number"
+                  },
+                  "registrationFeeMinor": {
+                    "type": "number"
+                  },
+                  "requiresClubMembership": {
+                    "type": "boolean"
+                  },
+                  "isInstructional": {
+                    "type": "boolean"
+                  },
+                  "minExperienceYears": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "minAge": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "maxAge": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "firstDayOfPlay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastDayOfPlay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "allowsWaitlist": {
+                    "type": "boolean"
+                  },
+                  "allowsSabbatical": {
+                    "type": "boolean"
+                  },
+                  "predecessorLeagueId": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "successorLeagueId": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   },
                   "drawTimes": {
                     "type": "array",
@@ -3779,6 +3955,86 @@
                     "endDate": {
                       "type": "string"
                     },
+                    "sessionId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "leagueType": {
+                      "type": "string",
+                      "enum": [
+                        "standard",
+                        "bring_your_own_team"
+                      ]
+                    },
+                    "capacityType": {
+                      "type": "string",
+                      "enum": [
+                        "individual",
+                        "team"
+                      ]
+                    },
+                    "capacityValue": {
+                      "type": "number"
+                    },
+                    "registrationFeeMinor": {
+                      "type": "number"
+                    },
+                    "requiresClubMembership": {
+                      "type": "boolean"
+                    },
+                    "isInstructional": {
+                      "type": "boolean"
+                    },
+                    "minExperienceYears": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "minAge": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "maxAge": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "firstDayOfPlay": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastDayOfPlay": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "allowsWaitlist": {
+                      "type": "boolean"
+                    },
+                    "allowsSabbatical": {
+                      "type": "boolean"
+                    },
+                    "predecessorLeagueId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "successorLeagueId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -3799,6 +4055,22 @@
                     "format",
                     "startDate",
                     "endDate",
+                    "sessionId",
+                    "leagueType",
+                    "capacityType",
+                    "capacityValue",
+                    "registrationFeeMinor",
+                    "requiresClubMembership",
+                    "isInstructional",
+                    "minExperienceYears",
+                    "minAge",
+                    "maxAge",
+                    "firstDayOfPlay",
+                    "lastDayOfPlay",
+                    "allowsWaitlist",
+                    "allowsSabbatical",
+                    "predecessorLeagueId",
+                    "successorLeagueId",
                     "drawTimes",
                     "exceptions"
                   ]
@@ -3945,6 +4217,86 @@
                     "endDate": {
                       "type": "string"
                     },
+                    "sessionId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "leagueType": {
+                      "type": "string",
+                      "enum": [
+                        "standard",
+                        "bring_your_own_team"
+                      ]
+                    },
+                    "capacityType": {
+                      "type": "string",
+                      "enum": [
+                        "individual",
+                        "team"
+                      ]
+                    },
+                    "capacityValue": {
+                      "type": "number"
+                    },
+                    "registrationFeeMinor": {
+                      "type": "number"
+                    },
+                    "requiresClubMembership": {
+                      "type": "boolean"
+                    },
+                    "isInstructional": {
+                      "type": "boolean"
+                    },
+                    "minExperienceYears": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "minAge": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "maxAge": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "firstDayOfPlay": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastDayOfPlay": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "allowsWaitlist": {
+                      "type": "boolean"
+                    },
+                    "allowsSabbatical": {
+                      "type": "boolean"
+                    },
+                    "predecessorLeagueId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "successorLeagueId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -3965,6 +4317,22 @@
                     "format",
                     "startDate",
                     "endDate",
+                    "sessionId",
+                    "leagueType",
+                    "capacityType",
+                    "capacityValue",
+                    "registrationFeeMinor",
+                    "requiresClubMembership",
+                    "isInstructional",
+                    "minExperienceYears",
+                    "minAge",
+                    "maxAge",
+                    "firstDayOfPlay",
+                    "lastDayOfPlay",
+                    "allowsWaitlist",
+                    "allowsSabbatical",
+                    "predecessorLeagueId",
+                    "successorLeagueId",
                     "drawTimes",
                     "exceptions"
                   ]
@@ -4218,6 +4586,86 @@
                           "endDate": {
                             "type": "string"
                           },
+                          "sessionId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "leagueType": {
+                            "type": "string",
+                            "enum": [
+                              "standard",
+                              "bring_your_own_team"
+                            ]
+                          },
+                          "capacityType": {
+                            "type": "string",
+                            "enum": [
+                              "individual",
+                              "team"
+                            ]
+                          },
+                          "capacityValue": {
+                            "type": "number"
+                          },
+                          "registrationFeeMinor": {
+                            "type": "number"
+                          },
+                          "requiresClubMembership": {
+                            "type": "boolean"
+                          },
+                          "isInstructional": {
+                            "type": "boolean"
+                          },
+                          "minExperienceYears": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "minAge": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "maxAge": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "firstDayOfPlay": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "lastDayOfPlay": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "allowsWaitlist": {
+                            "type": "boolean"
+                          },
+                          "allowsSabbatical": {
+                            "type": "boolean"
+                          },
+                          "predecessorLeagueId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "successorLeagueId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -4238,6 +4686,22 @@
                           "format",
                           "startDate",
                           "endDate",
+                          "sessionId",
+                          "leagueType",
+                          "capacityType",
+                          "capacityValue",
+                          "registrationFeeMinor",
+                          "requiresClubMembership",
+                          "isInstructional",
+                          "minExperienceYears",
+                          "minAge",
+                          "maxAge",
+                          "firstDayOfPlay",
+                          "lastDayOfPlay",
+                          "allowsWaitlist",
+                          "allowsSabbatical",
+                          "predecessorLeagueId",
+                          "successorLeagueId",
                           "drawTimes",
                           "exceptions"
                         ]
@@ -16744,6 +17208,1261 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/seasons": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "startDate": {
+                        "type": "string"
+                      },
+                      "endDate": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "startDate",
+                      "endDate",
+                      "createdAt",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "startDate",
+                  "endDate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "startDate": {
+                      "type": "string"
+                    },
+                    "endDate": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "startDate",
+                    "endDate",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/seasons/{id}": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "startDate": {
+                      "type": "string"
+                    },
+                    "endDate": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "startDate",
+                    "endDate",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "startDate": {
+                      "type": "string"
+                    },
+                    "endDate": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "startDate",
+                    "endDate",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/sessions": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "seasonId": {
+                        "type": "number"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "startDate": {
+                        "type": "string"
+                      },
+                      "endDate": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "seasonId",
+                      "name",
+                      "startDate",
+                      "endDate",
+                      "createdAt",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "seasonId",
+                  "name",
+                  "startDate",
+                  "endDate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "seasonId": {
+                      "type": "number"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "startDate": {
+                      "type": "string"
+                    },
+                    "endDate": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seasonId",
+                    "name",
+                    "startDate",
+                    "endDate",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/sessions/{id}": {
+      "patch": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "seasonId": {
+                      "type": "number"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "startDate": {
+                      "type": "string"
+                    },
+                    "endDate": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seasonId",
+                    "name",
+                    "startDate",
+                    "endDate",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/registration-state-transitions": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "seasonId": {
+                        "type": "number"
+                      },
+                      "sessionId": {
+                        "type": "number"
+                      },
+                      "effectiveAt": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "closed",
+                          "priority",
+                          "open"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "seasonId",
+                      "sessionId",
+                      "effectiveAt",
+                      "state",
+                      "createdAt",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "sessionId": {
+                    "type": "number"
+                  },
+                  "effectiveAt": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "closed",
+                      "priority",
+                      "open"
+                    ]
+                  }
+                },
+                "required": [
+                  "seasonId",
+                  "sessionId",
+                  "effectiveAt",
+                  "state"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "seasonId": {
+                      "type": "number"
+                    },
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "effectiveAt": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "closed",
+                        "priority",
+                        "open"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seasonId",
+                    "sessionId",
+                    "effectiveAt",
+                    "state",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/registration-state-transitions/apply-now": {
+      "post": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "sessionId": {
+                    "type": "number"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "closed",
+                      "priority",
+                      "open"
+                    ]
+                  }
+                },
+                "required": [
+                  "seasonId",
+                  "sessionId",
+                  "state"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "seasonId": {
+                      "type": "number"
+                    },
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "effectiveAt": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "closed",
+                        "priority",
+                        "open"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seasonId",
+                    "sessionId",
+                    "effectiveAt",
+                    "state",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/registration-state-transitions/{id}": {
+      "patch": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "sessionId": {
+                    "type": "number"
+                  },
+                  "effectiveAt": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "closed",
+                      "priority",
+                      "open"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "seasonId": {
+                      "type": "number"
+                    },
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "effectiveAt": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "closed",
+                        "priority",
+                        "open"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seasonId",
+                    "sessionId",
+                    "effectiveAt",
+                    "state",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "registration-config"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/prices": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "scope": {
+                      "type": "string"
+                    },
+                    "regularMembershipFeeDollars": {
+                      "type": "number"
+                    },
+                    "socialMembershipFeeDollars": {
+                      "type": "number"
+                    },
+                    "spareOnlyIcePrivilegeFeeDollars": {
+                      "type": "number"
+                    },
+                    "sabbaticalFeeDollars": {
+                      "type": "number"
+                    },
+                    "juniorRecreationalFeeDollars": {
+                      "type": "number"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "regularMembershipFeeDollars",
+                    "socialMembershipFeeDollars",
+                    "spareOnlyIcePrivilegeFeeDollars",
+                    "sabbaticalFeeDollars",
+                    "juniorRecreationalFeeDollars",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "regularMembershipFeeDollars": {
+                    "type": "number"
+                  },
+                  "socialMembershipFeeDollars": {
+                    "type": "number"
+                  },
+                  "spareOnlyIcePrivilegeFeeDollars": {
+                    "type": "number"
+                  },
+                  "sabbaticalFeeDollars": {
+                    "type": "number"
+                  },
+                  "juniorRecreationalFeeDollars": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "scope": {
+                      "type": "string"
+                    },
+                    "regularMembershipFeeDollars": {
+                      "type": "number"
+                    },
+                    "socialMembershipFeeDollars": {
+                      "type": "number"
+                    },
+                    "spareOnlyIcePrivilegeFeeDollars": {
+                      "type": "number"
+                    },
+                    "sabbaticalFeeDollars": {
+                      "type": "number"
+                    },
+                    "juniorRecreationalFeeDollars": {
+                      "type": "number"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "regularMembershipFeeDollars",
+                    "socialMembershipFeeDollars",
+                    "spareOnlyIcePrivilegeFeeDollars",
+                    "sabbaticalFeeDollars",
+                    "juniorRecreationalFeeDollars",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/discounts": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "scope": {
+                      "type": "string"
+                    },
+                    "studentDiscount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "amountType": {
+                          "type": "string",
+                          "enum": [
+                            "dollar",
+                            "percent"
+                          ]
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "amountType",
+                        "value"
+                      ]
+                    },
+                    "reciprocalDiscount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "amountType": {
+                          "type": "string",
+                          "enum": [
+                            "dollar",
+                            "percent"
+                          ]
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "amountType",
+                        "value"
+                      ]
+                    },
+                    "winterOnlyDiscount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "amountType": {
+                          "type": "string",
+                          "enum": [
+                            "dollar",
+                            "percent"
+                          ]
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "amountType",
+                        "value"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "studentDiscount",
+                    "reciprocalDiscount",
+                    "winterOnlyDiscount",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "studentDiscount": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "amountType": {
+                        "type": "string",
+                        "enum": [
+                          "dollar",
+                          "percent"
+                        ]
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "reciprocalDiscount": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "amountType": {
+                        "type": "string",
+                        "enum": [
+                          "dollar",
+                          "percent"
+                        ]
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "winterOnlyDiscount": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "amountType": {
+                        "type": "string",
+                        "enum": [
+                          "dollar",
+                          "percent"
+                        ]
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "scope": {
+                      "type": "string"
+                    },
+                    "studentDiscount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "amountType": {
+                          "type": "string",
+                          "enum": [
+                            "dollar",
+                            "percent"
+                          ]
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "amountType",
+                        "value"
+                      ]
+                    },
+                    "reciprocalDiscount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "amountType": {
+                          "type": "string",
+                          "enum": [
+                            "dollar",
+                            "percent"
+                          ]
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "amountType",
+                        "value"
+                      ]
+                    },
+                    "winterOnlyDiscount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "amountType": {
+                          "type": "string",
+                          "enum": [
+                            "dollar",
+                            "percent"
+                          ]
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "amountType",
+                        "value"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "studentDiscount",
+                    "reciprocalDiscount",
+                    "winterOnlyDiscount",
+                    "createdAt",
+                    "updatedAt"
+                  ]
                 }
               }
             }

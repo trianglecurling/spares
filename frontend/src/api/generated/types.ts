@@ -2602,6 +2602,24 @@ export interface paths {
                             format: "teams" | "doubles";
                             startDate: string;
                             endDate: string;
+                            sessionId: null | number;
+                            /** @enum {string} */
+                            leagueType: "standard" | "bring_your_own_team";
+                            /** @enum {string} */
+                            capacityType: "individual" | "team";
+                            capacityValue: number;
+                            registrationFeeMinor: number;
+                            requiresClubMembership: boolean;
+                            isInstructional: boolean;
+                            minExperienceYears: null | number;
+                            minAge: null | number;
+                            maxAge: null | number;
+                            firstDayOfPlay: null | string;
+                            lastDayOfPlay: null | string;
+                            allowsWaitlist: boolean;
+                            allowsSabbatical: boolean;
+                            predecessorLeagueId: null | number;
+                            successorLeagueId: null | number;
                             drawTimes: string[];
                             exceptions: string[];
                         }[];
@@ -2626,6 +2644,24 @@ export interface paths {
                         format: "teams" | "doubles";
                         startDate: string;
                         endDate: string;
+                        sessionId?: number | null;
+                        /** @enum {string} */
+                        leagueType?: "standard" | "bring_your_own_team";
+                        /** @enum {string} */
+                        capacityType?: "individual" | "team";
+                        capacityValue?: number;
+                        registrationFeeMinor?: number;
+                        requiresClubMembership?: boolean;
+                        isInstructional?: boolean;
+                        minExperienceYears?: number | null;
+                        minAge?: number | null;
+                        maxAge?: number | null;
+                        firstDayOfPlay?: string | null;
+                        lastDayOfPlay?: string | null;
+                        allowsWaitlist?: boolean;
+                        allowsSabbatical?: boolean;
+                        predecessorLeagueId?: number | null;
+                        successorLeagueId?: number | null;
                         drawTimes: string[];
                         exceptions?: string[];
                     };
@@ -2646,6 +2682,24 @@ export interface paths {
                             format: "teams" | "doubles";
                             startDate: string;
                             endDate: string;
+                            sessionId: null | number;
+                            /** @enum {string} */
+                            leagueType: "standard" | "bring_your_own_team";
+                            /** @enum {string} */
+                            capacityType: "individual" | "team";
+                            capacityValue: number;
+                            registrationFeeMinor: number;
+                            requiresClubMembership: boolean;
+                            isInstructional: boolean;
+                            minExperienceYears: null | number;
+                            minAge: null | number;
+                            maxAge: null | number;
+                            firstDayOfPlay: null | string;
+                            lastDayOfPlay: null | string;
+                            allowsWaitlist: boolean;
+                            allowsSabbatical: boolean;
+                            predecessorLeagueId: null | number;
+                            successorLeagueId: null | number;
                             drawTimes: string[];
                             exceptions: string[];
                         };
@@ -2779,6 +2833,24 @@ export interface paths {
                             format: "teams" | "doubles";
                             startDate: string;
                             endDate: string;
+                            sessionId: null | number;
+                            /** @enum {string} */
+                            leagueType: "standard" | "bring_your_own_team";
+                            /** @enum {string} */
+                            capacityType: "individual" | "team";
+                            capacityValue: number;
+                            registrationFeeMinor: number;
+                            requiresClubMembership: boolean;
+                            isInstructional: boolean;
+                            minExperienceYears: null | number;
+                            minAge: null | number;
+                            maxAge: null | number;
+                            firstDayOfPlay: null | string;
+                            lastDayOfPlay: null | string;
+                            allowsWaitlist: boolean;
+                            allowsSabbatical: boolean;
+                            predecessorLeagueId: null | number;
+                            successorLeagueId: null | number;
                             drawTimes: string[];
                             exceptions: string[];
                         };
@@ -2884,6 +2956,24 @@ export interface paths {
                                 format: "teams" | "doubles";
                                 startDate: string;
                                 endDate: string;
+                                sessionId: null | number;
+                                /** @enum {string} */
+                                leagueType: "standard" | "bring_your_own_team";
+                                /** @enum {string} */
+                                capacityType: "individual" | "team";
+                                capacityValue: number;
+                                registrationFeeMinor: number;
+                                requiresClubMembership: boolean;
+                                isInstructional: boolean;
+                                minExperienceYears: null | number;
+                                minAge: null | number;
+                                maxAge: null | number;
+                                firstDayOfPlay: null | string;
+                                lastDayOfPlay: null | string;
+                                allowsWaitlist: boolean;
+                                allowsSabbatical: boolean;
+                                predecessorLeagueId: null | number;
+                                successorLeagueId: null | number;
                                 drawTimes: string[];
                                 exceptions: string[];
                             }[];
@@ -10959,6 +11049,703 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/registration-config/seasons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            name: string;
+                            startDate: string;
+                            endDate: string;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        startDate: string;
+                        endDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            name: string;
+                            startDate: string;
+                            endDate: string;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration-config/seasons/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            name: string;
+                            startDate: string;
+                            endDate: string;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name?: string;
+                        startDate?: string;
+                        endDate?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            name: string;
+                            startDate: string;
+                            endDate: string;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/registration-config/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            name: string;
+                            startDate: string;
+                            endDate: string;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        seasonId: number;
+                        name: string;
+                        startDate: string;
+                        endDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            name: string;
+                            startDate: string;
+                            endDate: string;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration-config/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        seasonId?: number;
+                        name?: string;
+                        startDate?: string;
+                        endDate?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            name: string;
+                            startDate: string;
+                            endDate: string;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/registration-config/registration-state-transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            sessionId: number;
+                            effectiveAt: string;
+                            /** @enum {string} */
+                            state: "closed" | "priority" | "open";
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        seasonId: number;
+                        sessionId: number;
+                        effectiveAt: string;
+                        /** @enum {string} */
+                        state: "closed" | "priority" | "open";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            sessionId: number;
+                            effectiveAt: string;
+                            /** @enum {string} */
+                            state: "closed" | "priority" | "open";
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration-config/registration-state-transitions/apply-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        seasonId: number;
+                        sessionId: number;
+                        /** @enum {string} */
+                        state: "closed" | "priority" | "open";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            sessionId: number;
+                            effectiveAt: string;
+                            /** @enum {string} */
+                            state: "closed" | "priority" | "open";
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration-config/registration-state-transitions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        seasonId?: number;
+                        sessionId?: number;
+                        effectiveAt?: string;
+                        /** @enum {string} */
+                        state?: "closed" | "priority" | "open";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            sessionId: number;
+                            effectiveAt: string;
+                            /** @enum {string} */
+                            state: "closed" | "priority" | "open";
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/registration-config/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            scope: string;
+                            regularMembershipFeeDollars: number;
+                            socialMembershipFeeDollars: number;
+                            spareOnlyIcePrivilegeFeeDollars: number;
+                            sabbaticalFeeDollars: number;
+                            juniorRecreationalFeeDollars: number;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        regularMembershipFeeDollars?: number;
+                        socialMembershipFeeDollars?: number;
+                        spareOnlyIcePrivilegeFeeDollars?: number;
+                        sabbaticalFeeDollars?: number;
+                        juniorRecreationalFeeDollars?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            scope: string;
+                            regularMembershipFeeDollars: number;
+                            socialMembershipFeeDollars: number;
+                            spareOnlyIcePrivilegeFeeDollars: number;
+                            sabbaticalFeeDollars: number;
+                            juniorRecreationalFeeDollars: number;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/registration-config/discounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            scope: string;
+                            studentDiscount: {
+                                /** @enum {string} */
+                                amountType: "dollar" | "percent";
+                                value: number;
+                            };
+                            reciprocalDiscount: {
+                                /** @enum {string} */
+                                amountType: "dollar" | "percent";
+                                value: number;
+                            };
+                            winterOnlyDiscount: {
+                                /** @enum {string} */
+                                amountType: "dollar" | "percent";
+                                value: number;
+                            };
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        studentDiscount?: {
+                            /** @enum {string} */
+                            amountType?: "dollar" | "percent";
+                            value?: number;
+                        };
+                        reciprocalDiscount?: {
+                            /** @enum {string} */
+                            amountType?: "dollar" | "percent";
+                            value?: number;
+                        };
+                        winterOnlyDiscount?: {
+                            /** @enum {string} */
+                            amountType?: "dollar" | "percent";
+                            value?: number;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            scope: string;
+                            studentDiscount: {
+                                /** @enum {string} */
+                                amountType: "dollar" | "percent";
+                                value: number;
+                            };
+                            reciprocalDiscount: {
+                                /** @enum {string} */
+                                amountType: "dollar" | "percent";
+                                value: number;
+                            };
+                            winterOnlyDiscount: {
+                                /** @enum {string} */
+                                amountType: "dollar" | "percent";
+                                value: number;
+                            };
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
 }

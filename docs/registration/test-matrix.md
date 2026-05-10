@@ -1,0 +1,450 @@
+# Registration Business Logic Test Matrix
+
+## Purpose
+
+This document lists required business logic test cases for Phase 3.
+
+These tests should be implemented as unit tests or lightweight integration tests depending on existing project conventions.
+
+## Registration state tests
+
+### Closed registration blocks registration
+
+Given registration is closed  
+When a user attempts to register  
+Then registration is blocked
+
+### Open registration allows non-guaranteed registration
+
+Given registration is open  
+When a user registers for available non-guaranteed options  
+Then registration may proceed, but guaranteed return and sabbatical options are unavailable
+
+### Priority registration allows guaranteed return
+
+Given registration is priority  
+And the member has eligible predecessor league participation  
+When they select a guaranteed return league  
+Then the selection is allowed
+
+## Membership tests
+
+### Social membership has no ice privileges
+
+Given a registrant selects social membership  
+When they attempt to select a league  
+Then the league selection is blocked
+
+### Social membership is not discounted
+
+Given a registrant selects social membership  
+And student/reciprocal/winter-only discounts would otherwise be selected  
+When fees are calculated  
+Then no discount applies to social membership
+
+### Social-to-regular upgrade gets no credit
+
+Given a current social member upgrades to regular  
+When fees are calculated  
+Then they pay full regular membership price  
+And receive no credit for social membership  
+And receive no discounts
+
+### Regular membership plus spare-only
+
+Given a registrant selects spare-only  
+When fees are calculated  
+Then regular membership fee and spare-only fee are charged
+
+## Discount tests
+
+### Student discount requires institution
+
+Given a registrant selects student discount  
+When no institution is provided  
+Then the discount is invalid
+
+### Student discount auto-applies with institution
+
+Given a registrant selects student discount  
+And provides institution  
+When fees are calculated  
+Then the discount is applied automatically
+
+### Reciprocal discount requires club
+
+Given a registrant selects reciprocal discount  
+When no other club is provided  
+Then the discount is invalid
+
+### Reciprocal discount auto-applies with club
+
+Given a registrant selects reciprocal discount  
+And provides other club  
+When fees are calculated  
+Then the discount is applied automatically
+
+### Winter-only discount applies after first session
+
+Given the registration session is beyond the first session of the season  
+When regular membership is charged  
+Then winter-only discount applies to regular membership dues
+
+### Winter-only discount does not apply to first session
+
+Given the registration session is the first session of the season  
+When regular membership is charged  
+Then winter-only discount does not apply
+
+### Dollar discounts before percentage discounts
+
+Given both dollar and percentage discounts apply  
+When fees are calculated  
+Then dollar discounts apply first  
+And percentage discounts apply afterward
+
+### Sabbatical fee not discounted
+
+Given a registrant owes a sabbatical fee  
+And discounts apply elsewhere  
+When fees are calculated  
+Then the sabbatical fee is not discounted
+
+### Sabbatical-fill discount equals sabbatical fee
+
+Given a registrant fills a temporary sabbatical spot  
+When fees are calculated  
+Then the sabbatical-fill discount equals the full sabbatical fee
+
+## Age and experience tests
+
+### Under minimum age blocked
+
+Given a league has a minimum age  
+And the registrant is younger than that age on the first day of league  
+When they select the league  
+Then the selection is blocked
+
+### Over maximum age blocked
+
+Given a league has a maximum age  
+And the registrant is older than that age on the first day of league  
+When they select the league  
+Then the selection is blocked
+
+### Age calculated on first day of league
+
+Given a registrant has a birthday near the league start date  
+When age eligibility is calculated  
+Then age is based on the first day of league
+
+### No experience allowed for instructional
+
+Given a registrant has none or minimal experience  
+And the league is instructional  
+When they select the league  
+Then the selection is allowed if all other rules pass
+
+### No experience blocked from non-instructional
+
+Given a registrant has none or minimal experience  
+And the league requires experience  
+When they select the league  
+Then the selection is blocked
+
+### Session experience accrues as half year
+
+Given a member completed one session  
+When experience is calculated  
+Then 0.5 years is added
+
+### Experience accrual capped per year
+
+Given a member completed more than two sessions in one year  
+When experience is calculated  
+Then no more than 1.0 year is added for that year
+
+## Returning guarantee tests
+
+### Returning member can select two guaranteed leagues
+
+Given priority registration  
+And the member is eligible to return to two predecessor leagues  
+When they select both as guaranteed returns  
+Then both selections are allowed
+
+### Returning member cannot select three protected claims
+
+Given priority registration  
+And the member is eligible for three leagues  
+When they select three guaranteed returns or sabbaticals  
+Then the third protected claim is blocked
+
+### Guaranteed return unavailable outside priority
+
+Given open registration  
+And the member played in the predecessor league  
+When they try to claim guaranteed return  
+Then guaranteed return is blocked
+
+### Skipped predecessor session loses guarantee
+
+Given the member played Fall 2025  
+And skipped Winter 2026 without sabbatical  
+And Fall 2026 uses Winter 2026 as predecessor  
+When they register for Fall 2026  
+Then they do not have guaranteed return rights
+
+## Sabbatical tests
+
+### Sabbatical requires return eligibility
+
+Given a member is not eligible for guaranteed return  
+When they request sabbatical  
+Then the request is blocked
+
+### Sabbatical counts toward protected claim limit
+
+Given a member selects one guaranteed return and one sabbatical  
+When they attempt another guaranteed return  
+Then the third protected claim is blocked
+
+### Sabbatical-only does not require regular membership
+
+Given a member requests only sabbatical  
+When fees are calculated  
+Then no regular membership is charged  
+And sabbatical fee is charged
+
+### Sabbatical not available for BYOT
+
+Given a BYOT league  
+When a member requests sabbatical  
+Then the request is blocked
+
+### Sabbatical not available for temporary fill spot
+
+Given a member filled a temporary sabbatical spot  
+When they request sabbatical for that spot  
+Then the request is blocked
+
+### Sabbatical duration allowed before limit
+
+Given sabbatical limit is 3 years  
+And the successor league ends before the 3-year cutoff  
+When the member extends sabbatical  
+Then the extension is allowed
+
+### Sabbatical duration blocked at or after limit
+
+Given sabbatical limit is 3 years  
+And the successor league ends on or after the 3-year cutoff  
+When the member extends sabbatical  
+Then the extension is blocked unless staff override applies
+
+## Waitlist tests
+
+### Non-member can join waitlist
+
+Given a registrant has an account but no membership  
+And they meet league eligibility rules  
+When they join a waitlist  
+Then the waitlist request is allowed
+
+### Ineligible person cannot join waitlist
+
+Given a registrant does not meet age or experience requirements  
+When they attempt to join a waitlist  
+Then the waitlist request is blocked
+
+### ADD allowed with zero leagues
+
+Given a registrant is in zero leagues  
+When they request ADD waitlist  
+Then the request is allowed
+
+### ADD allowed with one league
+
+Given a registrant is in one league  
+When they request ADD waitlist  
+Then the request is allowed
+
+### ADD blocked with two leagues
+
+Given a registrant is in two leagues  
+When they request ADD waitlist  
+Then the request is blocked
+
+### Unlimited ADD waitlists
+
+Given a registrant is in zero or one leagues  
+When they request multiple ADD waitlists  
+Then no count limit blocks them
+
+### REPLACE requires replaced league
+
+Given a registrant requests REPLACE waitlist  
+When no replaced league is specified  
+Then the request is blocked
+
+### REPLACE limited to two
+
+Given a registrant already has two REPLACE waitlists  
+When they request another REPLACE waitlist  
+Then the request is blocked
+
+### Reaching two leagues requires ADD cleanup
+
+Given a registrant has active ADD waitlists  
+And they are placed into their second league  
+When business logic evaluates their waitlist state  
+Then cleanup is required before completion
+
+## Third-league interest tests
+
+### Third-league interest is ranked
+
+Given a registrant provides third-league interest  
+When selections are validated  
+Then ordered rankings are preserved
+
+### Third-league interest has no limit
+
+Given a registrant submits many third-league interest options  
+When selections are validated  
+Then no maximum count blocks them
+
+### Third-league interest defers payment
+
+Given a registrant has otherwise guaranteed selections  
+And submits third-league interest  
+When payment decision is evaluated  
+Then payment is deferred
+
+### BYOT cannot be third-league interest
+
+Given a BYOT league  
+When a registrant selects it as third-league interest  
+Then the selection is blocked
+
+## BYOT tests
+
+### New member can request BYOT
+
+Given a new member  
+When they request a BYOT league as one of their first two leagues  
+Then the request is allowed if all other eligibility rules pass
+
+### BYOT requires teammate text
+
+Given a registrant requests BYOT  
+When no teammate text is provided  
+Then the request is blocked
+
+### BYOT cannot be third league
+
+Given a registrant already has two leagues  
+When they request BYOT as a third league  
+Then the request is blocked
+
+### BYOT does not use waitlist
+
+Given a BYOT league  
+When a registrant requests waitlist entry  
+Then the request is blocked
+
+### BYOT treated as guaranteed for payment timing
+
+Given a registrant requests BYOT  
+And no other deferral reasons exist  
+When payment decision is evaluated  
+Then payment is immediate
+
+## Junior program tests
+
+### Junior Recreational blocks other leagues
+
+Given a registrant selects Junior Recreational  
+When they also select another league  
+Then registration is blocked
+
+### Junior Recreational blocks spare-only
+
+Given a registrant selects Junior Recreational  
+When they select spare-only  
+Then registration is blocked
+
+### Junior Recreational without assistance immediate payment
+
+Given a registrant selects Junior Recreational  
+And no financial assistance is requested  
+When payment decision is evaluated  
+Then payment is immediate
+
+### Junior Recreational with assistance deferred
+
+Given a registrant selects Junior Recreational  
+And financial assistance is requested  
+When payment decision is evaluated  
+Then payment is deferred for staff review
+
+### JAC treated as normal league
+
+Given a registrant selects Junior Advanced Commitment  
+When fees are calculated  
+Then regular membership and JAC league fee are charged
+
+## Payment decision tests
+
+### Guaranteed returning member pays immediately
+
+Given a returning member selects one or two guaranteed leagues  
+And no other deferral reasons exist  
+When payment decision is evaluated  
+Then payment is immediate
+
+### Waitlist-only registration has no payment
+
+Given a registrant joins only waitlists  
+And no membership or fees are due  
+When payment decision is evaluated  
+Then no payment is required
+
+### Non-guaranteed league defers payment
+
+Given a registrant selects a league subject to availability  
+When payment decision is evaluated  
+Then payment is deferred
+
+### Sabbatical-only pays immediately
+
+Given a registrant selects only sabbatical  
+When payment decision is evaluated  
+Then payment is immediate
+
+### Sabbatical plus waitlist defers payment
+
+Given a registrant selects sabbatical  
+And also selects a non-guaranteed league or waitlist placement  
+When payment decision is evaluated  
+Then the whole payment is deferred
+
+### Deferred reason list is returned
+
+Given payment is deferred  
+When payment decision is evaluated  
+Then machine-readable deferral reasons are returned
+
+## Fee total tests
+
+### Invoice total never negative
+
+Given discounts exceed eligible charges  
+When fees are calculated  
+Then total due is not negative
+
+### Non-discountable and discountable charges separated
+
+Given an invoice has regular membership and sabbatical fee  
+When discounts are calculated  
+Then only discount-eligible items are discounted

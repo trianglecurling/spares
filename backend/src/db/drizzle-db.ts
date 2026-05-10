@@ -17,7 +17,7 @@ type PgSchema = {
   curlingSeasons: typeof pgSchema.curlingSeasonsPg;
   curlingSessions: typeof pgSchema.curlingSessionsPg;
   leagues: typeof pgSchema.leaguesPg;
-  registrationPeriods: typeof pgSchema.registrationPeriodsPg;
+  registrationStateTransitions: typeof pgSchema.registrationStateTransitionsPg;
   curlingRegistrations: typeof pgSchema.curlingRegistrationsPg;
   curlingLeagueSabbaticals: typeof pgSchema.curlingLeagueSabbaticalsPg;
   registrationPolicyAcceptances: typeof pgSchema.registrationPolicyAcceptancesPg;
@@ -25,8 +25,8 @@ type PgSchema = {
   financialAssistanceRequests: typeof pgSchema.financialAssistanceRequestsPg;
   registrationInvoices: typeof pgSchema.registrationInvoicesPg;
   registrationInvoiceLineItems: typeof pgSchema.registrationInvoiceLineItemsPg;
-  registrationPriceConfigs: typeof pgSchema.registrationPriceConfigsPg;
-  registrationDiscountConfigs: typeof pgSchema.registrationDiscountConfigsPg;
+  registrationPriceSettings: typeof pgSchema.registrationPriceSettingsPg;
+  registrationDiscountSettings: typeof pgSchema.registrationDiscountSettingsPg;
   seasonMemberships: typeof pgSchema.seasonMembershipsPg;
   curlingIcePrivileges: typeof pgSchema.curlingIcePrivilegesPg;
   curlingSabbaticalSessions: typeof pgSchema.curlingSabbaticalSessionsPg;
@@ -133,7 +133,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       curlingSeasons: sqliteSchema.curlingSeasonsSqlite,
       curlingSessions: sqliteSchema.curlingSessionsSqlite,
       leagues: sqliteSchema.leaguesSqlite,
-      registrationPeriods: sqliteSchema.registrationPeriodsSqlite,
+      registrationStateTransitions: sqliteSchema.registrationStateTransitionsSqlite,
       curlingRegistrations: sqliteSchema.curlingRegistrationsSqlite,
       curlingLeagueSabbaticals: sqliteSchema.curlingLeagueSabbaticalsSqlite,
       registrationPolicyAcceptances: sqliteSchema.registrationPolicyAcceptancesSqlite,
@@ -141,8 +141,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       financialAssistanceRequests: sqliteSchema.financialAssistanceRequestsSqlite,
       registrationInvoices: sqliteSchema.registrationInvoicesSqlite,
       registrationInvoiceLineItems: sqliteSchema.registrationInvoiceLineItemsSqlite,
-      registrationPriceConfigs: sqliteSchema.registrationPriceConfigsSqlite,
-      registrationDiscountConfigs: sqliteSchema.registrationDiscountConfigsSqlite,
+      registrationPriceSettings: sqliteSchema.registrationPriceSettingsSqlite,
+      registrationDiscountSettings: sqliteSchema.registrationDiscountSettingsSqlite,
       seasonMemberships: sqliteSchema.seasonMembershipsSqlite,
       curlingIcePrivileges: sqliteSchema.curlingIcePrivilegesSqlite,
       curlingSabbaticalSessions: sqliteSchema.curlingSabbaticalSessionsSqlite,
@@ -240,7 +240,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       curlingSeasons: pgSchema.curlingSeasonsPg,
       curlingSessions: pgSchema.curlingSessionsPg,
       leagues: pgSchema.leaguesPg,
-      registrationPeriods: pgSchema.registrationPeriodsPg,
+      registrationStateTransitions: pgSchema.registrationStateTransitionsPg,
       curlingRegistrations: pgSchema.curlingRegistrationsPg,
       curlingLeagueSabbaticals: pgSchema.curlingLeagueSabbaticalsPg,
       registrationPolicyAcceptances: pgSchema.registrationPolicyAcceptancesPg,
@@ -248,8 +248,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       financialAssistanceRequests: pgSchema.financialAssistanceRequestsPg,
       registrationInvoices: pgSchema.registrationInvoicesPg,
       registrationInvoiceLineItems: pgSchema.registrationInvoiceLineItemsPg,
-      registrationPriceConfigs: pgSchema.registrationPriceConfigsPg,
-      registrationDiscountConfigs: pgSchema.registrationDiscountConfigsPg,
+      registrationPriceSettings: pgSchema.registrationPriceSettingsPg,
+      registrationDiscountSettings: pgSchema.registrationDiscountSettingsPg,
       seasonMemberships: pgSchema.seasonMembershipsPg,
       curlingIcePrivileges: pgSchema.curlingIcePrivilegesPg,
       curlingSabbaticalSessions: pgSchema.curlingSabbaticalSessionsPg,
