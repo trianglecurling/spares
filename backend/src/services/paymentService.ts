@@ -1389,6 +1389,7 @@ export class PaymentService {
       if (transitionedToSucceeded) {
         await this.sendDonationReceiptForSucceededOrder(order.id);
         await this.confirmEventRegistrationForSucceededOrder(order.id);
+        await this.confirmCurlingRegistrationForSucceededOrder(order.id);
       }
 
       if (transitionedToRefunded) {
@@ -1543,6 +1544,25 @@ export class PaymentService {
     } catch (error) {
       await logEvent({
         eventType: 'event.registration.payment_confirmation_failed',
+        relatedId: orderId,
+        meta: { error: error instanceof Error ? error.message : 'Unknown error' },
+      });
+    }
+  }
+
+  private async confirmCurlingRegistrationForSucceededOrder(orderId: number): Promise<void> {
+    try {
+      const { confirmCurlingRegistrationForPaymentOrder } = await import('../registration/registrationPhase5Service.js');
+      await confirmCurlingRegistrationForPaymentOrder(orderId);
+
+      await logEvent({
+        eventType: 'curling.registration.payment_confirmed',
+        relatedId: orderId,
+        meta: { paymentOrderId: orderId },
+      });
+    } catch (error) {
+      await logEvent({
+        eventType: 'curling.registration.payment_confirmation_failed',
         relatedId: orderId,
         meta: { error: error instanceof Error ? error.message : 'Unknown error' },
       });

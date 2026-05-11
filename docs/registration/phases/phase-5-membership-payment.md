@@ -5,7 +5,7 @@
 Implement the non-league portion of registration:
 
 - Membership selection
-- Spare-only ice privileges
+- Basic ice privileges (regular-member add-on)
 - Discount collection and calculation
 - Curling experience collection
 - Immediate payment for registrations that do not require league placement
@@ -72,27 +72,30 @@ The person submitting the registration may be the curler or may be registering o
 
 Memberships are valid for one curling season.
 
-The membership season is determined by the fiscal year start date:
+The season’s **boundaries** (start, end, and any other defined limits) come from **configuration and data for that season**, not from a fixed calendar rule codified in this document.
 
-- The tenant fiscal year starts July 1.
-- A membership purchased on or after July 1 is for the season beginning in that fiscal year.
-- Membership is valid September 1 through August 31 for that curling season.
+**Season and session for this registration** come from the **active registration context**. While registration is in **`priority` or `open`** state, the current **registration period** and the registration record’s bound **season** and **session** define which season and session apply to **membership**, **leagues** (when selected in Phase 6), and **any purchased ice privileges**. That binding is **not** inferred from the calendar date of purchase. See **RegistrationPeriod** and **Registration** in [`docs/registration/data-model.md`](../data-model.md).
 
 For example:
 
-- A membership purchased in August 2026 is for the 2026-27 curling season.
-- A membership purchased in January 2027 is also for the 2026-27 curling season.
-- That membership is valid through August 31, 2027.
+- A registration tied to the 2026–27 season and a specific session applies membership and Phase 5 purchases to that season and session, regardless of the wall-clock date when the registrant pays.
+- Membership remains valid for **that season’s defined period** as stored for the tenant and season.
 
 ---
 
 ### Membership types
 
-Phase 5 must support these membership paths:
+There are **two membership types**:
 
 1. Regular membership
 2. Social membership
-3. Regular membership plus spare-only ice privileges
+
+**Basic ice privileges** (sparing and practice) are **not** a third membership type. They are a **purchasable add-on** on top of **regular membership**. Fee configuration or invoice line items may still use an internal label such as “spare-only ice privilege fee”; treat that as an implementation naming detail.
+
+**How members get ice privileges**
+
+- **League registration** grants ice privileges in the context of that league (full league selection is Phase 6; Phase 5 only needs this concept for copy and validation).
+- **Purchasing basic ice privileges** grants **session-scoped** ice privileges for **sparing and practice** without requiring league selection on that path.
 
 Junior Recreational is not fully implemented in Phase 5 unless the existing app already has enough support to add a simple deferred-payment placeholder. The full Junior Recreational flow, including financial assistance review, belongs in a later phase unless explicitly added to this phase by the implementer.
 
@@ -104,9 +107,8 @@ Regular membership is the default membership choice.
 
 Regular membership is required for:
 
-- League participation
-- Spare-only ice privileges
-- Most ice privileges
+- League participation (ice privileges follow from league registration once leagues are chosen)
+- Purchasing **basic ice privileges** (sparing and practice) as an add-on
 
 A regular membership registration may be paid immediately if there are no non-guaranteed or deferred items.
 
@@ -121,7 +123,7 @@ Social membership is for members who do not plan to curl in leagues.
 Rules:
 
 - Social members do not receive ice privileges.
-- Social members cannot purchase spare-only ice privileges.
+- Social members cannot purchase basic ice privileges.
 - Social members do not continue to league selection.
 - Social membership is never discounted.
 - A social membership registration is eligible for immediate payment.
@@ -129,42 +131,44 @@ Rules:
 
 ---
 
-### Spare-only ice privileges
+### Basic ice privileges (regular-member add-on)
 
-Spare-only is not a standalone membership type.
+Basic ice privileges are **not** a standalone membership type. They are an add-on to **regular membership** and cover **sparing and practice** for the registration session.
 
-Spare-only means:
+Conceptually:
 
 ```text
-Regular membership + spare-only ice privilege fee
+Regular membership + basic ice privilege fee
 ```
+
+The invoice line item or tenant fee catalog may still use a legacy name such as “spare-only ice privilege fee” if that matches existing configuration.
 
 Rules:
 
-- Spare-only requires regular membership.
-- Anyone eligible to join a league is eligible to purchase spare-only.
-- Spare-only gives session-specific ice privileges.
-- Spare-only may be purchased during registration.
-- A spare-only registration does not require league selection.
-- Spare-only registrations are eligible for immediate payment unless another deferred item is present.
+- Basic ice privileges require regular membership.
+- Anyone eligible to join a league is eligible to purchase basic ice privileges for a session.
+- Basic ice privileges are session-specific (see below).
+- Basic ice privileges may be purchased during registration.
+- A registration with regular membership and basic ice privileges—but no league selections yet—does not require league selection in Phase 5.
+- Such registrations are eligible for immediate payment unless another deferred item is present.
 
-Phase 5 should enforce that social members cannot purchase spare-only privileges.
+Phase 5 should enforce that social members cannot purchase basic ice privileges.
 
 ---
 
 ### Ice privileges are session-specific
 
-Ice privileges are tied to a session.
+Ice privileges from **league registration** or from **basic ice privileges** are tied to a **session** (and the registration’s season).
 
-If a member buys fall ice privileges, they must still purchase winter ice privileges separately if they want winter ice privileges.
+If a member has fall session privileges only, they must register for a league or purchase session privileges separately for winter if they want winter access.
 
-In Phase 5, spare-only ice privileges should be associated with the registration session being registered for.
+In Phase 5, basic ice privileges must be associated with the registration session being registered for.
 
 ---
 
 ### Club Bonspiel note
 
-The Club Bonspiel is open to active club members who have purchased ice privileges for at least one session during the season.
+The Club Bonspiel is open to active club members who have ice privileges for at least one session during the season—whether from **league registration** or **basic ice privileges**.
 
 This does not need a user-facing flow in Phase 5, but data produced in Phase 5 should make this determinable later.
 
@@ -243,7 +247,7 @@ Rules:
 
 - The winter-only discount applies only to regular membership dues.
 - The winter-only discount does not apply to social membership.
-- The winter-only discount does not apply to league fees, spare-only fees, sabbatical fees, or other charges unless explicitly configured otherwise in a later rule update.
+- The winter-only discount does not apply to league fees, basic ice privilege fees, sabbatical fees, or other charges unless explicitly configured otherwise in a later rule update.
 
 Phase 5 must determine whether the registration session is beyond the first session of the season.
 
@@ -353,8 +357,8 @@ Immediate-payment examples in Phase 5:
 - Regular membership plus student discount
 - Regular membership plus reciprocal discount
 - Regular membership plus winter-only discount
-- Regular membership plus spare-only ice privileges
-- Regular membership plus spare-only ice privileges plus eligible discounts
+- Regular membership plus basic ice privileges
+- Regular membership plus basic ice privileges plus eligible discounts
 
 No-payment examples:
 
@@ -379,7 +383,7 @@ Line items should include enough metadata to distinguish:
 
 - Regular membership
 - Social membership
-- Spare-only ice privilege fee
+- Basic ice privilege fee (tenant fee catalog or legacy line-item labels may still read “spare-only ice privilege fee”)
 - Student discount
 - Reciprocal discount
 - Winter-only discount
@@ -475,7 +479,7 @@ Choose this if you want to be a club member but do not plan to curl.
 
 Important behavior:
 
-- If social membership is selected, hide spare-only and league-related options.
+- If social membership is selected, hide basic ice privileges and league-related options.
 - If regular membership is selected, continue to experience and ice privilege options.
 
 ---
@@ -538,25 +542,25 @@ For returning curlers:
 
 ---
 
-### Step 4: Spare-only option
+### Step 4: Basic ice privileges option
 
-For regular members, offer spare-only ice privileges if the registration flow allows membership/ice privileges without league selection.
+For regular members, offer **basic ice privileges** (sparing and practice for the registration session) if the registration flow allows membership and ice privileges without league selection.
 
 Suggested copy:
 
-> I want spare-only ice privileges for this session.
+> I want basic ice privileges (spare and practice) for this session.
 
 If selected:
 
-- Add the spare-only ice privilege fee.
+- Add the basic ice privilege fee (which may appear under a legacy catalog name such as “spare-only ice privilege fee”).
 - Do not require league selection.
 - Continue to review/payment.
 
 Rules:
 
-- Social members cannot select spare-only.
-- Spare-only is associated with the current registration session.
-- Spare-only requires regular membership.
+- Social members cannot select basic ice privileges.
+- Basic ice privileges are associated with the current registration session.
+- Basic ice privileges require regular membership.
 
 ---
 
@@ -571,7 +575,7 @@ The review must include:
 - Session/season
 - Claimed discounts
 - Experience answer
-- Spare-only selection, if any
+- Basic ice privileges selection, if any
 - Itemized charges
 - Total due now
 - Whether payment is due now or deferred
@@ -619,7 +623,7 @@ Before writing code, inspect:
 - Existing Stripe checkout pipeline
 - Existing price/fee configuration
 - Existing discount configuration
-- Existing tenant fiscal year configuration
+- Registration period state and season/session binding (priority and open registration)
 - Existing user/profile demographic model
 - Existing registration shell routes/components
 - Existing services from Phase 3
@@ -635,8 +639,8 @@ Confirm the registration data model can persist:
 - Membership selection
 - Membership season
 - Registration session
-- Spare-only selection
-- Spare-only session
+- Basic ice privileges selection (stored field names may differ, e.g. spare-only flags in existing models)
+- Session tied to basic ice privileges (same session as registration where applicable)
 - Student discount claim
 - Student institution
 - Reciprocal discount claim
@@ -661,14 +665,14 @@ Add or update registration step components for:
 
 - Regular membership
 - Social membership
-- Spare-only option for regular members
+- Basic ice privileges option for regular members
 
 Ensure:
 
 - Regular membership is selected by default.
 - Social membership short-circuits league/ice privilege flow.
 - Social membership cannot claim discounts.
-- Social membership cannot choose spare-only.
+- Social membership cannot choose basic ice privileges.
 
 ---
 
@@ -803,16 +807,16 @@ Do not leave undocumented business-rule changes in code only.
 - Membership type is required.
 - Membership type must be regular or social.
 - Regular membership is default.
-- Social membership cannot include spare-only.
+- Social membership cannot include basic ice privileges.
 - Social membership cannot include discounts.
 - Social membership cannot include ice privileges.
 
-### Spare-only validation
+### Basic ice privileges validation
 
-- Spare-only requires regular membership.
-- Spare-only must be tied to a session.
-- Spare-only requires the curler to be eligible to join leagues generally.
-- Spare-only cannot be selected with social membership.
+- Basic ice privileges require regular membership.
+- Basic ice privileges must be tied to a session.
+- Basic ice privileges require the curler to be eligible to join leagues generally.
+- Basic ice privileges cannot be selected with social membership.
 
 ### Student discount validation
 
@@ -831,7 +835,7 @@ Do not leave undocumented business-rule changes in code only.
 - Must only apply when registration begins with a session beyond the first session of the season.
 - Must only apply to regular membership dues.
 - Must not apply to social membership.
-- Must not apply to spare-only fees.
+- Must not apply to basic ice privilege fees.
 
 ### Experience validation
 
@@ -869,9 +873,9 @@ Test:
 10. Fixed-dollar discounts apply before percentage discounts.
 11. Percentage discounts apply only to discount-eligible charges.
 12. Discounts cannot reduce invoice below zero.
-13. Spare-only fee is added to regular membership.
-14. Spare-only fee is not discounted unless explicitly marked discount-eligible by configuration.
-15. Social membership plus spare-only is invalid.
+13. Basic ice privilege fee is added to regular membership.
+14. Basic ice privilege fee is not discounted unless explicitly marked discount-eligible by configuration.
+15. Social membership plus basic ice privileges is invalid.
 
 ### Unit tests: eligibility/payment decision
 
@@ -879,7 +883,7 @@ Test:
 
 1. Social membership only requires immediate payment.
 2. Regular membership only requires immediate payment.
-3. Regular plus spare-only requires immediate payment.
+3. Regular membership plus basic ice privileges requires immediate payment.
 4. Deferred registration does not create Stripe checkout.
 5. Immediate-payment registration creates a payment intent/checkout session through the existing pipeline.
 6. Payment failure does not confirm registration.
@@ -916,7 +920,7 @@ Test:
 5. New user registers for regular membership with reciprocal discount and pays.
 6. New user registers for regular membership with both student and reciprocal discounts and pays.
 7. New user registers for regular membership in a post-first session and receives winter-only discount.
-8. New user registers for regular membership plus spare-only and pays.
+8. New user registers for regular membership plus basic ice privileges and pays.
 9. Checkout cancellation leaves registration unpaid.
 10. Checkout success marks registration paid/confirmed.
 
@@ -934,13 +938,13 @@ Phase 5 is complete when all of the following are true:
 - Social membership cannot receive discounts.
 - Social membership can be paid immediately.
 
-### Spare-only
+### Basic ice privileges
 
-- Regular members can purchase spare-only ice privileges.
-- Spare-only is implemented as regular membership plus spare-only ice privilege fee.
-- Social members cannot purchase spare-only.
-- Spare-only is associated with the selected registration session.
-- Spare-only registrations can be paid immediately when no deferred items exist.
+- Regular members can purchase basic ice privileges (sparing and practice) for the registration session.
+- Basic ice privileges are implemented as regular membership plus a basic ice privilege fee (line item may use a legacy name such as “spare-only ice privilege fee”).
+- Social members cannot purchase basic ice privileges.
+- Basic ice privileges are associated with the selected registration session.
+- Registrations with regular membership and basic ice privileges can be paid immediately when no deferred items exist.
 
 ### Discounts
 
@@ -974,49 +978,6 @@ Phase 5 is complete when all of the following are true:
 - Relevant registration docs are updated if implementation details changed.
 - Test matrix includes Phase 5 cases.
 - No new business rules are introduced only in code.
-
----
-
-## Suggested implementation prompt for an LLM
-
-Use the following prompt to implement Phase 5 in a fresh context:
-
-```text
-You are implementing Phase 5 of the registration system: Membership,
-Discounts, Experience, and Basic Payment.
-
-Read these files first and treat them as authoritative:
-
-- docs/registration/rules.md
-- docs/registration/data-model.md
-- docs/registration/fee-calculation.md
-- docs/registration/eligibility.md
-- docs/registration/user-flow.md
-- docs/registration/test-matrix.md
-- docs/registration/phases/phase-5-membership-payment.md
-
-Do not implement league selection, waitlists, sabbaticals, BYOT, third-league
-interest, or staff placement tools in this phase.
-
-Before coding:
-1. Summarize the Phase 5 requirements.
-2. Identify existing files, models, services, and routes that need changes.
-3. Identify any missing data fields or migrations.
-4. Propose a concise implementation plan.
-5. Wait for approval.
-
-After approval:
-1. Implement membership selection.
-2. Implement discount collection and validation.
-3. Implement experience collection.
-4. Implement spare-only registration.
-5. Integrate fee calculation.
-6. Integrate payment decision logic.
-7. Integrate immediate Stripe checkout.
-8. Add/update tests.
-9. Update docs if needed.
-10. Provide a handoff summary for Phase 6.
-```
 
 ---
 

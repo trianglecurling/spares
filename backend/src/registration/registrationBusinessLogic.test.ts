@@ -85,6 +85,12 @@ describe('registration business logic', () => {
     expect(validateSpareOnlyEligibility(context).eligible).toBe(true);
   });
 
+  test('social membership cannot include spare-only basic ice privileges', () => {
+    const result = validateSpareOnlyEligibility(registrationContext({ membershipOption: 'social', selections: [] }));
+    expect(result.eligible).toBe(false);
+    expectReason(result, 'spare_only_requires_regular_membership');
+  });
+
   test('student discount requires institution and auto-applies with institution', () => {
     const invalid = calculateRegistrationFees(
       registrationContext({ selections: [], discountClaims: { student: { claimed: true } } })
@@ -119,6 +125,29 @@ describe('registration business logic', () => {
     const fall = calculateRegistrationFees(registrationContext({ selections: [], isFirstSessionOfSeason: true }));
     expect(fall.discountLineItems).toHaveLength(0);
     expect(fall.totalDueMinor).toBe(10000);
+  });
+
+  test('winter-only discount applies after any first session and only to regular membership dues', () => {
+    const thirdSession = calculateRegistrationFees(
+      registrationContext({
+        membershipOption: 'regular_spare_only',
+        selections: [],
+        isFirstSessionOfSeason: false,
+      })
+    );
+    expect(thirdSession.discountLineItems[0]?.lineType).toBe('winter_only_discount');
+    expect(thirdSession.discountLineItems[0]?.amountMinor).toBe(-2500);
+    expect(thirdSession.totalDueMinor).toBe(10000);
+
+    const social = calculateRegistrationFees(
+      registrationContext({
+        membershipOption: 'social',
+        selections: [],
+        isFirstSessionOfSeason: false,
+      })
+    );
+    expect(social.discountLineItems).toHaveLength(0);
+    expect(social.totalDueMinor).toBe(4000);
   });
 
   test('dollar discounts apply before percentage discounts', () => {
@@ -452,5 +481,24 @@ describe('registration business logic', () => {
     const decision = decideRegistrationPayment({ context, feePreview });
     expect(decision.totalDueMinor).toBe(10000);
     expect(decision.createStripeCheckoutNow).toBe(true);
+  });
+
+  test('Phase 5 membership-only and basic ice registrations require immediate payment', () => {
+    const regularOnly = evaluateRegistrationDraft(registrationContext({ selections: [] }));
+    expect(regularOnly.paymentDecision.outcome).toBe('immediate_payment');
+    expect(regularOnly.feePreview.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);
+
+    const socialOnly = evaluateRegistrationDraft(registrationContext({ membershipOption: 'social', selections: [] }));
+    expect(socialOnly.paymentDecision.outcome).toBe('immediate_payment');
+    expect(socialOnly.feePreview.lineItems.map((item) => item.lineType)).toEqual(['social_membership_fee']);
+
+    const regularWithBasicIce = evaluateRegistrationDraft(
+      registrationContext({ membershipOption: 'regular_spare_only', selections: [] })
+    );
+    expect(regularWithBasicIce.paymentDecision.outcome).toBe('immediate_payment');
+    expect(regularWithBasicIce.feePreview.lineItems.map((item) => item.lineType)).toEqual([
+      'regular_membership_fee',
+      'spare_only_fee',
+    ]);
   });
 });

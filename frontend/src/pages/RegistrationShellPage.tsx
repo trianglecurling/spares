@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import FormField from '../components/FormField';
+import FormCheckbox from '../components/FormCheckbox';
 import ChoiceInput from '../components/ChoiceInput';
 import Button from '../components/Button';
 
@@ -14,6 +15,13 @@ type RegistrationStatus =
   | 'policies_incomplete'
   | 'demographics_incomplete'
   | 'shell_complete'
+  | 'submitted'
+  | 'awaiting_staff_review'
+  | 'awaiting_placement'
+  | 'awaiting_payment'
+  | 'payment_started'
+  | 'paid'
+  | 'confirmed'
   | 'cancelled';
 
 type MemberSummary = {
@@ -68,6 +76,41 @@ type DemographicsForm = {
   emergencyContactPhone: string;
 };
 
+type RegistrationFeeLineItem = {
+  lineType: string;
+  description: string;
+  amountMinor: number;
+  discountEligible: boolean;
+};
+
+type RegistrationPhase5Payload = {
+  selection: {
+    membershipOption: 'none' | 'regular' | 'social' | 'regular_spare_only' | 'junior_recreational';
+    studentDiscountClaimed: boolean;
+    studentInstitution: string | null;
+    reciprocalDiscountClaimed: boolean;
+    reciprocalClubName: string | null;
+    experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing' | null;
+    experienceSelfReportedYears: number | null;
+  };
+  isFirstSessionOfSeason: boolean;
+  knownExperienceYears: number;
+  feePreview: {
+    lineItems: RegistrationFeeLineItem[];
+    discountLineItems: RegistrationFeeLineItem[];
+    subtotalMinor: number;
+    discountTotalMinor: number;
+    totalDueMinor: number;
+    blockingErrors: Array<{ code: string; message: string }>;
+    warnings: Array<{ code: string; message: string }>;
+  };
+  paymentDecision: {
+    outcome: 'immediate_payment' | 'deferred_payment' | 'no_payment_required';
+    deferralReasons: string[];
+    totalDueMinor: number;
+  };
+};
+
 const emptyDemographics: DemographicsForm = {
   firstName: '',
   lastName: '',
@@ -84,6 +127,10 @@ function errorMessage(error: unknown, fallback: string): string {
     return error.response?.data?.error || fallback;
   }
   return fallback;
+}
+
+function formatCurrency(amountMinor: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountMinor / 100);
 }
 
 function demographicsFromMember(member: MemberSummary | null): DemographicsForm {
@@ -104,10 +151,11 @@ function demographicsFromMember(member: MemberSummary | null): DemographicsForm 
 function nextStepFor(payload: RegistrationShellPayload): string {
   if (!payload.registration.curler_member_id || !payload.registration.submitted_by_member_id) return 'identity';
   if (!payload.policiesComplete) return 'policies';
-  if (payload.registration.status === 'shell_complete') return 'complete';
+  if (payload.registration.status === 'shell_complete') return 'membership';
+  if (['submitted', 'awaiting_staff_review', 'awaiting_placement', 'awaiting_payment', 'payment_started', 'paid', 'confirmed'].includes(payload.registration.status)) return 'review';
   if (!payload.curler?.dateOfBirth || !payload.curler.mailingAddress || !payload.curler.emergencyContactName) return 'demographics';
   if (payload.isMinor && !payload.registration.guardian_email) return 'guardian';
-  return 'complete';
+  return 'membership';
 }
 
 function RegistrationCard({ children }: { children: React.ReactNode }) {
@@ -124,6 +172,7 @@ function FieldInput({
   onChange,
   type = 'text',
   autoComplete,
+  step,
   required = true,
 }: {
   id: string;
@@ -131,12 +180,14 @@ function FieldInput({
   onChange: (value: string) => void;
   type?: string;
   autoComplete?: string;
+  step?: string;
   required?: boolean;
 }) {
   return (
     <input
       id={id}
       type={type}
+      step={step}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       className="app-input"
@@ -158,10 +209,21 @@ export default function RegistrationShellPage() {
   const [sameEmail, setSameEmail] = useState<'same' | 'different'>('same');
   const [demographics, setDemographics] = useState<DemographicsForm>(emptyDemographics);
   const [guardian, setGuardian] = useState({ firstName: '', lastName: '', email: '', phone: '' });
+  const [phase5, setPhase5] = useState<RegistrationPhase5Payload | null>(null);
+  const [membershipChoice, setMembershipChoice] = useState<'regular' | 'social'>('regular');
+  const [basicIcePrivileges, setBasicIcePrivileges] = useState(false);
+  const [studentDiscountClaimed, setStudentDiscountClaimed] = useState(false);
+  const [studentInstitution, setStudentInstitution] = useState('');
+  const [reciprocalDiscountClaimed, setReciprocalDiscountClaimed] = useState(false);
+  const [reciprocalClubName, setReciprocalClubName] = useState('');
+  const [experienceChoice, setExperienceChoice] = useState<'none_or_minimal' | 'specified_years' | 'known_existing'>('none_or_minimal');
+  const [experienceYears, setExperienceYears] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const profileInputId = useId();
   const choiceInputId = useId();
+  const membershipInputId = useId();
+  const experienceInputId = useId();
 
   const currentStep = step || (registrationId ? 'identity' : 'start');
 
@@ -189,6 +251,8 @@ export default function RegistrationShellPage() {
         const target = nextStepFor(data);
         if (!step || step === 'identity') {
           navigate(`/registration/${registrationId}/${target}`, { replace: true });
+        } else if (target === 'identity') {
+          navigate(`/registration/${registrationId}/identity`, { replace: true });
         }
       })
       .catch((err) => setError(errorMessage(err, 'Unable to load this registration draft.')));
@@ -201,6 +265,34 @@ export default function RegistrationShellPage() {
       .then((response) => setProfiles(response.data))
       .catch((err) => setError(errorMessage(err, 'Unable to load eligible curler profiles.')));
   }, [currentStep, member, payload]);
+
+  useEffect(() => {
+    const phase5Steps = ['membership', 'discounts', 'experience', 'basic-ice', 'review', 'success', 'cancel'];
+    if (!registrationId || !member || !phase5Steps.includes(currentStep)) return;
+    api
+      .get(`/registration/drafts/${registrationId}/phase5`)
+      .then((response) => {
+        const data = response.data as RegistrationPhase5Payload;
+        setPhase5(data);
+        const membershipOption = data.selection.membershipOption;
+        setMembershipChoice(membershipOption === 'social' ? 'social' : 'regular');
+        setBasicIcePrivileges(membershipOption === 'regular_spare_only');
+        setStudentDiscountClaimed(data.selection.studentDiscountClaimed);
+        setStudentInstitution(data.selection.studentInstitution || '');
+        setReciprocalDiscountClaimed(data.selection.reciprocalDiscountClaimed);
+        setReciprocalClubName(data.selection.reciprocalClubName || '');
+        setExperienceChoice(data.selection.experienceType || (data.knownExperienceYears > 0 ? 'known_existing' : 'none_or_minimal'));
+        setExperienceYears(data.selection.experienceSelfReportedYears?.toString() || '');
+      })
+      .catch((err) => setError(errorMessage(err, 'Unable to load membership details.')));
+  }, [registrationId, member, currentStep]);
+
+  useEffect(() => {
+    if (currentStep !== 'cancel' || !registrationId || !member) return;
+    api.post(`/registration/drafts/${registrationId}/payment-cancelled`).catch(() => {
+      // The page copy still explains that payment was not completed; staff can resolve stale checkout state.
+    });
+  }, [currentStep, registrationId, member]);
 
   const seasonSessionLabel = useMemo(() => {
     if (!windowState) return 'the upcoming season';
@@ -235,8 +327,10 @@ export default function RegistrationShellPage() {
     setLoading(true);
     setError('');
     try {
-      await api.patch(`/registration/drafts/${registrationId}/identity-returning`, { curlerMemberId });
-      navigate(`/registration/${registrationId}/policies`);
+      const response = await api.patch(`/registration/drafts/${registrationId}/identity-returning`, { curlerMemberId });
+      const row = response.data as { id: number };
+      const effectiveId = typeof row?.id === 'number' ? row.id : Number(registrationId);
+      navigate(`/registration/${effectiveId}/policies`, { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Unable to select that curler profile.'));
     } finally {
@@ -326,9 +420,106 @@ export default function RegistrationShellPage() {
     setError('');
     try {
       await api.post(`/registration/drafts/${registrationId}/complete-shell`);
-      navigate(`/registration/${registrationId}/complete`);
+      navigate(`/registration/${registrationId}/membership`);
     } catch (err) {
       setError(errorMessage(err, 'Registration shell is not complete yet.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveMembership(event: React.FormEvent) {
+    event.preventDefault();
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.patch(`/registration/drafts/${registrationId}/membership`, {
+        membershipOption: membershipChoice,
+        basicIcePrivileges: false,
+      });
+      setPhase5(response.data as RegistrationPhase5Payload);
+      navigate(membershipChoice === 'social' ? `/registration/${registrationId}/review` : `/registration/${registrationId}/discounts`);
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to save membership choice.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveDiscounts(event: React.FormEvent) {
+    event.preventDefault();
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.patch(`/registration/drafts/${registrationId}/discounts`, {
+        studentDiscountClaimed,
+        studentInstitution,
+        reciprocalDiscountClaimed,
+        reciprocalClubName,
+      });
+      setPhase5(response.data as RegistrationPhase5Payload);
+      navigate(`/registration/${registrationId}/experience`);
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to save discounts.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveExperience(event: React.FormEvent) {
+    event.preventDefault();
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.patch(`/registration/drafts/${registrationId}/experience`, {
+        experienceType: experienceChoice,
+        experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
+      });
+      setPhase5(response.data as RegistrationPhase5Payload);
+      navigate(`/registration/${registrationId}/basic-ice`);
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to save curling experience.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveBasicIce(event: React.FormEvent) {
+    event.preventDefault();
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.patch(`/registration/drafts/${registrationId}/membership`, {
+        membershipOption: 'regular',
+        basicIcePrivileges,
+      });
+      setPhase5(response.data as RegistrationPhase5Payload);
+      navigate(`/registration/${registrationId}/review`);
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to save basic ice privileges.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitRegistration() {
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.post(`/registration/drafts/${registrationId}/submit`);
+      const result = response.data as { outcome: string; checkoutUrl?: string };
+      if (result.checkoutUrl) {
+        window.location.assign(result.checkoutUrl);
+        return;
+      }
+      navigate(`/registration/${registrationId}/success`);
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to submit registration.'));
     } finally {
       setLoading(false);
     }
@@ -362,6 +553,32 @@ export default function RegistrationShellPage() {
             </FormField>
           );
         })}
+      </div>
+    );
+  }
+
+  function renderFeeSummary() {
+    if (!phase5) {
+      return <PublicStateCard title="Loading fees" description="Calculating your registration total." />;
+    }
+    const allLines = [...phase5.feePreview.lineItems, ...phase5.feePreview.discountLineItems];
+    return (
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+        <h2 className="text-lg font-semibold text-[#121033]">Charges</h2>
+        <div className="mt-3 divide-y divide-emerald-100">
+          {allLines.map((line, index) => (
+            <div key={`${line.lineType}-${index}`} className="flex items-start justify-between gap-4 py-2 text-sm">
+              <span className="text-gray-700">{line.description}</span>
+              <span className={line.amountMinor < 0 ? 'font-medium text-emerald-700' : 'font-medium text-gray-900'}>
+                {formatCurrency(line.amountMinor)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center justify-between border-t border-emerald-200 pt-3">
+          <span className="font-semibold text-[#121033]">Total due now</span>
+          <span className="text-xl font-bold text-[#121033]">{formatCurrency(phase5.feePreview.totalDueMinor)}</span>
+        </div>
       </div>
     );
   }
@@ -541,7 +758,7 @@ export default function RegistrationShellPage() {
         </form>
       </RegistrationCard>
     );
-  } else {
+  } else if (currentStep === 'complete') {
     content = (
       <RegistrationCard>
         <h1 className="text-3xl font-bold text-[#121033]">Registration shell complete</h1>
@@ -551,13 +768,205 @@ export default function RegistrationShellPage() {
         {payload?.registration.status !== 'shell_complete' ? (
           <Button className="mt-6" onClick={completeShell} disabled={loading}>Mark shell complete</Button>
         ) : (
-          <Link className="mt-6 inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white" to="/dashboard">
-            Return to dashboard
+          <Link className="mt-6 inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white" to={`/registration/${registrationId}/membership`}>
+            Continue to membership
           </Link>
         )}
         {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
       </RegistrationCard>
     );
+  } else if (currentStep === 'membership') {
+    content = (
+      <RegistrationCard>
+        <h1 className="text-3xl font-bold text-[#121033]">Choose membership</h1>
+        <p className="mt-3 text-gray-600">Regular membership is for curlers. Social membership is for members who do not plan to curl.</p>
+        <form onSubmit={saveMembership} className="mt-6 space-y-6">
+          <FormField label="Membership type" htmlFor={membershipInputId} required tone="public">
+            <ChoiceInput
+              inputId={membershipInputId}
+              layout="block"
+              value={membershipChoice}
+              onChange={(value) => setMembershipChoice(value as 'regular' | 'social')}
+              options={[
+                { value: 'regular', label: 'Regular membership', description: 'Choose this if the curler plans to curl, spare, practice, or register for leagues.' },
+                { value: 'social', label: 'Social membership', description: 'Choose this if the curler wants to be a member but will not curl this session.' },
+              ]}
+            />
+          </FormField>
+          {membershipChoice === 'social' ? (
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Social members do not receive discounts, basic ice privileges, or league access.
+            </p>
+          ) : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <Button type="submit" disabled={loading}>Continue</Button>
+        </form>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'discounts') {
+    const showWinterOnly = phase5 && !phase5.isFirstSessionOfSeason;
+    content = (
+      <RegistrationCard>
+        <h1 className="text-3xl font-bold text-[#121033]">Discounts</h1>
+        <p className="mt-3 text-gray-600">Student and reciprocal discounts are automatically approved when the required information is provided.</p>
+        <form onSubmit={saveDiscounts} className="mt-6 space-y-5">
+          {showWinterOnly ? (
+            <p className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              The winter-only discount is available for this session and will be applied to regular membership dues.
+            </p>
+          ) : null}
+          <FormCheckbox
+            tone="public"
+            label="Claim student discount"
+            checked={studentDiscountClaimed}
+            onChange={setStudentDiscountClaimed}
+            helperText="Available for K-12 students and full-time college or university students."
+          />
+          {studentDiscountClaimed ? (
+            <FormField label="Institution of study" htmlFor="student-institution" required tone="public">
+              <FieldInput id="student-institution" value={studentInstitution} onChange={setStudentInstitution} />
+            </FormField>
+          ) : null}
+          <FormCheckbox
+            tone="public"
+            label="Claim reciprocal club discount"
+            checked={reciprocalDiscountClaimed}
+            onChange={setReciprocalDiscountClaimed}
+            helperText="Available to members of another dedicated ice or arena curling club."
+          />
+          {reciprocalDiscountClaimed ? (
+            <FormField label="Other curling club" htmlFor="reciprocal-club" required tone="public">
+              <FieldInput id="reciprocal-club" value={reciprocalClubName} onChange={setReciprocalClubName} />
+            </FormField>
+          ) : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex flex-wrap gap-3">
+            <Button type="submit" disabled={loading}>Continue</Button>
+            <Button type="button" variant="secondary" onClick={() => navigate(`/registration/${registrationId}/membership`)}>
+              Back
+            </Button>
+          </div>
+        </form>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'experience') {
+    content = (
+      <RegistrationCard>
+        <h1 className="text-3xl font-bold text-[#121033]">Curling experience</h1>
+        <p className="mt-3 text-gray-600">This helps check league eligibility in the next registration phase.</p>
+        <form onSubmit={saveExperience} className="mt-6 space-y-6">
+          <FormField label="Previous curling experience" htmlFor={experienceInputId} required tone="public">
+            <ChoiceInput
+              inputId={experienceInputId}
+              layout="block"
+              value={experienceChoice}
+              onChange={(value) => setExperienceChoice(value as 'none_or_minimal' | 'specified_years' | 'known_existing')}
+              options={[
+                { value: 'none_or_minimal', label: 'None or minimal' },
+                { value: 'specified_years', label: 'I have curled before' },
+                ...(phase5?.knownExperienceYears
+                  ? [{ value: 'known_existing', label: `Use club record (${phase5.knownExperienceYears} years)` }]
+                  : []),
+              ]}
+            />
+          </FormField>
+          {experienceChoice === 'specified_years' ? (
+            <FormField label="Years of experience" htmlFor="experience-years" required tone="public">
+              <FieldInput id="experience-years" type="number" step="0.5" value={experienceYears} onChange={setExperienceYears} />
+            </FormField>
+          ) : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex flex-wrap gap-3">
+            <Button type="submit" disabled={loading}>Continue</Button>
+            <Button type="button" variant="secondary" onClick={() => navigate(`/registration/${registrationId}/discounts`)}>
+              Back
+            </Button>
+          </div>
+        </form>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'basic-ice') {
+    content = (
+      <RegistrationCard>
+        <h1 className="text-3xl font-bold text-[#121033]">Basic ice privileges</h1>
+        <p className="mt-3 text-gray-600">Basic ice privileges cover sparing and practice for {seasonSessionLabel} without selecting a league in this phase.</p>
+        <form onSubmit={saveBasicIce} className="mt-6 space-y-6">
+          <FormCheckbox
+            tone="public"
+            label="I want basic ice privileges for this session"
+            checked={basicIcePrivileges}
+            onChange={setBasicIcePrivileges}
+            helperText="This adds the configured spare-only ice privilege fee to regular membership."
+          />
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex flex-wrap gap-3">
+            <Button type="submit" disabled={loading}>Continue to review</Button>
+            <Button type="button" variant="secondary" onClick={() => navigate(`/registration/${registrationId}/experience`)}>
+              Back
+            </Button>
+          </div>
+        </form>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'review') {
+    content = (
+      <RegistrationCard>
+        <h1 className="text-3xl font-bold text-[#121033]">Review and pay</h1>
+        <p className="mt-3 text-gray-600">Review the registration for {payload?.curler?.name || 'this curler'} before payment.</p>
+        <div className="mt-6 space-y-4">
+          <div className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-700">
+            <p><span className="font-medium text-gray-900">Membership:</span> {phase5?.selection.membershipOption === 'social' ? 'Social membership' : 'Regular membership'}</p>
+            {phase5?.selection.membershipOption === 'regular_spare_only' ? (
+              <p><span className="font-medium text-gray-900">Basic ice privileges:</span> Included for this session</p>
+            ) : null}
+            {phase5?.selection.studentDiscountClaimed ? <p><span className="font-medium text-gray-900">Student discount:</span> {phase5.selection.studentInstitution}</p> : null}
+            {phase5?.selection.reciprocalDiscountClaimed ? <p><span className="font-medium text-gray-900">Reciprocal discount:</span> {phase5.selection.reciprocalClubName}</p> : null}
+            {phase5?.selection.experienceType ? <p><span className="font-medium text-gray-900">Experience:</span> {phase5.selection.experienceType === 'specified_years' ? `${phase5.selection.experienceSelfReportedYears} years` : phase5.selection.experienceType === 'known_existing' ? `${phase5.knownExperienceYears} years from club records` : 'None or minimal'}</p> : null}
+          </div>
+          {renderFeeSummary()}
+          <p className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+            {phase5?.paymentDecision.outcome === 'deferred_payment'
+              ? 'No payment is due now. We will contact you when your registration is ready for payment.'
+              : phase5?.paymentDecision.outcome === 'no_payment_required'
+                ? 'No payment is required now.'
+                : 'Payment is due now to complete this registration.'}
+          </p>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" disabled={loading || !phase5} onClick={submitRegistration}>
+              {phase5?.paymentDecision.outcome === 'immediate_payment' ? 'Submit and pay' : 'Submit registration'}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate(`/registration/${registrationId}/basic-ice`)}>
+              Back
+            </Button>
+          </div>
+        </div>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'success') {
+    content = (
+      <RegistrationCard>
+        <h1 className="text-3xl font-bold text-[#121033]">Registration submitted</h1>
+        <p className="mt-3 text-gray-600">
+          If payment was required, the registration will be confirmed after payment is processed.
+        </p>
+        <Link className="mt-6 inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white" to="/dashboard">
+          Return to dashboard
+        </Link>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'cancel') {
+    content = (
+      <RegistrationCard>
+        <h1 className="text-3xl font-bold text-[#121033]">Payment was not completed</h1>
+        <p className="mt-3 text-gray-600">Your registration is not confirmed yet. You can return to review and start checkout again.</p>
+        <Link className="mt-6 inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white" to={`/registration/${registrationId}/review`}>
+          Return to review
+        </Link>
+      </RegistrationCard>
+    );
+  } else {
+    content = <PublicStateCard title="Registration step not found" description="Return to the start of registration and continue from the next incomplete step." tone="warning" />;
   }
 
   return (

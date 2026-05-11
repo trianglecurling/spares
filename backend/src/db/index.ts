@@ -1,6 +1,7 @@
 import { getDatabaseConfig as getDbConfigFromFile, DatabaseConfig } from './config.js';
 import { getDrizzleDb, resetDrizzleDb } from './drizzle-db.js';
 import { createSchema } from './schema.js';
+import { ensureRegistrationPriceDiscountSettingsTablesExist } from './registrationSchemaBootstrap.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -74,6 +75,7 @@ export async function verifyDatabaseSchema(): Promise<void> {
       .select({ count: sql<number>`COUNT(*)` })
       .from(schema.members)
       .limit(1);
+    await ensureRegistrationPriceDiscountSettingsTablesExist();
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);
     throw new Error(`Database schema is not initialized or is missing migrations. Run "bun run db:migrate". (${details})`);

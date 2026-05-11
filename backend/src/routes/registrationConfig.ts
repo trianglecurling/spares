@@ -20,12 +20,13 @@ import {
   assertRegistrationStateTransition,
   assertSessionWithinSeason,
   assertValidDateRange,
+  assertValidPriceConfig,
+  assertValidRegistrationDiscountSettingsStored,
+  type PriceConfigInput,
+  type RegistrationDiscountSettingsStored,
 } from '../registration/registrationConfigValidation.js';
 
 const SINGLETON_SCOPE = 'singleton';
-
-const FEE_DISCOUNT_STORE_UNAVAILABLE =
-  'Registration fee and discount settings are not persisted in this database revision. This will be available with the registration billing configuration.';
 
 type RegistrationWindowState = 'closed' | 'priority' | 'open';
 
@@ -94,31 +95,145 @@ function mapStateTransition(row: any) {
   };
 }
 
-function defaultPriceSettingsResponse() {
-  const now = new Date().toISOString();
+/** Converts UI/API dollar amounts to integer cents (minor units). */
+function dollarsToFeeMinor(dollars: number): number {
+  return Math.round(dollars * 100);
+}
+
+function feeMinorToDollars(minor: number): number {
+  return minor / 100;
+}
+
+type DiscountSlotApi = { amountType: 'dollar' | 'percent'; value: number };
+
+function storedDiscountSlotToApi(slot: {
+  amountType: 'dollar' | 'percent';
+  amountValue: number;
+}): DiscountSlotApi {
+  if (slot.amountType === 'dollar') {
+    return { amountType: 'dollar', value: feeMinorToDollars(slot.amountValue) };
+  }
+  return { amountType: 'percent', value: slot.amountValue };
+}
+
+function apiDiscountSlotToStored(slot: DiscountSlotApi) {
+  if (slot.amountType === 'dollar') {
+    return { amountType: 'dollar' as const, amountValue: dollarsToFeeMinor(slot.value) };
+  }
+  return { amountType: 'percent' as const, amountValue: Math.round(slot.value) };
+}
+
+function mapPriceRowToResponse(row: {
+  scope: string;
+  regular_membership_fee_minor: number;
+  social_membership_fee_minor: number;
+  spare_only_ice_privilege_fee_minor: number;
+  sabbatical_fee_minor: number;
+  junior_recreational_fee_minor: number;
+  created_at: Date | string;
+  updated_at: Date | string;
+}) {
   return {
-    scope: SINGLETON_SCOPE,
-    regularMembershipFeeDollars: 0,
-    socialMembershipFeeDollars: 0,
-    spareOnlyIcePrivilegeFeeDollars: 0,
-    sabbaticalFeeDollars: 0,
-    juniorRecreationalFeeDollars: 0,
-    createdAt: now,
-    updatedAt: now,
+    scope: row.scope,
+    regularMembershipFeeDollars: feeMinorToDollars(row.regular_membership_fee_minor),
+    socialMembershipFeeDollars: feeMinorToDollars(row.social_membership_fee_minor),
+    spareOnlyIcePrivilegeFeeDollars: feeMinorToDollars(row.spare_only_ice_privilege_fee_minor),
+    sabbaticalFeeDollars: feeMinorToDollars(row.sabbatical_fee_minor),
+    juniorRecreationalFeeDollars: feeMinorToDollars(row.junior_recreational_fee_minor),
+    createdAt: normalizeDateTime(row.created_at) ?? '',
+    updatedAt: normalizeDateTime(row.updated_at) ?? '',
   };
 }
 
-function defaultDiscountSettingsResponse() {
-  const now = new Date().toISOString();
-  const zeroDollar = { amountType: 'dollar' as const, value: 0 };
+function mapDiscountRowToResponse(row: {
+  scope: string;
+  student_discount_amount_type: 'dollar' | 'percent';
+  student_discount_amount_value: number;
+  reciprocal_discount_amount_type: 'dollar' | 'percent';
+  reciprocal_discount_amount_value: number;
+  winter_only_discount_amount_type: 'dollar' | 'percent';
+  winter_only_discount_amount_value: number;
+  created_at: Date | string;
+  updated_at: Date | string;
+}) {
   return {
-    scope: SINGLETON_SCOPE,
-    studentDiscount: zeroDollar,
-    reciprocalDiscount: { ...zeroDollar },
-    winterOnlyDiscount: { ...zeroDollar },
-    createdAt: now,
-    updatedAt: now,
+    scope: row.scope,
+    studentDiscount: storedDiscountSlotToApi({
+      amountType: row.student_discount_amount_type,
+      amountValue: row.student_discount_amount_value,
+    }),
+    reciprocalDiscount: storedDiscountSlotToApi({
+      amountType: row.reciprocal_discount_amount_type,
+      amountValue: row.reciprocal_discount_amount_value,
+    }),
+    winterOnlyDiscount: storedDiscountSlotToApi({
+      amountType: row.winter_only_discount_amount_type,
+      amountValue: row.winter_only_discount_amount_value,
+    }),
+    createdAt: normalizeDateTime(row.created_at) ?? '',
+    updatedAt: normalizeDateTime(row.updated_at) ?? '',
   };
+}
+
+async function loadOrInsertRegistrationPriceSettings() {
+  const { db, schema } = getDrizzleDb();
+  let [row] = await db
+    .select()
+    .from(schema.registrationPriceSettings)
+    .where(eq(schema.registrationPriceSettings.scope, SINGLETON_SCOPE))
+    .limit(1);
+  if (row) return row;
+  await db
+    .insert(schema.registrationPriceSettings)
+    .values({
+      scope: SINGLETON_SCOPE,
+      regular_membership_fee_minor: 0,
+      social_membership_fee_minor: 0,
+      spare_only_ice_privilege_fee_minor: 0,
+      sabbatical_fee_minor: 0,
+      junior_recreational_fee_minor: 0,
+    })
+    .onConflictDoNothing();
+  [row] = await db
+    .select()
+    .from(schema.registrationPriceSettings)
+    .where(eq(schema.registrationPriceSettings.scope, SINGLETON_SCOPE))
+    .limit(1);
+  if (!row) {
+    throw new Error('Could not load registration_price_settings singleton row.');
+  }
+  return row;
+}
+
+async function loadOrInsertRegistrationDiscountSettings() {
+  const { db, schema } = getDrizzleDb();
+  let [row] = await db
+    .select()
+    .from(schema.registrationDiscountSettings)
+    .where(eq(schema.registrationDiscountSettings.scope, SINGLETON_SCOPE))
+    .limit(1);
+  if (row) return row;
+  await db
+    .insert(schema.registrationDiscountSettings)
+    .values({
+      scope: SINGLETON_SCOPE,
+      student_discount_amount_type: 'dollar',
+      student_discount_amount_value: 0,
+      reciprocal_discount_amount_type: 'dollar',
+      reciprocal_discount_amount_value: 0,
+      winter_only_discount_amount_type: 'dollar',
+      winter_only_discount_amount_value: 0,
+    })
+    .onConflictDoNothing();
+  [row] = await db
+    .select()
+    .from(schema.registrationDiscountSettings)
+    .where(eq(schema.registrationDiscountSettings.scope, SINGLETON_SCOPE))
+    .limit(1);
+  if (!row) {
+    throw new Error('Could not load registration_discount_settings singleton row.');
+  }
+  return row;
 }
 
 const seasonBodySchema = z.object({
@@ -690,7 +805,8 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       if (!requireAdmin(request, reply)) return;
-      return defaultPriceSettingsResponse();
+      const row = await loadOrInsertRegistrationPriceSettings();
+      return mapPriceRowToResponse(row);
     }
   );
 
@@ -715,8 +831,44 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       if (!requireAdmin(request, reply)) return;
-      pricePatchSchema.parse(request.body);
-      return reply.code(409).send({ error: FEE_DISCOUNT_STORE_UNAVAILABLE });
+      const body = pricePatchSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
+      const existingRow = await loadOrInsertRegistrationPriceSettings();
+      const current = mapPriceRowToResponse(existingRow);
+      const nextDollars = {
+        regularMembershipFeeDollars: body.regularMembershipFeeDollars ?? current.regularMembershipFeeDollars,
+        socialMembershipFeeDollars: body.socialMembershipFeeDollars ?? current.socialMembershipFeeDollars,
+        spareOnlyIcePrivilegeFeeDollars:
+          body.spareOnlyIcePrivilegeFeeDollars ?? current.spareOnlyIcePrivilegeFeeDollars,
+        sabbaticalFeeDollars: body.sabbaticalFeeDollars ?? current.sabbaticalFeeDollars,
+        juniorRecreationalFeeDollars: body.juniorRecreationalFeeDollars ?? current.juniorRecreationalFeeDollars,
+      };
+      const priceConfigMinor: PriceConfigInput = {
+        regularMembershipFeeMinor: dollarsToFeeMinor(nextDollars.regularMembershipFeeDollars),
+        socialMembershipFeeMinor: dollarsToFeeMinor(nextDollars.socialMembershipFeeDollars),
+        spareOnlyIcePrivilegeFeeMinor: dollarsToFeeMinor(nextDollars.spareOnlyIcePrivilegeFeeDollars),
+        sabbaticalFeeMinor: dollarsToFeeMinor(nextDollars.sabbaticalFeeDollars),
+        juniorRecreationalFeeMinor: dollarsToFeeMinor(nextDollars.juniorRecreationalFeeDollars),
+      };
+      try {
+        assertValidPriceConfig(priceConfigMinor);
+      } catch (error) {
+        if (handleValidationError(reply, error)) return;
+        throw error;
+      }
+      const rows = await db
+        .update(schema.registrationPriceSettings)
+        .set({
+          regular_membership_fee_minor: priceConfigMinor.regularMembershipFeeMinor,
+          social_membership_fee_minor: priceConfigMinor.socialMembershipFeeMinor,
+          spare_only_ice_privilege_fee_minor: priceConfigMinor.spareOnlyIcePrivilegeFeeMinor,
+          sabbatical_fee_minor: priceConfigMinor.sabbaticalFeeMinor,
+          junior_recreational_fee_minor: priceConfigMinor.juniorRecreationalFeeMinor,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.registrationPriceSettings.scope, SINGLETON_SCOPE))
+        .returning();
+      return mapPriceRowToResponse(rows[0]);
     }
   );
 
@@ -727,7 +879,8 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       if (!requireAdmin(request, reply)) return;
-      return defaultDiscountSettingsResponse();
+      const row = await loadOrInsertRegistrationDiscountSettings();
+      return mapDiscountRowToResponse(row);
     }
   );
 
@@ -771,8 +924,44 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       if (!requireAdmin(request, reply)) return;
-      discountPatchSchema.parse(request.body);
-      return reply.code(409).send({ error: FEE_DISCOUNT_STORE_UNAVAILABLE });
+      const body = discountPatchSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
+      const existingRow = await loadOrInsertRegistrationDiscountSettings();
+      const current = mapDiscountRowToResponse(existingRow);
+      const merged: RegistrationDiscountSettingsStored = {
+        student: apiDiscountSlotToStored({
+          ...current.studentDiscount,
+          ...body.studentDiscount,
+        }),
+        reciprocal: apiDiscountSlotToStored({
+          ...current.reciprocalDiscount,
+          ...body.reciprocalDiscount,
+        }),
+        winterOnly: apiDiscountSlotToStored({
+          ...current.winterOnlyDiscount,
+          ...body.winterOnlyDiscount,
+        }),
+      };
+      try {
+        assertValidRegistrationDiscountSettingsStored(merged);
+      } catch (error) {
+        if (handleValidationError(reply, error)) return;
+        throw error;
+      }
+      const rows = await db
+        .update(schema.registrationDiscountSettings)
+        .set({
+          student_discount_amount_type: merged.student.amountType,
+          student_discount_amount_value: merged.student.amountValue,
+          reciprocal_discount_amount_type: merged.reciprocal.amountType,
+          reciprocal_discount_amount_value: merged.reciprocal.amountValue,
+          winter_only_discount_amount_type: merged.winterOnly.amountType,
+          winter_only_discount_amount_value: merged.winterOnly.amountValue,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.registrationDiscountSettings.scope, SINGLETON_SCOPE))
+        .returning();
+      return mapDiscountRowToResponse(rows[0]);
     }
   );
 }

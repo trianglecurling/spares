@@ -1,4 +1,7 @@
 import type { DatabaseAdapter } from './adapter.js';
+import { sql } from 'drizzle-orm';
+import { getDatabaseConfig } from './config.js';
+import { getDrizzleDb } from './drizzle-db.js';
 
 /** Registration shell DDL. Earlier prototype registration tables are intentionally replaced. */
 export const curlingRegistrationDDLBase = `
@@ -49,6 +52,15 @@ export const curlingRegistrationDDLBase = `
     guardian_last_name TEXT,
     guardian_email TEXT,
     guardian_phone TEXT,
+    membership_option TEXT NOT NULL DEFAULT 'none' CHECK(membership_option IN ('none', 'regular', 'social', 'regular_spare_only', 'junior_recreational')),
+    experience_type TEXT CHECK(experience_type IN ('none_or_minimal', 'specified_years', 'known_existing')),
+    experience_self_reported_years REAL,
+    student_discount_claimed INTEGER NOT NULL DEFAULT 0 CHECK(student_discount_claimed IN (0, 1)),
+    student_institution TEXT,
+    reciprocal_discount_claimed INTEGER NOT NULL DEFAULT 0 CHECK(reciprocal_discount_claimed IN (0, 1)),
+    reciprocal_club_name TEXT,
+    last_fee_preview_json TEXT,
+    payment_decision_json TEXT,
     status TEXT NOT NULL DEFAULT 'identity_incomplete' CHECK(status IN (
       'identity_incomplete',
       'policies_incomplete',
@@ -64,6 +76,7 @@ export const curlingRegistrationDDLBase = `
       'cancelled'
     )),
     shell_completed_at DATETIME,
+    submitted_at DATETIME,
     cancelled_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -88,6 +101,29 @@ export const curlingRegistrationDDLBase = `
     UNIQUE(registration_id, policy_type)
   );
   CREATE INDEX IF NOT EXISTS idx_registration_policy_acceptances_registration_id ON registration_policy_acceptances(registration_id);
+
+  CREATE TABLE IF NOT EXISTS registration_price_settings (
+    scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+    regular_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
+    social_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
+    spare_only_ice_privilege_fee_minor INTEGER NOT NULL DEFAULT 0,
+    sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
+    junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS registration_discount_settings (
+    scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+    student_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+    student_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+    reciprocal_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+    reciprocal_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+    winter_only_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+    winter_only_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `;
 
 const legacyRegistrationTables = [
@@ -104,8 +140,6 @@ const legacyRegistrationTables = [
   'registration_policy_acceptances',
   'curling_league_sabbaticals',
   'curling_registrations',
-  'registration_discount_settings',
-  'registration_price_settings',
   'registration_discount_configs',
   'registration_price_configs',
   'registration_periods',
@@ -132,6 +166,65 @@ function curlingRegistrationDDLForDialect(isPostgres: boolean): string {
   s = s.replace(/DATETIME NOT NULL\b/g, 'TIMESTAMP NOT NULL');
   s = s.replace(/\bDATETIME\b/g, 'TIMESTAMP');
   return s;
+}
+
+/** Idempotent DDL for installs that predate registration pricing tables (Postgres / SQLite). */
+export async function ensureRegistrationPriceDiscountSettingsTablesExist(): Promise<void> {
+  const config = getDatabaseConfig();
+  if (!config || (config.type !== 'postgres' && config.type !== 'sqlite')) return;
+
+  const { db } = getDrizzleDb();
+
+  if (config.type === 'postgres') {
+    await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_price_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  regular_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
+  social_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
+  spare_only_ice_privilege_fee_minor INTEGER NOT NULL DEFAULT 0,
+  sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
+  junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`));
+    await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_discount_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  student_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+  student_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+  reciprocal_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+  reciprocal_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+  winter_only_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+  winter_only_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`));
+    return;
+  }
+
+  await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_price_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  regular_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
+  social_membership_fee_minor INTEGER NOT NULL DEFAULT 0,
+  spare_only_ice_privilege_fee_minor INTEGER NOT NULL DEFAULT 0,
+  sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
+  junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`));
+  await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_discount_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  student_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+  student_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+  reciprocal_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+  reciprocal_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+  winter_only_discount_amount_type TEXT NOT NULL DEFAULT 'dollar',
+  winter_only_discount_amount_value INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`));
 }
 
 async function allMaybe<T>(result: T[] | Promise<T[]>): Promise<T[]> {
@@ -179,26 +272,16 @@ async function dropLegacyRegistrationTables(
   execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
 ): Promise<void> {
   if (db.isAsync()) {
-    const legacyCore = await postgresTableHasColumn(db, 'curling_registrations', 'membership_option');
     for (const table of legacyAlwaysDropTables) {
       await execSQL(db, `DROP TABLE IF EXISTS ${table} CASCADE`);
-    }
-    if (legacyCore) {
-      await execSQL(db, `DROP TABLE IF EXISTS registration_policy_acceptances CASCADE`);
-      await execSQL(db, `DROP TABLE IF EXISTS curling_registrations CASCADE`);
     }
     return;
   }
 
   await execSQL(db, `PRAGMA foreign_keys = OFF`);
   try {
-    const legacyCore = sqliteTableHasColumn(db, 'curling_registrations', 'membership_option');
     for (const table of legacyAlwaysDropTables) {
       await execSQL(db, `DROP TABLE IF EXISTS ${table}`);
-    }
-    if (legacyCore) {
-      await execSQL(db, `DROP TABLE IF EXISTS registration_policy_acceptances`);
-      await execSQL(db, `DROP TABLE IF EXISTS curling_registrations`);
     }
   } finally {
     await execSQL(db, `PRAGMA foreign_keys = ON`);
@@ -211,38 +294,12 @@ function dropLegacyRegistrationTablesSync(
 ): void {
   execSQLSync(db, `PRAGMA foreign_keys = OFF`);
   try {
-    const legacyCore = sqliteTableHasColumn(db, 'curling_registrations', 'membership_option');
     for (const table of legacyAlwaysDropTables) {
       execSQLSync(db, `DROP TABLE IF EXISTS ${table}`);
-    }
-    if (legacyCore) {
-      execSQLSync(db, `DROP TABLE IF EXISTS registration_policy_acceptances`);
-      execSQLSync(db, `DROP TABLE IF EXISTS curling_registrations`);
     }
   } finally {
     execSQLSync(db, `PRAGMA foreign_keys = ON`);
   }
-}
-
-function sqliteTableHasColumn(db: DatabaseAdapter, table: string, column: string): boolean {
-  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(${table})`);
-  const rows = stmt.all() as { name?: string | null }[];
-  return rows.some((c) => String(c.name) === column);
-}
-
-async function postgresTableHasColumn(db: DatabaseAdapter, table: string, column: string): Promise<boolean> {
-  const stmt = db.prepare<{ exists: boolean }>(`
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = current_schema()
-        AND table_name = ?
-        AND column_name = ?
-    ) AS "exists"
-  `);
-  const result = stmt.get(table, column);
-  const row = result instanceof Promise ? await result : result;
-  return Boolean(row?.exists);
 }
 
 const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
@@ -262,6 +319,19 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'allows_sabbatical', ddl: 'allows_sabbatical INTEGER NOT NULL DEFAULT 1' },
   { name: 'predecessor_league_id', ddl: 'predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
   { name: 'successor_league_id', ddl: 'successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
+];
+
+const registrationPhase5ColumnsSQLite: { name: string; ddl: string }[] = [
+  { name: 'membership_option', ddl: "membership_option TEXT NOT NULL DEFAULT 'none' CHECK(membership_option IN ('none', 'regular', 'social', 'regular_spare_only', 'junior_recreational'))" },
+  { name: 'experience_type', ddl: "experience_type TEXT CHECK(experience_type IN ('none_or_minimal', 'specified_years', 'known_existing'))" },
+  { name: 'experience_self_reported_years', ddl: 'experience_self_reported_years REAL' },
+  { name: 'student_discount_claimed', ddl: 'student_discount_claimed INTEGER NOT NULL DEFAULT 0 CHECK(student_discount_claimed IN (0, 1))' },
+  { name: 'student_institution', ddl: 'student_institution TEXT' },
+  { name: 'reciprocal_discount_claimed', ddl: 'reciprocal_discount_claimed INTEGER NOT NULL DEFAULT 0 CHECK(reciprocal_discount_claimed IN (0, 1))' },
+  { name: 'reciprocal_club_name', ddl: 'reciprocal_club_name TEXT' },
+  { name: 'last_fee_preview_json', ddl: 'last_fee_preview_json TEXT' },
+  { name: 'payment_decision_json', ddl: 'payment_decision_json TEXT' },
+  { name: 'submitted_at', ddl: 'submitted_at DATETIME' },
 ];
 
 async function ensureSQLiteColumn(
@@ -297,6 +367,15 @@ async function sqliteEnsureLeaguesRegistrationColumns(
   );
 }
 
+async function sqliteEnsureRegistrationPhase5Columns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  for (const col of registrationPhase5ColumnsSQLite) {
+    await ensureSQLiteColumn(db, 'curling_registrations', col.name, col.ddl, execSQL);
+  }
+}
+
 const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS session_id INTEGER REFERENCES curling_sessions(id) ON DELETE SET NULL',
   "ALTER TABLE leagues ADD COLUMN IF NOT EXISTS league_type TEXT NOT NULL DEFAULT 'standard'",
@@ -316,6 +395,19 @@ const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
 ];
 
+const registrationPhase5ColumnsPg: string[] = [
+  "ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS membership_option TEXT NOT NULL DEFAULT 'none'",
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS experience_type TEXT',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS experience_self_reported_years DOUBLE PRECISION',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS student_discount_claimed INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS student_institution TEXT',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS reciprocal_discount_claimed INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS reciprocal_club_name TEXT',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS last_fee_preview_json JSONB',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS payment_decision_json JSONB',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP',
+];
+
 async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
   for (const ddl of leagueBootstrapColumnsPg) {
     await execSQL(db, ddl);
@@ -331,6 +423,12 @@ async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: D
   );
 }
 
+async function ensureRegistrationPhase5Postgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
+  for (const ddl of registrationPhase5ColumnsPg) {
+    await execSQL(db, ddl);
+  }
+}
+
 /**
  * Applies clean registration-shell DDL and intentionally migrates away from
  * previous prototype registration tables.
@@ -343,8 +441,10 @@ export async function ensureCurlingRegistrationBootstrap(
   await dropLegacyRegistrationTables(db, execSQL);
   await execSQL(db, curlingRegistrationDDLForDialect(Boolean(db.isAsync?.())));
   if (db.isAsync()) {
+    await ensureRegistrationPhase5Postgres(db, execSQL);
     await ensureLeagueBootstrapPostgres(db, execSQL);
   } else {
+    await sqliteEnsureRegistrationPhase5Columns(db, execSQL);
     await sqliteEnsureLeaguesRegistrationColumns(db, execSQL);
   }
 }
@@ -356,6 +456,15 @@ export function ensureCurlingRegistrationBootstrapSync(
   ensureMemberDemographicColumnsSync(db, execSQLSync);
   dropLegacyRegistrationTablesSync(db, execSQLSync);
   execSQLSync(db, curlingRegistrationDDLForDialect(false));
+
+  const registrationStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(curling_registrations)`);
+  const registrationCols = registrationStmt.all() as { name?: string | null }[];
+  const registrationNames = new Set(registrationCols.map((c) => String(c.name)));
+  for (const col of registrationPhase5ColumnsSQLite) {
+    if (!registrationNames.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE curling_registrations ADD COLUMN ${col.ddl}`);
+    }
+  }
 
   const leagueStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(leagues)`);
   const leagueCols = leagueStmt.all() as { name?: string | null }[];

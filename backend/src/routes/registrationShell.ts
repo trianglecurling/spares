@@ -4,6 +4,15 @@ import { sendApiError, sendValidationError } from '../api/errors.js';
 import type { ApiErrorResponse } from '../api/types.js';
 import type { Member } from '../types.js';
 import {
+  RegistrationPhase5ValidationError,
+  getRegistrationPhase5Payload,
+  markCurlingRegistrationPaymentCancelled,
+  submitRegistrationPhase5,
+  updateDiscounts,
+  updateExperience,
+  updateMembership,
+} from '../registration/registrationPhase5Service.js';
+import {
   RegistrationShellValidationError,
   acceptPolicies,
   attachNewCurler,
@@ -64,6 +73,21 @@ const guardianSchema = z.object({
   email: z.string().email(),
   phone: z.string().min(1),
 });
+const membershipSchema = z.object({
+  membershipOption: z.enum(['regular', 'social']),
+  basicIcePrivileges: z.boolean().default(false),
+});
+const discountSchema = z.object({
+  studentDiscountClaimed: z.boolean().optional(),
+  studentInstitution: z.string().nullable().optional(),
+  reciprocalDiscountClaimed: z.boolean().optional(),
+  reciprocalClubName: z.string().nullable().optional(),
+});
+const experienceSchema = z.discriminatedUnion('experienceType', [
+  z.object({ experienceType: z.literal('none_or_minimal'), experienceSelfReportedYears: z.null().optional() }),
+  z.object({ experienceType: z.literal('specified_years'), experienceSelfReportedYears: z.coerce.number().min(0) }),
+  z.object({ experienceType: z.literal('known_existing'), experienceSelfReportedYears: z.null().optional() }),
+]);
 
 const idParamsJsonSchema = {
   type: 'object',
@@ -88,6 +112,9 @@ const anyObjectSchema = {
 
 function handleRegistrationError(reply: FastifyReply, error: unknown) {
   if (error instanceof RegistrationShellValidationError) {
+    return sendValidationError(reply, error.message, error.details);
+  }
+  if (error instanceof RegistrationPhase5ValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
   if (error instanceof z.ZodError) {
@@ -357,6 +384,129 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         if (!(await requireDraftAccess(request, reply, id))) return reply;
         await completeShell(id);
         return await getRegistrationShellPayload(id);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.get<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/phase5',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        const registration = await requireDraftAccess(request, reply, id);
+        if (!registration) return reply;
+        return await getRegistrationPhase5Payload(id, (request as AuthenticatedRequest).member);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.patch<{ Params: { id: number }; Body: z.infer<typeof membershipSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/membership',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        const body = membershipSchema.parse(request.body);
+        return await updateMembership(id, (request as AuthenticatedRequest).member, body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.patch<{ Params: { id: number }; Body: z.infer<typeof discountSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/discounts',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        const body = discountSchema.parse(request.body);
+        return await updateDiscounts(id, (request as AuthenticatedRequest).member, body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.patch<{ Params: { id: number }; Body: z.infer<typeof experienceSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/experience',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        const body = experienceSchema.parse(request.body);
+        return await updateExperience(id, (request as AuthenticatedRequest).member, body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/submit',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        return await submitRegistrationPhase5({ registrationId: id, actor: (request as AuthenticatedRequest).member });
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/payment-cancelled',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        await markCurlingRegistrationPaymentCancelled(id, (request as AuthenticatedRequest).member);
+        return { ok: true };
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
