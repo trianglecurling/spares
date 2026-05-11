@@ -26,6 +26,12 @@ export interface Member {
   name: string;
   email: string | null;
   phone: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  date_of_birth?: DbDate | null;
+  mailing_address?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
   valid_through: DbDate | null;
   spare_only: number;
   social_member: number;

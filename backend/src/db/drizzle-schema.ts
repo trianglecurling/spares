@@ -22,6 +22,12 @@ export const membersSqlite = sqliteTable('members', {
   name: text('name').notNull(),
   email: text('email').notNull(),
   phone: text('phone'),
+  first_name: text('first_name'),
+  last_name: text('last_name'),
+  date_of_birth: text('date_of_birth'),
+  mailing_address: text('mailing_address'),
+  emergency_contact_name: text('emergency_contact_name'),
+  emergency_contact_phone: text('emergency_contact_phone'),
   // If set (YYYY-MM-DD), member is valid through that date (inclusive). Null = no expiry.
   valid_through: text('valid_through'),
   // Spare-only members can participate as spares, but cannot create spare requests.
@@ -137,7 +143,10 @@ export const memberAccountAccessDelegationsSqlite = sqliteTable('member_account_
 // ---------- Curling season / league registration (Phase 1) ----------
 export type RegistrationPeriodStateSqlite = 'closed' | 'priority' | 'open';
 export type CurlingRegistrationStatusSqlite =
-  | 'draft'
+  | 'identity_incomplete'
+  | 'policies_incomplete'
+  | 'demographics_incomplete'
+  | 'shell_complete'
   | 'submitted'
   | 'awaiting_staff_review'
   | 'awaiting_placement'
@@ -358,40 +367,17 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   session_id: integer('session_id')
     .notNull()
     .references(() => curlingSessionsSqlite.id, { onDelete: 'restrict' }),
-  curler_member_id: integer('curler_member_id')
-    .notNull()
-    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
-  submitted_by_member_id: integer('submitted_by_member_id')
-    .notNull()
-    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
-  registering_for_self: integer('registering_for_self').default(1).notNull(),
+  submitted_by_member_id: integer('submitted_by_member_id').references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  curler_member_id: integer('curler_member_id').references(() => membersSqlite.id, { onDelete: 'restrict' }),
   returning_member_answer: integer('returning_member_answer'),
-  status: text('status').notNull().default('draft').$type<CurlingRegistrationStatusSqlite>(),
-  membership_option: text('membership_option')
-    .notNull()
-    .default('none')
-    .$type<CurlingMembershipOptionSqlite>(),
-  experience_type: text('experience_type')
-    .notNull()
-    .default('none_or_minimal')
-    .$type<CurlingExperienceTypeSqlite>(),
-  self_reported_experience_years: real('self_reported_experience_years'),
-  student_discount_claimed: integer('student_discount_claimed').default(0).notNull(),
-  student_institution: text('student_institution'),
-  reciprocal_discount_claimed: integer('reciprocal_discount_claimed').default(0).notNull(),
-  reciprocal_club_name: text('reciprocal_club_name'),
-  winter_only_discount_applied: integer('winter_only_discount_applied').default(0).notNull(),
-  junior_assistance_requested_percent: real('junior_assistance_requested_percent'),
-  junior_assistance_decision: text('junior_assistance_decision'),
-  deferred_payment: integer('deferred_payment').default(0).notNull(),
-  deferred_payment_reason: text('deferred_payment_reason'),
-  stripe_checkout_session_id: text('stripe_checkout_session_id'),
-  payment_status: text('payment_status')
-    .notNull()
-    .default('unpaid')
-    .$type<CurlingRegistrationPaymentStatusSqlite>(),
-  submitted_at: text('submitted_at'),
-  paid_at: text('paid_at'),
+  registering_for_self: integer('registering_for_self'),
+  demographics_current_confirmed: integer('demographics_current_confirmed').default(0).notNull(),
+  guardian_first_name: text('guardian_first_name'),
+  guardian_last_name: text('guardian_last_name'),
+  guardian_email: text('guardian_email'),
+  guardian_phone: text('guardian_phone'),
+  status: text('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
+  shell_completed_at: text('shell_completed_at'),
   cancelled_at: text('cancelled_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
@@ -401,7 +387,7 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   curlerIdx: index('idx_curling_registrations_curler_member_id').on(table.curler_member_id),
   submitterIdx: index('idx_curling_registrations_submitted_by_member_id').on(table.submitted_by_member_id),
   statusIdx: index('idx_curling_registrations_status').on(table.status),
-  payIdx: index('idx_curling_registrations_payment_status').on(table.payment_status),
+  resumeIdx: index('idx_curling_registrations_resume').on(table.season_id, table.session_id, table.curler_member_id, table.status),
 }));
 
 export const curlingLeagueSabbaticalsSqlite = sqliteTable('curling_league_sabbaticals', {
@@ -455,6 +441,10 @@ export const registrationPolicyAcceptancesSqlite = sqliteTable('registration_pol
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   regIdx: index('idx_registration_policy_acceptances_registration_id').on(table.registration_id),
+  regPolicyUnique: uniqueIndex('registration_policy_acceptances_registration_policy_unique').on(
+    table.registration_id,
+    table.policy_type
+  ),
 }));
 
 export const registrationSelectionsSqlite = sqliteTable('registration_selections', {
@@ -1784,6 +1774,12 @@ export const membersPg = pgTable('members', {
   name: textPg('name').notNull(),
   email: textPg('email').notNull(),
   phone: textPg('phone'),
+  first_name: textPg('first_name'),
+  last_name: textPg('last_name'),
+  date_of_birth: date('date_of_birth'),
+  mailing_address: textPg('mailing_address'),
+  emergency_contact_name: textPg('emergency_contact_name'),
+  emergency_contact_phone: textPg('emergency_contact_phone'),
   valid_through: date('valid_through'),
   spare_only: integerPg('spare_only').default(0).notNull(),
   social_member: integerPg('social_member').default(0).notNull(),
@@ -1975,40 +1971,17 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   session_id: integerPg('session_id')
     .notNull()
     .references(() => curlingSessionsPg.id, { onDelete: 'restrict' }),
-  curler_member_id: integerPg('curler_member_id')
-    .notNull()
-    .references(() => membersPg.id, { onDelete: 'restrict' }),
-  submitted_by_member_id: integerPg('submitted_by_member_id')
-    .notNull()
-    .references(() => membersPg.id, { onDelete: 'restrict' }),
-  registering_for_self: integerPg('registering_for_self').default(1).notNull(),
+  submitted_by_member_id: integerPg('submitted_by_member_id').references(() => membersPg.id, { onDelete: 'restrict' }),
+  curler_member_id: integerPg('curler_member_id').references(() => membersPg.id, { onDelete: 'restrict' }),
   returning_member_answer: integerPg('returning_member_answer'),
-  status: textPg('status').notNull().default('draft').$type<CurlingRegistrationStatusSqlite>(),
-  membership_option: textPg('membership_option')
-    .notNull()
-    .default('none')
-    .$type<CurlingMembershipOptionSqlite>(),
-  experience_type: textPg('experience_type')
-    .notNull()
-    .default('none_or_minimal')
-    .$type<CurlingExperienceTypeSqlite>(),
-  self_reported_experience_years: doublePrecision('self_reported_experience_years'),
-  student_discount_claimed: integerPg('student_discount_claimed').default(0).notNull(),
-  student_institution: textPg('student_institution'),
-  reciprocal_discount_claimed: integerPg('reciprocal_discount_claimed').default(0).notNull(),
-  reciprocal_club_name: textPg('reciprocal_club_name'),
-  winter_only_discount_applied: integerPg('winter_only_discount_applied').default(0).notNull(),
-  junior_assistance_requested_percent: doublePrecision('junior_assistance_requested_percent'),
-  junior_assistance_decision: textPg('junior_assistance_decision'),
-  deferred_payment: integerPg('deferred_payment').default(0).notNull(),
-  deferred_payment_reason: textPg('deferred_payment_reason'),
-  stripe_checkout_session_id: textPg('stripe_checkout_session_id'),
-  payment_status: textPg('payment_status')
-    .notNull()
-    .default('unpaid')
-    .$type<CurlingRegistrationPaymentStatusSqlite>(),
-  submitted_at: timestamp('submitted_at', { withTimezone: false }),
-  paid_at: timestamp('paid_at', { withTimezone: false }),
+  registering_for_self: integerPg('registering_for_self'),
+  demographics_current_confirmed: integerPg('demographics_current_confirmed').default(0).notNull(),
+  guardian_first_name: textPg('guardian_first_name'),
+  guardian_last_name: textPg('guardian_last_name'),
+  guardian_email: textPg('guardian_email'),
+  guardian_phone: textPg('guardian_phone'),
+  status: textPg('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
+  shell_completed_at: timestamp('shell_completed_at', { withTimezone: false }),
   cancelled_at: timestamp('cancelled_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
@@ -2018,7 +1991,7 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   curlerIdx: indexPg('idx_curling_registrations_curler_member_id').on(table.curler_member_id),
   submitterIdx: indexPg('idx_curling_registrations_submitted_by_member_id').on(table.submitted_by_member_id),
   statusIdx: indexPg('idx_curling_registrations_status').on(table.status),
-  payIdx: indexPg('idx_curling_registrations_payment_status').on(table.payment_status),
+  resumeIdx: indexPg('idx_curling_registrations_resume').on(table.season_id, table.session_id, table.curler_member_id, table.status),
 }));
 
 export const curlingLeagueSabbaticalsPg = pgTable('curling_league_sabbaticals', {
@@ -2072,6 +2045,10 @@ export const registrationPolicyAcceptancesPg = pgTable('registration_policy_acce
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   regIdx: indexPg('idx_registration_policy_acceptances_registration_id').on(table.registration_id),
+  regPolicyUnique: uniqueIndexPg('registration_policy_acceptances_registration_policy_unique').on(
+    table.registration_id,
+    table.policy_type
+  ),
 }));
 
 export const registrationSelectionsPg = pgTable('registration_selections', {
