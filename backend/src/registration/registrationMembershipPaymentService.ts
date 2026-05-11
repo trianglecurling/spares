@@ -16,13 +16,13 @@ import type { RegistrationContext } from './registrationContext.js';
 import { canViewOrEditRegistration, getEffectiveRegistrationWindow, getRegistrationById } from './registrationShellService.js';
 import type { Member } from '../types.js';
 
-export class RegistrationPhase5ValidationError extends Error {
+export class RegistrationMembershipPaymentValidationError extends Error {
   constructor(public details: Record<string, string>) {
-    super('Registration phase 5 validation failed');
+    super('Registration membership payment validation failed');
   }
 }
 
-type RegistrationPhase5Selection = {
+type RegistrationMembershipPaymentSelection = {
   membershipOption: CurlingMembershipOptionSqlite;
   studentDiscountClaimed: boolean;
   studentInstitution: string | null;
@@ -32,7 +32,7 @@ type RegistrationPhase5Selection = {
   experienceSelfReportedYears: number | null;
 };
 
-type RegistrationPhase5RowFields = {
+type RegistrationMembershipPaymentRowFields = {
   status: string;
   membership_option: CurlingMembershipOptionSqlite;
   student_discount_claimed: number;
@@ -43,8 +43,8 @@ type RegistrationPhase5RowFields = {
   experience_self_reported_years: number | null;
 };
 
-export type RegistrationPhase5Payload = {
-  selection: RegistrationPhase5Selection;
+export type RegistrationMembershipPaymentPayload = {
+  selection: RegistrationMembershipPaymentSelection;
   isFirstSessionOfSeason: boolean;
   knownExperienceYears: number;
   feePreview: RegistrationFeePreview;
@@ -123,7 +123,7 @@ function frontendBaseUrl(): string {
   return config.frontendUrl.replace(/\/+$/, '');
 }
 
-function phase5RegistrationFields(row: RegistrationPhase5RowFields): RegistrationPhase5Selection {
+function membershipPaymentFieldsFromRegistrationRow(row: RegistrationMembershipPaymentRowFields): RegistrationMembershipPaymentSelection {
   return {
     membershipOption: (row.membership_option ?? 'none') as CurlingMembershipOptionSqlite,
     studentDiscountClaimed: row.student_discount_claimed === 1,
@@ -141,10 +141,10 @@ function phase5RegistrationFields(row: RegistrationPhase5RowFields): Registratio
 async function requireRegistrationAccess(registrationId: number, actor: Member) {
   const registration = await getRegistrationById(registrationId);
   if (!registration) {
-    throw new RegistrationPhase5ValidationError({ registration: 'Registration draft not found.' });
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration draft not found.' });
   }
   if (!(await canViewOrEditRegistration(actor, registration))) {
-    throw new RegistrationPhase5ValidationError({ registration: 'You do not have access to this registration.' });
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'You do not have access to this registration.' });
   }
   return registration;
 }
@@ -157,7 +157,7 @@ async function loadFullRegistration(registrationId: number) {
     .where(eq(schema.curlingRegistrations.id, registrationId))
     .limit(1);
   if (!registration) {
-    throw new RegistrationPhase5ValidationError({ registration: 'Registration draft not found.' });
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration draft not found.' });
   }
   return registration;
 }
@@ -227,22 +227,38 @@ async function loadRegistrationSettings(): Promise<{
   };
 }
 
-export async function buildRegistrationContextForDraft(registrationId: number): Promise<RegistrationContext> {
-  const { db, schema } = getDrizzleDb();
-  const registration = await loadFullRegistration(registrationId);
+type RegistrationMembershipPaymentSourceRow = {
+  season_id: number;
+  session_id: number;
+  curler_member_id: number | null;
+  returning_member_answer: number | null;
+  submitted_by_member_id: number | null;
+  status: string;
+  membership_option: CurlingMembershipOptionSqlite;
+  student_discount_claimed: number;
+  student_institution: string | null;
+  reciprocal_discount_claimed: number;
+  reciprocal_club_name: string | null;
+  experience_type: CurlingExperienceTypeSqlite | null;
+  experience_self_reported_years: number | null;
+};
+
+async function buildRegistrationContextFromSourceRow(
+  registration: RegistrationMembershipPaymentSourceRow,
+  options: {
+    curlerDateOfBirth: string | null | undefined;
+    completedSessions: RegistrationContext['experience']['completedSessions'];
+  },
+): Promise<RegistrationContext> {
   const window = await getEffectiveRegistrationWindow(registration.season_id, registration.session_id);
   if (!window) {
-    throw new RegistrationPhase5ValidationError({ registration: 'Registration window not found.' });
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration window not found.' });
   }
 
-  const [curler] = registration.curler_member_id
-    ? await db.select().from(schema.members).where(eq(schema.members.id, registration.curler_member_id)).limit(1)
-    : [];
-  const completedSessions = registration.curler_member_id ? await loadCompletedSessions(registration.curler_member_id) : [];
   const settings = await loadRegistrationSettings();
-  const selected = phase5RegistrationFields(registration);
+  const selected = membershipPaymentFieldsFromRegistrationRow(registration);
   const membershipOption = selected.membershipOption;
-  const useKnownExperience = selected.experienceType === null && completedSessions.length > 0;
+  const useKnownExperience = selected.experienceType === null && options.completedSessions.length > 0;
   const experienceType = (selected.experienceType ?? (useKnownExperience ? 'known_existing' : 'none_or_minimal')) as CurlingExperienceTypeSqlite;
 
   return {
@@ -265,14 +281,14 @@ export async function buildRegistrationContextForDraft(registrationId: number): 
       memberId: registration.curler_member_id,
       hasUserAccount: Boolean(registration.curler_member_id),
       isReturningMember: registration.returning_member_answer === 1,
-      dateOfBirth: normalizeDate(curler?.date_of_birth),
+      dateOfBirth: normalizeDate(options.curlerDateOfBirth),
     },
     submittedByMemberId: registration.submitted_by_member_id,
     membershipOption,
     experience: {
       type: experienceType,
       selfReportedYears: selected.experienceSelfReportedYears,
-      completedSessions,
+      completedSessions: options.completedSessions,
     },
     activeLeagueIds: [],
     participatedLeagueIds: [],
@@ -299,14 +315,91 @@ export async function buildRegistrationContextForDraft(registrationId: number): 
   };
 }
 
-export async function getRegistrationPhase5Payload(registrationId: number, actor: Member): Promise<RegistrationPhase5Payload> {
+export async function buildRegistrationContextForDraft(registrationId: number): Promise<RegistrationContext> {
+  const { db, schema } = getDrizzleDb();
+  const registration = await loadFullRegistration(registrationId);
+  const [curler] = registration.curler_member_id
+    ? await db.select().from(schema.members).where(eq(schema.members.id, registration.curler_member_id)).limit(1)
+    : [];
+  const completedSessions = registration.curler_member_id ? await loadCompletedSessions(registration.curler_member_id) : [];
+  return buildRegistrationContextFromSourceRow(registration, {
+    curlerDateOfBirth: curler?.date_of_birth,
+    completedSessions,
+  });
+}
+
+export type GuestMembershipPaymentPreviewInput = {
+  seasonId: number;
+  sessionId: number;
+  curlerDateOfBirth: string;
+  membershipChoice: 'regular' | 'social';
+  basicIcePrivileges: boolean;
+  studentDiscountClaimed: boolean;
+  studentInstitution: string | null;
+  reciprocalDiscountClaimed: boolean;
+  reciprocalClubName: string | null;
+  experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing';
+  experienceSelfReportedYears: number | null;
+};
+
+export async function getGuestMembershipPaymentPreview(input: GuestMembershipPaymentPreviewInput): Promise<RegistrationMembershipPaymentPayload> {
+  const window = await getEffectiveRegistrationWindow(input.seasonId, input.sessionId);
+  if (!window) {
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration window not found.' });
+  }
+  const membershipOption: CurlingMembershipOptionSqlite =
+    input.membershipChoice === 'social' ? 'social' : input.basicIcePrivileges ? 'regular_spare_only' : 'regular';
+  const experienceTypeResolved: CurlingExperienceTypeSqlite | null =
+    input.membershipChoice === 'social'
+      ? null
+      : input.experienceType === 'known_existing'
+        ? 'none_or_minimal'
+        : input.experienceType;
+  const experienceYears =
+    input.membershipChoice === 'social' || input.experienceType !== 'specified_years' ? null : input.experienceSelfReportedYears;
+
+  const synthetic: RegistrationMembershipPaymentSourceRow = {
+    season_id: input.seasonId,
+    session_id: input.sessionId,
+    curler_member_id: null,
+    returning_member_answer: 0,
+    submitted_by_member_id: null,
+    status: 'shell_complete',
+    membership_option: membershipOption,
+    student_discount_claimed: input.membershipChoice === 'social' ? 0 : input.studentDiscountClaimed ? 1 : 0,
+    student_institution: input.membershipChoice === 'social' ? null : input.studentInstitution,
+    reciprocal_discount_claimed: input.membershipChoice === 'social' ? 0 : input.reciprocalDiscountClaimed ? 1 : 0,
+    reciprocal_club_name: input.membershipChoice === 'social' ? null : input.reciprocalClubName,
+    experience_type: experienceTypeResolved,
+    experience_self_reported_years: experienceYears,
+  };
+
+  const context = await buildRegistrationContextFromSourceRow(synthetic, {
+    curlerDateOfBirth: input.curlerDateOfBirth,
+    completedSessions: [],
+  });
+  const evaluation = evaluateRegistrationDraft(context);
+
+  return {
+    selection: membershipPaymentFieldsFromRegistrationRow(synthetic),
+    isFirstSessionOfSeason: context.isFirstSessionOfSeason,
+    knownExperienceYears: calculateClubExperienceYears(context.experience.completedSessions),
+    feePreview: evaluation.feePreview,
+    paymentDecision: evaluation.paymentDecision,
+  };
+}
+
+export async function getRegistrationMembershipPaymentPayload(
+  registrationId: number,
+  actor: Member,
+): Promise<RegistrationMembershipPaymentPayload> {
   await requireRegistrationAccess(registrationId, actor);
   const registration = await loadFullRegistration(registrationId);
   const context = await buildRegistrationContextForDraft(registrationId);
   const evaluation = evaluateRegistrationDraft(context);
 
   return {
-    selection: phase5RegistrationFields(registration),
+    selection: membershipPaymentFieldsFromRegistrationRow(registration),
     isFirstSessionOfSeason: context.isFirstSessionOfSeason,
     knownExperienceYears: calculateClubExperienceYears(context.experience.completedSessions),
     feePreview: evaluation.feePreview,
@@ -316,7 +409,7 @@ export async function getRegistrationPhase5Payload(registrationId: number, actor
 
 function assertShellComplete(row: { status: string }): void {
   if (row.status !== 'shell_complete' && row.status !== 'submitted' && row.status !== 'awaiting_payment') {
-    throw new RegistrationPhase5ValidationError({ registration: 'Complete the registration shell before choosing membership.' });
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Complete the registration shell before choosing membership.' });
   }
 }
 
@@ -341,7 +434,7 @@ export async function updateMembership(registrationId: number, actor: Member, in
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));
-  return getRegistrationPhase5Payload(registrationId, actor);
+  return getRegistrationMembershipPaymentPayload(registrationId, actor);
 }
 
 export async function updateDiscounts(registrationId: number, actor: Member, input: UpdateDiscountsInput) {
@@ -349,16 +442,16 @@ export async function updateDiscounts(registrationId: number, actor: Member, inp
   const registration = await loadFullRegistration(registrationId);
   assertShellComplete(registration);
   if (registration.membership_option === 'social') {
-    throw new RegistrationPhase5ValidationError({ discounts: 'Social membership cannot receive discounts.' });
+    throw new RegistrationMembershipPaymentValidationError({ discounts: 'Social membership cannot receive discounts.' });
   }
 
   const studentClaimed = input.studentDiscountClaimed === true;
   const reciprocalClaimed = input.reciprocalDiscountClaimed === true;
   if (studentClaimed && !trimOrNull(input.studentInstitution)) {
-    throw new RegistrationPhase5ValidationError({ studentInstitution: 'Student discount requires an institution.' });
+    throw new RegistrationMembershipPaymentValidationError({ studentInstitution: 'Student discount requires an institution.' });
   }
   if (reciprocalClaimed && !trimOrNull(input.reciprocalClubName)) {
-    throw new RegistrationPhase5ValidationError({ reciprocalClubName: 'Reciprocal discount requires another curling club.' });
+    throw new RegistrationMembershipPaymentValidationError({ reciprocalClubName: 'Reciprocal discount requires another curling club.' });
   }
 
   const { db, schema } = getDrizzleDb();
@@ -372,7 +465,7 @@ export async function updateDiscounts(registrationId: number, actor: Member, inp
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));
-  return getRegistrationPhase5Payload(registrationId, actor);
+  return getRegistrationMembershipPaymentPayload(registrationId, actor);
 }
 
 export async function updateExperience(registrationId: number, actor: Member, input: UpdateExperienceInput) {
@@ -380,11 +473,11 @@ export async function updateExperience(registrationId: number, actor: Member, in
   const registration = await loadFullRegistration(registrationId);
   assertShellComplete(registration);
   if (registration.membership_option === 'social') {
-    throw new RegistrationPhase5ValidationError({ experience: 'Social membership does not require curling experience.' });
+    throw new RegistrationMembershipPaymentValidationError({ experience: 'Social membership does not require curling experience.' });
   }
   if (input.experienceType === 'specified_years') {
     if (!Number.isFinite(input.experienceSelfReportedYears) || input.experienceSelfReportedYears < 0) {
-      throw new RegistrationPhase5ValidationError({ experienceSelfReportedYears: 'Experience must be a non-negative number.' });
+      throw new RegistrationMembershipPaymentValidationError({ experienceSelfReportedYears: 'Experience must be a non-negative number.' });
     }
   }
 
@@ -397,30 +490,30 @@ export async function updateExperience(registrationId: number, actor: Member, in
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));
-  return getRegistrationPhase5Payload(registrationId, actor);
+  return getRegistrationMembershipPaymentPayload(registrationId, actor);
 }
 
 function assertReadyToSubmit(registration: { status: string }, context: RegistrationContext, feePreview: RegistrationFeePreview): void {
   if (registration.status !== 'shell_complete' && registration.status !== 'submitted' && registration.status !== 'awaiting_payment') {
-    throw new RegistrationPhase5ValidationError({ registration: 'Registration is not ready to submit.' });
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration is not ready to submit.' });
   }
   if (context.registrationState === 'closed') {
-    throw new RegistrationPhase5ValidationError({ registration: 'Registration is closed.' });
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration is closed.' });
   }
   if (context.membershipOption !== 'regular' && context.membershipOption !== 'regular_spare_only' && context.membershipOption !== 'social') {
-    throw new RegistrationPhase5ValidationError({ membershipOption: 'Choose regular or social membership.' });
+    throw new RegistrationMembershipPaymentValidationError({ membershipOption: 'Choose regular or social membership.' });
   }
   if (context.membershipOption === 'social') {
     return;
   }
   if (!context.experience.type) {
-    throw new RegistrationPhase5ValidationError({ experience: 'Curling experience is required.' });
+    throw new RegistrationMembershipPaymentValidationError({ experience: 'Curling experience is required.' });
   }
   if (context.experience.type === 'specified_years' && (context.experience.selfReportedYears ?? -1) < 0) {
-    throw new RegistrationPhase5ValidationError({ experienceSelfReportedYears: 'Experience must be a non-negative number.' });
+    throw new RegistrationMembershipPaymentValidationError({ experienceSelfReportedYears: 'Experience must be a non-negative number.' });
   }
   if (feePreview.blockingErrors.length > 0) {
-    throw new RegistrationPhase5ValidationError({
+    throw new RegistrationMembershipPaymentValidationError({
       fees: feePreview.blockingErrors.map((error) => error.message).join(' '),
     });
   }
@@ -471,7 +564,7 @@ async function createInvoiceSnapshot(input: {
   return invoice.id;
 }
 
-export async function submitRegistrationPhase5(input: SubmitRegistrationInput): Promise<SubmitRegistrationResult> {
+export async function submitRegistrationMembershipPayment(input: SubmitRegistrationInput): Promise<SubmitRegistrationResult> {
   await requireRegistrationAccess(input.registrationId, input.actor);
   const registration = await loadFullRegistration(input.registrationId);
   const context = await buildRegistrationContextForDraft(input.registrationId);
@@ -506,8 +599,8 @@ export async function submitRegistrationPhase5(input: SubmitRegistrationInput): 
       });
       const checkout = await paymentService.createHostedCheckoutForOrder({
         orderId: order.id,
-        successUrl: `${frontendBaseUrl()}/registration/${input.registrationId}/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: `${frontendBaseUrl()}/registration/${input.registrationId}/cancel`,
+        successUrl: `${frontendBaseUrl()}/registration/success?registration_id=${input.registrationId}&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
       });
       await db
         .update(schema.registrationInvoices)
@@ -539,7 +632,7 @@ export async function submitRegistrationPhase5(input: SubmitRegistrationInput): 
       };
     } catch (error) {
       if (error instanceof PaymentServiceError) {
-        throw new RegistrationPhase5ValidationError({ payment: error.message });
+        throw new RegistrationMembershipPaymentValidationError({ payment: error.message });
       }
       throw error;
     }

@@ -527,3 +527,121 @@ Then only discount-eligible items are discounted
 | Delegated user opens draft | Access allowed |
 | Unrelated user opens draft | Access denied |
 | Staff/admin opens draft | Access allowed according to RBAC |
+
+# Phase 6: League Selection Test Matrix
+
+## Returning guarantees
+
+| Case | Expected result |
+| --- | --- |
+| Returning member in priority registration has one predecessor league and selects Return | Selection is accepted as a guaranteed return |
+| Returning member in priority registration has two predecessor leagues and selects Return for both | Both selections are accepted as guaranteed returns |
+| Returning member attempts to protect three leagues | System blocks the third protected claim |
+| Returning member outside priority registration attempts guaranteed return | System blocks guaranteed return |
+| Returning member attempts guaranteed return to a league without predecessor eligibility | System blocks guaranteed return |
+| New member attempts guaranteed return | System blocks guaranteed return |
+
+## Sabbaticals
+
+| Case | Expected result |
+| --- | --- |
+| Returning member in priority registration requests sabbatical for eligible predecessor league | Sabbatical selection is accepted |
+| Returning member requests two sabbaticals | Both are accepted if eligible |
+| Returning member requests two returns and one sabbatical | System blocks because protected claims exceed two |
+| Returning member requests sabbatical outside priority registration | System blocks sabbatical |
+| Returning member requests sabbatical for BYOT league | System blocks sabbatical |
+| Returning member requests sabbatical for temporary sabbatical-fill spot | System blocks sabbatical |
+| Sabbatical-only registration has no regular membership | Allowed |
+| Sabbatical exceeds configured duration limit | System blocks unless staff override exists |
+| Sabbatical duration limit is overridden by staff | Sabbatical is allowed and override is auditable |
+
+## Standard league eligibility
+
+| Case | Expected result |
+| --- | --- |
+| Under-minimum-age curler selects restricted league | System blocks selection |
+| Over-maximum-age curler selects restricted league | System blocks selection |
+| New curler with no experience selects non-instructional experienced league | System blocks selection |
+| New curler with no experience selects instructional league | System allows selection |
+| Curler with sufficient experience selects experienced league | System allows selection |
+| Non-member joins waitlist for league they are eligible for | System allows waitlist entry |
+| Non-member tries to join waitlist for league they are not eligible for | System blocks waitlist entry |
+
+## ADD waitlists
+
+| Case | Expected result |
+| --- | --- |
+| Curler with zero leagues creates ADD waitlist entry | Entry is allowed |
+| Curler with one league creates ADD waitlist entry | Entry is allowed |
+| Curler with two leagues creates ADD waitlist entry | System blocks ADD |
+| Curler with one league creates several ADD entries | All are allowed |
+| Curler reaches two leagues while having active ADD entries | System requires cleanup |
+| Curler removes ADD entries during cleanup | Cleanup succeeds |
+| Curler converts ADD entries to REPLACE during cleanup | Cleanup succeeds if REPLACE rules are satisfied |
+| Curler attempts to keep ADD entries after reaching two leagues | Registration progress is blocked |
+
+## REPLACE waitlists
+
+| Case | Expected result |
+| --- | --- |
+| Curler creates REPLACE waitlist and identifies replacement league | Entry is allowed |
+| Curler creates REPLACE waitlist without replacement league | System blocks entry |
+| Curler creates two REPLACE waitlists | Both are allowed |
+| Curler attempts third active REPLACE waitlist | System blocks third entry |
+| Curler changes replacement league | Change is saved and audited if it mutates waitlist state |
+
+## Waitlist rollover
+
+| Case | Expected result |
+| --- | --- |
+| League has successor and active ADD entries | Entries roll forward preserving order |
+| League has successor and active REPLACE entries | Entries roll forward preserving order and replacement intent |
+| Rolled ADD entry is no longer valid because curler now has two leagues | System requires cleanup |
+| Rolled REPLACE entry references a league the curler no longer holds | System requires cleanup |
+| Waitlist entry rolls forward | Audit record is created |
+
+## Third-league interest
+
+| Case | Expected result |
+| --- | --- |
+| Curler provides one third-league interest choice | Choice is saved |
+| Curler provides multiple third-league interest choices | Choices are saved in order |
+| Curler provides many third-league interest choices | All are saved; no limit is enforced |
+| Registration includes third-league interest | Payment is deferred |
+| Third-league interest is submitted | No normal waitlist entries are created |
+| Curler attempts to select BYOT as third-league interest | System blocks selection |
+
+## BYOT leagues
+
+| Case | Expected result |
+| --- | --- |
+| New member requests BYOT league as first or second league | Request is allowed |
+| Returning member requests BYOT league as first or second league | Request is allowed |
+| BYOT request has teammate text | Request is allowed |
+| BYOT request omits teammate text | System blocks request |
+| BYOT requested as third league | System blocks request |
+| BYOT request is submitted | No waitlist entry is created |
+| BYOT request is submitted | No sabbatical option is available |
+| BYOT request is submitted | Treated as guaranteed for payment timing |
+
+## Junior Recreational
+
+| Case | Expected result |
+| --- | --- |
+| Junior Recreational selected | Normal league selection is skipped |
+| Junior Recreational registrant attempts to add standard league | System blocks selection |
+| Junior Recreational registrant attempts to purchase sparing rights | System blocks selection |
+| Junior Recreational registrant requests financial assistance | Payment is deferred |
+| Junior Recreational registrant does not request financial assistance | Payment may proceed immediately if no other deferral applies |
+
+## League selection summary
+
+| Case | Expected result |
+| --- | --- |
+| Registrant has guaranteed return | Summary labels it as Guaranteed return |
+| Registrant has sabbatical | Summary labels it as Sabbatical |
+| Registrant has ADD waitlist | Summary labels it as Waitlist: ADD |
+| Registrant has REPLACE waitlist | Summary labels it as Waitlist: REPLACE and shows replacement league |
+| Registrant has third-league interest | Summary labels it as Third-league interest |
+| Registrant has BYOT request | Summary labels it as BYOT request |
+| Registrant has deferred-payment reason | Summary clearly states payment will be deferred |

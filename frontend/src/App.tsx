@@ -126,7 +126,9 @@ function App() {
                   <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
                   <Route path="/events/:slug/register/success" element={<PublicEventRegisterSuccessPage />} />
                   <Route path="/registration/start" element={<RegistrationShellPage />} />
-                  <Route path="/registration/:registrationId/:step?" element={<RegistrationShellPage />} />
+                  <Route path="/registration/success" element={<RegistrationShellPage />} />
+                  <Route path="/registration/cancel" element={<RegistrationShellPage />} />
+                  <Route path="/registration/:step" element={<RegistrationShellPage />} />
 
                   <Route path="/go/:slug/info" element={<PublicPermalinkInfo />} />
 

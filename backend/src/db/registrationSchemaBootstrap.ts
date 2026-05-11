@@ -321,7 +321,7 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'successor_league_id', ddl: 'successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
 ];
 
-const registrationPhase5ColumnsSQLite: { name: string; ddl: string }[] = [
+const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'membership_option', ddl: "membership_option TEXT NOT NULL DEFAULT 'none' CHECK(membership_option IN ('none', 'regular', 'social', 'regular_spare_only', 'junior_recreational'))" },
   { name: 'experience_type', ddl: "experience_type TEXT CHECK(experience_type IN ('none_or_minimal', 'specified_years', 'known_existing'))" },
   { name: 'experience_self_reported_years', ddl: 'experience_self_reported_years REAL' },
@@ -367,11 +367,11 @@ async function sqliteEnsureLeaguesRegistrationColumns(
   );
 }
 
-async function sqliteEnsureRegistrationPhase5Columns(
+async function sqliteEnsureRegistrationMembershipPaymentColumns(
   db: DatabaseAdapter,
   execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
 ): Promise<void> {
-  for (const col of registrationPhase5ColumnsSQLite) {
+  for (const col of registrationMembershipPaymentColumnsSQLite) {
     await ensureSQLiteColumn(db, 'curling_registrations', col.name, col.ddl, execSQL);
   }
 }
@@ -395,7 +395,7 @@ const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
 ];
 
-const registrationPhase5ColumnsPg: string[] = [
+const registrationMembershipPaymentColumnsPg: string[] = [
   "ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS membership_option TEXT NOT NULL DEFAULT 'none'",
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS experience_type TEXT',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS experience_self_reported_years DOUBLE PRECISION',
@@ -423,8 +423,8 @@ async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: D
   );
 }
 
-async function ensureRegistrationPhase5Postgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
-  for (const ddl of registrationPhase5ColumnsPg) {
+async function ensureRegistrationMembershipPaymentPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
+  for (const ddl of registrationMembershipPaymentColumnsPg) {
     await execSQL(db, ddl);
   }
 }
@@ -441,10 +441,10 @@ export async function ensureCurlingRegistrationBootstrap(
   await dropLegacyRegistrationTables(db, execSQL);
   await execSQL(db, curlingRegistrationDDLForDialect(Boolean(db.isAsync?.())));
   if (db.isAsync()) {
-    await ensureRegistrationPhase5Postgres(db, execSQL);
+    await ensureRegistrationMembershipPaymentPostgres(db, execSQL);
     await ensureLeagueBootstrapPostgres(db, execSQL);
   } else {
-    await sqliteEnsureRegistrationPhase5Columns(db, execSQL);
+    await sqliteEnsureRegistrationMembershipPaymentColumns(db, execSQL);
     await sqliteEnsureLeaguesRegistrationColumns(db, execSQL);
   }
 }
@@ -460,7 +460,7 @@ export function ensureCurlingRegistrationBootstrapSync(
   const registrationStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(curling_registrations)`);
   const registrationCols = registrationStmt.all() as { name?: string | null }[];
   const registrationNames = new Set(registrationCols.map((c) => String(c.name)));
-  for (const col of registrationPhase5ColumnsSQLite) {
+  for (const col of registrationMembershipPaymentColumnsSQLite) {
     if (!registrationNames.has(col.name)) {
       execSQLSync(db, `ALTER TABLE curling_registrations ADD COLUMN ${col.ddl}`);
     }

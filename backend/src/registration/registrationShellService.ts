@@ -121,6 +121,26 @@ export class RegistrationShellValidationError extends Error {
   }
 }
 
+/** Thrown when a signed-in member already has a registration that is not finished or cancelled. */
+export class RegistrationInProgressError extends Error {
+  constructor() {
+    super('Registration already in progress');
+  }
+}
+
+const IN_PROGRESS_REGISTRATION_STATUSES = [
+  'identity_incomplete',
+  'policies_incomplete',
+  'demographics_incomplete',
+  'shell_complete',
+  'submitted',
+  'awaiting_staff_review',
+  'awaiting_placement',
+  'awaiting_payment',
+  'payment_started',
+  'paid',
+] as const satisfies readonly CurlingRegistrationStatusSqlite[];
+
 export function validateDemographics(input: MemberDemographicsInput): void {
   assertNonEmpty(input.firstName, 'firstName');
   assertNonEmpty(input.lastName, 'lastName');
@@ -249,10 +269,47 @@ export async function assertRegistrationOpen(seasonId: number, sessionId: number
   }
 }
 
-export async function createDraft(input: {
+export async function findActiveRegistrationForSubmitter(submittedByMemberId: number): Promise<RegistrationShellRow | null> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select()
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.submitted_by_member_id, submittedByMemberId),
+        inArray(schema.curlingRegistrations.status, [...IN_PROGRESS_REGISTRATION_STATUSES]),
+      ),
+    )
+    .orderBy(desc(schema.curlingRegistrations.updated_at))
+    .limit(1);
+  return rows[0] ? mapRegistration(rows[0]) : null;
+}
+
+export async function abandonRegistrationDraft(registrationId: number, actor: Member): Promise<void> {
+  const registration = await getRegistrationById(registrationId);
+  if (!registration) {
+    throw new RegistrationShellValidationError({ registration: 'Registration was not found.' });
+  }
+  if (!(await canViewOrEditRegistration(actor, registration))) {
+    throw new RegistrationShellValidationError({ registration: 'You do not have access to this registration.' });
+  }
+  if (registration.status === 'confirmed' || registration.status === 'cancelled') {
+    throw new RegistrationShellValidationError({ registration: 'This registration cannot be restarted.' });
+  }
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.curlingRegistrations)
+    .set({
+      status: 'cancelled',
+      cancelled_at: new Date() as any,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(schema.curlingRegistrations.id, registrationId));
+}
+
+export async function insertEmptyGuestRegistrationDraft(input: {
   seasonId: number;
   sessionId: number;
-  returningMember: boolean;
 }): Promise<RegistrationShellRow> {
   await assertRegistrationOpen(input.seasonId, input.sessionId);
   const { db, schema } = getDrizzleDb();
@@ -261,6 +318,32 @@ export async function createDraft(input: {
     .values({
       season_id: input.seasonId,
       session_id: input.sessionId,
+      returning_member_answer: 0,
+      status: 'identity_incomplete',
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .returning();
+  return mapRegistration(row);
+}
+
+export async function createDraft(input: {
+  seasonId: number;
+  sessionId: number;
+  returningMember: boolean;
+  submittedByMemberId: number;
+}): Promise<RegistrationShellRow> {
+  await assertRegistrationOpen(input.seasonId, input.sessionId);
+  const existing = await findActiveRegistrationForSubmitter(input.submittedByMemberId);
+  if (existing) {
+    throw new RegistrationInProgressError();
+  }
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .insert(schema.curlingRegistrations)
+    .values({
+      season_id: input.seasonId,
+      session_id: input.sessionId,
+      submitted_by_member_id: input.submittedByMemberId,
       returning_member_answer: input.returningMember ? 1 : 0,
       status: 'identity_incomplete',
       updated_at: sql`CURRENT_TIMESTAMP`,
@@ -559,4 +642,95 @@ export async function completeShell(registrationId: number): Promise<Registratio
     .where(eq(schema.curlingRegistrations.id, registrationId))
     .returning();
   return mapRegistration(row);
+}
+
+export type GuestRegistrationSubmitInput = {
+  seasonId: number;
+  sessionId: number;
+  registeringForSelf: boolean;
+  useSubmitterEmailForCurler?: boolean;
+  submitter?: Partial<MemberDemographicsInput> & { email: string };
+  curler: MemberDemographicsInput;
+  guardian?: GuardianInput;
+  membershipChoice: 'regular' | 'social';
+  basicIcePrivileges: boolean;
+  studentDiscountClaimed: boolean;
+  studentInstitution: string | null;
+  reciprocalDiscountClaimed: boolean;
+  reciprocalClubName: string | null;
+  experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing';
+  experienceSelfReportedYears: number | null;
+};
+
+export async function submitGuestRegistration(input: GuestRegistrationSubmitInput) {
+  await assertRegistrationOpen(input.seasonId, input.sessionId);
+  validateDemographics(input.curler);
+  const minor = isMinorOnRegistrationDate(input.curler.dateOfBirth);
+  if (minor) {
+    if (!input.guardian) {
+      throw new RegistrationShellValidationError({ guardian: 'Parent/guardian information is required for minors.' });
+    }
+    validateGuardian(input.guardian);
+  }
+  if (!input.registeringForSelf) {
+    const s = input.submitter ?? input.curler;
+    assertValidEmail(s.email || '', 'submitterEmail');
+  }
+
+  const draft = await insertEmptyGuestRegistrationDraft({ seasonId: input.seasonId, sessionId: input.sessionId });
+  const { submitter } = await attachNewCurler({
+    registrationId: draft.id,
+    registeringForSelf: input.registeringForSelf,
+    submitter: input.registeringForSelf ? undefined : input.submitter ?? input.curler,
+    curler: input.curler,
+    useSubmitterEmailForCurler: input.useSubmitterEmailForCurler,
+  });
+  await acceptPolicies(draft.id, submitter.id);
+  await updateCurlerDemographics(draft.id, input.curler, false);
+  if (minor && input.guardian) {
+    await updateGuardian(draft.id, input.guardian);
+  }
+  await completeShell(draft.id);
+
+  const { db, schema } = getDrizzleDb();
+  const [actorRow] = await db.select().from(schema.members).where(eq(schema.members.id, submitter.id)).limit(1);
+  if (!actorRow) {
+    throw new RegistrationShellValidationError({ registration: 'Could not load submitting member profile.' });
+  }
+  const actor = actorRow as Member;
+
+  const membershipPayment = await import('./registrationMembershipPaymentService.js');
+  if (input.membershipChoice === 'social') {
+    await membershipPayment.updateMembership(draft.id, actor, { membershipOption: 'social', basicIcePrivileges: false });
+  } else {
+    const resolvedExperienceType =
+      input.experienceType === 'known_existing' ? 'none_or_minimal' : input.experienceType;
+    await membershipPayment.updateMembership(draft.id, actor, { membershipOption: 'regular', basicIcePrivileges: false });
+    await membershipPayment.updateDiscounts(draft.id, actor, {
+      studentDiscountClaimed: input.studentDiscountClaimed,
+      studentInstitution: input.studentInstitution,
+      reciprocalDiscountClaimed: input.reciprocalDiscountClaimed,
+      reciprocalClubName: input.reciprocalClubName,
+    });
+    if (resolvedExperienceType === 'specified_years') {
+      const years = input.experienceSelfReportedYears;
+      if (years === null || years === undefined) {
+        throw new RegistrationShellValidationError({
+          experienceSelfReportedYears: 'Years of experience is required.',
+        });
+      }
+      await membershipPayment.updateExperience(draft.id, actor, {
+        experienceType: 'specified_years',
+        experienceSelfReportedYears: years,
+      });
+    } else {
+      await membershipPayment.updateExperience(draft.id, actor, {
+        experienceType: 'none_or_minimal',
+        experienceSelfReportedYears: null,
+      });
+    }
+    await membershipPayment.updateMembership(draft.id, actor, { membershipOption: 'regular', basicIcePrivileges: input.basicIcePrivileges });
+  }
+
+  return membershipPayment.submitRegistrationMembershipPayment({ registrationId: draft.id, actor });
 }

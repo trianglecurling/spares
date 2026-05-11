@@ -1633,7 +1633,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/registration/drafts": {
+    "/registration/guest/preview-membership-payment": {
         parameters: {
             query?: never;
             header?: never;
@@ -1652,9 +1652,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        seasonId: number;
-                        sessionId: number;
-                        returningMember: boolean;
+                        [key: string]: unknown;
                     };
                 };
             };
@@ -1692,7 +1690,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/registration/drafts/{id}/identity-new-auth": {
+    "/registration/guest/submit": {
         parameters: {
             query?: never;
             header?: never;
@@ -1701,17 +1699,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: {
+        post: {
             parameters: {
                 query?: never;
                 header?: never;
-                path: {
-                    id: number;
-                };
+                path?: never;
                 cookie?: never;
             };
             requestBody: {
@@ -1747,22 +1739,12 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: string;
-                            details?: unknown;
-                        } & {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/payments/webhooks/{provider}": {
@@ -11948,6 +11930,116 @@ export interface paths {
         };
         trace?: never;
     };
+    "/registration/drafts/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        seasonId: number;
+                        sessionId: number;
+                        returningMember: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/drafts/{id}": {
         parameters: {
             query?: never;
@@ -12009,7 +12101,72 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -12372,7 +12529,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/registration/drafts/{id}/phase5": {
+    "/registration/drafts/{id}/membership-payment": {
         parameters: {
             query?: never;
             header?: never;

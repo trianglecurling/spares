@@ -1552,7 +1552,7 @@ export class PaymentService {
 
   private async confirmCurlingRegistrationForSucceededOrder(orderId: number): Promise<void> {
     try {
-      const { confirmCurlingRegistrationForPaymentOrder } = await import('../registration/registrationPhase5Service.js');
+      const { confirmCurlingRegistrationForPaymentOrder } = await import('../registration/registrationMembershipPaymentService.js');
       await confirmCurlingRegistrationForPaymentOrder(orderId);
 
       await logEvent({

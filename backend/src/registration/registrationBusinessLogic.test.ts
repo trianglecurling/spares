@@ -483,7 +483,7 @@ describe('registration business logic', () => {
     expect(decision.createStripeCheckoutNow).toBe(true);
   });
 
-  test('Phase 5 membership-only and basic ice registrations require immediate payment', () => {
+  test('Membership-only and basic ice curling registrations require immediate payment', () => {
     const regularOnly = evaluateRegistrationDraft(registrationContext({ selections: [] }));
     expect(regularOnly.paymentDecision.outcome).toBe('immediate_payment');
     expect(regularOnly.feePreview.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);

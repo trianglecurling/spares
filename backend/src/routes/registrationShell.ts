@@ -4,27 +4,32 @@ import { sendApiError, sendValidationError } from '../api/errors.js';
 import type { ApiErrorResponse } from '../api/types.js';
 import type { Member } from '../types.js';
 import {
-  RegistrationPhase5ValidationError,
-  getRegistrationPhase5Payload,
+  RegistrationMembershipPaymentValidationError,
+  getGuestMembershipPaymentPreview,
+  getRegistrationMembershipPaymentPayload,
   markCurlingRegistrationPaymentCancelled,
-  submitRegistrationPhase5,
+  submitRegistrationMembershipPayment,
   updateDiscounts,
   updateExperience,
   updateMembership,
-} from '../registration/registrationPhase5Service.js';
+} from '../registration/registrationMembershipPaymentService.js';
 import {
+  RegistrationInProgressError,
   RegistrationShellValidationError,
+  abandonRegistrationDraft,
   acceptPolicies,
   attachNewCurler,
   attachReturningCurler,
   canViewOrEditRegistration,
   completeShell,
   createDraft,
-  getEffectiveRegistrationWindow,
+  findActiveRegistrationForSubmitter,
   getDefaultRegistrationWindow,
+  getEffectiveRegistrationWindow,
   getRegistrationById,
   getRegistrationShellPayload,
   listEligibleReturningProfiles,
+  submitGuestRegistration,
   updateCurlerDemographics,
   updateGuardian,
   type GuardianInput,
@@ -89,6 +94,38 @@ const experienceSchema = z.discriminatedUnion('experienceType', [
   z.object({ experienceType: z.literal('known_existing'), experienceSelfReportedYears: z.null().optional() }),
 ]);
 
+const guestPreviewSchema = z.object({
+  seasonId: z.number().int().positive(),
+  sessionId: z.number().int().positive(),
+  curlerDateOfBirth: z.string().min(1),
+  membershipChoice: z.enum(['regular', 'social']),
+  basicIcePrivileges: z.boolean(),
+  studentDiscountClaimed: z.boolean(),
+  studentInstitution: z.string().nullable(),
+  reciprocalDiscountClaimed: z.boolean(),
+  reciprocalClubName: z.string().nullable(),
+  experienceType: z.enum(['none_or_minimal', 'specified_years', 'known_existing']),
+  experienceSelfReportedYears: z.coerce.number().nullable(),
+});
+
+const guestSubmitSchema = z.object({
+  seasonId: z.number().int().positive(),
+  sessionId: z.number().int().positive(),
+  registeringForSelf: z.boolean(),
+  useSubmitterEmailForCurler: z.boolean().optional(),
+  submitter: demographicsSchema.partial().extend({ email: z.string().email() }).optional(),
+  curler: demographicsSchema,
+  guardian: guardianSchema.optional(),
+  membershipChoice: z.enum(['regular', 'social']),
+  basicIcePrivileges: z.boolean(),
+  studentDiscountClaimed: z.boolean(),
+  studentInstitution: z.string().nullable(),
+  reciprocalDiscountClaimed: z.boolean(),
+  reciprocalClubName: z.string().nullable(),
+  experienceType: z.enum(['none_or_minimal', 'specified_years', 'known_existing']),
+  experienceSelfReportedYears: z.coerce.number().nullable(),
+});
+
 const idParamsJsonSchema = {
   type: 'object',
   properties: { id: { type: 'number' } },
@@ -111,10 +148,17 @@ const anyObjectSchema = {
 } as const;
 
 function handleRegistrationError(reply: FastifyReply, error: unknown) {
+  if (error instanceof RegistrationInProgressError) {
+    return sendApiError(
+      reply,
+      409,
+      'You already have a registration in progress. Continue from the registration start page or start over.',
+    );
+  }
   if (error instanceof RegistrationShellValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
-  if (error instanceof RegistrationPhase5ValidationError) {
+  if (error instanceof RegistrationMembershipPaymentValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
   if (error instanceof z.ZodError) {
@@ -131,9 +175,6 @@ async function requireDraftAccess(request: FastifyRequest, reply: FastifyReply, 
     return null;
   }
   const member = (request as AuthenticatedRequest).member;
-  if (!registration.submitted_by_member_id && !registration.curler_member_id && registration.status === 'identity_incomplete') {
-    return registration;
-  }
   if (!(await canViewOrEditRegistration(member, registration))) {
     sendApiError(reply, 403, 'Forbidden');
     return null;
@@ -168,6 +209,58 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.post<{ Body: z.infer<typeof guestPreviewSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/guest/preview-membership-payment',
+    {
+      schema: {
+        tags: ['registration'],
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = guestPreviewSchema.parse(request.body);
+        return await getGuestMembershipPaymentPreview(body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.post<{ Body: z.infer<typeof guestSubmitSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/guest/submit',
+    {
+      schema: {
+        tags: ['registration'],
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = guestSubmitSchema.parse(request.body);
+        return await submitGuestRegistration(body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+}
+
+export async function protectedRegistrationShellRoutes(fastify: FastifyInstance) {
+  fastify.get('/registration/drafts/me', {
+    schema: {
+      tags: ['registration'],
+      response: { 200: anyObjectSchema },
+    },
+  }, async (request) => {
+    const row = await findActiveRegistrationForSubmitter((request as AuthenticatedRequest).member.id);
+    if (!row) return { draft: null };
+    const shell = await getRegistrationShellPayload(row.id);
+    return { draft: { id: row.id, ...shell } };
+  });
+
   fastify.post<{ Body: z.infer<typeof createDraftSchema>; Reply: unknown | ApiErrorResponse }>(
     '/registration/drafts',
     {
@@ -182,51 +275,42 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
           },
           required: ['seasonId', 'sessionId', 'returningMember'],
         },
-        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema },
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 409: apiErrorResponseSchema },
       },
     },
     async (request, reply) => {
       try {
         const body = createDraftSchema.parse(request.body);
-        return await createDraft(body);
-      } catch (error) {
-        return handleRegistrationError(reply, error);
-      }
-    }
-  );
-
-  fastify.patch<{ Params: { id: number }; Body: z.infer<typeof newIdentitySchema>; Reply: unknown | ApiErrorResponse }>(
-    '/registration/drafts/:id/identity-new-auth',
-    {
-      schema: {
-        tags: ['registration'],
-        params: idParamsJsonSchema,
-        body: anyObjectSchema,
-        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 404: apiErrorResponseSchema },
-      },
-    },
-    async (request, reply) => {
-      try {
-        const { id } = idParamsSchema.parse(request.params);
-        const existing = await getRegistrationById(id);
-        if (!existing) return sendApiError(reply, 404, 'Registration draft not found');
-        if (existing.submitted_by_member_id) return sendApiError(reply, 403, 'This draft already has an owner.');
-        const body = newIdentitySchema.parse(request.body);
-        return await attachNewCurler({
-          registrationId: id,
-          registeringForSelf: body.registeringForSelf,
-          submitter: body.submitter,
-          curler: body.curler,
-          useSubmitterEmailForCurler: body.useSubmitterEmailForCurler,
+        return await createDraft({
+          ...body,
+          submittedByMemberId: (request as AuthenticatedRequest).member.id,
         });
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
     }
   );
-}
 
-export async function protectedRegistrationShellRoutes(fastify: FastifyInstance) {
+  fastify.delete<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        await abandonRegistrationDraft(id, (request as AuthenticatedRequest).member);
+        return { ok: true };
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
   fastify.get<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
     '/registration/drafts/:id',
     {
@@ -276,6 +360,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         const { id } = idParamsSchema.parse(request.params);
         const registration = await getRegistrationById(id);
         if (!registration) return sendApiError(reply, 404, 'Registration draft not found');
+        if (!(await requireDraftAccess(request, reply, id))) return reply;
         const body = returningIdentitySchema.parse(request.body);
         return await attachReturningCurler({
           registrationId: id,
@@ -301,9 +386,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     async (request, reply) => {
       try {
         const { id } = idParamsSchema.parse(request.params);
-        const registration = await getRegistrationById(id);
-        if (!registration) return sendApiError(reply, 404, 'Registration draft not found');
-        if (registration.submitted_by_member_id && !(await requireDraftAccess(request, reply, id))) return reply;
+        if (!(await requireDraftAccess(request, reply, id))) return reply;
         const body = newIdentitySchema.parse(request.body);
         return await attachNewCurler({
           registrationId: id,
@@ -391,7 +474,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
   );
 
   fastify.get<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
-    '/registration/drafts/:id/phase5',
+    '/registration/drafts/:id/membership-payment',
     {
       schema: {
         tags: ['registration'],
@@ -404,7 +487,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         const { id } = idParamsSchema.parse(request.params);
         const registration = await requireDraftAccess(request, reply, id);
         if (!registration) return reply;
-        return await getRegistrationPhase5Payload(id, (request as AuthenticatedRequest).member);
+        return await getRegistrationMembershipPaymentPayload(id, (request as AuthenticatedRequest).member);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
@@ -486,7 +569,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     async (request, reply) => {
       try {
         const { id } = idParamsSchema.parse(request.params);
-        return await submitRegistrationPhase5({ registrationId: id, actor: (request as AuthenticatedRequest).member });
+        return await submitRegistrationMembershipPayment({ registrationId: id, actor: (request as AuthenticatedRequest).member });
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

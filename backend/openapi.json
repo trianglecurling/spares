@@ -1804,7 +1804,7 @@
         }
       }
     },
-    "/registration/drafts": {
+    "/registration/guest/preview-membership-payment": {
       "post": {
         "tags": [
           "registration"
@@ -1815,22 +1815,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "seasonId": {
-                    "type": "number"
-                  },
-                  "sessionId": {
-                    "type": "number"
-                  },
-                  "returningMember": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "seasonId",
-                  "sessionId",
-                  "returningMember"
-                ]
+                "additionalProperties": true
               }
             }
           }
@@ -1870,8 +1855,8 @@
         }
       }
     },
-    "/registration/drafts/{id}/identity-new-auth": {
-      "patch": {
+    "/registration/guest/submit": {
+      "post": {
         "tags": [
           "registration"
         ],
@@ -1886,16 +1871,6 @@
             }
           }
         },
-        "parameters": [
-          {
-            "schema": {
-              "type": "number"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -1909,26 +1884,6 @@
             }
           },
           "400": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "details": {}
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -18695,7 +18650,201 @@
         }
       }
     },
+    "/registration/drafts/me": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/drafts": {
+      "post": {
+        "tags": [
+          "registration"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "sessionId": {
+                    "type": "number"
+                  },
+                  "returningMember": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "seasonId",
+                  "sessionId",
+                  "returningMember"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/drafts/{id}": {
+      "delete": {
+        "tags": [
+          "registration"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "registration"
@@ -19110,7 +19259,7 @@
         }
       }
     },
-    "/registration/drafts/{id}/phase5": {
+    "/registration/drafts/{id}/membership-payment": {
       "get": {
         "tags": [
           "registration"
