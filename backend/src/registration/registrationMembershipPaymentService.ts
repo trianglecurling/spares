@@ -1,4 +1,4 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -12,7 +12,7 @@ import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import { calculateClubExperienceYears } from './registrationAgeExperience.js';
 import type { RegistrationFeeLineItem, RegistrationFeePreview } from './registrationFeeCalculator.js';
 import type { RegistrationPaymentDecision } from './registrationPaymentDecision.js';
-import type { RegistrationContext } from './registrationContext.js';
+import type { LeagueConfig, RegistrationContext, RegistrationSelectionInput } from './registrationContext.js';
 import { canViewOrEditRegistration, getEffectiveRegistrationWindow, getRegistrationById } from './registrationShellService.js';
 import type { Member } from '../types.js';
 
@@ -52,8 +52,9 @@ export type RegistrationMembershipPaymentPayload = {
 };
 
 type UpdateMembershipInput = {
-  membershipOption: 'regular' | 'social';
-  basicIcePrivileges: boolean;
+  membershipOption: 'regular' | 'social' | 'junior_recreational';
+  basicIcePrivileges?: boolean;
+  juniorAssistancePercent?: number | null;
 };
 
 type UpdateDiscountsInput = {
@@ -104,6 +105,53 @@ function normalizeDate(value: unknown): string {
   if (value === null || value === undefined) return '';
   const raw = String(value);
   return raw.includes('T') ? raw.slice(0, 10) : raw;
+}
+
+function mapLeagueConfig(row: {
+  id: number;
+  session_id: number | null;
+  name: string;
+  league_type: 'standard' | 'bring_your_own_team';
+  capacity_type: 'individual' | 'team';
+  capacity_value: number;
+  registration_fee_minor: number;
+  requires_club_membership: number;
+  is_instructional: number;
+  min_experience_years: number | null;
+  min_age: number | null;
+  max_age: number | null;
+  start_date: unknown;
+  end_date: unknown;
+  first_day_of_play: unknown;
+  last_day_of_play: unknown;
+  allows_waitlist: number;
+  allows_sabbatical: number;
+  predecessor_league_id: number | null;
+  successor_league_id: number | null;
+}): LeagueConfig {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    name: row.name,
+    leagueType: row.league_type,
+    capacityType: row.capacity_type,
+    capacityValue: row.capacity_value,
+    registrationFeeMinor: row.registration_fee_minor,
+    requiresClubMembership: row.requires_club_membership === 1,
+    isInstructional: row.is_instructional === 1,
+    minExperienceYears: row.min_experience_years,
+    minAge: row.min_age,
+    maxAge: row.max_age,
+    startDate: normalizeDate(row.start_date),
+    endDate: normalizeDate(row.end_date),
+    firstDayOfPlay: row.first_day_of_play ? normalizeDate(row.first_day_of_play) : null,
+    lastDayOfPlay: row.last_day_of_play ? normalizeDate(row.last_day_of_play) : null,
+    allowsWaitlist: row.allows_waitlist === 1,
+    allowsSabbatical: row.allows_sabbatical === 1,
+    predecessorLeagueId: row.predecessor_league_id,
+    successorLeagueId: row.successor_league_id,
+    discountEligible: true,
+  };
 }
 
 function trimOrNull(value: string | null | undefined): string | null {
@@ -194,6 +242,98 @@ async function loadCompletedSessions(memberId: number): Promise<RegistrationCont
   }));
 }
 
+async function loadLeaguesForSession(sessionId: number): Promise<Record<number, LeagueConfig>> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db.select().from(schema.leagues).where(eq(schema.leagues.session_id, sessionId));
+  return Object.fromEntries(rows.map((row) => [row.id, mapLeagueConfig(row)]));
+}
+
+async function loadRegistrationSelections(registrationId: number): Promise<RegistrationSelectionInput[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select()
+    .from(schema.registrationSelections)
+    .where(eq(schema.registrationSelections.registration_id, registrationId))
+    .orderBy(asc(schema.registrationSelections.rank), asc(schema.registrationSelections.id));
+
+  return rows.map((row) => ({
+    selectionType: row.selection_type,
+    leagueId: row.league_id,
+    rank: row.rank,
+    replacesLeagueId: row.replaces_league_id,
+    byotTeammateText: row.byot_teammate_text,
+    isTemporarySabbaticalFill: row.is_temporary_sabbatical_fill === 1,
+  }));
+}
+
+async function loadActiveLeagueIds(memberId: number, sessionId: number): Promise<number[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ leagueId: schema.leagueRoster.league_id })
+    .from(schema.leagueRoster)
+    .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
+    .where(
+      and(
+        eq(schema.leagueRoster.member_id, memberId),
+        eq(schema.leagueRoster.status, 'active'),
+        eq(schema.leagues.session_id, sessionId)
+      )
+    );
+  return rows.map((row) => row.leagueId);
+}
+
+async function loadExistingSabbaticals(memberId: number): Promise<RegistrationContext['existingSabbaticals']> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select()
+    .from(schema.curlingLeagueSabbaticals)
+    .where(eq(schema.curlingLeagueSabbaticals.member_id, memberId));
+  return rows.map((row) => ({
+    id: row.id,
+    originalLeagueId: row.original_league_id,
+    currentLeagueId: row.current_league_id,
+    firstSabbaticalLeagueId: row.first_sabbatical_league_id,
+    firstSabbaticalStartDate: normalizeDate(row.first_sabbatical_start_date),
+    status: row.status,
+    staffOverride: row.staff_override === 1,
+  }));
+}
+
+async function loadExistingWaitlistEntries(memberId: number, sessionId: number): Promise<RegistrationContext['existingWaitlistEntries']> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      leagueId: schema.waitlistEntries.league_id,
+      entryType: schema.waitlistEntries.entry_type,
+      replacesLeagueId: schema.waitlistEntries.replaces_league_id,
+      status: schema.waitlistEntries.status,
+    })
+    .from(schema.waitlistEntries)
+    .innerJoin(schema.leagues, eq(schema.waitlistEntries.league_id, schema.leagues.id))
+    .where(and(eq(schema.waitlistEntries.member_id, memberId), eq(schema.leagues.session_id, sessionId)));
+  return rows.map((row) => ({
+    leagueId: row.leagueId,
+    entryType: row.entryType,
+    replacesLeagueId: row.replacesLeagueId,
+    status: row.status,
+  }));
+}
+
+async function loadJuniorAssistance(registrationId: number): Promise<RegistrationContext['juniorAssistance'] | undefined> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select()
+    .from(schema.financialAssistanceRequests)
+    .where(eq(schema.financialAssistanceRequests.registration_id, registrationId))
+    .limit(1);
+  if (!row) return undefined;
+  return {
+    requestedPercent: row.requested_percentage,
+    approvedPercent: row.approved_percentage,
+    status: row.status,
+  };
+}
+
 async function loadRegistrationSettings(): Promise<{
   priceConfig: RegistrationContext['priceConfig'];
   discountSettings: RegistrationContext['discountSettings'];
@@ -246,6 +386,7 @@ type RegistrationMembershipPaymentSourceRow = {
 async function buildRegistrationContextFromSourceRow(
   registration: RegistrationMembershipPaymentSourceRow,
   options: {
+    registrationId?: number;
     curlerDateOfBirth: string | null | undefined;
     completedSessions: RegistrationContext['experience']['completedSessions'];
   },
@@ -260,6 +401,28 @@ async function buildRegistrationContextFromSourceRow(
   const membershipOption = selected.membershipOption;
   const useKnownExperience = selected.experienceType === null && options.completedSessions.length > 0;
   const experienceType = (selected.experienceType ?? (useKnownExperience ? 'known_existing' : 'none_or_minimal')) as CurlingExperienceTypeSqlite;
+  const memberId = registration.curler_member_id ?? null;
+  const emptyContextState: [
+    Record<number, LeagueConfig>,
+    RegistrationSelectionInput[],
+    number[],
+    RegistrationContext['existingSabbaticals'],
+    RegistrationContext['existingWaitlistEntries'],
+    RegistrationContext['juniorAssistance'] | undefined,
+  ] = [{}, [], [], [], [], undefined];
+  const [leagues, selections, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = options.registrationId
+    ? await Promise.all([
+        loadLeaguesForSession(registration.session_id),
+        loadRegistrationSelections(options.registrationId),
+        memberId ? loadActiveLeagueIds(memberId, registration.session_id) : Promise.resolve([]),
+        memberId ? loadExistingSabbaticals(memberId) : Promise.resolve([]),
+        memberId ? loadExistingWaitlistEntries(memberId, registration.session_id) : Promise.resolve([]),
+        loadJuniorAssistance(options.registrationId),
+      ])
+    : emptyContextState;
+  const participatedLeagueIds = Array.from(
+    new Set([...options.completedSessions.map((session) => session.leagueId), ...activeLeagueIds])
+  );
 
   return {
     season: {
@@ -290,12 +453,12 @@ async function buildRegistrationContextFromSourceRow(
       selfReportedYears: selected.experienceSelfReportedYears,
       completedSessions: options.completedSessions,
     },
-    activeLeagueIds: [],
-    participatedLeagueIds: [],
-    existingSabbaticals: [],
-    existingWaitlistEntries: [],
-    leagues: {},
-    selections: [],
+    activeLeagueIds,
+    participatedLeagueIds,
+    existingSabbaticals,
+    existingWaitlistEntries,
+    leagues,
+    selections,
     discountClaims:
       membershipOption === 'social'
         ? {}
@@ -311,6 +474,7 @@ async function buildRegistrationContextFromSourceRow(
             winterOnly: {},
           },
     ...settings,
+    juniorAssistance,
     sabbaticalDurationLimitYears: 3,
   };
 }
@@ -323,6 +487,7 @@ export async function buildRegistrationContextForDraft(registrationId: number): 
     : [];
   const completedSessions = registration.curler_member_id ? await loadCompletedSessions(registration.curler_member_id) : [];
   return buildRegistrationContextFromSourceRow(registration, {
+    registrationId,
     curlerDateOfBirth: curler?.date_of_birth,
     completedSessions,
   });
@@ -419,21 +584,54 @@ export async function updateMembership(registrationId: number, actor: Member, in
   assertShellComplete(registration);
 
   const membershipOption: CurlingMembershipOptionSqlite =
-    input.membershipOption === 'social' ? 'social' : input.basicIcePrivileges ? 'regular_spare_only' : 'regular';
+    input.membershipOption === 'social'
+      ? 'social'
+      : input.membershipOption === 'junior_recreational'
+        ? 'junior_recreational'
+        : input.basicIcePrivileges
+          ? 'regular_spare_only'
+          : 'regular';
   const { db, schema } = getDrizzleDb();
-  await db
-    .update(schema.curlingRegistrations)
-    .set({
-      membership_option: membershipOption,
-      student_discount_claimed: membershipOption === 'social' ? 0 : registration.student_discount_claimed,
-      student_institution: membershipOption === 'social' ? null : registration.student_institution,
-      reciprocal_discount_claimed: membershipOption === 'social' ? 0 : registration.reciprocal_discount_claimed,
-      reciprocal_club_name: membershipOption === 'social' ? null : registration.reciprocal_club_name,
-      experience_type: membershipOption === 'social' ? null : registration.experience_type,
-      experience_self_reported_years: membershipOption === 'social' ? null : registration.experience_self_reported_years,
-      updated_at: sql`CURRENT_TIMESTAMP`,
-    })
-    .where(eq(schema.curlingRegistrations.id, registrationId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.curlingRegistrations)
+      .set({
+        membership_option: membershipOption,
+        student_discount_claimed:
+          membershipOption === 'social' || membershipOption === 'junior_recreational' ? 0 : registration.student_discount_claimed,
+        student_institution:
+          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.student_institution,
+        reciprocal_discount_claimed:
+          membershipOption === 'social' || membershipOption === 'junior_recreational' ? 0 : registration.reciprocal_discount_claimed,
+        reciprocal_club_name:
+          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.reciprocal_club_name,
+        experience_type:
+          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.experience_type,
+        experience_self_reported_years:
+          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.experience_self_reported_years,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.curlingRegistrations.id, registrationId));
+
+    await tx
+      .delete(schema.financialAssistanceRequests)
+      .where(eq(schema.financialAssistanceRequests.registration_id, registrationId));
+    const requestedPercent = input.juniorAssistancePercent ?? 0;
+    if (membershipOption === 'junior_recreational' && requestedPercent > 0) {
+      if (![25, 50, 75].includes(requestedPercent)) {
+        throw new RegistrationMembershipPaymentValidationError({
+          juniorAssistancePercent: 'Junior Recreational assistance must be 25%, 50%, or 75%.',
+        });
+      }
+      await tx.insert(schema.financialAssistanceRequests).values({
+        registration_id: registrationId,
+        member_id: registration.curler_member_id ?? actor.id,
+        requested_percentage: requestedPercent,
+        status: 'pending',
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      });
+    }
+  });
   return getRegistrationMembershipPaymentPayload(registrationId, actor);
 }
 
@@ -443,6 +641,9 @@ export async function updateDiscounts(registrationId: number, actor: Member, inp
   assertShellComplete(registration);
   if (registration.membership_option === 'social') {
     throw new RegistrationMembershipPaymentValidationError({ discounts: 'Social membership cannot receive discounts.' });
+  }
+  if (registration.membership_option === 'junior_recreational') {
+    throw new RegistrationMembershipPaymentValidationError({ discounts: 'Junior Recreational cannot receive standard discounts.' });
   }
 
   const studentClaimed = input.studentDiscountClaimed === true;
@@ -475,6 +676,9 @@ export async function updateExperience(registrationId: number, actor: Member, in
   if (registration.membership_option === 'social') {
     throw new RegistrationMembershipPaymentValidationError({ experience: 'Social membership does not require curling experience.' });
   }
+  if (registration.membership_option === 'junior_recreational') {
+    throw new RegistrationMembershipPaymentValidationError({ experience: 'Junior Recreational does not use normal league experience.' });
+  }
   if (input.experienceType === 'specified_years') {
     if (!Number.isFinite(input.experienceSelfReportedYears) || input.experienceSelfReportedYears < 0) {
       throw new RegistrationMembershipPaymentValidationError({ experienceSelfReportedYears: 'Experience must be a non-negative number.' });
@@ -500,10 +704,15 @@ function assertReadyToSubmit(registration: { status: string }, context: Registra
   if (context.registrationState === 'closed') {
     throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration is closed.' });
   }
-  if (context.membershipOption !== 'regular' && context.membershipOption !== 'regular_spare_only' && context.membershipOption !== 'social') {
-    throw new RegistrationMembershipPaymentValidationError({ membershipOption: 'Choose regular or social membership.' });
+  if (
+    context.membershipOption !== 'regular' &&
+    context.membershipOption !== 'regular_spare_only' &&
+    context.membershipOption !== 'social' &&
+    context.membershipOption !== 'junior_recreational'
+  ) {
+    throw new RegistrationMembershipPaymentValidationError({ membershipOption: 'Choose regular, social, or Junior Recreational membership.' });
   }
-  if (context.membershipOption === 'social') {
+  if (context.membershipOption === 'social' || context.membershipOption === 'junior_recreational') {
     return;
   }
   if (!context.experience.type) {

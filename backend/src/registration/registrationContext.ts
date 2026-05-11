@@ -85,7 +85,7 @@ export type DiscountClaims = {
 export type JuniorAssistanceRequest = {
   requestedPercent?: number | null;
   approvedPercent?: number | null;
-  status?: 'none' | 'pending' | 'approved' | 'partially_approved' | 'denied';
+  status?: 'none' | 'pending' | 'approved' | 'partially_approved' | 'denied' | 'withdrawn';
 };
 
 export type RegistrationContext = {

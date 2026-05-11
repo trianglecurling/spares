@@ -334,6 +334,23 @@ describe('registration business logic', () => {
       validateRegistrationSelections(registrationContext({ selections: [selection({ selectionType: 'waitlist_replace' })] })),
       'replace_waitlist_requires_replaced_league'
     );
+    expectReason(
+      validateRegistrationSelections(
+        registrationContext({
+          activeLeagueIds: [2],
+          selections: [selection({ selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
+        })
+      ),
+      'replace_waitlist_replacement_not_held'
+    );
+    expect(
+      validateRegistrationSelections(
+        registrationContext({
+          activeLeagueIds: [1],
+          selections: [selection({ selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
+        })
+      ).allowed
+    ).toBe(true);
 
     const context = registrationContext({
       existingWaitlistEntries: [
@@ -343,6 +360,20 @@ describe('registration business logic', () => {
       selections: [selection({ selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
     });
     expectReason(validateRegistrationSelections(context), 'replace_waitlist_limit_exceeded');
+  });
+
+  test('selection league must belong to the registration session and drops are accepted as structured choices', () => {
+    expectReason(
+      validateRegistrationSelections(
+        registrationContext({
+          leagues: { 100: league({ sessionId: 999 }) },
+          selections: [selection({ selectionType: 'waitlist_add' })],
+        })
+      ),
+      'league_not_in_registration_session'
+    );
+
+    expect(validateRegistrationSelections(registrationContext({ selections: [selection({ selectionType: 'drop' })] })).allowed).toBe(true);
   });
 
   test('reaching two leagues requires ADD cleanup', () => {
@@ -375,6 +406,16 @@ describe('registration business logic', () => {
       selections: [selection({ selectionType: 'third_league_interest', leagueId: 102 })],
     });
     expectReason(blocked, 'byot_cannot_be_third_league');
+  });
+
+  test('skipped predecessor session loses guaranteed return rights', () => {
+    const fall2026 = league({ predecessorLeagueId: 95 });
+    const context = registrationContext({
+      participatedLeagueIds: [90],
+      leagues: { [fall2026.id]: fall2026 },
+      selections: [selection({ selectionType: 'guaranteed_return', leagueId: fall2026.id })],
+    });
+    expectReason(validateRegistrationSelections(context), 'guaranteed_return_requires_predecessor_participation');
   });
 
   test('new members can request BYOT with teammates, BYOT cannot be third, and BYOT does not use waitlist', () => {

@@ -35,6 +35,16 @@ function selectedFirstTwoLeagueCount(context: RegistrationContext): number {
   ).length;
 }
 
+function hasReplacementLeague(context: RegistrationContext, leagueId: number): boolean {
+  return (
+    context.activeLeagueIds.includes(leagueId) ||
+    context.selections.some((selection) =>
+      selection.leagueId === leagueId &&
+      ['guaranteed_return', 'return_subject_to_availability', 'byot_request'].includes(selection.selectionType)
+    )
+  );
+}
+
 function validateSelection(context: RegistrationContext, selection: RegistrationSelectionInput): {
   blockingErrors: DecisionMessage[];
   warnings: DecisionMessage[];
@@ -61,6 +71,22 @@ function validateSelection(context: RegistrationContext, selection: Registration
   }
 
   if (!league) {
+    if (selection.leagueId !== null && selection.leagueId !== undefined) {
+      blockingErrors.push(
+        blockingError('league_not_in_registration_session', 'Selected league is not available for this registration session.')
+      );
+    }
+    return { blockingErrors, warnings, deferralReasonCodes };
+  }
+
+  if (league.sessionId !== null && league.sessionId !== undefined && league.sessionId !== context.session.id) {
+    blockingErrors.push(
+      blockingError('league_not_in_registration_session', 'Selected league is not available for this registration session.')
+    );
+    return { blockingErrors, warnings, deferralReasonCodes };
+  }
+
+  if (selection.selectionType === 'drop') {
     return { blockingErrors, warnings, deferralReasonCodes };
   }
 
@@ -103,6 +129,10 @@ function validateSelection(context: RegistrationContext, selection: Registration
       if (!selection.replacesLeagueId) {
         blockingErrors.push(
           blockingError('replace_waitlist_requires_replaced_league', 'REPLACE waitlist entries must identify a league to replace.')
+        );
+      } else if (!hasReplacementLeague(context, selection.replacesLeagueId)) {
+        blockingErrors.push(
+          blockingError('replace_waitlist_replacement_not_held', 'REPLACE waitlists must identify a league the registrant currently holds.')
         );
       }
       const selectedReplaceCount = context.selections.filter((item) => item.selectionType === 'waitlist_replace').length;

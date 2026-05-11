@@ -4,6 +4,12 @@ import { sendApiError, sendValidationError } from '../api/errors.js';
 import type { ApiErrorResponse } from '../api/types.js';
 import type { Member } from '../types.js';
 import {
+  RegistrationLeagueSelectionValidationError,
+  getRegistrationLeagueSelectionEvaluation,
+  getRegistrationLeagueSelectionPayload,
+  putRegistrationLeagueSelections,
+} from '../registration/registrationLeagueSelectionService.js';
+import {
   RegistrationMembershipPaymentValidationError,
   getGuestMembershipPaymentPreview,
   getRegistrationMembershipPaymentPayload,
@@ -79,8 +85,9 @@ const guardianSchema = z.object({
   phone: z.string().min(1),
 });
 const membershipSchema = z.object({
-  membershipOption: z.enum(['regular', 'social']),
+  membershipOption: z.enum(['regular', 'social', 'junior_recreational']),
   basicIcePrivileges: z.boolean().default(false),
+  juniorAssistancePercent: z.number().int().refine((value) => [0, 25, 50, 75].includes(value)).nullable().optional(),
 });
 const discountSchema = z.object({
   studentDiscountClaimed: z.boolean().optional(),
@@ -93,6 +100,28 @@ const experienceSchema = z.discriminatedUnion('experienceType', [
   z.object({ experienceType: z.literal('specified_years'), experienceSelfReportedYears: z.coerce.number().min(0) }),
   z.object({ experienceType: z.literal('known_existing'), experienceSelfReportedYears: z.null().optional() }),
 ]);
+const registrationSelectionSchema = z.object({
+  selectionType: z.enum([
+    'guaranteed_return',
+    'sabbatical',
+    'drop',
+    'return_subject_to_availability',
+    'waitlist_add',
+    'waitlist_replace',
+    'third_league_interest',
+    'byot_request',
+    'junior_recreational',
+    'spare_only',
+  ]),
+  leagueId: z.number().int().positive().nullable().optional(),
+  rank: z.number().int().positive().nullable().optional(),
+  replacesLeagueId: z.number().int().positive().nullable().optional(),
+  byotTeammateText: z.string().nullable().optional(),
+  isTemporarySabbaticalFill: z.boolean().optional(),
+});
+const leagueSelectionsSchema = z.object({
+  selections: z.array(registrationSelectionSchema),
+});
 
 const guestPreviewSchema = z.object({
   seasonId: z.number().int().positive(),
@@ -159,6 +188,9 @@ function handleRegistrationError(reply: FastifyReply, error: unknown) {
     return sendValidationError(reply, error.message, error.details);
   }
   if (error instanceof RegistrationMembershipPaymentValidationError) {
+    return sendValidationError(reply, error.message, error.details);
+  }
+  if (error instanceof RegistrationLeagueSelectionValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
   if (error instanceof z.ZodError) {
@@ -551,6 +583,65 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         const { id } = idParamsSchema.parse(request.params);
         const body = experienceSchema.parse(request.body);
         return await updateExperience(id, (request as AuthenticatedRequest).member, body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.get<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/league-catalog',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        return await getRegistrationLeagueSelectionPayload(id, (request as AuthenticatedRequest).member);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.put<{ Params: { id: number }; Body: z.infer<typeof leagueSelectionsSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/league-selections',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        const body = leagueSelectionsSchema.parse(request.body);
+        return await putRegistrationLeagueSelections(id, (request as AuthenticatedRequest).member, body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.get<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/league-selection-eval',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        return await getRegistrationLeagueSelectionEvaluation(id, (request as AuthenticatedRequest).member);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

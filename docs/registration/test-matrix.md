@@ -582,6 +582,11 @@ Then only discount-eligible items are discounted
 
 ## REPLACE waitlists
 
+Phase 6 draft editing stores REPLACE intent on `registration_selections`.
+Audited waitlist-entry replacement changes apply when an existing
+`waitlist_entries` row is mutated, including rollover or later waitlist-entry
+creation/update phases.
+
 | Case | Expected result |
 | --- | --- |
 | Curler creates REPLACE waitlist and identifies replacement league | Entry is allowed |
@@ -645,3 +650,80 @@ Then only discount-eligible items are discounted
 | Registrant has third-league interest | Summary labels it as Third-league interest |
 | Registrant has BYOT request | Summary labels it as BYOT request |
 | Registrant has deferred-payment reason | Summary clearly states payment will be deferred |
+
+## Phase 7: Submission & Checkout Tests
+
+### Submission outcome tests
+
+| Case | Expected outcome |
+|---|---|
+| Social membership only | Registration submitted; Stripe Checkout created |
+| Regular membership plus spare-only | Registration submitted; Stripe Checkout created |
+| Returning member with one guaranteed league | Registration submitted; Stripe Checkout created |
+| Returning member with two guaranteed leagues | Registration submitted; Stripe Checkout created |
+| Sabbatical-only registration | Registration submitted; Stripe Checkout created for sabbatical fee only |
+| Junior Recreational without assistance | Registration submitted; Stripe Checkout created |
+| BYOT request as first or second league | Registration submitted; Stripe Checkout created |
+| Waitlist ADD request | Registration submitted; payment deferred; no Stripe Checkout |
+| Waitlist REPLACE request | Registration submitted; payment deferred; no Stripe Checkout |
+| Third-league interest | Registration submitted; payment deferred; no Stripe Checkout |
+| Junior Recreational with assistance request | Registration submitted; payment deferred; no Stripe Checkout |
+| Guaranteed league plus non-guaranteed league request | Registration submitted; payment deferred; no Stripe Checkout |
+| Sabbatical plus waitlist request | Registration submitted; payment deferred; no Stripe Checkout |
+| Waitlist-only registration | Registration submitted; no payment due; no Stripe Checkout |
+
+### Review screen tests
+
+| Case | Expected outcome |
+|---|---|
+| Registration has guaranteed leagues | Review labels them as confirmed/payable now |
+| Registration has waitlist ADD entries | Review labels them as waitlisted ADD |
+| Registration has waitlist REPLACE entries | Review labels them as waitlisted REPLACE and shows replacement league |
+| Registration has third-league interest | Review shows ordered third-league list and payment deferral |
+| Registration has sabbaticals | Review labels them as sabbaticals and shows sabbatical fee |
+| Registration has BYOT request | Review shows teammate text and BYOT status |
+| Registration has discounts | Review shows itemized discounts |
+| Registration is deferred | Review clearly explains why payment is deferred |
+| Registration requires immediate payment | Review clearly shows total due now |
+
+### Submission validation tests
+
+| Case | Expected outcome |
+|---|---|
+| Policies not accepted | Submission fails |
+| Minor missing parent/guardian info | Submission fails |
+| Registration closed | Submission fails |
+| BYOT missing teammate text | Submission fails |
+| BYOT selected as third league | Submission fails |
+| Student discount missing institution | Submission fails |
+| Reciprocal discount missing club | Submission fails |
+| REPLACE waitlist missing replacement league | Submission fails |
+| More than two REPLACE waitlists | Submission fails |
+| More than two protected return/sabbatical claims | Submission fails |
+| Ineligible age for league | Submission fails |
+| Ineligible experience for league | Submission fails |
+
+### Stripe tests
+
+| Case | Expected outcome |
+|---|---|
+| Immediate-payment registration submitted | Stripe Checkout Session created |
+| Checkout Session created | Stripe session ID stored internally |
+| Checkout Session metadata | Metadata includes registration ID and invoice/payment ID |
+| User returns from Stripe success URL | Registration is not marked paid unless webhook has confirmed |
+| `checkout.session.completed` received | Invoice/payment marked paid |
+| `checkout.session.completed` received | Registration marked paid/confirmed |
+| Duplicate webhook received | No duplicate side effects |
+| Checkout cancelled | Registration remains unpaid/unconfirmed |
+| Checkout fails or expires | Registration remains unpaid/unconfirmed |
+
+### Idempotency tests
+
+| Case | Expected outcome |
+|---|---|
+| User double-clicks submit for immediate-payment registration | One invoice/payment record created |
+| User double-clicks submit for immediate-payment registration | One active Stripe Checkout Session reused |
+| User double-clicks submit for deferred registration | One submitted registration state; no duplicate invoice |
+| User double-clicks submit with waitlist entries | No duplicate waitlist entries |
+| User double-clicks submit with sabbaticals | No duplicate sabbatical records |
+| Stripe sends duplicate successful webhook | Payment confirmation runs once |

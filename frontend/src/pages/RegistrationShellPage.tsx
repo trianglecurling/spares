@@ -112,6 +112,51 @@ type RegistrationMembershipPaymentPayload = {
   };
 };
 
+type RegistrationSelectionType =
+  | 'guaranteed_return'
+  | 'sabbatical'
+  | 'drop'
+  | 'return_subject_to_availability'
+  | 'waitlist_add'
+  | 'waitlist_replace'
+  | 'third_league_interest'
+  | 'byot_request'
+  | 'junior_recreational'
+  | 'spare_only';
+
+type RegistrationSelectionInput = {
+  selectionType: RegistrationSelectionType;
+  leagueId?: number | null;
+  rank?: number | null;
+  replacesLeagueId?: number | null;
+  byotTeammateText?: string | null;
+  isTemporarySabbaticalFill?: boolean;
+};
+
+type LeagueCatalogItem = {
+  id: number;
+  sessionId?: number | null;
+  name: string;
+  leagueType: 'standard' | 'bring_your_own_team';
+  minExperienceYears?: number | null;
+  minAge?: number | null;
+  maxAge?: number | null;
+  predecessorLeagueId?: number | null;
+  allowsWaitlist: boolean;
+  allowsSabbatical: boolean;
+};
+
+type RegistrationLeagueSelectionPayload = {
+  leagues: LeagueCatalogItem[];
+  selections: RegistrationSelectionInput[];
+  activeLeagueIds: number[];
+  participatedLeagueIds: number[];
+  evaluation: {
+    feePreview: RegistrationMembershipPaymentPayload['feePreview'];
+    paymentDecision: RegistrationMembershipPaymentPayload['paymentDecision'];
+  };
+};
+
 type LocalRegistrationDraftV1 = {
   v: 1;
   seasonId: number;
@@ -301,7 +346,8 @@ export default function RegistrationShellPage() {
   const [demographics, setDemographics] = useState<DemographicsForm>(emptyDemographics);
   const [guardian, setGuardian] = useState({ firstName: '', lastName: '', email: '', phone: '' });
   const [membershipPayment, setMembershipPayment] = useState<RegistrationMembershipPaymentPayload | null>(null);
-  const [membershipChoice, setMembershipChoice] = useState<'regular' | 'social'>('regular');
+  const [membershipChoice, setMembershipChoice] = useState<'regular' | 'social' | 'junior_recreational'>('regular');
+  const [juniorAssistancePercent, setJuniorAssistancePercent] = useState<'0' | '25' | '50' | '75'>('0');
   const [basicIcePrivileges, setBasicIcePrivileges] = useState(false);
   const [studentDiscountClaimed, setStudentDiscountClaimed] = useState(false);
   const [studentInstitution, setStudentInstitution] = useState('');
@@ -309,6 +355,8 @@ export default function RegistrationShellPage() {
   const [reciprocalClubName, setReciprocalClubName] = useState('');
   const [experienceChoice, setExperienceChoice] = useState<'none_or_minimal' | 'specified_years' | 'known_existing'>('none_or_minimal');
   const [experienceYears, setExperienceYears] = useState('');
+  const [leaguePayload, setLeaguePayload] = useState<RegistrationLeagueSelectionPayload | null>(null);
+  const [leagueSelections, setLeagueSelections] = useState<RegistrationSelectionInput[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resumeOffer, setResumeOffer] = useState<'none' | 'server' | 'local'>('none');
@@ -372,7 +420,7 @@ export default function RegistrationShellPage() {
           sameEmail,
           demographics,
           guardian,
-          membershipChoice,
+          membershipChoice: membershipChoice === 'junior_recreational' ? 'regular' : membershipChoice,
           basicIcePrivileges,
           studentDiscountClaimed,
           studentInstitution,
@@ -487,7 +535,7 @@ export default function RegistrationShellPage() {
   }, [currentStep, member, payload]);
 
   useEffect(() => {
-    const membershipPaymentFlowSteps = ['membership', 'discounts', 'experience', 'basic-ice', 'review'];
+    const membershipPaymentFlowSteps = ['membership', 'discounts', 'experience', 'basic-ice', 'league-selection', 'third-league-interest', 'league-summary', 'review'];
     if (!member || !registrationId || !membershipPaymentFlowSteps.includes(currentStep)) return;
     api
       .get(`/registration/drafts/${registrationId}/membership-payment`)
@@ -495,7 +543,7 @@ export default function RegistrationShellPage() {
         const data = response.data as RegistrationMembershipPaymentPayload;
         setMembershipPayment(data);
         const membershipOption = data.selection.membershipOption;
-        setMembershipChoice(membershipOption === 'social' ? 'social' : 'regular');
+        setMembershipChoice(membershipOption === 'junior_recreational' ? 'junior_recreational' : membershipOption === 'social' ? 'social' : 'regular');
         setBasicIcePrivileges(membershipOption === 'regular_spare_only');
         setStudentDiscountClaimed(data.selection.studentDiscountClaimed);
         setStudentInstitution(data.selection.studentInstitution || '');
@@ -505,6 +553,19 @@ export default function RegistrationShellPage() {
         setExperienceYears(data.selection.experienceSelfReportedYears?.toString() || '');
       })
       .catch((err) => setError(errorMessage(err, 'Unable to load membership details.')));
+  }, [registrationId, member, currentStep]);
+
+  useEffect(() => {
+    const leagueSteps = ['league-selection', 'third-league-interest', 'league-summary', 'review'];
+    if (!member || !registrationId || !leagueSteps.includes(currentStep)) return;
+    api
+      .get(`/registration/drafts/${registrationId}/league-catalog`)
+      .then((response) => {
+        const data = response.data as RegistrationLeagueSelectionPayload;
+        setLeaguePayload(data);
+        setLeagueSelections(data.selections);
+      })
+      .catch((err) => setError(errorMessage(err, 'Unable to load league choices.')));
   }, [registrationId, member, currentStep]);
 
   useEffect(() => {
@@ -812,9 +873,16 @@ export default function RegistrationShellPage() {
         const response = await api.patch(`/registration/drafts/${registrationId}/membership`, {
           membershipOption: membershipChoice,
           basicIcePrivileges: false,
+          juniorAssistancePercent: membershipChoice === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
         });
         setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
-        navigate(membershipChoice === 'social' ? '/registration/review' : '/registration/discounts');
+        navigate(
+          membershipChoice === 'social'
+            ? '/registration/review'
+            : membershipChoice === 'junior_recreational'
+              ? '/registration/league-summary'
+              : '/registration/discounts'
+        );
       } else {
         persistGuestDraft(membershipChoice === 'social' ? 'review' : 'discounts');
         navigate(membershipChoice === 'social' ? '/registration/review' : '/registration/discounts');
@@ -885,7 +953,7 @@ export default function RegistrationShellPage() {
           basicIcePrivileges,
         });
         setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
-        navigate('/registration/review');
+        navigate('/registration/league-selection');
       } else {
         persistGuestDraft('review');
         navigate('/registration/review');
@@ -895,6 +963,48 @@ export default function RegistrationShellPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function saveLeagueSelections(nextStep = '/registration/third-league-interest') {
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.put(`/registration/drafts/${registrationId}/league-selections`, {
+        selections: leagueSelections,
+      });
+      const data = response.data as RegistrationLeagueSelectionPayload;
+      setLeaguePayload(data);
+      setLeagueSelections(data.selections);
+      navigate(nextStep);
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to save league selections.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function updateLeagueSelection(leagueId: number, selectionType: RegistrationSelectionType | 'none') {
+    setLeagueSelections((current) => {
+      const withoutLeague = current.filter((selection) => selection.leagueId !== leagueId || selection.selectionType === 'third_league_interest');
+      if (selectionType === 'none') return withoutLeague;
+      return [...withoutLeague, { selectionType, leagueId }];
+    });
+  }
+
+  function updateThirdLeagueInterest(leagueId: number, checked: boolean) {
+    setLeagueSelections((current) => {
+      const others = current.filter((selection) => !(selection.leagueId === leagueId && selection.selectionType === 'third_league_interest'));
+      if (!checked) return others;
+      const nextRank = current.filter((selection) => selection.selectionType === 'third_league_interest').length + 1;
+      return [...others, { selectionType: 'third_league_interest', leagueId, rank: nextRank }];
+    });
+  }
+
+  function updateByotTeammates(leagueId: number, text: string) {
+    setLeagueSelections((current) =>
+      current.map((selection) => (selection.leagueId === leagueId && selection.selectionType === 'byot_request' ? { ...selection, byotTeammateText: text } : selection))
+    );
   }
 
   async function submitRegistration() {
@@ -1014,6 +1124,37 @@ export default function RegistrationShellPage() {
         </div>
       </div>
     );
+  }
+
+  function selectionLabel(selection: RegistrationSelectionInput): string {
+    switch (selection.selectionType) {
+      case 'guaranteed_return':
+        return 'Guaranteed return';
+      case 'sabbatical':
+        return 'Sabbatical';
+      case 'drop':
+        return 'Dropped';
+      case 'return_subject_to_availability':
+        return 'Subject to availability';
+      case 'waitlist_add':
+        return 'Waitlist: ADD';
+      case 'waitlist_replace':
+        return 'Waitlist: REPLACE';
+      case 'third_league_interest':
+        return 'Third-league interest';
+      case 'byot_request':
+        return 'BYOT request';
+      case 'junior_recreational':
+        return 'Junior Recreational';
+      case 'spare_only':
+        return 'Spare-only';
+      default:
+        return 'League selection';
+    }
+  }
+
+  function leagueName(leagueId: number | null | undefined): string {
+    return leaguePayload?.leagues.find((league) => league.id === leagueId)?.name ?? 'League';
   }
 
   let content: React.ReactNode;
@@ -1264,14 +1405,14 @@ export default function RegistrationShellPage() {
       <RegistrationCard>
         <StartOverLink />
         <h1 className="text-3xl font-bold text-[#121033]">Choose membership</h1>
-        <p className="mt-3 text-gray-600">Regular membership is for curlers. Social membership is for members who do not plan to curl.</p>
+        <p className="mt-3 text-gray-600">Choose the membership or program path for this curler.</p>
         <form onSubmit={saveMembership} className="mt-6 space-y-6">
           <FormField label="Membership type" htmlFor={membershipInputId} required tone="public">
             <ChoiceInput
               inputId={membershipInputId}
               layout="block"
               value={membershipChoice}
-              onChange={(value) => setMembershipChoice(value as 'regular' | 'social')}
+              onChange={(value) => setMembershipChoice(value as 'regular' | 'social' | 'junior_recreational')}
               options={[
                 {
                   value: 'regular',
@@ -1283,6 +1424,11 @@ export default function RegistrationShellPage() {
                   label: 'Social membership',
                   description: 'Choose this if the curler wants to be a member but will not curl this session.',
                 },
+                {
+                  value: 'junior_recreational',
+                  label: 'Junior Recreational',
+                  description: 'Choose this special junior program. It skips normal league selection.',
+                },
               ]}
             />
           </FormField>
@@ -1290,6 +1436,22 @@ export default function RegistrationShellPage() {
             <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
               Social members do not receive discounts, basic ice privileges, or league access.
             </p>
+          ) : null}
+          {membershipChoice === 'junior_recreational' ? (
+            <FormField label="Financial assistance request" htmlFor={`${membershipInputId}-assistance`} tone="public">
+              <ChoiceInput
+                inputId={`${membershipInputId}-assistance`}
+                layout="block"
+                value={juniorAssistancePercent}
+                onChange={(value) => setJuniorAssistancePercent(value as '0' | '25' | '50' | '75')}
+                options={[
+                  { value: '0', label: 'No assistance requested' },
+                  { value: '25', label: 'Request 25% assistance' },
+                  { value: '50', label: 'Request 50% assistance' },
+                  { value: '75', label: 'Request 75% assistance' },
+                ]}
+              />
+            </FormField>
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <Button type="submit" disabled={loading}>
@@ -1405,13 +1567,176 @@ export default function RegistrationShellPage() {
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex flex-wrap gap-3">
             <Button type="submit" disabled={loading}>
-              Continue to review
+              Continue to league selection
             </Button>
             <Button type="button" variant="secondary" onClick={() => navigate('/registration/experience')}>
               Back
             </Button>
           </div>
         </form>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'league-selection') {
+    const leagues = leaguePayload?.leagues ?? [];
+    content = (
+      <RegistrationCard>
+        <StartOverLink />
+        <h1 className="text-3xl font-bold text-[#121033]">Choose leagues</h1>
+        <p className="mt-3 text-gray-600">
+          Select the leagues this curler wants for {seasonSessionLabel}. Eligibility is checked when you save.
+        </p>
+        <div className="mt-6 space-y-5">
+          {leagues.length === 0 ? (
+            <PublicStateCard title="No leagues available" description="There are no leagues configured for this registration session yet." tone="warning" />
+          ) : (
+            leagues.map((league) => {
+              const currentSelection = leagueSelections.find(
+                (selection) => selection.leagueId === league.id && selection.selectionType !== 'third_league_interest'
+              );
+              const hasReturnRight =
+                windowState?.state === 'priority' &&
+                Boolean(league.predecessorLeagueId && leaguePayload?.participatedLeagueIds.includes(league.predecessorLeagueId));
+              const value = currentSelection?.selectionType ?? 'none';
+              return (
+                <div key={league.id} className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                  <FormField label={league.name} htmlFor={`league-${league.id}`} tone="public">
+                    <ChoiceInput
+                      inputId={`league-${league.id}`}
+                      layout="block"
+                      value={value}
+                      onChange={(next) => updateLeagueSelection(league.id, next as RegistrationSelectionType | 'none')}
+                      options={[
+                        { value: 'none', label: 'No selection' },
+                        ...(hasReturnRight
+                          ? [
+                              { value: 'guaranteed_return', label: 'Return', description: 'Claim an eligible guaranteed return spot.' },
+                              ...(league.allowsSabbatical
+                                ? [{ value: 'sabbatical', label: 'Sabbatical', description: 'Preserve the spot while stepping away.' }]
+                                : []),
+                              { value: 'drop', label: 'Drop', description: 'Release this protected spot.' },
+                            ]
+                          : []),
+                        ...(league.leagueType === 'bring_your_own_team'
+                          ? [{ value: 'byot_request', label: 'BYOT request', description: 'List teammates for coordinator review.' }]
+                          : [
+                              { value: 'waitlist_add', label: 'Waitlist: ADD', description: 'Try to add this as a first or second league.' },
+                              { value: 'return_subject_to_availability', label: 'Subject to availability', description: 'Request a non-guaranteed spot.' },
+                            ]),
+                      ]}
+                    />
+                  </FormField>
+                  {currentSelection?.selectionType === 'byot_request' ? (
+                    <FormField label="Teammates" htmlFor={`league-${league.id}-teammates`} required tone="public">
+                      <textarea
+                        id={`league-${league.id}-teammates`}
+                        className="app-input min-h-24"
+                        value={currentSelection.byotTeammateText ?? ''}
+                        onChange={(event) => updateByotTeammates(league.id, event.target.value)}
+                        placeholder="List teammate names"
+                      />
+                    </FormField>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" disabled={loading} onClick={() => saveLeagueSelections()}>
+              Continue
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate('/registration/basic-ice')}>
+              Back
+            </Button>
+          </div>
+        </div>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'third-league-interest') {
+    const thirdLeagueSelections = leagueSelections.filter((selection) => selection.selectionType === 'third_league_interest');
+    content = (
+      <RegistrationCard>
+        <StartOverLink />
+        <h1 className="text-3xl font-bold text-[#121033]">Third-league interest</h1>
+        <p className="mt-3 text-gray-600">
+          These choices tell staff which additional standard leagues would be suitable if third-league spots are available. They are not waitlist entries.
+        </p>
+        <div className="mt-6 space-y-4">
+          {(leaguePayload?.leagues ?? [])
+            .filter((league) => league.leagueType !== 'bring_your_own_team')
+            .map((league) => (
+              <FormCheckbox
+                key={league.id}
+                tone="public"
+                label={league.name}
+                checked={thirdLeagueSelections.some((selection) => selection.leagueId === league.id)}
+                onChange={(checked) => updateThirdLeagueInterest(league.id, checked)}
+                helperText="Interest only; staff handle third-league placement later."
+              />
+            ))}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" disabled={loading} onClick={() => saveLeagueSelections('/registration/league-summary')}>
+              Continue
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate('/registration/league-selection')}>
+              Back
+            </Button>
+          </div>
+        </div>
+      </RegistrationCard>
+    );
+  } else if (currentStep === 'league-summary') {
+    const selections = leagueSelections;
+    content = (
+      <RegistrationCard>
+        <StartOverLink />
+        <h1 className="text-3xl font-bold text-[#121033]">League selection summary</h1>
+        <p className="mt-3 text-gray-600">Review the curler's league choices before continuing to final review.</p>
+        <div className="mt-6 space-y-4">
+          {membershipChoice === 'junior_recreational' ? (
+            <p className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              Junior Recreational skips normal league selection, waitlists, sparing, and third-league interest.
+            </p>
+          ) : selections.length === 0 ? (
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">No league choices have been saved.</p>
+          ) : (
+            <div className="divide-y divide-emerald-100 rounded-2xl border border-emerald-100">
+              {selections.map((selection, index) => (
+                <div key={`${selection.selectionType}-${selection.leagueId ?? 'none'}-${index}`} className="p-4 text-sm">
+                  <p className="font-medium text-[#121033]">{selection.leagueId ? leagueName(selection.leagueId) : selectionLabel(selection)}</p>
+                  <p className="text-gray-700">{selectionLabel(selection)}</p>
+                  {selection.selectionType === 'waitlist_replace' && selection.replacesLeagueId ? (
+                    <p className="text-gray-600">Would replace {leagueName(selection.replacesLeagueId)}.</p>
+                  ) : null}
+                  {selection.selectionType === 'byot_request' && selection.byotTeammateText ? (
+                    <p className="text-gray-600">Teammates: {selection.byotTeammateText}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+          {leaguePayload?.evaluation.paymentDecision.outcome === 'deferred_payment' ? (
+            <p className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+              Payment will be deferred because one or more choices require placement or staff review.
+            </p>
+          ) : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" disabled={loading} onClick={() => navigate('/registration/review')}>
+              Continue to review
+            </Button>
+            {membershipChoice === 'junior_recreational' ? (
+              <Button type="button" variant="secondary" onClick={() => navigate('/registration/membership')}>
+                Back
+              </Button>
+            ) : (
+              <Button type="button" variant="secondary" onClick={() => navigate('/registration/third-league-interest')}>
+                Back
+              </Button>
+            )}
+          </div>
+        </div>
       </RegistrationCard>
     );
   } else if (currentStep === 'review') {
@@ -1425,7 +1750,11 @@ export default function RegistrationShellPage() {
           <div className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-700">
             <p>
               <span className="font-medium text-gray-900">Membership:</span>{' '}
-              {membershipPayment?.selection.membershipOption === 'social' ? 'Social membership' : 'Regular membership'}
+              {membershipPayment?.selection.membershipOption === 'social'
+                ? 'Social membership'
+                : membershipPayment?.selection.membershipOption === 'junior_recreational'
+                  ? 'Junior Recreational'
+                  : 'Regular membership'}
             </p>
             {membershipPayment?.selection.membershipOption === 'regular_spare_only' ? (
               <p>
@@ -1453,6 +1782,23 @@ export default function RegistrationShellPage() {
               </p>
             ) : null}
           </div>
+          {leagueSelections.length > 0 ? (
+            <div className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-700">
+              <h2 className="font-semibold text-[#121033]">League choices</h2>
+              <div className="mt-2 space-y-2">
+                {leagueSelections.map((selection, index) => (
+                  <p key={`${selection.selectionType}-${selection.leagueId ?? 'none'}-${index}`}>
+                    <span className="font-medium text-gray-900">{selection.leagueId ? leagueName(selection.leagueId) : selectionLabel(selection)}:</span>{' '}
+                    {selectionLabel(selection)}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : membershipPayment?.selection.membershipOption === 'junior_recreational' ? (
+            <div className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-700">
+              <span className="font-medium text-gray-900">League choices:</span> Junior Recreational skips normal league selection.
+            </div>
+          ) : null}
           {renderFeeSummary()}
           <p className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
             {membershipPayment?.paymentDecision.outcome === 'deferred_payment'
@@ -1466,7 +1812,7 @@ export default function RegistrationShellPage() {
             <Button type="button" disabled={loading || !membershipPayment} onClick={submitRegistration}>
               {membershipPayment?.paymentDecision.outcome === 'immediate_payment' ? 'Submit and pay' : 'Submit registration'}
             </Button>
-            <Button type="button" variant="secondary" onClick={() => navigate('/registration/basic-ice')}>
+            <Button type="button" variant="secondary" onClick={() => navigate('/registration/league-summary')}>
               Back
             </Button>
           </div>

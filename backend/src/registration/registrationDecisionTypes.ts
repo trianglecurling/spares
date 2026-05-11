@@ -29,6 +29,8 @@ export type RegistrationReasonCode =
   | 'add_waitlist_cleanup_required'
   | 'replace_waitlist_limit_exceeded'
   | 'replace_waitlist_requires_replaced_league'
+  | 'replace_waitlist_replacement_not_held'
+  | 'league_not_in_registration_session'
   | 'third_league_interest_defers_payment'
   | 'junior_financial_assistance_requires_review'
   | 'non_guaranteed_league_defers_payment'

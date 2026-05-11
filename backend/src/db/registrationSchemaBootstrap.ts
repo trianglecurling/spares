@@ -126,6 +126,218 @@ export const curlingRegistrationDDLBase = `
   );
 `;
 
+/** Tables recreated after `legacyAlwaysDropTables`; must match `drizzle-schema` registration/league subgraph. */
+export const curlingRegistrationExtendedDDL = `
+  CREATE TABLE IF NOT EXISTS curling_league_sabbaticals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+    lineage_key TEXT,
+    original_league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE RESTRICT,
+    current_league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE RESTRICT,
+    source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    first_sabbatical_league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE RESTRICT,
+    first_sabbatical_start_date DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    staff_override INTEGER NOT NULL DEFAULT 0,
+    staff_override_reason TEXT,
+    released_at DATETIME,
+    released_reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_curling_league_sabbaticals_member_id ON curling_league_sabbaticals(member_id);
+  CREATE INDEX IF NOT EXISTS idx_curling_league_sabbaticals_current_league_id ON curling_league_sabbaticals(current_league_id);
+  CREATE INDEX IF NOT EXISTS idx_curling_league_sabbaticals_status ON curling_league_sabbaticals(status);
+  CREATE INDEX IF NOT EXISTS idx_curling_league_sabbaticals_first_start ON curling_league_sabbaticals(first_sabbatical_start_date);
+
+  CREATE TABLE IF NOT EXISTS registration_selections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registration_id INTEGER NOT NULL REFERENCES curling_registrations(id) ON DELETE CASCADE,
+    league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    selection_type TEXT NOT NULL,
+    rank INTEGER,
+    replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    related_sabbatical_id INTEGER REFERENCES curling_league_sabbaticals(id) ON DELETE SET NULL,
+    is_temporary_sabbatical_fill INTEGER NOT NULL DEFAULT 0,
+    byot_teammate_text TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    fee_amount_minor_snapshot INTEGER NOT NULL DEFAULT 0,
+    discount_amount_minor_snapshot INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_registration_selections_registration_id ON registration_selections(registration_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_selections_league_id ON registration_selections(league_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_selections_selection_type ON registration_selections(selection_type);
+  CREATE INDEX IF NOT EXISTS idx_registration_selections_status ON registration_selections(status);
+
+  CREATE TABLE IF NOT EXISTS curling_sabbatical_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sabbatical_id INTEGER NOT NULL REFERENCES curling_league_sabbaticals(id) ON DELETE CASCADE,
+    league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE RESTRICT,
+    registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    fee_amount_minor INTEGER NOT NULL DEFAULT 0,
+    payment_status TEXT NOT NULL DEFAULT 'unpaid',
+    starts_at DATETIME,
+    ends_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_curling_sabbatical_sessions_sabbatical_id ON curling_sabbatical_sessions(sabbatical_id);
+
+  CREATE TABLE IF NOT EXISTS financial_assistance_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registration_id INTEGER NOT NULL REFERENCES curling_registrations(id) ON DELETE CASCADE,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+    requested_percentage REAL NOT NULL,
+    approved_percentage REAL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewed_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    reviewed_at DATETIME,
+    staff_notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_financial_assistance_requests_registration_id ON financial_assistance_requests(registration_id);
+
+  CREATE TABLE IF NOT EXISTS registration_invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registration_id INTEGER NOT NULL REFERENCES curling_registrations(id) ON DELETE CASCADE,
+    payer_member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    subtotal_minor INTEGER NOT NULL DEFAULT 0,
+    discount_minor INTEGER NOT NULL DEFAULT 0,
+    total_minor INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'usd',
+    deferred INTEGER NOT NULL DEFAULT 0,
+    deferred_reason TEXT,
+    stripe_checkout_session_id TEXT,
+    stripe_payment_intent_id TEXT,
+    payment_order_id INTEGER,
+    paid_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_registration_invoices_registration_id ON registration_invoices(registration_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_invoices_payer_member_id ON registration_invoices(payer_member_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_invoices_status ON registration_invoices(status);
+  CREATE INDEX IF NOT EXISTS idx_registration_invoices_stripe_checkout_session_id ON registration_invoices(stripe_checkout_session_id);
+
+  CREATE TABLE IF NOT EXISTS registration_invoice_line_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL REFERENCES registration_invoices(id) ON DELETE CASCADE,
+    line_type TEXT NOT NULL,
+    description TEXT NOT NULL,
+    related_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    related_selection_id INTEGER REFERENCES registration_selections(id) ON DELETE SET NULL,
+    amount_minor INTEGER NOT NULL,
+    discount_eligible INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_registration_invoice_line_items_invoice_id ON registration_invoice_line_items(invoice_id);
+
+  CREATE TABLE IF NOT EXISTS season_memberships (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+    season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
+    membership_type TEXT NOT NULL,
+    starts_at DATETIME NOT NULL,
+    ends_at DATETIME NOT NULL,
+    source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    payment_order_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_season_memberships_member_id ON season_memberships(member_id);
+  CREATE INDEX IF NOT EXISTS idx_season_memberships_season_id ON season_memberships(season_id);
+
+  CREATE TABLE IF NOT EXISTS curling_ice_privileges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+    season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
+    session_id INTEGER NOT NULL REFERENCES curling_sessions(id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL,
+    source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    source_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_curling_ice_privileges_member_id ON curling_ice_privileges(member_id);
+
+  CREATE TABLE IF NOT EXISTS waitlist_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+    source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    entry_type TEXT NOT NULL,
+    replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    position_sort_key TEXT NOT NULL,
+    joined_at DATETIME NOT NULL,
+    decline_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',
+    rolled_over_from_waitlist_entry_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_league_id ON waitlist_entries(league_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_member_id ON waitlist_entries(member_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_status ON waitlist_entries(status);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_entry_type ON waitlist_entries(entry_type);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_position_sort_key ON waitlist_entries(position_sort_key);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_joined_at ON waitlist_entries(joined_at);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_source_registration_id ON waitlist_entries(source_registration_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_replaces_league_id ON waitlist_entries(replaces_league_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_entries_active_member_league ON waitlist_entries(member_id, league_id) WHERE status = 'active';
+
+  CREATE TABLE IF NOT EXISTS waitlist_offers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    waitlist_entry_id INTEGER NOT NULL REFERENCES waitlist_entries(id) ON DELETE CASCADE,
+    league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE RESTRICT,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+    offer_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    offered_at DATETIME NOT NULL,
+    expires_at DATETIME NOT NULL,
+    responded_at DATETIME,
+    response_source TEXT,
+    offered_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    payment_link_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_waitlist_offers_waitlist_entry_id ON waitlist_offers(waitlist_entry_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_offers_league_id ON waitlist_offers(league_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_offers_member_id ON waitlist_offers(member_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_offers_status ON waitlist_offers(status);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_offers_expires_at ON waitlist_offers(expires_at);
+
+  CREATE TABLE IF NOT EXISTS waitlist_audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    waitlist_entry_id INTEGER REFERENCES waitlist_entries(id) ON DELETE SET NULL,
+    league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    actor_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    source TEXT NOT NULL,
+    action TEXT NOT NULL,
+    reason TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    metadata_json TEXT,
+    created_at DATETIME NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_waitlist_entry_id ON waitlist_audit_events(waitlist_entry_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_league_id ON waitlist_audit_events(league_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_member_id ON waitlist_audit_events(member_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_actor_member_id ON waitlist_audit_events(actor_member_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_created_at ON waitlist_audit_events(created_at);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_action ON waitlist_audit_events(action);
+`;
+
 const legacyRegistrationTables = [
   'waitlist_audit_events',
   'waitlist_offers',
@@ -159,8 +371,9 @@ const memberDemographicColumnsSQLite: { name: string; ddl: string }[] = [
 ];
 
 function curlingRegistrationDDLForDialect(isPostgres: boolean): string {
-  if (!isPostgres) return curlingRegistrationDDLBase;
-  let s = curlingRegistrationDDLBase;
+  const merged = curlingRegistrationDDLBase + curlingRegistrationExtendedDDL;
+  if (!isPostgres) return merged;
+  let s = merged;
   s = s.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY');
   s = s.replace(/DATETIME DEFAULT CURRENT_TIMESTAMP/g, 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
   s = s.replace(/DATETIME NOT NULL\b/g, 'TIMESTAMP NOT NULL');

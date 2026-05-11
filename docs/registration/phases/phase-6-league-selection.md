@@ -50,6 +50,13 @@ record, validate them, and present a clear summary of what the user has chosen.
 
 Phase 6 should support both new and returning curlers.
 
+Implementation note: Phase 6 persists league intent on `registration_selections`
+and validates that intent server-side. It does not create final roster placements
+or final waitlist entries during draft editing; later submission/placement phases
+consume the structured selections. A backend waitlist rollover service may roll
+existing `waitlist_entries` forward with audit records, but no staff waitlist
+manager UI is part of this phase.
+
 ---
 
 ## Non-goals
