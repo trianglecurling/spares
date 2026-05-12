@@ -13,6 +13,7 @@ import {
   RegistrationMembershipPaymentValidationError,
   getGuestMembershipPaymentPreview,
   getRegistrationMembershipPaymentPayload,
+  getRegistrationPaymentStatusByOrderToken,
   markCurlingRegistrationPaymentCancelled,
   submitRegistrationMembershipPayment,
   updateDiscounts,
@@ -51,6 +52,7 @@ const windowQuerySchema = z.object({
   seasonId: z.coerce.number().int().positive().optional(),
   sessionId: z.coerce.number().int().positive().optional(),
 });
+const paymentStatusParamsSchema = z.object({ orderToken: z.string().uuid() });
 const createDraftSchema = z.object({
   seasonId: z.number().int().positive(),
   sessionId: z.number().int().positive(),
@@ -273,6 +275,29 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
       try {
         const body = guestSubmitSchema.parse(request.body);
         return await submitGuestRegistration(body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.get<{ Params: { orderToken: string }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/payment-status/:orderToken',
+    {
+      schema: {
+        tags: ['registration'],
+        params: {
+          type: 'object',
+          properties: { orderToken: { type: 'string' } },
+          required: ['orderToken'],
+        },
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { orderToken } = paymentStatusParamsSchema.parse(request.params);
+        return await getRegistrationPaymentStatusByOrderToken(orderToken);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

@@ -15,6 +15,12 @@ interface League {
   drawTimes: string[];
 }
 
+function leaguePlayFormatUiLabel(format: string): string {
+  if (format === 'instructional') return 'Instructional';
+  if (format === 'doubles') return 'Doubles';
+  return 'Teams';
+}
+
 interface Availability {
   leagueId: number;
   available: boolean;
@@ -202,7 +208,7 @@ export default function SetAvailability() {
                         </p>
                         <p>
                           <span className="font-medium dark:text-gray-300">Format:</span>{' '}
-                          {league.format === 'teams' ? 'Teams' : 'Doubles'}
+                          {leaguePlayFormatUiLabel(league.format)}
                         </p>
                       </div>
 

@@ -22,7 +22,7 @@ export type LeagueConfig = {
   capacityValue: number;
   registrationFeeMinor: number;
   requiresClubMembership: boolean;
-  isInstructional: boolean;
+  format: 'teams' | 'doubles' | 'instructional';
   minExperienceYears?: number | null;
   minAge?: number | null;
   maxAge?: number | null;

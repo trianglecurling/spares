@@ -772,6 +772,11 @@ export class PaymentService {
       .update(this.schema.paymentOrders)
       .set({
         provider_order_id: checkoutSession.providerOrderId,
+        metadata: safeJsonStringify({
+          ...parsedMetadata,
+          hostedCheckoutUrl: checkoutSession.checkoutUrl,
+          hostedCheckoutExpiresAt: checkoutSession.expiresAt,
+        }),
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(this.schema.paymentOrders.id, order.id));
@@ -1366,6 +1371,7 @@ export class PaymentService {
 
       let transitionedToSucceeded = false;
       let transitionedToRefunded = false;
+      let transitionedToFailed = false;
       if (verified.nextStatus) {
         const transitioned = await this.transitionOrderStatus(
           order.id,
@@ -1374,6 +1380,7 @@ export class PaymentService {
         );
         transitionedToSucceeded = transitioned && verified.nextStatus === 'succeeded';
         transitionedToRefunded = transitioned && (verified.nextStatus === 'refunded' || verified.nextStatus === 'partially_refunded');
+        transitionedToFailed = transitioned && verified.nextStatus === 'failed';
       }
 
       await this.db
@@ -1390,6 +1397,10 @@ export class PaymentService {
         await this.sendDonationReceiptForSucceededOrder(order.id);
         await this.confirmEventRegistrationForSucceededOrder(order.id);
         await this.confirmCurlingRegistrationForSucceededOrder(order.id);
+      }
+
+      if (transitionedToFailed) {
+        await this.markCurlingRegistrationFailedForOrder(order.id);
       }
 
       if (transitionedToRefunded) {
@@ -1563,6 +1574,25 @@ export class PaymentService {
     } catch (error) {
       await logEvent({
         eventType: 'curling.registration.payment_confirmation_failed',
+        relatedId: orderId,
+        meta: { error: error instanceof Error ? error.message : 'Unknown error' },
+      });
+    }
+  }
+
+  private async markCurlingRegistrationFailedForOrder(orderId: number): Promise<void> {
+    try {
+      const { markCurlingRegistrationPaymentFailedForOrder } = await import('../registration/registrationMembershipPaymentService.js');
+      await markCurlingRegistrationPaymentFailedForOrder(orderId);
+
+      await logEvent({
+        eventType: 'curling.registration.payment_failed',
+        relatedId: orderId,
+        meta: { paymentOrderId: orderId },
+      });
+    } catch (error) {
+      await logEvent({
+        eventType: 'curling.registration.payment_failure_mark_failed',
         relatedId: orderId,
         meta: { error: error instanceof Error ? error.message : 'Unknown error' },
       });

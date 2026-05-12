@@ -109,6 +109,7 @@ export const curlingRegistrationDDLBase = `
     spare_only_ice_privilege_fee_minor INTEGER NOT NULL DEFAULT 0,
     sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
     junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
+    default_league_fee_minor INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -397,9 +398,15 @@ CREATE TABLE IF NOT EXISTS registration_price_settings (
   spare_only_ice_privilege_fee_minor INTEGER NOT NULL DEFAULT 0,
   sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
   junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
+  default_league_fee_minor INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`));
+    try {
+      await db.execute(sql.raw(`ALTER TABLE registration_price_settings ADD COLUMN IF NOT EXISTS default_league_fee_minor INTEGER NOT NULL DEFAULT 0`));
+    } catch {
+      /* ignore */
+    }
     await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_discount_settings (
   scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
@@ -423,9 +430,15 @@ CREATE TABLE IF NOT EXISTS registration_price_settings (
   spare_only_ice_privilege_fee_minor INTEGER NOT NULL DEFAULT 0,
   sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
   junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
+  default_league_fee_minor INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`));
+  try {
+    await db.execute(sql.raw(`ALTER TABLE registration_price_settings ADD COLUMN default_league_fee_minor INTEGER NOT NULL DEFAULT 0`));
+  } catch {
+    /* ignore duplicate column */
+  }
   await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_discount_settings (
   scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
@@ -521,8 +534,8 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'capacity_type', ddl: "capacity_type TEXT NOT NULL DEFAULT 'individual' CHECK(capacity_type IN ('individual','team'))" },
   { name: 'capacity_value', ddl: 'capacity_value INTEGER NOT NULL DEFAULT 0 CHECK(capacity_value >= 0)' },
   { name: 'registration_fee_minor', ddl: 'registration_fee_minor INTEGER NOT NULL DEFAULT 0 CHECK(registration_fee_minor >= 0)' },
+  { name: 'registration_fee_override_minor', ddl: 'registration_fee_override_minor INTEGER CHECK(registration_fee_override_minor IS NULL OR registration_fee_override_minor >= 0)' },
   { name: 'requires_club_membership', ddl: 'requires_club_membership INTEGER NOT NULL DEFAULT 1' },
-  { name: 'is_instructional', ddl: 'is_instructional INTEGER NOT NULL DEFAULT 0' },
   { name: 'min_experience_years', ddl: 'min_experience_years INTEGER' },
   { name: 'min_age', ddl: 'min_age INTEGER' },
   { name: 'max_age', ddl: 'max_age INTEGER' },
@@ -562,6 +575,23 @@ async function ensureSQLiteColumn(
   }
 }
 
+async function seedLeagueFeeOverridesIfNeeded(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  await execSQL(
+    db,
+    `UPDATE leagues SET registration_fee_override_minor = registration_fee_minor WHERE registration_fee_override_minor IS NULL AND (SELECT COUNT(*) FROM leagues WHERE registration_fee_override_minor IS NULL) = (SELECT COUNT(*) FROM leagues) AND (SELECT COUNT(*) FROM leagues) > 0`
+  );
+}
+
+function seedLeagueFeeOverridesIfNeededSync(db: DatabaseAdapter, execSQLSync: (d: DatabaseAdapter, s: string) => void): void {
+  execSQLSync(
+    db,
+    `UPDATE leagues SET registration_fee_override_minor = registration_fee_minor WHERE registration_fee_override_minor IS NULL AND (SELECT COUNT(*) FROM leagues WHERE registration_fee_override_minor IS NULL) = (SELECT COUNT(*) FROM leagues) AND (SELECT COUNT(*) FROM leagues) > 0`
+  );
+}
+
 async function sqliteEnsureLeaguesRegistrationColumns(
   db: DatabaseAdapter,
   execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
@@ -569,6 +599,7 @@ async function sqliteEnsureLeaguesRegistrationColumns(
   for (const col of leagueBootstrapColumnsSQLite) {
     await ensureSQLiteColumn(db, 'leagues', col.name, col.ddl, execSQL);
   }
+  await seedLeagueFeeOverridesIfNeeded(db, execSQL);
   await execSQL(
     db,
     `
@@ -595,8 +626,8 @@ const leagueBootstrapColumnsPg: string[] = [
   "ALTER TABLE leagues ADD COLUMN IF NOT EXISTS capacity_type TEXT NOT NULL DEFAULT 'individual'",
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS capacity_value INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS registration_fee_minor INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS registration_fee_override_minor INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS requires_club_membership INTEGER NOT NULL DEFAULT 1',
-  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS is_instructional INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS min_experience_years INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS min_age INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS max_age INTEGER',
@@ -625,6 +656,7 @@ async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: D
   for (const ddl of leagueBootstrapColumnsPg) {
     await execSQL(db, ddl);
   }
+  await seedLeagueFeeOverridesIfNeeded(db, execSQL);
   await execSQL(
     db,
     `
@@ -687,6 +719,7 @@ export function ensureCurlingRegistrationBootstrapSync(
       execSQLSync(db, `ALTER TABLE leagues ADD COLUMN ${col.ddl}`);
     }
   }
+  seedLeagueFeeOverridesIfNeededSync(db, execSQLSync);
   execSQLSync(
     db,
     `

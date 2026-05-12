@@ -7,6 +7,7 @@ import {
   assertValidLeagueRegistrationSettings,
   assertValidPriceConfig,
   assertValidRegistrationDiscountSettingsStored,
+  effectiveLeagueRegistrationFeeMinor,
 } from './registrationConfigValidation.js';
 
 function expectValidationError(fn: () => void, field: string): void {
@@ -52,7 +53,7 @@ describe('registration configuration validation', () => {
           leagueType: 'bring_your_own_team',
           capacityType: 'individual',
           capacityValue: 24,
-          registrationFeeMinor: 5000,
+          registrationFeeOverrideMinor: 5000,
           allowsWaitlist: true,
           allowsSabbatical: true,
         }),
@@ -81,6 +82,7 @@ describe('registration configuration validation', () => {
           spareOnlyIcePrivilegeFeeMinor: 2500,
           sabbaticalFeeMinor: 5000,
           juniorRecreationalFeeMinor: 7500,
+          defaultLeagueFeeMinor: 0,
         }),
       'socialMembershipFeeMinor'
     );
@@ -120,6 +122,12 @@ describe('registration configuration validation', () => {
         }),
       'studentDiscount'
     );
+  });
+
+  test('effective league fee prefers override over club default', () => {
+    expect(effectiveLeagueRegistrationFeeMinor(5000, 30000)).toBe(5000);
+    expect(effectiveLeagueRegistrationFeeMinor(null, 30000)).toBe(30000);
+    expect(effectiveLeagueRegistrationFeeMinor(undefined, 30000)).toBe(30000);
   });
 
   test('accepts whole-number percentage discounts', () => {

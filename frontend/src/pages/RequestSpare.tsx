@@ -16,6 +16,12 @@ import Button from '../components/Button';
 import { HiChevronDown, HiUser, HiUserGroup } from 'react-icons/hi2';
 import { format } from 'date-fns';
 
+function leaguePlayFormatUiLabel(format: string): string {
+  if (format === 'instructional') return 'Instructional';
+  if (format === 'doubles') return 'Doubles';
+  return 'Teams';
+}
+
 interface Member {
   id: number;
   name: string;
@@ -26,7 +32,7 @@ interface League {
   id: number;
   name: string;
   dayOfWeek: number; // 0=Sun .. 6=Sat
-  format: 'teams' | 'doubles';
+  format: 'teams' | 'doubles' | 'instructional';
   startDate: string;
   endDate: string;
   drawTimes: string[];
@@ -769,7 +775,7 @@ export default function RequestSpare() {
                             </span>
                           </div>
                           <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-300">
-                            {displayedLeague.format === 'teams' ? 'Teams' : 'Doubles'}
+                            {leaguePlayFormatUiLabel(displayedLeague.format)}
                             {displayedLeague.drawTimes?.length
                               ? ` • ${displayedLeague.drawTimes.map(formatTimeShort).join(', ')}`
                               : ''}
@@ -861,7 +867,7 @@ export default function RequestSpare() {
                                     >
                                       <div className="flex items-start gap-2">
                                         <div className="mt-0.5 text-gray-600 dark:text-gray-300">
-                                          {league.format === 'teams' ? (
+                                          {league.format !== 'doubles' ? (
                                             <HiUserGroup className="w-4 h-4" />
                                           ) : (
                                             <HiUser className="w-4 h-4" />
@@ -872,7 +878,7 @@ export default function RequestSpare() {
                                             {league.name}
                                           </div>
                                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                                            {league.format === 'teams' ? 'Teams' : 'Doubles'}
+                                            {leaguePlayFormatUiLabel(league.format)}
                                             {league.drawTimes?.length
                                               ? ` • ${league.drawTimes.map(formatTimeShort).join(', ')}`
                                               : ''}

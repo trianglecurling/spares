@@ -75,15 +75,15 @@ export interface League {
   session_id: number | null;
   name: string;
   day_of_week: number;
-  format: 'teams' | 'doubles';
+  format: 'teams' | 'doubles' | 'instructional';
   start_date: DbDate;
   end_date: DbDate;
   league_type: 'standard' | 'bring_your_own_team';
   capacity_type: 'individual' | 'team';
   capacity_value: number;
   registration_fee_minor: number;
+  registration_fee_override_minor?: number | null;
   requires_club_membership: number;
-  is_instructional: number;
   min_experience_years: number | null;
   min_age: number | null;
   max_age: number | null;

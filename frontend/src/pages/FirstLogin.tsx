@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { HiOutlineInformationCircle } from 'react-icons/hi2';
 import { useAuth } from '../contexts/AuthContext';
 import { get, patch, post } from '../api/client';
+import { getApiErrorMessage } from '../utils/api';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
 
@@ -18,6 +19,7 @@ export default function FirstLogin() {
   const [phoneVisible, setPhoneVisible] = useState(true);
   const [loading, setLoading] = useState(false);
   const [smsDisabled, setSmsDisabled] = useState<boolean | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const normalizeThemePreference = (value?: string | null): 'light' | 'dark' | 'system' => {
     if (value === 'light' || value === 'dark' || value === 'system') return value;
@@ -51,6 +53,7 @@ export default function FirstLogin() {
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setProfileError(null);
 
     try {
       const response = await patch('/members/me', {
@@ -70,6 +73,9 @@ export default function FirstLogin() {
       setStep(2);
     } catch (error) {
       console.error('Failed to update profile:', error);
+      setProfileError(
+        getApiErrorMessage(error, 'Could not save your profile. Please check your details and try again.')
+      );
     } finally {
       setLoading(false);
     }
@@ -140,6 +146,11 @@ export default function FirstLogin() {
 
             {step === 1 && (
               <form onSubmit={handleUpdateProfile} className="space-y-6">
+                {profileError && (
+                  <div className="app-alert-error" role="alert">
+                    {profileError}
+                  </div>
+                )}
                 <div>
                   <label
                     htmlFor="name"

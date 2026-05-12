@@ -1,9 +1,20 @@
+/** Resolved cents charged for a league in registration (override or club default). */
+export function effectiveLeagueRegistrationFeeMinor(
+  registrationFeeOverrideMinor: number | null | undefined,
+  defaultLeagueFeeMinor: number
+): number {
+  const d = Math.max(0, Math.round(defaultLeagueFeeMinor));
+  if (registrationFeeOverrideMinor === null || registrationFeeOverrideMinor === undefined) return d;
+  return Math.max(0, Math.round(registrationFeeOverrideMinor));
+}
+
 export type LeagueRegistrationSettingsInput = {
   id?: number;
   leagueType: 'standard' | 'bring_your_own_team';
   capacityType: 'individual' | 'team';
   capacityValue: number;
-  registrationFeeMinor: number;
+  /** When null, club default league fee from registration prices applies. */
+  registrationFeeOverrideMinor: number | null;
   minExperienceYears?: number | null;
   minAge?: number | null;
   maxAge?: number | null;
@@ -27,6 +38,8 @@ export type PriceConfigInput = {
   spareOnlyIcePrivilegeFeeMinor: number;
   sabbaticalFeeMinor: number;
   juniorRecreationalFeeMinor: number;
+  /** Default league registration fee (cents); leagues may override per-league. */
+  defaultLeagueFeeMinor: number;
 };
 
 export type DiscountAmountType = 'dollar' | 'percent';
@@ -130,8 +143,8 @@ export function assertValidLeagueRegistrationSettings(input: LeagueRegistrationS
   if (isNegative(input.capacityValue)) {
     details.capacityValue = 'Capacity cannot be negative.';
   }
-  if (isNegative(input.registrationFeeMinor)) {
-    details.registrationFeeMinor = 'Registration fee cannot be negative.';
+  if (isNegative(input.registrationFeeOverrideMinor)) {
+    details.registrationFeeOverrideMinor = 'League fee override cannot be negative.';
   }
   if (isNegative(input.minExperienceYears)) {
     details.minExperienceYears = 'Minimum experience years cannot be negative.';

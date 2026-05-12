@@ -1,9 +1,16 @@
 import { and, desc, eq, inArray, lte, or, sql } from 'drizzle-orm';
+import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { CurlingRegistrationStatusSqlite, PolicyAcceptanceKindSqlite } from '../db/drizzle-schema.js';
-import { canActorImpersonateTarget, listAccountSwitchOptions } from '../services/accountAccess.js';
+import {
+  canActorImpersonateTarget,
+  fetchMemberEmailRow,
+  findMemberIdWithConflictingNormalizedEmail,
+  listAccountSwitchOptions,
+} from '../services/accountAccess.js';
 import type { Member } from '../types.js';
 import { isAdmin, isServerAdmin, normalizeEmail } from '../utils/auth.js';
+import { isEmailChangeToReservedServerAdminAddress } from '../utils/rbac.js';
 
 export const REQUIRED_REGISTRATION_POLICIES: Array<{
   type: PolicyAcceptanceKindSqlite;
@@ -575,12 +582,28 @@ export async function updateCurlerDemographics(registrationId: number, input: Me
   if (!registration?.curler_member_id) {
     throw new RegistrationShellValidationError({ curler: 'A curler must be selected before demographics can be updated.' });
   }
+  const curlerRow = await fetchMemberEmailRow(registration.curler_member_id);
   const { db, schema } = getDrizzleDb();
+  const normalizedEmail = normalizeEmail(input.email);
+  if (isEmailChangeToReservedServerAdminAddress(curlerRow?.email ?? null, normalizedEmail)) {
+    throw new RegistrationShellValidationError({
+      email: MEMBER_PROFILE_EMAIL_UNAVAILABLE,
+    });
+  }
+  const conflictId = await findMemberIdWithConflictingNormalizedEmail(
+    normalizedEmail,
+    registration.curler_member_id
+  );
+  if (conflictId != null) {
+    throw new RegistrationShellValidationError({
+      email: MEMBER_PROFILE_EMAIL_UNAVAILABLE,
+    });
+  }
   await db
     .update(schema.members)
     .set({
       name: memberName(input),
-      email: normalizeEmail(input.email),
+      email: normalizedEmail,
       phone: input.phone.trim(),
       first_name: input.firstName.trim(),
       last_name: input.lastName.trim(),

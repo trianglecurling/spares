@@ -70,4 +70,18 @@ export const formatApiError = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+/** Prefer the API `error` string when present; otherwise return `fallback` (no prefix). */
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const serverError = error.response?.data?.error;
+    if (typeof serverError === 'string' && serverError.trim().length > 0) {
+      return serverError.trim();
+    }
+  }
+  if (error instanceof Error && error.message?.trim()) {
+    return error.message.trim();
+  }
+  return fallback;
+}
+
 export default api;

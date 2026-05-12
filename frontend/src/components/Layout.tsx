@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
@@ -17,11 +17,16 @@ interface League {
   id: number;
   name: string;
   dayOfWeek: number;
-  format: 'teams' | 'doubles';
+  format: 'teams' | 'doubles' | 'instructional';
   startDate: string;
   endDate: string;
+  sessionId: number | null;
   drawTimes: string[];
   exceptions: string[];
+}
+
+interface RegistrationWindowPayload {
+  session: { id: number };
 }
 
 const navLinkClass = (active: boolean) =>
@@ -63,6 +68,8 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const [mobileAdminExpanded, setMobileAdminExpanded] = useState(false);
   const [mobileCalendarExpanded, setMobileCalendarExpanded] = useState(false);
   const [leagues, setLeagues] = useState<League[]>([]);
+  const [registrationWindowSessionId, setRegistrationWindowSessionId] = useState<number | null>(null);
+  const [myRosterLeagueIds, setMyRosterLeagueIds] = useState<number[]>([]);
   const [leaguesLoading, setLeaguesLoading] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -144,25 +151,67 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   ];
   const hasAdminLinks = adminLinks.length > 0;
 
-  // Fetch leagues for dropdown
+  // Fetch leagues, registration session, and my roster — nav shows a dropdown only when I have leagues in that session.
   useEffect(() => {
     let cancelled = false;
     setLeaguesLoading(true);
-    get('/leagues')
-      .then((data) => {
-        if (!cancelled) {
-          setLeagues(data as League[]);
-          setLeaguesLoading(false);
+    const memberId = member?.id ?? null;
+    Promise.all([
+      get('/leagues'),
+      get('/registration/window').catch(() => null),
+      memberId != null
+        ? get('/members/{memberId}/leagues', undefined, {
+            memberId: String(memberId),
+          }).catch(() => [])
+        : Promise.resolve([]),
+    ])
+      .then(([leaguesData, windowRes, myLeaguesRows]) => {
+        if (cancelled) return;
+        setLeagues(leaguesData as League[]);
+        const rows = Array.isArray(myLeaguesRows) ? myLeaguesRows : [];
+        setMyRosterLeagueIds([...new Set(rows.map((r) => r.leagueId))]);
+        if (
+          windowRes &&
+          typeof windowRes === 'object' &&
+          windowRes !== null &&
+          'session' in windowRes
+        ) {
+          const w = windowRes as unknown as RegistrationWindowPayload;
+          if (typeof w.session?.id === 'number') {
+            setRegistrationWindowSessionId(w.session.id);
+          } else {
+            setRegistrationWindowSessionId(null);
+          }
+        } else {
+          setRegistrationWindowSessionId(null);
         }
+        setLeaguesLoading(false);
       })
       .catch(() => {
-        if (!cancelled) setLeaguesLoading(false);
-        // Ignore - leagues dropdown will show "View all" only
+        if (!cancelled) {
+          setLeaguesLoading(false);
+          setRegistrationWindowSessionId(null);
+          setMyRosterLeagueIds([]);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [member?.id]);
+
+  const navMyLeaguesInCurrentSession = useMemo(() => {
+    if (registrationWindowSessionId == null) return [];
+    const onRoster = new Set(myRosterLeagueIds);
+    return leagues.filter(
+      (l) => l.sessionId === registrationWindowSessionId && onRoster.has(l.id)
+    );
+  }, [leagues, registrationWindowSessionId, myRosterLeagueIds]);
+
+  const showLeaguesNavDropdown = !leaguesLoading && navMyLeaguesInCurrentSession.length > 0;
+
+  useEffect(() => {
+    if (!showLeaguesNavDropdown) setLeaguesDropdownOpen(false);
+  }, [showLeaguesNavDropdown]);
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -281,38 +330,35 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   Dashboard
                 </Link>
 
-                {/* Leagues dropdown */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setLeaguesDropdownOpen(!leaguesDropdownOpen);
-                      setSparesDropdownOpen(false);
-                      setAdminDropdownOpen(false);
-                      setCalendarDropdownOpen(false);
-                    }}
-                    className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isLeaguesActive)}`}
-                  >
-                    Leagues
-                    <HiChevronDown
-                      className={`w-4 h-4 transition-transform ${leaguesDropdownOpen ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                  {leaguesDropdownOpen && (
-                    <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
-                      <Link
-                        to="/leagues"
-                        onClick={closeDropdowns}
-                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        View all
-                      </Link>
-                      <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
-                      {leaguesLoading ? (
-                        <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
-                          Loading leagues…
-                        </div>
-                      ) : (
-                        leagues.map((league) => (
+                {/* Leagues: dropdown only when I have roster leagues in the current session */}
+                {showLeaguesNavDropdown ? (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLeaguesDropdownOpen(!leaguesDropdownOpen);
+                        setSparesDropdownOpen(false);
+                        setAdminDropdownOpen(false);
+                        setCalendarDropdownOpen(false);
+                      }}
+                      className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isLeaguesActive)}`}
+                    >
+                      Leagues
+                      <HiChevronDown
+                        className={`w-4 h-4 transition-transform ${leaguesDropdownOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                    {leaguesDropdownOpen && (
+                      <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
+                        <Link
+                          to="/leagues"
+                          onClick={closeDropdowns}
+                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          View all
+                        </Link>
+                        <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                        {navMyLeaguesInCurrentSession.map((league) => (
                           <Link
                             key={league.id}
                             to={`/leagues/${league.id}`}
@@ -321,11 +367,15 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                           >
                             {league.name}
                           </Link>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Link to="/leagues" className={navLinkClass(isLeaguesActive)}>
+                    Leagues
+                  </Link>
+                )}
 
                 {/* Spares dropdown */}
                 <div className="relative">
@@ -600,25 +650,21 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   Dashboard
                 </Link>
 
-                <MobileDropdownSection
-                  label="Leagues"
-                  expanded={mobileLeaguesExpanded}
-                  onToggle={() => setMobileLeaguesExpanded(!mobileLeaguesExpanded)}
-                  active={isLeaguesActive}
-                >
-                  <Link
-                    to="/leagues"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                {showLeaguesNavDropdown ? (
+                  <MobileDropdownSection
+                    label="Leagues"
+                    expanded={mobileLeaguesExpanded}
+                    onToggle={() => setMobileLeaguesExpanded(!mobileLeaguesExpanded)}
+                    active={isLeaguesActive}
                   >
-                    View all
-                  </Link>
-                  {leaguesLoading ? (
-                    <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                      Loading leagues…
-                    </div>
-                  ) : (
-                    leagues.map((league) => (
+                    <Link
+                      to="/leagues"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      View all
+                    </Link>
+                    {navMyLeaguesInCurrentSession.map((league) => (
                       <Link
                         key={league.id}
                         to={`/leagues/${league.id}`}
@@ -627,9 +673,17 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                       >
                         {league.name}
                       </Link>
-                    ))
-                  )}
-                </MobileDropdownSection>
+                    ))}
+                  </MobileDropdownSection>
+                ) : (
+                  <Link
+                    to="/leagues"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={navLinkClassMobile(isLeaguesActive)}
+                  >
+                    Leagues
+                  </Link>
+                )}
 
                 <MobileDropdownSection
                   label="Spares"

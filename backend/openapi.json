@@ -1906,6 +1906,56 @@
         }
       }
     },
+    "/registration/payment-status/{orderToken}": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orderToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/payments/webhooks/{provider}": {
       "post": {
         "tags": [
@@ -3832,7 +3882,8 @@
                         "type": "string",
                         "enum": [
                           "teams",
-                          "doubles"
+                          "doubles",
+                          "instructional"
                         ]
                       },
                       "startDate": {
@@ -3867,10 +3918,13 @@
                       "registrationFeeMinor": {
                         "type": "number"
                       },
-                      "requiresClubMembership": {
-                        "type": "boolean"
+                      "registrationFeeOverrideMinor": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
-                      "isInstructional": {
+                      "requiresClubMembership": {
                         "type": "boolean"
                       },
                       "minExperienceYears": {
@@ -3946,8 +4000,8 @@
                       "capacityType",
                       "capacityValue",
                       "registrationFeeMinor",
+                      "registrationFeeOverrideMinor",
                       "requiresClubMembership",
-                      "isInstructional",
                       "minExperienceYears",
                       "minAge",
                       "maxAge",
@@ -3990,7 +4044,8 @@
                     "type": "string",
                     "enum": [
                       "teams",
-                      "doubles"
+                      "doubles",
+                      "instructional"
                     ]
                   },
                   "startDate": {
@@ -4026,9 +4081,6 @@
                     "type": "number"
                   },
                   "requiresClubMembership": {
-                    "type": "boolean"
-                  },
-                  "isInstructional": {
                     "type": "boolean"
                   },
                   "minExperienceYears": {
@@ -4126,7 +4178,8 @@
                       "type": "string",
                       "enum": [
                         "teams",
-                        "doubles"
+                        "doubles",
+                        "instructional"
                       ]
                     },
                     "startDate": {
@@ -4161,10 +4214,13 @@
                     "registrationFeeMinor": {
                       "type": "number"
                     },
-                    "requiresClubMembership": {
-                      "type": "boolean"
+                    "registrationFeeOverrideMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
                     },
-                    "isInstructional": {
+                    "requiresClubMembership": {
                       "type": "boolean"
                     },
                     "minExperienceYears": {
@@ -4240,8 +4296,8 @@
                     "capacityType",
                     "capacityValue",
                     "registrationFeeMinor",
+                    "registrationFeeOverrideMinor",
                     "requiresClubMembership",
-                    "isInstructional",
                     "minExperienceYears",
                     "minAge",
                     "maxAge",
@@ -4306,6 +4362,223 @@
         }
       }
     },
+    "/leagues/bulk-copy-to-session": {
+      "post": {
+        "tags": [
+          "leagues"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sourceLeagueIds",
+                  "seasonId",
+                  "targetSessionId",
+                  "anchorStartDate",
+                  "anchorEndDate"
+                ],
+                "properties": {
+                  "sourceLeagueIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "targetSessionId": {
+                    "type": "number"
+                  },
+                  "anchorStartDate": {
+                    "type": "string"
+                  },
+                  "anchorEndDate": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "leagues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "dayOfWeek": {
+                            "type": "number"
+                          },
+                          "format": {
+                            "type": "string",
+                            "enum": [
+                              "teams",
+                              "doubles",
+                              "instructional"
+                            ]
+                          },
+                          "startDate": {
+                            "type": "string"
+                          },
+                          "endDate": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "leagueType": {
+                            "type": "string",
+                            "enum": [
+                              "standard",
+                              "bring_your_own_team"
+                            ]
+                          },
+                          "capacityType": {
+                            "type": "string",
+                            "enum": [
+                              "individual",
+                              "team"
+                            ]
+                          },
+                          "capacityValue": {
+                            "type": "number"
+                          },
+                          "registrationFeeMinor": {
+                            "type": "number"
+                          },
+                          "registrationFeeOverrideMinor": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "requiresClubMembership": {
+                            "type": "boolean"
+                          },
+                          "minExperienceYears": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "minAge": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "maxAge": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "firstDayOfPlay": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "lastDayOfPlay": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "allowsWaitlist": {
+                            "type": "boolean"
+                          },
+                          "allowsSabbatical": {
+                            "type": "boolean"
+                          },
+                          "predecessorLeagueId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "successorLeagueId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "drawTimes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exceptions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "dayOfWeek",
+                          "format",
+                          "startDate",
+                          "endDate",
+                          "sessionId",
+                          "leagueType",
+                          "capacityType",
+                          "capacityValue",
+                          "registrationFeeMinor",
+                          "registrationFeeOverrideMinor",
+                          "requiresClubMembership",
+                          "minExperienceYears",
+                          "minAge",
+                          "maxAge",
+                          "firstDayOfPlay",
+                          "lastDayOfPlay",
+                          "allowsWaitlist",
+                          "allowsSabbatical",
+                          "predecessorLeagueId",
+                          "successorLeagueId",
+                          "drawTimes",
+                          "exceptions"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "leagues"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/leagues/{id}": {
       "patch": {
         "tags": [
@@ -4330,7 +4603,8 @@
                     "type": "string",
                     "enum": [
                       "teams",
-                      "doubles"
+                      "doubles",
+                      "instructional"
                     ]
                   },
                   "startDate": {
@@ -4338,6 +4612,89 @@
                   },
                   "endDate": {
                     "type": "string"
+                  },
+                  "sessionId": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "leagueType": {
+                    "type": "string",
+                    "enum": [
+                      "standard",
+                      "bring_your_own_team"
+                    ]
+                  },
+                  "capacityType": {
+                    "type": "string",
+                    "enum": [
+                      "individual",
+                      "team"
+                    ]
+                  },
+                  "capacityValue": {
+                    "type": "number"
+                  },
+                  "registrationFeeMinor": {
+                    "type": "number"
+                  },
+                  "registrationFeeOverrideMinor": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "requiresClubMembership": {
+                    "type": "boolean"
+                  },
+                  "minExperienceYears": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "minAge": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "maxAge": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "firstDayOfPlay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastDayOfPlay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "allowsWaitlist": {
+                    "type": "boolean"
+                  },
+                  "allowsSabbatical": {
+                    "type": "boolean"
+                  },
+                  "predecessorLeagueId": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "successorLeagueId": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   },
                   "drawTimes": {
                     "type": "array",
@@ -4388,7 +4745,8 @@
                       "type": "string",
                       "enum": [
                         "teams",
-                        "doubles"
+                        "doubles",
+                        "instructional"
                       ]
                     },
                     "startDate": {
@@ -4423,10 +4781,13 @@
                     "registrationFeeMinor": {
                       "type": "number"
                     },
-                    "requiresClubMembership": {
-                      "type": "boolean"
+                    "registrationFeeOverrideMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
                     },
-                    "isInstructional": {
+                    "requiresClubMembership": {
                       "type": "boolean"
                     },
                     "minExperienceYears": {
@@ -4502,8 +4863,8 @@
                     "capacityType",
                     "capacityValue",
                     "registrationFeeMinor",
+                    "registrationFeeOverrideMinor",
                     "requiresClubMembership",
-                    "isInstructional",
                     "minExperienceYears",
                     "minAge",
                     "maxAge",
@@ -4609,7 +4970,8 @@
                             "type": "string",
                             "enum": [
                               "teams",
-                              "doubles"
+                              "doubles",
+                              "instructional"
                             ]
                           },
                           "startDate": {
@@ -4683,7 +5045,8 @@
                           "type": "string",
                           "enum": [
                             "teams",
-                            "doubles"
+                            "doubles",
+                            "instructional"
                           ]
                         },
                         "startDate": {
@@ -4757,7 +5120,8 @@
                             "type": "string",
                             "enum": [
                               "teams",
-                              "doubles"
+                              "doubles",
+                              "instructional"
                             ]
                           },
                           "startDate": {
@@ -4792,10 +5156,13 @@
                           "registrationFeeMinor": {
                             "type": "number"
                           },
-                          "requiresClubMembership": {
-                            "type": "boolean"
+                          "registrationFeeOverrideMinor": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
                           },
-                          "isInstructional": {
+                          "requiresClubMembership": {
                             "type": "boolean"
                           },
                           "minExperienceYears": {
@@ -4871,8 +5238,8 @@
                           "capacityType",
                           "capacityValue",
                           "registrationFeeMinor",
+                          "registrationFeeOverrideMinor",
                           "requiresClubMembership",
-                          "isInstructional",
                           "minExperienceYears",
                           "minAge",
                           "maxAge",
@@ -18287,6 +18654,9 @@
                     "juniorRecreationalFeeDollars": {
                       "type": "number"
                     },
+                    "leagueFeeDollars": {
+                      "type": "number"
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -18301,6 +18671,7 @@
                     "spareOnlyIcePrivilegeFeeDollars",
                     "sabbaticalFeeDollars",
                     "juniorRecreationalFeeDollars",
+                    "leagueFeeDollars",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -18336,6 +18707,9 @@
                   },
                   "juniorRecreationalFeeDollars": {
                     "type": "number"
+                  },
+                  "leagueFeeDollars": {
+                    "type": "number"
                   }
                 }
               }
@@ -18369,6 +18743,9 @@
                     "juniorRecreationalFeeDollars": {
                       "type": "number"
                     },
+                    "leagueFeeDollars": {
+                      "type": "number"
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -18383,6 +18760,7 @@
                     "spareOnlyIcePrivilegeFeeDollars",
                     "sabbaticalFeeDollars",
                     "juniorRecreationalFeeDollars",
+                    "leagueFeeDollars",
                     "createdAt",
                     "updatedAt"
                   ]

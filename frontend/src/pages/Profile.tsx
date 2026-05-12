@@ -4,6 +4,7 @@ import { AppPage, AppPageHeader } from '../components/AppPage';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { get, patch, put } from '../api/client';
+import { getApiErrorMessage } from '../utils/api';
 import Button from '../components/Button';
 import FormSection from '../components/FormSection';
 import MemberMultiSelect from '../components/MemberMultiSelect';
@@ -115,7 +116,10 @@ export default function Profile() {
       setMessage({ type: 'success', text: 'Profile updated successfully' });
     } catch (error) {
       console.error('Failed to update profile:', error);
-      setMessage({ type: 'error', text: 'Failed to update profile' });
+      setMessage({
+        type: 'error',
+        text: getApiErrorMessage(error, 'Could not update your profile. Please try again.'),
+      });
     } finally {
       setLoading(false);
     }

@@ -117,6 +117,16 @@ export function isInServerAdminListsByEmail(email: string | null | undefined): b
   return dbConfig.adminEmails.map(normalizeEmail).includes(normalized);
 }
 
+/** True when the new address is configured as a server-admin sign-in email but the member does not already own it (blocks privilege escalation / squatting on admin addresses). */
+export function isEmailChangeToReservedServerAdminAddress(
+  currentEmail: string | null | undefined,
+  newEmail: string
+): boolean {
+  if (!isInServerAdminListsByEmail(newEmail)) return false;
+  if (!currentEmail) return true;
+  return normalizeEmail(currentEmail) !== normalizeEmail(newEmail);
+}
+
 export function getAnonymousAuthzClaims(): AuthzClaims {
   return {
     roleCodes: [RBAC_ROLE_CODES.anonymous],

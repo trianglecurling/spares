@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { normalizeEmail } from '../utils/auth.js';
 import type { JWTPayload } from '../types.js';
@@ -29,6 +29,25 @@ export async function memberIdsWithSameNormalizedEmailAs(memberId: number): Prom
     .from(schema.members)
     .where(sql`lower(trim(${schema.members.email})) = ${norm}`);
   return peers.map((p) => p.id);
+}
+
+/** Another member (not `excludeMemberId`) already has this normalized email — blocks account takeover via shared login. */
+export async function findMemberIdWithConflictingNormalizedEmail(
+  normalizedEmail: string,
+  excludeMemberId: number
+): Promise<number | null> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(
+      and(
+        sql`lower(trim(${schema.members.email})) = ${normalizedEmail}`,
+        ne(schema.members.id, excludeMemberId)
+      )
+    )
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 export async function canActorImpersonateTarget(

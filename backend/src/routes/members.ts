@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin, isInServerAdminsList, isSponsorAdmin } from '../utils/auth.js';
-import { hasScope } from '../utils/rbac.js';
+import { hasScope, isEmailChangeToReservedServerAdminAddress } from '../utils/rbac.js';
 import { Member } from '../types.js';
 import {
   bulkCreateResponseSchema,
@@ -17,6 +17,8 @@ import {
   memberUpdateResponseSchema,
   successResponseSchema,
 } from '../api/schemas.js';
+import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
+import { clearMemberRestrictedRelations } from '../services/clearMemberRestrictedRelations.js';
 import type {
   ApiErrorResponse,
   BulkCreateBody,
@@ -37,9 +39,10 @@ import type {
   UpdateProfileBody,
 } from '../api/types.js';
 import { sendWelcomeEmail } from '../services/email.js';
-import { buildJwtPayloadForMember, generateEmailLinkToken } from '../utils/auth.js';
+import { buildJwtPayloadForMember, generateEmailLinkToken, normalizeEmail } from '../utils/auth.js';
 import { config } from '../config.js';
 import {
+  findMemberIdWithConflictingNormalizedEmail,
   listDelegateGranteesForGrantor,
   memberIdsWithSameNormalizedEmailAs,
 } from '../services/accountAccess.js';
@@ -473,7 +476,15 @@ export async function memberRoutes(fastify: FastifyInstance) {
       updateData.name = body.name;
     }
     if (body.email !== undefined) {
-      updateData.email = body.email;
+      const normalizedEmail = normalizeEmail(body.email);
+      if (isEmailChangeToReservedServerAdminAddress(member.email, normalizedEmail)) {
+        return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
+      }
+      const conflictId = await findMemberIdWithConflictingNormalizedEmail(normalizedEmail, member.id);
+      if (conflictId != null) {
+        return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
+      }
+      updateData.email = normalizedEmail;
     }
     if (body.phone !== undefined) {
       updateData.phone = body.phone;
@@ -1066,7 +1077,18 @@ export async function memberRoutes(fastify: FastifyInstance) {
       updateData.name = body.name;
     }
     if (body.email !== undefined) {
-      updateData.email = body.email;
+      const normalizedEmail = normalizeEmail(body.email);
+      if (
+        isEmailChangeToReservedServerAdminAddress(targetMember.email, normalizedEmail) &&
+        !isServerAdmin(member)
+      ) {
+        return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
+      }
+      const conflictId = await findMemberIdWithConflictingNormalizedEmail(normalizedEmail, memberId);
+      if (conflictId != null) {
+        return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
+      }
+      updateData.email = normalizedEmail;
     }
     if (body.phone !== undefined) {
       updateData.phone = body.phone;
@@ -1205,9 +1227,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
       }
     }
 
-    await db
-      .delete(schema.members)
-      .where(eq(schema.members.id, memberId));
+    await db.transaction(async (tx) => {
+      await clearMemberRestrictedRelations(tx, schema, [memberId]);
+      await tx.delete(schema.members).where(eq(schema.members.id, memberId));
+    });
 
     return { success: true };
     }
@@ -1264,7 +1287,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
     // Use a transaction to ensure atomicity
     await db.transaction(async (tx) => {
-      // Delete related data first (cascade should handle most, but be explicit)
+      await clearMemberRestrictedRelations(tx, schema, deletableIds);
+
       await tx
         .delete(schema.memberAvailability)
         .where(inArray(schema.memberAvailability.member_id, deletableIds));

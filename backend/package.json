@@ -22,6 +22,7 @@
     "db:push": "bunx drizzle-kit push",
     "db:studio": "bunx drizzle-kit studio",
     "db:add-disable-columns": "bun run add-columns.js",
+    "db:import-league-rosters-tsv": "bun run src/scripts/import-league-rosters-from-tsv.ts",
     "db:seed-test-members": "bun run src/scripts/seed-test-members.ts",
     "db:generate-teams": "bun run src/scripts/generate-teams.ts",
     "db:seed-bye-requests": "bun run src/scripts/seed-bye-requests.ts",

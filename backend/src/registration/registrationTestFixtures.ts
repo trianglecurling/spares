@@ -10,7 +10,7 @@ export function league(overrides: Partial<LeagueConfig> = {}): LeagueConfig {
     capacityValue: 40,
     registrationFeeMinor: 30000,
     requiresClubMembership: true,
-    isInstructional: false,
+    format: 'teams',
     minExperienceYears: 1,
     minAge: null,
     maxAge: null,
@@ -94,6 +94,7 @@ export function registrationContext(overrides: Partial<RegistrationContext> = {}
       spareOnlyIcePrivilegeFeeMinor: 2500,
       sabbaticalFeeMinor: 5000,
       juniorRecreationalFeeMinor: 7500,
+      defaultLeagueFeeMinor: 30000,
     },
     discountSettings: {
       student: { amountType: 'dollar', amountValue: 1000 },

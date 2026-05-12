@@ -42,6 +42,7 @@ import AdminArticleVersionPreview from './pages/admin/AdminArticleVersionPreview
 import AdminObservability from './pages/admin/AdminObservability';
 import AdminSponsorship from './pages/admin/AdminSponsorship';
 import Leagues from './pages/leagues/Leagues';
+import CopyLeaguesToSession from './pages/leagues/CopyLeaguesToSession';
 import LeagueDetail from './pages/leagues/LeagueDetail';
 import Calendar from './pages/Calendar';
 import CalendarEventFormPage from './pages/CalendarEventFormPage';
@@ -269,6 +270,14 @@ function App() {
                   }
                 />
 
+                <Route
+                  path="/leagues/copy-to-session"
+                  element={
+                    <ProtectedRoute>
+                      <CopyLeaguesToSession />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/leagues"
                   element={

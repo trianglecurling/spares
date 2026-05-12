@@ -3,12 +3,14 @@ import PageTabs from './PageTabs';
 
 interface LeagueTabsProps {
   leagueId: string;
+  showConfigurationTab?: boolean;
   showSheetsTab?: boolean;
   showMaintenanceTab?: boolean;
 }
 
 const leagueTabs = [
   { label: 'Overview', path: '' },
+  { label: 'Configuration', path: 'configuration', requiresConfigurationAccess: true },
   { label: 'Schedule', path: 'schedule' },
   { label: 'Standings', path: 'standings' },
   { label: 'Sheets', path: 'sheets', requiresManager: true },
@@ -22,6 +24,7 @@ const leagueTabs = [
 
 export default function LeagueTabs({
   leagueId,
+  showConfigurationTab = false,
   showSheetsTab = false,
   showMaintenanceTab = false,
 }: LeagueTabsProps) {
@@ -29,6 +32,7 @@ export default function LeagueTabs({
   const basePath = `/leagues/${leagueId}`;
   const items = leagueTabs
     .filter((tab) => {
+      if (tab.requiresConfigurationAccess) return showConfigurationTab;
       if (tab.requiresManager) return showSheetsTab;
       if (tab.requiresAdmin) return showMaintenanceTab;
       return true;

@@ -727,3 +727,251 @@ creation/update phases.
 | User double-clicks submit with waitlist entries | No duplicate waitlist entries |
 | User double-clicks submit with sabbaticals | No duplicate sabbatical records |
 | Stripe sends duplicate successful webhook | Payment confirmation runs once |
+
+# Phase 8 Test Matrix Additions: Staff Waitlists
+
+## Staff access and permissions
+
+### P8-001: Unauthorized user cannot access waitlist manager
+
+Given a user without waitlist management permissions  
+When they attempt to access the staff waitlist dashboard  
+Then access is denied.
+
+### P8-002: Authorized staff can access waitlist dashboard
+
+Given a user with waitlist management permissions  
+When they open the staff waitlist dashboard  
+Then they can view league vacancy and waitlist summaries.
+
+---
+
+## Vacancy calculations
+
+### P8-003: Permanent vacancies are calculated correctly
+
+Given a standard league with capacity 40  
+And 35 confirmed permanent placements  
+When staff views the league waitlist manager  
+Then the system shows 5 permanent vacancies.
+
+### P8-004: Temporary sabbatical-fill vacancies are calculated separately
+
+Given a league with 2 active sabbatical spots available for temporary fill  
+When staff views the league waitlist manager  
+Then the system shows 2 temporary sabbatical-fill vacancies separately from
+permanent vacancies.
+
+### P8-005: Permanent vacancies are prioritized before temporary vacancies
+
+Given a league with both permanent and temporary vacancies  
+When staff processes offers  
+Then permanent spot offers are processed before temporary sabbatical-fill
+offers.
+
+---
+
+## Offer creation
+
+### P8-006: Staff can send permanent offers to top eligible waitlist entries
+
+Given a league with permanent vacancies  
+And active eligible waitlist entries  
+When staff sends offers to the top N eligible entries  
+Then offer records are created  
+And offer emails are sent  
+And waitlist audit entries are created.
+
+### P8-007: Staff can send temporary sabbatical-fill offers
+
+Given a league with temporary sabbatical-fill vacancies  
+And active eligible waitlist entries  
+When staff sends temporary fill offers  
+Then offer records are created as temporary offers  
+And the email clearly states the spot is temporary.
+
+### P8-008: BYOT leagues cannot receive waitlist offers
+
+Given a BYOT league  
+When staff attempts to send waitlist offers  
+Then the action is blocked.
+
+### P8-009: Ineligible waitlist entry cannot receive offer without override
+
+Given a waitlist entry whose member is no longer eligible for the league  
+When staff attempts to send an offer  
+Then the system blocks the offer or requires a documented override, depending
+on configured staff permissions.
+
+---
+
+## Offer response behavior
+
+### P8-010: First decline preserves waitlist position
+
+Given a member with decline count 0  
+And a pending waitlist offer  
+When the member declines the offer  
+Then the offer is marked declined  
+And the member remains in the same waitlist position  
+And decline count becomes 1  
+And the change is audited.
+
+### P8-011: Second decline moves member to bottom
+
+Given a member with decline count 1  
+And a pending waitlist offer  
+When the member declines the offer  
+Then the offer is marked declined  
+And the member is moved to the bottom of the waitlist  
+And the change is audited.
+
+### P8-012: Temporary fill decline counts like permanent decline
+
+Given a member receives a temporary sabbatical-fill offer  
+When the member declines the offer  
+Then decline rules are applied the same as for a permanent offer.
+
+### P8-013: No response auto-accepts after 24 hours
+
+Given a pending waitlist offer whose deadline has passed  
+And the member did not decline  
+When the auto-accept job runs  
+Then the offer is marked auto-accepted  
+And the member is placed into the league  
+And the action is audited.
+
+### P8-014: Auto-accept job is idempotent
+
+Given an offer already auto-accepted  
+When the auto-accept job runs again  
+Then no duplicate placement is created  
+And no duplicate audit mutation occurs.
+
+---
+
+## Placement behavior
+
+### P8-015: Permanent accepted offer creates permanent placement
+
+Given a pending permanent offer  
+When the offer is accepted  
+Then the member is placed permanently into the league  
+And the waitlist entry is deactivated or removed  
+And the change is audited.
+
+### P8-016: Temporary accepted offer creates temporary placement
+
+Given a pending temporary sabbatical-fill offer  
+When the offer is accepted  
+Then the member is placed temporarily into the league  
+And the member remains on the waitlist  
+And the change is audited.
+
+### P8-017: REPLACE placement releases replaced league
+
+Given a waitlist entry of type REPLACE  
+And the member accepts the offer  
+When the placement is processed  
+Then the member is added to the new league  
+And the replaced league placement is released  
+And both changes are audited.
+
+### P8-018: ADD placement requiring cleanup is detected
+
+Given a member has active ADD waitlist entries  
+And the member reaches 2 active leagues  
+When placement is processed  
+Then the system identifies ADD entries requiring cleanup  
+And blocks further progression or flags staff review until resolved.
+
+---
+
+## Waitlist rollover
+
+### P8-019: Waitlist rolls over to successor league
+
+Given a predecessor league with active waitlist entries  
+And a configured successor league  
+When rollover runs  
+Then active waitlist entries are created or updated for the successor league.
+
+### P8-020: Rollover preserves order
+
+Given multiple active predecessor waitlist entries  
+When rollover runs  
+Then successor waitlist entries preserve the same relative order.
+
+### P8-021: Rollover preserves decline counts
+
+Given an active predecessor waitlist entry with decline count 1  
+When rollover runs  
+Then the successor waitlist entry has decline count 1.
+
+### P8-022: Rollover is idempotent
+
+Given rollover has already run for a predecessor/successor pair  
+When rollover runs again  
+Then no duplicate active waitlist entries are created.
+
+### P8-023: Rollover is audited
+
+Given rollover creates or updates waitlist entries  
+When rollover completes  
+Then audit entries exist for the rollover changes.
+
+---
+
+## Manual staff actions
+
+### P8-024: Manual removal requires reason and audit
+
+Given staff removes a person from a waitlist  
+When they submit the action  
+Then a reason is required  
+And the removal is audited.
+
+### P8-025: Manual reorder requires reason and audit
+
+Given staff reorders waitlist entries  
+When they submit the action  
+Then a reason is required  
+And the reorder is audited.
+
+### P8-026: Manual ADD-to-REPLACE conversion requires replacement league
+
+Given staff converts an ADD entry to REPLACE  
+When they submit the conversion  
+Then they must specify the league being replaced  
+And the change is audited.
+
+### P8-027: Manual offer cancellation requires reason and audit
+
+Given staff cancels a pending offer  
+When they submit the cancellation  
+Then a reason is required  
+And the offer is marked cancelled  
+And the cancellation is audited.
+
+---
+
+## Payment links after placement
+
+### P8-028: Staff can trigger payment link after placement
+
+Given a deferred registration becomes ready for payment after placement  
+When staff triggers payment  
+Then a payment link is created using the existing fee calculation service.
+
+### P8-029: Temporary sabbatical-fill placement applies sabbatical-fill discount
+
+Given a member accepts a temporary sabbatical-fill spot  
+When the payment amount is calculated  
+Then the sabbatical-fill discount is applied as the full sabbatical fee amount.
+
+### P8-030: Payment remains deferred if unresolved placement items remain
+
+Given a registration still has unresolved non-guaranteed items  
+When staff attempts to trigger payment  
+Then the system either blocks payment or warns staff according to existing
+payment-deferral rules.

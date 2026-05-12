@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { asc, eq, sql, type SQL } from 'drizzle-orm';
+import { asc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { sendValidationError } from '../api/errors.js';
 import type { ApiReply } from '../api/types.js';
@@ -15,6 +15,7 @@ import {
 } from '../api/schemas.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin } from '../utils/auth.js';
+import { hasClubLeagueAdministratorAccess } from '../utils/leagueAccess.js';
 import {
   RegistrationConfigValidationError,
   assertRegistrationStateTransition,
@@ -37,6 +38,23 @@ function requireAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
     return false;
   }
   if (!isAdmin(member)) {
+    reply.code(403).send({ error: 'Forbidden' });
+    return false;
+  }
+  return true;
+}
+
+/** Read-only season/session lists for league administration flows (e.g. copy leagues to a session). */
+async function requireAdminOrClubLeagueAdministrator(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<boolean> {
+  const member = request.member;
+  if (!member) {
+    reply.code(401).send({ error: 'Unauthorized' });
+    return false;
+  }
+  if (!(await hasClubLeagueAdministratorAccess(member))) {
     reply.code(403).send({ error: 'Forbidden' });
     return false;
   }
@@ -130,6 +148,7 @@ function mapPriceRowToResponse(row: {
   spare_only_ice_privilege_fee_minor: number;
   sabbatical_fee_minor: number;
   junior_recreational_fee_minor: number;
+  default_league_fee_minor?: number | null;
   created_at: Date | string;
   updated_at: Date | string;
 }) {
@@ -140,6 +159,7 @@ function mapPriceRowToResponse(row: {
     spareOnlyIcePrivilegeFeeDollars: feeMinorToDollars(row.spare_only_ice_privilege_fee_minor),
     sabbaticalFeeDollars: feeMinorToDollars(row.sabbatical_fee_minor),
     juniorRecreationalFeeDollars: feeMinorToDollars(row.junior_recreational_fee_minor),
+    leagueFeeDollars: feeMinorToDollars(row.default_league_fee_minor ?? 0),
     createdAt: normalizeDateTime(row.created_at) ?? '',
     updatedAt: normalizeDateTime(row.updated_at) ?? '',
   };
@@ -192,6 +212,7 @@ async function loadOrInsertRegistrationPriceSettings() {
       spare_only_ice_privilege_fee_minor: 0,
       sabbatical_fee_minor: 0,
       junior_recreational_fee_minor: 0,
+      default_league_fee_minor: 0,
     })
     .onConflictDoNothing();
   [row] = await db
@@ -276,6 +297,7 @@ const pricePatchSchema = z.object({
   spareOnlyIcePrivilegeFeeDollars: dollarAmountSchema.optional(),
   sabbaticalFeeDollars: dollarAmountSchema.optional(),
   juniorRecreationalFeeDollars: dollarAmountSchema.optional(),
+  leagueFeeDollars: dollarAmountSchema.optional(),
 });
 
 const discountSlotPatchSchema = z
@@ -360,7 +382,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      if (!requireAdmin(request, reply)) return;
+      if (!(await requireAdminOrClubLeagueAdministrator(request, reply))) return;
       const { db, schema } = getDrizzleDb();
       const rows = await db.select().from(schema.curlingSeasons).orderBy(schema.curlingSeasons.start_date);
       return rows.map(mapSeason);
@@ -481,7 +503,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
       schema: { tags: ['registration-config'], response: { 200: registrationSessionListResponseSchema } },
     },
     async (request, reply) => {
-      if (!requireAdmin(request, reply)) return;
+      if (!(await requireAdminOrClubLeagueAdministrator(request, reply))) return;
       const { db, schema } = getDrizzleDb();
       const rows = await db
         .select()
@@ -824,6 +846,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
             spareOnlyIcePrivilegeFeeDollars: { type: 'number' },
             sabbaticalFeeDollars: { type: 'number' },
             juniorRecreationalFeeDollars: { type: 'number' },
+            leagueFeeDollars: { type: 'number' },
           },
         },
         response: { 200: registrationPriceSettingsSchema },
@@ -842,6 +865,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
           body.spareOnlyIcePrivilegeFeeDollars ?? current.spareOnlyIcePrivilegeFeeDollars,
         sabbaticalFeeDollars: body.sabbaticalFeeDollars ?? current.sabbaticalFeeDollars,
         juniorRecreationalFeeDollars: body.juniorRecreationalFeeDollars ?? current.juniorRecreationalFeeDollars,
+        leagueFeeDollars: body.leagueFeeDollars ?? current.leagueFeeDollars,
       };
       const priceConfigMinor: PriceConfigInput = {
         regularMembershipFeeMinor: dollarsToFeeMinor(nextDollars.regularMembershipFeeDollars),
@@ -849,6 +873,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
         spareOnlyIcePrivilegeFeeMinor: dollarsToFeeMinor(nextDollars.spareOnlyIcePrivilegeFeeDollars),
         sabbaticalFeeMinor: dollarsToFeeMinor(nextDollars.sabbaticalFeeDollars),
         juniorRecreationalFeeMinor: dollarsToFeeMinor(nextDollars.juniorRecreationalFeeDollars),
+        defaultLeagueFeeMinor: dollarsToFeeMinor(nextDollars.leagueFeeDollars),
       };
       try {
         assertValidPriceConfig(priceConfigMinor);
@@ -864,10 +889,18 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
           spare_only_ice_privilege_fee_minor: priceConfigMinor.spareOnlyIcePrivilegeFeeMinor,
           sabbatical_fee_minor: priceConfigMinor.sabbaticalFeeMinor,
           junior_recreational_fee_minor: priceConfigMinor.juniorRecreationalFeeMinor,
+          default_league_fee_minor: priceConfigMinor.defaultLeagueFeeMinor,
           updated_at: sql`CURRENT_TIMESTAMP`,
         })
         .where(eq(schema.registrationPriceSettings.scope, SINGLETON_SCOPE))
         .returning();
+      await db
+        .update(schema.leagues)
+        .set({
+          registration_fee_minor: priceConfigMinor.defaultLeagueFeeMinor,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(isNull(schema.leagues.registration_fee_override_minor));
       return mapPriceRowToResponse(rows[0]);
     }
   );

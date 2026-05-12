@@ -75,7 +75,7 @@ export function validateLeagueEligibility(
   if (requiredExperience > 0 && experienceYears < requiredExperience) {
     blockingErrors.push(blockingError('insufficient_experience', `League requires ${requiredExperience} years of experience.`));
   }
-  if (context.experience.type === 'none_or_minimal' && !league.isInstructional && requiredExperience > 0) {
+  if (context.experience.type === 'none_or_minimal' && league.format !== 'instructional' && requiredExperience > 0) {
     blockingErrors.push(
       blockingError('insufficient_experience', 'None or minimal experience qualifies only for instructional leagues.')
     );

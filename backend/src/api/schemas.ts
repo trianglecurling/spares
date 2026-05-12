@@ -264,7 +264,7 @@ export const leagueResponseSchema = {
     id: { type: 'number' },
     name: { type: 'string' },
     dayOfWeek: { type: 'number' },
-    format: { type: 'string', enum: ['teams', 'doubles'] },
+    format: { type: 'string', enum: ['teams', 'doubles', 'instructional'] },
     startDate: { type: 'string' },
     endDate: { type: 'string' },
     sessionId: { type: ['number', 'null'] },
@@ -272,8 +272,8 @@ export const leagueResponseSchema = {
     capacityType: { type: 'string', enum: ['individual', 'team'] },
     capacityValue: { type: 'number' },
     registrationFeeMinor: { type: 'number' },
+    registrationFeeOverrideMinor: { type: ['number', 'null'] },
     requiresClubMembership: { type: 'boolean' },
-    isInstructional: { type: 'boolean' },
     minExperienceYears: { type: ['number', 'null'] },
     minAge: { type: ['number', 'null'] },
     maxAge: { type: ['number', 'null'] },
@@ -298,8 +298,8 @@ export const leagueResponseSchema = {
     'capacityType',
     'capacityValue',
     'registrationFeeMinor',
+    'registrationFeeOverrideMinor',
     'requiresClubMembership',
-    'isInstructional',
     'minExperienceYears',
     'minAge',
     'maxAge',
@@ -319,6 +319,15 @@ export const leagueListResponseSchema = {
   items: leagueResponseSchema,
 } as const;
 
+export const leagueBulkCopyToSessionResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    leagues: { type: 'array', items: leagueResponseSchema },
+  },
+  required: ['leagues'],
+} as const;
+
 export const leagueExportResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -331,7 +340,7 @@ export const leagueExportResponseSchema = {
         properties: {
           name: { type: 'string' },
           dayOfWeek: { type: 'number' },
-          format: { type: 'string', enum: ['teams', 'doubles'] },
+          format: { type: 'string', enum: ['teams', 'doubles', 'instructional'] },
           startDate: { type: 'string' },
           endDate: { type: 'string' },
           drawTimes: { type: 'array', items: { type: 'string' } },
@@ -409,6 +418,7 @@ export const registrationPriceSettingsSchema = {
     spareOnlyIcePrivilegeFeeDollars: { type: 'number' },
     sabbaticalFeeDollars: { type: 'number' },
     juniorRecreationalFeeDollars: { type: 'number' },
+    leagueFeeDollars: { type: 'number' },
     createdAt: { type: 'string' },
     updatedAt: { type: 'string' },
   },
@@ -419,6 +429,7 @@ export const registrationPriceSettingsSchema = {
     'spareOnlyIcePrivilegeFeeDollars',
     'sabbaticalFeeDollars',
     'juniorRecreationalFeeDollars',
+    'leagueFeeDollars',
     'createdAt',
     'updatedAt',
   ],

@@ -30,8 +30,8 @@ async function generateTeams(leagueName: string): Promise<void> {
     process.exit(1);
   }
 
-  const format = league.format as 'teams' | 'doubles';
-  const teamSize = format === 'teams' ? 4 : 2;
+  const format = league.format as 'teams' | 'doubles' | 'instructional';
+  const teamSize = format === 'doubles' ? 2 : 4;
   console.log(`League: "${league.name}" (id=${league.id}, format=${format})`);
 
   // 2. Get divisions for the league
@@ -114,7 +114,7 @@ async function generateTeams(leagueName: string): Promise<void> {
         const teamPlayers = rosterRows.slice(playerIndex, playerIndex + teamSize);
         playerIndex += teamSize;
 
-        if (format === 'teams') {
+        if (format !== 'doubles') {
           // Roles: lead, second, third, fourth (already shuffled, so assignment is random)
           const roles = ['lead', 'second', 'third', 'fourth'] as const;
 

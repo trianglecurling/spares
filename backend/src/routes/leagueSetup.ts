@@ -225,7 +225,11 @@ function getLastName(fullName: string): string {
   return parts[parts.length - 1] || trimmed;
 }
 
-function validateRoster(format: 'teams' | 'doubles', members: TeamMemberInput[]): TeamMemberInput[] {
+function validateRoster(
+  format: 'teams' | 'doubles' | 'instructional',
+  members: TeamMemberInput[]
+): TeamMemberInput[] {
+  const rosterShapeFormat = format === 'doubles' ? 'doubles' : 'teams';
   const normalized = members.map((m) => ({
     ...m,
     isSkip: Boolean(m.isSkip),
@@ -246,7 +250,7 @@ function validateRoster(format: 'teams' | 'doubles', members: TeamMemberInput[])
     throw new Error('Roster roles must be unique.');
   }
 
-  if (format === 'teams') {
+  if (rosterShapeFormat === 'teams') {
     const allowedRoles = new Set(['lead', 'second', 'third', 'fourth']);
     if (!normalized.every((m) => allowedRoles.has(m.role))) {
       throw new Error('Teams roster roles must be lead, second, third, or fourth.');
@@ -300,11 +304,12 @@ function validateRoster(format: 'teams' | 'doubles', members: TeamMemberInput[])
 }
 
 function computeDefaultTeamName(
-  format: 'teams' | 'doubles',
+  format: 'teams' | 'doubles' | 'instructional',
   roster: TeamMemberInput[],
   memberNamesById: Map<number, string>
 ): string | null {
-  if (format === 'teams') {
+  const rosterShapeFormat = format === 'doubles' ? 'doubles' : 'teams';
+  if (rosterShapeFormat === 'teams') {
     const skip = roster.find((member) => member.isSkip);
     if (!skip) return null;
     const name = memberNamesById.get(skip.memberId) || '';

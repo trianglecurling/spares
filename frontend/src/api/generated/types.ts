@@ -1747,6 +1747,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/payment-status/{orderToken}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    orderToken: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments/webhooks/{provider}": {
         parameters: {
             query?: never;
@@ -2781,7 +2834,7 @@ export interface paths {
                             name: string;
                             dayOfWeek: number;
                             /** @enum {string} */
-                            format: "teams" | "doubles";
+                            format: "teams" | "doubles" | "instructional";
                             startDate: string;
                             endDate: string;
                             sessionId: null | number;
@@ -2791,8 +2844,8 @@ export interface paths {
                             capacityType: "individual" | "team";
                             capacityValue: number;
                             registrationFeeMinor: number;
+                            registrationFeeOverrideMinor: null | number;
                             requiresClubMembership: boolean;
-                            isInstructional: boolean;
                             minExperienceYears: null | number;
                             minAge: null | number;
                             maxAge: null | number;
@@ -2823,7 +2876,7 @@ export interface paths {
                         name: string;
                         dayOfWeek: number;
                         /** @enum {string} */
-                        format: "teams" | "doubles";
+                        format: "teams" | "doubles" | "instructional";
                         startDate: string;
                         endDate: string;
                         sessionId?: number | null;
@@ -2834,7 +2887,6 @@ export interface paths {
                         capacityValue?: number;
                         registrationFeeMinor?: number;
                         requiresClubMembership?: boolean;
-                        isInstructional?: boolean;
                         minExperienceYears?: number | null;
                         minAge?: number | null;
                         maxAge?: number | null;
@@ -2861,7 +2913,7 @@ export interface paths {
                             name: string;
                             dayOfWeek: number;
                             /** @enum {string} */
-                            format: "teams" | "doubles";
+                            format: "teams" | "doubles" | "instructional";
                             startDate: string;
                             endDate: string;
                             sessionId: null | number;
@@ -2871,8 +2923,8 @@ export interface paths {
                             capacityType: "individual" | "team";
                             capacityValue: number;
                             registrationFeeMinor: number;
+                            registrationFeeOverrideMinor: null | number;
                             requiresClubMembership: boolean;
-                            isInstructional: boolean;
                             minExperienceYears: null | number;
                             minAge: null | number;
                             maxAge: null | number;
@@ -2929,6 +2981,81 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/bulk-copy-to-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sourceLeagueIds: number[];
+                        seasonId: number;
+                        targetSessionId: number;
+                        anchorStartDate: string;
+                        anchorEndDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            leagues: {
+                                id: number;
+                                name: string;
+                                dayOfWeek: number;
+                                /** @enum {string} */
+                                format: "teams" | "doubles" | "instructional";
+                                startDate: string;
+                                endDate: string;
+                                sessionId: null | number;
+                                /** @enum {string} */
+                                leagueType: "standard" | "bring_your_own_team";
+                                /** @enum {string} */
+                                capacityType: "individual" | "team";
+                                capacityValue: number;
+                                registrationFeeMinor: number;
+                                registrationFeeOverrideMinor: null | number;
+                                requiresClubMembership: boolean;
+                                minExperienceYears: null | number;
+                                minAge: null | number;
+                                maxAge: null | number;
+                                firstDayOfPlay: null | string;
+                                lastDayOfPlay: null | string;
+                                allowsWaitlist: boolean;
+                                allowsSabbatical: boolean;
+                                predecessorLeagueId: null | number;
+                                successorLeagueId: null | number;
+                                drawTimes: string[];
+                                exceptions: string[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -2992,9 +3119,27 @@ export interface paths {
                         name?: string;
                         dayOfWeek?: number;
                         /** @enum {string} */
-                        format?: "teams" | "doubles";
+                        format?: "teams" | "doubles" | "instructional";
                         startDate?: string;
                         endDate?: string;
+                        sessionId?: number | null;
+                        /** @enum {string} */
+                        leagueType?: "standard" | "bring_your_own_team";
+                        /** @enum {string} */
+                        capacityType?: "individual" | "team";
+                        capacityValue?: number;
+                        registrationFeeMinor?: number;
+                        registrationFeeOverrideMinor?: number | null;
+                        requiresClubMembership?: boolean;
+                        minExperienceYears?: number | null;
+                        minAge?: number | null;
+                        maxAge?: number | null;
+                        firstDayOfPlay?: string | null;
+                        lastDayOfPlay?: string | null;
+                        allowsWaitlist?: boolean;
+                        allowsSabbatical?: boolean;
+                        predecessorLeagueId?: number | null;
+                        successorLeagueId?: number | null;
                         drawTimes?: string[];
                         exceptions?: string[];
                     };
@@ -3012,7 +3157,7 @@ export interface paths {
                             name: string;
                             dayOfWeek: number;
                             /** @enum {string} */
-                            format: "teams" | "doubles";
+                            format: "teams" | "doubles" | "instructional";
                             startDate: string;
                             endDate: string;
                             sessionId: null | number;
@@ -3022,8 +3167,8 @@ export interface paths {
                             capacityType: "individual" | "team";
                             capacityValue: number;
                             registrationFeeMinor: number;
+                            registrationFeeOverrideMinor: null | number;
                             requiresClubMembership: boolean;
-                            isInstructional: boolean;
                             minExperienceYears: null | number;
                             minAge: null | number;
                             maxAge: null | number;
@@ -3069,7 +3214,7 @@ export interface paths {
                                 name: string;
                                 dayOfWeek: number;
                                 /** @enum {string} */
-                                format: "teams" | "doubles";
+                                format: "teams" | "doubles" | "instructional";
                                 startDate: string;
                                 endDate: string;
                                 drawTimes: string[];
@@ -3111,7 +3256,7 @@ export interface paths {
                             name: string;
                             dayOfWeek: number;
                             /** @enum {string} */
-                            format: "teams" | "doubles";
+                            format: "teams" | "doubles" | "instructional";
                             startDate: string;
                             endDate: string;
                             drawTimes: string[];
@@ -3135,7 +3280,7 @@ export interface paths {
                                 name: string;
                                 dayOfWeek: number;
                                 /** @enum {string} */
-                                format: "teams" | "doubles";
+                                format: "teams" | "doubles" | "instructional";
                                 startDate: string;
                                 endDate: string;
                                 sessionId: null | number;
@@ -3145,8 +3290,8 @@ export interface paths {
                                 capacityType: "individual" | "team";
                                 capacityValue: number;
                                 registrationFeeMinor: number;
+                                registrationFeeOverrideMinor: null | number;
                                 requiresClubMembership: boolean;
-                                isInstructional: boolean;
                                 minExperienceYears: null | number;
                                 minAge: null | number;
                                 maxAge: null | number;
@@ -11765,6 +11910,7 @@ export interface paths {
                             spareOnlyIcePrivilegeFeeDollars: number;
                             sabbaticalFeeDollars: number;
                             juniorRecreationalFeeDollars: number;
+                            leagueFeeDollars: number;
                             createdAt: string;
                             updatedAt: string;
                         };
@@ -11792,6 +11938,7 @@ export interface paths {
                         spareOnlyIcePrivilegeFeeDollars?: number;
                         sabbaticalFeeDollars?: number;
                         juniorRecreationalFeeDollars?: number;
+                        leagueFeeDollars?: number;
                     };
                 };
             };
@@ -11809,6 +11956,7 @@ export interface paths {
                             spareOnlyIcePrivilegeFeeDollars: number;
                             sabbaticalFeeDollars: number;
                             juniorRecreationalFeeDollars: number;
+                            leagueFeeDollars: number;
                             createdAt: string;
                             updatedAt: string;
                         };

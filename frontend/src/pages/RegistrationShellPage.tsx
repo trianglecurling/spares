@@ -112,6 +112,15 @@ type RegistrationMembershipPaymentPayload = {
   };
 };
 
+type RegistrationPaymentStatusPayload = {
+  registrationId: number | null;
+  paymentStatus: 'confirming' | 'confirmed' | 'failed' | 'deferred' | 'no_payment_due' | 'unknown';
+  registrationStatus: RegistrationStatus | null;
+  invoiceStatus: string | null;
+  paymentOrderStatus: string | null;
+  totalDueMinor: number | null;
+};
+
 type RegistrationSelectionType =
   | 'guaranteed_return'
   | 'sabbatical'
@@ -361,6 +370,7 @@ export default function RegistrationShellPage() {
   const [loading, setLoading] = useState(false);
   const [resumeOffer, setResumeOffer] = useState<'none' | 'server' | 'local'>('none');
   const [serverResume, setServerResume] = useState<(RegistrationShellPayload & { id: number }) | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<RegistrationPaymentStatusPayload | null>(null);
 
   const profileInputId = useId();
   const choiceInputId = useId();
@@ -380,6 +390,8 @@ export default function RegistrationShellPage() {
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
   }, [searchParams]);
+
+  const paymentOrderToken = searchParams.get('order_token');
 
   const isGuestLocal = !member;
 
@@ -614,6 +626,32 @@ export default function RegistrationShellPage() {
     if (currentStep !== 'cancel' || !paymentRegistrationId || !member) return;
     api.post(`/registration/drafts/${paymentRegistrationId}/payment-cancelled`).catch(() => {});
   }, [currentStep, paymentRegistrationId, member]);
+
+  useEffect(() => {
+    if (currentStep !== 'success' || !paymentOrderToken) {
+      setPaymentStatus(null);
+      return;
+    }
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const poll = async () => {
+      try {
+        const { data } = await api.get<RegistrationPaymentStatusPayload>(`/registration/payment-status/${paymentOrderToken}`);
+        if (cancelled) return;
+        setPaymentStatus(data);
+        if (data.paymentStatus === 'confirming') {
+          timeoutId = window.setTimeout(poll, 2500);
+        }
+      } catch (err) {
+        if (!cancelled) setError(errorMessage(err, 'Unable to confirm payment status.'));
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [currentStep, paymentOrderToken]);
 
   const seasonSessionLabel = useMemo(() => {
     if (!windowState) return 'the upcoming season';
@@ -1119,7 +1157,9 @@ export default function RegistrationShellPage() {
           ))}
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-emerald-200 pt-3">
-          <span className="font-semibold text-[#121033]">Total due now</span>
+          <span className="font-semibold text-[#121033]">
+            {membershipPayment.paymentDecision.outcome === 'deferred_payment' ? 'Estimated total' : 'Total due now'}
+          </span>
           <span className="text-xl font-bold text-[#121033]">{formatCurrency(membershipPayment.feePreview.totalDueMinor)}</span>
         </div>
       </div>
@@ -1155,6 +1195,47 @@ export default function RegistrationShellPage() {
 
   function leagueName(leagueId: number | null | undefined): string {
     return leaguePayload?.leagues.find((league) => league.id === leagueId)?.name ?? 'League';
+  }
+
+  function selectionStatusLabel(selection: RegistrationSelectionInput): string {
+    switch (selection.selectionType) {
+      case 'guaranteed_return':
+        return 'Confirmed now';
+      case 'byot_request':
+        return 'Payable now';
+      case 'sabbatical':
+        return 'Sabbatical';
+      case 'waitlist_add':
+      case 'waitlist_replace':
+        return 'On waitlist';
+      case 'return_subject_to_availability':
+        return 'Subject to availability';
+      case 'third_league_interest':
+        return 'Third-league interest only';
+      case 'spare_only':
+      case 'junior_recreational':
+        return 'Payable now';
+      default:
+        return selectionLabel(selection);
+    }
+  }
+
+  function deferralReasonText(reason: string): string {
+    switch (reason) {
+      case 'waitlist_placement_pending':
+        return 'One or more waitlist choices may change placement and payment.';
+      case 'non_guaranteed_league_defers_payment':
+      case 'return_subject_to_availability':
+        return 'One or more league choices is subject to availability.';
+      case 'third_league_interest_defers_payment':
+        return 'Third-league interest requires staff placement review.';
+      case 'junior_financial_assistance_requires_review':
+        return 'Junior Recreational financial assistance needs staff review.';
+      case 'staff_review_required':
+        return 'Staff review is required before payment can be finalized.';
+      default:
+        return 'Payment timing depends on placement review.';
+    }
   }
 
   let content: React.ReactNode;
@@ -1787,10 +1868,21 @@ export default function RegistrationShellPage() {
               <h2 className="font-semibold text-[#121033]">League choices</h2>
               <div className="mt-2 space-y-2">
                 {leagueSelections.map((selection, index) => (
-                  <p key={`${selection.selectionType}-${selection.leagueId ?? 'none'}-${index}`}>
-                    <span className="font-medium text-gray-900">{selection.leagueId ? leagueName(selection.leagueId) : selectionLabel(selection)}:</span>{' '}
-                    {selectionLabel(selection)}
-                  </p>
+                  <div key={`${selection.selectionType}-${selection.leagueId ?? 'none'}-${index}`} className="rounded-xl bg-gray-50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="font-medium text-gray-900">{selection.leagueId ? leagueName(selection.leagueId) : selectionLabel(selection)}</p>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-primary-teal shadow-sm">
+                        {selectionStatusLabel(selection)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-gray-600">{selectionLabel(selection)}</p>
+                    {selection.selectionType === 'waitlist_replace' && selection.replacesLeagueId ? (
+                      <p className="mt-1 text-gray-600">Would replace {leagueName(selection.replacesLeagueId)}.</p>
+                    ) : null}
+                    {selection.selectionType === 'byot_request' && selection.byotTeammateText ? (
+                      <p className="mt-1 text-gray-600">Teammates: {selection.byotTeammateText}</p>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             </div>
@@ -1802,11 +1894,21 @@ export default function RegistrationShellPage() {
           {renderFeeSummary()}
           <p className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
             {membershipPayment?.paymentDecision.outcome === 'deferred_payment'
-              ? 'No payment is due now. We will contact you when your registration is ready for payment.'
+              ? 'Payment is deferred. We will contact you when your registration is ready for payment.'
               : membershipPayment?.paymentDecision.outcome === 'no_payment_required'
                 ? 'No payment is required now.'
                 : 'Payment is due now to complete this registration.'}
           </p>
+          {membershipPayment?.paymentDecision.outcome === 'deferred_payment' && membershipPayment.paymentDecision.deferralReasons.length > 0 ? (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+              <h2 className="font-semibold">Why payment is deferred</h2>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {membershipPayment.paymentDecision.deferralReasons.map((reason) => (
+                  <li key={reason}>{deferralReasonText(reason)}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex flex-wrap gap-3">
             <Button type="button" disabled={loading || !membershipPayment} onClick={submitRegistration}>
@@ -1820,10 +1922,29 @@ export default function RegistrationShellPage() {
       </RegistrationCard>
     );
   } else if (currentStep === 'success') {
+    const title =
+      paymentStatus?.paymentStatus === 'confirmed'
+        ? 'Payment confirmed'
+        : paymentStatus?.paymentStatus === 'failed'
+          ? 'Payment was not completed'
+          : 'Registration submitted';
+    const description = paymentOrderToken
+      ? paymentStatus?.paymentStatus === 'confirmed'
+        ? 'Stripe has confirmed your payment and your registration is confirmed.'
+        : paymentStatus?.paymentStatus === 'failed'
+          ? 'Stripe did not complete this payment. Your registration remains unpaid and unconfirmed.'
+          : 'Your payment was submitted. We are confirming it with Stripe. This usually takes a few moments.'
+      : 'Your registration has been submitted. No payment is due right now, or payment will be handled after placement review.';
     content = (
       <RegistrationCard>
-        <h1 className="text-3xl font-bold text-[#121033]">Registration submitted</h1>
-        <p className="mt-3 text-gray-600">If payment was required, the registration will be confirmed after payment is processed.</p>
+        <h1 className="text-3xl font-bold text-[#121033]">{title}</h1>
+        <p className="mt-3 text-gray-600">{description}</p>
+        {paymentOrderToken && paymentStatus?.paymentStatus === 'confirming' ? (
+          <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+            Confirmation status: waiting for Stripe webhook confirmation.
+          </div>
+        ) : null}
+        {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
         <Link className="mt-6 inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white" to="/dashboard">
           Return to dashboard
         </Link>

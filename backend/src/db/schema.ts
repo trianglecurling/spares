@@ -2322,6 +2322,149 @@ function ensureRbacTablesSync(db: DatabaseAdapter): void {
   );
 }
 
+/** Ensure leagues.format allows instructional; fold legacy is_instructional into format; drop legacy column. */
+async function migrateLeaguesFormatAllowsInstructional(db: DatabaseAdapter): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      `DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'leagues'
+            AND column_name = 'is_instructional'
+        ) THEN
+          UPDATE leagues SET format = 'instructional'
+          WHERE COALESCE(is_instructional, 0) <> 0
+            AND format IS DISTINCT FROM 'instructional';
+          ALTER TABLE leagues DROP COLUMN is_instructional;
+        END IF;
+      END $$;`
+    );
+    await execSQL(db, 'ALTER TABLE leagues DROP CONSTRAINT IF EXISTS leagues_format_check');
+    await execSQL(
+      db,
+      `ALTER TABLE leagues ADD CONSTRAINT leagues_format_check CHECK (format IN ('teams', 'doubles', 'instructional'))`
+    );
+    return;
+  }
+
+  const tableStmt = db.prepare<{ sql?: string | null }>(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='leagues'`
+  );
+  const tableSqlRow = tableStmt.get() as { sql?: string | null } | undefined;
+  if (!tableSqlRow?.sql) return;
+
+  const colStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(leagues)`);
+  const colRows = colStmt.all() as { name?: string | null }[];
+  const colNames = new Set(colRows.map((c) => String(c.name ?? '')));
+  const hasLegacyFlag = colNames.has('is_instructional');
+  const allowsInstructional = tableSqlRow.sql.includes("'instructional'");
+
+  if (allowsInstructional && hasLegacyFlag) {
+    await execSQL(
+      db,
+      `UPDATE leagues SET format = 'instructional' WHERE COALESCE(is_instructional, 0) <> 0 AND format <> 'instructional'`
+    );
+    await execSQL(db, 'PRAGMA foreign_keys = OFF');
+    await execSQL(db, 'ALTER TABLE leagues DROP COLUMN is_instructional');
+    await execSQL(db, 'PRAGMA foreign_keys = ON');
+    return;
+  }
+
+  if (allowsInstructional && !hasLegacyFlag) {
+    return;
+  }
+
+  const formatExpr = hasLegacyFlag
+    ? `CASE WHEN COALESCE(is_instructional, 0) <> 0 THEN 'instructional' ELSE format END`
+    : 'format';
+
+  await execSQL(db, 'PRAGMA foreign_keys = OFF');
+  await execSQL(db, 'DROP TABLE IF EXISTS leagues__format_migration_new');
+  await execSQL(
+    db,
+    `CREATE TABLE leagues__format_migration_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER REFERENCES curling_sessions(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      day_of_week INTEGER NOT NULL,
+      format TEXT NOT NULL CHECK(format IN ('teams', 'doubles', 'instructional')),
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      league_type TEXT NOT NULL DEFAULT 'standard',
+      capacity_type TEXT NOT NULL DEFAULT 'individual',
+      capacity_value INTEGER NOT NULL DEFAULT 0,
+      registration_fee_minor INTEGER NOT NULL DEFAULT 0,
+      registration_fee_override_minor INTEGER,
+      requires_club_membership INTEGER NOT NULL DEFAULT 1,
+      min_experience_years INTEGER,
+      min_age INTEGER,
+      max_age INTEGER,
+      first_day_of_play TEXT,
+      last_day_of_play TEXT,
+      allows_waitlist INTEGER NOT NULL DEFAULT 1,
+      allows_sabbatical INTEGER NOT NULL DEFAULT 1,
+      predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+      successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`
+  );
+
+  await execSQL(
+    db,
+    `INSERT INTO leagues__format_migration_new (
+      id, session_id, name, day_of_week, format, start_date, end_date,
+      league_type, capacity_type, capacity_value, registration_fee_minor,
+      registration_fee_override_minor, requires_club_membership,
+      min_experience_years, min_age, max_age, first_day_of_play, last_day_of_play,
+      allows_waitlist, allows_sabbatical, predecessor_league_id, successor_league_id,
+      created_at, updated_at
+    )
+    SELECT
+      id,
+      session_id,
+      name,
+      day_of_week,
+      ${formatExpr},
+      start_date,
+      end_date,
+      COALESCE(league_type, 'standard'),
+      COALESCE(capacity_type, 'individual'),
+      COALESCE(capacity_value, 0),
+      COALESCE(registration_fee_minor, 0),
+      registration_fee_override_minor,
+      COALESCE(requires_club_membership, 1),
+      min_experience_years,
+      min_age,
+      max_age,
+      first_day_of_play,
+      last_day_of_play,
+      COALESCE(allows_waitlist, 1),
+      COALESCE(allows_sabbatical, 1),
+      predecessor_league_id,
+      successor_league_id,
+      created_at,
+      updated_at
+    FROM leagues`
+  );
+
+  await execSQL(db, 'DROP TABLE leagues');
+  await execSQL(db, 'ALTER TABLE leagues__format_migration_new RENAME TO leagues');
+  await execSQL(db, `DELETE FROM sqlite_sequence WHERE name = 'leagues'`);
+  await execSQL(
+    db,
+    `INSERT INTO sqlite_sequence (name, seq) SELECT 'leagues', COALESCE(MAX(id), 0) FROM leagues`
+  );
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_leagues_session_id ON leagues(session_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_leagues_predecessor_league_id ON leagues(predecessor_league_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_leagues_successor_league_id ON leagues(successor_league_id)');
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_leagues_league_type ON leagues(league_type)');
+  await execSQL(db, 'PRAGMA foreign_keys = ON');
+}
+
 export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await execSQL(db, `
     -- Members table
@@ -2378,7 +2521,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       day_of_week INTEGER NOT NULL,
-      format TEXT NOT NULL CHECK(format IN ('teams', 'doubles')),
+      format TEXT NOT NULL CHECK(format IN ('teams', 'doubles', 'instructional')),
       start_date DATE NOT NULL,
       end_date DATE NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -2405,20 +2548,6 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_league_exceptions_league_id ON league_exceptions(league_id);
-
-    -- League extra draws (one-off draw dates/times)
-    CREATE TABLE IF NOT EXISTS league_extra_draws (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      league_id INTEGER NOT NULL,
-      draw_date DATE NOT NULL,
-      draw_time TIME NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
-      UNIQUE(league_id, draw_date, draw_time)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_league_id ON league_extra_draws(league_id);
-    CREATE INDEX IF NOT EXISTS idx_league_extra_draws_date_time ON league_extra_draws(league_id, draw_date, draw_time);
 
     -- League extra draws (one-off draw dates/times)
     CREATE TABLE IF NOT EXISTS league_extra_draws (
@@ -3270,6 +3399,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureRbacTables(db);
   await ensurePaymentDomainTables(db);
   await ensureCurlingRegistrationBootstrap(db, execSQL);
+  await migrateLeaguesFormatAllowsInstructional(db);
   await ensureEventsTables(db);
   await ensurePermalinksTables(db);
   await ensurePermalinksLegacyClickCountColumn(db);
@@ -3338,7 +3468,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       day_of_week INTEGER NOT NULL,
-      format TEXT NOT NULL CHECK(format IN ('teams', 'doubles')),
+      format TEXT NOT NULL CHECK(format IN ('teams', 'doubles', 'instructional')),
       start_date DATE NOT NULL,
       end_date DATE NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
