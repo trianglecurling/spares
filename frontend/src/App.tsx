@@ -63,6 +63,8 @@ import AdminEvents from './pages/admin/AdminEvents';
 import AdminEventEditor from './pages/admin/AdminEventEditor';
 import AdminEventRegistrationEditor from './pages/admin/AdminEventRegistrationEditor';
 import AdminRegistrationConfig from './pages/admin/AdminRegistrationConfig';
+import AdminRegistrationWaitlists from './pages/admin/AdminRegistrationWaitlists';
+import AdminRegistrationCommunications from './pages/admin/AdminRegistrationCommunications';
 import PublicEventsPage from './pages/PublicEventsPage';
 import PublicEventDetailPage from './pages/PublicEventDetailPage';
 import PublicEventTeamPage from './pages/PublicEventTeamPage';
@@ -71,6 +73,10 @@ import PublicEventRegisterSuccessPage from './pages/PublicEventRegisterSuccessPa
 import PublicPermalinkInfo from './pages/PublicPermalinkInfo';
 import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
 import RegistrationShellPage from './pages/RegistrationShellPage';
+import PublicWaitlistOfferDeclinePage from './pages/PublicWaitlistOfferDeclinePage';
+import RegistrationStatusPage from './pages/RegistrationStatusPage';
+import RegistrationStatusDetailPage from './pages/RegistrationStatusDetailPage';
+import WaitlistOfferAcceptPage from './pages/WaitlistOfferAcceptPage';
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -129,6 +135,7 @@ function App() {
                   <Route path="/registration/start" element={<RegistrationShellPage />} />
                   <Route path="/registration/success" element={<RegistrationShellPage />} />
                   <Route path="/registration/cancel" element={<RegistrationShellPage />} />
+                  <Route path="/registration/waitlist-offers/:token/decline" element={<PublicWaitlistOfferDeclinePage />} />
                   <Route path="/registration/:step" element={<RegistrationShellPage />} />
 
                   <Route path="/go/:slug/info" element={<PublicPermalinkInfo />} />
@@ -141,6 +148,33 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/registration/status"
+                  element={
+                    <ProtectedRoute>
+                      <RegistrationStatusPage />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/registration/status/:registrationId"
+                  element={
+                    <ProtectedRoute>
+                      <RegistrationStatusDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/registration/waitlist-offers/:token/accept"
+                  element={
+                    <ProtectedRoute>
+                      <WaitlistOfferAcceptPage />
                     </ProtectedRoute>
                   }
                 />
@@ -393,7 +427,31 @@ function App() {
                 />
                 <Route
                   path="/admin/registration"
-                  element={<Navigate to="/admin/registration/seasons" replace />}
+                  element={<Navigate to="/admin/registration/waitlists" replace />}
+                />
+                <Route
+                  path="/admin/registration/waitlists"
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <AdminRegistrationWaitlists />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/registration/waitlists/:leagueId"
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <AdminRegistrationWaitlists />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/registration/communications"
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <AdminRegistrationCommunications />
+                    </ProtectedRoute>
+                  }
                 />
                 <Route
                   path="/admin/registration/:tab"

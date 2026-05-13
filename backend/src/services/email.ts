@@ -119,6 +119,7 @@ async function sendMailWithTransporter(
     to: options.to,
     subject: options.subject,
     html: fullHtmlContent,
+    ...(options.textContent ? { text: options.textContent } : {}),
     ...(options.replyTo && options.replyTo.trim().length > 0
       ? { replyTo: options.replyTo.trim() }
       : {}),
@@ -141,9 +142,16 @@ interface EmailOptions {
   to: string;
   subject: string;
   htmlContent: string;
+  textContent?: string;
   recipientName: string;
   replyTo?: string;
   includeUnsubscribeFooter?: boolean;
+}
+
+export interface EmailDeliveryResult {
+  status: 'sent' | 'logged' | 'failed';
+  reason?: string;
+  error?: string;
 }
 
 function getUnsubscribeFooter(memberToken?: string): string {
@@ -190,7 +198,7 @@ function logEmail(options: EmailOptions, fullHtmlContent: string, prefix: string
   console.log('='.repeat(80));
 }
 
-export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<void> {
+export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<EmailDeliveryResult> {
   console.log(`[Email Service] sendEmail called for ${options.to}`);
   const fullHtmlContent = buildFullHtmlContent(
     options.htmlContent,
@@ -203,7 +211,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
     console.log(`[Email Service] Blocking email to @example.com address: ${options.to}`);
     logEmail(options, fullHtmlContent, 'EXAMPLE.COM BLOCKED');
     logEvent({ eventType: 'email.logged', meta: { reason: 'blocked_example_com' } }).catch(() => {});
-    return;
+    return { status: 'logged', reason: 'blocked_example_com' };
   }
 
   const dbConfig = await getConfigFromDatabase();
@@ -213,7 +221,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
     console.log(`[Email Service] Email disabled - logging email instead of sending`);
     logEmail(options, fullHtmlContent, 'DISABLED');
     logEvent({ eventType: 'email.logged', meta: { reason: 'disabled' } }).catch(() => {});
-    return;
+    return { status: 'logged', reason: 'disabled' };
   }
 
   const smtpFrom = config.smtp.from || dbConfig.senderEmail;
@@ -226,6 +234,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
         `[Email Service] Test mode: sent via SMTP to ${config.testMailer.smtpHost}:${config.testMailer.smtpPort}`
       );
       logEvent({ eventType: 'email.sent', meta: { test_mode: true } }).catch(() => {});
+      return { status: 'sent' };
     } catch (error) {
       console.error(
         '[Email Service] Test mode SMTP send failed - logging to console instead:',
@@ -235,15 +244,15 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
       logEvent({ eventType: 'email.logged', meta: { reason: 'test_mode_smtp_failed' } }).catch(
         () => {}
       );
+      return { status: 'failed', reason: 'test_mode_smtp_failed', error: error instanceof Error ? error.message : String(error) };
     }
-    return;
   }
 
   const useSmtp = Boolean(config.smtp.host);
   if (!useSmtp && !dbConfig.connectionString) {
     console.log('Email not configured. Would send:', options);
     logEvent({ eventType: 'email.logged', meta: { reason: 'not_configured' } }).catch(() => {});
-    return;
+    return { status: 'logged', reason: 'not_configured' };
   }
 
   try {
@@ -260,6 +269,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
         content: {
           subject: options.subject,
           html: fullHtmlContent,
+          ...(options.textContent ? { plainText: options.textContent } : {}),
         },
         recipients: {
           to: [{ address: options.to, displayName: options.recipientName }],
@@ -275,14 +285,59 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
       await poller.pollUntilDone();
       logEvent({ eventType: 'email.sent' }).catch(() => {});
     }
+    return { status: 'sent' };
   } catch (error) {
     // If sending fails for any reason (misconfiguration, transient outage, etc),
     // fall back to logging so auth/login flows can continue.
     console.error('[Email Service] Error sending email - logging to console instead:', error);
     logEmail(options, fullHtmlContent, 'SEND FAILED - LOGGED');
     logEvent({ eventType: 'email.logged', meta: { reason: 'send_failed' } }).catch(() => {});
-    return;
+    return { status: 'failed', reason: 'send_failed', error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+export async function sendWaitlistOfferEmail(input: {
+  recipientEmail: string;
+  recipientName: string;
+  leagueName: string;
+  offerType: 'permanent' | 'temporary_sabbatical_fill';
+  deadline: Date;
+  declineUrl: string;
+}): Promise<void> {
+  const isTemporary = input.offerType === 'temporary_sabbatical_fill';
+  const deadlineText = input.deadline.toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  const temporaryNotice = isTemporary
+    ? `
+      <p><strong>This is a temporary sabbatical-fill spot.</strong> You may play in this spot for the session, but the original member may reclaim the spot in a future session. You will keep your position on the waitlist for a permanent spot.</p>
+    `
+    : '';
+
+  await sendEmail(
+    {
+      to: input.recipientEmail,
+      recipientName: input.recipientName,
+      subject: `${isTemporary ? 'Temporary sabbatical-fill' : 'League'} offer: ${input.leagueName}`,
+      htmlContent: `
+        <h2>${isTemporary ? 'Temporary sabbatical-fill offer' : 'League spot offer'}</h2>
+        <p>Hi ${input.recipientName},</p>
+        <p>Triangle Curling Club has an offer for you in <strong>${input.leagueName}</strong>.</p>
+        ${temporaryNotice}
+        <p><strong>Deadline to decline:</strong> ${deadlineText}</p>
+        <p>If you do not decline this offer within 24 hours, we will treat the offer as accepted and add you to the league. If payment is required, staff will follow up with you.</p>
+        <p>If you need to decline this offer, use this link before the deadline:</p>
+        <p><a href="${input.declineUrl}">Decline this waitlist offer</a></p>
+        <p>If you have questions, reply to this email or contact Triangle Curling Club staff.</p>
+      `,
+      includeUnsubscribeFooter: false,
+    }
+  );
 }
 
 export async function sendAuthCodeEmail(

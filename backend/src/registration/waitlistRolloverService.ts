@@ -1,4 +1,4 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 
@@ -33,6 +33,9 @@ export async function rollWaitlistForward(input: RollWaitlistForwardInput): Prom
   if (!toLeagueId) {
     throw new WaitlistRolloverValidationError({ toLeagueId: 'A successor league is required for waitlist rollover.' });
   }
+  if (toLeagueId === input.fromLeagueId) {
+    throw new WaitlistRolloverValidationError({ toLeagueId: 'A league cannot roll waitlist entries forward to itself.' });
+  }
   const [toLeague] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, toLeagueId)).limit(1);
   if (!toLeague) {
     throw new WaitlistRolloverValidationError({ toLeagueId: 'Successor league was not found.' });
@@ -48,6 +51,17 @@ export async function rollWaitlistForward(input: RollWaitlistForwardInput): Prom
   const rolledEntryIds: number[] = [];
   await db.transaction(async (tx) => {
     for (const entry of activeEntries) {
+      const [existingSuccessorEntry] = await tx
+        .select()
+        .from(schema.waitlistEntries)
+        .where(
+          and(
+            eq(schema.waitlistEntries.member_id, entry.member_id),
+            eq(schema.waitlistEntries.league_id, toLeagueId),
+            eq(schema.waitlistEntries.status, 'active')
+          )
+        )
+        .limit(1);
       const before = {
         id: entry.id,
         leagueId: entry.league_id,
@@ -57,6 +71,26 @@ export async function rollWaitlistForward(input: RollWaitlistForwardInput): Prom
         status: entry.status,
       };
       const after = { ...before, leagueId: toLeagueId, rolledOverFromWaitlistEntryId: entry.id };
+      if (existingSuccessorEntry) {
+        await tx.insert(schema.waitlistAuditEvents).values({
+          waitlist_entry_id: existingSuccessorEntry.id,
+          league_id: toLeagueId,
+          member_id: entry.member_id,
+          actor_member_id: input.actorMemberId ?? null,
+          source: 'waitlist_rollover',
+          action: 'entry_rolled_over',
+          reason: input.reason ?? `Rollover from ${fromLeague.name} to ${toLeague.name} skipped because an active successor entry already exists.`,
+          before_json: dbJson(before),
+          after_json: dbJson({
+            existingEntryId: existingSuccessorEntry.id,
+            leagueId: toLeagueId,
+            status: existingSuccessorEntry.status,
+          }),
+          metadata_json: dbJson({ fromLeagueId: input.fromLeagueId, toLeagueId, duplicateSkipped: true }),
+          created_at: dbNow(),
+        });
+        continue;
+      }
       await tx
         .update(schema.waitlistEntries)
         .set({

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
-import { resolveRegistrationPaymentStatus } from './registrationMembershipPaymentService.js';
+import { resolveRegistrationPaymentStatus, shouldMarkCheckoutCancelled } from './registrationMembershipPaymentService.js';
 import { league, registrationContext, selection } from './registrationTestFixtures.js';
 
 describe('Phase 7 submission and checkout decisions', () => {
@@ -91,5 +91,28 @@ describe('Phase 7 submission and checkout decisions', () => {
         totalDueMinor: 12500,
       })
     ).toBe('failed');
+  });
+
+  test('checkout cancellation cannot regress paid or confirmed registrations', () => {
+    expect(
+      shouldMarkCheckoutCancelled({
+        invoiceStatus: 'checkout_started',
+        registrationStatus: 'payment_started',
+      })
+    ).toBe(true);
+
+    expect(
+      shouldMarkCheckoutCancelled({
+        invoiceStatus: 'paid',
+        registrationStatus: 'payment_started',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldMarkCheckoutCancelled({
+        invoiceStatus: 'checkout_started',
+        registrationStatus: 'confirmed',
+      })
+    ).toBe(false);
   });
 });

@@ -730,6 +730,12 @@ creation/update phases.
 
 # Phase 8 Test Matrix Additions: Staff Waitlists
 
+Implementation note: Phase 8 now has automated helper coverage for vacancy
+calculation and decline movement rules in
+`backend/src/registration/waitlistStaffService.test.ts`. The remaining rows
+below describe integration and UI workflows that should be exercised as seeded
+end-to-end fixtures become available.
+
 ## Staff access and permissions
 
 ### P8-001: Unauthorized user cannot access waitlist manager
@@ -975,3 +981,867 @@ Given a registration still has unresolved non-guaranteed items
 When staff attempts to trigger payment  
 Then the system either blocks payment or warns staff according to existing
 payment-deferral rules.
+
+# Phase 9 Addendum — Member Communications Tests
+
+## Member registration dashboard
+
+### MC-001 — Member can view submitted immediate-payment registration
+
+**Scenario:** A member submits a registration that requires immediate payment.
+
+**Expected result:**
+
+- Registration appears on the member dashboard.
+- Status indicates payment is required.
+- Payment link is visible.
+- League and membership choices are shown accurately.
+- Registration is not shown as paid or fully confirmed until payment succeeds.
+
+---
+
+### MC-002 — Member can view deferred registration
+
+**Scenario:** A member submits a registration with a waitlist request or
+third-league interest causing payment deferral.
+
+**Expected result:**
+
+- Registration appears on the dashboard.
+- Status indicates payment is deferred.
+- No payment link is shown unless one has been generated.
+- Deferral reason is shown in plain language.
+- Pending items are not displayed as confirmed.
+
+---
+
+### MC-003 — Delegated user can view registration for managed curler
+
+**Scenario:** A parent or delegated user registers a curler and later views the
+registration.
+
+**Expected result:**
+
+- Delegated user can view the registration.
+- Curler name is clearly displayed.
+- The page does not imply the delegated user is the curler.
+- Unauthorized users cannot view the registration.
+
+---
+
+### MC-004 — Member cannot view another member's registration
+
+**Scenario:** A logged-in user attempts to access a registration for a curler
+they do not manage.
+
+**Expected result:**
+
+- Access is denied.
+- No registration details are leaked.
+
+---
+
+## Registration detail display
+
+### MC-005 — Confirmed leagues are displayed as confirmed
+
+**Scenario:** A paid registration includes confirmed guaranteed leagues.
+
+**Expected result:**
+
+- Confirmed leagues are listed under confirmed leagues.
+- League names and sessions are correct.
+- No waitlist language is shown for confirmed leagues.
+
+---
+
+### MC-006 — Waitlist entries display type and position
+
+**Scenario:** A member has active ADD and REPLACE waitlist entries.
+
+**Expected result:**
+
+- Each waitlist entry is shown.
+- Each entry shows ADD or REPLACE.
+- REPLACE entries show the replacement league.
+- Current position is shown.
+- Decline count is shown if available.
+
+---
+
+### MC-007 — Third-league interest is displayed in member-provided order
+
+**Scenario:** A member submits ranked third-league interest choices.
+
+**Expected result:**
+
+- Third-league choices are displayed in the submitted order.
+- Page explains these are interest choices, not confirmed spots.
+- Page explains staff will follow up if placement is possible.
+
+---
+
+### MC-008 — Temporary sabbatical-fill spot is clearly marked
+
+**Scenario:** A member is placed into a temporary sabbatical-fill spot.
+
+**Expected result:**
+
+- League is marked as temporary.
+- Page explains the original member may return in a future session.
+- Page explains the member keeps their waitlist position for a permanent spot.
+
+---
+
+### MC-009 — Sabbatical is displayed correctly
+
+**Scenario:** A member has an active sabbatical.
+
+**Expected result:**
+
+- Sabbatical is shown separately from confirmed active leagues.
+- Page explains that the member is preserving a return right.
+- Sabbatical fee/payment status is shown.
+- If applicable, duration-limit warning is shown.
+
+---
+
+### MC-010 — BYOT request displays teammate text
+
+**Scenario:** A member registers for a BYOT league and provides teammate names.
+
+**Expected result:**
+
+- BYOT league request is shown.
+- Submitted teammate text is visible.
+- Page explains placement is coordinated by the league coordinator.
+
+---
+
+## Payment visibility
+
+### MC-011 — Payment link shown only when payment is due
+
+**Scenario:** Registration has a current payable invoice/payment link.
+
+**Expected result:**
+
+- Payment link is visible.
+- Amount due is visible.
+- Payment status says payment is required.
+
+---
+
+### MC-012 — Payment link hidden when payment is deferred
+
+**Scenario:** Registration is awaiting placement or review.
+
+**Expected result:**
+
+- No payment link is shown.
+- Page explains why payment is deferred.
+
+---
+
+### MC-013 — Successful payment updates member view
+
+**Scenario:** Member pays through Stripe successfully.
+
+**Expected result:**
+
+- Registration payment status updates to paid.
+- Payment confirmation details are visible.
+- Payment link is no longer presented as an unpaid action.
+
+---
+
+### MC-014 — Failed or abandoned payment does not confirm registration
+
+**Scenario:** Member starts checkout but payment fails or is abandoned.
+
+**Expected result:**
+
+- Registration is not marked paid.
+- Registration is not falsely shown as confirmed due to payment.
+- Member is instructed to retry or contact staff.
+
+---
+
+## Self-service waitlist removal
+
+### MC-015 — Member removes self from waitlist
+
+**Scenario:** Member removes their own active waitlist entry.
+
+**Expected result:**
+
+- Confirmation prompt is shown.
+- Waitlist entry becomes inactive/removed after confirmation.
+- Member no longer appears in active waitlist position list.
+- Waitlist change is audited.
+- Confirmation email is sent.
+
+---
+
+### MC-016 — Delegated user removes curler from waitlist
+
+**Scenario:** Delegated user removes a managed curler from a waitlist.
+
+**Expected result:**
+
+- Action is allowed.
+- Audit identifies the acting user.
+- Curler/waitlist entry is updated correctly.
+- Confirmation email is sent to the appropriate address.
+
+---
+
+### MC-017 — Unauthorized waitlist removal is blocked
+
+**Scenario:** User attempts to remove another user's waitlist entry.
+
+**Expected result:**
+
+- Action is denied.
+- Waitlist entry remains active.
+- No removal email is sent.
+- No misleading audit entry is created.
+
+---
+
+### MC-018 — Removing waitlist entry warns about losing position
+
+**Scenario:** Member starts waitlist removal flow.
+
+**Expected result:**
+
+- Confirmation copy clearly says the current waitlist position will be lost.
+- Cancellation leaves the waitlist entry unchanged.
+
+---
+
+## Email sending
+
+### MC-019 — Immediate-payment registration email
+
+**Scenario:** Registration is submitted and immediate payment is required.
+
+**Expected result:**
+
+- Correct email type is sent.
+- Email includes curler name, season/session, summary, amount due, and payment
+  link.
+- Email says registration is not fully confirmed until payment is complete.
+
+---
+
+### MC-020 — Deferred-payment registration email
+
+**Scenario:** Registration is submitted and payment is deferred.
+
+**Expected result:**
+
+- Correct email type is sent.
+- Email includes curler name, season/session, submitted choices, and deferral
+  reason.
+- Email does not include a payment link unless one exists.
+
+---
+
+### MC-021 — Payment confirmation email
+
+**Scenario:** Stripe payment succeeds.
+
+**Expected result:**
+
+- Payment confirmation email is sent.
+- Email includes curler name, season/session, amount paid, and paid item summary.
+- Pending waitlist or third-league items are not described as confirmed.
+
+---
+
+### MC-022 — Social membership confirmation email
+
+**Scenario:** Member purchases social membership.
+
+**Expected result:**
+
+- Email confirms social membership after payment.
+- Email states social membership does not include ice privileges.
+- Email states social members cannot curl or spare unless they later upgrade and
+  purchase applicable ice privileges.
+
+---
+
+### MC-023 — Waitlist joined email
+
+**Scenario:** Member is added to a waitlist.
+
+**Expected result:**
+
+- Waitlist joined email is sent.
+- Email includes league name, ADD/REPLACE type, replacement league if
+  applicable, and current position.
+- Email explains waitlists roll forward to successor leagues.
+
+---
+
+### MC-024 — Waitlist removed by member email
+
+**Scenario:** Member removes themselves from a waitlist.
+
+**Expected result:**
+
+- Removal confirmation email is sent.
+- Email confirms the league and loss of previous position.
+
+---
+
+### MC-025 — Staff waitlist change email
+
+**Scenario:** Staff materially changes a member's waitlist entry.
+
+**Expected result:**
+
+- Waitlist status changed email is sent unless staff intentionally suppresses
+  notification.
+- Email describes what changed.
+- Waitlist audit records the staff action.
+
+---
+
+### MC-026 — Permanent waitlist offer email
+
+**Scenario:** Staff offers a permanent spot from a waitlist.
+
+**Expected result:**
+
+- Offer email is sent.
+- Email identifies the spot as permanent.
+- Email states the 24-hour response rule.
+- Email states no response means acceptance.
+- Email includes accept/decline links or clear instructions.
+
+---
+
+### MC-027 — Temporary sabbatical-fill offer email
+
+**Scenario:** Staff offers a temporary sabbatical-fill spot.
+
+**Expected result:**
+
+- Offer email is sent.
+- Email identifies the spot as temporary.
+- Email explains another member may return in a future session.
+- Email explains accepting does not remove the member from the permanent
+  waitlist.
+- Email states declining counts under normal decline rules.
+
+---
+
+### MC-028 — Offer accepted email, explicit acceptance
+
+**Scenario:** Member explicitly accepts an offer.
+
+**Expected result:**
+
+- Offer accepted email is sent.
+- Email includes league name and spot type.
+- Email includes next steps/payment follow-up if applicable.
+
+---
+
+### MC-029 — Offer accepted email, automatic acceptance
+
+**Scenario:** Member does not decline within 24 hours and offer is treated as
+accepted.
+
+**Expected result:**
+
+- Offer accepted email is sent.
+- Email may state acceptance occurred automatically.
+- League placement follows Phase 8 rules.
+- Payment follow-up is included if applicable.
+
+---
+
+### MC-030 — Offer declined email, first decline
+
+**Scenario:** Member declines an offer for the first time on that waitlist
+instance.
+
+**Expected result:**
+
+- Decline confirmation email is sent.
+- Email says position is retained.
+- Updated waitlist position is shown if available.
+
+---
+
+### MC-031 — Offer declined email, second decline
+
+**Scenario:** Member declines an offer for the second time on that waitlist
+instance.
+
+**Expected result:**
+
+- Decline confirmation email is sent.
+- Email says the member was moved to the bottom of the waitlist.
+- Updated waitlist position is shown if available.
+- Waitlist audit records the move.
+
+---
+
+### MC-032 — Deferred payment link email
+
+**Scenario:** Staff generates a payment link for a deferred registration.
+
+**Expected result:**
+
+- Payment-ready email is sent.
+- Email includes summary, amount due, and payment link.
+- Email states payment is required to complete registration.
+
+---
+
+### MC-033 — Junior Recreational financial assistance pending email
+
+**Scenario:** Junior Recreational registration requests financial assistance.
+
+**Expected result:**
+
+- Assistance pending email is sent.
+- Email includes requested assistance level.
+- Email says payment is deferred during review.
+
+---
+
+### MC-034 — Junior Recreational financial assistance decision email
+
+**Scenario:** Staff records financial assistance decision.
+
+**Expected result:**
+
+- Decision/payment email is sent.
+- Email includes approved assistance level/amount.
+- Email includes final amount due and payment link.
+- If assistance is reduced or denied, email is clear and sensitive.
+
+---
+
+### MC-035 — Sabbatical confirmation email
+
+**Scenario:** Member submits a sabbatical registration.
+
+**Expected result:**
+
+- Sabbatical confirmation email is sent.
+- Email includes league name and session.
+- Email explains the sabbatical preserves return rights under sabbatical rules.
+
+---
+
+### MC-036 — Sabbatical release email
+
+**Scenario:** Member or staff releases a sabbatical-held spot.
+
+**Expected result:**
+
+- Sabbatical release email is sent.
+- Email explains the protected spot has been released.
+- Email explains future return requires joining the waitlist.
+
+---
+
+### MC-037 — BYOT confirmation email
+
+**Scenario:** Member submits BYOT registration.
+
+**Expected result:**
+
+- BYOT confirmation language is included in registration/payment email or a
+  separate email.
+- Email includes teammate text.
+- Email explains coordinator-managed placement and possible staff follow-up.
+
+---
+
+### MC-038 — Staff manual update email
+
+**Scenario:** Staff materially updates a submitted registration.
+
+**Expected result:**
+
+- Manual update email can be sent.
+- Email states what changed and whether payment status changed.
+- Sending the email does not itself alter registration business state.
+
+---
+
+## Email logging and resending
+
+### MC-039 — Emails are logged
+
+**Scenario:** Any registration-related email is sent.
+
+**Expected result:**
+
+- Email log records message type, recipient, associated registration/offer if
+  applicable, subject, timestamp, and status if available.
+
+---
+
+### MC-040 — Staff can view registration communication history
+
+**Scenario:** Staff opens a registration.
+
+**Expected result:**
+
+- Staff can see related communications.
+- Each entry shows message type, recipient, timestamp, and delivery status if
+  available.
+
+---
+
+### MC-041 — Staff can resend payment link email without duplicate charge
+
+**Scenario:** Staff resends a deferred payment link email.
+
+**Expected result:**
+
+- Email is resent.
+- Existing payment link/session/invoice is reused where appropriate.
+- No duplicate business action or duplicate charge is created.
+
+---
+
+### MC-042 — Staff can resend waitlist offer email without duplicate offer
+
+**Scenario:** Staff resends an offer email.
+
+**Expected result:**
+
+- Existing offer is referenced.
+- No new offer is created.
+- Offer deadline is not accidentally reset unless staff explicitly performs a
+  separate deadline-extension action.
+
+---
+
+### MC-043 — Failed/bounced email visible to staff
+
+**Scenario:** Email provider reports failure or bounce.
+
+**Expected result:**
+
+- Communication log shows failed/bounced status.
+- Staff can identify the affected recipient and registration/offer.
+- Registration business state is not automatically changed solely due to bounce.
+
+---
+
+## Email action links and authorization
+
+### MC-044 — Decline offer link works for intended recipient
+
+**Scenario:** Member clicks decline link from waitlist offer email.
+
+**Expected result:**
+
+- Offer is declined.
+- Decline rules are applied.
+- Confirmation email is sent.
+- Waitlist audit records the change.
+
+---
+
+### MC-045 — Expired/invalid action link is rejected
+
+**Scenario:** User clicks expired or invalid signed action link.
+
+**Expected result:**
+
+- Action is not performed.
+- User sees clear message.
+- No waitlist or registration state is changed.
+
+---
+
+### MC-046 — Action link cannot be used for unrelated account access
+
+**Scenario:** User clicks a signed action link.
+
+**Expected result:**
+
+- Link only authorizes the specific intended action.
+- It does not expose unrelated registration/account data.
+
+---
+
+### MC-047 — Duplicate action link usage is safe
+
+**Scenario:** User clicks the same decline or accept link multiple times.
+
+**Expected result:**
+
+- Business action is idempotent or safely rejected after first use.
+- No duplicate decline count increments occur.
+- No duplicate placement occurs.
+
+---
+
+## Copy correctness
+
+### MC-048 — No deferred registration is described as confirmed
+
+**Scenario:** Review emails and member pages for deferred registrations.
+
+**Expected result:**
+
+- Pending league placement is not called confirmed.
+- Pending payment is not called paid.
+- Third-league interest is not called a league registration.
+
+---
+
+### MC-049 — No temporary sabbatical-fill spot is described as permanent
+
+**Scenario:** Review emails and member pages for temporary sabbatical-fill
+placements/offers.
+
+**Expected result:**
+
+- Temporary nature is clearly stated.
+- Member is told original sabbatical holder may return in a future session.
+
+---
+
+### MC-050 — No-response-means-acceptance rule is explicit
+
+**Scenario:** Review waitlist offer emails.
+
+**Expected result:**
+
+- Offer email clearly says no response within 24 hours means acceptance.
+- Email says staff will follow up about payment if required.
+
+# Phase 10 Test Matrix Addendum
+
+This section adds hardening, launch-readiness, and operational tests that should be included before registration is opened for live use.
+
+These tests supplement the existing registration test matrix.
+
+---
+
+## 1. Rule coverage audit
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-RULE-001 | Compare implemented registration rules to `docs/registration/rules.md` | Every documented rule has automated coverage, manual coverage, or an explicitly accepted exception | Blocker |
+| P10-RULE-002 | Attempt to bypass UI validation through direct API submission for ineligible league | Server rejects the request | Blocker |
+| P10-RULE-003 | Attempt to submit registration without policy acceptance | Registration is rejected | Blocker |
+| P10-RULE-004 | Attempt to claim three protected returns/sabbaticals | Registration is rejected | Blocker |
+| P10-RULE-005 | Attempt to select BYOT as third-league interest | Registration is rejected | Blocker |
+| P10-RULE-006 | Attempt to create sabbatical outside priority registration | Registration is rejected unless staff override exists | Blocker |
+| P10-RULE-007 | Attempt to apply discounts to social membership | Discounts are not applied | Blocker |
+| P10-RULE-008 | Attempt to apply discounts to sabbatical fees | Discounts are not applied | Blocker |
+
+---
+
+## 2. Stripe and payment hardening
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-PAY-001 | Immediate-payment registration completes Stripe checkout successfully | Registration is marked paid/confirmed exactly once | Blocker |
+| P10-PAY-002 | Immediate-payment registration abandons checkout | Registration remains unpaid and unconfirmed | Blocker |
+| P10-PAY-003 | Immediate-payment registration payment fails | Registration remains unpaid and unconfirmed | Blocker |
+| P10-PAY-004 | Stripe success webhook is delivered twice | Registration is not double-confirmed and no duplicate payment record is created | Blocker |
+| P10-PAY-005 | Stripe webhook arrives before user returns from checkout | Registration is correctly marked paid | High |
+| P10-PAY-006 | Deferred payment link is generated by staff | Payment link amount matches internal invoice amount | Blocker |
+| P10-PAY-007 | Deferred payment succeeds | Registration/payment status updates correctly | Blocker |
+| P10-PAY-008 | Deferred payment fails | Registration remains unpaid and staff can see failure/pending status | High |
+| P10-PAY-009 | Staff resends payment link | Existing registration remains consistent; duplicate invoice/payment records are not incorrectly created | High |
+| P10-PAY-010 | Registration is cancelled before deferred payment | Old payment link cannot incorrectly confirm cancelled registration | Blocker |
+| P10-PAY-011 | Stripe amount differs from internal calculation due to tampering attempt | Payment creation uses server-calculated amount only | Blocker |
+| P10-PAY-012 | Social membership registration with attempted discount | Stripe amount excludes discount | Blocker |
+| P10-PAY-013 | Sabbatical fee with attempted percentage discount | Stripe amount does not discount sabbatical fee | Blocker |
+| P10-PAY-014 | Sabbatical-fill discount applies with other discounts | Sabbatical-fill discount equals full sabbatical fee and is applied separately | High |
+
+---
+
+## 3. Registration status transitions
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-STATUS-001 | Draft registration is abandoned | Draft remains resumable or safely expired according to app behavior | Medium |
+| P10-STATUS-002 | Submitted registration requires immediate payment | Registration enters payment-pending state | Blocker |
+| P10-STATUS-003 | Submitted registration requires deferred payment | Registration enters awaiting-placement/review/payment state with clear reason | Blocker |
+| P10-STATUS-004 | Payment succeeds | Registration enters paid/confirmed state | Blocker |
+| P10-STATUS-005 | Payment fails | Registration does not enter confirmed state | Blocker |
+| P10-STATUS-006 | Staff cancels registration | Registration enters cancelled state and is not payable unless restored | High |
+| P10-STATUS-007 | Deferred registration receives placement decision | Registration can generate correct payment amount | High |
+| P10-STATUS-008 | Junior Recreational assistance request submitted | Registration enters assistance-review state and payment is deferred | High |
+| P10-STATUS-009 | Junior Recreational assistance decision made | Registration can be invoiced for approved amount | High |
+
+---
+
+## 4. Access control and security
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-SEC-001 | Anonymous visitor attempts to access registration dashboard | Access denied or redirected to login | Blocker |
+| P10-SEC-002 | User attempts to view another user's registration without delegation | Access denied | Blocker |
+| P10-SEC-003 | Delegated registrant views delegated curler registration | Access allowed | Blocker |
+| P10-SEC-004 | User attempts staff waitlist endpoint | Access denied | Blocker |
+| P10-SEC-005 | Staff user accesses waitlist manager | Access allowed | Blocker |
+| P10-SEC-006 | User attempts to modify their waitlist position directly | Request rejected | Blocker |
+| P10-SEC-007 | User attempts to mark registration paid directly | Request rejected | Blocker |
+| P10-SEC-008 | User attempts to create unauthorized sabbatical directly | Request rejected | Blocker |
+| P10-SEC-009 | User attempts to exceed REPLACE waitlist limit through API | Request rejected | Blocker |
+| P10-SEC-010 | User attempts to join age-ineligible league through API | Request rejected | Blocker |
+| P10-SEC-011 | User attempts to join experience-ineligible league through API | Request rejected | Blocker |
+| P10-SEC-012 | Staff action is performed without required role | Request rejected | Blocker |
+
+---
+
+## 5. Waitlist hardening and audit tests
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-WL-001 | User joins waitlist as ADD | Entry is created in correct order and audit log is written | Blocker |
+| P10-WL-002 | User joins waitlist as REPLACE | Entry records replacement league and audit log is written | Blocker |
+| P10-WL-003 | User removes self from waitlist | Entry is inactive/removed and audit log is written | Blocker |
+| P10-WL-004 | Staff manually adds waitlist entry | Entry is created and audit log records staff actor and reason | Blocker |
+| P10-WL-005 | Staff manually removes waitlist entry | Entry is removed/inactive and audit log records staff actor and reason | Blocker |
+| P10-WL-006 | Staff manually reorders waitlist | New order is saved and audit log records before/after state or sufficient details | Blocker |
+| P10-WL-007 | Waitlist rolls over to successor league | Order is preserved and audit log records system rollover | Blocker |
+| P10-WL-008 | First offer decline | User keeps position and decline count increments | Blocker |
+| P10-WL-009 | Second offer decline | User moves to bottom and audit log is written | Blocker |
+| P10-WL-010 | Offer receives no response after 24 hours | Offer is treated as accepted | Blocker |
+| P10-WL-011 | Temporary sabbatical-fill offer is declined | Decline count behavior matches permanent spot decline behavior | High |
+| P10-WL-012 | User is removed and re-added to waitlist | Decline count resets for new waitlist instance | High |
+| P10-WL-013 | User reaches two leagues while on ADD waitlists | User must resolve ADD waitlists immediately | High |
+| P10-WL-014 | User converts ADD waitlist to REPLACE | Replacement league is required and REPLACE limit is enforced | High |
+| P10-WL-015 | User attempts more than two active REPLACE waitlists | Request is rejected | Blocker |
+
+---
+
+## 6. Staff operations rehearsal tests
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-STAFF-001 | Staff configures a full season and session | Configuration is saved and usable for registration | Blocker |
+| P10-STAFF-002 | Staff configures registration schedule | Registration transitions or displays correct state | Blocker |
+| P10-STAFF-003 | Staff configures league predecessor/successor links | Returning rights and waitlist rollover work | Blocker |
+| P10-STAFF-004 | Staff opens priority registration | Returning members can claim eligible protected spots | Blocker |
+| P10-STAFF-005 | Staff closes priority registration | Guaranteed return period ends; post-priority workflows are available | Blocker |
+| P10-STAFF-006 | Staff views league vacancy summary | Permanent and temporary vacancies are understandable | High |
+| P10-STAFF-007 | Staff sends offers to top N waitlisted users | Correct recipients receive offer emails | Blocker |
+| P10-STAFF-008 | Staff processes declined offer | Waitlist position and decline count update correctly | High |
+| P10-STAFF-009 | Staff processes no-response offer | Offer is accepted after 24 hours | High |
+| P10-STAFF-010 | Staff generates deferred payment link | Correct invoice/payment link is produced | Blocker |
+| P10-STAFF-011 | Staff reviews waitlist audit history | Audit entries are understandable and complete | High |
+| P10-STAFF-012 | Staff pauses registration | Users cannot start/submit new registrations; existing data is preserved | Blocker |
+
+---
+
+## 7. Email verification tests
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-EMAIL-001 | Registration submitted with immediate payment | User receives clear submission/payment email | High |
+| P10-EMAIL-002 | Registration submitted with deferred payment | User receives clear deferred-status email | High |
+| P10-EMAIL-003 | Junior Recreational assistance requested | User receives assistance-review email | High |
+| P10-EMAIL-004 | Junior Recreational assistance decision made | User receives decision and payment instructions | High |
+| P10-EMAIL-005 | Waitlist offer sent | Email clearly states 24-hour decline window and automatic acceptance rule | Blocker |
+| P10-EMAIL-006 | Waitlist offer declined | User receives confirmation if implemented | Medium |
+| P10-EMAIL-007 | Waitlist offer accepted | User receives confirmation if implemented | Medium |
+| P10-EMAIL-008 | Deferred payment link sent | Email has correct amount, curler, season/session, and payment link | Blocker |
+| P10-EMAIL-009 | Sabbatical registration submitted | Email clearly confirms sabbatical and fee/payment status | High |
+| P10-EMAIL-010 | BYOT registration submitted | Email avoids over-promising placement if coordinator review may occur | High |
+
+---
+
+## 8. Production data validation tests
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-DATA-001 | Fiscal year is configured | Fiscal year is July 1-June 30 or correct tenant-specific value | Blocker |
+| P10-DATA-002 | Active membership season is configured | Membership validity is correct for current registration period | Blocker |
+| P10-DATA-003 | Session order is configured | Winter-only discount applies only when registering after first session | Blocker |
+| P10-DATA-004 | Pricing is configured | Regular, social, league, spare-only, sabbatical, and junior fees are correct | Blocker |
+| P10-DATA-005 | Discounts are configured | Student, reciprocal, and winter-only discounts are correct | Blocker |
+| P10-DATA-006 | League fees are configured | No registrable league has missing or incorrect fee | Blocker |
+| P10-DATA-007 | League capacities are configured | No registrable league has missing or invalid capacity | Blocker |
+| P10-DATA-008 | League first day of play is configured | Age eligibility can be calculated | Blocker |
+| P10-DATA-009 | League last day of play is configured | Sabbatical duration can be calculated | Blocker |
+| P10-DATA-010 | League age limits are valid | Maximum age is not lower than minimum age | High |
+| P10-DATA-011 | League experience requirements are valid | Requirements are non-negative and sensible | High |
+| P10-DATA-012 | Predecessor/successor links are valid | No circular league continuity chains exist | Blocker |
+| P10-DATA-013 | BYOT league settings are valid | BYOT leagues do not use waitlists/sabbaticals and have team capacity | High |
+| P10-DATA-014 | Existing waitlists are valid | Waitlist entries reference eligible users and active/current league lineage | High |
+| P10-DATA-015 | Existing sabbaticals are valid | Sabbaticals reference eligible leagues and do not exceed limit unless overridden | High |
+| P10-DATA-016 | Existing users have required profile data | Missing critical data is identified before launch | High |
+
+---
+
+## 9. Performance sanity tests
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-PERF-001 | 50 users start registration within a short period | System remains responsive | Medium |
+| P10-PERF-002 | 50 users submit registration within a short period | Submissions complete without data corruption | High |
+| P10-PERF-003 | Staff opens waitlist manager for a large league | Page loads within acceptable time | Medium |
+| P10-PERF-004 | Staff opens registration dashboard with realistic data | Page loads within acceptable time | Medium |
+| P10-PERF-005 | Member views waitlist positions | Page loads within acceptable time | Medium |
+| P10-PERF-006 | Registration submission creates multiple related records | Operation completes atomically or rolls back safely | Blocker |
+
+---
+
+## 10. Launch and pause tests
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-LAUNCH-001 | Registration is closed | Users cannot submit registration | Blocker |
+| P10-LAUNCH-002 | Registration enters priority state | Priority-specific returning-member options appear | Blocker |
+| P10-LAUNCH-003 | Registration enters open state | Guaranteed return options are no longer available to normal users | Blocker |
+| P10-LAUNCH-004 | Staff pauses registration unexpectedly | New submissions are blocked and clear message is shown | Blocker |
+| P10-LAUNCH-005 | Staff reopens registration after pause | Existing draft/submitted registrations remain consistent | High |
+| P10-LAUNCH-006 | Controlled production test registration is submitted | Payment, email, registration status, and staff visibility are correct | Blocker |
+| P10-LAUNCH-007 | Serious issue occurs after launch | Staff can identify how to pause registration and contact support | Blocker |
+
+---
+
+## 11. Regression tests for resolved policy decisions
+
+| ID | Scenario | Expected result | Priority |
+|---|---|---|---|
+| P10-REGRESS-001 | Spare-only registration | Charges regular membership plus spare-only ice privilege fee | Blocker |
+| P10-REGRESS-002 | Sabbatical-only registration | Does not require regular membership | Blocker |
+| P10-REGRESS-003 | Social member upgrades to regular | Pays full regular membership price with no social credit and no discounts | High |
+| P10-REGRESS-004 | Student and reciprocal discounts both selected | Both apply automatically when required self-reported info is provided | High |
+| P10-REGRESS-005 | Dollar and percentage discounts combined | Dollar discounts apply first, then percentage discounts | High |
+| P10-REGRESS-006 | Winter-only discount | Applies only to regular membership when registration starts after first session of season | High |
+| P10-REGRESS-007 | Third-league interest exists | Payment is deferred | Blocker |
+| P10-REGRESS-008 | Third-league interest list submitted | Ordered list is preserved and has no maximum length | Medium |
+| P10-REGRESS-009 | Permanent and temporary sabbatical vacancies exist | Permanent vacancies are offered before temporary vacancies | High |
+| P10-REGRESS-010 | New member requests BYOT league | Allowed if BYOT counts as one of first two leagues and teammate text is provided | High |
+| P10-REGRESS-011 | Returning member requests BYOT league as third league | Rejected | High |
+| P10-REGRESS-012 | Junior Recreational financial assistance requested | Payment is deferred until decision | High |
+| P10-REGRESS-013 | Non-member joins waitlist only | Account is required; no membership payment is required | High |
+| P10-REGRESS-014 | Ineligible non-member tries to join waitlist | Request is rejected | High |
+| P10-REGRESS-015 | Waitlist rolls to successor league | Position is preserved | High |
+
+---
+
+## Phase 10 completion requirement
+
+Phase 10 should not be considered complete until:
+
+- All blocker tests pass.
+- Any failed high-priority tests are fixed or explicitly accepted.
+- Staff has completed a realistic registration rehearsal.
+- Stripe test-mode workflows have been verified.
+- Production configuration has been reviewed.
+- Registration can be paused quickly if needed.
+- Known issues are documented.

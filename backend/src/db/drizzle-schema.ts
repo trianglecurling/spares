@@ -231,6 +231,7 @@ export type WaitlistAuditSourceSqlite =
   | 'registration_submission'
   | 'waitlist_rollover'
   | 'staff_action'
+  | 'member_self'
   | 'offer_response'
   | 'offer_expiration'
   | 'placement_process'
@@ -247,6 +248,7 @@ export type WaitlistAuditActionSqlite =
   | 'offer_sent'
   | 'offer_accepted'
   | 'offer_declined'
+  | 'offer_cancelled'
   | 'offer_expired_accepted'
   | 'decline_count_changed'
   | 'entry_moved_to_bottom'
@@ -284,6 +286,27 @@ export type RegistrationInvoiceLineKindSqlite =
 export type FinancialAssistanceStatusSqlite = 'pending' | 'approved' | 'partially_approved' | 'denied' | 'withdrawn';
 
 export type IcePrivilegeRowStatusSqlite = 'pending' | 'active' | 'inactive' | 'cancelled';
+
+export type RegistrationCommunicationDeliveryStatusSqlite = 'pending' | 'sent' | 'failed' | 'suppressed';
+export type RegistrationCommunicationMessageTypeSqlite =
+  | 'registration_submitted_immediate_payment'
+  | 'registration_submitted_deferred_payment'
+  | 'registration_payment_received'
+  | 'social_membership_confirmation'
+  | 'waitlist_joined'
+  | 'waitlist_removed_by_member'
+  | 'waitlist_changed_by_staff'
+  | 'waitlist_offer_permanent'
+  | 'waitlist_offer_temporary_sabbatical_fill'
+  | 'waitlist_offer_accepted'
+  | 'waitlist_offer_declined'
+  | 'deferred_registration_payment_link'
+  | 'junior_assistance_pending'
+  | 'junior_assistance_decision'
+  | 'sabbatical_confirmation'
+  | 'sabbatical_release'
+  | 'byot_registration_confirmation'
+  | 'registration_manually_updated_by_staff';
 
 export const curlingSeasonsSqlite = sqliteTable('curling_seasons', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -701,11 +724,14 @@ export const waitlistOffersSqlite = sqliteTable('waitlist_offers', {
   expires_at: text('expires_at').notNull(),
   responded_at: text('responded_at'),
   response_source: text('response_source'),
+  response_token: text('response_token'),
   offered_by_member_id: integer('offered_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
     onDelete: 'set null',
   }),
   payment_link_id: text('payment_link_id'),
+  cancellation_reason: text('cancellation_reason'),
+  staff_notes: text('staff_notes'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -714,6 +740,7 @@ export const waitlistOffersSqlite = sqliteTable('waitlist_offers', {
   memberIdx: index('idx_waitlist_offers_member_id').on(table.member_id),
   statusIdx: index('idx_waitlist_offers_status').on(table.status),
   expiresIdx: index('idx_waitlist_offers_expires_at').on(table.expires_at),
+  responseTokenIdx: uniqueIndex('idx_waitlist_offers_response_token').on(table.response_token),
 }));
 
 export const waitlistAuditEventsSqlite = sqliteTable('waitlist_audit_events', {
@@ -738,6 +765,39 @@ export const waitlistAuditEventsSqlite = sqliteTable('waitlist_audit_events', {
   actorIdx: index('idx_waitlist_audit_events_actor_member_id').on(table.actor_member_id),
   createdIdx: index('idx_waitlist_audit_events_created_at').on(table.created_at),
   actionIdx: index('idx_waitlist_audit_events_action').on(table.action),
+}));
+
+export const registrationOutboundMessagesSqlite = sqliteTable('registration_outbound_messages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  message_type: text('message_type').notNull().$type<RegistrationCommunicationMessageTypeSqlite>(),
+  recipient_email: text('recipient_email').notNull(),
+  recipient_member_id: integer('recipient_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  registration_id: integer('registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  waitlist_offer_id: integer('waitlist_offer_id').references(() => waitlistOffersSqlite.id, {
+    onDelete: 'set null',
+  }),
+  waitlist_entry_id: integer('waitlist_entry_id').references(() => waitlistEntriesSqlite.id, {
+    onDelete: 'set null',
+  }),
+  resend_of_message_id: integer('resend_of_message_id'),
+  subject: text('subject').notNull(),
+  html_body: text('html_body').notNull(),
+  text_body: text('text_body').notNull(),
+  payload_json: text('payload_json'),
+  delivery_status: text('delivery_status').notNull().default('pending').$type<RegistrationCommunicationDeliveryStatusSqlite>(),
+  provider_message_id: text('provider_message_id'),
+  error_detail: text('error_detail'),
+  sent_at: text('sent_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  regCreatedIdx: index('idx_registration_outbound_messages_registration_created').on(table.registration_id, table.created_at),
+  offerIdx: index('idx_registration_outbound_messages_waitlist_offer').on(table.waitlist_offer_id),
+  entryIdx: index('idx_registration_outbound_messages_waitlist_entry').on(table.waitlist_entry_id),
+  recipientIdx: index('idx_registration_outbound_messages_recipient_member').on(table.recipient_member_id),
+  statusIdx: index('idx_registration_outbound_messages_delivery_status').on(table.delivery_status),
+  messageTypeIdx: index('idx_registration_outbound_messages_type').on(table.message_type),
 }));
 
 export const leagueDrawTimesSqlite = sqliteTable('league_draw_times', {
@@ -2307,11 +2367,14 @@ export const waitlistOffersPg = pgTable('waitlist_offers', {
   expires_at: timestamp('expires_at', { withTimezone: false }).notNull(),
   responded_at: timestamp('responded_at', { withTimezone: false }),
   response_source: textPg('response_source'),
+  response_token: textPg('response_token'),
   offered_by_member_id: integerPg('offered_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
     onDelete: 'set null',
   }),
   payment_link_id: textPg('payment_link_id'),
+  cancellation_reason: textPg('cancellation_reason'),
+  staff_notes: textPg('staff_notes'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -2320,6 +2383,7 @@ export const waitlistOffersPg = pgTable('waitlist_offers', {
   memberIdx: indexPg('idx_waitlist_offers_member_id').on(table.member_id),
   statusIdx: indexPg('idx_waitlist_offers_status').on(table.status),
   expiresIdx: indexPg('idx_waitlist_offers_expires_at').on(table.expires_at),
+  responseTokenIdx: uniqueIndexPg('idx_waitlist_offers_response_token').on(table.response_token),
 }));
 
 export const waitlistAuditEventsPg = pgTable('waitlist_audit_events', {
@@ -2344,6 +2408,39 @@ export const waitlistAuditEventsPg = pgTable('waitlist_audit_events', {
   actorIdx: indexPg('idx_waitlist_audit_events_actor_member_id').on(table.actor_member_id),
   createdIdx: indexPg('idx_waitlist_audit_events_created_at').on(table.created_at),
   actionIdx: indexPg('idx_waitlist_audit_events_action').on(table.action),
+}));
+
+export const registrationOutboundMessagesPg = pgTable('registration_outbound_messages', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  message_type: textPg('message_type').notNull().$type<RegistrationCommunicationMessageTypeSqlite>(),
+  recipient_email: textPg('recipient_email').notNull(),
+  recipient_member_id: integerPg('recipient_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  registration_id: integerPg('registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  waitlist_offer_id: integerPg('waitlist_offer_id').references(() => waitlistOffersPg.id, {
+    onDelete: 'set null',
+  }),
+  waitlist_entry_id: integerPg('waitlist_entry_id').references(() => waitlistEntriesPg.id, {
+    onDelete: 'set null',
+  }),
+  resend_of_message_id: integerPg('resend_of_message_id'),
+  subject: textPg('subject').notNull(),
+  html_body: textPg('html_body').notNull(),
+  text_body: textPg('text_body').notNull(),
+  payload_json: jsonb('payload_json'),
+  delivery_status: textPg('delivery_status').notNull().default('pending').$type<RegistrationCommunicationDeliveryStatusSqlite>(),
+  provider_message_id: textPg('provider_message_id'),
+  error_detail: textPg('error_detail'),
+  sent_at: timestamp('sent_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  regCreatedIdx: indexPg('idx_registration_outbound_messages_registration_created').on(table.registration_id, table.created_at),
+  offerIdx: indexPg('idx_registration_outbound_messages_waitlist_offer').on(table.waitlist_offer_id),
+  entryIdx: indexPg('idx_registration_outbound_messages_waitlist_entry').on(table.waitlist_entry_id),
+  recipientIdx: indexPg('idx_registration_outbound_messages_recipient_member').on(table.recipient_member_id),
+  statusIdx: indexPg('idx_registration_outbound_messages_delivery_status').on(table.delivery_status),
+  messageTypeIdx: indexPg('idx_registration_outbound_messages_type').on(table.message_type),
 }));
 
 export const leagueDrawTimesPg = pgTable('league_draw_times', {
@@ -3387,6 +3484,7 @@ export const sqliteSchema = {
   waitlistEntries: waitlistEntriesSqlite,
   waitlistOffers: waitlistOffersSqlite,
   waitlistAuditEvents: waitlistAuditEventsSqlite,
+  registrationOutboundMessages: registrationOutboundMessagesSqlite,
   leagueDrawTimes: leagueDrawTimesSqlite,
   leagueExceptions: leagueExceptionsSqlite,
   sheets: sheetsSqlite,
@@ -3480,6 +3578,7 @@ export const pgSchema = {
   waitlistEntries: waitlistEntriesPg,
   waitlistOffers: waitlistOffersPg,
   waitlistAuditEvents: waitlistAuditEventsPg,
+  registrationOutboundMessages: registrationOutboundMessagesPg,
   leagueDrawTimes: leagueDrawTimesPg,
   leagueExceptions: leagueExceptionsPg,
   sheets: sheetsPg,

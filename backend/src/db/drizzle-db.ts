@@ -33,6 +33,7 @@ type PgSchema = {
   waitlistEntries: typeof pgSchema.waitlistEntriesPg;
   waitlistOffers: typeof pgSchema.waitlistOffersPg;
   waitlistAuditEvents: typeof pgSchema.waitlistAuditEventsPg;
+  registrationOutboundMessages: typeof pgSchema.registrationOutboundMessagesPg;
   leagueDrawTimes: typeof pgSchema.leagueDrawTimesPg;
   leagueExceptions: typeof pgSchema.leagueExceptionsPg;
   sheets: typeof pgSchema.sheetsPg;
@@ -149,6 +150,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       waitlistEntries: sqliteSchema.waitlistEntriesSqlite,
       waitlistOffers: sqliteSchema.waitlistOffersSqlite,
       waitlistAuditEvents: sqliteSchema.waitlistAuditEventsSqlite,
+      registrationOutboundMessages: sqliteSchema.registrationOutboundMessagesSqlite,
       leagueDrawTimes: sqliteSchema.leagueDrawTimesSqlite,
       leagueExceptions: sqliteSchema.leagueExceptionsSqlite,
       sheets: sqliteSchema.sheetsSqlite,
@@ -256,6 +258,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       waitlistEntries: pgSchema.waitlistEntriesPg,
       waitlistOffers: pgSchema.waitlistOffersPg,
       waitlistAuditEvents: pgSchema.waitlistAuditEventsPg,
+      registrationOutboundMessages: pgSchema.registrationOutboundMessagesPg,
       leagueDrawTimes: pgSchema.leagueDrawTimesPg,
       leagueExceptions: pgSchema.leagueExceptionsPg,
       sheets: pgSchema.sheetsPg,

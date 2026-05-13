@@ -11,10 +11,11 @@ import { createPaymentService, PaymentServiceError } from '../services/paymentSe
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import { calculateClubExperienceYears } from './registrationAgeExperience.js';
 import { effectiveLeagueRegistrationFeeMinor } from './registrationConfigValidation.js';
-import type { RegistrationFeeLineItem, RegistrationFeePreview } from './registrationFeeCalculator.js';
+import { calculateRegistrationFees, type RegistrationFeeLineItem, type RegistrationFeePreview } from './registrationFeeCalculator.js';
 import { evaluateWaitlistCleanup } from './registrationLeagueSelections.js';
-import type { RegistrationPaymentDecision } from './registrationPaymentDecision.js';
+import { decideRegistrationPayment, type RegistrationPaymentDecision } from './registrationPaymentDecision.js';
 import type { LeagueConfig, RegistrationContext, RegistrationSelectionInput } from './registrationContext.js';
+import { sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType } from './registrationEmailService.js';
 import { canViewOrEditRegistration, getEffectiveRegistrationWindow, getRegistrationById, getRegistrationShellPayload } from './registrationShellService.js';
 import type { Member } from '../types.js';
 
@@ -124,6 +125,14 @@ export function resolveRegistrationPaymentStatus(input: {
   return 'confirming';
 }
 
+export function shouldMarkCheckoutCancelled(input: {
+  invoiceStatus: string | null;
+  registrationStatus: string | null;
+}): boolean {
+  if (input.invoiceStatus !== 'checkout_started' && input.invoiceStatus !== 'awaiting_payment') return false;
+  return input.registrationStatus !== 'paid' && input.registrationStatus !== 'confirmed' && input.registrationStatus !== 'cancelled';
+}
+
 function normalizeDate(value: unknown): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (value === null || value === undefined) return '';
@@ -201,6 +210,80 @@ function textJsonValue(value: unknown): string {
 
 function frontendBaseUrl(): string {
   return config.frontendUrl.replace(/\/+$/, '');
+}
+
+function memberDisplayName(row: { name?: string | null; first_name?: string | null; last_name?: string | null; email?: string | null } | null | undefined): string {
+  if (!row) return 'there';
+  const parts = [row.first_name, row.last_name].map((part) => part?.trim()).filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : row.name?.trim() || row.email?.trim() || 'there';
+}
+
+function registrationSummaryLines(context: RegistrationContext): string[] {
+  const lines: string[] = [];
+  if (context.membershipOption && context.membershipOption !== 'none') {
+    lines.push(`${context.membershipOption.replace(/_/g, ' ')} membership`);
+  }
+  for (const selection of context.selections) {
+    const leagueName = selection.leagueId ? context.leagues[selection.leagueId]?.name : null;
+    const label = selection.selectionType.replace(/_/g, ' ');
+    lines.push(leagueName ? `${label}: ${leagueName}` : label);
+  }
+  return lines;
+}
+
+async function loadRegistrationEmailBase(registrationId: number) {
+  const { db, schema } = getDrizzleDb();
+  const [registration] = await db.select().from(schema.curlingRegistrations).where(eq(schema.curlingRegistrations.id, registrationId)).limit(1);
+  if (!registration) return null;
+  const [curler] = registration.curler_member_id
+    ? await db.select().from(schema.members).where(eq(schema.members.id, registration.curler_member_id)).limit(1)
+    : [];
+  const [season] = await db.select().from(schema.curlingSeasons).where(eq(schema.curlingSeasons.id, registration.season_id)).limit(1);
+  const [session] = await db.select().from(schema.curlingSessions).where(eq(schema.curlingSessions.id, registration.session_id)).limit(1);
+  return { registration, curler, season, session };
+}
+
+async function hasSentRegistrationMessage(registrationId: number, messageType: RegistrationMessageType): Promise<boolean> {
+  const { db, schema } = getDrizzleDb();
+  const [existing] = await db
+    .select({ id: schema.registrationOutboundMessages.id })
+    .from(schema.registrationOutboundMessages)
+    .where(and(
+      eq(schema.registrationOutboundMessages.registration_id, registrationId),
+      eq(schema.registrationOutboundMessages.message_type, messageType)
+    ))
+    .limit(1);
+  return Boolean(existing);
+}
+
+async function safeSendRegistrationEmail(input: {
+  registrationId: number;
+  messageType: RegistrationMessageType;
+  payload: RegistrationEmailPayload;
+  recipientMemberId?: number | null;
+  recipientEmail?: string | null;
+  recipientName?: string | null;
+}): Promise<void> {
+  try {
+    const base = await loadRegistrationEmailBase(input.registrationId);
+    const recipientEmail = input.recipientEmail ?? base?.curler?.email;
+    if (!recipientEmail) return;
+    await sendRegistrationEmailForDashboard({
+      messageType: input.messageType,
+      recipientEmail,
+      recipientName: input.recipientName ?? memberDisplayName(base?.curler),
+      recipientMemberId: input.recipientMemberId ?? base?.curler?.id ?? null,
+      registrationId: input.registrationId,
+      payload: {
+        curlerName: memberDisplayName(base?.curler),
+        seasonName: base?.season?.name,
+        sessionName: base?.session?.name,
+        ...input.payload,
+      },
+    });
+  } catch (error) {
+    console.error('[Registration Email] Failed to send registration email:', error);
+  }
 }
 
 function membershipPaymentFieldsFromRegistrationRow(row: RegistrationMembershipPaymentRowFields): RegistrationMembershipPaymentSelection {
@@ -918,6 +1001,12 @@ async function persistRegistrationWaitlists(input: {
   actorMemberId: number;
   curlerMemberId: number;
   selections: RegistrationSelectionInput[];
+  notifications?: Array<{
+    entryId: number;
+    leagueId: number;
+    entryType: 'add' | 'replace';
+    replacesLeagueId: number | null;
+  }>;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
   const waitlistSelections = input.selections.filter(
@@ -981,6 +1070,12 @@ async function persistRegistrationWaitlists(input: {
         .returning({ id: schema.waitlistEntries.id });
       entryId = inserted.id;
       after = { ...nextEntry, id: entryId };
+      input.notifications?.push({
+        entryId,
+        leagueId: selection.leagueId,
+        entryType: nextEntry.entry_type as 'add' | 'replace',
+        replacesLeagueId: nextEntry.replaces_league_id,
+      });
     }
 
     await input.tx.insert(schema.waitlistAuditEvents).values({
@@ -1009,6 +1104,11 @@ async function persistRegistrationSabbaticals(input: {
   curlerMemberId: number;
   context: RegistrationContext;
   feePreview: RegistrationFeePreview;
+  notifications?: Array<{
+    leagueId: number;
+    leagueName: string;
+    feeAmountMinor: number;
+  }>;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
   const sabbaticalSelections = input.context.selections.filter(
@@ -1076,6 +1176,11 @@ async function persistRegistrationSabbaticals(input: {
         .where(eq(schema.curlingSabbaticalSessions.id, existingSession.id));
     } else {
       await input.tx.insert(schema.curlingSabbaticalSessions).values(sessionValues);
+      input.notifications?.push({
+        leagueId,
+        leagueName: league.name,
+        feeAmountMinor: sessionValues.fee_amount_minor,
+      });
     }
 
     await input.tx
@@ -1173,6 +1278,8 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
 
   const reusableInvoiceId =
     existingInvoice && !['failed', 'cancelled', 'refunded'].includes(existingInvoice.status) ? existingInvoice.id : null;
+  const waitlistNotifications: Array<{ entryId: number; leagueId: number; entryType: 'add' | 'replace'; replacesLeagueId: number | null }> = [];
+  const sabbaticalNotifications: Array<{ leagueId: number; leagueName: string; feeAmountMinor: number }> = [];
   const invoiceId = await db.transaction(async (tx) => {
     if (!registration.curler_member_id) {
       throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
@@ -1183,6 +1290,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       actorMemberId: input.actor.id,
       curlerMemberId: registration.curler_member_id,
       selections: context.selections,
+      notifications: waitlistNotifications,
     });
     await persistRegistrationSabbaticals({
       tx,
@@ -1190,6 +1298,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       curlerMemberId: registration.curler_member_id,
       context,
       feePreview: evaluation.feePreview,
+      notifications: sabbaticalNotifications,
     });
     await setSubmittedSelectionStatuses(tx, input.registrationId);
     const snapshotId = await createInvoiceSnapshot({
@@ -1220,6 +1329,35 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       .where(eq(schema.curlingRegistrations.id, input.registrationId));
     return snapshotId;
   });
+
+  for (const notification of waitlistNotifications) {
+    const league = context.leagues[notification.leagueId];
+    const replacementLeague = notification.replacesLeagueId ? context.leagues[notification.replacesLeagueId] : null;
+    await safeSendRegistrationEmail({
+      registrationId: input.registrationId,
+      messageType: 'waitlist_joined',
+      payload: {
+        leagueName: league?.name,
+        waitlistType: notification.entryType === 'replace' ? 'REPLACE' : 'ADD',
+        replacementLeagueName: replacementLeague?.name,
+        summaryLines: registrationSummaryLines(context),
+      },
+    });
+  }
+
+  for (const notification of sabbaticalNotifications) {
+    if (!(await hasSentRegistrationMessage(input.registrationId, 'sabbatical_confirmation'))) {
+      await safeSendRegistrationEmail({
+        registrationId: input.registrationId,
+        messageType: 'sabbatical_confirmation',
+        payload: {
+          leagueName: notification.leagueName,
+          sabbaticalFeeStatus: notification.feeAmountMinor > 0 ? 'unpaid' : 'no payment required',
+          summaryLines: registrationSummaryLines(context),
+        },
+      });
+    }
+  }
 
   if (evaluation.paymentDecision.outcome === 'immediate_payment') {
     try {
@@ -1264,6 +1402,28 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         })
         .where(eq(schema.curlingRegistrations.id, input.registrationId));
 
+      await safeSendRegistrationEmail({
+        registrationId: input.registrationId,
+        messageType: 'registration_submitted_immediate_payment',
+        payload: {
+          amountDueMinor: evaluation.feePreview.totalDueMinor,
+          paymentUrl: checkout.checkoutUrl,
+          summaryLines: registrationSummaryLines(context),
+        },
+      });
+
+      for (const selection of context.selections.filter((selection) => selection.selectionType === 'byot_request')) {
+        if (!selection.leagueId || await hasSentRegistrationMessage(input.registrationId, 'byot_registration_confirmation')) continue;
+        await safeSendRegistrationEmail({
+          registrationId: input.registrationId,
+          messageType: 'byot_registration_confirmation',
+          payload: {
+            leagueName: context.leagues[selection.leagueId]?.name,
+            teammateText: selection.byotTeammateText,
+          },
+        });
+      }
+
       return {
         outcome: 'immediate_payment',
         registrationId: input.registrationId,
@@ -1280,6 +1440,38 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     }
   }
 
+  await safeSendRegistrationEmail({
+    registrationId: input.registrationId,
+    messageType: 'registration_submitted_deferred_payment',
+    payload: {
+      amountDueMinor: evaluation.feePreview.totalDueMinor,
+      deferralReasons: evaluation.paymentDecision.deferralReasons,
+      summaryLines: registrationSummaryLines(context),
+    },
+  });
+
+  if (context.juniorAssistance?.requestedPercent && context.juniorAssistance.status === 'pending') {
+    await safeSendRegistrationEmail({
+      registrationId: input.registrationId,
+      messageType: 'junior_assistance_pending',
+      payload: {
+        requestedAssistancePercent: context.juniorAssistance.requestedPercent,
+      },
+    });
+  }
+
+  for (const selection of context.selections.filter((selection) => selection.selectionType === 'byot_request')) {
+    if (!selection.leagueId || await hasSentRegistrationMessage(input.registrationId, 'byot_registration_confirmation')) continue;
+    await safeSendRegistrationEmail({
+      registrationId: input.registrationId,
+      messageType: 'byot_registration_confirmation',
+      payload: {
+        leagueName: context.leagues[selection.leagueId]?.name,
+        teammateText: selection.byotTeammateText,
+      },
+    });
+  }
+
   return {
     outcome: evaluation.paymentDecision.outcome,
     registrationId: input.registrationId,
@@ -1287,6 +1479,146 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     totalDueMinor: evaluation.feePreview.totalDueMinor,
     deferralReasons: evaluation.paymentDecision.deferralReasons,
   };
+}
+
+export async function triggerDeferredRegistrationPayment(input: {
+  registrationId: number;
+  actorMemberId: number;
+}): Promise<SubmitRegistrationResult> {
+  const registration = await loadFullRegistration(input.registrationId);
+  if (!registration.curler_member_id) {
+    throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
+  }
+  const context = await buildRegistrationContextForDraft(input.registrationId);
+  const { db, schema } = getDrizzleDb();
+  const selectionRows = await db
+    .select({
+      selectionType: schema.registrationSelections.selection_type,
+      leagueId: schema.registrationSelections.league_id,
+      status: schema.registrationSelections.status,
+    })
+    .from(schema.registrationSelections)
+    .where(eq(schema.registrationSelections.registration_id, input.registrationId));
+  const placedWaitlistLeagues = new Set(
+    selectionRows
+      .filter(
+        (selection) =>
+          (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') &&
+          (selection.status === 'placed' || selection.status === 'accepted')
+      )
+      .map((selection) => selection.leagueId)
+      .filter((leagueId): leagueId is number => leagueId !== null && leagueId !== undefined)
+  );
+  const paymentContext: RegistrationContext = {
+    ...context,
+    selections: context.selections
+      .filter((selection) => {
+        if (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') {
+          return selection.leagueId != null && placedWaitlistLeagues.has(selection.leagueId);
+        }
+        return true;
+      })
+      .map((selection) =>
+        selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace'
+          ? { ...selection, selectionType: 'guaranteed_return' as const }
+          : selection
+      ),
+  };
+  const feePreview = calculateRegistrationFees(paymentContext);
+  const paymentDecision = decideRegistrationPayment({ context: paymentContext, feePreview });
+  if (paymentDecision.outcome !== 'immediate_payment') {
+    const existingInvoice = await loadLatestRegistrationInvoice(input.registrationId);
+    const invoiceId = await createInvoiceSnapshot({
+      registrationId: input.registrationId,
+      payerMemberId: registration.submitted_by_member_id ?? input.actorMemberId,
+      feePreview,
+      paymentDecision,
+      existingInvoiceId: existingInvoice?.id ?? null,
+    });
+    return {
+      outcome: paymentDecision.outcome,
+      registrationId: input.registrationId,
+      invoiceId,
+      totalDueMinor: feePreview.totalDueMinor,
+      deferralReasons: paymentDecision.deferralReasons,
+    };
+  }
+
+  const reusableInvoice = await loadLatestRegistrationInvoice(input.registrationId);
+  const invoiceId = await createInvoiceSnapshot({
+    registrationId: input.registrationId,
+    payerMemberId: registration.submitted_by_member_id ?? input.actorMemberId,
+    feePreview,
+    paymentDecision,
+    existingInvoiceId: reusableInvoice && !['failed', 'cancelled', 'refunded'].includes(reusableInvoice.status) ? reusableInvoice.id : null,
+  });
+  try {
+    const paymentService = createPaymentService();
+    const order = await paymentService.createPaymentOrder({
+      provider: 'stripe',
+      subjectType: 'curling_registration',
+      subjectId: input.registrationId,
+      amountMinor: feePreview.totalDueMinor,
+      currency: 'usd',
+      createdByMemberId: registration.submitted_by_member_id ?? input.actorMemberId,
+      metadata: {
+        registrationId: input.registrationId,
+        invoiceId,
+        seasonId: registration.season_id,
+        sessionId: registration.session_id,
+        curlerUserId: registration.curler_member_id,
+        curlerMemberId: registration.curler_member_id,
+        submittedByUserId: registration.submitted_by_member_id,
+        submittedByMemberId: registration.submitted_by_member_id,
+        triggeredByStaffMemberId: input.actorMemberId,
+      },
+    });
+    const checkout = await paymentService.createHostedCheckoutForOrder({
+      orderId: order.id,
+      successUrl: `${frontendBaseUrl()}/registration/success?registration_id=${input.registrationId}&order_token=${order.orderToken}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
+    });
+    await db
+      .update(schema.registrationInvoices)
+      .set({
+        status: 'checkout_started',
+        payment_order_id: order.id,
+        stripe_checkout_session_id: checkout.providerOrderId,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.registrationInvoices.id, invoiceId));
+    await db
+      .update(schema.curlingRegistrations)
+      .set({
+        status: 'payment_started',
+        last_fee_preview_json: dbValue(jsonStorageValue(feePreview)),
+        payment_decision_json: dbValue(jsonStorageValue(paymentDecision)),
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.curlingRegistrations.id, input.registrationId));
+    await safeSendRegistrationEmail({
+      registrationId: input.registrationId,
+      messageType: 'deferred_registration_payment_link',
+      payload: {
+        amountDueMinor: feePreview.totalDueMinor,
+        paymentUrl: checkout.checkoutUrl,
+        summaryLines: registrationSummaryLines(paymentContext),
+      },
+    });
+    return {
+      outcome: 'immediate_payment',
+      registrationId: input.registrationId,
+      invoiceId,
+      checkoutUrl: checkout.checkoutUrl,
+      orderToken: order.orderToken,
+      totalDueMinor: feePreview.totalDueMinor,
+    };
+  } catch (error) {
+    if (error instanceof PaymentServiceError) {
+      throw new RegistrationMembershipPaymentValidationError({ payment: error.message });
+    }
+    throw error;
+  }
 }
 
 export async function confirmCurlingRegistrationForPaymentOrder(orderId: number): Promise<void> {
@@ -1404,6 +1736,27 @@ export async function confirmCurlingRegistrationForPaymentOrder(orderId: number)
       }
     }
   });
+  const lineItems = await db
+    .select({ description: schema.registrationInvoiceLineItems.description })
+    .from(schema.registrationInvoiceLineItems)
+    .where(eq(schema.registrationInvoiceLineItems.invoice_id, invoice.id))
+    .orderBy(asc(schema.registrationInvoiceLineItems.sort_order), asc(schema.registrationInvoiceLineItems.id));
+  await safeSendRegistrationEmail({
+    registrationId,
+    messageType: 'registration_payment_received',
+    payload: {
+      amountPaidMinor: order.amount_minor,
+      paidItems: lineItems.map((item) => item.description),
+      paymentReference: `Payment order ${order.id}`,
+    },
+  });
+  if (registration.membership_option === 'social') {
+    await safeSendRegistrationEmail({
+      registrationId,
+      messageType: 'social_membership_confirmation',
+      payload: {},
+    });
+  }
 }
 
 export async function markCurlingRegistrationPaymentFailedForOrder(orderId: number): Promise<void> {
@@ -1467,10 +1820,15 @@ export async function getRegistrationPaymentStatusByOrderToken(orderToken: strin
 export async function markCurlingRegistrationPaymentCancelled(registrationId: number, actor: Member): Promise<void> {
   await requireRegistrationAccess(registrationId, actor);
   const { db, schema } = getDrizzleDb();
+  const registration = await loadFullRegistration(registrationId);
+  const invoice = await loadLatestRegistrationInvoice(registrationId);
+  if (!invoice || !shouldMarkCheckoutCancelled({ invoiceStatus: invoice.status, registrationStatus: registration.status })) {
+    return;
+  }
   await db
     .update(schema.registrationInvoices)
     .set({ status: 'failed', updated_at: sql`CURRENT_TIMESTAMP` })
-    .where(eq(schema.registrationInvoices.registration_id, registrationId));
+    .where(eq(schema.registrationInvoices.id, invoice.id));
   await db
     .update(schema.curlingRegistrations)
     .set({ status: 'awaiting_payment', updated_at: sql`CURRENT_TIMESTAMP` })

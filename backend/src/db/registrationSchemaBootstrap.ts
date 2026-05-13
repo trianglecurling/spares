@@ -305,9 +305,12 @@ export const curlingRegistrationExtendedDDL = `
     expires_at DATETIME NOT NULL,
     responded_at DATETIME,
     response_source TEXT,
+    response_token TEXT,
     offered_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
     source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
     payment_link_id TEXT,
+    cancellation_reason TEXT,
+    staff_notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -316,6 +319,7 @@ export const curlingRegistrationExtendedDDL = `
   CREATE INDEX IF NOT EXISTS idx_waitlist_offers_member_id ON waitlist_offers(member_id);
   CREATE INDEX IF NOT EXISTS idx_waitlist_offers_status ON waitlist_offers(status);
   CREATE INDEX IF NOT EXISTS idx_waitlist_offers_expires_at ON waitlist_offers(expires_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token);
 
   CREATE TABLE IF NOT EXISTS waitlist_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -337,9 +341,36 @@ export const curlingRegistrationExtendedDDL = `
   CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_actor_member_id ON waitlist_audit_events(actor_member_id);
   CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_created_at ON waitlist_audit_events(created_at);
   CREATE INDEX IF NOT EXISTS idx_waitlist_audit_events_action ON waitlist_audit_events(action);
+
+  CREATE TABLE IF NOT EXISTS registration_outbound_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_type TEXT NOT NULL,
+    recipient_email TEXT NOT NULL,
+    recipient_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    waitlist_offer_id INTEGER REFERENCES waitlist_offers(id) ON DELETE SET NULL,
+    waitlist_entry_id INTEGER REFERENCES waitlist_entries(id) ON DELETE SET NULL,
+    resend_of_message_id INTEGER,
+    subject TEXT NOT NULL,
+    html_body TEXT NOT NULL,
+    text_body TEXT NOT NULL,
+    payload_json TEXT,
+    delivery_status TEXT NOT NULL DEFAULT 'pending',
+    provider_message_id TEXT,
+    error_detail TEXT,
+    sent_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_registration_outbound_messages_registration_created ON registration_outbound_messages(registration_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_registration_outbound_messages_waitlist_offer ON registration_outbound_messages(waitlist_offer_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_outbound_messages_waitlist_entry ON registration_outbound_messages(waitlist_entry_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_outbound_messages_recipient_member ON registration_outbound_messages(recipient_member_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_outbound_messages_delivery_status ON registration_outbound_messages(delivery_status);
+  CREATE INDEX IF NOT EXISTS idx_registration_outbound_messages_type ON registration_outbound_messages(message_type);
 `;
 
 const legacyRegistrationTables = [
+  'registration_outbound_messages',
   'waitlist_audit_events',
   'waitlist_offers',
   'waitlist_entries',
@@ -560,6 +591,12 @@ const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[
   { name: 'submitted_at', ddl: 'submitted_at DATETIME' },
 ];
 
+const waitlistOfferColumnsSQLite: { name: string; ddl: string }[] = [
+  { name: 'response_token', ddl: 'response_token TEXT' },
+  { name: 'cancellation_reason', ddl: 'cancellation_reason TEXT' },
+  { name: 'staff_notes', ddl: 'staff_notes TEXT' },
+];
+
 async function ensureSQLiteColumn(
   db: DatabaseAdapter,
   table: string,
@@ -620,6 +657,16 @@ async function sqliteEnsureRegistrationMembershipPaymentColumns(
   }
 }
 
+async function sqliteEnsureWaitlistOfferColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  for (const col of waitlistOfferColumnsSQLite) {
+    await ensureSQLiteColumn(db, 'waitlist_offers', col.name, col.ddl, execSQL);
+  }
+  await execSQL(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)`);
+}
+
 const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS session_id INTEGER REFERENCES curling_sessions(id) ON DELETE SET NULL',
   "ALTER TABLE leagues ADD COLUMN IF NOT EXISTS league_type TEXT NOT NULL DEFAULT 'standard'",
@@ -652,6 +699,13 @@ const registrationMembershipPaymentColumnsPg: string[] = [
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP',
 ];
 
+const waitlistOfferColumnsPg: string[] = [
+  'ALTER TABLE waitlist_offers ADD COLUMN IF NOT EXISTS response_token TEXT',
+  'ALTER TABLE waitlist_offers ADD COLUMN IF NOT EXISTS cancellation_reason TEXT',
+  'ALTER TABLE waitlist_offers ADD COLUMN IF NOT EXISTS staff_notes TEXT',
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)',
+];
+
 async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
   for (const ddl of leagueBootstrapColumnsPg) {
     await execSQL(db, ddl);
@@ -674,6 +728,12 @@ async function ensureRegistrationMembershipPaymentPostgres(db: DatabaseAdapter, 
   }
 }
 
+async function ensureWaitlistOfferPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
+  for (const ddl of waitlistOfferColumnsPg) {
+    await execSQL(db, ddl);
+  }
+}
+
 /**
  * Applies clean registration-shell DDL and intentionally migrates away from
  * previous prototype registration tables.
@@ -687,9 +747,11 @@ export async function ensureCurlingRegistrationBootstrap(
   await execSQL(db, curlingRegistrationDDLForDialect(Boolean(db.isAsync?.())));
   if (db.isAsync()) {
     await ensureRegistrationMembershipPaymentPostgres(db, execSQL);
+    await ensureWaitlistOfferPostgres(db, execSQL);
     await ensureLeagueBootstrapPostgres(db, execSQL);
   } else {
     await sqliteEnsureRegistrationMembershipPaymentColumns(db, execSQL);
+    await sqliteEnsureWaitlistOfferColumns(db, execSQL);
     await sqliteEnsureLeaguesRegistrationColumns(db, execSQL);
   }
 }
@@ -710,6 +772,16 @@ export function ensureCurlingRegistrationBootstrapSync(
       execSQLSync(db, `ALTER TABLE curling_registrations ADD COLUMN ${col.ddl}`);
     }
   }
+
+  const waitlistOfferStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(waitlist_offers)`);
+  const waitlistOfferCols = waitlistOfferStmt.all() as { name?: string | null }[];
+  const waitlistOfferNames = new Set(waitlistOfferCols.map((c) => String(c.name)));
+  for (const col of waitlistOfferColumnsSQLite) {
+    if (!waitlistOfferNames.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE waitlist_offers ADD COLUMN ${col.ddl}`);
+    }
+  }
+  execSQLSync(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)`);
 
   const leagueStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(leagues)`);
   const leagueCols = leagueStmt.all() as { name?: string | null }[];

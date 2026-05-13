@@ -143,6 +143,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canManageEvents ? [{ to: '/admin/events', label: 'Manage events' }] : []),
+    ...(canManageRegistration ? [{ to: '/admin/registration/waitlists', label: 'Registration waitlists' }] : []),
     ...(canManageRegistration ? [{ to: '/admin/registration/seasons', label: 'Registration configuration' }] : []),
     ...(canManageSponsorship ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
     ...(canReadPayments ? [{ to: '/admin/payments', label: 'Payment activity' }] : []),
@@ -328,6 +329,12 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                 {/* Dashboard */}
                 <Link to="/dashboard" className={navLinkClass(location.pathname === '/dashboard')}>
                   Dashboard
+                </Link>
+                <Link
+                  to="/registration/status"
+                  className={navLinkClass(location.pathname.startsWith('/registration/status'))}
+                >
+                  Registration
                 </Link>
 
                 {/* Leagues: dropdown only when I have roster leagues in the current session */}
@@ -648,6 +655,13 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                   className={navLinkClassMobile(location.pathname === '/dashboard')}
                 >
                   Dashboard
+                </Link>
+                <Link
+                  to="/registration/status"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={navLinkClassMobile(location.pathname.startsWith('/registration/status'))}
+                >
+                  Registration
                 </Link>
 
                 {showLeaguesNavDropdown ? (

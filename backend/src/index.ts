@@ -14,6 +14,7 @@ import { optionalAuthMiddleware } from './middleware/auth.js';
 import { goRedirectRoutes } from './routes/goRedirect.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
+import { startWaitlistOfferProcessor } from './services/waitlistOfferProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 
 const fastify = Fastify({
@@ -66,6 +67,7 @@ function startBackgroundProcessorsIfReady(): void {
 
   startNotificationProcessor();
   startPaymentReconciliationProcessor();
+  startWaitlistOfferProcessor();
   backgroundProcessorsStarted = true;
 }
 
