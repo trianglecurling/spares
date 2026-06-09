@@ -6,6 +6,11 @@ import type {
   WaitlistAuditSourceSqlite,
 } from '../db/drizzle-schema.js';
 
+type WaitlistAuditDb = ReturnType<typeof getDrizzleDb>['db'];
+type WaitlistAuditSelectExecutor = Pick<WaitlistAuditDb, 'select'>;
+type WaitlistAuditInsertExecutor = Pick<WaitlistAuditDb, 'insert' | 'select'>;
+type WaitlistAuditMutateExecutor = Pick<WaitlistAuditDb, 'insert' | 'delete' | 'select'>;
+
 type MemberNameRow = {
   name?: string | null;
   first_name?: string | null;
@@ -165,7 +170,7 @@ export function formatWaitlistAuditSummary(input: {
   }
 }
 
-async function loadMemberName(tx: { select: Function }, memberId: number | null | undefined): Promise<string | null> {
+async function loadMemberName(tx: WaitlistAuditSelectExecutor, memberId: number | null | undefined): Promise<string | null> {
   if (memberId == null) return null;
   const { schema } = getDrizzleDb();
   const [member] = await tx
@@ -182,7 +187,7 @@ async function loadMemberName(tx: { select: Function }, memberId: number | null 
 }
 
 export async function getWaitlistQueuePosition(
-  tx: { select: Function },
+  tx: WaitlistAuditSelectExecutor,
   waitlistId: number,
   entryId: number
 ): Promise<{ position: number; total: number } | null> {
@@ -204,18 +209,18 @@ export async function getWaitlistQueuePosition(
 }
 
 export async function insertWaitlistAuditEvent(
-  tx: { insert: Function; select?: Function },
+  tx: WaitlistAuditInsertExecutor,
   input: WaitlistAuditInput
 ): Promise<void> {
   const { schema } = getDrizzleDb();
   const canResolveNames = typeof tx.select === 'function';
   const memberName =
     input.memberName?.trim() ||
-    (canResolveNames && input.memberId != null ? await loadMemberName(tx as { select: Function }, input.memberId) : null);
+    (canResolveNames && input.memberId != null ? await loadMemberName(tx, input.memberId) : null);
   const actorMemberName =
     input.actorMemberName?.trim() ||
     (canResolveNames && input.actorMemberId != null
-      ? await loadMemberName(tx as { select: Function }, input.actorMemberId)
+      ? await loadMemberName(tx, input.actorMemberId)
       : null);
 
   const teamRosterText = teamRosterTextFromAuditState(input.before, input.after);
@@ -262,7 +267,7 @@ export async function insertWaitlistAuditEvent(
 }
 
 export async function recordAndDeleteWaitlistEntry(
-  tx: { insert: Function; delete: Function; select: Function },
+  tx: WaitlistAuditMutateExecutor,
   input: {
     entry: WaitlistEntryRow;
     leagueId?: number | null;

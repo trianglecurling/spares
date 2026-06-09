@@ -161,8 +161,7 @@ export function useBracketCanvasView({
       setZoom(z);
     };
 
-    const opts: AddEventListenerOptions = { passive: false, capture: true };
-    el.addEventListener('wheel', onWheel, opts);
+    el.addEventListener('wheel', onWheel, { passive: false, capture: true });
     return () => el.removeEventListener('wheel', onWheel, { capture: true });
   }, [enabled, attachToken]);
 

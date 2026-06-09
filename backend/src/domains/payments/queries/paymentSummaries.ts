@@ -14,6 +14,12 @@ export type RegistrationPaymentActivityItem = {
   label: string;
 };
 
+function normalizeOccurredAt(value: string | Date | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
 function parsePaymentMetadata(metadata: unknown): Record<string, unknown> {
   if (typeof metadata === 'string') {
     try {
@@ -98,7 +104,7 @@ export async function listCurlingRegistrationPaymentActivity(
       amountMinor: order.amount_minor,
       currency: order.currency,
       status: order.status,
-      occurredAt: order.completed_at ?? order.created_at,
+      occurredAt: normalizeOccurredAt(order.completed_at ?? order.created_at),
       provider: order.provider,
       providerReference: order.provider_order_id,
       label: isBalance ? 'Additional payment' : 'Payment',
@@ -113,7 +119,7 @@ export async function listCurlingRegistrationPaymentActivity(
       amountMinor: refund.amount_minor,
       currency: refund.currency,
       status: refund.status,
-      occurredAt: refund.processed_at ?? refund.created_at,
+      occurredAt: normalizeOccurredAt(refund.processed_at ?? refund.created_at),
       provider: refund.provider,
       providerReference: refund.provider_refund_id,
       label: refund.reason?.trim() || 'Refund',

@@ -1123,6 +1123,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       first_day_of_play: string | null;
       last_day_of_play: string | null;
       allows_waitlist: number;
+      waitlist_id: number | null;
       is_play_in_based: number;
       allows_sabbatical: number;
       predecessor_league_id: number | null;

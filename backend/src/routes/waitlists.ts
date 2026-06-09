@@ -27,10 +27,6 @@ import {
 import { RegistrationMemberValidationError } from '../registration/registrationMemberService.js';
 import { memberCanManageWaitlists, memberCanViewWaitlists } from '../utils/waitlistAccess.js';
 
-interface AuthenticatedRequest extends FastifyRequest {
-  member: Member;
-}
-
 function requireWaitlistView(request: FastifyRequest, reply: FastifyReply): Member | null {
   const member = request.member;
   if (!member) {
@@ -305,7 +301,7 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
     const member = requireWaitlistManage(request, reply);
     if (!member) return;
     try {
-      const params = waitlistIdParamsSchema.parse(request.params);
+      waitlistIdParamsSchema.parse(request.params);
       const body = createOfferSchema.parse(request.body);
       return await sendWaitlistOffers({
         leagueId: body.placementLeagueId,

@@ -297,10 +297,6 @@ function dateColumnValue(value: unknown): never {
   return dbValue(normalized);
 }
 
-function textJsonValue(value: unknown): string {
-  return JSON.stringify(value);
-}
-
 function frontendBaseUrl(): string {
   return config.frontendUrl.replace(/\/+$/, '');
 }

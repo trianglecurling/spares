@@ -1,6 +1,11 @@
 import { and, desc, eq, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { CurlingIcePrivilegesChoiceSqlite, CurlingRegistrationStatusSqlite, PolicyAcceptanceKindSqlite } from '../db/drizzle-schema.js';
+import type {
+  CurlingIcePrivilegesChoiceSqlite,
+  CurlingMembershipOptionSqlite,
+  CurlingRegistrationStatusSqlite,
+  PolicyAcceptanceKindSqlite,
+} from '../db/drizzle-schema.js';
 import {
   canActorImpersonateTarget,
   listAccountSwitchOptions,
@@ -35,6 +40,8 @@ export type RegistrationShellRow = {
   guardian_email: string | null;
   guardian_phone: string | null;
   ice_privileges_choice: CurlingIcePrivilegesChoiceSqlite;
+  membership_option: CurlingMembershipOptionSqlite;
+  basic_ice_fallback_interest: number | null;
   status: RegistrationShellStatus;
   shell_completed_at: string | Date | null;
   cancelled_at: string | Date | null;
@@ -197,6 +204,8 @@ export function mapRegistration(row: any): RegistrationShellRow {
     guardian_email: row.guardian_email ?? null,
     guardian_phone: row.guardian_phone ?? null,
     ice_privileges_choice: (row.ice_privileges_choice ?? 'none') as CurlingIcePrivilegesChoiceSqlite,
+    membership_option: (row.membership_option ?? 'none') as CurlingMembershipOptionSqlite,
+    basic_ice_fallback_interest: row.basic_ice_fallback_interest ?? null,
     status: row.status,
     shell_completed_at: normalizeDateTime(row.shell_completed_at),
     cancelled_at: normalizeDateTime(row.cancelled_at),

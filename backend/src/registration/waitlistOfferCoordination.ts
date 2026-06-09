@@ -1,6 +1,7 @@
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { WaitlistOfferKindSqlite } from '../db/drizzle-schema.js';
+import type { WaitlistAuditInput } from './waitlistAudit.js';
 
 export type WaitlistEntryCoordinationRow = {
   id: number;
@@ -219,7 +220,7 @@ export async function skipLowerPriorityWaitlistEntriesAfterAcceptance(input: {
   sessionId: number;
   actorMemberId?: number | null;
   reason: string;
-  createAuditEvent: (tx: any, event: Record<string, unknown>) => Promise<void>;
+  createAuditEvent: (tx: any, event: WaitlistAuditInput) => Promise<void>;
 }): Promise<number[]> {
   if (input.acceptedEntry.entry_type !== 'add' || input.acceptedEntry.desired_add_waitlist_league_count == null) {
     return [];

@@ -181,7 +181,6 @@ export default function AdminEventTournamentPanel({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit location.hash so workspace tab clicks do not scroll
   }, [eventId]);
 
   useEffect(() => {

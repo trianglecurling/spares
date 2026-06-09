@@ -165,13 +165,6 @@ function expectedByotRosterSize(league: { format: string }): number | null {
   return null;
 }
 
-function rosterEntries(text: string | null | undefined): string[] {
-  return (text ?? '')
-    .split(/[\n,;]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
 function validateSelection(context: RegistrationContext, selection: RegistrationSelectionInput): {
   blockingErrors: DecisionMessage[];
   warnings: DecisionMessage[];

@@ -3,6 +3,11 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { RegistrationSelectionInput } from './registrationContext.js';
 import { recordAndDeleteWaitlistEntry } from './waitlistAudit.js';
 
+type WaitlistCleanupExecutor = Pick<
+  ReturnType<typeof getDrizzleDb>['db'],
+  'select' | 'delete' | 'insert'
+>;
+
 function selectedWaitlistLeagueIds(selections: RegistrationSelectionInput[]): Set<number> {
   return new Set(
     selections
@@ -24,7 +29,7 @@ export async function removeExistingWaitlistsMarkedForRemoval(input: {
   curlerMemberId: number;
   actorMemberId: number;
   selections: RegistrationSelectionInput[];
-  tx?: { select: Function; delete: Function; insert: Function };
+  tx?: WaitlistCleanupExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
@@ -64,7 +69,7 @@ export async function removeOrphanedRegistrationWaitlistEntries(input: {
   curlerMemberId: number;
   actorMemberId: number;
   selections: RegistrationSelectionInput[];
-  tx?: { select: Function; delete: Function; insert: Function };
+  tx?: WaitlistCleanupExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;

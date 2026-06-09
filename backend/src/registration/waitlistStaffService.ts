@@ -64,29 +64,12 @@ type WaitlistEntryRow = typeof getDrizzleDb extends () => infer T
     : any
   : any;
 
-function dbJson(value: unknown): never {
-  return (getDatabaseConfig()?.type === 'postgres' ? value : JSON.stringify(value)) as never;
-}
-
 function dbValue(value: unknown): never {
   return value as never;
 }
 
 function dbNow(): never {
   return dbValue(getDatabaseConfig()?.type === 'postgres' ? new Date() : new Date().toISOString());
-}
-
-function expectedByotRosterSize(league: { format: string }): number | null {
-  if (league.format === 'teams') return 4;
-  if (league.format === 'doubles') return 2;
-  return null;
-}
-
-function waitlistRosterEntries(text: string | null | undefined): string[] {
-  return (text ?? '')
-    .split(/[\n,;]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
 }
 
 async function resolveWaitlistEntryRoster(input: {

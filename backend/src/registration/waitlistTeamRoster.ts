@@ -14,8 +14,6 @@ export type WaitlistTeamMemberPlacement = WaitlistTeamMemberPlacementInput & {
   memberName: string;
 };
 
-type LeagueFormat = 'teams' | 'doubles' | 'instructional';
-
 function rosterFirstName(name: string): string {
   return name.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
 }
@@ -76,7 +74,7 @@ export function parseTeamRosterPlacements(raw: string | null | undefined): Waitl
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .map((item) => {
+      .map((item): WaitlistTeamMemberPlacementInput | null => {
         if (!item || typeof item !== 'object') return null;
         const memberId = Number((item as { memberId?: unknown }).memberId);
         const entryType = (item as { entryType?: unknown }).entryType;
@@ -92,7 +90,7 @@ export function parseTeamRosterPlacements(raw: string | null | undefined): Waitl
           memberId,
           entryType,
           replacesLeagueId,
-        } satisfies WaitlistTeamMemberPlacementInput;
+        };
       })
       .filter((item): item is WaitlistTeamMemberPlacementInput => item != null);
   } catch {
@@ -167,20 +165,6 @@ export async function enrichTeamRosterPlacements(
   }));
 }
 
-type MemberLeagueHold = {
-  leagueId: number;
-  leagueName: string;
-  format: LeagueFormat;
-};
-
-function countsTowardAddWaitlistLimit(format: LeagueFormat): boolean {
-  return format !== 'instructional';
-}
-
-function countLeaguesForAddLimit(holds: MemberLeagueHold[]): number {
-  return holds.filter((hold) => countsTowardAddWaitlistLimit(hold.format)).length;
-}
-
 export async function normalizeAndValidateTeamRosterPlacements(input: {
   league: { league_type: string; format: string };
   primaryMemberId: number;
@@ -204,7 +188,7 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
   }
 
   const expectedSize = expectedByotRosterSizeFromFormat(input.league.format);
-  let placements = (input.placements ?? []).map((placement) => ({
+  let placements: WaitlistTeamMemberPlacementInput[] = (input.placements ?? []).map((placement) => ({
     memberId: placement.memberId,
     entryType: placement.entryType,
     replacesLeagueId: placement.entryType === 'replace' ? placement.replacesLeagueId ?? null : null,
@@ -219,7 +203,7 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
     const fallbackReplacesLeagueId =
       fallbackEntryType === 'replace' ? input.fallbackReplacesLeagueId ?? null : null;
     placements = names
-      .map((name) => {
+      .map((name): WaitlistTeamMemberPlacementInput | null => {
         const memberId = nameRows.get(name.trim().toLowerCase());
         if (memberId == null) return null;
         return {
@@ -394,14 +378,14 @@ export async function hydrateTeamRosterPlacementsForEntry(input: {
   if (names.length === 0) return [];
   const nameRows = await loadMemberNamesByNames(names);
   const fallbackPlacements = names
-    .map((name) => {
+    .map((name): WaitlistTeamMemberPlacementInput | null => {
       const memberId = nameRows.get(name.trim().toLowerCase());
       if (memberId == null) return null;
       return {
         memberId,
         entryType: input.entryType,
         replacesLeagueId: input.entryType === 'replace' ? input.replacesLeagueId : null,
-      } satisfies WaitlistTeamMemberPlacementInput;
+      };
     })
     .filter((item): item is WaitlistTeamMemberPlacementInput => item != null);
 

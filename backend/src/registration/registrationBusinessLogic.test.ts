@@ -283,13 +283,27 @@ describe('registration business logic', () => {
 
   test('none or minimal experience is allowed for instructional and blocked from experienced leagues', () => {
     const instructional = validateLeagueEligibility(
-      registrationContext({ experience: { type: 'none_or_minimal', completedSessions: [] } }),
+      registrationContext({
+        experience: {
+          type: 'none_or_minimal',
+          baselineOtherClubExperienceYears: 0,
+          baselineClubExperienceYears: 0,
+          completedSessions: [],
+        },
+      }),
       league({ format: 'instructional', minExperienceYears: 0 })
     );
     expect(instructional.eligible).toBe(true);
 
     const experienced = validateLeagueEligibility(
-      registrationContext({ experience: { type: 'none_or_minimal', completedSessions: [] } }),
+      registrationContext({
+        experience: {
+          type: 'none_or_minimal',
+          baselineOtherClubExperienceYears: 0,
+          baselineClubExperienceYears: 0,
+          completedSessions: [],
+        },
+      }),
       league({ format: 'teams', minExperienceYears: 1 })
     );
     expectReason(experienced, 'insufficient_experience');

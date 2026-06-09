@@ -1,5 +1,4 @@
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
-import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { canActorImpersonateTarget, listAccountSwitchOptions } from '../services/accountAccess.js';
 import type { Member } from '../types.js';
@@ -25,18 +24,6 @@ export class RegistrationMemberValidationError extends Error {
   constructor(public details: Record<string, string>) {
     super('Registration member operation failed');
   }
-}
-
-function dbValue(value: unknown): never {
-  return value as never;
-}
-
-function textJsonValue(value: unknown): string {
-  return JSON.stringify(value);
-}
-
-function dbNow(): never {
-  return dbValue(getDatabaseConfig()?.type === 'postgres' ? new Date() : new Date().toISOString());
 }
 
 function memberName(row: { name?: string | null; first_name?: string | null; last_name?: string | null; email?: string | null } | null | undefined): string {

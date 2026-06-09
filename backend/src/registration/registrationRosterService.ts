@@ -2,12 +2,10 @@ import { and, eq, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { RegistrationSelectionInput } from './registrationContext.js';
 
-type DbExecutor = {
-  select: Function;
-  insert: Function;
-  update: Function;
-  delete: Function;
-};
+type DbExecutor = Pick<
+  ReturnType<typeof getDrizzleDb>['db'],
+  'select' | 'insert' | 'update' | 'delete'
+>;
 
 export const GUARANTEED_RETURN_ROSTER_SELECTION_TYPE = 'guaranteed_return' as const;
 

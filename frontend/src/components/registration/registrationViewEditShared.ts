@@ -62,6 +62,7 @@ export type LeagueCatalogItem = {
   activeWaitlistEntryCount?: number;
   isPlayInBased?: boolean;
   allowsSabbatical: boolean;
+  discountEligible?: boolean;
 };
 
 export type IcePrivilegesChoice = 'none' | 'league_play' | 'basic_ice';

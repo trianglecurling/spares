@@ -265,12 +265,13 @@ export default function AdminContentPermalinksPanel({
       } catch (err: unknown) {
         if (axios.isCancel(err)) return;
       } finally {
-        if (labelSuggestRequestIdRef.current !== requestId) return;
-        setLabelSuggestStatus('idle');
-        const focusLabel = suggestFocusLabelAfterSuggestRef.current;
-        suggestFocusLabelAfterSuggestRef.current = false;
-        if (focusLabel) {
-          requestAnimationFrame(() => labelInputRef.current?.focus());
+        if (labelSuggestRequestIdRef.current === requestId) {
+          setLabelSuggestStatus('idle');
+          const focusLabel = suggestFocusLabelAfterSuggestRef.current;
+          suggestFocusLabelAfterSuggestRef.current = false;
+          if (focusLabel) {
+            requestAnimationFrame(() => labelInputRef.current?.focus());
+          }
         }
       }
     },

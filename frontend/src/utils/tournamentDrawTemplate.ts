@@ -93,7 +93,7 @@ export function buildTournamentDrawTemplate(
 
 export function tournamentDrawTemplateFilenameBase(filenameBase: string): string {
   const t = filenameBase.trim() || 'tournament-draw';
-  return t.replace(/[^\w\-]+/g, '-').replace(/^-+|-+$/g, '') || 'tournament-draw';
+  return t.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'tournament-draw';
 }
 
 export function downloadTournamentDrawTemplate(doc: TournamentDrawTemplateDocument, filenameBase: string): void {
