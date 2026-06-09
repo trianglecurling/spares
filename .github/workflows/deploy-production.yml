@@ -21,7 +21,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.13
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -66,11 +66,18 @@ jobs:
       - name: Install production dependencies and restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << EOF
-            set -e
+            set -euo pipefail
             cd /srv/tccnc-web/backend
-            export CI=
-            export GITHUB_ACTIONS=
-            bun install --production
+            sudo chown -R "${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }}" /srv/tccnc-web/backend
+            sudo rm -rf node_modules
+            sudo rm -f bun.lock ../bun.lock ../package.json
+            if [ -f bun.lock ] || [ -f ../bun.lock ]; then
+              echo "Stale bun.lock could not be removed; aborting."
+              ls -la bun.lock ../bun.lock 2>/dev/null || true
+              exit 1
+            fi
+            unset CI GITHUB_ACTIONS
+            bun install --production --no-save
             sudo mkdir -p /srv/tccnc-web/backend/data
             sudo chown -R www-data:www-data /srv/tccnc-web/backend
             sudo chmod 755 /srv/tccnc-web/backend/data
