@@ -21,6 +21,7 @@ import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
 import AppStateCard from '../components/AppStateCard';
+import DashboardRegistrationStatus from '../components/DashboardRegistrationStatus';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -784,6 +785,8 @@ export default function Dashboard() {
             </Link>
           </div>
         )}
+
+        <DashboardRegistrationStatus />
 
         {loading ? (
           <AppStateCard title="Loading dashboard..." />

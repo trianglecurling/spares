@@ -18,6 +18,7 @@ import { publicRoutes } from './routes/public.js';
 import { contactRoutes } from './routes/contact.js';
 import { mailingListRoutes } from './routes/mailingList.js';
 import { donationRoutes } from './routes/donations.js';
+import { publicPaymentRoutes } from './routes/publicPayments.js';
 import { paymentWebhookRoutes } from './routes/paymentWebhooks.js';
 import { paymentRoutes } from './routes/payments.js';
 import { contentRoutes } from './routes/content.js';
@@ -31,7 +32,10 @@ import { waiversAdminRoutes } from './routes/waiversAdmin.js';
 import { registrationConfigRoutes } from './routes/registrationConfig.js';
 import { protectedRegistrationShellRoutes, publicRegistrationShellRoutes } from './routes/registrationShell.js';
 import { protectedRegistrationMemberRoutes } from './routes/registrationMember.js';
+import { protectedRegistrationStaffRoutes } from './routes/registrationStaff.js';
 import { protectedRegistrationWaitlistStaffRoutes, publicRegistrationWaitlistOfferRoutes } from './routes/registrationWaitlistStaff.js';
+import { waitlistRoutes } from './routes/waitlists.js';
+import { webhookRoutes } from './routes/webhooks.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(installRoutes, { prefix: '/api' });
@@ -41,6 +45,7 @@ export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise
   await fastify.register(contactRoutes, { prefix: '/api' });
   await fastify.register(mailingListRoutes, { prefix: '/api' });
   await fastify.register(donationRoutes, { prefix: '/api' });
+  await fastify.register(publicPaymentRoutes, { prefix: '/api' });
   await fastify.register(publicEventRoutes, { prefix: '/api' });
   await fastify.register(publicRegistrationShellRoutes, { prefix: '/api' });
   await fastify.register(publicRegistrationWaitlistOfferRoutes, { prefix: '/api' });
@@ -74,5 +79,8 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(registrationConfigRoutes, { prefix: '/api' });
   await fastify.register(protectedRegistrationShellRoutes, { prefix: '/api' });
   await fastify.register(protectedRegistrationMemberRoutes, { prefix: '/api' });
+  await fastify.register(protectedRegistrationStaffRoutes, { prefix: '/api' });
   await fastify.register(protectedRegistrationWaitlistStaffRoutes, { prefix: '/api' });
+  await fastify.register(waitlistRoutes, { prefix: '/api' });
+  await fastify.register(webhookRoutes, { prefix: '/api' });
 }

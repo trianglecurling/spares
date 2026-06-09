@@ -1,14 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { patch, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
 import Button from '../../components/Button';
 import ChoiceInput from '../../components/ChoiceInput';
+import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import api, { formatApiError } from '../../utils/api';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
 
+function memberNameParts(member: Pick<Member, 'name' | 'firstName' | 'lastName'>): {
+  firstName: string;
+  lastName: string;
+} {
+  const storedFirst = member.firstName?.trim() ?? '';
+  const storedLast = member.lastName?.trim() ?? '';
+  if (storedFirst || storedLast) {
+    return { firstName: storedFirst, lastName: storedLast };
+  }
+  const parts = member.name.trim().split(/\s+/);
+  if (parts.length <= 1) return { firstName: parts[0] ?? '', lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
 type MemberUpdatePayload = {
-  name: string;
+  firstName: string;
+  lastName: string;
   email?: string;
   phone?: string;
   emailVisible: boolean;
@@ -17,10 +33,13 @@ type MemberUpdatePayload = {
   spareOnly?: boolean;
   socialMember?: boolean;
   isServerAdmin?: boolean;
+  baselineOtherClubExperienceYears?: number;
+  baselineClubExperienceYears?: number;
 };
 
 type MemberCreatePayload = {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone?: string;
   validThrough: string | null;
@@ -88,8 +107,13 @@ export default function AdminMemberEditorModal({
   onSaved,
 }: Props) {
   const { showAlert } = useAlert();
+  const firstNameInputId = useId();
+  const lastNameInputId = useId();
+  const baselineOtherClubExperienceInputId = useId();
+  const baselineClubExperienceInputId = useId();
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
     validThrough: '',
@@ -98,6 +122,8 @@ export default function AdminMemberEditorModal({
     isServerAdmin: false,
     emailVisible: false,
     phoneVisible: false,
+    baselineOtherClubExperienceYears: '0',
+    baselineClubExperienceYears: '0',
   });
   const [submitting, setSubmitting] = useState(false);
   const [assignableRoles, setAssignableRoles] = useState<RbacRole[]>([]);
@@ -108,7 +134,8 @@ export default function AdminMemberEditorModal({
 
   const resetFormClosed = () => {
     setFormData({
-      name: '',
+      firstName: '',
+      lastName: '',
       email: '',
       phone: '',
       validThrough: '',
@@ -117,6 +144,8 @@ export default function AdminMemberEditorModal({
       isServerAdmin: false,
       emailVisible: false,
       phoneVisible: false,
+      baselineOtherClubExperienceYears: '0',
+      baselineClubExperienceYears: '0',
     });
     setAssignableRoles([]);
     setMemberAssignments([]);
@@ -134,9 +163,11 @@ export default function AdminMemberEditorModal({
     setActiveMemberModalTab('details');
 
     if (editingMember) {
-      const isServerAdmin = editingMember.isInServerAdminsList ? true : editingMember.isServerAdmin || false;
+      const isServerAdmin = editingMember.isServerAdmin || false;
+      const { firstName, lastName } = memberNameParts(editingMember);
       setFormData({
-        name: editingMember.name,
+        firstName,
+        lastName,
         email: editingMember.email || '',
         phone: editingMember.phone || '',
         validThrough: editingMember.validThrough || '',
@@ -145,6 +176,8 @@ export default function AdminMemberEditorModal({
         isServerAdmin: isServerAdmin,
         emailVisible: editingMember.emailVisible,
         phoneVisible: editingMember.phoneVisible,
+        baselineOtherClubExperienceYears: String(editingMember.baselineOtherClubExperienceYears ?? 0),
+        baselineClubExperienceYears: String(editingMember.baselineClubExperienceYears ?? 0),
       });
       setAssignmentsError(null);
       setAssignableRoles([]);
@@ -156,7 +189,8 @@ export default function AdminMemberEditorModal({
       }
     } else {
       setFormData({
-        name: '',
+        firstName: '',
+        lastName: '',
         email: '',
         phone: '',
         validThrough: '',
@@ -165,6 +199,8 @@ export default function AdminMemberEditorModal({
         isServerAdmin: false,
         emailVisible: false,
         phoneVisible: false,
+        baselineOtherClubExperienceYears: '0',
+        baselineClubExperienceYears: '0',
       });
       setAssignableRoles([]);
       setMemberAssignments([]);
@@ -250,7 +286,8 @@ export default function AdminMemberEditorModal({
     try {
       if (editingMember) {
         const updateData: MemberUpdatePayload = {
-          name: formData.name,
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
           email: formData.email || undefined,
           phone: formData.phone || undefined,
           emailVisible: formData.emailVisible,
@@ -264,12 +301,11 @@ export default function AdminMemberEditorModal({
         }
 
         if (currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id) {
-          if (editingMember?.isInServerAdminsList) {
-            updateData.isServerAdmin = true;
-          } else {
-            updateData.isServerAdmin = formData.isServerAdmin;
-          }
+          updateData.isServerAdmin = formData.isServerAdmin;
         }
+
+        updateData.baselineOtherClubExperienceYears = Number(formData.baselineOtherClubExperienceYears) || 0;
+        updateData.baselineClubExperienceYears = Number(formData.baselineClubExperienceYears) || 0;
 
         await patch('/members/{id}', updateData, { id: String(editingMember.id) });
 
@@ -296,7 +332,8 @@ export default function AdminMemberEditorModal({
         }
       } else {
         const createData: MemberCreatePayload = {
-          name: formData.name,
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
           email: formData.email,
           phone: formData.phone || undefined,
           validThrough: formData.validThrough ? formData.validThrough : null,
@@ -359,18 +396,29 @@ export default function AdminMemberEditorModal({
 
         {(!editingMember || activeMemberModalTab === 'details') && (
           <>
-            <div>
-              <label htmlFor="name" className="app-label">
-                Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="app-input"
-                required
-              />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="First name" htmlFor={firstNameInputId} required>
+                <input
+                  type="text"
+                  id={firstNameInputId}
+                  autoComplete="given-name"
+                  value={formData.firstName}
+                  onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                  className="app-input"
+                  required
+                />
+              </FormField>
+              <FormField label="Last name" htmlFor={lastNameInputId} required>
+                <input
+                  type="text"
+                  id={lastNameInputId}
+                  autoComplete="family-name"
+                  value={formData.lastName}
+                  onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                  className="app-input"
+                  required
+                />
+              </FormField>
             </div>
 
             <div>
@@ -423,6 +471,47 @@ export default function AdminMemberEditorModal({
                 </label>
               </div>
             </div>
+
+            {editingMember ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  label="Years at another club"
+                  htmlFor={baselineOtherClubExperienceInputId}
+                  helperText="Baseline experience from other curling clubs before joining Triangle Curling."
+                >
+                  <input
+                    type="number"
+                    id={baselineOtherClubExperienceInputId}
+                    min={0}
+                    max={99.5}
+                    step={0.5}
+                    value={formData.baselineOtherClubExperienceYears}
+                    onChange={(event) =>
+                      setFormData({ ...formData, baselineOtherClubExperienceYears: event.target.value })
+                    }
+                    className="app-input"
+                  />
+                </FormField>
+                <FormField
+                  label="Baseline years at this club"
+                  htmlFor={baselineClubExperienceInputId}
+                  helperText="Pre-app club experience. Computed session years are added on top of this baseline."
+                >
+                  <input
+                    type="number"
+                    id={baselineClubExperienceInputId}
+                    min={0}
+                    max={99.5}
+                    step={0.5}
+                    value={formData.baselineClubExperienceYears}
+                    onChange={(event) =>
+                      setFormData({ ...formData, baselineClubExperienceYears: event.target.value })
+                    }
+                    className="app-input"
+                  />
+                </FormField>
+              </div>
+            ) : null}
 
             <div>
               <label htmlFor="validThrough" className="app-label">
@@ -519,9 +608,10 @@ export default function AdminMemberEditorModal({
                 </p>
               </div>
 
-              {editingMember.isInServerAdminsList && (
+              {editingMember.isLastServerAdmin && (
                 <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">
-                  This member is managed by <code>SERVER_ADMINS</code> and must remain a server admin.
+                  This is the last server admin. At least one server admin is required, so this status
+                  cannot be removed and this member cannot be deleted.
                 </div>
               )}
 
@@ -531,7 +621,7 @@ export default function AdminMemberEditorModal({
                   id="isServerAdmin"
                   checked={formData.isServerAdmin}
                   onChange={(e) => setFormData({ ...formData, isServerAdmin: e.target.checked })}
-                  disabled={!canEditRoleAccess || editingMember.isInServerAdminsList}
+                  disabled={!canEditRoleAccess || editingMember.isLastServerAdmin}
                   className="mt-1 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal disabled:opacity-60"
                 />
                 <label htmlFor="isServerAdmin" className="text-sm text-gray-700 dark:text-gray-300">

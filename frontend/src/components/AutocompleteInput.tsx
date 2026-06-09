@@ -30,6 +30,8 @@ type AutocompleteInputProps<T> = {
   inputId?: string
   required?: boolean
   autoComplete?: string
+  /** Chromium: toggle `autocomplete="chrome-off"` only while focused (see ChoiceInput). */
+  chromeOffAutocompleteWhileFocused?: boolean
 }
 
 export default function AutocompleteInput<T>({
@@ -53,6 +55,7 @@ export default function AutocompleteInput<T>({
   inputId,
   required = false,
   autoComplete,
+  chromeOffAutocompleteWhileFocused,
 }: AutocompleteInputProps<T>) {
   const mappedOptions = useMemo(
     () =>
@@ -85,6 +88,7 @@ export default function AutocompleteInput<T>({
       listboxLabel={listboxLabel}
       required={required}
       autoComplete={autoComplete}
+      chromeOffAutocompleteWhileFocused={chromeOffAutocompleteWhileFocused}
       inputClassName={inputClassName}
       clearButton={clearButton}
       shouldShowDropdown={shouldShowDropdown}

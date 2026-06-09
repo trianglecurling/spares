@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   RegistrationShellValidationError,
+  curlerDemographicsAreComplete,
   isMinorOnRegistrationDate,
   validateDemographics,
   validateGuardian,
@@ -57,6 +58,30 @@ describe('registration shell validation', () => {
         phone: '919-555-0120',
       })
     ).not.toThrow();
+  });
+
+  test('curlerDemographicsAreComplete detects complete and incomplete payloads', () => {
+    expect(
+      curlerDemographicsAreComplete({
+        firstName: 'Jamie',
+        lastName: 'Curler',
+        dateOfBirth: '2000-01-01',
+        email: 'jamie@example.com',
+        phone: '919-555-0100',
+        mailingAddress: '123 Curling Way',
+        emergencyContactName: 'Alex Curler',
+        emergencyContactPhone: '919-555-0110',
+      }),
+    ).toBe(true);
+
+    expect(
+      curlerDemographicsAreComplete({
+        firstName: 'Jamie',
+        lastName: 'Curler',
+        dateOfBirth: '2000-01-01',
+        email: 'jamie@example.com',
+      }),
+    ).toBe(false);
   });
 
   test('minor status is based on registration date', () => {

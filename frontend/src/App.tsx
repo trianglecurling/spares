@@ -17,6 +17,8 @@ import MyRequests from './pages/MyRequests';
 import Unsubscribe from './pages/Unsubscribe';
 import MembersDirectory from './pages/MembersDirectory';
 import Profile from './pages/Profile';
+import ProfilePaymentDetailPage from './pages/ProfilePaymentDetailPage';
+import PublicPaymentDetailPage from './pages/PublicPaymentDetailPage';
 import AdminMembers from './pages/admin/AdminMembers';
 import AdminWaivers from './pages/admin/AdminWaivers';
 import AdminSheets from './pages/admin/AdminSheets';
@@ -59,12 +61,15 @@ import ClubGovernance from './pages/ClubGovernance';
 import AdminGovernance from './pages/admin/AdminGovernance';
 import AdminRoles from './pages/admin/AdminRoles';
 import AdminPayments from './pages/admin/AdminPayments';
+import AdminWebhooks from './pages/admin/AdminWebhooks';
 import AdminEvents from './pages/admin/AdminEvents';
 import AdminEventEditor from './pages/admin/AdminEventEditor';
 import AdminEventRegistrationEditor from './pages/admin/AdminEventRegistrationEditor';
 import AdminRegistrationConfig from './pages/admin/AdminRegistrationConfig';
-import AdminRegistrationWaitlists from './pages/admin/AdminRegistrationWaitlists';
+import AdminWaitlists from './pages/admin/AdminWaitlists';
 import AdminRegistrationCommunications from './pages/admin/AdminRegistrationCommunications';
+import AdminRegistrations from './pages/admin/AdminRegistrations';
+import AdminRegistrationDetail from './pages/admin/AdminRegistrationDetail';
 import PublicEventsPage from './pages/PublicEventsPage';
 import PublicEventDetailPage from './pages/PublicEventDetailPage';
 import PublicEventTeamPage from './pages/PublicEventTeamPage';
@@ -74,7 +79,6 @@ import PublicPermalinkInfo from './pages/PublicPermalinkInfo';
 import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
 import RegistrationShellPage from './pages/RegistrationShellPage';
 import PublicWaitlistOfferDeclinePage from './pages/PublicWaitlistOfferDeclinePage';
-import RegistrationStatusPage from './pages/RegistrationStatusPage';
 import RegistrationStatusDetailPage from './pages/RegistrationStatusDetailPage';
 import WaitlistOfferAcceptPage from './pages/WaitlistOfferAcceptPage';
 
@@ -88,6 +92,23 @@ function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   return <Navigate to={targetPath} replace />;
 }
 
+function LegacyRegistrationDetailRedirect() {
+  return <Navigate to="/registration/view/1" replace />;
+}
+
+function RegistrationViewIndexRedirect() {
+  return <Navigate to="/registration/view/1" replace />;
+}
+
+/** React Router param regex like `(?!view$)[a-z]…` does not match in v6; dispatch reserved segments here instead. */
+function RegistrationShellStepRoute() {
+  const { step } = useParams();
+  if (step === 'view' || (step != null && /^\d+$/.test(step))) {
+    return <Navigate to="/registration/view/1" replace />;
+  }
+  return <RegistrationShellPage />;
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -98,7 +119,14 @@ function App() {
               <MemberOptionsProvider>
                 <Routes>
                   <Route path="/login" element={<Login />} />
-                  <Route path="/unsubscribe" element={<Unsubscribe />} />
+                  <Route
+                    path="/unsubscribe"
+                    element={
+                      <ProtectedRoute>
+                        <Unsubscribe />
+                      </ProtectedRoute>
+                    }
+                  />
                   <Route path="/install" element={<Install />} />
 
                 {/* Help pages - accessible without authentication */}
@@ -119,6 +147,7 @@ function App() {
                   <Route path="/" element={<PublicHomePage />} />
                   <Route path="/contact" element={<PublicContactPage />} />
                   <Route path="/contact/confirm" element={<PublicContactConfirmPage />} />
+                  <Route path="/payments/:orderToken" element={<PublicPaymentDetailPage />} />
                   <Route path="/donate" element={<PublicDonatePage />} />
                   <Route path="/donate/success" element={<PublicDonateSuccessPage />} />
                   <Route path="/donate/cancel" element={<PublicDonateCancelPage />} />
@@ -135,8 +164,7 @@ function App() {
                   <Route path="/registration/start" element={<RegistrationShellPage />} />
                   <Route path="/registration/success" element={<RegistrationShellPage />} />
                   <Route path="/registration/cancel" element={<RegistrationShellPage />} />
-                  <Route path="/registration/waitlist-offers/:token/decline" element={<PublicWaitlistOfferDeclinePage />} />
-                  <Route path="/registration/:step" element={<RegistrationShellPage />} />
+                  <Route path="/registration/:step" element={<RegistrationShellStepRoute />} />
 
                   <Route path="/go/:slug/info" element={<PublicPermalinkInfo />} />
 
@@ -153,16 +181,7 @@ function App() {
                 />
 
                 <Route
-                  path="/registration/status"
-                  element={
-                    <ProtectedRoute>
-                      <RegistrationStatusPage />
-                    </ProtectedRoute>
-                  }
-                />
-
-                <Route
-                  path="/registration/status/:registrationId"
+                  path="/registration/view/:slot"
                   element={
                     <ProtectedRoute>
                       <RegistrationStatusDetailPage />
@@ -171,10 +190,33 @@ function App() {
                 />
 
                 <Route
-                  path="/registration/waitlist-offers/:token/accept"
+                  path="/registration/view"
+                  element={
+                    <ProtectedRoute>
+                      <RegistrationViewIndexRedirect />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/registration/:registrationId(\\d+)"
+                  element={<LegacyRegistrationDetailRedirect />}
+                />
+
+                <Route
+                  path="/registration/waitlist-offers/:offerId/accept"
                   element={
                     <ProtectedRoute>
                       <WaitlistOfferAcceptPage />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/registration/waitlist-offers/:offerId/decline"
+                  element={
+                    <ProtectedRoute>
+                      <PublicWaitlistOfferDeclinePage />
                     </ProtectedRoute>
                   }
                 />
@@ -278,8 +320,17 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route path="/profile" element={<Navigate to="/profile/preferences" replace />} />
                 <Route
-                  path="/profile"
+                  path="/profile/payment-history/:orderToken"
+                  element={
+                    <ProtectedRoute>
+                      <ProfilePaymentDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile/:tab"
                   element={
                     <ProtectedRoute>
                       <Profile />
@@ -427,21 +478,37 @@ function App() {
                 />
                 <Route
                   path="/admin/registration"
-                  element={<Navigate to="/admin/registration/waitlists" replace />}
+                  element={<Navigate to="/admin/registration/seasons" replace />}
                 />
                 <Route
-                  path="/admin/registration/waitlists"
+                  path="/waitlists"
                   element={
-                    <ProtectedRoute adminOnly>
-                      <AdminRegistrationWaitlists />
+                    <ProtectedRoute>
+                      <AdminWaitlists />
                     </ProtectedRoute>
                   }
                 />
                 <Route
-                  path="/admin/registration/waitlists/:leagueId"
+                  path="/waitlists/:waitlistId"
                   element={
-                    <ProtectedRoute adminOnly>
-                      <AdminRegistrationWaitlists />
+                    <ProtectedRoute>
+                      <AdminWaitlists />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/registrations"
+                  element={
+                    <ProtectedRoute anyOfScopes={['registrations.manage', 'admin.manage']}>
+                      <AdminRegistrations />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/registrations/:registrationId"
+                  element={
+                    <ProtectedRoute anyOfScopes={['registrations.manage', 'admin.manage']}>
+                      <AdminRegistrationDetail />
                     </ProtectedRoute>
                   }
                 />
@@ -466,6 +533,14 @@ function App() {
                   element={
                     <ProtectedRoute requiredScope="payments.read">
                       <AdminPayments />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/webhooks"
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <AdminWebhooks />
                     </ProtectedRoute>
                   }
                 />

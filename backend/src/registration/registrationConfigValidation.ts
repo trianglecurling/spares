@@ -1,3 +1,5 @@
+import { validateHalfYearExperienceValue } from './curlingExperienceYears.js';
+
 /** Resolved cents charged for a league in registration (override or club default). */
 export function effectiveLeagueRegistrationFeeMinor(
   registrationFeeOverrideMinor: number | null | undefined,
@@ -10,17 +12,21 @@ export function effectiveLeagueRegistrationFeeMinor(
 
 export type LeagueRegistrationSettingsInput = {
   id?: number;
+  format?: 'teams' | 'doubles' | 'instructional';
   leagueType: 'standard' | 'bring_your_own_team';
   capacityType: 'individual' | 'team';
   capacityValue: number;
   /** When null, club default league fee from registration prices applies. */
   registrationFeeOverrideMinor: number | null;
   minExperienceYears?: number | null;
+  maxExperienceYears?: number | null;
   minAge?: number | null;
   maxAge?: number | null;
   firstDayOfPlay?: string | null;
   lastDayOfPlay?: string | null;
   allowsWaitlist: boolean;
+  isPlayInBased?: boolean;
+  hasAttachedWaitlist?: boolean;
   allowsSabbatical: boolean;
   predecessorLeagueId?: number | null;
   successorLeagueId?: number | null;
@@ -146,8 +152,20 @@ export function assertValidLeagueRegistrationSettings(input: LeagueRegistrationS
   if (isNegative(input.registrationFeeOverrideMinor)) {
     details.registrationFeeOverrideMinor = 'League fee override cannot be negative.';
   }
-  if (isNegative(input.minExperienceYears)) {
-    details.minExperienceYears = 'Minimum experience years cannot be negative.';
+  const minExperienceError = validateHalfYearExperienceValue(input.minExperienceYears, 'Minimum experience years');
+  if (minExperienceError) {
+    details.minExperienceYears = minExperienceError;
+  }
+  const maxExperienceError = validateHalfYearExperienceValue(input.maxExperienceYears, 'Maximum experience years');
+  if (maxExperienceError) {
+    details.maxExperienceYears = maxExperienceError;
+  }
+  if (
+    input.minExperienceYears != null &&
+    input.maxExperienceYears != null &&
+    input.maxExperienceYears < input.minExperienceYears
+  ) {
+    details.maxExperienceYears = 'Maximum experience years cannot be less than minimum experience years.';
   }
   if (
     input.minAge !== null &&
@@ -166,9 +184,6 @@ export function assertValidLeagueRegistrationSettings(input: LeagueRegistrationS
     details.lastDayOfPlay = 'Last day of play must be on or after first day of play.';
   }
   if (input.leagueType === 'bring_your_own_team') {
-    if (input.allowsWaitlist) {
-      details.allowsWaitlist = 'Bring-your-own-team leagues cannot use waitlists.';
-    }
     if (input.allowsSabbatical) {
       details.allowsSabbatical = 'Bring-your-own-team leagues cannot use sabbaticals.';
     }
@@ -178,6 +193,20 @@ export function assertValidLeagueRegistrationSettings(input: LeagueRegistrationS
   }
   if (input.leagueType === 'standard' && input.capacityType !== 'individual') {
     details.capacityType = 'Standard leagues must use individual capacity.';
+  }
+
+  const isPlayInBased = input.isPlayInBased === true;
+  const hasAttachedWaitlist =
+    input.hasAttachedWaitlist === true ||
+    (input.hasAttachedWaitlist === undefined && input.allowsWaitlist === true);
+  if (input.format === 'instructional' && isPlayInBased) {
+    details.isPlayInBased = 'Instructional leagues cannot be play-in based.';
+  }
+  if (input.format !== 'instructional' && input.format !== undefined && !hasAttachedWaitlist && !isPlayInBased) {
+    details.isPlayInBased = 'Non-instructional leagues must use a waitlist or be play-in based.';
+  }
+  if (hasAttachedWaitlist && isPlayInBased) {
+    details.isPlayInBased = 'A league cannot use both a waitlist and play-in based registration.';
   }
 
   assertNoErrors(details);

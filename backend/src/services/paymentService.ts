@@ -3,8 +3,10 @@ import { and, eq, or, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { sendDonationReceiptEmail } from './email.js';
+import { sendDonationReceiptEmail, sendEventRegistrationPaymentConfirmationEmail } from './email.js';
+import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { logEvent } from './observability.js';
+import { dispatchWebhookEvent } from './webhookService.js';
 
 export type PaymentProvider = 'stripe' | 'paypal' | 'square';
 export type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
@@ -1023,7 +1025,9 @@ export class PaymentService {
         if (changed) {
           currentStatus = providerStatus;
           if (providerStatus === 'succeeded') {
-            await this.sendDonationReceiptForSucceededOrder(orderId);
+            await this.runSucceededOrderSideEffects(orderId);
+          } else if (providerStatus === 'refunded' || providerStatus === 'partially_refunded') {
+            await this.runRefundedOrderSideEffects(orderId);
           }
         }
       } catch (error) {
@@ -1049,6 +1053,10 @@ export class PaymentService {
         reason: resultReason,
       },
     });
+
+    if ((providerStatus === 'succeeded' || currentStatus === 'succeeded') && !changed) {
+      await this.confirmCurlingRegistrationForSucceededOrder(orderId);
+    }
 
     return {
       orderId,
@@ -1204,7 +1212,7 @@ export class PaymentService {
       );
     }
 
-    await this.db
+    const [updated] = await this.db
       .update(this.schema.paymentOrders)
       .set({
         status: nextStatus,
@@ -1215,7 +1223,12 @@ export class PaymentService {
             : null,
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
-      .where(eq(this.schema.paymentOrders.id, orderId));
+      .where(and(eq(this.schema.paymentOrders.id, orderId), eq(this.schema.paymentOrders.status, currentStatus)))
+      .returning({ id: this.schema.paymentOrders.id });
+
+    if (!updated) {
+      return false;
+    }
 
     await logEvent({
       eventType: 'payment.order.status_transition',
@@ -1394,8 +1407,8 @@ export class PaymentService {
         .where(eq(this.schema.paymentEvents.id, eventId!));
 
       if (transitionedToSucceeded) {
-        await this.sendDonationReceiptForSucceededOrder(order.id);
-        await this.confirmEventRegistrationForSucceededOrder(order.id);
+        await this.runSucceededOrderSideEffects(order.id);
+      } else if (verified.nextStatus === 'succeeded') {
         await this.confirmCurlingRegistrationForSucceededOrder(order.id);
       }
 
@@ -1404,7 +1417,7 @@ export class PaymentService {
       }
 
       if (transitionedToRefunded) {
-        await this.cancelEventRegistrationForRefundedOrder(order.id);
+        await this.runRefundedOrderSideEffects(order.id);
       }
 
       await logEvent({
@@ -1447,11 +1460,32 @@ export class PaymentService {
     }
   }
 
+  private async runSucceededOrderSideEffects(orderId: number): Promise<void> {
+    await this.sendDonationReceiptForSucceededOrder(orderId);
+    await this.confirmEventRegistrationForSucceededOrder(orderId);
+    await this.confirmCurlingRegistrationForSucceededOrder(orderId);
+    dispatchWebhookEvent('payment.received', { orderId }).catch(() => {});
+    const [orderSubject] = await this.db
+      .select({ subjectType: this.schema.paymentOrders.subject_type })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, orderId))
+      .limit(1);
+    if (orderSubject?.subjectType === 'event_registration') {
+      dispatchWebhookEvent('event_registration.received', { orderId }).catch(() => {});
+    }
+  }
+
+  private async runRefundedOrderSideEffects(orderId: number): Promise<void> {
+    await this.cancelEventRegistrationForRefundedOrder(orderId);
+    dispatchWebhookEvent('payment.refunded', { orderId }).catch(() => {});
+  }
+
   private async sendDonationReceiptForSucceededOrder(orderId: number): Promise<void> {
     try {
       const [order] = await this.db
         .select({
           id: this.schema.paymentOrders.id,
+          order_token: this.schema.paymentOrders.order_token,
           subject_type: this.schema.paymentOrders.subject_type,
           amount_minor: this.schema.paymentOrders.amount_minor,
           currency: this.schema.paymentOrders.currency,
@@ -1496,6 +1530,7 @@ export class PaymentService {
         currency: order.currency,
         receivedAt,
         treasurerName,
+        paymentDetailsUrl: paymentDetailsUrl(order.order_token),
       });
 
       metadata.donationReceiptSentAt = new Date().toISOString();
@@ -1546,6 +1581,7 @@ export class PaymentService {
 
       const { confirmRegistrationPayment } = await import('./eventService.js');
       await confirmRegistrationPayment(order.subject_id, order.id);
+      await this.sendEventRegistrationPaymentConfirmationForSucceededOrder(orderId);
 
       await logEvent({
         eventType: 'event.registration.payment_confirmed',
@@ -1555,6 +1591,89 @@ export class PaymentService {
     } catch (error) {
       await logEvent({
         eventType: 'event.registration.payment_confirmation_failed',
+        relatedId: orderId,
+        meta: { error: error instanceof Error ? error.message : 'Unknown error' },
+      });
+    }
+  }
+
+  private async sendEventRegistrationPaymentConfirmationForSucceededOrder(orderId: number): Promise<void> {
+    try {
+      const [order] = await this.db
+        .select({
+          id: this.schema.paymentOrders.id,
+          order_token: this.schema.paymentOrders.order_token,
+          subject_type: this.schema.paymentOrders.subject_type,
+          subject_id: this.schema.paymentOrders.subject_id,
+          status: this.schema.paymentOrders.status,
+          metadata: this.schema.paymentOrders.metadata,
+        })
+        .from(this.schema.paymentOrders)
+        .where(eq(this.schema.paymentOrders.id, orderId))
+        .limit(1);
+
+      if (!order || order.subject_type !== 'event_registration' || order.status !== 'succeeded' || !order.subject_id) {
+        return;
+      }
+
+      const metadata = safeJsonParseObject(order.metadata);
+      if (asString(metadata.eventPaymentConfirmationSentAt ?? metadata.event_payment_confirmation_sent_at)) {
+        return;
+      }
+
+      const [registration] = await this.db
+        .select({
+          contactName: this.schema.eventRegistrations.contact_name,
+          contactEmail: this.schema.eventRegistrations.contact_email,
+          groupSize: this.schema.eventRegistrations.group_size,
+          eventId: this.schema.eventRegistrations.event_id,
+        })
+        .from(this.schema.eventRegistrations)
+        .where(eq(this.schema.eventRegistrations.id, order.subject_id))
+        .limit(1);
+
+      if (!registration?.contactEmail) {
+        return;
+      }
+
+      const { getEventById } = await import('./eventService.js');
+      const event = await getEventById(registration.eventId);
+      if (!event) {
+        return;
+      }
+
+      const firstTimespan = event.timespans?.[0];
+      const eventDateStr = firstTimespan?.start_dt
+        ? new Date(firstTimespan.start_dt).toLocaleString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })
+        : 'See event page';
+
+      await sendEventRegistrationPaymentConfirmationEmail(
+        registration.contactEmail,
+        registration.contactName,
+        event.title,
+        eventDateStr,
+        registration.groupSize ?? 1,
+        paymentDetailsUrl(order.order_token)
+      );
+
+      metadata.eventPaymentConfirmationSentAt = new Date().toISOString();
+      await this.db
+        .update(this.schema.paymentOrders)
+        .set({
+          metadata: safeJsonStringify(metadata),
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(this.schema.paymentOrders.id, orderId));
+    } catch (error) {
+      await logEvent({
+        eventType: 'event.registration.payment_confirmation_email_failed',
         relatedId: orderId,
         meta: { error: error instanceof Error ? error.message : 'Unknown error' },
       });

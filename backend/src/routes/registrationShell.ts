@@ -2,22 +2,27 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sendApiError, sendValidationError } from '../api/errors.js';
 import type { ApiErrorResponse } from '../api/types.js';
+import { PaymentServiceError } from '../services/paymentService.js';
 import type { Member } from '../types.js';
 import {
   RegistrationLeagueSelectionValidationError,
   getRegistrationLeagueSelectionEvaluation,
   getRegistrationLeagueSelectionPayload,
   putRegistrationLeagueSelections,
+  updateBasicIceFallbackInterest,
 } from '../registration/registrationLeagueSelectionService.js';
 import {
   RegistrationMembershipPaymentValidationError,
   getGuestMembershipPaymentPreview,
+  getPublicRegistrationDiscountSettings,
   getRegistrationMembershipPaymentPayload,
   getRegistrationPaymentStatusByOrderToken,
+  resolveRegistrationPaymentFromCheckoutReturn,
   markCurlingRegistrationPaymentCancelled,
   submitRegistrationMembershipPayment,
   updateDiscounts,
   updateExperience,
+  updateIcePrivileges,
   updateMembership,
 } from '../registration/registrationMembershipPaymentService.js';
 import {
@@ -31,6 +36,8 @@ import {
   completeShell,
   createDraft,
   findActiveRegistrationForSubmitter,
+  findCompletedSelfRegistrationForWindow,
+  getImmediatelyPriorRegistrationSessionDisplayName,
   getDefaultRegistrationWindow,
   getEffectiveRegistrationWindow,
   getRegistrationById,
@@ -42,17 +49,25 @@ import {
   type GuardianInput,
   type MemberDemographicsInput,
 } from '../registration/registrationShellService.js';
+import { getLeagueTeamMemberPlacementOptions } from '../registration/memberWaitlistJoinService.js';
+import { RegistrationMemberValidationError } from '../registration/registrationMemberService.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
 }
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+const submitRegistrationSchema = z.object({
+  confirmImmediatePayment: z.boolean().optional(),
+});
 const windowQuerySchema = z.object({
   seasonId: z.coerce.number().int().positive().optional(),
   sessionId: z.coerce.number().int().positive().optional(),
 });
 const paymentStatusParamsSchema = z.object({ orderToken: z.string().uuid() });
+const resolveRegistrationPaymentSchema = z.object({
+  sessionId: z.string().trim().min(3).max(255),
+});
 const createDraftSchema = z.object({
   seasonId: z.number().int().positive(),
   sessionId: z.number().int().positive(),
@@ -91,6 +106,9 @@ const membershipSchema = z.object({
   basicIcePrivileges: z.boolean().default(false),
   juniorAssistancePercent: z.number().int().refine((value) => [0, 25, 50, 75].includes(value)).nullable().optional(),
 });
+const icePrivilegesSchema = z.object({
+  choice: z.enum(['league_play', 'basic_ice', 'none']),
+});
 const discountSchema = z.object({
   studentDiscountClaimed: z.boolean().optional(),
   studentInstitution: z.string().nullable().optional(),
@@ -110,8 +128,15 @@ const registrationSelectionSchema = z.object({
     'return_subject_to_availability',
     'waitlist_add',
     'waitlist_replace',
+    'waitlist_add_auto_decline',
+    'waitlist_replace_auto_decline',
+    'waitlist_keep_auto_accept',
+    'waitlist_keep_auto_decline',
+    'waitlist_remove',
     'third_league_interest',
     'byot_request',
+    'play_in_request',
+    'instructional_join',
     'junior_recreational',
     'spare_only',
   ]),
@@ -119,10 +144,38 @@ const registrationSelectionSchema = z.object({
   rank: z.number().int().positive().nullable().optional(),
   replacesLeagueId: z.number().int().positive().nullable().optional(),
   byotTeammateText: z.string().nullable().optional(),
+  teamRosterText: z.string().nullable().optional(),
+  teamRosterPlacements: z
+    .array(
+      z.object({
+        memberId: z.number().int().positive(),
+        entryType: z.enum(['add', 'replace']),
+        replacesLeagueId: z.number().int().positive().nullable().optional(),
+      }),
+    )
+    .optional()
+    .nullable(),
   isTemporarySabbaticalFill: z.boolean().optional(),
 });
+const teamMemberPlacementOptionsQuerySchema = z.object({
+  memberIds: z
+    .union([z.string(), z.array(z.coerce.number().int().positive())])
+    .transform((value) => {
+      if (Array.isArray(value)) return value;
+      return value
+        .split(',')
+        .map((part) => Number(part.trim()))
+        .filter((id) => Number.isFinite(id) && id > 0);
+    }),
+});
+const leagueIdParamsSchema = z.object({ leagueId: z.coerce.number().int().positive() });
 const leagueSelectionsSchema = z.object({
   selections: z.array(registrationSelectionSchema),
+  desiredAddWaitlistLeagueCount: z.number().int().min(1).max(2).nullable().optional(),
+  addWaitlistPriority: z.array(z.number().int().positive()).optional(),
+});
+const basicIceFallbackSchema = z.object({
+  interested: z.boolean(),
 });
 
 const guestPreviewSchema = z.object({
@@ -195,6 +248,12 @@ function handleRegistrationError(reply: FastifyReply, error: unknown) {
   if (error instanceof RegistrationLeagueSelectionValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
+  if (error instanceof RegistrationMemberValidationError) {
+    return sendValidationError(reply, error.message, error.details);
+  }
+  if (error instanceof PaymentServiceError) {
+    return sendApiError(reply, error.statusCode, error.message);
+  }
   if (error instanceof z.ZodError) {
     return sendValidationError(reply, 'Validation failed', error.flatten());
   }
@@ -236,7 +295,11 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
           ? await getEffectiveRegistrationWindow(query.seasonId, query.sessionId)
           : await getDefaultRegistrationWindow();
         if (!window) return sendApiError(reply, 404, 'Registration window not found');
-        return window;
+        const [previousRegistrationSessionDisplayName, availableDiscounts] = await Promise.all([
+          getImmediatelyPriorRegistrationSessionDisplayName(window.session.id),
+          getPublicRegistrationDiscountSettings(),
+        ]);
+        return { ...window, previousRegistrationSessionDisplayName, availableDiscounts };
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
@@ -303,6 +366,31 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  fastify.post<{ Params: { orderToken: string }; Body: z.infer<typeof resolveRegistrationPaymentSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/payment-status/:orderToken/resolve',
+    {
+      schema: {
+        tags: ['registration'],
+        params: {
+          type: 'object',
+          properties: { orderToken: { type: 'string' } },
+          required: ['orderToken'],
+        },
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { orderToken } = paymentStatusParamsSchema.parse(request.params);
+        const body = resolveRegistrationPaymentSchema.parse(request.body ?? {});
+        return await resolveRegistrationPaymentFromCheckoutReturn(orderToken, body.sessionId);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
 }
 
 export async function protectedRegistrationShellRoutes(fastify: FastifyInstance) {
@@ -312,10 +400,25 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
       response: { 200: anyObjectSchema },
     },
   }, async (request) => {
-    const row = await findActiveRegistrationForSubmitter((request as AuthenticatedRequest).member.id);
-    if (!row) return { draft: null };
+    const member = (request as AuthenticatedRequest).member;
+    const window = await getDefaultRegistrationWindow();
+    const [row, completedSelf] = await Promise.all([
+      findActiveRegistrationForSubmitter(member.id),
+      window
+        ? findCompletedSelfRegistrationForWindow(member.id, window.season.id, window.session.id)
+        : Promise.resolve(null),
+    ]);
+    if (!row) {
+      return {
+        draft: null,
+        completedSelfRegistration: completedSelf ? { id: completedSelf.id } : null,
+      };
+    }
     const shell = await getRegistrationShellPayload(row.id);
-    return { draft: { id: row.id, ...shell } };
+    return {
+      draft: { id: row.id, ...shell },
+      completedSelfRegistration: completedSelf ? { id: completedSelf.id } : null,
+    };
   });
 
   fastify.post<{ Body: z.infer<typeof createDraftSchema>; Reply: unknown | ApiErrorResponse }>(
@@ -389,13 +492,24 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     }
   );
 
-  fastify.get('/registration/returning-profiles', {
+  fastify.get<{ Querystring: { seasonId?: number; sessionId?: number } }>('/registration/returning-profiles', {
     schema: {
       tags: ['registration'],
+      querystring: {
+        type: 'object',
+        properties: { seasonId: { type: 'number' }, sessionId: { type: 'number' } },
+      },
       response: { 200: { type: 'array', items: anyObjectSchema } },
     },
   }, async (request) => {
-    return listEligibleReturningProfiles((request as AuthenticatedRequest).member.id);
+    const query = request.query ?? {};
+    const seasonId = query.seasonId != null ? Number(query.seasonId) : undefined;
+    const sessionId = query.sessionId != null ? Number(query.sessionId) : undefined;
+    return listEligibleReturningProfiles(
+      (request as AuthenticatedRequest).member.id,
+      Number.isFinite(seasonId) ? seasonId : undefined,
+      Number.isFinite(sessionId) ? sessionId : undefined,
+    );
   });
 
   fastify.patch<{ Params: { id: number }; Body: z.infer<typeof returningIdentitySchema>; Reply: unknown | ApiErrorResponse }>(
@@ -572,6 +686,27 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     }
   );
 
+  fastify.patch<{ Params: { id: number }; Body: z.infer<typeof icePrivilegesSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/ice-privileges',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        const body = icePrivilegesSchema.parse(request.body);
+        return await updateIcePrivileges(id, (request as AuthenticatedRequest).member, body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
   fastify.patch<{ Params: { id: number }; Body: z.infer<typeof discountSchema>; Reply: unknown | ApiErrorResponse }>(
     '/registration/drafts/:id/discounts',
     {
@@ -614,6 +749,29 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     }
   );
 
+  fastify.get<{ Params: { leagueId: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/leagues/:leagueId/team-member-placement-options',
+    {
+      schema: {
+        tags: ['registration'],
+        params: { type: 'object', properties: { leagueId: { type: 'integer' } }, required: ['leagueId'] },
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 401: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!request.member) {
+        return sendApiError(reply, 401, 'Unauthorized');
+      }
+      try {
+        const params = leagueIdParamsSchema.parse(request.params);
+        const query = teamMemberPlacementOptionsQuerySchema.parse(request.query);
+        return await getLeagueTeamMemberPlacementOptions(params.leagueId, query.memberIds);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    },
+  );
+
   fastify.get<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
     '/registration/drafts/:id/league-catalog',
     {
@@ -627,6 +785,27 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
       try {
         const { id } = idParamsSchema.parse(request.params);
         return await getRegistrationLeagueSelectionPayload(id, (request as AuthenticatedRequest).member);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.patch<{ Params: { id: number }; Body: z.infer<typeof basicIceFallbackSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/basic-ice-fallback',
+    {
+      schema: {
+        tags: ['registration'],
+        params: idParamsJsonSchema,
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        const body = basicIceFallbackSchema.parse(request.body);
+        return await updateBasicIceFallbackInterest(id, (request as AuthenticatedRequest).member, body);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
@@ -673,19 +852,25 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     }
   );
 
-  fastify.post<{ Params: { id: number }; Reply: unknown | ApiErrorResponse }>(
+  fastify.post<{ Params: { id: number }; Body: z.infer<typeof submitRegistrationSchema>; Reply: unknown | ApiErrorResponse }>(
     '/registration/drafts/:id/submit',
     {
       schema: {
         tags: ['registration'],
         params: idParamsJsonSchema,
+        body: anyObjectSchema,
         response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
       },
     },
     async (request, reply) => {
       try {
         const { id } = idParamsSchema.parse(request.params);
-        return await submitRegistrationMembershipPayment({ registrationId: id, actor: (request as AuthenticatedRequest).member });
+        const body = submitRegistrationSchema.parse(request.body ?? {});
+        return await submitRegistrationMembershipPayment({
+          registrationId: id,
+          actor: (request as AuthenticatedRequest).member,
+          confirmImmediatePayment: body.confirmImmediatePayment,
+        });
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

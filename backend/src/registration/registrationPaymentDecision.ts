@@ -1,7 +1,7 @@
 import { createDecision, type BusinessDecision, type RegistrationReasonCode } from './registrationDecisionTypes.js';
 import type { RegistrationFeePreview } from './registrationFeeCalculator.js';
 import type { SelectionValidationResult } from './registrationLeagueSelections.js';
-import type { RegistrationContext } from './registrationContext.js';
+import { playInSelectionDefersPayment, waitlistSelectionDefersPayment, type RegistrationContext } from './registrationContext.js';
 
 export type RegistrationPaymentOutcome = 'immediate_payment' | 'deferred_payment' | 'no_payment_required';
 
@@ -16,14 +16,17 @@ export type RegistrationPaymentDecision = BusinessDecision<RegistrationPaymentOu
 function selectionDeferralReasons(context: RegistrationContext): RegistrationReasonCode[] {
   const reasons: RegistrationReasonCode[] = [];
   for (const selection of context.selections) {
-    if (selection.selectionType === 'return_subject_to_availability') {
-      reasons.push('non_guaranteed_league_defers_payment', 'return_subject_to_availability');
+    if (
+      selection.selectionType === 'return_subject_to_availability' ||
+      selection.selectionType === 'third_league_interest'
+    ) {
+      reasons.push('third_league_interest_defers_payment');
     }
-    if (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') {
+    if (waitlistSelectionDefersPayment(context, selection)) {
       reasons.push('waitlist_placement_pending');
     }
-    if (selection.selectionType === 'third_league_interest') {
-      reasons.push('third_league_interest_defers_payment');
+    if (playInSelectionDefersPayment(context, selection)) {
+      reasons.push('play_in_placement_pending');
     }
   }
   if (

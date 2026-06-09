@@ -49,7 +49,21 @@ interface MemberLeague {
   teamName: string | null;
 }
 
-type MemberProfileTab = 'profile' | 'sparing' | 'leagues';
+interface MemberEmergencyContact {
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+}
+
+interface MemberExperienceSummary {
+  totalExperienceYears: number;
+}
+
+type MemberProfileTab = 'profile' | 'emergency-contact' | 'sparing' | 'leagues';
+
+function formatExperienceYears(years: number): string {
+  const displayValue = Number.isInteger(years) ? String(years) : years.toFixed(1).replace(/\.0$/, '');
+  return `${displayValue} ${years === 1 ? 'year' : 'years'}`;
+}
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -71,9 +85,15 @@ export default function MembersDirectory() {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [memberAvailability, setMemberAvailability] = useState<MemberAvailability | null>(null);
   const [memberLeagues, setMemberLeagues] = useState<MemberLeague[] | null>(null);
+  const [memberEmergencyContact, setMemberEmergencyContact] = useState<MemberEmergencyContact | null>(
+    null
+  );
+  const [memberExperience, setMemberExperience] = useState<MemberExperienceSummary | null>(null);
   const [activeTab, setActiveTab] = useState<MemberProfileTab>('profile');
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
+  const [loadingEmergencyContact, setLoadingEmergencyContact] = useState(false);
+  const [loadingExperience, setLoadingExperience] = useState(false);
   const [teamRosterModal, setTeamRosterModal] = useState<{
     teamId: number;
     teamName: string;
@@ -215,27 +235,36 @@ export default function MembersDirectory() {
     setActiveTab('profile');
     setMemberAvailability(null);
     setMemberLeagues(null);
+    setMemberEmergencyContact(null);
+    setMemberExperience(null);
 
     setLoadingAvailability(true);
     setLoadingLeagues(true);
+    setLoadingEmergencyContact(true);
+    setLoadingExperience(true);
     try {
-      const [availabilityRes, leaguesRes] = await Promise.all([
-        get('/members/{memberId}/availability', undefined, {
-          memberId: String(member.id),
-        }),
-        get('/members/{memberId}/leagues', undefined, {
-          memberId: String(member.id),
-        }),
+      const memberId = String(member.id);
+      const [availabilityRes, leaguesRes, emergencyContactRes, experienceRes] = await Promise.all([
+        get('/members/{memberId}/availability', undefined, { memberId }),
+        get('/members/{memberId}/leagues', undefined, { memberId }),
+        get('/members/{memberId}/emergency-contact', undefined, { memberId }),
+        get('/members/{memberId}/experience', undefined, { memberId }),
       ]);
       setMemberAvailability(availabilityRes);
       setMemberLeagues(Array.isArray(leaguesRes) ? leaguesRes : []);
+      setMemberEmergencyContact(emergencyContactRes);
+      setMemberExperience(experienceRes as MemberExperienceSummary);
     } catch (error) {
       console.error('Failed to load member data:', error);
       setMemberAvailability({ canSkip: false, availableLeagues: [] });
       setMemberLeagues([]);
+      setMemberEmergencyContact(null);
+      setMemberExperience(null);
     } finally {
       setLoadingAvailability(false);
       setLoadingLeagues(false);
+      setLoadingEmergencyContact(false);
+      setLoadingExperience(false);
     }
   };
 
@@ -243,6 +272,8 @@ export default function MembersDirectory() {
     setSelectedMember(null);
     setMemberAvailability(null);
     setMemberLeagues(null);
+    setMemberEmergencyContact(null);
+    setMemberExperience(null);
     setActiveTab('profile');
     setTeamRosterModal(null);
   };
@@ -329,6 +360,12 @@ export default function MembersDirectory() {
                     onClick: () => setActiveTab('profile'),
                   },
                   {
+                    key: 'emergency-contact',
+                    label: 'Emergency contact',
+                    isActive: activeTab === 'emergency-contact',
+                    onClick: () => setActiveTab('emergency-contact'),
+                  },
+                  {
                     key: 'sparing',
                     label: 'Sparing availability',
                     isActive: activeTab === 'sparing',
@@ -346,11 +383,10 @@ export default function MembersDirectory() {
               {/* Tab content */}
               <div className="overflow-y-auto flex-1 min-h-0">
                 {activeTab === 'profile' && (
-                  <div className="space-y-2">
-                    <h3 className="app-section-title mb-3">
-                      Contact Information
-                    </h3>
-                    <div className="space-y-2">
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="app-section-title mb-3">Contact information</h3>
+                      <div className="space-y-2">
                       <div>
                         <span className="font-medium text-gray-700 dark:text-gray-300">Name:</span>{' '}
                         <span className="text-gray-900 dark:text-gray-100">
@@ -396,7 +432,70 @@ export default function MembersDirectory() {
                           )}
                         </div>
                       )}
+                      </div>
                     </div>
+
+                    <div>
+                      <h3 className="app-section-title mb-3">Experience</h3>
+                      {loadingExperience ? (
+                        <InlineStateMessage title="Loading experience..." />
+                      ) : memberExperience ? (
+                        <div>
+                          <span className="font-medium text-gray-700 dark:text-gray-300">
+                            Years of experience:
+                          </span>{' '}
+                          <span className="text-gray-900 dark:text-gray-100">
+                            {formatExperienceYears(memberExperience.totalExperienceYears)}
+                          </span>
+                        </div>
+                      ) : (
+                        <InlineStateMessage title="Unable to load experience." />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'emergency-contact' && (
+                  <div>
+                    <h3 className="app-section-title mb-3">Emergency contact</h3>
+                    {loadingEmergencyContact ? (
+                      <InlineStateMessage title="Loading emergency contact..." />
+                    ) : memberEmergencyContact ? (
+                      <div className="space-y-2">
+                        {memberEmergencyContact.emergencyContactName ||
+                        memberEmergencyContact.emergencyContactPhone ? (
+                          <>
+                            {memberEmergencyContact.emergencyContactName ? (
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">
+                                  Name:
+                                </span>{' '}
+                                <span className="text-gray-900 dark:text-gray-100">
+                                  {memberEmergencyContact.emergencyContactName}
+                                </span>
+                              </div>
+                            ) : null}
+                            {memberEmergencyContact.emergencyContactPhone ? (
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">
+                                  Phone:
+                                </span>{' '}
+                                <a
+                                  href={`tel:${memberEmergencyContact.emergencyContactPhone.replace(/\D/g, '')}`}
+                                  className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+                                >
+                                  {formatPhone(memberEmergencyContact.emergencyContactPhone)}
+                                </a>
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <InlineStateMessage title="No emergency contact on file." />
+                        )}
+                      </div>
+                    ) : (
+                      <InlineStateMessage title="Unable to load emergency contact." />
+                    )}
                   </div>
                 )}
 

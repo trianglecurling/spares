@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { get, post } from '../api/client';
@@ -39,12 +39,14 @@ const isSelectionResponse = (
 
 const isLoginSuccessResponse = (
   value: unknown
-): value is { token: string; member: AuthenticatedMember } =>
+): value is { accessToken: string; refreshToken: string; member: AuthenticatedMember } =>
   typeof value === 'object' &&
   value !== null &&
-  'token' in value &&
+  'accessToken' in value &&
+  'refreshToken' in value &&
   'member' in value &&
-  typeof (value as { token?: unknown }).token === 'string';
+  typeof (value as { accessToken?: unknown }).accessToken === 'string' &&
+  typeof (value as { refreshToken?: unknown }).refreshToken === 'string';
 
 export default function Login() {
   const [contact, setContact] = useState('');
@@ -57,9 +59,12 @@ export default function Login() {
   const { login } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // Get the intended destination from location state
-  const from = (location.state as LocationState | null)?.from?.pathname || null;
+  const rawRedirectParam = searchParams.get('redirect');
+  const redirectParam = rawRedirectParam?.startsWith('/') ? rawRedirectParam : null;
+  const from = redirectParam || (location.state as LocationState | null)?.from?.pathname || null;
 
   useEffect(() => {
     let isActive = true;
@@ -92,7 +97,7 @@ export default function Login() {
           ...response.member,
           themePreference: normalizeThemePreference(response.member.themePreference),
         } as AuthenticatedMember);
-        await login(response.token, member, from || undefined);
+        await login(response.accessToken, response.refreshToken, member, from || undefined);
       } else if (isSelectionResponse(response)) {
         setMultipleMembers(response.members);
         setTempToken(response.tempToken);
@@ -129,7 +134,7 @@ export default function Login() {
           ...response.member,
           themePreference: normalizeThemePreference(response.member.themePreference),
         } as AuthenticatedMember);
-        await login(response.token, member, from || undefined);
+        await login(response.accessToken, response.refreshToken, member, from || undefined);
       }
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
@@ -157,7 +162,7 @@ export default function Login() {
           ...response.member,
           themePreference: normalizeThemePreference(response.member.themePreference),
         } as AuthenticatedMember);
-        await login(response.token, member, from || undefined);
+        await login(response.accessToken, response.refreshToken, member, from || undefined);
       }
     } catch (err: unknown) {
       const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;

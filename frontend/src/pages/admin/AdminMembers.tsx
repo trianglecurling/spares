@@ -27,6 +27,7 @@ import { HiEllipsisVertical } from 'react-icons/hi2';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
 import AdminMemberEditorModal from './AdminMemberEditorModal';
 import AdminMembersBulkImportModal from './AdminMembersBulkImportModal';
+import AdminMembersExperienceBaselinesImportModal from './AdminMembersExperienceBaselinesImportModal';
 import useTableQueryState from '../../hooks/useTableQueryState';
 
 const MEMBERS_PAGE_SIZE = 50;
@@ -184,6 +185,7 @@ export default function AdminMembers() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportTsv, setExportTsv] = useState('');
   const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
+  const [isExperienceImportModalOpen, setIsExperienceImportModalOpen] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([]);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [memberActionsMenuPosition, setMemberActionsMenuPosition] = useState<{
@@ -250,7 +252,7 @@ export default function AdminMembers() {
         isSponsorAdmin: Boolean((m as { isSponsorAdmin?: boolean }).isSponsorAdmin),
         isLeagueAdministrator: Boolean(m.isLeagueAdministratorGlobal),
         isLeagueAdministratorGlobal: Boolean(m.isLeagueAdministratorGlobal),
-        isInServerAdminsList: Boolean(m.isInServerAdminsList),
+        isLastServerAdmin: Boolean(m.isLastServerAdmin),
         firstLoginCompleted: Boolean(m.firstLoginCompleted),
       }));
       const sorted = membersWithBooleans.sort((a, b) => {
@@ -589,9 +591,12 @@ export default function AdminMembers() {
   const isSelectableMember = useCallback(
     (m: Member) => {
       if (m.id === currentMember?.id) return false;
-      if (m.isAdmin) return false;
-      if (m.isServerAdmin && !currentMember?.isServerAdmin) return false;
-      if (m.isInServerAdminsList) return false;
+      if (m.isLastServerAdmin) return false;
+
+      if (!currentMember?.isServerAdmin) {
+        if (m.isAdmin || m.isServerAdmin) return false;
+      }
+
       return true;
     },
     [currentMember?.id, currentMember?.isServerAdmin]
@@ -728,6 +733,13 @@ export default function AdminMembers() {
               <Button type="button" onClick={() => setIsBulkAddModalOpen(true)} variant="secondary">
                 Bulk import
               </Button>
+              <Button
+                type="button"
+                onClick={() => setIsExperienceImportModalOpen(true)}
+                variant="secondary"
+              >
+                Import experience baselines
+              </Button>
               {selectedMemberIds.length > 0 && (
                 <>
                   <Button type="button" variant="secondary" onClick={handleBulkSendWelcome}>
@@ -768,6 +780,13 @@ export default function AdminMembers() {
       <AdminMembersBulkImportModal
         isOpen={isBulkAddModalOpen}
         onClose={() => setIsBulkAddModalOpen(false)}
+        onImported={loadMembers}
+      />
+
+      <AdminMembersExperienceBaselinesImportModal
+        isOpen={isExperienceImportModalOpen}
+        members={members}
+        onClose={() => setIsExperienceImportModalOpen(false)}
         onImported={loadMembers}
       />
 

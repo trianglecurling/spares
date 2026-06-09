@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { get, post } from '../api/client';
-import api from '../utils/api';
+import api, { clearAuthTokens, getAccessToken, getRefreshToken, storeAuthTokens } from '../utils/api';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 export type AccountSwitchOption = { id: number; name: string };
@@ -17,7 +17,13 @@ type SessionPayload = {
 interface AuthContextType {
   member: AuthenticatedMember | null;
   token: string | null;
-  login: (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => Promise<void>;
+  login: (
+    accessToken: string,
+    refreshToken: string,
+    newMember: AuthenticatedMember,
+    redirectTo?: string,
+    options?: { suppressNavigation?: boolean },
+  ) => Promise<void>;
   logout: () => void;
   updateMember: (member: AuthenticatedMember) => void;
   isLoading: boolean;
@@ -32,13 +38,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [member, setMember] = useState<AuthenticatedMember | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('authToken'));
+  const [token, setToken] = useState<string | null>(getAccessToken());
   const [isLoading, setIsLoading] = useState(true);
   const [actorMemberId, setActorMemberId] = useState<number | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [accountSwitchOptions, setAccountSwitchOptions] = useState<AccountSwitchOption[]>([]);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   const normalizeThemePreference = (
     value: string | null | undefined
@@ -76,27 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Check for token in URL (from email links)
-    // /contact/confirm uses `token` for the public contact confirmation flow, not member JWT.
-    const pathname = window.location.pathname;
-    const urlToken = pathname === '/contact/confirm' ? null : searchParams.get('token');
-    if (urlToken) {
-      localStorage.setItem('authToken', urlToken);
-      setToken(urlToken);
-      // Remove token from URL but preserve any other query params (e.g. requestId)
-      const params = new URLSearchParams(window.location.search);
-      params.delete('token');
-      const newSearch = params.toString();
-      window.history.replaceState(
-        {},
-        '',
-        window.location.pathname + (newSearch ? `?${newSearch}` : '')
-      );
-    }
-
     // Verify existing token
     const verifyToken = async () => {
-      const currentToken = urlToken || token;
+      const currentToken = getAccessToken();
 
       // Skip verification if we're on the install page
       const currentPath = window.location.pathname;
@@ -114,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             isImpersonating: response.isImpersonating,
             accountSwitchOptions: response.accountSwitchOptions,
           });
+          setToken(getAccessToken());
 
           // Redirect to first login if needed
           if (!response.member.firstLoginCompleted) {
@@ -157,7 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Intentionally silent: user may be on the install flow
           } else {
             console.error('Token verification failed:', error);
-            localStorage.removeItem('authToken');
+            clearAuthTokens();
             setToken(null);
             clearAccountSwitchState();
           }
@@ -169,9 +157,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     verifyToken();
   }, []);
 
-  const login = async (newToken: string, newMember: AuthenticatedMember, redirectTo?: string) => {
-    localStorage.setItem('authToken', newToken);
-    setToken(newToken);
+  const login = async (
+    accessToken: string,
+    refreshToken: string,
+    newMember: AuthenticatedMember,
+    redirectTo?: string,
+    options?: { suppressNavigation?: boolean },
+  ) => {
+    storeAuthTokens(accessToken, refreshToken);
+    setToken(accessToken);
     setMember(normalizeMember(newMember));
 
     try {
@@ -197,14 +191,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // ignore
       }
       navigate('/first-login', { replace: true });
-    } else {
-      // Use the redirect destination if provided, otherwise default to dashboard
+      return;
+    }
+    if (!options?.suppressNavigation) {
       navigate(redirectTo || '/dashboard');
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('authToken');
+    const refreshToken = getRefreshToken();
+    api.post('/auth/logout', { refreshToken }).catch(() => {});
+    clearAuthTokens();
     setToken(null);
     setMember(null);
     clearAccountSwitchState();
@@ -217,8 +214,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchToMemberAccount = async (targetMemberId: number) => {
     const response = await post('/auth/impersonate', { targetMemberId });
-    localStorage.setItem('authToken', response.token);
-    setToken(response.token);
+    storeAuthTokens(response.accessToken, response.refreshToken);
+    setToken(response.accessToken);
     applySessionPayload({
       member: response.member as AuthenticatedMember,
       actorMemberId: response.actorMemberId,
@@ -228,9 +225,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const stopImpersonation = async () => {
-    const { data } = await api.post<SessionPayload & { token: string }>('/auth/stop-impersonation');
-    localStorage.setItem('authToken', data.token);
-    setToken(data.token);
+    const { data } = await api.post<SessionPayload & { accessToken: string; refreshToken: string }>('/auth/stop-impersonation');
+    storeAuthTokens(data.accessToken, data.refreshToken);
+    setToken(data.accessToken);
     applySessionPayload({
       member: data.member as AuthenticatedMember,
       actorMemberId: data.actorMemberId,

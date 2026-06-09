@@ -718,11 +718,37 @@ choose at most two to keep as REPLACE entries.
 The registration or placement flow should block completion until this cleanup is
 resolved.
 
+### Waitlist offer response preferences
+
+Each active waitlist entry has an offer response preference for the current
+session:
+
+- `ask` — reach out when a spot opens and wait for a response (default)
+- `auto_accept` — accept automatically when a spot opens
+- `auto_decline` — decline automatically when a spot opens
+
+During priority registration, members confirm each waitlist they are keeping or
+joining and must choose either `auto_accept` or `auto_decline`. `ask` is not
+offered during priority registration because registration is close to league
+start and the goal is to avoid waiting on responses after priority registration
+closes.
+
+The preference is stored on the waitlist entry itself, not on individual team
+members. For BYOT waitlist entries, any member on the entry may set the
+preference during registration and it applies to the whole entry.
+
+Staff can see each entry's preference while processing waitlists.
+
 ### Waitlist offers
 
 When a spot becomes available, staff may send offers to waitlisted users.
 
-A waitlist offer gives the user 24 hours to decline.
+If the entry preference is `auto_accept` or `auto_decline`, the system resolves
+the offer immediately using that preference instead of waiting for a member
+response.
+
+If the entry preference is `ask`, a waitlist offer gives the user 24 hours to
+decline.
 
 If the user does not respond within 24 hours, the offer is treated as accepted.
 

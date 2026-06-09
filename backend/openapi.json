@@ -106,17 +106,10 @@
                             "database",
                             "username"
                           ]
-                        },
-                        "adminEmails": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
                         }
                       },
                       "required": [
-                        "type",
-                        "adminEmails"
+                        "type"
                       ]
                     }
                   ]
@@ -187,17 +180,30 @@
                       "password"
                     ]
                   },
-                  "adminEmails": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
+                  "initialAdmin": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "firstName": {
+                        "type": "string"
+                      },
+                      "lastName": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      }
                     },
-                    "minItems": 1
+                    "required": [
+                      "firstName",
+                      "lastName",
+                      "email"
+                    ]
                   }
                 },
                 "required": [
                   "databaseType",
-                  "adminEmails"
+                  "initialAdmin"
                 ]
               }
             }
@@ -226,11 +232,78 @@
         }
       }
     },
-    "/install/create-admin-members": {
+    "/auth/refresh": {
       "post": {
         "tags": [
-          "install"
+          "auth"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "accessToken",
+                    "refreshToken"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Default Response",
@@ -242,22 +315,10 @@
                   "properties": {
                     "success": {
                       "type": "boolean"
-                    },
-                    "created": {
-                      "type": "number"
-                    },
-                    "updated": {
-                      "type": "number"
-                    },
-                    "total": {
-                      "type": "number"
                     }
                   },
                   "required": [
-                    "success",
-                    "created",
-                    "updated",
-                    "total"
+                    "success"
                   ]
                 }
               }
@@ -357,7 +418,10 @@
                       "type": "object",
                       "additionalProperties": false,
                       "properties": {
-                        "token": {
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "refreshToken": {
                           "type": "string"
                         },
                         "member": {
@@ -509,7 +573,8 @@
                         }
                       },
                       "required": [
-                        "token",
+                        "accessToken",
+                        "refreshToken",
                         "member"
                       ]
                     }
@@ -602,7 +667,10 @@
                       "type": "object",
                       "additionalProperties": false,
                       "properties": {
-                        "token": {
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "refreshToken": {
                           "type": "string"
                         },
                         "member": {
@@ -754,7 +822,8 @@
                         }
                       },
                       "required": [
-                        "token",
+                        "accessToken",
+                        "refreshToken",
                         "member"
                       ]
                     }
@@ -844,7 +913,10 @@
                       "type": "object",
                       "additionalProperties": false,
                       "properties": {
-                        "token": {
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "refreshToken": {
                           "type": "string"
                         },
                         "member": {
@@ -996,7 +1068,8 @@
                         }
                       },
                       "required": [
-                        "token",
+                        "accessToken",
+                        "refreshToken",
                         "member"
                       ]
                     }
@@ -1550,6 +1623,212 @@
         }
       }
     },
+    "/public/payments/{orderToken}": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orderToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "orderToken": {
+                      "type": "string"
+                    },
+                    "subjectType": {
+                      "type": "string",
+                      "enum": [
+                        "donation",
+                        "membership",
+                        "event_registration",
+                        "curling_registration"
+                      ]
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "amountMinor": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "created",
+                        "pending",
+                        "succeeded",
+                        "failed",
+                        "refunded",
+                        "partially_refunded"
+                      ]
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "stripe",
+                        "paypal",
+                        "square"
+                      ]
+                    },
+                    "providerReference": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "paidAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "lineItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "description",
+                          "amountMinor"
+                        ]
+                      }
+                    },
+                    "subtotalMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "discountMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "totalMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "refunds": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "processedAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amountMinor",
+                          "currency",
+                          "status",
+                          "reason",
+                          "processedAt",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "context": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "value"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "orderToken",
+                    "subjectType",
+                    "description",
+                    "amountMinor",
+                    "currency",
+                    "status",
+                    "provider",
+                    "providerReference",
+                    "paidAt",
+                    "createdAt",
+                    "updatedAt",
+                    "lineItems",
+                    "subtotalMinor",
+                    "discountMinor",
+                    "totalMinor",
+                    "refunds",
+                    "context"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/public/events": {
       "get": {
         "tags": [
@@ -1956,6 +2235,87 @@
         }
       }
     },
+    "/registration/payment-status/{orderToken}/resolve": {
+      "post": {
+        "tags": [
+          "registration"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orderToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/payments/webhooks/{provider}": {
       "post": {
         "tags": [
@@ -2211,7 +2571,10 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "token": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
                       "type": "string"
                     },
                     "member": {
@@ -2388,7 +2751,8 @@
                     }
                   },
                   "required": [
-                    "token",
+                    "accessToken",
+                    "refreshToken",
                     "member",
                     "actorMemberId",
                     "isImpersonating",
@@ -2415,7 +2779,10 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "token": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
                       "type": "string"
                     },
                     "member": {
@@ -2592,7 +2959,8 @@
                     }
                   },
                   "required": [
-                    "token",
+                    "accessToken",
+                    "refreshToken",
                     "member",
                     "actorMemberId",
                     "isImpersonating",
@@ -2632,6 +3000,42 @@
                       ]
                     },
                     "phone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "firstName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "dateOfBirth": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "emergencyContactName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "emergencyContactPhone": {
                       "type": [
                         "null",
                         "string"
@@ -2679,6 +3083,12 @@
                     "name",
                     "email",
                     "phone",
+                    "firstName",
+                    "lastName",
+                    "dateOfBirth",
+                    "mailingAddress",
+                    "emergencyContactName",
+                    "emergencyContactPhone",
                     "validThrough",
                     "spareOnly",
                     "socialMember",
@@ -2718,6 +3128,30 @@
                   },
                   "phone": {
                     "type": "string"
+                  },
+                  "firstName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "dateOfBirth": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "mailingAddress": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "emergencyContactName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "emergencyContactPhone": {
+                    "type": "string",
+                    "minLength": 1
                   },
                   "optedInSms": {
                     "type": "boolean"
@@ -2768,6 +3202,42 @@
                         "string"
                       ]
                     },
+                    "firstName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "dateOfBirth": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "emergencyContactName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "emergencyContactPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "validThrough": {
                       "type": [
                         "null",
@@ -2810,6 +3280,12 @@
                     "name",
                     "email",
                     "phone",
+                    "firstName",
+                    "lastName",
+                    "dateOfBirth",
+                    "mailingAddress",
+                    "emergencyContactName",
+                    "emergencyContactPhone",
                     "validThrough",
                     "spareOnly",
                     "socialMember",
@@ -2821,6 +3297,327 @@
                     "emailVisible",
                     "phoneVisible",
                     "themePreference"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/me/payment-history": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "total": {
+                      "type": "number"
+                    },
+                    "limit": {
+                      "type": "number"
+                    },
+                    "offset": {
+                      "type": "number"
+                    },
+                    "payments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "orderToken": {
+                            "type": "string"
+                          },
+                          "subjectType": {
+                            "type": "string",
+                            "enum": [
+                              "donation",
+                              "membership",
+                              "event_registration",
+                              "curling_registration"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "pending",
+                              "succeeded",
+                              "failed",
+                              "refunded",
+                              "partially_refunded"
+                            ]
+                          },
+                          "paidAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "orderToken",
+                          "subjectType",
+                          "description",
+                          "amountMinor",
+                          "currency",
+                          "status",
+                          "paidAt",
+                          "createdAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "limit",
+                    "offset",
+                    "payments"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/me/payment-history/{orderToken}": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orderToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "orderToken": {
+                      "type": "string"
+                    },
+                    "subjectType": {
+                      "type": "string",
+                      "enum": [
+                        "donation",
+                        "membership",
+                        "event_registration",
+                        "curling_registration"
+                      ]
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "amountMinor": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "created",
+                        "pending",
+                        "succeeded",
+                        "failed",
+                        "refunded",
+                        "partially_refunded"
+                      ]
+                    },
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "stripe",
+                        "paypal",
+                        "square"
+                      ]
+                    },
+                    "providerReference": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "paidAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "lineItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "description",
+                          "amountMinor"
+                        ]
+                      }
+                    },
+                    "subtotalMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "discountMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "totalMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "refunds": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "processedAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amountMinor",
+                          "currency",
+                          "status",
+                          "reason",
+                          "processedAt",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "context": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "value"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "orderToken",
+                    "subjectType",
+                    "description",
+                    "amountMinor",
+                    "currency",
+                    "status",
+                    "provider",
+                    "providerReference",
+                    "paidAt",
+                    "createdAt",
+                    "updatedAt",
+                    "lineItems",
+                    "subtotalMinor",
+                    "discountMinor",
+                    "totalMinor",
+                    "refunds",
+                    "context"
                   ]
                 }
               }
@@ -3003,6 +3800,18 @@
                       "name": {
                         "type": "string"
                       },
+                      "firstName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "lastName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "email": {
                         "type": [
                           "null",
@@ -3042,7 +3851,7 @@
                       "isLeagueAdministratorGlobal": {
                         "type": "boolean"
                       },
-                      "isInServerAdminsList": {
+                      "isLastServerAdmin": {
                         "type": "boolean"
                       },
                       "emailSubscribed": {
@@ -3059,6 +3868,12 @@
                       },
                       "firstLoginCompleted": {
                         "type": "boolean"
+                      },
+                      "baselineOtherClubExperienceYears": {
+                        "type": "number"
+                      },
+                      "baselineClubExperienceYears": {
+                        "type": "number"
                       }
                     },
                     "required": [
@@ -3067,7 +3882,7 @@
                       "isAdmin",
                       "isServerAdmin",
                       "isLeagueAdministratorGlobal",
-                      "isInServerAdminsList",
+                      "isLastServerAdmin",
                       "emailSubscribed",
                       "optedInSms",
                       "emailVisible",
@@ -3093,6 +3908,14 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
+                  "firstName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
                   "name": {
                     "type": "string",
                     "minLength": 1
@@ -3135,7 +3958,6 @@
                   }
                 },
                 "required": [
-                  "name",
                   "email"
                 ]
               }
@@ -3242,6 +4064,18 @@
                       "name": {
                         "type": "string"
                       },
+                      "firstName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "lastName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "email": {
                         "type": [
                           "null",
@@ -3281,7 +4115,7 @@
                       "isLeagueAdministratorGlobal": {
                         "type": "boolean"
                       },
-                      "isInServerAdminsList": {
+                      "isLastServerAdmin": {
                         "type": "boolean"
                       },
                       "emailSubscribed": {
@@ -3298,6 +4132,12 @@
                       },
                       "firstLoginCompleted": {
                         "type": "boolean"
+                      },
+                      "baselineOtherClubExperienceYears": {
+                        "type": "number"
+                      },
+                      "baselineClubExperienceYears": {
+                        "type": "number"
                       }
                     },
                     "required": [
@@ -3306,7 +4146,7 @@
                       "isAdmin",
                       "isServerAdmin",
                       "isLeagueAdministratorGlobal",
-                      "isInServerAdminsList",
+                      "isLastServerAdmin",
                       "emailSubscribed",
                       "optedInSms",
                       "emailVisible",
@@ -3377,6 +4217,92 @@
                       "teamName"
                     ]
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/{memberId}/experience": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "totalExperienceYears": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "totalExperienceYears"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/{memberId}/emergency-contact": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "emergencyContactName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "emergencyContactPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "emergencyContactName",
+                    "emergencyContactPhone"
+                  ]
                 }
               }
             }
@@ -3502,6 +4428,130 @@
         }
       }
     },
+    "/members/bulk-experience-baselines": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "rows": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "email": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "baselineOtherClubExperienceYears": {
+                          "type": "number"
+                        },
+                        "baselineClubExperienceYears": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "baselineOtherClubExperienceYears",
+                        "baselineClubExperienceYears"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "rows"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "updatedCount": {
+                      "type": "number"
+                    },
+                    "unchangedCount": {
+                      "type": "number"
+                    },
+                    "failedCount": {
+                      "type": "number"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "email": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "updated",
+                              "unchanged",
+                              "not_found",
+                              "ambiguous_email",
+                              "ambiguous_name",
+                              "invalid"
+                            ]
+                          },
+                          "memberId": {
+                            "type": "number"
+                          },
+                          "memberName": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "updatedCount",
+                    "unchangedCount",
+                    "failedCount",
+                    "results"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/members/{id}": {
       "patch": {
         "tags": [
@@ -3515,6 +4565,14 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
+                  "firstName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
                   "name": {
                     "type": "string",
                     "minLength": 1
@@ -3551,6 +4609,12 @@
                   },
                   "isSponsorAdmin": {
                     "type": "boolean"
+                  },
+                  "baselineOtherClubExperienceYears": {
+                    "type": "number"
+                  },
+                  "baselineClubExperienceYears": {
+                    "type": "number"
                   }
                 }
               }
@@ -3933,6 +4997,12 @@
                           "number"
                         ]
                       },
+                      "maxExperienceYears": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
                       "minAge": {
                         "type": [
                           "null",
@@ -3958,6 +5028,15 @@
                         ]
                       },
                       "allowsWaitlist": {
+                        "type": "boolean"
+                      },
+                      "waitlistId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "isPlayInBased": {
                         "type": "boolean"
                       },
                       "allowsSabbatical": {
@@ -4003,11 +5082,14 @@
                       "registrationFeeOverrideMinor",
                       "requiresClubMembership",
                       "minExperienceYears",
+                      "maxExperienceYears",
                       "minAge",
                       "maxAge",
                       "firstDayOfPlay",
                       "lastDayOfPlay",
                       "allowsWaitlist",
+                      "waitlistId",
+                      "isPlayInBased",
                       "allowsSabbatical",
                       "predecessorLeagueId",
                       "successorLeagueId",
@@ -4084,6 +5166,12 @@
                     "type": "boolean"
                   },
                   "minExperienceYears": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "maxExperienceYears": {
                     "type": [
                       "number",
                       "null"
@@ -4229,6 +5317,12 @@
                         "number"
                       ]
                     },
+                    "maxExperienceYears": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
                     "minAge": {
                       "type": [
                         "null",
@@ -4254,6 +5348,15 @@
                       ]
                     },
                     "allowsWaitlist": {
+                      "type": "boolean"
+                    },
+                    "waitlistId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "isPlayInBased": {
                       "type": "boolean"
                     },
                     "allowsSabbatical": {
@@ -4299,11 +5402,14 @@
                     "registrationFeeOverrideMinor",
                     "requiresClubMembership",
                     "minExperienceYears",
+                    "maxExperienceYears",
                     "minAge",
                     "maxAge",
                     "firstDayOfPlay",
                     "lastDayOfPlay",
                     "allowsWaitlist",
+                    "waitlistId",
+                    "isPlayInBased",
                     "allowsSabbatical",
                     "predecessorLeagueId",
                     "successorLeagueId",
@@ -4485,6 +5591,12 @@
                               "number"
                             ]
                           },
+                          "maxExperienceYears": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "minAge": {
                             "type": [
                               "null",
@@ -4510,6 +5622,15 @@
                             ]
                           },
                           "allowsWaitlist": {
+                            "type": "boolean"
+                          },
+                          "waitlistId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "isPlayInBased": {
                             "type": "boolean"
                           },
                           "allowsSabbatical": {
@@ -4555,11 +5676,14 @@
                           "registrationFeeOverrideMinor",
                           "requiresClubMembership",
                           "minExperienceYears",
+                          "maxExperienceYears",
                           "minAge",
                           "maxAge",
                           "firstDayOfPlay",
                           "lastDayOfPlay",
                           "allowsWaitlist",
+                          "waitlistId",
+                          "isPlayInBased",
                           "allowsSabbatical",
                           "predecessorLeagueId",
                           "successorLeagueId",
@@ -4654,6 +5778,12 @@
                       "null"
                     ]
                   },
+                  "maxExperienceYears": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "minAge": {
                     "type": [
                       "number",
@@ -4679,6 +5809,9 @@
                     ]
                   },
                   "allowsWaitlist": {
+                    "type": "boolean"
+                  },
+                  "isPlayInBased": {
                     "type": "boolean"
                   },
                   "allowsSabbatical": {
@@ -4796,6 +5929,12 @@
                         "number"
                       ]
                     },
+                    "maxExperienceYears": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
                     "minAge": {
                       "type": [
                         "null",
@@ -4821,6 +5960,15 @@
                       ]
                     },
                     "allowsWaitlist": {
+                      "type": "boolean"
+                    },
+                    "waitlistId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "isPlayInBased": {
                       "type": "boolean"
                     },
                     "allowsSabbatical": {
@@ -4866,11 +6014,14 @@
                     "registrationFeeOverrideMinor",
                     "requiresClubMembership",
                     "minExperienceYears",
+                    "maxExperienceYears",
                     "minAge",
                     "maxAge",
                     "firstDayOfPlay",
                     "lastDayOfPlay",
                     "allowsWaitlist",
+                    "waitlistId",
+                    "isPlayInBased",
                     "allowsSabbatical",
                     "predecessorLeagueId",
                     "successorLeagueId",
@@ -5171,6 +6322,12 @@
                               "number"
                             ]
                           },
+                          "maxExperienceYears": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "minAge": {
                             "type": [
                               "null",
@@ -5196,6 +6353,15 @@
                             ]
                           },
                           "allowsWaitlist": {
+                            "type": "boolean"
+                          },
+                          "waitlistId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "isPlayInBased": {
                             "type": "boolean"
                           },
                           "allowsSabbatical": {
@@ -5241,11 +6407,14 @@
                           "registrationFeeOverrideMinor",
                           "requiresClubMembership",
                           "minExperienceYears",
+                          "maxExperienceYears",
                           "minAge",
                           "maxAge",
                           "firstDayOfPlay",
                           "lastDayOfPlay",
                           "allowsWaitlist",
+                          "waitlistId",
+                          "isPlayInBased",
                           "allowsSabbatical",
                           "predecessorLeagueId",
                           "successorLeagueId",
@@ -5260,6 +6429,128 @@
                     "imported",
                     "leagues"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/waitlist-options": {
+      "get": {
+        "tags": [
+          "leagues"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{id}/waitlist": {
+      "post": {
+        "tags": [
+          "leagues"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "leagues"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
                 }
               }
             }
@@ -11757,6 +13048,12 @@
                     "notificationDelaySeconds": {
                       "type": "number"
                     },
+                    "sessionTokenTtlMinutes": {
+                      "type": "number"
+                    },
+                    "refreshTokenTtlDays": {
+                      "type": "number"
+                    },
                     "updatedAt": {
                       "type": [
                         "null",
@@ -11784,6 +13081,8 @@
                     "captureBackendLogs",
                     "testCurrentTime",
                     "notificationDelaySeconds",
+                    "sessionTokenTtlMinutes",
+                    "refreshTokenTtlDays",
                     "updatedAt"
                   ]
                 }
@@ -11898,6 +13197,12 @@
                   },
                   "notificationDelaySeconds": {
                     "type": "number"
+                  },
+                  "sessionTokenTtlMinutes": {
+                    "type": "number"
+                  },
+                  "refreshTokenTtlDays": {
+                    "type": "number"
                   }
                 }
               }
@@ -12006,6 +13311,12 @@
                     "notificationDelaySeconds": {
                       "type": "number"
                     },
+                    "sessionTokenTtlMinutes": {
+                      "type": "number"
+                    },
+                    "refreshTokenTtlDays": {
+                      "type": "number"
+                    },
                     "updatedAt": {
                       "type": [
                         "null",
@@ -12033,6 +13344,8 @@
                     "captureBackendLogs",
                     "testCurrentTime",
                     "notificationDelaySeconds",
+                    "sessionTokenTtlMinutes",
+                    "refreshTokenTtlDays",
                     "updatedAt"
                   ]
                 }
@@ -12319,17 +13632,10 @@
                         "database",
                         "username"
                       ]
-                    },
-                    "adminEmails": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
                     }
                   },
                   "required": [
-                    "type",
-                    "adminEmails"
+                    "type"
                   ]
                 }
               }
@@ -12394,18 +13700,10 @@
                       "database",
                       "username"
                     ]
-                  },
-                  "adminEmails": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "minItems": 1
                   }
                 },
                 "required": [
-                  "databaseType",
-                  "adminEmails"
+                  "databaseType"
                 ]
               }
             }
@@ -19297,6 +20595,24 @@
         "tags": [
           "registration"
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "seasonId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -19828,6 +21144,107 @@
         }
       }
     },
+    "/registration/drafts/{id}/ice-privileges": {
+      "patch": {
+        "tags": [
+          "registration"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/drafts/{id}/discounts": {
       "patch": {
         "tags": [
@@ -20030,11 +21447,182 @@
         }
       }
     },
+    "/registration/leagues/{leagueId}/team-member-placement-options": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/drafts/{id}/league-catalog": {
       "get": {
         "tags": [
           "registration"
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/drafts/{id}/basic-ice-fallback": {
+      "patch": {
+        "tags": [
+          "registration"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -20316,6 +21904,17 @@
         "tags": [
           "registration"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -20487,6 +22086,1217 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/registration/member/dashboard-status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/registrations": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/registrations/current": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/registrations/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/registrations/{id}/communications": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/waitlist-entries/{entryId}/remove": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/registrations/current/cancel": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/sessions": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations/{id}/submit": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations/{id}/cancel": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/waitlist-offers/{offerId}/accept": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/member/waitlist-offers/{offerId}/decline": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/dashboard": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/communications": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/communications/{id}/resend": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations/{id}/manual-update-email": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/financial-assistance/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/leagues/{leagueId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/leagues/{leagueId}/offers": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/sessions/{sessionId}/process-vacancies": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/offers/{offerId}/accept": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/offers/{offerId}/decline": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/offers/{offerId}/cancel": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/offers/{offerId}/payment-link": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/entries": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/entries/{entryId}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/entries/{entryId}/move-to-bottom": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/leagues/{leagueId}/rollover": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/waitlists/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists": {
+      "get": {
+        "tags": [
+          "waitlists"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}": {
+      "get": {
+        "tags": [
+          "waitlists"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}/team-member-placement-options": {
+      "get": {
+        "tags": [
+          "waitlists"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}/join-context": {
+      "get": {
+        "tags": [
+          "waitlists"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}/join": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}/entries/reorder": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}/entries": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/sessions/{sessionId}/process-vacancies": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}/offers": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/entries/{entryId}": {
+      "patch": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/entries/{entryId}/move-to-bottom": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/offers/{offerId}/accept": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/offers/{offerId}/decline": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/offers/{offerId}/cancel": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/offers/{offerId}/payment-link": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/webhooks/events": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/webhooks": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "eventType": {
+                    "type": "string"
+                  },
+                  "destinationUrl": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "eventType",
+                  "destinationUrl"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}": {
+      "patch": {
+        "tags": [
+          "webhooks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "eventType": {
+                    "type": "string"
+                  },
+                  "destinationUrl": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/deliveries": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/test": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }

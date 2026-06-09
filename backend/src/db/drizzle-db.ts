@@ -30,6 +30,7 @@ type PgSchema = {
   seasonMemberships: typeof pgSchema.seasonMembershipsPg;
   curlingIcePrivileges: typeof pgSchema.curlingIcePrivilegesPg;
   curlingSabbaticalSessions: typeof pgSchema.curlingSabbaticalSessionsPg;
+  leagueWaitlists: typeof pgSchema.leagueWaitlistsPg;
   waitlistEntries: typeof pgSchema.waitlistEntriesPg;
   waitlistOffers: typeof pgSchema.waitlistOffersPg;
   waitlistAuditEvents: typeof pgSchema.waitlistAuditEventsPg;
@@ -63,6 +64,8 @@ type PgSchema = {
   paymentTransactions: typeof pgSchema.paymentTransactionsPg;
   paymentEvents: typeof pgSchema.paymentEventsPg;
   refunds: typeof pgSchema.refundsPg;
+  webhooks: typeof pgSchema.webhooksPg;
+  webhookDeliveries: typeof pgSchema.webhookDeliveriesPg;
   dailyActivity: typeof pgSchema.dailyActivityPg;
   calendarEvents: typeof pgSchema.calendarEventsPg;
   calendarEventLocations: typeof pgSchema.calendarEventLocationsPg;
@@ -147,6 +150,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       seasonMemberships: sqliteSchema.seasonMembershipsSqlite,
       curlingIcePrivileges: sqliteSchema.curlingIcePrivilegesSqlite,
       curlingSabbaticalSessions: sqliteSchema.curlingSabbaticalSessionsSqlite,
+      leagueWaitlists: sqliteSchema.leagueWaitlistsSqlite,
       waitlistEntries: sqliteSchema.waitlistEntriesSqlite,
       waitlistOffers: sqliteSchema.waitlistOffersSqlite,
       waitlistAuditEvents: sqliteSchema.waitlistAuditEventsSqlite,
@@ -180,6 +184,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       paymentTransactions: sqliteSchema.paymentTransactionsSqlite,
       paymentEvents: sqliteSchema.paymentEventsSqlite,
       refunds: sqliteSchema.refundsSqlite,
+      webhooks: sqliteSchema.webhooksSqlite,
+      webhookDeliveries: sqliteSchema.webhookDeliveriesSqlite,
       dailyActivity: sqliteSchema.dailyActivitySqlite,
       calendarEvents: sqliteSchema.calendarEventsSqlite,
       calendarEventLocations: sqliteSchema.calendarEventLocationsSqlite,
@@ -255,6 +261,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       seasonMemberships: pgSchema.seasonMembershipsPg,
       curlingIcePrivileges: pgSchema.curlingIcePrivilegesPg,
       curlingSabbaticalSessions: pgSchema.curlingSabbaticalSessionsPg,
+      leagueWaitlists: pgSchema.leagueWaitlistsPg,
       waitlistEntries: pgSchema.waitlistEntriesPg,
       waitlistOffers: pgSchema.waitlistOffersPg,
       waitlistAuditEvents: pgSchema.waitlistAuditEventsPg,
@@ -288,6 +295,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       paymentTransactions: pgSchema.paymentTransactionsPg,
       paymentEvents: pgSchema.paymentEventsPg,
       refunds: pgSchema.refundsPg,
+      webhooks: pgSchema.webhooksPg,
+      webhookDeliveries: pgSchema.webhookDeliveriesPg,
       dailyActivity: pgSchema.dailyActivityPg,
       calendarEvents: pgSchema.calendarEventsPg,
       calendarEventLocations: pgSchema.calendarEventLocationsPg,

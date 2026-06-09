@@ -61,6 +61,13 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
 
   { scope: 'events.read', category: 'Events', description: 'View events and event registration data.' },
   { scope: 'events.manage', category: 'Events', description: 'Create, edit, delete events and manage registrations.' },
+
+  { scope: 'waitlists.manage', category: 'Registration', description: 'Add, remove, reorder waitlist entries and run waitlist staff actions.' },
+  {
+    scope: 'registrations.manage',
+    category: 'Registration',
+    description: 'View and edit curling session registrations, including payment adjustments.',
+  },
 ];
 
 const byScope = new Map(SCOPE_REGISTRY.map((entry) => [entry.scope, entry]));

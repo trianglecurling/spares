@@ -7,23 +7,23 @@ import Button from '../components/Button';
 import api, { getApiErrorMessage } from '../utils/api';
 
 export default function WaitlistOfferAcceptPage() {
-  const { token } = useParams();
+  const { offerId } = useParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Accepting your waitlist offer.');
 
   useEffect(() => {
     let cancelled = false;
     async function accept() {
-      if (!token) {
+      if (!offerId) {
         setStatus('error');
-        setMessage('This waitlist offer link is missing a token.');
+        setMessage('This waitlist offer link is missing an offer id.');
         return;
       }
       try {
-        await api.post(`/registration/member/waitlist-offers/${encodeURIComponent(token)}/accept`, {});
+        await api.post(`/registration/member/waitlist-offers/${encodeURIComponent(offerId)}/accept`, {});
         if (cancelled) return;
         setStatus('success');
-        setMessage('Your waitlist offer has been accepted. If payment is required, staff will follow up or your payment link will appear on your registration status page.');
+        setMessage('Your waitlist offer has been accepted. If payment is required, staff will follow up or your payment link will appear on your dashboard.');
       } catch (error) {
         if (cancelled) return;
         setStatus('error');
@@ -34,7 +34,7 @@ export default function WaitlistOfferAcceptPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [offerId]);
 
   return (
     <Layout>
@@ -46,11 +46,8 @@ export default function WaitlistOfferAcceptPage() {
           action={
             status !== 'loading' ? (
               <div className="flex flex-wrap justify-center gap-2">
-                <Link to="/registration/status">
-                  <Button>View registration status</Button>
-                </Link>
                 <Link to="/dashboard">
-                  <Button variant="secondary">Return to dashboard</Button>
+                  <Button>Return to dashboard</Button>
                 </Link>
               </div>
             ) : null

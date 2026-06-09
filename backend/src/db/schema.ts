@@ -220,6 +220,20 @@ function ensureGameIdColumnSync(db: DatabaseAdapter): void {
   );
 }
 
+const PAYMENT_ORDER_SUBJECT_TYPES_SQL = "('donation', 'membership', 'event_registration', 'curling_registration')";
+
+async function ensurePaymentOrdersCurlingRegistrationSubjectType(db: DatabaseAdapter): Promise<void> {
+  if (!db.isAsync()) {
+    return;
+  }
+
+  await execSQL(db, 'ALTER TABLE payment_orders DROP CONSTRAINT IF EXISTS payment_orders_subject_type_check');
+  await execSQL(
+    db,
+    `ALTER TABLE payment_orders ADD CONSTRAINT payment_orders_subject_type_check CHECK (subject_type IN ${PAYMENT_ORDER_SUBJECT_TYPES_SQL})`
+  );
+}
+
 async function ensurePaymentDomainTables(db: DatabaseAdapter): Promise<void> {
   await execSQL(
     db,
@@ -305,6 +319,41 @@ async function ensurePaymentDomainTables(db: DatabaseAdapter): Promise<void> {
   );
 }
 
+async function ensureWebhookTables(db: DatabaseAdapter): Promise<void> {
+  await execSQL(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS webhooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        destination_url TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        description TEXT,
+        created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_webhooks_event_type ON webhooks(event_type);
+      CREATE INDEX IF NOT EXISTS idx_webhooks_enabled ON webhooks(enabled);
+
+      CREATE TABLE IF NOT EXISTS webhook_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        webhook_id INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        request_url TEXT NOT NULL,
+        response_status INTEGER,
+        success INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
+      CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_created_at ON webhook_deliveries(created_at);
+    `
+  );
+}
+
 function ensurePaymentDomainTablesSync(db: DatabaseAdapter): void {
   execSQLSync(
     db,
@@ -386,6 +435,41 @@ function ensurePaymentDomainTablesSync(db: DatabaseAdapter): void {
       CREATE INDEX IF NOT EXISTS idx_refunds_order_id ON refunds(payment_order_id);
       CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
       CREATE UNIQUE INDEX IF NOT EXISTS refunds_provider_refund_id_unique ON refunds(provider, provider_refund_id);
+    `
+  );
+}
+
+function ensureWebhookTablesSync(db: DatabaseAdapter): void {
+  execSQLSync(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS webhooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        destination_url TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        description TEXT,
+        created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_webhooks_event_type ON webhooks(event_type);
+      CREATE INDEX IF NOT EXISTS idx_webhooks_enabled ON webhooks(enabled);
+
+      CREATE TABLE IF NOT EXISTS webhook_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        webhook_id INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        request_url TEXT NOT NULL,
+        response_status INTEGER,
+        success INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
+      CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_created_at ON webhook_deliveries(created_at);
     `
   );
 }
@@ -1908,6 +1992,9 @@ async function ensureRbacTables(db: DatabaseAdapter): Promise<void> {
             ('general_admin', 'feedback.manage', 'allow'),
             ('general_admin', 'payments.read', 'allow'),
             ('general_admin', 'payments.manage', 'allow'),
+            ('general_admin', 'waitlists.view', 'allow'),
+            ('general_admin', 'waitlists.manage', 'allow'),
+            ('general_admin', 'registrations.manage', 'allow'),
             ('calendar_admin', 'calendar.manage', 'allow'),
             ('content_admin', 'content.manage', 'allow'),
             ('content_admin', 'files.manage', 'allow'),
@@ -1990,6 +2077,12 @@ async function ensureRbacTables(db: DatabaseAdapter): Promise<void> {
         VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.read', 'allow');
         INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
         VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.manage', 'allow');
+        INSERT OR IGNORE INTO role_scopes (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'waitlists.view', 'allow');
+        INSERT OR IGNORE INTO role_scopes (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'waitlists.manage', 'allow');
+        INSERT OR IGNORE INTO role_scopes (role_id, scope, effect)
+        VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'registrations.manage', 'allow');
 
         INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
         VALUES ((SELECT id FROM roles WHERE code = 'calendar_admin'), 'calendar.manage', 'allow');
@@ -2216,6 +2309,12 @@ function ensureRbacTablesSync(db: DatabaseAdapter): void {
       VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.read', 'allow');
       INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
       VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'payments.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'waitlists.view', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'waitlists.manage', 'allow');
+      INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+      VALUES ((SELECT id FROM roles WHERE code = 'general_admin'), 'registrations.manage', 'allow');
 
       INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
       VALUES ((SELECT id FROM roles WHERE code = 'calendar_admin'), 'calendar.manage', 'allow');
@@ -2507,10 +2606,12 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     CREATE TABLE IF NOT EXISTS auth_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       member_id INTEGER NOT NULL,
+      actor_member_id INTEGER,
       token TEXT NOT NULL UNIQUE,
       expires_at DATETIME NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY (actor_member_id) REFERENCES members(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
@@ -2983,6 +3084,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
       capture_backend_logs INTEGER DEFAULT 1,
       test_current_time DATETIME,
       notification_delay_seconds INTEGER DEFAULT 180,
+      session_token_ttl_minutes INTEGER DEFAULT 30,
+      refresh_token_ttl_days INTEGER DEFAULT 60,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -3072,6 +3175,9 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
     { sql: 'ALTER TABLE spare_requests ADD COLUMN had_cancellation INTEGER DEFAULT 0', table: 'spare_requests', column: 'had_cancellation' },
     { sql: 'ALTER TABLE server_config ADD COLUMN test_current_time DATETIME', table: 'server_config', column: 'test_current_time' },
     { sql: 'ALTER TABLE server_config ADD COLUMN notification_delay_seconds INTEGER DEFAULT 180', table: 'server_config', column: 'notification_delay_seconds' },
+    { sql: 'ALTER TABLE server_config ADD COLUMN session_token_ttl_minutes INTEGER DEFAULT 30', table: 'server_config', column: 'session_token_ttl_minutes' },
+    { sql: 'ALTER TABLE server_config ADD COLUMN refresh_token_ttl_days INTEGER DEFAULT 60', table: 'server_config', column: 'refresh_token_ttl_days' },
+    { sql: 'ALTER TABLE auth_tokens ADD COLUMN actor_member_id INTEGER REFERENCES members(id) ON DELETE CASCADE', table: 'auth_tokens', column: 'actor_member_id' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_status TEXT DEFAULT NULL', table: 'spare_requests', column: 'notification_status' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN next_notification_at DATETIME', table: 'spare_requests', column: 'next_notification_at' },
     { sql: 'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0', table: 'spare_requests', column: 'notification_paused' },
@@ -3128,6 +3234,7 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   try {
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id ON spare_requests(game_id);');
+    await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_auth_tokens_actor_member_id ON auth_tokens(actor_member_id);');
   } catch {
     // Ignore if DB doesn't support IF NOT EXISTS or column is missing for some reason
   }
@@ -3398,6 +3505,8 @@ export async function createSchema(db: DatabaseAdapter): Promise<void> {
   await ensureGovernanceTables(db);
   await ensureRbacTables(db);
   await ensurePaymentDomainTables(db);
+  await ensurePaymentOrdersCurlingRegistrationSubjectType(db);
+  await ensureWebhookTables(db);
   await ensureCurlingRegistrationBootstrap(db, execSQL);
   await migrateLeaguesFormatAllowsInstructional(db);
   await ensureEventsTables(db);
@@ -3454,10 +3563,12 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     CREATE TABLE IF NOT EXISTS auth_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       member_id INTEGER NOT NULL,
+      actor_member_id INTEGER,
       token TEXT NOT NULL UNIQUE,
       expires_at DATETIME NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+      FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY (actor_member_id) REFERENCES members(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
@@ -3829,6 +3940,8 @@ export function createSchemaSync(db: DatabaseAdapter): void {
       frontend_otel_enabled INTEGER DEFAULT 1,
       test_current_time DATETIME,
       notification_delay_seconds INTEGER DEFAULT 180,
+      session_token_ttl_minutes INTEGER DEFAULT 30,
+      refresh_token_ttl_days INTEGER DEFAULT 60,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -3907,6 +4020,9 @@ export function createSchemaSync(db: DatabaseAdapter): void {
     'ALTER TABLE spare_requests ADD COLUMN had_cancellation INTEGER DEFAULT 0',
     'ALTER TABLE server_config ADD COLUMN test_current_time DATETIME',
     'ALTER TABLE server_config ADD COLUMN notification_delay_seconds INTEGER DEFAULT 180',
+    'ALTER TABLE server_config ADD COLUMN session_token_ttl_minutes INTEGER DEFAULT 30',
+    'ALTER TABLE server_config ADD COLUMN refresh_token_ttl_days INTEGER DEFAULT 60',
+    'ALTER TABLE auth_tokens ADD COLUMN actor_member_id INTEGER REFERENCES members(id) ON DELETE CASCADE',
     'ALTER TABLE spare_requests ADD COLUMN notification_status TEXT DEFAULT NULL',
     'ALTER TABLE spare_requests ADD COLUMN next_notification_at DATETIME',
     'ALTER TABLE spare_requests ADD COLUMN notification_paused INTEGER DEFAULT 0',
@@ -3949,6 +4065,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   try {
     execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_league_id ON spare_requests(league_id);');
     execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_spare_requests_game_id ON spare_requests(game_id);');
+    execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_auth_tokens_actor_member_id ON auth_tokens(actor_member_id);');
   } catch {
     // ignore
   }
@@ -4178,6 +4295,7 @@ export function createSchemaSync(db: DatabaseAdapter): void {
   ensureGovernanceTablesSync(db);
   ensureRbacTablesSync(db);
   ensurePaymentDomainTablesSync(db);
+  ensureWebhookTablesSync(db);
   ensureCurlingRegistrationBootstrapSync(db, execSQLSync);
   ensureEventsTablesSync(db);
   ensurePermalinksTablesSync(db);

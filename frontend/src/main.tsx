@@ -5,12 +5,12 @@ import './index.css';
 import { initOtel, type RuntimeOtelConfig } from './otel';
 
 const loadRuntimeOtelConfig = async (): Promise<RuntimeOtelConfig | undefined> => {
-  const authToken = localStorage.getItem('authToken');
-  const isAuthenticated = Boolean(authToken);
+  const accessToken = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
+  const isAuthenticated = Boolean(accessToken);
 
   // Authenticated-only server config is the source of truth for frontend OTEL.
   // Unauthenticated sessions never fetch protected config and never capture console logs.
-  if (!isAuthenticated || !authToken) {
+  if (!isAuthenticated || !accessToken) {
     return {
       enabled: false,
       captureConsoleLogs: false,
@@ -20,7 +20,7 @@ const loadRuntimeOtelConfig = async (): Promise<RuntimeOtelConfig | undefined> =
   try {
     const response = await fetch('/api/public-config', {
       cache: 'no-store',
-      headers: { Authorization: `Bearer ${authToken}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (response.ok) {
       const data = (await response.json()) as {

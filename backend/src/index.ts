@@ -57,7 +57,6 @@ await fastify.register(fastifyRawBody, {
 // Track database initialization state
 let dbInitialized = false;
 let dbInitError: Error | null = null;
-let adminMembersCreated = false;
 let backgroundProcessorsStarted = false;
 
 function startBackgroundProcessorsIfReady(): void {
@@ -79,90 +78,12 @@ if (isDatabaseConfigured()) {
     dbInitialized = true;
     console.log('Database connection verified successfully');
     await loadBackendLogCaptureFromDb();
-    
-    // Create admin members if none exist
-    await ensureAdminMembersExist();
     startBackgroundProcessorsIfReady();
   } catch (error: unknown) {
     const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
     dbInitError = initError;
     console.error('Failed to verify database startup state:', error);
     console.error('Error details:', initError.message);
-  }
-}
-
-// Helper function to create admin members if they don't exist
-async function ensureAdminMembersExist(): Promise<void> {
-  if (adminMembersCreated) return;
-  
-  try {
-    const { getDrizzleDb } = await import('./db/drizzle-db.js');
-    const { getDatabaseConfig } = await import('./db/config.js');
-    const { normalizeEmail } = await import('./utils/auth.js');
-    const { sql } = await import('drizzle-orm');
-    
-    const { db, schema } = getDrizzleDb();
-    const memberCountResult = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(schema.members);
-    
-    const memberCount = Number(memberCountResult[0]?.count || 0);
-    
-    if (memberCount === 0) {
-      // No members exist - create server admin members from SERVER_ADMINS env var and database config
-      const dbConfig = getDatabaseConfig();
-      
-      // Combine SERVER_ADMINS env var and database config adminEmails
-      const serverAdminEmails = new Set<string>();
-      
-      // Add emails from SERVER_ADMINS environment variable
-      if (config.admins && config.admins.length > 0) {
-        config.admins.forEach(email => serverAdminEmails.add(normalizeEmail(email)));
-      }
-      
-      // Add emails from database config
-      if (dbConfig && dbConfig.adminEmails && dbConfig.adminEmails.length > 0) {
-        dbConfig.adminEmails.forEach(email => serverAdminEmails.add(normalizeEmail(email)));
-      }
-      
-      if (serverAdminEmails.size > 0) {
-        for (const email of serverAdminEmails) {
-          const normalizedEmail = normalizeEmail(email);
-          const emailName = normalizedEmail.split('@')[0];
-          const name = emailName
-            .split(/[._-]/)
-            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-            .join(' ') || 'Admin User';
-          
-          const existingMembers = await db
-            .select()
-            .from(schema.members)
-            .where(sql`LOWER(${schema.members.email}) = LOWER(${normalizedEmail})`)
-            .limit(1);
-          
-          if (existingMembers.length === 0) {
-            await db.insert(schema.members).values({
-              name,
-              email: normalizedEmail,
-              is_admin: 0,
-              is_server_admin: 1,
-              email_subscribed: 1,
-              opted_in_sms: 0,
-              first_login_completed: 0,
-              email_visible: 0,
-              phone_visible: 0,
-            });
-            console.log(`Created server admin member: ${normalizedEmail}`);
-          }
-        }
-        adminMembersCreated = true;
-      }
-    } else {
-      adminMembersCreated = true; // Members exist, no need to create
-    }
-  } catch (error) {
-    // Don't block if this fails - just log it
-    console.error('Failed to check/create admin members:', error);
   }
 }
 
@@ -194,9 +115,6 @@ fastify.addHook('onRequest', async (request, reply) => {
       dbInitError = null;
       console.log('Database verified on first request');
       await loadBackendLogCaptureFromDb();
-      
-      // Create admin members if none exist
-      await ensureAdminMembersExist();
       startBackgroundProcessorsIfReady();
       
       // Allow request to proceed

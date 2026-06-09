@@ -1,6 +1,6 @@
 import type { FastifyReply } from 'fastify';
 
-/** Shared copy for duplicate member email and reserved SERVER_ADMINS / db-config admin emails. */
+/** Shared copy for duplicate member email conflicts. */
 export const MEMBER_PROFILE_EMAIL_UNAVAILABLE =
   'Failed to save profile. The email address you provided is already in use.';
 

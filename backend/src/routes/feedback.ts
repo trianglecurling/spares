@@ -2,7 +2,6 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { desc, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { getDatabaseConfig } from '../db/config.js';
 import { Member } from '../types.js';
 import { config } from '../config.js';
 import { isAdmin, normalizeEmail, verifyToken } from '../utils/auth.js';
@@ -104,18 +103,6 @@ function categoryLabel(category: string): string {
 async function getServerAdminRecipients(): Promise<Array<{ email: string; name: string }>> {
   const recipients = new Map<string, string>(); // email -> name
 
-  // 1) Server admins from env + db-config file
-  for (const email of config.admins || []) {
-    const normalized = normalizeEmail(email);
-    if (normalized) recipients.set(normalized, normalized);
-  }
-  const dbConfig = getDatabaseConfig();
-  for (const email of dbConfig?.adminEmails || []) {
-    const normalized = normalizeEmail(email);
-    if (normalized) recipients.set(normalized, normalized);
-  }
-
-  // 2) Members flagged as server admins in DB
   const { db, schema } = getDrizzleDb();
   const serverAdmins = await db
     .select({ email: schema.members.email, name: schema.members.name })

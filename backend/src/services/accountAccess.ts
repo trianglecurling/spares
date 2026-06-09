@@ -50,6 +50,17 @@ export async function findMemberIdWithConflictingNormalizedEmail(
   return rows[0]?.id ?? null;
 }
 
+/** Returns a conflicting member id only when the normalized email is changing to one owned by someone else. */
+export async function findMemberIdWithConflictingNormalizedEmailChange(
+  normalizedEmail: string,
+  currentEmail: string | null | undefined,
+  excludeMemberId: number
+): Promise<number | null> {
+  const currentNormalized = currentEmail ? normalizeEmail(currentEmail) : null;
+  if (normalizedEmail === currentNormalized) return null;
+  return findMemberIdWithConflictingNormalizedEmail(normalizedEmail, excludeMemberId);
+}
+
 export async function canActorImpersonateTarget(
   actorMemberId: number,
   targetMemberId: number

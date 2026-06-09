@@ -1,12 +1,9 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { post } from '../api/client';
 import { formatApiError } from '../utils/api';
 import Button from '../components/Button';
 
 export default function Unsubscribe() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -16,13 +13,7 @@ export default function Unsubscribe() {
     setError('');
 
     try {
-      if (token) {
-        await post('/members/me/unsubscribe', undefined, undefined, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } else {
-        await post('/members/me/unsubscribe', undefined);
-      }
+      await post('/members/me/unsubscribe', undefined);
 
       setConfirmed(true);
     } catch (err: unknown) {

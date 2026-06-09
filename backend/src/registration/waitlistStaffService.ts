@@ -10,18 +10,49 @@ import type {
   WaitlistAuditSourceSqlite,
   WaitlistEntryTypeSqlite,
   WaitlistOfferKindSqlite,
+  WaitlistOfferResponsePreferenceSqlite,
   WaitlistOfferStatusSqlite,
 } from '../db/drizzle-schema.js';
+import { WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS } from './waitlistOfferPreference.js';
 import { validateWaitlistEligibility } from './registrationEligibility.js';
 import { buildRegistrationContextForDraft, triggerDeferredRegistrationPayment } from './registrationMembershipPaymentService.js';
 import { sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType } from './registrationEmailService.js';
+import {
+  leagueAllowsWaitlist,
+  replacementLineageFromLeagueId,
+  resolvePlacementLeagueForWaitlist,
+} from './waitlistEntityService.js';
+import {
+  getWaitlistQueuePosition,
+  insertWaitlistAuditEvent,
+  recordAndDeleteWaitlistEntry,
+  serializeWaitlistAuditEvent,
+  waitlistMemberDisplayName,
+} from './waitlistAudit.js';
 import { rollWaitlistForward } from './waitlistRolloverService.js';
+import { loadLeagueContinuityMap, resolveLeagueInSession } from './waitlistLineage.js';
+import {
+  compareLeaguesByDayThenFirstDraw,
+  loadFirstDrawTimeByLeagueId,
+  pickLeagueWithLatestStartDate,
+} from '../utils/leagueOrdering.js';
+import {
+  hydrateTeamRosterPlacementsForEntry,
+  normalizeAndValidateTeamRosterPlacements,
+  parseTeamRosterPlacements,
+  serializeTeamRosterPlacements,
+  type WaitlistTeamMemberPlacementInput,
+} from './waitlistTeamRoster.js';
 
-export class WaitlistStaffValidationError extends Error {
-  constructor(public details: Record<string, string>) {
-    super('Waitlist staff operation failed');
-  }
-}
+import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificationService.js';
+import { assertMembersAvailableForWaitlist } from './waitlistMemberMembership.js';
+import { WaitlistStaffValidationError } from './waitlistErrors.js';
+import {
+  shouldOfferPermanentWaitlistEntry,
+  skipLowerPriorityWaitlistEntriesAfterAcceptance,
+  type WaitlistEntryCoordinationRow,
+} from './waitlistOfferCoordination.js';
+export { WaitlistStaffValidationError } from './waitlistErrors.js';
 
 type WaitlistEntryRow = typeof getDrizzleDb extends () => infer T
   ? T extends { schema: infer S }
@@ -43,6 +74,83 @@ function dbValue(value: unknown): never {
 
 function dbNow(): never {
   return dbValue(getDatabaseConfig()?.type === 'postgres' ? new Date() : new Date().toISOString());
+}
+
+function expectedByotRosterSize(league: { format: string }): number | null {
+  if (league.format === 'teams') return 4;
+  if (league.format === 'doubles') return 2;
+  return null;
+}
+
+function waitlistRosterEntries(text: string | null | undefined): string[] {
+  return (text ?? '')
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+async function resolveWaitlistEntryRoster(input: {
+  league: {
+    league_type: string;
+    format: string;
+    session_id: number | null;
+  };
+  primaryMemberId: number;
+  entryType: WaitlistEntryTypeSqlite;
+  replacesLeagueId?: number | null;
+  teamRosterText?: string | null;
+  teamRosterPlacements?: WaitlistTeamMemberPlacementInput[] | null;
+  existingTeamRosterText?: string | null;
+  existingTeamRosterPlacements?: string | null;
+  enforceMemberPlacementRules: boolean;
+}): Promise<{
+  entryType: WaitlistEntryTypeSqlite;
+  replacesLeagueId: number | null;
+  teamRosterText: string | null;
+  teamRosterPlacements: string | null;
+}> {
+  if (input.league.league_type !== 'bring_your_own_team') {
+    const entryType = input.entryType;
+    if (entryType === 'replace' && !input.replacesLeagueId) {
+      throw new WaitlistStaffValidationError({
+        replacesLeagueId: 'A replacement league is required for REPLACE entries.',
+      });
+    }
+    return {
+      entryType,
+      replacesLeagueId: entryType === 'replace' ? input.replacesLeagueId ?? null : null,
+      teamRosterText: null,
+      teamRosterPlacements: null,
+    };
+  }
+
+  if (input.league.session_id == null) {
+    throw new WaitlistStaffValidationError({ session: 'Placement league session was not found.' });
+  }
+
+  const normalized = await normalizeAndValidateTeamRosterPlacements({
+    league: input.league,
+    primaryMemberId: input.primaryMemberId,
+    sessionId: input.league.session_id,
+    placements:
+      input.teamRosterPlacements ??
+      (input.teamRosterText === undefined && input.existingTeamRosterPlacements
+        ? parseTeamRosterPlacements(input.existingTeamRosterPlacements)
+        : null),
+    fallbackEntryType: input.entryType,
+    fallbackReplacesLeagueId: input.replacesLeagueId ?? null,
+    teamRosterText:
+      input.teamRosterText ??
+      (input.teamRosterPlacements == null ? input.existingTeamRosterText ?? null : null),
+    enforceMemberPlacementRules: input.enforceMemberPlacementRules,
+  });
+
+  return {
+    entryType: normalized.entryType,
+    replacesLeagueId: normalized.replacesLeagueId,
+    teamRosterText: normalized.teamRosterText,
+    teamRosterPlacements: serializeTeamRosterPlacements(normalized.placements),
+  };
 }
 
 function asDate(value: unknown): Date | null {
@@ -158,23 +266,16 @@ async function createAuditEvent(
     reason?: string | null;
     before?: unknown;
     after?: unknown;
-    metadata?: unknown;
+    metadata?: Record<string, unknown>;
+    memberName?: string | null;
+    actorMemberName?: string | null;
+    summary?: string | null;
+    position?: number | null;
+    queueTotal?: number | null;
+    offerType?: string | null;
   }
 ) {
-  const { schema } = getDrizzleDb();
-  await tx.insert(schema.waitlistAuditEvents).values({
-    waitlist_entry_id: input.waitlistEntryId ?? null,
-    league_id: input.leagueId ?? null,
-    member_id: input.memberId ?? null,
-    actor_member_id: input.actorMemberId ?? null,
-    source: input.source,
-    action: input.action,
-    reason: input.reason ?? null,
-    before_json: dbJson(input.before ?? null),
-    after_json: dbJson(input.after ?? null),
-    metadata_json: dbJson(input.metadata ?? null),
-    created_at: dbNow(),
-  });
+  await insertWaitlistAuditEvent(tx, input);
 }
 
 async function getLatestRegistrationForMember(memberId: number, sessionId: number | null): Promise<number | null> {
@@ -207,6 +308,14 @@ async function loadEntry(entryId: number) {
   const [entry] = await db.select().from(schema.waitlistEntries).where(eq(schema.waitlistEntries.id, entryId)).limit(1);
   if (!entry) throw new WaitlistStaffValidationError({ waitlistEntryId: 'Waitlist entry was not found.' });
   return entry as WaitlistEntryRow;
+}
+
+async function requireLeagueWaitlist(leagueId: number) {
+  const league = await loadLeague(leagueId);
+  if (!league.waitlist_id) {
+    throw new WaitlistStaffValidationError({ waitlistId: 'This league is not attached to a waitlist.' });
+  }
+  return { league, waitlistId: league.waitlist_id };
 }
 
 async function activeRosterCountByLeague(leagueIds: number[]): Promise<Map<number, { permanent: number; temporary: number }>> {
@@ -253,12 +362,26 @@ async function countActiveWaitlistsAndPendingOffers(leagueIds: number[]) {
   const offers = new Map<number, number>();
   if (leagueIds.length === 0) return { waitlists, offers };
   const { db, schema } = getDrizzleDb();
-  const waitlistRows = await db
-    .select({ leagueId: schema.waitlistEntries.league_id, total: sql<number>`COUNT(*)` })
-    .from(schema.waitlistEntries)
-    .where(and(inArray(schema.waitlistEntries.league_id, leagueIds), eq(schema.waitlistEntries.status, 'active')))
-    .groupBy(schema.waitlistEntries.league_id);
-  for (const row of waitlistRows) waitlists.set(row.leagueId, Number(row.total ?? 0));
+  const leagueWaitlistLinks = await db
+    .select({ leagueId: schema.leagues.id, waitlistId: schema.leagues.waitlist_id })
+    .from(schema.leagues)
+    .where(inArray(schema.leagues.id, leagueIds));
+  const waitlistIds = [
+    ...new Set(leagueWaitlistLinks.map((row) => row.waitlistId).filter((id): id is number => id != null)),
+  ];
+  if (waitlistIds.length > 0) {
+    const waitlistRows = await db
+      .select({ waitlistId: schema.waitlistEntries.waitlist_id, total: sql<number>`COUNT(*)` })
+      .from(schema.waitlistEntries)
+      .where(and(inArray(schema.waitlistEntries.waitlist_id, waitlistIds), eq(schema.waitlistEntries.status, 'active')))
+      .groupBy(schema.waitlistEntries.waitlist_id);
+    const countByWaitlist = new Map(waitlistRows.map((row) => [row.waitlistId, Number(row.total ?? 0)]));
+    for (const link of leagueWaitlistLinks) {
+      if (link.waitlistId != null) {
+        waitlists.set(link.leagueId, countByWaitlist.get(link.waitlistId) ?? 0);
+      }
+    }
+  }
 
   const offerRows = await db
     .select({ leagueId: schema.waitlistOffers.league_id, total: sql<number>`COUNT(*)` })
@@ -274,7 +397,7 @@ async function warningCodesForLeague(league: any, now = new Date()): Promise<str
   if (!league.capacity_value || league.capacity_value <= 0) warnings.push('missing_capacity');
   if (!league.first_day_of_play) warnings.push('missing_first_day_of_play');
   if (!league.last_day_of_play) warnings.push('missing_last_day_of_play');
-  if (!league.successor_league_id) warnings.push('missing_successor_league');
+  if (!league.waitlist_id) warnings.push('missing_waitlist');
   const { db, schema } = getDrizzleDb();
   const overdueOffers = await db
     .select({ id: schema.waitlistOffers.id })
@@ -328,7 +451,7 @@ export async function getWaitlistDashboard(input: { sessionId?: number | null } 
       temporarySabbaticalFillVacancies,
       activeWaitlistEntries: waitlists.get(league.id) ?? 0,
       pendingOffers: offers.get(league.id) ?? 0,
-      rolloverOccurred: Boolean(league.predecessor_league_id),
+      hasWaitlist: Boolean(league.waitlist_id),
       warnings: await warningCodesForLeague(league),
     });
   }
@@ -337,7 +460,7 @@ export async function getWaitlistDashboard(input: { sessionId?: number | null } 
 
 export async function getLeagueWaitlistManager(leagueId: number) {
   const { db, schema } = getDrizzleDb();
-  const league = await loadLeague(leagueId);
+  const { league, waitlistId } = await requireLeagueWaitlist(leagueId);
   const rosterCounts = await activeRosterCountByLeague([leagueId]);
   const sabbaticalCounts = await activeSabbaticalCountByLeague([leagueId]);
   const roster = rosterCounts.get(leagueId) ?? { permanent: 0, temporary: 0 };
@@ -371,19 +494,26 @@ export async function getLeagueWaitlistManager(leagueId: number) {
       firstName: schema.members.first_name,
       lastName: schema.members.last_name,
       entryType: schema.waitlistEntries.entry_type,
-      replacesLeagueId: schema.waitlistEntries.replaces_league_id,
+      replacesLineageStartLeagueId: schema.waitlistEntries.replaces_lineage_start_league_id,
+      originalReplacesLeagueId: schema.waitlistEntries.original_replaces_league_id,
+      teamRosterText: schema.waitlistEntries.team_roster_text,
+      teamRosterPlacementsJson: schema.waitlistEntries.team_roster_placements,
       sourceRegistrationId: schema.waitlistEntries.source_registration_id,
       positionSortKey: schema.waitlistEntries.position_sort_key,
       joinedAt: schema.waitlistEntries.joined_at,
       declineCount: schema.waitlistEntries.decline_count,
+      offerResponsePreference: schema.waitlistEntries.offer_response_preference,
+      desiredAddWaitlistLeagueCount: schema.waitlistEntries.desired_add_waitlist_league_count,
+      addWaitlistPriorityRank: schema.waitlistEntries.add_waitlist_priority_rank,
       status: schema.waitlistEntries.status,
       rolledOverFromWaitlistEntryId: schema.waitlistEntries.rolled_over_from_waitlist_entry_id,
     })
     .from(schema.waitlistEntries)
     .innerJoin(schema.members, eq(schema.waitlistEntries.member_id, schema.members.id))
-    .where(eq(schema.waitlistEntries.league_id, leagueId))
+    .where(and(eq(schema.waitlistEntries.waitlist_id, waitlistId), eq(schema.waitlistEntries.status, 'active')))
     .orderBy(asc(schema.waitlistEntries.position_sort_key), asc(schema.waitlistEntries.joined_at), asc(schema.waitlistEntries.id));
 
+  const continuity = await loadLeagueContinuityMap();
   const waitlistEntryIds = waitlistRows.map((row) => row.id);
   const offers = waitlistEntryIds.length
     ? await db
@@ -419,6 +549,7 @@ export async function getLeagueWaitlistManager(leagueId: number) {
       name: league.name,
       sessionId: league.session_id,
       leagueType: league.league_type,
+      format: league.format,
       capacity: league.capacity_value ?? 0,
       feeMinor: league.registration_fee_override_minor ?? league.registration_fee_minor ?? 0,
       firstDayOfPlay: normalizeDate(league.first_day_of_play),
@@ -437,26 +568,350 @@ export async function getLeagueWaitlistManager(leagueId: number) {
       }),
       temporary: row.temporary === 1,
     })),
-    waitlistEntries: waitlistRows.map((row, index) => ({
-      ...row,
-      memberName: memberName({
-        name: row.memberName,
-        first_name: row.firstName,
-        last_name: row.lastName,
-        email: row.memberEmail,
-      }),
-      position: index + 1,
-      pendingOffer: (offersByEntry.get(row.id) ?? []).find((offer) => offer.status === 'pending') ?? null,
-      acceptedOffer:
-        (offersByEntry.get(row.id) ?? []).find((offer) => offer.status === 'accepted' || offer.status === 'expired_accepted') ?? null,
-      offers: offersByEntry.get(row.id) ?? [],
-    })),
-    auditEvents: auditRows,
+    waitlistEntries: await Promise.all(
+      waitlistRows.map(async (row, index) => {
+      const replacesLeagueId =
+        row.replacesLineageStartLeagueId != null && league.session_id != null
+          ? resolveLeagueInSession(row.replacesLineageStartLeagueId, league.session_id, continuity)
+          : row.originalReplacesLeagueId;
+      const teamRosterPlacements = await hydrateTeamRosterPlacementsForEntry({
+        primaryMemberId: row.memberId,
+        entryType: row.entryType,
+        replacesLeagueId,
+        teamRosterPlacementsJson: row.teamRosterPlacementsJson,
+        teamRosterText: row.teamRosterText,
+      });
+      return {
+        ...row,
+        replacesLeagueId,
+        teamRosterText: row.teamRosterText ?? null,
+        teamRosterPlacements,
+        memberName: memberName({
+          name: row.memberName,
+          first_name: row.firstName,
+          last_name: row.lastName,
+          email: row.memberEmail,
+        }),
+        position: index + 1,
+        offerResponsePreference: (row.offerResponsePreference ?? 'ask') as WaitlistOfferResponsePreferenceSqlite,
+        offerResponsePreferenceLabel:
+          WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS[
+            (row.offerResponsePreference ?? 'ask') as WaitlistOfferResponsePreferenceSqlite
+          ],
+        pendingOffer: (offersByEntry.get(row.id) ?? []).find((offer) => offer.status === 'pending') ?? null,
+        acceptedOffer:
+          (offersByEntry.get(row.id) ?? []).find((offer) => offer.status === 'accepted' || offer.status === 'expired_accepted') ??
+          null,
+        offers: offersByEntry.get(row.id) ?? [],
+      };
+    }),
+    ),
+    auditEvents: auditRows.map((row) => serializeWaitlistAuditEvent(row)),
   };
+}
+
+export async function listWaitlistsOverview(input: { sessionId?: number | null } = {}) {
+  const { db, schema } = getDrizzleDb();
+  const sessionId = input.sessionId ?? null;
+  const waitlists = await db
+    .select()
+    .from(schema.leagueWaitlists)
+    .where(eq(schema.leagueWaitlists.status, 'active'));
+
+  const leagues = await db
+    .select({
+      id: schema.leagues.id,
+      name: schema.leagues.name,
+      sessionId: schema.leagues.session_id,
+      waitlistId: schema.leagues.waitlist_id,
+      capacityValue: schema.leagues.capacity_value,
+      leagueType: schema.leagues.league_type,
+      dayOfWeek: schema.leagues.day_of_week,
+      startDate: schema.leagues.start_date,
+    })
+    .from(schema.leagues)
+    .where(sql`${schema.leagues.waitlist_id} IS NOT NULL`);
+
+  const filteredLeagues =
+    sessionId != null ? leagues.filter((league) => league.sessionId === sessionId) : leagues;
+  const waitlistIdsInScope = new Set(
+    filteredLeagues.map((league) => league.waitlistId).filter((id): id is number => id != null)
+  );
+  const scopedWaitlists =
+    sessionId != null ? waitlists.filter((waitlist) => waitlistIdsInScope.has(waitlist.id)) : waitlists;
+
+  const sessionIds = [...new Set(filteredLeagues.map((league) => league.sessionId).filter((id): id is number => id != null))];
+  const sessions =
+    sessionIds.length > 0
+      ? await db
+          .select({ id: schema.curlingSessions.id, name: schema.curlingSessions.name })
+          .from(schema.curlingSessions)
+          .where(inArray(schema.curlingSessions.id, sessionIds))
+      : [];
+  const sessionNameById = new Map(sessions.map((session) => [session.id, session.name]));
+
+  const entryCounts =
+    scopedWaitlists.length > 0
+      ? await db
+          .select({
+            waitlistId: schema.waitlistEntries.waitlist_id,
+            total: sql<number>`COUNT(*)`,
+          })
+          .from(schema.waitlistEntries)
+          .where(
+            and(
+              inArray(
+                schema.waitlistEntries.waitlist_id,
+                scopedWaitlists.map((waitlist) => waitlist.id)
+              ),
+              eq(schema.waitlistEntries.status, 'active')
+            )
+          )
+          .groupBy(schema.waitlistEntries.waitlist_id)
+      : [];
+  const activeEntriesByWaitlist = new Map(entryCounts.map((row) => [row.waitlistId, Number(row.total ?? 0)]));
+
+  const placementLeagueIds = filteredLeagues.map((league) => league.id);
+  const { waitlists: waitlistByLeague, offers: offersByLeague } = await countActiveWaitlistsAndPendingOffers(placementLeagueIds);
+
+  const leaguesByWaitlist = new Map<number, typeof filteredLeagues>();
+  for (const league of filteredLeagues) {
+    if (league.waitlistId == null) continue;
+    const list = leaguesByWaitlist.get(league.waitlistId) ?? [];
+    list.push(league);
+    leaguesByWaitlist.set(league.waitlistId, list);
+  }
+
+  const firstDrawByLeagueId = await loadFirstDrawTimeByLeagueId(
+    db,
+    schema,
+    filteredLeagues.map((league) => league.id)
+  );
+
+  const sortedWaitlists = [...scopedWaitlists].sort((left, right) => {
+    const leftLeague = pickLeagueWithLatestStartDate(leaguesByWaitlist.get(left.id) ?? []);
+    const rightLeague = pickLeagueWithLatestStartDate(leaguesByWaitlist.get(right.id) ?? []);
+    if (!leftLeague && !rightLeague) return left.name.localeCompare(right.name);
+    if (!leftLeague) return 1;
+    if (!rightLeague) return -1;
+
+    const leagueOrder = compareLeaguesByDayThenFirstDraw(
+      { id: leftLeague.id, name: leftLeague.name, dayOfWeek: leftLeague.dayOfWeek },
+      { id: rightLeague.id, name: rightLeague.name, dayOfWeek: rightLeague.dayOfWeek },
+      firstDrawByLeagueId
+    );
+    if (leagueOrder !== 0) return leagueOrder;
+    return left.name.localeCompare(right.name);
+  });
+
+  return {
+    waitlists: sortedWaitlists.map((waitlist) => {
+      const attached = leaguesByWaitlist.get(waitlist.id) ?? [];
+      const pendingOffers = attached.reduce((sum, league) => sum + (offersByLeague.get(league.id) ?? 0), 0);
+      return {
+        id: waitlist.id,
+        name: waitlist.name,
+        status: waitlist.status,
+        activeEntryCount: activeEntriesByWaitlist.get(waitlist.id) ?? 0,
+        pendingOffers,
+        attachedLeagues: attached.map((league) => ({
+          id: league.id,
+          name: league.name,
+          sessionId: league.sessionId,
+          sessionName: league.sessionId ? (sessionNameById.get(league.sessionId) ?? null) : null,
+          capacity: league.capacityValue ?? 0,
+          leagueType: league.leagueType,
+          activeWaitlistEntries: waitlistByLeague.get(league.id) ?? 0,
+        })),
+      };
+    }),
+  };
+}
+
+async function loadWaitlistOrThrow(waitlistId: number) {
+  const { db, schema } = getDrizzleDb();
+  const [waitlist] = await db
+    .select()
+    .from(schema.leagueWaitlists)
+    .where(eq(schema.leagueWaitlists.id, waitlistId))
+    .limit(1);
+  if (!waitlist || waitlist.status !== 'active') {
+    throw new WaitlistStaffValidationError({ waitlistId: 'Waitlist was not found.' });
+  }
+  return waitlist;
+}
+
+export async function renameWaitlist(input: {
+  waitlistId: number;
+  name: string;
+}): Promise<{ waitlist: { id: number; name: string; status: string } }> {
+  const waitlist = await loadWaitlistOrThrow(input.waitlistId);
+  const name = input.name.trim();
+  if (!name) {
+    throw new WaitlistStaffValidationError({ name: 'Waitlist name is required.' });
+  }
+  if (waitlist.name === name) {
+    return { waitlist: { id: waitlist.id, name: waitlist.name, status: waitlist.status } };
+  }
+
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.leagueWaitlists)
+    .set({ name, updated_at: sql`CURRENT_TIMESTAMP` })
+    .where(eq(schema.leagueWaitlists.id, input.waitlistId));
+
+  return { waitlist: { id: waitlist.id, name, status: waitlist.status } };
+}
+
+export async function getWaitlistManagerById(input: {
+  waitlistId: number;
+  placementLeagueId?: number | null;
+}) {
+  const { db, schema } = getDrizzleDb();
+  const waitlist = await loadWaitlistOrThrow(input.waitlistId);
+  const attachedLeagues = await db
+    .select()
+    .from(schema.leagues)
+    .where(eq(schema.leagues.waitlist_id, input.waitlistId))
+    .orderBy(asc(schema.leagues.name));
+  if (attachedLeagues.length === 0) {
+    throw new WaitlistStaffValidationError({ waitlistId: 'No league is attached to this waitlist.' });
+  }
+
+  const placementLeague =
+    input.placementLeagueId != null
+      ? attachedLeagues.find((league) => league.id === input.placementLeagueId)
+      : attachedLeagues[attachedLeagues.length - 1];
+  if (!placementLeague) {
+    throw new WaitlistStaffValidationError({ placementLeagueId: 'Placement league is not attached to this waitlist.' });
+  }
+
+  const manager = await getLeagueWaitlistManager(placementLeague.id);
+  const sessionIds = [...new Set(attachedLeagues.map((league) => league.session_id).filter((id): id is number => id != null))];
+  const sessions =
+    sessionIds.length > 0
+      ? await db
+          .select({ id: schema.curlingSessions.id, name: schema.curlingSessions.name })
+          .from(schema.curlingSessions)
+          .where(inArray(schema.curlingSessions.id, sessionIds))
+      : [];
+  const sessionNameById = new Map(sessions.map((session) => [session.id, session.name]));
+
+  return {
+    waitlist: {
+      id: waitlist.id,
+      name: waitlist.name,
+      status: waitlist.status,
+    },
+    placementLeagueId: placementLeague.id,
+    attachedLeagues: attachedLeagues.map((league) => ({
+      id: league.id,
+      name: league.name,
+      sessionId: league.session_id,
+      sessionName: league.session_id ? (sessionNameById.get(league.session_id) ?? null) : null,
+      leagueType: league.league_type,
+      capacity: league.capacity_value ?? 0,
+    })),
+    league: manager.league,
+    roster: manager.roster,
+    waitlistEntries: manager.waitlistEntries,
+    auditEvents: manager.auditEvents,
+  };
+}
+
+export async function reorderWaitlistEntries(input: {
+  waitlistId: number;
+  entryIds: number[];
+  actorMemberId: number;
+  reason: string;
+}) {
+  const { db, schema } = getDrizzleDb();
+  const reason = requireReason(input.reason);
+  await loadWaitlistOrThrow(input.waitlistId);
+  if (input.entryIds.length === 0) {
+    throw new WaitlistStaffValidationError({ entryIds: 'At least one waitlist entry is required.' });
+  }
+
+  const entries = await db
+    .select()
+    .from(schema.waitlistEntries)
+    .where(
+      and(
+        eq(schema.waitlistEntries.waitlist_id, input.waitlistId),
+        eq(schema.waitlistEntries.status, 'active'),
+        inArray(schema.waitlistEntries.id, input.entryIds)
+      )
+    );
+  if (entries.length !== input.entryIds.length) {
+    throw new WaitlistStaffValidationError({ entryIds: 'One or more waitlist entries were not found for this waitlist.' });
+  }
+
+  const placement = await resolvePlacementLeagueForWaitlist(input.waitlistId);
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+  await db.transaction(async (tx) => {
+    for (let index = 0; index < input.entryIds.length; index += 1) {
+      const entryId = input.entryIds[index]!;
+      const entry = entryById.get(entryId);
+      if (!entry) continue;
+      const positionSortKey = `${String(index + 1).padStart(6, '0')}:${entryId}`;
+      if (entry.position_sort_key === positionSortKey) continue;
+      await tx
+        .update(schema.waitlistEntries)
+        .set({ position_sort_key: positionSortKey, updated_at: sql`CURRENT_TIMESTAMP` })
+        .where(eq(schema.waitlistEntries.id, entryId));
+      await createAuditEvent(tx, {
+        waitlistEntryId: entryId,
+        leagueId: placement?.leagueId ?? null,
+        memberId: entry.member_id,
+        actorMemberId: input.actorMemberId,
+        source: 'staff_action',
+        action: 'entry_reordered',
+        reason,
+        before: { positionSortKey: entry.position_sort_key },
+        after: { positionSortKey },
+        metadata: { waitlistId: input.waitlistId, position: index + 1 },
+        position: index + 1,
+        queueTotal: input.entryIds.length,
+      });
+    }
+  });
+
+  return { waitlistId: input.waitlistId, entryIds: input.entryIds };
+}
+
+export async function addWaitlistEntryForWaitlist(input: {
+  waitlistId: number;
+  placementLeagueId: number;
+  memberId: number;
+  entryType: WaitlistEntryTypeSqlite;
+  replacesLeagueId?: number | null;
+  teamRosterText?: string | null;
+  teamRosterPlacements?: WaitlistTeamMemberPlacementInput[] | null;
+  actorMemberId: number;
+  reason: string;
+}) {
+  const league = await loadLeague(input.placementLeagueId);
+  if (league.waitlist_id !== input.waitlistId) {
+    throw new WaitlistStaffValidationError({
+      placementLeagueId: 'The placement league is not attached to this waitlist.',
+    });
+  }
+  return addWaitlistEntry({
+    leagueId: input.placementLeagueId,
+    memberId: input.memberId,
+    entryType: input.entryType,
+    replacesLeagueId: input.replacesLeagueId,
+    teamRosterText: input.teamRosterText,
+    teamRosterPlacements: input.teamRosterPlacements,
+    actorMemberId: input.actorMemberId,
+    reason: input.reason,
+  });
 }
 
 async function validateOfferCandidate(input: {
   entry: WaitlistEntryRow;
+  placementLeagueId: number;
   offerType: WaitlistOfferKindSqlite;
   override?: boolean;
 }): Promise<void> {
@@ -464,8 +919,8 @@ async function validateOfferCandidate(input: {
   if (input.entry.status !== 'active') {
     throw new WaitlistStaffValidationError({ waitlistEntry: 'Only active waitlist entries can receive offers.' });
   }
-  const league = await loadLeague(input.entry.league_id);
-  if (league.league_type === 'bring_your_own_team' || league.allows_waitlist !== 1) {
+  const league = await loadLeague(input.placementLeagueId);
+  if (!leagueAllowsWaitlist(league)) {
     throw new WaitlistStaffValidationError({ league: 'This league cannot receive waitlist offers.' });
   }
   if (input.offerType === 'temporary_sabbatical_fill' && league.allows_sabbatical !== 1) {
@@ -477,7 +932,7 @@ async function validateOfferCandidate(input: {
     .where(
       and(
         eq(schema.waitlistOffers.waitlist_entry_id, input.entry.id),
-        eq(schema.waitlistOffers.league_id, input.entry.league_id),
+        eq(schema.waitlistOffers.league_id, input.placementLeagueId),
         eq(schema.waitlistOffers.status, 'pending')
       )
     )
@@ -490,7 +945,7 @@ async function validateOfferCandidate(input: {
     .from(schema.leagueRoster)
     .where(
       and(
-        eq(schema.leagueRoster.league_id, input.entry.league_id),
+        eq(schema.leagueRoster.league_id, input.placementLeagueId),
         eq(schema.leagueRoster.member_id, input.entry.member_id),
         eq(schema.leagueRoster.status, 'active')
       )
@@ -501,7 +956,7 @@ async function validateOfferCandidate(input: {
   }
   if (!input.override && input.entry.source_registration_id) {
     const context = await buildRegistrationContextForDraft(input.entry.source_registration_id);
-    const targetLeague = context.leagues[input.entry.league_id];
+    const targetLeague = context.leagues[input.placementLeagueId];
     const decision = targetLeague ? validateWaitlistEligibility(context, targetLeague) : null;
     if (!decision?.allowed) {
       throw new WaitlistStaffValidationError({
@@ -511,20 +966,36 @@ async function validateOfferCandidate(input: {
   }
 }
 
+function toCoordinationEntry(entry: WaitlistEntryRow): WaitlistEntryCoordinationRow {
+  return {
+    id: entry.id,
+    member_id: entry.member_id,
+    waitlist_id: entry.waitlist_id,
+    source_registration_id: entry.source_registration_id ?? null,
+    entry_type: entry.entry_type,
+    desired_add_waitlist_league_count: entry.desired_add_waitlist_league_count ?? null,
+    add_waitlist_priority_rank: entry.add_waitlist_priority_rank ?? null,
+    status: entry.status,
+  };
+}
+
 async function selectOfferEntries(input: {
   leagueId: number;
+  sessionId: number | null;
   entryIds?: number[];
   count?: number;
   offerType: WaitlistOfferKindSqlite;
   override?: boolean;
+  alreadySelectedEntryIds?: Set<number>;
 }): Promise<WaitlistEntryRow[]> {
   const { db, schema } = getDrizzleDb();
+  const { waitlistId } = await requireLeagueWaitlist(input.leagueId);
   const baseRows = await db
     .select()
     .from(schema.waitlistEntries)
     .where(
       and(
-        eq(schema.waitlistEntries.league_id, input.leagueId),
+        eq(schema.waitlistEntries.waitlist_id, waitlistId),
         input.entryIds?.length ? inArray(schema.waitlistEntries.id, input.entryIds) : eq(schema.waitlistEntries.status, 'active')
       )
     )
@@ -532,10 +1003,31 @@ async function selectOfferEntries(input: {
   const requestedCount = input.entryIds?.length ?? input.count ?? 1;
   const eligible: WaitlistEntryRow[] = [];
   const errors: Record<string, string> = {};
+  const alreadySelectedEntryIds = input.alreadySelectedEntryIds ?? new Set<number>();
   for (const entry of baseRows) {
     try {
-      await validateOfferCandidate({ entry, offerType: input.offerType, override: input.override });
+      await validateOfferCandidate({
+        entry,
+        placementLeagueId: input.leagueId,
+        offerType: input.offerType,
+        override: input.override,
+      });
+      if (input.sessionId != null) {
+        const coordination = await shouldOfferPermanentWaitlistEntry({
+          entry: toCoordinationEntry(entry as WaitlistEntryRow),
+          sessionId: input.sessionId,
+          offerType: input.offerType,
+          alreadySelectedEntryIds,
+        });
+        if (!coordination.allowed) {
+          if (input.entryIds?.includes(entry.id)) {
+            errors.entry = coordination.reason ?? 'This waitlist entry cannot be offered right now.';
+          }
+          continue;
+        }
+      }
       eligible.push(entry as WaitlistEntryRow);
+      alreadySelectedEntryIds.add(entry.id);
       if (eligible.length >= requestedCount) break;
     } catch (error) {
       if (input.entryIds?.includes(entry.id) && error instanceof WaitlistStaffValidationError) {
@@ -557,23 +1049,29 @@ export async function sendWaitlistOffers(input: {
   count?: number;
   override?: boolean;
   staffNotes?: string | null;
+  alreadySelectedEntryIds?: Set<number>;
 }) {
   const reason = requireReason(input.reason ?? 'waitlist-offer-sent');
   const { db, schema } = getDrizzleDb();
   const league = await loadLeague(input.leagueId);
-  const entries = await selectOfferEntries(input);
+  const entries = await selectOfferEntries({
+    ...input,
+    sessionId: league.session_id ?? null,
+    alreadySelectedEntryIds: input.alreadySelectedEntryIds,
+  });
   const offeredAt = new Date();
   const expiresAt = responseDeadline(offeredAt);
-  const createdOffers: any[] = [];
+  const createdOffers: Array<{ offer: any; preference: WaitlistOfferResponsePreferenceSqlite; entry: WaitlistEntryRow }> = [];
 
   await db.transaction(async (tx) => {
     for (const entry of entries) {
       const token = generateResponseToken();
+      const preference = (entry.offer_response_preference ?? 'ask') as WaitlistOfferResponsePreferenceSqlite;
       const [offer] = await tx
         .insert(schema.waitlistOffers)
         .values({
           waitlist_entry_id: entry.id,
-          league_id: entry.league_id,
+          league_id: input.leagueId,
           member_id: entry.member_id,
           offer_type: input.offerType,
           status: 'pending',
@@ -588,20 +1086,48 @@ export async function sendWaitlistOffers(input: {
         .returning();
       await createAuditEvent(tx, {
         waitlistEntryId: entry.id,
-        leagueId: entry.league_id,
+        leagueId: input.leagueId,
         memberId: entry.member_id,
         actorMemberId: input.actorMemberId,
         source: 'staff_action',
         action: 'offer_sent',
         reason,
         after: offer,
-        metadata: { offerType: input.offerType, override: input.override === true },
+        metadata: { offerType: input.offerType, override: input.override === true, offerResponsePreference: preference },
+        offerType: input.offerType,
       });
-      createdOffers.push(offer);
+      createdOffers.push({ offer, preference, entry: entry as WaitlistEntryRow });
+      input.alreadySelectedEntryIds?.add(entry.id);
     }
   });
 
-  for (const offer of createdOffers) {
+  for (const { offer, preference, entry } of createdOffers) {
+    if (preference === 'auto_accept') {
+      await respondToOffer({
+        offerId: offer.id,
+        status: 'accepted',
+        source: 'placement_process',
+        actorMemberId: input.actorMemberId,
+        reason: 'waitlist-offer-auto-accepted-from-registration-preference',
+      });
+      input.alreadySelectedEntryIds?.add(entry.id);
+      continue;
+    }
+    if (preference === 'auto_decline') {
+      await respondToOffer({
+        offerId: offer.id,
+        status: 'declined',
+        source: 'placement_process',
+        actorMemberId: input.actorMemberId,
+        reason: 'waitlist-offer-auto-declined-from-registration-preference',
+      });
+      continue;
+    }
+    input.alreadySelectedEntryIds?.add(entry.id);
+  }
+
+  for (const { offer, preference } of createdOffers) {
+    if (preference !== 'ask') continue;
     const [member] = await db.select().from(schema.members).where(eq(schema.members.id, offer.member_id)).limit(1);
     if (!member?.email) continue;
     const deadline = asDate(offer.expires_at) ?? expiresAt;
@@ -623,13 +1149,61 @@ export async function sendWaitlistOffers(input: {
       leagueName: league.name,
         isTemporarySabbaticalFill: offer.offer_type === 'temporary_sabbatical_fill',
         deadlineText,
-        acceptUrl: `${config.frontendUrl.replace(/\/+$/, '')}/registration/waitlist-offers/${offer.response_token}/accept`,
-        declineUrl: `${config.frontendUrl.replace(/\/+$/, '')}/registration/waitlist-offers/${offer.response_token}/decline`,
+        acceptUrl: `${config.frontendUrl.replace(/\/+$/, '')}/login?redirect=${encodeURIComponent(`/registration/waitlist-offers/${offer.id}/accept`)}`,
+        declineUrl: `${config.frontendUrl.replace(/\/+$/, '')}/login?redirect=${encodeURIComponent(`/registration/waitlist-offers/${offer.id}/decline`)}`,
       },
     });
   }
 
-  return { offers: createdOffers };
+  return { offers: createdOffers.map((item) => item.offer) };
+}
+
+export async function processBatchVacancyOffers(input: {
+  sessionId: number;
+  leagueIds?: number[];
+  offerType: WaitlistOfferKindSqlite;
+  actorMemberId: number;
+  reason: string;
+  override?: boolean;
+}) {
+  const dashboard = await getWaitlistDashboard({ sessionId: input.sessionId });
+  const vacancyField =
+    input.offerType === 'temporary_sabbatical_fill' ? 'temporarySabbaticalFillVacancies' : 'permanentVacancies';
+  const candidateLeagues = dashboard.leagues
+    .filter((league) => league.hasWaitlist && (league[vacancyField] as number) > 0)
+    .filter((league) => (input.leagueIds?.length ? input.leagueIds.includes(league.id) : true));
+  const sortedLeagueIds = candidateLeagues.map((league) => league.id);
+  const alreadySelectedEntryIds = new Set<number>();
+  const results: Array<{ leagueId: number; offers: any[] }> = [];
+
+  for (const league of candidateLeagues) {
+    const count = league[vacancyField] as number;
+    if (count <= 0) continue;
+    try {
+      const result = await sendWaitlistOffers({
+        leagueId: league.id,
+        offerType: input.offerType,
+        count,
+        reason: input.reason,
+        override: input.override,
+        actorMemberId: input.actorMemberId,
+        alreadySelectedEntryIds,
+      });
+      results.push({ leagueId: league.id, offers: result.offers });
+    } catch (error) {
+      if (error instanceof WaitlistStaffValidationError && error.details.entries) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return {
+    sessionId: input.sessionId,
+    processedLeagueIds: sortedLeagueIds,
+    results,
+    offersCreated: results.reduce((total, result) => total + result.offers.length, 0),
+  };
 }
 
 async function placeAcceptedOffer(
@@ -637,6 +1211,7 @@ async function placeAcceptedOffer(
   input: {
     offer: any;
     entry: WaitlistEntryRow;
+    placementLeagueId: number;
     status: WaitlistOfferStatusSqlite;
     source: WaitlistAuditSourceSqlite;
     actorMemberId?: number | null;
@@ -644,6 +1219,7 @@ async function placeAcceptedOffer(
   }
 ) {
   const { schema } = getDrizzleDb();
+  const placementLeagueId = input.placementLeagueId;
   const placementType = offerTypeToPlacementType(input.entry.entry_type, input.offer.offer_type);
   const relatedSabbaticalId =
     input.offer.offer_type === 'temporary_sabbatical_fill'
@@ -653,7 +1229,7 @@ async function placeAcceptedOffer(
             .from(schema.curlingLeagueSabbaticals)
             .where(
               and(
-                eq(schema.curlingLeagueSabbaticals.current_league_id, input.entry.league_id),
+                eq(schema.curlingLeagueSabbaticals.current_league_id, placementLeagueId),
                 eq(schema.curlingLeagueSabbaticals.status, 'active')
               )
             )
@@ -664,7 +1240,7 @@ async function placeAcceptedOffer(
   const [existingRoster] = await tx
     .select()
     .from(schema.leagueRoster)
-    .where(and(eq(schema.leagueRoster.league_id, input.entry.league_id), eq(schema.leagueRoster.member_id, input.entry.member_id)))
+    .where(and(eq(schema.leagueRoster.league_id, placementLeagueId), eq(schema.leagueRoster.member_id, input.entry.member_id)))
     .limit(1);
   const rosterValues = {
     source_registration_id: input.entry.source_registration_id ?? input.offer.source_registration_id ?? null,
@@ -679,7 +1255,7 @@ async function placeAcceptedOffer(
     : await tx
         .insert(schema.leagueRoster)
         .values({
-          league_id: input.entry.league_id,
+          league_id: placementLeagueId,
           member_id: input.entry.member_id,
           ...rosterValues,
         })
@@ -687,7 +1263,7 @@ async function placeAcceptedOffer(
 
   await createAuditEvent(tx, {
     waitlistEntryId: input.entry.id,
-    leagueId: input.entry.league_id,
+    leagueId: placementLeagueId,
     memberId: input.entry.member_id,
     actorMemberId: input.actorMemberId ?? null,
     source: 'placement_process',
@@ -705,7 +1281,7 @@ async function placeAcceptedOffer(
       .where(eq(schema.waitlistEntries.id, input.entry.id));
     await createAuditEvent(tx, {
       waitlistEntryId: input.entry.id,
-      leagueId: input.entry.league_id,
+      leagueId: placementLeagueId,
       memberId: input.entry.member_id,
       actorMemberId: input.actorMemberId ?? null,
       source: 'placement_process',
@@ -717,13 +1293,20 @@ async function placeAcceptedOffer(
     });
   }
 
-  if (input.entry.entry_type === 'replace' && input.entry.replaces_league_id) {
+  if (input.entry.entry_type === 'replace' && input.entry.replaces_lineage_start_league_id) {
+    const placementLeague = await loadLeague(placementLeagueId);
+    const { resolveLeagueInSessionFromDb } = await import('./waitlistLineage.js');
+    const replacesLeagueId =
+      placementLeague.session_id != null
+        ? await resolveLeagueInSessionFromDb(input.entry.replaces_lineage_start_league_id, placementLeague.session_id)
+        : null;
+    if (replacesLeagueId) {
     const [released] = await tx
       .update(schema.leagueRoster)
       .set({ status: 'removed', updated_at: sql`CURRENT_TIMESTAMP` })
       .where(
         and(
-          eq(schema.leagueRoster.league_id, input.entry.replaces_league_id),
+          eq(schema.leagueRoster.league_id, replacesLeagueId),
           eq(schema.leagueRoster.member_id, input.entry.member_id),
           eq(schema.leagueRoster.status, 'active')
         )
@@ -732,7 +1315,7 @@ async function placeAcceptedOffer(
     if (released) {
       await createAuditEvent(tx, {
         waitlistEntryId: input.entry.id,
-        leagueId: input.entry.replaces_league_id,
+        leagueId: replacesLeagueId,
         memberId: input.entry.member_id,
         actorMemberId: input.actorMemberId ?? null,
         source: 'placement_process',
@@ -740,8 +1323,9 @@ async function placeAcceptedOffer(
         reason: `Released replaced league placement: ${input.reason}`,
         before: released,
         after: { ...released, status: 'removed' },
-        metadata: { offerId: input.offer.id, targetLeagueId: input.entry.league_id },
+        metadata: { offerId: input.offer.id, targetLeagueId: placementLeagueId },
       });
+    }
     }
   }
 
@@ -756,7 +1340,7 @@ async function placeAcceptedOffer(
       .where(
         and(
           eq(schema.registrationSelections.registration_id, input.entry.source_registration_id),
-          eq(schema.registrationSelections.league_id, input.entry.league_id),
+          eq(schema.registrationSelections.league_id, placementLeagueId),
           sql`${schema.registrationSelections.selection_type} IN ('waitlist_add', 'waitlist_replace')`
         )
       );
@@ -801,7 +1385,7 @@ async function respondToOffer(input: {
       .where(eq(schema.waitlistOffers.id, offer.id));
     await createAuditEvent(tx, {
       waitlistEntryId: entry.id,
-      leagueId: entry.league_id,
+      leagueId: offer.league_id,
       memberId: entry.member_id,
       actorMemberId: input.actorMemberId ?? null,
       source: input.source,
@@ -810,6 +1394,7 @@ async function respondToOffer(input: {
       before: offer,
       after: { ...offer, status: input.status },
       metadata: { offerId: offer.id },
+      offerType: offer.offer_type,
     });
 
     if (input.status === 'declined') {
@@ -839,7 +1424,7 @@ async function respondToOffer(input: {
         .where(eq(schema.waitlistEntries.id, entry.id));
       await createAuditEvent(tx, {
         waitlistEntryId: entry.id,
-        leagueId: entry.league_id,
+        leagueId: offer.league_id,
         memberId: entry.member_id,
         actorMemberId: input.actorMemberId ?? null,
         source: input.source,
@@ -848,11 +1433,38 @@ async function respondToOffer(input: {
         before,
         after,
         metadata: { offerId: offer.id, movedToBottom: declineResolution.movedToBottom },
+        offerType: offer.offer_type,
       });
       return;
     }
 
-    await placeAcceptedOffer(tx, { offer, entry, status: input.status, source: input.source, actorMemberId: input.actorMemberId, reason });
+    await placeAcceptedOffer(tx, {
+      offer,
+      entry,
+      placementLeagueId: offer.league_id,
+      status: input.status,
+      source: input.source,
+      actorMemberId: input.actorMemberId,
+      reason,
+    });
+
+    if (input.status === 'accepted' || input.status === 'expired_accepted') {
+      const [placementLeague] = await tx
+        .select({ sessionId: schema.leagues.session_id })
+        .from(schema.leagues)
+        .where(eq(schema.leagues.id, offer.league_id))
+        .limit(1);
+      if (placementLeague?.sessionId != null && offer.offer_type === 'permanent') {
+        await skipLowerPriorityWaitlistEntriesAfterAcceptance({
+          tx,
+          acceptedEntry: toCoordinationEntry(entry),
+          sessionId: placementLeague.sessionId,
+          actorMemberId: input.actorMemberId ?? null,
+          reason: 'Higher-priority waitlist spot accepted for this member.',
+          createAuditEvent,
+        });
+      }
+    }
   });
 
   const [member] = await db.select().from(schema.members).where(eq(schema.members.id, offer.member_id)).limit(1);
@@ -885,23 +1497,39 @@ export async function declineWaitlistOffer(input: { offerId: number; actorMember
   return respondToOffer({ ...input, status: 'declined', source: input.actorMemberId ? 'staff_action' : 'offer_response' });
 }
 
-export async function declineWaitlistOfferByToken(token: string) {
-  return respondToOffer({ token, status: 'declined', source: 'offer_response', reason: 'waitlist-offer-declined-by-member' });
-}
-
-export async function acceptWaitlistOfferByTokenForMember(input: { token: string; actorMemberId: number }) {
+export async function declineWaitlistOfferForMember(input: { offerId: number; actorMemberId: number }) {
   const { db, schema } = getDrizzleDb();
   const [offer] = await db
     .select()
     .from(schema.waitlistOffers)
-    .where(eq(schema.waitlistOffers.response_token, input.token))
+    .where(eq(schema.waitlistOffers.id, input.offerId))
+    .limit(1);
+  if (!offer) throw new WaitlistStaffValidationError({ offer: 'Waitlist offer was not found.' });
+  if (!(await canActorImpersonateTarget(input.actorMemberId, offer.member_id))) {
+    throw new WaitlistStaffValidationError({ offer: 'You do not have access to decline this waitlist offer.' });
+  }
+  return respondToOffer({
+    offerId: input.offerId,
+    status: 'declined',
+    source: 'offer_response',
+    actorMemberId: input.actorMemberId,
+    reason: 'waitlist-offer-declined-by-member',
+  });
+}
+
+export async function acceptWaitlistOfferForMember(input: { offerId: number; actorMemberId: number }) {
+  const { db, schema } = getDrizzleDb();
+  const [offer] = await db
+    .select()
+    .from(schema.waitlistOffers)
+    .where(eq(schema.waitlistOffers.id, input.offerId))
     .limit(1);
   if (!offer) throw new WaitlistStaffValidationError({ offer: 'Waitlist offer was not found.' });
   if (!(await canActorImpersonateTarget(input.actorMemberId, offer.member_id))) {
     throw new WaitlistStaffValidationError({ offer: 'You do not have access to accept this waitlist offer.' });
   }
   return respondToOffer({
-    token: input.token,
+    offerId: input.offerId,
     status: 'accepted',
     source: 'offer_response',
     actorMemberId: input.actorMemberId,
@@ -968,25 +1596,45 @@ export async function addWaitlistEntry(input: {
   memberId: number;
   entryType: WaitlistEntryTypeSqlite;
   replacesLeagueId?: number | null;
+  teamRosterText?: string | null;
+  teamRosterPlacements?: WaitlistTeamMemberPlacementInput[] | null;
   actorMemberId: number;
   reason: string;
+  auditSource?: WaitlistAuditSourceSqlite;
 }) {
   const { db, schema } = getDrizzleDb();
   const reason = requireReason(input.reason);
-  const league = await loadLeague(input.leagueId);
-  if (league.league_type === 'bring_your_own_team') throw new WaitlistStaffValidationError({ league: 'BYOT leagues do not use waitlists.' });
-  if (input.entryType === 'replace' && !input.replacesLeagueId) {
-    throw new WaitlistStaffValidationError({ replacesLeagueId: 'A replacement league is required for REPLACE entries.' });
-  }
+  const { league, waitlistId } = await requireLeagueWaitlist(input.leagueId);
+  const roster = await resolveWaitlistEntryRoster({
+    league,
+    primaryMemberId: input.memberId,
+    entryType: input.entryType,
+    replacesLeagueId: input.replacesLeagueId,
+    teamRosterText: input.teamRosterText,
+    teamRosterPlacements: input.teamRosterPlacements,
+    enforceMemberPlacementRules: input.auditSource === 'member_self',
+  });
+  const rosterMemberIds =
+    roster.teamRosterPlacements != null
+      ? parseTeamRosterPlacements(roster.teamRosterPlacements).map((placement) => placement.memberId)
+      : [input.memberId];
+  await assertMembersAvailableForWaitlist({ waitlistId, memberIds: rosterMemberIds });
+  const replacement =
+    roster.entryType === 'replace' && roster.replacesLeagueId
+      ? await replacementLineageFromLeagueId(roster.replacesLeagueId)
+      : null;
   const registrationId = await getLatestRegistrationForMember(input.memberId, league.session_id);
   const [entry] = await db
     .insert(schema.waitlistEntries)
     .values({
-      league_id: input.leagueId,
+      waitlist_id: waitlistId,
       member_id: input.memberId,
       source_registration_id: registrationId,
-      entry_type: input.entryType,
-      replaces_league_id: input.entryType === 'replace' ? input.replacesLeagueId ?? null : null,
+      entry_type: roster.entryType,
+      replaces_lineage_start_league_id: replacement?.lineageStartLeagueId ?? null,
+      original_replaces_league_id: replacement?.originalReplacesLeagueId ?? null,
+      team_roster_text: roster.teamRosterText,
+      team_roster_placements: roster.teamRosterPlacements,
       position_sort_key: nextPositionSortKey(),
       joined_at: dbNow(),
       decline_count: 0,
@@ -994,15 +1642,26 @@ export async function addWaitlistEntry(input: {
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .returning();
+  const queuePosition = await getWaitlistQueuePosition(db, waitlistId, entry.id);
   await createAuditEvent(db, {
     waitlistEntryId: entry.id,
-    leagueId: entry.league_id,
+    leagueId: input.leagueId,
     memberId: entry.member_id,
     actorMemberId: input.actorMemberId,
-    source: 'staff_action',
+    source: input.auditSource ?? 'staff_action',
     action: 'entry_created',
     reason,
     after: entry,
+    position: queuePosition?.position ?? null,
+    queueTotal: queuePosition?.total ?? null,
+  });
+  await sendWaitlistEntryJoinedNotifications({
+    waitlistId,
+    entryId: entry.id,
+    leagueName: league.name,
+    addedByMemberId: input.actorMemberId,
+    addedBySource: input.auditSource === 'member_self' ? 'member_self' : 'staff_action',
+    registrationId: entry.source_registration_id ?? null,
   });
   return { entry };
 }
@@ -1011,50 +1670,49 @@ export async function removeWaitlistEntry(input: { entryId: number; actorMemberI
   const { db, schema } = getDrizzleDb();
   const reason = requireReason(input.reason);
   const entry = await loadEntry(input.entryId);
+  if (entry.status !== 'active') {
+    throw new WaitlistStaffValidationError({ waitlistEntry: 'Active waitlist entry was not found.' });
+  }
+  const placement = await resolvePlacementLeagueForWaitlist(entry.waitlist_id);
+  const [member] = await db.select().from(schema.members).where(eq(schema.members.id, entry.member_id)).limit(1);
+  const [actor] = await db.select().from(schema.members).where(eq(schema.members.id, input.actorMemberId)).limit(1);
   await db.transaction(async (tx) => {
-    await tx
-      .update(schema.waitlistEntries)
-      .set({ status: 'removed', updated_at: sql`CURRENT_TIMESTAMP` })
-      .where(eq(schema.waitlistEntries.id, input.entryId));
-    await createAuditEvent(tx, {
-      waitlistEntryId: entry.id,
-      leagueId: entry.league_id,
-      memberId: entry.member_id,
+    await recordAndDeleteWaitlistEntry(tx, {
+      entry,
+      leagueId: placement?.leagueId ?? null,
       actorMemberId: input.actorMemberId,
       source: 'staff_action',
-      action: 'entry_removed',
       reason,
-      before: entry,
-      after: { ...entry, status: 'removed' },
+      memberName: member ? waitlistMemberDisplayName(member) : null,
+      actorMemberName: actor ? waitlistMemberDisplayName(actor) : null,
     });
   });
-  const [member] = await db.select().from(schema.members).where(eq(schema.members.id, entry.member_id)).limit(1);
-  const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, entry.league_id)).limit(1);
   if (member) {
     await safeSendWaitlistCommunication({
       messageType: 'waitlist_changed_by_staff',
       member,
       registrationId: entry.source_registration_id ?? null,
-      waitlistEntryId: entry.id,
+      waitlistEntryId: null,
       payload: {
-        leagueName: league?.name,
+        leagueName: placement?.leagueName,
         changedSummary: 'Staff removed your waitlist entry.',
       },
     });
   }
-  return { entryId: input.entryId, status: 'removed' };
+  return { entryId: input.entryId, deleted: true };
 }
 
 export async function moveWaitlistEntryToBottom(input: { entryId: number; actorMemberId: number; reason: string }) {
   const { db, schema } = getDrizzleDb();
   const reason = requireReason(input.reason);
   const entry = await loadEntry(input.entryId);
+  const placement = await resolvePlacementLeagueForWaitlist(entry.waitlist_id);
   const after = { position_sort_key: nextPositionSortKey(), decline_count: 0, status: 'active' as const };
   await db.transaction(async (tx) => {
     await tx.update(schema.waitlistEntries).set({ ...after, updated_at: sql`CURRENT_TIMESTAMP` }).where(eq(schema.waitlistEntries.id, entry.id));
     await createAuditEvent(tx, {
       waitlistEntryId: entry.id,
-      leagueId: entry.league_id,
+      leagueId: placement?.leagueId ?? null,
       memberId: entry.member_id,
       actorMemberId: input.actorMemberId,
       source: 'staff_action',
@@ -1065,7 +1723,6 @@ export async function moveWaitlistEntryToBottom(input: { entryId: number; actorM
     });
   });
   const [member] = await db.select().from(schema.members).where(eq(schema.members.id, entry.member_id)).limit(1);
-  const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, entry.league_id)).limit(1);
   if (member) {
     await safeSendWaitlistCommunication({
       messageType: 'waitlist_changed_by_staff',
@@ -1073,7 +1730,7 @@ export async function moveWaitlistEntryToBottom(input: { entryId: number; actorM
       registrationId: entry.source_registration_id ?? null,
       waitlistEntryId: entry.id,
       payload: {
-        leagueName: league?.name,
+        leagueName: placement?.leagueName,
         changedSummary: 'Staff moved your waitlist entry to the bottom of the waitlist.',
       },
     });
@@ -1087,29 +1744,68 @@ export async function updateWaitlistEntry(input: {
   reason: string;
   entryType?: WaitlistEntryTypeSqlite;
   replacesLeagueId?: number | null;
+  teamRosterText?: string | null;
+  teamRosterPlacements?: WaitlistTeamMemberPlacementInput[] | null;
 }) {
   const { db, schema } = getDrizzleDb();
   const reason = requireReason(input.reason);
   const entry = await loadEntry(input.entryId);
-  const entryType = input.entryType ?? entry.entry_type;
-  if (entryType === 'replace' && !input.replacesLeagueId && !entry.replaces_league_id) {
-    throw new WaitlistStaffValidationError({ replacesLeagueId: 'A replacement league is required for REPLACE entries.' });
+  const placement = await resolvePlacementLeagueForWaitlist(entry.waitlist_id);
+  const league = placement ? await loadLeague(placement.leagueId) : null;
+  if (!league) {
+    throw new WaitlistStaffValidationError({ league: 'Placement league was not found.' });
   }
+  const continuity = await loadLeagueContinuityMap();
+  const resolvedReplacesLeagueId =
+    input.replacesLeagueId ??
+    (entry.replaces_lineage_start_league_id != null && league.session_id != null
+      ? resolveLeagueInSession(entry.replaces_lineage_start_league_id, league.session_id, continuity)
+      : entry.original_replaces_league_id);
+  const roster = await resolveWaitlistEntryRoster({
+    league,
+    primaryMemberId: entry.member_id,
+    entryType: input.entryType ?? entry.entry_type,
+    replacesLeagueId: resolvedReplacesLeagueId,
+    teamRosterText: input.teamRosterText,
+    teamRosterPlacements: input.teamRosterPlacements,
+    existingTeamRosterText: entry.team_roster_text,
+    existingTeamRosterPlacements: entry.team_roster_placements,
+    enforceMemberPlacementRules: false,
+  });
+  const rosterMemberIds =
+    roster.teamRosterPlacements != null
+      ? parseTeamRosterPlacements(roster.teamRosterPlacements).map((placement) => placement.memberId)
+      : [entry.member_id];
+  await assertMembersAvailableForWaitlist({
+    waitlistId: entry.waitlist_id,
+    memberIds: rosterMemberIds,
+    excludeEntryId: entry.id,
+  });
+  const replacement =
+    roster.entryType === 'replace' && roster.replacesLeagueId
+      ? await replacementLineageFromLeagueId(roster.replacesLeagueId)
+      : null;
   const values = {
-    entry_type: entryType,
-    replaces_league_id: entryType === 'replace' ? input.replacesLeagueId ?? entry.replaces_league_id : null,
+    entry_type: roster.entryType,
+    replaces_lineage_start_league_id: replacement?.lineageStartLeagueId ?? null,
+    original_replaces_league_id: replacement?.originalReplacesLeagueId ?? null,
+    team_roster_text: roster.teamRosterText,
+    team_roster_placements: roster.teamRosterPlacements,
     updated_at: sql`CURRENT_TIMESTAMP`,
   };
+  const entryType = roster.entryType;
   const action: WaitlistAuditActionSqlite =
     entry.entry_type !== entryType
       ? entryType === 'replace'
         ? 'entry_converted_add_to_replace'
         : 'entry_converted_replace_to_add'
-      : 'replacement_league_changed';
+      : entry.replaces_lineage_start_league_id !== values.replaces_lineage_start_league_id
+        ? 'replacement_league_changed'
+        : 'staff_correction';
   const [updated] = await db.update(schema.waitlistEntries).set(values).where(eq(schema.waitlistEntries.id, entry.id)).returning();
   await createAuditEvent(db, {
     waitlistEntryId: entry.id,
-    leagueId: entry.league_id,
+    leagueId: placement?.leagueId ?? null,
     memberId: entry.member_id,
     actorMemberId: input.actorMemberId,
     source: 'staff_action',
@@ -1119,7 +1815,6 @@ export async function updateWaitlistEntry(input: {
     after: updated,
   });
   const [member] = await db.select().from(schema.members).where(eq(schema.members.id, entry.member_id)).limit(1);
-  const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, entry.league_id)).limit(1);
   if (member) {
     await safeSendWaitlistCommunication({
       messageType: 'waitlist_changed_by_staff',
@@ -1127,7 +1822,7 @@ export async function updateWaitlistEntry(input: {
       registrationId: entry.source_registration_id ?? null,
       waitlistEntryId: entry.id,
       payload: {
-        leagueName: league?.name,
+        leagueName: placement?.leagueName ?? league?.name,
         changedSummary: entry.entry_type !== updated.entry_type ? 'Staff changed your waitlist type.' : 'Staff updated your waitlist entry.',
       },
     });

@@ -543,7 +543,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         });
 
         if (result.needsPayment && result.status !== 'waitlisted') {
-          return createCheckoutForRegistration(event, result, parsed.data.contactEmail);
+          return createCheckoutForRegistration(event, result, parsed.data.contactEmail, regMember?.id ?? null);
         }
 
         sendEventRegistrationConfirmationEmail(
@@ -1058,7 +1058,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         });
 
         if (result.needsPayment && result.status !== 'waitlisted') {
-          return createCheckoutForRegistration(event, result, parsed.data.contactEmail);
+          return createCheckoutForRegistration(event, result, parsed.data.contactEmail, member.id);
         }
 
         sendEventRegistrationConfirmationEmail(
@@ -1559,7 +1559,8 @@ function formatEventResponse(event: EventFormattingSource) {
 async function createCheckoutForRegistration(
   event: EventFormattingSource,
   registrationResult: { registrationId: number; totalFee: number },
-  contactEmail: string
+  contactEmail: string,
+  createdByMemberId?: number | null
 ) {
   const paymentService = createPaymentService();
   const order = await paymentService.createPaymentOrder({
@@ -1568,6 +1569,7 @@ async function createCheckoutForRegistration(
     subjectId: registrationResult.registrationId,
     amountMinor: registrationResult.totalFee,
     currency: event.currency || 'usd',
+    createdByMemberId: createdByMemberId ?? null,
     metadata: {
       eventId: event.id,
       eventTitle: event.title,

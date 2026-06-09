@@ -19,6 +19,7 @@ export function league(overrides: Partial<LeagueConfig> = {}): LeagueConfig {
     firstDayOfPlay: '2026-09-15',
     lastDayOfPlay: '2026-12-15',
     allowsWaitlist: true,
+    isPlayInBased: false,
     allowsSabbatical: true,
     predecessorLeagueId: 90,
     successorLeagueId: null,
@@ -66,6 +67,8 @@ export function registrationContext(overrides: Partial<RegistrationContext> = {}
     experience: {
       type: 'specified_years',
       selfReportedYears: 2,
+      baselineOtherClubExperienceYears: 0,
+      baselineClubExperienceYears: 0,
       completedSessions: [],
     },
     activeLeagueIds: [],

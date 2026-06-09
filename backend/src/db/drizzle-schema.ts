@@ -45,6 +45,8 @@ export const membersSqlite = sqliteTable('members', {
   email_visible: integer('email_visible').default(0).notNull(),
   phone_visible: integer('phone_visible').default(0).notNull(),
   theme_preference: text('theme_preference').default('system'),
+  baseline_other_club_experience_years: real('baseline_other_club_experience_years').default(0).notNull(),
+  baseline_club_experience_years: real('baseline_club_experience_years').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -67,12 +69,14 @@ export const authCodesSqlite = sqliteTable('auth_codes', {
 export const authTokensSqlite = sqliteTable('auth_tokens', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  actor_member_id: integer('actor_member_id').references(() => membersSqlite.id, { onDelete: 'cascade' }),
   token: text('token').notNull().unique(),
   expires_at: text('expires_at').notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   tokenIdx: index('idx_auth_tokens_token').on(table.token),
   memberIdIdx: index('idx_auth_tokens_member_id').on(table.member_id),
+  actorMemberIdIdx: index('idx_auth_tokens_actor_member_id').on(table.actor_member_id),
 }));
 
 export const rolesSqlite = sqliteTable('roles', {
@@ -156,6 +160,7 @@ export type CurlingRegistrationStatusSqlite =
   | 'confirmed'
   | 'cancelled';
 export type CurlingMembershipOptionSqlite = 'none' | 'regular' | 'social' | 'regular_spare_only' | 'junior_recreational';
+export type CurlingIcePrivilegesChoiceSqlite = 'none' | 'league_play' | 'basic_ice';
 export type CurlingExperienceTypeSqlite = 'none_or_minimal' | 'specified_years' | 'known_existing';
 export type CurlingRegistrationPaymentStatusSqlite =
   | 'unpaid'
@@ -173,8 +178,15 @@ export type CurlingRegistrationSelectionKindSqlite =
   | 'return_subject_to_availability'
   | 'waitlist_add'
   | 'waitlist_replace'
+  | 'waitlist_add_auto_decline'
+  | 'waitlist_replace_auto_decline'
+  | 'waitlist_keep_auto_accept'
+  | 'waitlist_keep_auto_decline'
+  | 'waitlist_remove'
   | 'third_league_interest'
   | 'byot_request'
+  | 'play_in_request'
+  | 'instructional_join'
   | 'junior_recreational'
   | 'spare_only';
 export type CurlingRegistrationSelectionStatusSqlite =
@@ -211,6 +223,8 @@ export type CurlingLeagueSabbaticalStatusSqlite =
   | 'expired'
   | 'staff_overridden'
   | 'cancelled';
+
+export type WaitlistOfferResponsePreferenceSqlite = 'ask' | 'auto_accept' | 'auto_decline';
 
 export type WaitlistEntryTypeSqlite = 'add' | 'replace';
 export type WaitlistEntryStatusSqlite =
@@ -253,7 +267,9 @@ export type WaitlistAuditActionSqlite =
   | 'decline_count_changed'
   | 'entry_moved_to_bottom'
   | 'entry_placed'
-  | 'staff_correction';
+  | 'staff_correction'
+  | 'offer_preference_changed'
+  | 'entry_preference_skipped';
 
 export type CurlingDiscountTypeSqlite = 'student' | 'reciprocal' | 'winter_only';
 export type CurlingDiscountAmountTypeSqlite = 'dollar' | 'percent';
@@ -306,7 +322,8 @@ export type RegistrationCommunicationMessageTypeSqlite =
   | 'sabbatical_confirmation'
   | 'sabbatical_release'
   | 'byot_registration_confirmation'
-  | 'registration_manually_updated_by_staff';
+  | 'registration_manually_updated_by_staff'
+  | 'registration_cancelled_by_member';
 
 export const curlingSeasonsSqlite = sqliteTable('curling_seasons', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -346,12 +363,15 @@ export const leaguesSqlite = sqliteTable('leagues', {
   registration_fee_minor: integer('registration_fee_minor').default(0).notNull(),
   registration_fee_override_minor: integer('registration_fee_override_minor'),
   requires_club_membership: integer('requires_club_membership').default(1).notNull(),
-  min_experience_years: integer('min_experience_years'),
+  min_experience_years: real('min_experience_years'),
+  max_experience_years: real('max_experience_years'),
   min_age: integer('min_age'),
   max_age: integer('max_age'),
   first_day_of_play: text('first_day_of_play'),
   last_day_of_play: text('last_day_of_play'),
   allows_waitlist: integer('allows_waitlist').default(1).notNull(),
+  waitlist_id: integer('waitlist_id'),
+  is_play_in_based: integer('is_play_in_based').default(0).notNull(),
   allows_sabbatical: integer('allows_sabbatical').default(1).notNull(),
   predecessor_league_id: integer('predecessor_league_id'),
   successor_league_id: integer('successor_league_id'),
@@ -361,7 +381,20 @@ export const leaguesSqlite = sqliteTable('leagues', {
   sessionIdx: index('idx_leagues_session_id').on(table.session_id),
   predIdx: index('idx_leagues_predecessor_league_id').on(table.predecessor_league_id),
   succIdx: index('idx_leagues_successor_league_id').on(table.successor_league_id),
+  waitlistIdx: index('idx_leagues_waitlist_id').on(table.waitlist_id),
   leagueTypeIdx: index('idx_leagues_league_type').on(table.league_type),
+}));
+
+export type LeagueWaitlistStatusSqlite = 'active' | 'archived';
+
+export const leagueWaitlistsSqlite = sqliteTable('league_waitlists', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  status: text('status').notNull().default('active').$type<LeagueWaitlistStatusSqlite>(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  statusIdx: index('idx_league_waitlists_status').on(table.status),
 }));
 
 export const registrationStateTransitionsSqlite = sqliteTable('registration_state_transitions', {
@@ -400,6 +433,7 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   guardian_email: text('guardian_email'),
   guardian_phone: text('guardian_phone'),
   membership_option: text('membership_option').notNull().default('none').$type<CurlingMembershipOptionSqlite>(),
+  ice_privileges_choice: text('ice_privileges_choice').notNull().default('none').$type<CurlingIcePrivilegesChoiceSqlite>(),
   experience_type: text('experience_type').$type<CurlingExperienceTypeSqlite>(),
   experience_self_reported_years: real('experience_self_reported_years'),
   student_discount_claimed: integer('student_discount_claimed').default(0).notNull(),
@@ -408,6 +442,8 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   reciprocal_club_name: text('reciprocal_club_name'),
   last_fee_preview_json: text('last_fee_preview_json'),
   payment_decision_json: text('payment_decision_json'),
+  desired_add_waitlist_league_count: integer('desired_add_waitlist_league_count'),
+  basic_ice_fallback_interest: integer('basic_ice_fallback_interest'),
   status: text('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: text('shell_completed_at'),
   submitted_at: text('submitted_at'),
@@ -494,6 +530,7 @@ export const registrationSelectionsSqlite = sqliteTable('registration_selections
   }),
   is_temporary_sabbatical_fill: integer('is_temporary_sabbatical_fill').default(0).notNull(),
   byot_teammate_text: text('byot_teammate_text'),
+  team_roster_placements: text('team_roster_placements'),
   status: text('status').notNull().default('draft').$type<CurlingRegistrationSelectionStatusSqlite>(),
   fee_amount_minor_snapshot: integer('fee_amount_minor_snapshot').default(0).notNull(),
   discount_amount_minor_snapshot: integer('discount_amount_minor_snapshot').default(0).notNull(),
@@ -677,33 +714,48 @@ export const waitlistEntriesSqlite = sqliteTable('waitlist_entries', {
   member_id: integer('member_id')
     .notNull()
     .references(() => membersSqlite.id, { onDelete: 'cascade' }),
-  league_id: integer('league_id')
+  waitlist_id: integer('waitlist_id')
     .notNull()
-    .references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+    .references(() => leagueWaitlistsSqlite.id, { onDelete: 'cascade' }),
   source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
     onDelete: 'set null',
   }),
   entry_type: text('entry_type').notNull().$type<WaitlistEntryTypeSqlite>(),
-  replaces_league_id: integer('replaces_league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  replaces_lineage_start_league_id: integer('replaces_lineage_start_league_id').references(() => leaguesSqlite.id, {
+    onDelete: 'set null',
+  }),
+  original_replaces_league_id: integer('original_replaces_league_id').references(() => leaguesSqlite.id, {
+    onDelete: 'set null',
+  }),
+  team_roster_text: text('team_roster_text'),
+  team_roster_placements: text('team_roster_placements'),
   position_sort_key: text('position_sort_key').notNull(),
   joined_at: text('joined_at').notNull(),
   decline_count: integer('decline_count').default(0).notNull(),
+  offer_response_preference: text('offer_response_preference')
+    .notNull()
+    .default('ask')
+    .$type<WaitlistOfferResponsePreferenceSqlite>(),
+  desired_add_waitlist_league_count: integer('desired_add_waitlist_league_count'),
+  add_waitlist_priority_rank: integer('add_waitlist_priority_rank'),
   status: text('status').notNull().default('active').$type<WaitlistEntryStatusSqlite>(),
   rolled_over_from_waitlist_entry_id: integer('rolled_over_from_waitlist_entry_id'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
-  leagueIdx: index('idx_waitlist_entries_league_id').on(table.league_id),
+  waitlistIdx: index('idx_waitlist_entries_waitlist_id').on(table.waitlist_id),
   memberIdx: index('idx_waitlist_entries_member_id').on(table.member_id),
   statusIdx: index('idx_waitlist_entries_status').on(table.status),
   entryTypeIdx: index('idx_waitlist_entries_entry_type').on(table.entry_type),
   posIdx: index('idx_waitlist_entries_position_sort_key').on(table.position_sort_key),
   joinedIdx: index('idx_waitlist_entries_joined_at').on(table.joined_at),
   sourceRegIdx: index('idx_waitlist_entries_source_registration_id').on(table.source_registration_id),
-  replacesIdx: index('idx_waitlist_entries_replaces_league_id').on(table.replaces_league_id),
-  activeMemberLeaguePartial: uniqueIndex('idx_waitlist_entries_active_member_league').on(
+  replacesLineageIdx: index('idx_waitlist_entries_replaces_lineage_start_league_id').on(
+    table.replaces_lineage_start_league_id
+  ),
+  activeMemberWaitlistPartial: uniqueIndex('idx_waitlist_entries_active_member_waitlist').on(
     table.member_id,
-    table.league_id
+    table.waitlist_id
   ).where(eq(table.status, 'active')),
 }));
 
@@ -1131,6 +1183,8 @@ export const serverConfigSqlite = sqliteTable('server_config', {
   capture_backend_logs: integer('capture_backend_logs').default(1).notNull(),
   test_current_time: text('test_current_time'),
   notification_delay_seconds: integer('notification_delay_seconds').default(180).notNull(),
+  session_token_ttl_minutes: integer('session_token_ttl_minutes').default(30).notNull(),
+  refresh_token_ttl_days: integer('refresh_token_ttl_days').default(60).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
@@ -1297,6 +1351,36 @@ export const refundsSqlite = sqliteTable('refunds', {
   orderIdx: index('idx_refunds_order_id').on(table.payment_order_id),
   statusIdx: index('idx_refunds_status').on(table.status),
   providerRefundIdx: uniqueIndex('refunds_provider_refund_id_unique').on(table.provider, table.provider_refund_id),
+}));
+
+export const webhooksSqlite = sqliteTable('webhooks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_type: text('event_type').notNull(),
+  destination_url: text('destination_url').notNull(),
+  secret: text('secret').notNull(),
+  enabled: integer('enabled').default(1).notNull(),
+  description: text('description'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  eventTypeIdx: index('idx_webhooks_event_type').on(table.event_type),
+  enabledIdx: index('idx_webhooks_enabled').on(table.enabled),
+}));
+
+export const webhookDeliveriesSqlite = sqliteTable('webhook_deliveries', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  webhook_id: integer('webhook_id').notNull().references(() => webhooksSqlite.id, { onDelete: 'cascade' }),
+  event_type: text('event_type').notNull(),
+  payload: text('payload').notNull(),
+  request_url: text('request_url').notNull(),
+  response_status: integer('response_status'),
+  success: integer('success').default(0).notNull(),
+  error_message: text('error_message'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  webhookIdIdx: index('idx_webhook_deliveries_webhook_id').on(table.webhook_id),
+  createdAtIdx: index('idx_webhook_deliveries_created_at').on(table.created_at),
 }));
 
 // Daily active users table (one row per member per day; duplicates ignored)
@@ -1865,6 +1949,8 @@ export const membersPg = pgTable('members', {
   email_visible: integerPg('email_visible').default(0).notNull(),
   phone_visible: integerPg('phone_visible').default(0).notNull(),
   theme_preference: textPg('theme_preference').default('system'),
+  baseline_other_club_experience_years: doublePrecision('baseline_other_club_experience_years').default(0).notNull(),
+  baseline_club_experience_years: doublePrecision('baseline_club_experience_years').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -1887,12 +1973,14 @@ export const authCodesPg = pgTable('auth_codes', {
 export const authTokensPg = pgTable('auth_tokens', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  actor_member_id: integerPg('actor_member_id').references(() => membersPg.id, { onDelete: 'cascade' }),
   token: textPg('token').notNull().unique(),
   expires_at: timestamp('expires_at', { withTimezone: false }).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   tokenIdx: indexPg('idx_auth_tokens_token').on(table.token),
   memberIdIdx: indexPg('idx_auth_tokens_member_id').on(table.member_id),
+  actorMemberIdIdx: indexPg('idx_auth_tokens_actor_member_id').on(table.actor_member_id),
 }));
 
 export const rolesPg = pgTable('roles', {
@@ -1998,12 +2086,15 @@ export const leaguesPg = pgTable('leagues', {
   registration_fee_minor: integerPg('registration_fee_minor').default(0).notNull(),
   registration_fee_override_minor: integerPg('registration_fee_override_minor'),
   requires_club_membership: integerPg('requires_club_membership').default(1).notNull(),
-  min_experience_years: integerPg('min_experience_years'),
+  min_experience_years: doublePrecision('min_experience_years'),
+  max_experience_years: doublePrecision('max_experience_years'),
   min_age: integerPg('min_age'),
   max_age: integerPg('max_age'),
   first_day_of_play: date('first_day_of_play'),
   last_day_of_play: date('last_day_of_play'),
   allows_waitlist: integerPg('allows_waitlist').default(1).notNull(),
+  waitlist_id: integerPg('waitlist_id'),
+  is_play_in_based: integerPg('is_play_in_based').default(0).notNull(),
   allows_sabbatical: integerPg('allows_sabbatical').default(1).notNull(),
   predecessor_league_id: integerPg('predecessor_league_id'),
   successor_league_id: integerPg('successor_league_id'),
@@ -2013,7 +2104,18 @@ export const leaguesPg = pgTable('leagues', {
   sessionIdx: indexPg('idx_leagues_session_id').on(table.session_id),
   predIdx: indexPg('idx_leagues_predecessor_league_id').on(table.predecessor_league_id),
   succIdx: indexPg('idx_leagues_successor_league_id').on(table.successor_league_id),
+  waitlistIdx: indexPg('idx_leagues_waitlist_id').on(table.waitlist_id),
   leagueTypeIdx: indexPg('idx_leagues_league_type').on(table.league_type),
+}));
+
+export const leagueWaitlistsPg = pgTable('league_waitlists', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  status: textPg('status').notNull().default('active').$type<LeagueWaitlistStatusSqlite>(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  statusIdx: indexPg('idx_league_waitlists_status').on(table.status),
 }));
 
 export const registrationStateTransitionsPg = pgTable('registration_state_transitions', {
@@ -2052,6 +2154,7 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   guardian_email: textPg('guardian_email'),
   guardian_phone: textPg('guardian_phone'),
   membership_option: textPg('membership_option').notNull().default('none').$type<CurlingMembershipOptionSqlite>(),
+  ice_privileges_choice: textPg('ice_privileges_choice').notNull().default('none').$type<CurlingIcePrivilegesChoiceSqlite>(),
   experience_type: textPg('experience_type').$type<CurlingExperienceTypeSqlite>(),
   experience_self_reported_years: doublePrecision('experience_self_reported_years'),
   student_discount_claimed: integerPg('student_discount_claimed').default(0).notNull(),
@@ -2060,6 +2163,8 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   reciprocal_club_name: textPg('reciprocal_club_name'),
   last_fee_preview_json: jsonb('last_fee_preview_json'),
   payment_decision_json: jsonb('payment_decision_json'),
+  desired_add_waitlist_league_count: integerPg('desired_add_waitlist_league_count'),
+  basic_ice_fallback_interest: integerPg('basic_ice_fallback_interest'),
   status: textPg('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: timestamp('shell_completed_at', { withTimezone: false }),
   submitted_at: timestamp('submitted_at', { withTimezone: false }),
@@ -2146,6 +2251,7 @@ export const registrationSelectionsPg = pgTable('registration_selections', {
   }),
   is_temporary_sabbatical_fill: integerPg('is_temporary_sabbatical_fill').default(0).notNull(),
   byot_teammate_text: textPg('byot_teammate_text'),
+  team_roster_placements: textPg('team_roster_placements'),
   status: textPg('status').notNull().default('draft').$type<CurlingRegistrationSelectionStatusSqlite>(),
   fee_amount_minor_snapshot: integerPg('fee_amount_minor_snapshot').default(0).notNull(),
   discount_amount_minor_snapshot: integerPg('discount_amount_minor_snapshot').default(0).notNull(),
@@ -2320,33 +2426,48 @@ export const waitlistEntriesPg = pgTable('waitlist_entries', {
   member_id: integerPg('member_id')
     .notNull()
     .references(() => membersPg.id, { onDelete: 'cascade' }),
-  league_id: integerPg('league_id')
+  waitlist_id: integerPg('waitlist_id')
     .notNull()
-    .references(() => leaguesPg.id, { onDelete: 'cascade' }),
+    .references(() => leagueWaitlistsPg.id, { onDelete: 'cascade' }),
   source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
     onDelete: 'set null',
   }),
   entry_type: textPg('entry_type').notNull().$type<WaitlistEntryTypeSqlite>(),
-  replaces_league_id: integerPg('replaces_league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  replaces_lineage_start_league_id: integerPg('replaces_lineage_start_league_id').references(() => leaguesPg.id, {
+    onDelete: 'set null',
+  }),
+  original_replaces_league_id: integerPg('original_replaces_league_id').references(() => leaguesPg.id, {
+    onDelete: 'set null',
+  }),
+  team_roster_text: textPg('team_roster_text'),
+  team_roster_placements: textPg('team_roster_placements'),
   position_sort_key: textPg('position_sort_key').notNull(),
   joined_at: timestamp('joined_at', { withTimezone: false }).notNull(),
   decline_count: integerPg('decline_count').default(0).notNull(),
+  offer_response_preference: textPg('offer_response_preference')
+    .notNull()
+    .default('ask')
+    .$type<WaitlistOfferResponsePreferenceSqlite>(),
+  desired_add_waitlist_league_count: integerPg('desired_add_waitlist_league_count'),
+  add_waitlist_priority_rank: integerPg('add_waitlist_priority_rank'),
   status: textPg('status').notNull().default('active').$type<WaitlistEntryStatusSqlite>(),
   rolled_over_from_waitlist_entry_id: integerPg('rolled_over_from_waitlist_entry_id'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
-  leagueIdx: indexPg('idx_waitlist_entries_league_id').on(table.league_id),
+  waitlistIdx: indexPg('idx_waitlist_entries_waitlist_id').on(table.waitlist_id),
   memberIdx: indexPg('idx_waitlist_entries_member_id').on(table.member_id),
   statusIdx: indexPg('idx_waitlist_entries_status').on(table.status),
   entryTypeIdx: indexPg('idx_waitlist_entries_entry_type').on(table.entry_type),
   posIdx: indexPg('idx_waitlist_entries_position_sort_key').on(table.position_sort_key),
   joinedIdx: indexPg('idx_waitlist_entries_joined_at').on(table.joined_at),
   sourceRegIdx: indexPg('idx_waitlist_entries_source_registration_id').on(table.source_registration_id),
-  replacesIdx: indexPg('idx_waitlist_entries_replaces_league_id').on(table.replaces_league_id),
-  activeMemberLeaguePartial: uniqueIndexPg('idx_waitlist_entries_active_member_league').on(
+  replacesLineageIdx: indexPg('idx_waitlist_entries_replaces_lineage_start_league_id').on(
+    table.replaces_lineage_start_league_id
+  ),
+  activeMemberWaitlistPartial: uniqueIndexPg('idx_waitlist_entries_active_member_waitlist').on(
     table.member_id,
-    table.league_id
+    table.waitlist_id
   ).where(eq(table.status, 'active')),
 }));
 
@@ -2774,6 +2895,8 @@ export const serverConfigPg = pgTable('server_config', {
   capture_backend_logs: integerPg('capture_backend_logs').default(1).notNull(),
   test_current_time: timestamp('test_current_time', { withTimezone: false }),
   notification_delay_seconds: integerPg('notification_delay_seconds').default(180).notNull(),
+  session_token_ttl_minutes: integerPg('session_token_ttl_minutes').default(30).notNull(),
+  refresh_token_ttl_days: integerPg('refresh_token_ttl_days').default(60).notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
@@ -2940,6 +3063,36 @@ export const refundsPg = pgTable('refunds', {
   orderIdx: indexPg('idx_refunds_order_id').on(table.payment_order_id),
   statusIdx: indexPg('idx_refunds_status').on(table.status),
   providerRefundIdx: uniqueIndexPg('refunds_provider_refund_id_unique').on(table.provider, table.provider_refund_id),
+}));
+
+export const webhooksPg = pgTable('webhooks', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_type: textPg('event_type').notNull(),
+  destination_url: textPg('destination_url').notNull(),
+  secret: textPg('secret').notNull(),
+  enabled: integerPg('enabled').default(1).notNull(),
+  description: textPg('description'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  eventTypeIdx: indexPg('idx_webhooks_event_type').on(table.event_type),
+  enabledIdx: indexPg('idx_webhooks_enabled').on(table.enabled),
+}));
+
+export const webhookDeliveriesPg = pgTable('webhook_deliveries', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  webhook_id: integerPg('webhook_id').notNull().references(() => webhooksPg.id, { onDelete: 'cascade' }),
+  event_type: textPg('event_type').notNull(),
+  payload: textPg('payload').notNull(),
+  request_url: textPg('request_url').notNull(),
+  response_status: integerPg('response_status'),
+  success: integerPg('success').default(0).notNull(),
+  error_message: textPg('error_message'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  webhookIdIdx: indexPg('idx_webhook_deliveries_webhook_id').on(table.webhook_id),
+  createdAtIdx: indexPg('idx_webhook_deliveries_created_at').on(table.created_at),
 }));
 
 export const dailyActivityPg = pgTable('daily_activity', {
@@ -3481,6 +3634,7 @@ export const sqliteSchema = {
   seasonMemberships: seasonMembershipsSqlite,
   curlingIcePrivileges: curlingIcePrivilegesSqlite,
   curlingSabbaticalSessions: curlingSabbaticalSessionsSqlite,
+  leagueWaitlists: leagueWaitlistsSqlite,
   waitlistEntries: waitlistEntriesSqlite,
   waitlistOffers: waitlistOffersSqlite,
   waitlistAuditEvents: waitlistAuditEventsSqlite,
@@ -3514,6 +3668,8 @@ export const sqliteSchema = {
   paymentTransactions: paymentTransactionsSqlite,
   paymentEvents: paymentEventsSqlite,
   refunds: refundsSqlite,
+  webhooks: webhooksSqlite,
+  webhookDeliveries: webhookDeliveriesSqlite,
   dailyActivity: dailyActivitySqlite,
   calendarEvents: calendarEventsSqlite,
   calendarEventLocations: calendarEventLocationsSqlite,
@@ -3575,6 +3731,7 @@ export const pgSchema = {
   seasonMemberships: seasonMembershipsPg,
   curlingIcePrivileges: curlingIcePrivilegesPg,
   curlingSabbaticalSessions: curlingSabbaticalSessionsPg,
+  leagueWaitlists: leagueWaitlistsPg,
   waitlistEntries: waitlistEntriesPg,
   waitlistOffers: waitlistOffersPg,
   waitlistAuditEvents: waitlistAuditEventsPg,
@@ -3608,6 +3765,8 @@ export const pgSchema = {
   paymentTransactions: paymentTransactionsPg,
   paymentEvents: paymentEventsPg,
   refunds: refundsPg,
+  webhooks: webhooksPg,
+  webhookDeliveries: webhookDeliveriesPg,
   dailyActivity: dailyActivityPg,
   calendarEvents: calendarEventsPg,
   calendarEventLocations: calendarEventLocationsPg,

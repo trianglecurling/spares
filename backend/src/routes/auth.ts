@@ -4,8 +4,6 @@ import { eq, and, desc, sql, like } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import {
   generateAuthCode,
-  buildJwtPayloadForMember,
-  generateToken,
   normalizeEmail,
   isAdmin,
   isServerAdmin,
@@ -32,6 +30,7 @@ import type {
   AuthVerifyTokenResponse,
 } from '../api/types.js';
 import { logEvent } from '../services/observability.js';
+import { issueAuthSession, refreshAuthSession, revokeRefreshToken } from '../services/authSessionService.js';
 
 function normalizeDateString(value: string | Date | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -80,6 +79,10 @@ const selectMemberSchema = z.object({
 
 const impersonateSchema = z.object({
   targetMemberId: z.number().int().positive(),
+});
+
+const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(1),
 });
 
 const authMemberResponseSchema = {
@@ -245,10 +248,11 @@ const authRequestCodeResponseSchema = {
       type: 'object',
       additionalProperties: false,
       properties: {
-        token: { type: 'string' },
+        accessToken: { type: 'string' },
+        refreshToken: { type: 'string' },
         member: authMemberResponseSchema,
       },
-      required: ['token', 'member'],
+      required: ['accessToken', 'refreshToken', 'member'],
     },
   ],
 } as const;
@@ -290,10 +294,11 @@ const authVerifyCodeResponseSchema = {
       type: 'object',
       additionalProperties: false,
       properties: {
-        token: { type: 'string' },
+        accessToken: { type: 'string' },
+        refreshToken: { type: 'string' },
         member: authMemberResponseSchema,
       },
-      required: ['token', 'member'],
+      required: ['accessToken', 'refreshToken', 'member'],
     },
   ],
 } as const;
@@ -334,13 +339,42 @@ const authSessionTokenResponseSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    token: { type: 'string' },
+    accessToken: { type: 'string' },
+    refreshToken: { type: 'string' },
     member: authMemberResponseSchema,
     actorMemberId: { type: 'number' },
     isImpersonating: { type: 'boolean' },
     accountSwitchOptions: { type: 'array', items: accountSwitchOptionSchema },
   },
-  required: ['token', 'member', 'actorMemberId', 'isImpersonating', 'accountSwitchOptions'],
+  required: ['accessToken', 'refreshToken', 'member', 'actorMemberId', 'isImpersonating', 'accountSwitchOptions'],
+} as const;
+
+const authRefreshBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    refreshToken: { type: 'string' },
+  },
+  required: ['refreshToken'],
+} as const;
+
+const authTokenPairResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    accessToken: { type: 'string' },
+    refreshToken: { type: 'string' },
+  },
+  required: ['accessToken', 'refreshToken'],
+} as const;
+
+const authLogoutResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    success: { type: 'boolean' },
+  },
+  required: ['success'],
 } as const;
 
 const authImpersonateBodySchema = {
@@ -353,6 +387,57 @@ const authImpersonateBodySchema = {
 } as const;
 
 export async function publicAuthRoutes(fastify: FastifyInstance) {
+  fastify.post<{
+    Body: { refreshToken: string };
+    Reply: { accessToken: string; refreshToken: string } | ApiErrorResponse;
+  }>(
+    '/auth/refresh',
+    {
+      schema: {
+        tags: ['auth'],
+        body: authRefreshBodySchema,
+        response: {
+          200: authTokenPairResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = refreshTokenSchema.parse(request.body);
+      const session = await refreshAuthSession(body.refreshToken);
+      if (!session) {
+        return reply.code(401).send({ error: 'Invalid or expired refresh token' });
+      }
+      return session;
+    }
+  );
+
+  fastify.post<{
+    Body: { refreshToken?: string };
+    Reply: { success: boolean };
+  }>(
+    '/auth/logout',
+    {
+      schema: {
+        tags: ['auth'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            refreshToken: { type: 'string' },
+          },
+        },
+        response: {
+          200: authLogoutResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const refreshToken = typeof request.body?.refreshToken === 'string' ? request.body.refreshToken : undefined;
+      await revokeRefreshToken(refreshToken);
+      return { success: true };
+    }
+  );
+
   // Request auth code
   fastify.post<{
     Body: AuthRequestCodeBody;
@@ -434,13 +519,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         if (isMemberExpired(member)) {
           return reply.code(403).send({ error: 'Membership expired' });
         }
-        const payload = await buildJwtPayloadForMember(member as Member);
-        const token = generateToken(payload);
+        const session = await issueAuthSession(member as Member);
 
         logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
         return {
-          token,
+          ...session,
           member: await buildAuthenticatedMember(member as Member),
         };
       }
@@ -576,14 +660,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       if (isMemberExpired(member)) {
         return reply.code(403).send({ error: 'Membership expired' });
       }
-      const payload = await buildJwtPayloadForMember(member as Member);
-      const token = generateToken(payload);
+      const session = await issueAuthSession(member as Member);
 
       // Best-effort analytics (do not block)
       logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
       return {
-        token,
+        ...session,
         member: await buildAuthenticatedMember(member as Member),
       };
     }
@@ -669,14 +752,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ error: 'Membership expired' });
     }
 
-    const payload = await buildJwtPayloadForMember(member as Member);
-    const token = generateToken(payload);
+    const session = await issueAuthSession(member as Member);
 
     // Best-effort analytics (do not block)
     logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
 
       return {
-      token,
+      ...session,
       member: await buildAuthenticatedMember(member),
       };
     }
@@ -715,7 +797,8 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
     Body: { targetMemberId: number };
     Reply:
       | {
-          token: string;
+          accessToken: string;
+          refreshToken: string;
           member: AuthenticatedMember;
           actorMemberId: number;
           isImpersonating: boolean;
@@ -761,8 +844,7 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: 'Membership expired' });
       }
 
-      const payload = await buildJwtPayloadForMember(targetMember, { actorMemberId: actorId });
-      const token = generateToken(payload);
+      const session = await issueAuthSession(targetMember, { actorMemberId: actorId });
       targetMember.impersonationSession = actorId !== targetMemberId;
       targetMember.authz = await buildAuthzClaimsForImpersonatedMember(targetMember);
 
@@ -773,7 +855,7 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
       }).catch(() => {});
 
       return {
-        token,
+        ...session,
         member: await buildAuthenticatedMember(targetMember),
         actorMemberId: actorId,
         isImpersonating: actorId !== targetMemberId,
@@ -785,7 +867,8 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
   fastify.post<{
     Reply:
       | {
-          token: string;
+          accessToken: string;
+          refreshToken: string;
           member: AuthenticatedMember;
           actorMemberId: number;
           isImpersonating: boolean;
@@ -819,16 +902,15 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Member not found' });
       }
 
-      const payload = await buildJwtPayloadForMember(rawActor as Member);
-      const token = generateToken(payload);
       const actorMember = rawActor as Member;
       actorMember.impersonationSession = false;
       actorMember.authz = await buildAuthzClaimsForMember(actorMember);
+      const session = await issueAuthSession(actorMember);
 
       logEvent({ eventType: 'auth.stop_impersonation', memberId: actorId }).catch(() => {});
 
       return {
-        token,
+        ...session,
         member: await buildAuthenticatedMember(actorMember),
         actorMemberId: actorId,
         isImpersonating: false,

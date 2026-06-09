@@ -15,6 +15,12 @@ export const memberProfileResponseSchema = {
     name: { type: 'string' },
     email: { type: ['string', 'null'] },
     phone: { type: ['string', 'null'] },
+    firstName: { type: ['string', 'null'] },
+    lastName: { type: ['string', 'null'] },
+    dateOfBirth: { type: ['string', 'null'] },
+    mailingAddress: { type: ['string', 'null'] },
+    emergencyContactName: { type: ['string', 'null'] },
+    emergencyContactPhone: { type: ['string', 'null'] },
     validThrough: { type: ['string', 'null'] },
     spareOnly: { type: 'boolean' },
     socialMember: { type: 'boolean' },
@@ -32,6 +38,12 @@ export const memberProfileResponseSchema = {
     'name',
     'email',
     'phone',
+    'firstName',
+    'lastName',
+    'dateOfBirth',
+    'mailingAddress',
+    'emergencyContactName',
+    'emergencyContactPhone',
     'validThrough',
     'spareOnly',
     'socialMember',
@@ -46,12 +58,152 @@ export const memberProfileResponseSchema = {
   ],
 } as const;
 
+export const memberPaymentHistoryItemSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    orderToken: { type: 'string' },
+    subjectType: {
+      type: 'string',
+      enum: ['donation', 'membership', 'event_registration', 'curling_registration'],
+    },
+    description: { type: 'string' },
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    status: {
+      type: 'string',
+      enum: ['created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded'],
+    },
+    paidAt: { type: ['string', 'null'] },
+    createdAt: { type: 'string' },
+  },
+  required: [
+    'orderToken',
+    'subjectType',
+    'description',
+    'amountMinor',
+    'currency',
+    'status',
+    'paidAt',
+    'createdAt',
+  ],
+} as const;
+
+export const memberPaymentHistoryResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    total: { type: 'number' },
+    limit: { type: 'number' },
+    offset: { type: 'number' },
+    payments: {
+      type: 'array',
+      items: memberPaymentHistoryItemSchema,
+    },
+  },
+  required: ['total', 'limit', 'offset', 'payments'],
+} as const;
+
+export const memberPaymentLineItemSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    description: { type: 'string' },
+    amountMinor: { type: 'number' },
+  },
+  required: ['description', 'amountMinor'],
+} as const;
+
+export const memberPaymentRefundSummarySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    status: { type: 'string' },
+    reason: { type: ['string', 'null'] },
+    processedAt: { type: ['string', 'null'] },
+    createdAt: { type: 'string' },
+  },
+  required: ['amountMinor', 'currency', 'status', 'reason', 'processedAt', 'createdAt'],
+} as const;
+
+export const memberPaymentContextFieldSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    label: { type: 'string' },
+    value: { type: 'string' },
+  },
+  required: ['label', 'value'],
+} as const;
+
+export const memberPaymentDetailSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    orderToken: { type: 'string' },
+    subjectType: {
+      type: 'string',
+      enum: ['donation', 'membership', 'event_registration', 'curling_registration'],
+    },
+    description: { type: 'string' },
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    status: {
+      type: 'string',
+      enum: ['created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded'],
+    },
+    provider: { type: 'string', enum: ['stripe', 'paypal', 'square'] },
+    providerReference: { type: ['string', 'null'] },
+    paidAt: { type: ['string', 'null'] },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+    lineItems: {
+      type: 'array',
+      items: memberPaymentLineItemSchema,
+    },
+    subtotalMinor: { type: ['number', 'null'] },
+    discountMinor: { type: ['number', 'null'] },
+    totalMinor: { type: ['number', 'null'] },
+    refunds: {
+      type: 'array',
+      items: memberPaymentRefundSummarySchema,
+    },
+    context: {
+      type: 'array',
+      items: memberPaymentContextFieldSchema,
+    },
+  },
+  required: [
+    'orderToken',
+    'subjectType',
+    'description',
+    'amountMinor',
+    'currency',
+    'status',
+    'provider',
+    'providerReference',
+    'paidAt',
+    'createdAt',
+    'updatedAt',
+    'lineItems',
+    'subtotalMinor',
+    'discountMinor',
+    'totalMinor',
+    'refunds',
+    'context',
+  ],
+} as const;
+
 export const memberSummarySchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     id: { type: 'number' },
     name: { type: 'string' },
+    firstName: { type: ['string', 'null'] },
+    lastName: { type: ['string', 'null'] },
     email: { type: ['string', 'null'] },
     phone: { type: ['string', 'null'] },
     createdAt: { type: ['string', 'null'] },
@@ -61,12 +213,14 @@ export const memberSummarySchema = {
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
-    isInServerAdminsList: { type: 'boolean' },
+    isLastServerAdmin: { type: 'boolean' },
     emailSubscribed: { type: 'boolean' },
     optedInSms: { type: 'boolean' },
     emailVisible: { type: 'boolean' },
     phoneVisible: { type: 'boolean' },
     firstLoginCompleted: { type: 'boolean' },
+    baselineOtherClubExperienceYears: { type: 'number' },
+    baselineClubExperienceYears: { type: 'number' },
   },
   required: [
     'id',
@@ -74,7 +228,7 @@ export const memberSummarySchema = {
     'isAdmin',
     'isServerAdmin',
     'isLeagueAdministratorGlobal',
-    'isInServerAdminsList',
+    'isLastServerAdmin',
     'emailSubscribed',
     'optedInSms',
     'emailVisible',
@@ -165,6 +319,60 @@ export const bulkDeleteResponseSchema = {
   required: ['success', 'deletedCount'],
 } as const;
 
+export const bulkExperienceBaselinesBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    rows: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          email: { type: 'string' },
+          name: { type: 'string' },
+          baselineOtherClubExperienceYears: { type: 'number' },
+          baselineClubExperienceYears: { type: 'number' },
+        },
+        required: ['baselineOtherClubExperienceYears', 'baselineClubExperienceYears'],
+      },
+    },
+  },
+  required: ['rows'],
+} as const;
+
+export const bulkExperienceBaselinesResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    success: { type: 'boolean' },
+    updatedCount: { type: 'number' },
+    unchangedCount: { type: 'number' },
+    failedCount: { type: 'number' },
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          email: { type: 'string' },
+          name: { type: ['string', 'null'] },
+          status: {
+            type: 'string',
+            enum: ['updated', 'unchanged', 'not_found', 'ambiguous_email', 'ambiguous_name', 'invalid'],
+          },
+          memberId: { type: 'number' },
+          memberName: { type: 'string' },
+          message: { type: 'string' },
+        },
+        required: ['status'],
+      },
+    },
+  },
+  required: ['success', 'updatedCount', 'unchangedCount', 'failedCount', 'results'],
+} as const;
+
 export const loginLinkResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -243,6 +451,25 @@ export const memberLeaguesResponseSchema = {
   },
 } as const;
 
+export const memberEmergencyContactResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    emergencyContactName: { type: ['string', 'null'] },
+    emergencyContactPhone: { type: ['string', 'null'] },
+  },
+  required: ['emergencyContactName', 'emergencyContactPhone'],
+} as const;
+
+export const memberExperienceSummaryResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    totalExperienceYears: { type: 'number' },
+  },
+  required: ['totalExperienceYears'],
+} as const;
+
 export const availabilityMembersResponseSchema = {
   type: 'array',
   items: {
@@ -275,11 +502,14 @@ export const leagueResponseSchema = {
     registrationFeeOverrideMinor: { type: ['number', 'null'] },
     requiresClubMembership: { type: 'boolean' },
     minExperienceYears: { type: ['number', 'null'] },
+    maxExperienceYears: { type: ['number', 'null'] },
     minAge: { type: ['number', 'null'] },
     maxAge: { type: ['number', 'null'] },
     firstDayOfPlay: { type: ['string', 'null'] },
     lastDayOfPlay: { type: ['string', 'null'] },
     allowsWaitlist: { type: 'boolean' },
+    waitlistId: { type: ['number', 'null'] },
+    isPlayInBased: { type: 'boolean' },
     allowsSabbatical: { type: 'boolean' },
     predecessorLeagueId: { type: ['number', 'null'] },
     successorLeagueId: { type: ['number', 'null'] },
@@ -301,11 +531,14 @@ export const leagueResponseSchema = {
     'registrationFeeOverrideMinor',
     'requiresClubMembership',
     'minExperienceYears',
+    'maxExperienceYears',
     'minAge',
     'maxAge',
     'firstDayOfPlay',
     'lastDayOfPlay',
     'allowsWaitlist',
+    'waitlistId',
+    'isPlayInBased',
     'allowsSabbatical',
     'predecessorLeagueId',
     'successorLeagueId',
@@ -555,23 +788,10 @@ export const installConfigResponseSchema = {
           },
           required: ['host', 'port', 'database', 'username'],
         },
-        adminEmails: { type: 'array', items: { type: 'string' } },
       },
-      required: ['type', 'adminEmails'],
+      required: ['type'],
     },
   ],
-} as const;
-
-export const installCreateAdminResponseSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    success: { type: 'boolean' },
-    created: { type: 'number' },
-    updated: { type: 'number' },
-    total: { type: 'number' },
-  },
-  required: ['success', 'created', 'updated', 'total'],
 } as const;
 
 export const captchaResponseSchema = {
@@ -638,6 +858,8 @@ export const configResponseSchema = {
     captureBackendLogs: { type: 'boolean' },
     testCurrentTime: { type: ['string', 'null'] },
     notificationDelaySeconds: { type: 'number' },
+    sessionTokenTtlMinutes: { type: 'number' },
+    refreshTokenTtlDays: { type: 'number' },
     updatedAt: { type: ['string', 'null'] },
   },
   required: [
@@ -660,6 +882,8 @@ export const configResponseSchema = {
     'captureBackendLogs',
     'testCurrentTime',
     'notificationDelaySeconds',
+    'sessionTokenTtlMinutes',
+    'refreshTokenTtlDays',
     'updatedAt',
   ],
 } as const;
@@ -771,9 +995,8 @@ export const databaseConfigResponseSchema = {
       },
       required: ['host', 'port', 'database', 'username'],
     },
-    adminEmails: { type: 'array', items: { type: 'string' } },
   },
-  required: ['type', 'adminEmails'],
+  required: ['type'],
 } as const;
 
 export const sparesCcResponseSchema = {

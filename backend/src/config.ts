@@ -32,9 +32,7 @@ export const config = {
   databasePath: process.env.DATABASE_PATH || './data/spares.sqlite',
   fileStoragePath: process.env.FILE_STORAGE_PATH || './data/uploads',
   timeZone: process.env.TIME_ZONE || 'America/New_York',
-  
-  admins: (process.env.SERVER_ADMINS || '').split(',').map(email => email.trim()).filter(Boolean),
-  
+
   azure: {
     connectionString: process.env.AZURE_COMMUNICATION_CONNECTION_STRING || '',
     senderEmail: process.env.AZURE_COMMUNICATION_SENDER_EMAIL || 'noreply@tccnc.club',

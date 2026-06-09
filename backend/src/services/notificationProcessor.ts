@@ -1,10 +1,8 @@
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendSpareRequestEmail } from './email.js';
 import { sendSpareRequestSMS } from './sms.js';
-import { buildJwtPayloadForMember, generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 import { eq, and, or, sql, asc, isNull, lte, lt } from 'drizzle-orm';
-import { Member } from '../types.js';
 import { sendOnceWithDeliveryClaim } from './spareRequestDelivery.js';
 
 let lastDbErrorLogAt = 0;
@@ -227,23 +225,6 @@ export async function processNextNotification(): Promise<void> {
       }
 
       if (nextInQueue.email) {
-        // Generate token using member object (need to construct it from the query result)
-        // Match the Member interface from types.ts
-        const memberForToken = {
-          id: nextInQueue.id,
-          name: nextInQueue.name,
-          email: nextInQueue.email,
-          phone: nextInQueue.phone,
-          is_admin: 0, // Not admin for spare requests
-          first_login_completed: 1, // Assuming first login completed
-          opted_in_sms: nextInQueue.opted_in_sms,
-          email_subscribed: 1, // Assuming subscribed if email is present
-          email_visible: 0,
-          phone_visible: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as Member;
-        const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(memberForToken));
         const sent = await sendOnceWithDeliveryClaim(
           {
             spareRequestId: spareRequest.id,
@@ -268,7 +249,6 @@ export async function processNextNotification(): Promise<void> {
                 position: spareRequest.position || undefined,
                 message: spareRequest.message || undefined,
               },
-              acceptToken,
               spareRequest.id
             );
             console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
@@ -537,21 +517,6 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
         }
 
         if (nextInQueue.email) {
-          const memberForToken = {
-            id: nextInQueue.id,
-            name: nextInQueue.name,
-            email: nextInQueue.email,
-            phone: nextInQueue.phone,
-            is_admin: 0,
-            first_login_completed: 1,
-            opted_in_sms: nextInQueue.opted_in_sms,
-            email_subscribed: 1,
-            email_visible: 0,
-            phone_visible: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          } as Member;
-          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(memberForToken));
           await sendOnceWithDeliveryClaim(
             {
               spareRequestId: spareRequest.id,
@@ -573,7 +538,6 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
                   position: spareRequest.position || undefined,
                   message: spareRequest.message || undefined,
                 },
-                acceptToken,
                 spareRequest.id
               );
             }

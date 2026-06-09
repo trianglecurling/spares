@@ -1,16 +1,13 @@
-import { and, desc, eq, inArray, lte, or, sql } from 'drizzle-orm';
-import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
+import { and, desc, eq, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { CurlingRegistrationStatusSqlite, PolicyAcceptanceKindSqlite } from '../db/drizzle-schema.js';
+import type { CurlingIcePrivilegesChoiceSqlite, CurlingRegistrationStatusSqlite, PolicyAcceptanceKindSqlite } from '../db/drizzle-schema.js';
 import {
   canActorImpersonateTarget,
-  fetchMemberEmailRow,
-  findMemberIdWithConflictingNormalizedEmail,
   listAccountSwitchOptions,
 } from '../services/accountAccess.js';
 import type { Member } from '../types.js';
 import { isAdmin, isServerAdmin, normalizeEmail } from '../utils/auth.js';
-import { isEmailChangeToReservedServerAdminAddress } from '../utils/rbac.js';
+import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 
 export const REQUIRED_REGISTRATION_POLICIES: Array<{
   type: PolicyAcceptanceKindSqlite;
@@ -37,6 +34,7 @@ export type RegistrationShellRow = {
   guardian_last_name: string | null;
   guardian_email: string | null;
   guardian_phone: string | null;
+  ice_privileges_choice: CurlingIcePrivilegesChoiceSqlite;
   status: RegistrationShellStatus;
   shell_completed_at: string | Date | null;
   cancelled_at: string | Date | null;
@@ -44,16 +42,14 @@ export type RegistrationShellRow = {
   updated_at: string | Date;
 };
 
-export type MemberDemographicsInput = {
-  firstName: string;
-  lastName: string;
-  dateOfBirth: string;
-  email: string;
-  phone: string;
-  mailingAddress: string;
-  emergencyContactName: string;
-  emergencyContactPhone: string;
-};
+export type { MemberDemographicsInput } from '../services/memberDemographics.js';
+import {
+  type MemberDemographicsInput,
+  applyMemberDemographicsUpdate,
+  MemberDemographicsUpdateError,
+  MemberDemographicsValidationError,
+  validateMemberDemographics,
+} from '../services/memberDemographics.js';
 
 export type GuardianInput = {
   firstName: string;
@@ -74,10 +70,6 @@ type MemberSummary = {
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
 };
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
 
 function normalizeDate(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -135,28 +127,39 @@ export class RegistrationInProgressError extends Error {
   }
 }
 
-const IN_PROGRESS_REGISTRATION_STATUSES = [
-  'identity_incomplete',
-  'policies_incomplete',
-  'demographics_incomplete',
-  'shell_complete',
-  'submitted',
-  'awaiting_staff_review',
-  'awaiting_placement',
-  'awaiting_payment',
-  'payment_started',
-  'paid',
-] as const satisfies readonly CurlingRegistrationStatusSqlite[];
+import {
+  DRAFT_REGISTRATION_STATUSES,
+  SUBMITTED_CURLER_REGISTRATION_STATUSES,
+  hasBlockingInProgressDraft,
+} from './registrationDraftProgress.js';
 
 export function validateDemographics(input: MemberDemographicsInput): void {
-  assertNonEmpty(input.firstName, 'firstName');
-  assertNonEmpty(input.lastName, 'lastName');
-  assertValidDateOfBirth(input.dateOfBirth);
-  assertValidEmail(input.email);
-  assertNonEmpty(input.phone, 'phone');
-  assertNonEmpty(input.mailingAddress, 'mailingAddress');
-  assertNonEmpty(input.emergencyContactName, 'emergencyContactName');
-  assertNonEmpty(input.emergencyContactPhone, 'emergencyContactPhone');
+  try {
+    validateMemberDemographics(input);
+  } catch (error) {
+    if (error instanceof MemberDemographicsValidationError) {
+      throw new RegistrationShellValidationError(error.details);
+    }
+    throw error;
+  }
+}
+
+export function curlerDemographicsAreComplete(input: Partial<MemberDemographicsInput> & { email: string }): boolean {
+  try {
+    validateDemographics({
+      firstName: input.firstName?.trim() ?? '',
+      lastName: input.lastName?.trim() ?? '',
+      dateOfBirth: input.dateOfBirth?.trim() ?? '',
+      email: input.email,
+      phone: input.phone?.trim() ?? '',
+      mailingAddress: input.mailingAddress?.trim() ?? '',
+      emergencyContactName: input.emergencyContactName?.trim() ?? '',
+      emergencyContactPhone: input.emergencyContactPhone?.trim() ?? '',
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function validateGuardian(input: GuardianInput): void {
@@ -193,6 +196,7 @@ export function mapRegistration(row: any): RegistrationShellRow {
     guardian_last_name: row.guardian_last_name ?? null,
     guardian_email: row.guardian_email ?? null,
     guardian_phone: row.guardian_phone ?? null,
+    ice_privileges_choice: (row.ice_privileges_choice ?? 'none') as CurlingIcePrivilegesChoiceSqlite,
     status: row.status,
     shell_completed_at: normalizeDateTime(row.shell_completed_at),
     cancelled_at: normalizeDateTime(row.cancelled_at),
@@ -214,6 +218,27 @@ export function mapMemberSummary(row: any): MemberSummary {
     emergencyContactName: row.emergency_contact_name ?? null,
     emergencyContactPhone: row.emergency_contact_phone ?? null,
   };
+}
+
+/** Human-readable label for the session that started immediately before {@code sessionId} (club-wide, by session start dates). */
+export async function getImmediatelyPriorRegistrationSessionDisplayName(sessionId: number): Promise<string | null> {
+  const { db, schema } = getDrizzleDb();
+  const [session] = await db
+    .select()
+    .from(schema.curlingSessions)
+    .where(eq(schema.curlingSessions.id, sessionId))
+    .limit(1);
+  if (!session) return null;
+
+  const rows = await db
+    .select({ sessionName: schema.curlingSessions.name })
+    .from(schema.curlingSessions)
+    .where(lt(schema.curlingSessions.start_date, session.start_date))
+    .orderBy(desc(schema.curlingSessions.start_date))
+    .limit(1);
+
+  const prior = rows[0];
+  return prior?.sessionName?.trim() ? prior.sessionName : null;
 }
 
 export async function getEffectiveRegistrationWindow(seasonId: number, sessionId: number) {
@@ -284,12 +309,74 @@ export async function findActiveRegistrationForSubmitter(submittedByMemberId: nu
     .where(
       and(
         eq(schema.curlingRegistrations.submitted_by_member_id, submittedByMemberId),
-        inArray(schema.curlingRegistrations.status, [...IN_PROGRESS_REGISTRATION_STATUSES]),
+        inArray(schema.curlingRegistrations.status, [...DRAFT_REGISTRATION_STATUSES]),
       ),
     )
     .orderBy(desc(schema.curlingRegistrations.updated_at))
     .limit(1);
   return rows[0] ? mapRegistration(rows[0]) : null;
+}
+
+export async function findCompletedSelfRegistrationForWindow(
+  actorMemberId: number,
+  seasonId: number,
+  sessionId: number,
+): Promise<RegistrationShellRow | null> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select()
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.season_id, seasonId),
+        eq(schema.curlingRegistrations.session_id, sessionId),
+        eq(schema.curlingRegistrations.curler_member_id, actorMemberId),
+        sql`${schema.curlingRegistrations.submitted_at} IS NOT NULL`,
+        inArray(schema.curlingRegistrations.status, [...SUBMITTED_CURLER_REGISTRATION_STATUSES]),
+      ),
+    )
+    .orderBy(desc(schema.curlingRegistrations.updated_at))
+    .limit(1);
+  return rows[0] ? mapRegistration(rows[0]) : null;
+}
+
+async function findSubmittedCurlerRegistration(
+  seasonId: number,
+  sessionId: number,
+  curlerMemberId: number,
+): Promise<RegistrationShellRow | null> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select()
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.season_id, seasonId),
+        eq(schema.curlingRegistrations.session_id, sessionId),
+        eq(schema.curlingRegistrations.curler_member_id, curlerMemberId),
+        sql`${schema.curlingRegistrations.submitted_at} IS NOT NULL`,
+        inArray(schema.curlingRegistrations.status, [...SUBMITTED_CURLER_REGISTRATION_STATUSES]),
+      ),
+    )
+    .orderBy(desc(schema.curlingRegistrations.updated_at))
+    .limit(1);
+  return rows[0] ? mapRegistration(rows[0]) : null;
+}
+
+async function assertCurlerNotAlreadyRegistered(
+  registration: RegistrationShellRow,
+  curlerMemberId: number,
+): Promise<void> {
+  const existing = await findSubmittedCurlerRegistration(
+    registration.season_id,
+    registration.session_id,
+    curlerMemberId,
+  );
+  if (existing) {
+    throw new RegistrationShellValidationError({
+      curler: 'This curler already has a submitted registration for this session.',
+    });
+  }
 }
 
 export async function abandonRegistrationDraft(registrationId: number, actor: Member): Promise<void> {
@@ -341,7 +428,7 @@ export async function createDraft(input: {
 }): Promise<RegistrationShellRow> {
   await assertRegistrationOpen(input.seasonId, input.sessionId);
   const existing = await findActiveRegistrationForSubmitter(input.submittedByMemberId);
-  if (existing) {
+  if (hasBlockingInProgressDraft(existing)) {
     throw new RegistrationInProgressError();
   }
   const { db, schema } = getDrizzleDb();
@@ -400,6 +487,7 @@ export async function getRegistrationShellPayload(id: number) {
 
 export async function canViewOrEditRegistration(actor: Member | undefined, registration: RegistrationShellRow): Promise<boolean> {
   if (!actor) return false;
+  if (memberCanManageRegistrations(actor)) return true;
   if (isAdmin(actor) || isServerAdmin(actor)) return true;
   if (registration.submitted_by_member_id === actor.id || registration.curler_member_id === actor.id) return true;
   if (registration.curler_member_id) {
@@ -408,13 +496,26 @@ export async function canViewOrEditRegistration(actor: Member | undefined, regis
   return false;
 }
 
-export async function listEligibleReturningProfiles(actorMemberId: number) {
+export async function listEligibleReturningProfiles(
+  actorMemberId: number,
+  seasonId?: number,
+  sessionId?: number,
+) {
   const options = await listAccountSwitchOptions(actorMemberId);
   const ids = options.map((option) => option.id);
   if (ids.length === 0) return [];
   const { db, schema } = getDrizzleDb();
   const rows = await db.select().from(schema.members).where(inArray(schema.members.id, ids));
-  return rows.map(mapMemberSummary);
+  let eligible = rows.map(mapMemberSummary);
+  if (seasonId != null && sessionId != null) {
+    const blocked = new Set<number>();
+    for (const id of ids) {
+      const submitted = await findSubmittedCurlerRegistration(seasonId, sessionId, id);
+      if (submitted) blocked.add(id);
+    }
+    eligible = eligible.filter((profile) => !blocked.has(profile.id));
+  }
+  return eligible;
 }
 
 export async function attachReturningCurler(input: {
@@ -425,6 +526,11 @@ export async function attachReturningCurler(input: {
   if (!(await canActorImpersonateTarget(input.actorMemberId, input.curlerMemberId))) {
     throw new RegistrationShellValidationError({ curlerMemberId: 'You do not have access to register this curler.' });
   }
+  const current = await getRegistrationById(input.registrationId);
+  if (!current) {
+    throw new RegistrationShellValidationError({ registration: 'Registration was not found.' });
+  }
+  await assertCurlerNotAlreadyRegistered(current, input.curlerMemberId);
   const { db, schema } = getDrizzleDb();
   const existing = await findReusableDraft(input.registrationId, input.curlerMemberId);
   const targetId = existing?.id ?? input.registrationId;
@@ -510,12 +616,25 @@ export async function attachNewCurler(input: {
     ? mapMemberSummary((await db.select().from(schema.members).where(eq(schema.members.id, input.actorMemberId)).limit(1))[0])
     : await createMemberForRegistration(input.submitter ?? input.curler);
 
+  const registration = await getRegistrationById(input.registrationId);
+  if (!registration) {
+    throw new RegistrationShellValidationError({ registration: 'Registration was not found.' });
+  }
+
+  const resolvedCurlerEmail = input.useSubmitterEmailForCurler
+    ? submitter.email ?? input.curler.email
+    : input.curler.email;
+
   const curler = input.registeringForSelf
     ? submitter
     : await createMemberForRegistration({
         ...input.curler,
-        email: input.useSubmitterEmailForCurler ? submitter.email ?? input.curler.email : input.curler.email,
+        email: resolvedCurlerEmail,
       });
+
+  if (input.registeringForSelf) {
+    await assertCurlerNotAlreadyRegistered(registration, curler.id);
+  }
 
   if (!input.registeringForSelf && submitter.id !== curler.id && normalizeEmail(submitter.email ?? '') !== normalizeEmail(curler.email ?? '')) {
     await db
@@ -524,6 +643,12 @@ export async function attachNewCurler(input: {
       .onConflictDoNothing();
   }
 
+  const demographicsSource = input.registeringForSelf ? (input.submitter ?? input.curler) : input.curler;
+  const demographicsComplete = curlerDemographicsAreComplete({
+    ...demographicsSource,
+    email: input.registeringForSelf ? (submitter.email ?? input.curler.email) : resolvedCurlerEmail,
+  });
+
   const [row] = await db
     .update(schema.curlingRegistrations)
     .set({
@@ -531,6 +656,7 @@ export async function attachNewCurler(input: {
       curler_member_id: curler.id,
       returning_member_answer: 0,
       registering_for_self: input.registeringForSelf ? 1 : 0,
+      demographics_current_confirmed: demographicsComplete ? 1 : 0,
       status: 'policies_incomplete',
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
@@ -577,47 +703,23 @@ export async function acceptPolicies(registrationId: number, actorMemberId: numb
 }
 
 export async function updateCurlerDemographics(registrationId: number, input: MemberDemographicsInput, confirmedCurrent = false): Promise<void> {
-  validateDemographics(input);
   const registration = await getRegistrationById(registrationId);
   if (!registration?.curler_member_id) {
     throw new RegistrationShellValidationError({ curler: 'A curler must be selected before demographics can be updated.' });
   }
-  const curlerRow = await fetchMemberEmailRow(registration.curler_member_id);
+  try {
+    await applyMemberDemographicsUpdate(registration.curler_member_id, input);
+  } catch (error) {
+    if (error instanceof MemberDemographicsUpdateError) {
+      throw new RegistrationShellValidationError(error.details);
+    }
+    throw error;
+  }
   const { db, schema } = getDrizzleDb();
-  const normalizedEmail = normalizeEmail(input.email);
-  if (isEmailChangeToReservedServerAdminAddress(curlerRow?.email ?? null, normalizedEmail)) {
-    throw new RegistrationShellValidationError({
-      email: MEMBER_PROFILE_EMAIL_UNAVAILABLE,
-    });
-  }
-  const conflictId = await findMemberIdWithConflictingNormalizedEmail(
-    normalizedEmail,
-    registration.curler_member_id
-  );
-  if (conflictId != null) {
-    throw new RegistrationShellValidationError({
-      email: MEMBER_PROFILE_EMAIL_UNAVAILABLE,
-    });
-  }
-  await db
-    .update(schema.members)
-    .set({
-      name: memberName(input),
-      email: normalizedEmail,
-      phone: input.phone.trim(),
-      first_name: input.firstName.trim(),
-      last_name: input.lastName.trim(),
-      date_of_birth: input.dateOfBirth as any,
-      mailing_address: input.mailingAddress.trim(),
-      emergency_contact_name: input.emergencyContactName.trim(),
-      emergency_contact_phone: input.emergencyContactPhone.trim(),
-      updated_at: sql`CURRENT_TIMESTAMP`,
-    } as any)
-    .where(eq(schema.members.id, registration.curler_member_id));
   await db
     .update(schema.curlingRegistrations)
     .set({
-      demographics_current_confirmed: confirmedCurrent ? 1 : 0,
+      demographics_current_confirmed: confirmedCurrent === false ? 0 : 1,
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));

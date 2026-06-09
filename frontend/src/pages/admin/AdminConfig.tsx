@@ -48,6 +48,8 @@ interface ServerConfig {
   captureBackendLogs: boolean;
   testCurrentTime: string | null;
   notificationDelaySeconds: number;
+  sessionTokenTtlMinutes: number;
+  refreshTokenTtlDays: number;
   updatedAt: string | null;
 }
 
@@ -71,6 +73,8 @@ interface UpdateConfigPayload {
   captureBackendLogs?: boolean;
   testCurrentTime?: string;
   notificationDelaySeconds?: number;
+  sessionTokenTtlMinutes?: number;
+  refreshTokenTtlDays?: number;
 }
 
 const EASTERN_TIME_ZONE = 'America/New_York';
@@ -199,6 +203,8 @@ export default function AdminConfig() {
     captureBackendLogs: true,
     testCurrentTime: '',
     notificationDelaySeconds: 180,
+    sessionTokenTtlMinutes: 30,
+    refreshTokenTtlDays: 60,
   });
 
   useEffect(() => {
@@ -229,6 +235,8 @@ export default function AdminConfig() {
         captureBackendLogs: response.captureBackendLogs ?? true,
         testCurrentTime: response.testCurrentTime || '',
         notificationDelaySeconds: response.notificationDelaySeconds || 180,
+        sessionTokenTtlMinutes: response.sessionTokenTtlMinutes || 30,
+        refreshTokenTtlDays: response.refreshTokenTtlDays || 60,
       });
     } catch (error) {
       console.error('Failed to load config:', error);
@@ -320,6 +328,12 @@ export default function AdminConfig() {
       }
       if (formData.notificationDelaySeconds !== (config?.notificationDelaySeconds || 180)) {
         payload.notificationDelaySeconds = formData.notificationDelaySeconds;
+      }
+      if (formData.sessionTokenTtlMinutes !== (config?.sessionTokenTtlMinutes || 30)) {
+        payload.sessionTokenTtlMinutes = formData.sessionTokenTtlMinutes;
+      }
+      if (formData.refreshTokenTtlDays !== (config?.refreshTokenTtlDays || 60)) {
+        payload.refreshTokenTtlDays = formData.refreshTokenTtlDays;
       }
 
       await patch('/config', payload);
@@ -487,6 +501,59 @@ export default function AdminConfig() {
                   When enabled, SMS messages will be printed to the console instead of being sent,
                   regardless of test mode.
                 </p>
+              </div>
+            </div>
+
+            {/* Authentication Configuration */}
+            <div className="border-b dark:border-gray-700 pb-6">
+              <h2 className="app-section-title mb-4">
+                Authentication
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="sessionTokenTtlMinutes" className="app-label">
+                    Session token lifetime (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    id="sessionTokenTtlMinutes"
+                    min={5}
+                    max={1440}
+                    value={formData.sessionTokenTtlMinutes}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        sessionTokenTtlMinutes: Number(e.target.value),
+                      })
+                    }
+                    className="app-input"
+                  />
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                    Access tokens authorize API requests. The default is 30 minutes.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="refreshTokenTtlDays" className="app-label">
+                    Refresh token lifetime (days)
+                  </label>
+                  <input
+                    type="number"
+                    id="refreshTokenTtlDays"
+                    min={1}
+                    max={365}
+                    value={formData.refreshTokenTtlDays}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        refreshTokenTtlDays: Number(e.target.value),
+                      })
+                    }
+                    className="app-input"
+                  />
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                    Refresh tokens transparently renew expired sessions. The default is 60 days.
+                  </p>
+                </div>
               </div>
             </div>
 

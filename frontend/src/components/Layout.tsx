@@ -70,7 +70,6 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [registrationWindowSessionId, setRegistrationWindowSessionId] = useState<number | null>(null);
   const [myRosterLeagueIds, setMyRosterLeagueIds] = useState<number[]>([]);
-  const [leaguesLoading, setLeaguesLoading] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
@@ -102,7 +101,8 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
       ? location.pathname === to || location.pathname.startsWith(`${to}/`)
       : location.pathname === to;
 
-  const isLeaguesActive = isNavLinkActive('/leagues', true);
+  const isLeaguesActive =
+    isNavLinkActive('/leagues', true) || isNavLinkActive('/waitlists', true);
   const isSocialMember = Boolean(member?.socialMember);
   const isSparesActive =
     isNavLinkActive('/availability') ||
@@ -118,6 +118,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     isNavLinkActive('/admin/sponsorship') ||
     isNavLinkActive('/admin/events') ||
     isNavLinkActive('/admin/payments') ||
+    isNavLinkActive('/admin/webhooks') ||
     isNavLinkActive('/admin/config') ||
     isNavLinkActive('/admin/registration', true);
 
@@ -130,6 +131,10 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const canManageSponsorship = Boolean(member && memberHasScope(member, 'sponsorship.manage'));
   const canManageEvents = Boolean(member && memberHasScope(member, 'events.manage'));
   const canManageRegistration = Boolean(member && memberHasScope(member, 'admin.manage'));
+  const canManageRegistrations = Boolean(
+    member && (memberHasScope(member, 'registrations.manage') || memberHasScope(member, 'admin.manage')),
+  );
+  const canManageWebhooks = Boolean(member && memberHasScope(member, 'admin.manage'));
   const canReadPayments = Boolean(member && memberHasScope(member, 'payments.read'));
   const canManageServerConfig = Boolean(member?.isServerAdmin);
   const canManageWaivers = Boolean(
@@ -143,19 +148,19 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canManageEvents ? [{ to: '/admin/events', label: 'Manage events' }] : []),
-    ...(canManageRegistration ? [{ to: '/admin/registration/waitlists', label: 'Registration waitlists' }] : []),
+    ...(canManageRegistrations ? [{ to: '/admin/registrations', label: 'Manage registrations' }] : []),
     ...(canManageRegistration ? [{ to: '/admin/registration/seasons', label: 'Registration configuration' }] : []),
     ...(canManageSponsorship ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
     ...(canReadPayments ? [{ to: '/admin/payments', label: 'Payment activity' }] : []),
+    ...(canManageWebhooks ? [{ to: '/admin/webhooks', label: 'Outbound webhooks' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/roles', label: 'Manage roles' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/config', label: 'Server config' }] : []),
   ];
   const hasAdminLinks = adminLinks.length > 0;
 
-  // Fetch leagues, registration session, and my roster — nav shows a dropdown only when I have leagues in that session.
+  // Fetch leagues, registration session, and my roster for the Leagues nav submenu.
   useEffect(() => {
     let cancelled = false;
-    setLeaguesLoading(true);
     const memberId = member?.id ?? null;
     Promise.all([
       get('/leagues'),
@@ -186,11 +191,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
         } else {
           setRegistrationWindowSessionId(null);
         }
-        setLeaguesLoading(false);
       })
       .catch(() => {
         if (!cancelled) {
-          setLeaguesLoading(false);
           setRegistrationWindowSessionId(null);
           setMyRosterLeagueIds([]);
         }
@@ -207,12 +210,6 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
       (l) => l.sessionId === registrationWindowSessionId && onRoster.has(l.id)
     );
   }, [leagues, registrationWindowSessionId, myRosterLeagueIds]);
-
-  const showLeaguesNavDropdown = !leaguesLoading && navMyLeaguesInCurrentSession.length > 0;
-
-  useEffect(() => {
-    if (!showLeaguesNavDropdown) setLeaguesDropdownOpen(false);
-  }, [showLeaguesNavDropdown]);
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -330,59 +327,58 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                 <Link to="/dashboard" className={navLinkClass(location.pathname === '/dashboard')}>
                   Dashboard
                 </Link>
-                <Link
-                  to="/registration/status"
-                  className={navLinkClass(location.pathname.startsWith('/registration/status'))}
-                >
-                  Registration
-                </Link>
 
-                {/* Leagues: dropdown only when I have roster leagues in the current session */}
-                {showLeaguesNavDropdown ? (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLeaguesDropdownOpen(!leaguesDropdownOpen);
-                        setSparesDropdownOpen(false);
-                        setAdminDropdownOpen(false);
-                        setCalendarDropdownOpen(false);
-                      }}
-                      className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isLeaguesActive)}`}
-                    >
-                      Leagues
-                      <HiChevronDown
-                        className={`w-4 h-4 transition-transform ${leaguesDropdownOpen ? 'rotate-180' : ''}`}
-                      />
-                    </button>
-                    {leaguesDropdownOpen && (
-                      <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
-                        <Link
-                          to="/leagues"
-                          onClick={closeDropdowns}
-                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                        >
-                          View all
-                        </Link>
-                        <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
-                        {navMyLeaguesInCurrentSession.map((league) => (
-                          <Link
-                            key={league.id}
-                            to={`/leagues/${league.id}`}
-                            onClick={closeDropdowns}
-                            className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                            {league.name}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <Link to="/leagues" className={navLinkClass(isLeaguesActive)}>
+                {/* Leagues */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLeaguesDropdownOpen(!leaguesDropdownOpen);
+                      setSparesDropdownOpen(false);
+                      setAdminDropdownOpen(false);
+                      setCalendarDropdownOpen(false);
+                    }}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium ${navLinkClass(isLeaguesActive)}`}
+                  >
                     Leagues
-                  </Link>
-                )}
+                    <HiChevronDown
+                      className={`w-4 h-4 transition-transform ${leaguesDropdownOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {leaguesDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700 py-1">
+                      <Link
+                        to="/leagues"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        View all
+                      </Link>
+                      <Link
+                        to="/waitlists"
+                        onClick={closeDropdowns}
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Waitlists
+                      </Link>
+                      {navMyLeaguesInCurrentSession.length > 0 ? (
+                        <>
+                          <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                          {navMyLeaguesInCurrentSession.map((league) => (
+                            <Link
+                              key={league.id}
+                              to={`/leagues/${league.id}`}
+                              onClick={closeDropdowns}
+                              className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            >
+                              {league.name}
+                            </Link>
+                          ))}
+                        </>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
 
                 {/* Spares dropdown */}
                 <div className="relative">
@@ -656,48 +652,43 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
                 >
                   Dashboard
                 </Link>
-                <Link
-                  to="/registration/status"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={navLinkClassMobile(location.pathname.startsWith('/registration/status'))}
-                >
-                  Registration
-                </Link>
 
-                {showLeaguesNavDropdown ? (
-                  <MobileDropdownSection
-                    label="Leagues"
-                    expanded={mobileLeaguesExpanded}
-                    onToggle={() => setMobileLeaguesExpanded(!mobileLeaguesExpanded)}
-                    active={isLeaguesActive}
-                  >
-                    <Link
-                      to="/leagues"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      View all
-                    </Link>
-                    {navMyLeaguesInCurrentSession.map((league) => (
-                      <Link
-                        key={league.id}
-                        to={`/leagues/${league.id}`}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        {league.name}
-                      </Link>
-                    ))}
-                  </MobileDropdownSection>
-                ) : (
+                <MobileDropdownSection
+                  label="Leagues"
+                  expanded={mobileLeaguesExpanded}
+                  onToggle={() => setMobileLeaguesExpanded(!mobileLeaguesExpanded)}
+                  active={isLeaguesActive}
+                >
                   <Link
                     to="/leagues"
                     onClick={() => setMobileMenuOpen(false)}
-                    className={navLinkClassMobile(isLeaguesActive)}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
-                    Leagues
+                    View all
                   </Link>
-                )}
+                  <Link
+                    to="/waitlists"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Waitlists
+                  </Link>
+                  {navMyLeaguesInCurrentSession.length > 0 ? (
+                    <>
+                      <div className="my-1 border-t border-gray-200 dark:border-gray-600" />
+                      {navMyLeaguesInCurrentSession.map((league) => (
+                        <Link
+                          key={league.id}
+                          to={`/leagues/${league.id}`}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className="block px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          {league.name}
+                        </Link>
+                      ))}
+                    </>
+                  ) : null}
+                </MobileDropdownSection>
 
                 <MobileDropdownSection
                   label="Spares"

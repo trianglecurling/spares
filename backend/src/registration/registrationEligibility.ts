@@ -1,5 +1,11 @@
 import { ageOnLeagueStart, effectiveExperienceYears } from './registrationAgeExperience.js';
 import { blockingError, createDecision, type BusinessDecision, type DecisionMessage } from './registrationDecisionTypes.js';
+import {
+  leagueMaximumAgeConstraint,
+  leagueMaximumExperienceConstraint,
+  leagueMinimumAgeConstraint,
+  leagueMinimumExperienceConstraint,
+} from './leagueEligibilityConstraints.js';
 import type { LeagueConfig, RegistrationContext } from './registrationContext.js';
 
 export type LeagueEligibilityMode = 'league_selection' | 'waitlist';
@@ -63,19 +69,27 @@ export function validateLeagueEligibility(
   blockingErrors.push(...registrationOpen.blockingErrors);
 
   const age = ageOnLeagueStart(context.registrant.dateOfBirth, league);
-  if (age !== null && league.minAge !== null && league.minAge !== undefined && age < league.minAge) {
-    blockingErrors.push(blockingError('under_minimum_age', `Registrant must be at least ${league.minAge}.`));
+  const minimumAge = leagueMinimumAgeConstraint(league.minAge);
+  const maximumAge = leagueMaximumAgeConstraint(league.maxAge);
+  if (age !== null && minimumAge != null && age < minimumAge) {
+    blockingErrors.push(blockingError('under_minimum_age', `Registrant must be at least ${minimumAge}.`));
   }
-  if (age !== null && league.maxAge !== null && league.maxAge !== undefined && age > league.maxAge) {
-    blockingErrors.push(blockingError('over_maximum_age', `Registrant must be no older than ${league.maxAge}.`));
+  if (age !== null && maximumAge != null && age > maximumAge) {
+    blockingErrors.push(blockingError('over_maximum_age', `Registrant must be no older than ${maximumAge}.`));
   }
 
   const experienceYears = effectiveExperienceYears(context);
-  const requiredExperience = league.minExperienceYears ?? 0;
-  if (requiredExperience > 0 && experienceYears < requiredExperience) {
+  const requiredExperience = leagueMinimumExperienceConstraint(league.minExperienceYears);
+  const maximumExperience = leagueMaximumExperienceConstraint(league.maxExperienceYears);
+  if (requiredExperience != null && experienceYears < requiredExperience) {
     blockingErrors.push(blockingError('insufficient_experience', `League requires ${requiredExperience} years of experience.`));
   }
-  if (context.experience.type === 'none_or_minimal' && league.format !== 'instructional' && requiredExperience > 0) {
+  if (maximumExperience != null && experienceYears > maximumExperience) {
+    blockingErrors.push(
+      blockingError('excessive_experience', `League allows at most ${maximumExperience} years of experience.`)
+    );
+  }
+  if (context.experience.type === 'none_or_minimal' && league.format !== 'instructional' && requiredExperience != null) {
     blockingErrors.push(
       blockingError('insufficient_experience', 'None or minimal experience qualifies only for instructional leagues.')
     );
@@ -113,9 +127,6 @@ export function validateWaitlistEligibility(
   }
   if (!league.allowsWaitlist) {
     blockingErrors.push(blockingError('waitlist_not_enabled', 'This league does not use waitlists.'));
-  }
-  if (league.leagueType === 'bring_your_own_team') {
-    blockingErrors.push(blockingError('byot_no_waitlist', 'Bring-your-own-team leagues do not use waitlists.'));
   }
 
   const leagueEligibility = validateLeagueEligibility(context, league, 'waitlist');

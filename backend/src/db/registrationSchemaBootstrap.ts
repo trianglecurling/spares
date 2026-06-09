@@ -2,6 +2,7 @@ import type { DatabaseAdapter } from './adapter.js';
 import { sql } from 'drizzle-orm';
 import { getDatabaseConfig } from './config.js';
 import { getDrizzleDb } from './drizzle-db.js';
+import { ensureLeagueWaitlistSchema } from './waitlistSchemaMigration.js';
 
 /** Registration shell DDL. Earlier prototype registration tables are intentionally replaced. */
 export const curlingRegistrationDDLBase = `
@@ -53,6 +54,7 @@ export const curlingRegistrationDDLBase = `
     guardian_email TEXT,
     guardian_phone TEXT,
     membership_option TEXT NOT NULL DEFAULT 'none' CHECK(membership_option IN ('none', 'regular', 'social', 'regular_spare_only', 'junior_recreational')),
+    ice_privileges_choice TEXT NOT NULL DEFAULT 'none' CHECK(ice_privileges_choice IN ('none', 'league_play', 'basic_ice')),
     experience_type TEXT CHECK(experience_type IN ('none_or_minimal', 'specified_years', 'known_existing')),
     experience_self_reported_years REAL,
     student_discount_claimed INTEGER NOT NULL DEFAULT 0 CHECK(student_discount_claimed IN (0, 1)),
@@ -78,6 +80,7 @@ export const curlingRegistrationDDLBase = `
     shell_completed_at DATETIME,
     submitted_at DATETIME,
     cancelled_at DATETIME,
+    desired_add_waitlist_league_count INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -269,30 +272,43 @@ export const curlingRegistrationExtendedDDL = `
   );
   CREATE INDEX IF NOT EXISTS idx_curling_ice_privileges_member_id ON curling_ice_privileges(member_id);
 
+  CREATE TABLE IF NOT EXISTS league_waitlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_league_waitlists_status ON league_waitlists(status);
+
   CREATE TABLE IF NOT EXISTS waitlist_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
-    league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+    waitlist_id INTEGER NOT NULL REFERENCES league_waitlists(id) ON DELETE CASCADE,
     source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
     entry_type TEXT NOT NULL,
-    replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    replaces_lineage_start_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    original_replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    team_roster_text TEXT,
     position_sort_key TEXT NOT NULL,
     joined_at DATETIME NOT NULL,
     decline_count INTEGER NOT NULL DEFAULT 0,
+    desired_add_waitlist_league_count INTEGER,
+    add_waitlist_priority_rank INTEGER,
     status TEXT NOT NULL DEFAULT 'active',
     rolled_over_from_waitlist_entry_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_league_id ON waitlist_entries(league_id);
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_waitlist_id ON waitlist_entries(waitlist_id);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_member_id ON waitlist_entries(member_id);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_status ON waitlist_entries(status);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_entry_type ON waitlist_entries(entry_type);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_position_sort_key ON waitlist_entries(position_sort_key);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_joined_at ON waitlist_entries(joined_at);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_source_registration_id ON waitlist_entries(source_registration_id);
-  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_replaces_league_id ON waitlist_entries(replaces_league_id);
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_entries_active_member_league ON waitlist_entries(member_id, league_id) WHERE status = 'active';
+  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_replaces_lineage_start_league_id ON waitlist_entries(replaces_lineage_start_league_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_entries_active_member_waitlist ON waitlist_entries(member_id, waitlist_id) WHERE status = 'active';
 
   CREATE TABLE IF NOT EXISTS waitlist_offers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -393,6 +409,11 @@ const legacyAlwaysDropTables = legacyRegistrationTables.filter(
   (table) => table !== 'curling_registrations' && table !== 'registration_policy_acceptances'
 );
 
+const memberExperienceBaselineColumnsSQLite: { name: string; ddl: string }[] = [
+  { name: 'baseline_other_club_experience_years', ddl: 'baseline_other_club_experience_years REAL NOT NULL DEFAULT 0' },
+  { name: 'baseline_club_experience_years', ddl: 'baseline_club_experience_years REAL NOT NULL DEFAULT 0' },
+];
+
 const memberDemographicColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'first_name', ddl: 'first_name TEXT' },
   { name: 'last_name', ddl: 'last_name TEXT' },
@@ -488,10 +509,51 @@ async function allMaybe<T>(result: T[] | Promise<T[]>): Promise<T[]> {
   return result instanceof Promise ? await result : result;
 }
 
+async function ensureMemberExperienceBaselineColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  if (db.isAsync()) {
+    await execSQL(
+      db,
+      'ALTER TABLE members ADD COLUMN IF NOT EXISTS baseline_other_club_experience_years DOUBLE PRECISION NOT NULL DEFAULT 0'
+    );
+    await execSQL(
+      db,
+      'ALTER TABLE members ADD COLUMN IF NOT EXISTS baseline_club_experience_years DOUBLE PRECISION NOT NULL DEFAULT 0'
+    );
+    return;
+  }
+
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
+  const rows = await allMaybe(stmt.all());
+  const names = new Set(rows.map((c) => String(c.name)));
+  for (const col of memberExperienceBaselineColumnsSQLite) {
+    if (!names.has(col.name)) {
+      await execSQL(db, `ALTER TABLE members ADD COLUMN ${col.ddl}`);
+    }
+  }
+}
+
+function ensureMemberExperienceBaselineColumnsSync(
+  db: DatabaseAdapter,
+  execSQLSync: (d: DatabaseAdapter, s: string) => void
+): void {
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
+  const rows = stmt.all() as { name?: string | null }[];
+  const names = new Set(rows.map((c) => String(c.name)));
+  for (const col of memberExperienceBaselineColumnsSQLite) {
+    if (!names.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE members ADD COLUMN ${col.ddl}`);
+    }
+  }
+}
+
 async function ensureMemberDemographicColumns(
   db: DatabaseAdapter,
   execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
 ): Promise<void> {
+  await ensureMemberExperienceBaselineColumns(db, execSQL);
   if (db.isAsync()) {
     for (const col of memberDemographicColumnsSQLite) {
       const pgType = col.name === 'date_of_birth' ? 'DATE' : 'TEXT';
@@ -514,6 +576,7 @@ function ensureMemberDemographicColumnsSync(
   db: DatabaseAdapter,
   execSQLSync: (d: DatabaseAdapter, s: string) => void
 ): void {
+  ensureMemberExperienceBaselineColumnsSync(db, execSQLSync);
   const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
   const rows = stmt.all() as { name?: string | null }[];
   const names = new Set(rows.map((c) => String(c.name)));
@@ -567,12 +630,15 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'registration_fee_minor', ddl: 'registration_fee_minor INTEGER NOT NULL DEFAULT 0 CHECK(registration_fee_minor >= 0)' },
   { name: 'registration_fee_override_minor', ddl: 'registration_fee_override_minor INTEGER CHECK(registration_fee_override_minor IS NULL OR registration_fee_override_minor >= 0)' },
   { name: 'requires_club_membership', ddl: 'requires_club_membership INTEGER NOT NULL DEFAULT 1' },
-  { name: 'min_experience_years', ddl: 'min_experience_years INTEGER' },
+  { name: 'min_experience_years', ddl: 'min_experience_years REAL' },
+  { name: 'max_experience_years', ddl: 'max_experience_years REAL' },
   { name: 'min_age', ddl: 'min_age INTEGER' },
   { name: 'max_age', ddl: 'max_age INTEGER' },
   { name: 'first_day_of_play', ddl: 'first_day_of_play DATE' },
   { name: 'last_day_of_play', ddl: 'last_day_of_play DATE' },
   { name: 'allows_waitlist', ddl: 'allows_waitlist INTEGER NOT NULL DEFAULT 1' },
+  { name: 'waitlist_id', ddl: 'waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE SET NULL' },
+  { name: 'is_play_in_based', ddl: 'is_play_in_based INTEGER NOT NULL DEFAULT 0' },
   { name: 'allows_sabbatical', ddl: 'allows_sabbatical INTEGER NOT NULL DEFAULT 1' },
   { name: 'predecessor_league_id', ddl: 'predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
   { name: 'successor_league_id', ddl: 'successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
@@ -580,6 +646,7 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
 
 const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'membership_option', ddl: "membership_option TEXT NOT NULL DEFAULT 'none' CHECK(membership_option IN ('none', 'regular', 'social', 'regular_spare_only', 'junior_recreational'))" },
+  { name: 'ice_privileges_choice', ddl: "ice_privileges_choice TEXT NOT NULL DEFAULT 'none' CHECK(ice_privileges_choice IN ('none', 'league_play', 'basic_ice'))" },
   { name: 'experience_type', ddl: "experience_type TEXT CHECK(experience_type IN ('none_or_minimal', 'specified_years', 'known_existing'))" },
   { name: 'experience_self_reported_years', ddl: 'experience_self_reported_years REAL' },
   { name: 'student_discount_claimed', ddl: 'student_discount_claimed INTEGER NOT NULL DEFAULT 0 CHECK(student_discount_claimed IN (0, 1))' },
@@ -589,12 +656,38 @@ const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[
   { name: 'last_fee_preview_json', ddl: 'last_fee_preview_json TEXT' },
   { name: 'payment_decision_json', ddl: 'payment_decision_json TEXT' },
   { name: 'submitted_at', ddl: 'submitted_at DATETIME' },
+  { name: 'desired_add_waitlist_league_count', ddl: 'desired_add_waitlist_league_count INTEGER' },
+  { name: 'basic_ice_fallback_interest', ddl: 'basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))' },
 ];
 
 const waitlistOfferColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'response_token', ddl: 'response_token TEXT' },
   { name: 'cancellation_reason', ddl: 'cancellation_reason TEXT' },
   { name: 'staff_notes', ddl: 'staff_notes TEXT' },
+];
+
+const registrationSelectionColumnsSQLite: { name: string; ddl: string }[] = [
+  { name: 'team_roster_placements', ddl: 'team_roster_placements TEXT' },
+];
+
+const waitlistEntryColumnsSQLite: { name: string; ddl: string }[] = [
+  { name: 'team_roster_text', ddl: 'team_roster_text TEXT' },
+  { name: 'team_roster_placements', ddl: 'team_roster_placements TEXT' },
+  { name: 'waitlist_id', ddl: 'waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE CASCADE' },
+  {
+    name: 'replaces_lineage_start_league_id',
+    ddl: 'replaces_lineage_start_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
+  },
+  {
+    name: 'original_replaces_league_id',
+    ddl: 'original_replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
+  },
+  {
+    name: 'offer_response_preference',
+    ddl: "offer_response_preference TEXT NOT NULL DEFAULT 'ask'",
+  },
+  { name: 'desired_add_waitlist_league_count', ddl: 'desired_add_waitlist_league_count INTEGER' },
+  { name: 'add_waitlist_priority_rank', ddl: 'add_waitlist_priority_rank INTEGER' },
 ];
 
 async function ensureSQLiteColumn(
@@ -644,6 +737,7 @@ async function sqliteEnsureLeaguesRegistrationColumns(
     CREATE INDEX IF NOT EXISTS idx_leagues_predecessor_league_id ON leagues(predecessor_league_id);
     CREATE INDEX IF NOT EXISTS idx_leagues_successor_league_id ON leagues(successor_league_id);
     CREATE INDEX IF NOT EXISTS idx_leagues_league_type ON leagues(league_type);
+    CREATE INDEX IF NOT EXISTS idx_leagues_waitlist_id ON leagues(waitlist_id);
     `
   );
 }
@@ -667,6 +761,24 @@ async function sqliteEnsureWaitlistOfferColumns(
   await execSQL(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)`);
 }
 
+async function sqliteEnsureRegistrationSelectionColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  for (const col of registrationSelectionColumnsSQLite) {
+    await ensureSQLiteColumn(db, 'registration_selections', col.name, col.ddl, execSQL);
+  }
+}
+
+async function sqliteEnsureWaitlistEntryColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  for (const col of waitlistEntryColumnsSQLite) {
+    await ensureSQLiteColumn(db, 'waitlist_entries', col.name, col.ddl, execSQL);
+  }
+}
+
 const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS session_id INTEGER REFERENCES curling_sessions(id) ON DELETE SET NULL',
   "ALTER TABLE leagues ADD COLUMN IF NOT EXISTS league_type TEXT NOT NULL DEFAULT 'standard'",
@@ -675,12 +787,15 @@ const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS registration_fee_minor INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS registration_fee_override_minor INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS requires_club_membership INTEGER NOT NULL DEFAULT 1',
-  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS min_experience_years INTEGER',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS min_experience_years DOUBLE PRECISION',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS max_experience_years DOUBLE PRECISION',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS min_age INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS max_age INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS first_day_of_play DATE',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS last_day_of_play DATE',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS allows_waitlist INTEGER NOT NULL DEFAULT 1',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE SET NULL',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS is_play_in_based INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS allows_sabbatical INTEGER NOT NULL DEFAULT 1',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
@@ -688,6 +803,7 @@ const leagueBootstrapColumnsPg: string[] = [
 
 const registrationMembershipPaymentColumnsPg: string[] = [
   "ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS membership_option TEXT NOT NULL DEFAULT 'none'",
+  "ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS ice_privileges_choice TEXT NOT NULL DEFAULT 'none'",
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS experience_type TEXT',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS experience_self_reported_years DOUBLE PRECISION',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS student_discount_claimed INTEGER NOT NULL DEFAULT 0',
@@ -697,6 +813,8 @@ const registrationMembershipPaymentColumnsPg: string[] = [
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS last_fee_preview_json JSONB',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS payment_decision_json JSONB',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS desired_add_waitlist_league_count INTEGER',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))',
 ];
 
 const waitlistOfferColumnsPg: string[] = [
@@ -706,9 +824,32 @@ const waitlistOfferColumnsPg: string[] = [
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)',
 ];
 
+const registrationSelectionColumnsPg: string[] = [
+  'ALTER TABLE registration_selections ADD COLUMN IF NOT EXISTS team_roster_placements TEXT',
+];
+
+const waitlistEntryColumnsPg: string[] = [
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS team_roster_text TEXT',
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS team_roster_placements TEXT',
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE CASCADE',
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS replaces_lineage_start_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS original_replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
+  "ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS offer_response_preference TEXT NOT NULL DEFAULT 'ask'",
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS desired_add_waitlist_league_count INTEGER',
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS add_waitlist_priority_rank INTEGER',
+];
+
 async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
   for (const ddl of leagueBootstrapColumnsPg) {
     await execSQL(db, ddl);
+  }
+  try {
+    await execSQL(
+      db,
+      'ALTER TABLE leagues ALTER COLUMN min_experience_years TYPE DOUBLE PRECISION USING min_experience_years::double precision'
+    );
+  } catch {
+    /* column may already be double precision or absent on fresh installs */
   }
   await seedLeagueFeeOverridesIfNeeded(db, execSQL);
   await execSQL(
@@ -718,6 +859,8 @@ async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: D
     CREATE INDEX IF NOT EXISTS idx_leagues_predecessor_league_id ON leagues(predecessor_league_id);
     CREATE INDEX IF NOT EXISTS idx_leagues_successor_league_id ON leagues(successor_league_id);
     CREATE INDEX IF NOT EXISTS idx_leagues_league_type ON leagues(league_type);
+    CREATE INDEX IF NOT EXISTS idx_leagues_waitlist_id ON leagues(waitlist_id);
+    CREATE INDEX IF NOT EXISTS idx_leagues_waitlist_id ON leagues(waitlist_id);
     `
   );
 }
@@ -730,6 +873,12 @@ async function ensureRegistrationMembershipPaymentPostgres(db: DatabaseAdapter, 
 
 async function ensureWaitlistOfferPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
   for (const ddl of waitlistOfferColumnsPg) {
+    await execSQL(db, ddl);
+  }
+}
+
+async function ensureWaitlistEntryPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
+  for (const ddl of waitlistEntryColumnsPg) {
     await execSQL(db, ddl);
   }
 }
@@ -748,11 +897,19 @@ export async function ensureCurlingRegistrationBootstrap(
   if (db.isAsync()) {
     await ensureRegistrationMembershipPaymentPostgres(db, execSQL);
     await ensureWaitlistOfferPostgres(db, execSQL);
+    await ensureWaitlistEntryPostgres(db, execSQL);
+    for (const ddl of registrationSelectionColumnsPg) {
+      await execSQL(db, ddl);
+    }
     await ensureLeagueBootstrapPostgres(db, execSQL);
+    await ensureLeagueWaitlistSchema(db, execSQL);
   } else {
     await sqliteEnsureRegistrationMembershipPaymentColumns(db, execSQL);
     await sqliteEnsureWaitlistOfferColumns(db, execSQL);
+    await sqliteEnsureWaitlistEntryColumns(db, execSQL);
+    await sqliteEnsureRegistrationSelectionColumns(db, execSQL);
     await sqliteEnsureLeaguesRegistrationColumns(db, execSQL);
+    await ensureLeagueWaitlistSchema(db, execSQL);
   }
 }
 
@@ -783,6 +940,15 @@ export function ensureCurlingRegistrationBootstrapSync(
   }
   execSQLSync(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)`);
 
+  const waitlistEntryStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(waitlist_entries)`);
+  const waitlistEntryCols = waitlistEntryStmt.all() as { name?: string | null }[];
+  const waitlistEntryNames = new Set(waitlistEntryCols.map((c) => String(c.name)));
+  for (const col of waitlistEntryColumnsSQLite) {
+    if (!waitlistEntryNames.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE waitlist_entries ADD COLUMN ${col.ddl}`);
+    }
+  }
+
   const leagueStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(leagues)`);
   const leagueCols = leagueStmt.all() as { name?: string | null }[];
   const leagueNames = new Set(leagueCols.map((c) => String(c.name)));
@@ -799,6 +965,7 @@ export function ensureCurlingRegistrationBootstrapSync(
     CREATE INDEX IF NOT EXISTS idx_leagues_predecessor_league_id ON leagues(predecessor_league_id);
     CREATE INDEX IF NOT EXISTS idx_leagues_successor_league_id ON leagues(successor_league_id);
     CREATE INDEX IF NOT EXISTS idx_leagues_league_type ON leagues(league_type);
+    CREATE INDEX IF NOT EXISTS idx_leagues_waitlist_id ON leagues(waitlist_id);
     `
   );
 }

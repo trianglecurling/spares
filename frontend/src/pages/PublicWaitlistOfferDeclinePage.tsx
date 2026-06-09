@@ -1,25 +1,26 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import PublicLayout from '../components/PublicLayout';
-import PublicStateCard from '../components/PublicStateCard';
+import Layout from '../components/Layout';
+import { AppPage, AppPageHeader } from '../components/AppPage';
+import AppStateCard from '../components/AppStateCard';
 import Button from '../components/Button';
 import api, { getApiErrorMessage } from '../utils/api';
 
 export default function PublicWaitlistOfferDeclinePage() {
-  const { token } = useParams();
+  const { offerId } = useParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Declining your waitlist offer.');
 
   useEffect(() => {
     let cancelled = false;
     async function decline() {
-      if (!token) {
+      if (!offerId) {
         setStatus('error');
-        setMessage('This waitlist offer link is missing a token.');
+        setMessage('This waitlist offer link is missing an offer id.');
         return;
       }
       try {
-        await api.post(`/registration/waitlist-offers/${encodeURIComponent(token)}/decline`);
+        await api.post(`/registration/member/waitlist-offers/${encodeURIComponent(offerId)}/decline`);
         if (cancelled) return;
         setStatus('success');
         setMessage('Your waitlist offer has been declined. If this was your first decline for this waitlist, your position is preserved. If it was your second decline, staff will move you to the bottom according to the waitlist rules.');
@@ -33,21 +34,26 @@ export default function PublicWaitlistOfferDeclinePage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [offerId]);
 
   return (
-    <PublicLayout>
-      <PublicStateCard
-        title={status === 'loading' ? 'Declining offer' : status === 'success' ? 'Offer declined' : 'Unable to decline offer'}
-        description={message}
-        action={
-          status !== 'loading' ? (
-            <Link to="/">
-              <Button>Return home</Button>
-            </Link>
-          ) : null
-        }
-      />
-    </PublicLayout>
+    <Layout>
+      <AppPage narrow>
+        <AppPageHeader title="Waitlist offer" description="League placement offers are tied to your account for safety." />
+        <AppStateCard
+          title={status === 'loading' ? 'Declining offer' : status === 'success' ? 'Offer declined' : 'Unable to decline offer'}
+          description={message}
+          action={
+            status !== 'loading' ? (
+              <div className="flex flex-wrap justify-center gap-2">
+                <Link to="/dashboard">
+                  <Button>Return to dashboard</Button>
+                </Link>
+              </div>
+            ) : null
+          }
+        />
+      </AppPage>
+    </Layout>
   );
 }

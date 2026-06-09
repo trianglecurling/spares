@@ -1,6 +1,4 @@
 import { eq, inArray } from 'drizzle-orm';
-import { config } from '../config.js';
-import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { AuthzClaims, AuthzRule, Member, ScopeContext, ScopeEffect } from '../types.js';
 
@@ -19,10 +17,6 @@ export const RBAC_ROLE_CODES = {
 
 function normalizeScope(scope: string): string {
   return scope.trim().toLowerCase();
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
 }
 
 function normalizeDateString(value: string | Date | number | null | undefined): string | null {
@@ -106,27 +100,6 @@ function getComputedRoleCodes(member: Member): string[] {
   return roleCodes;
 }
 
-export function isInServerAdminListsByEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const normalized = normalizeEmail(email);
-
-  if (config.admins.map(normalizeEmail).includes(normalized)) return true;
-
-  const dbConfig = getDatabaseConfig();
-  if (!dbConfig?.adminEmails) return false;
-  return dbConfig.adminEmails.map(normalizeEmail).includes(normalized);
-}
-
-/** True when the new address is configured as a server-admin sign-in email but the member does not already own it (blocks privilege escalation / squatting on admin addresses). */
-export function isEmailChangeToReservedServerAdminAddress(
-  currentEmail: string | null | undefined,
-  newEmail: string
-): boolean {
-  if (!isInServerAdminListsByEmail(newEmail)) return false;
-  if (!currentEmail) return true;
-  return normalizeEmail(currentEmail) !== normalizeEmail(newEmail);
-}
-
 export function getAnonymousAuthzClaims(): AuthzClaims {
   return {
     roleCodes: [RBAC_ROLE_CODES.anonymous],
@@ -142,7 +115,7 @@ export function getAnonymousAuthzClaims(): AuthzClaims {
 }
 
 export async function buildAuthzClaimsForMember(member: Member): Promise<AuthzClaims> {
-  const isServerAdmin = isInServerAdminListsByEmail(member.email) || (member.is_server_admin ?? 0) === 1;
+  const isServerAdmin = (member.is_server_admin ?? 0) === 1;
 
   if (isServerAdmin) {
     return {

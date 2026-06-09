@@ -14,7 +14,8 @@
     "@types/react-dom": "^19.2.0"
   },
   "scripts": {
-    "dev": "bun run --elide-lines=0 --filter '*' dev",
+    "dev": "bunx concurrently -n mailpit,apps -c magenta,auto \"bun run dev:mailpit\" \"bun run --elide-lines=0 --filter '*' dev\"",
+    "dev:mailpit": "mailpit",
     "dev:frontend": "bun run --filter frontend dev",
     "dev:backend": "bun run --filter backend dev",
     "db:migrate": "bun run --filter backend db:init",

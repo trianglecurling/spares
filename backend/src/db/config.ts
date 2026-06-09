@@ -14,7 +14,6 @@ export interface DatabaseConfig {
     password: string;
     ssl?: boolean;
   };
-  adminEmails: string[];
 }
 
 // Resolve config file path relative to the backend directory (where process.cwd() points)

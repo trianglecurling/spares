@@ -1,3 +1,5 @@
+import type { CurlingExperienceTypeSqlite } from '../db/drizzle-schema.js';
+import type { MemberExperienceBaselines } from './curlingExperienceYears.js';
 import type { LeagueConfig, RegistrationContext } from './registrationContext.js';
 
 const ISO_DATE_LENGTH = 10;
@@ -26,6 +28,19 @@ export function ageOnDate(dateOfBirth: string, targetDate: string): number {
   return age;
 }
 
+export const JUNIOR_RECREATIONAL_MAX_AGE = 21;
+
+export function ageOnToday(dateOfBirth: string | null | undefined): number | null {
+  if (!dateOfBirth) return null;
+  const today = new Date().toISOString().slice(0, ISO_DATE_LENGTH);
+  return ageOnDate(dateOfBirth, today);
+}
+
+export function isJuniorRecreationalEligible(dateOfBirth: string | null | undefined): boolean {
+  const age = ageOnToday(dateOfBirth);
+  return age !== null && age <= JUNIOR_RECREATIONAL_MAX_AGE;
+}
+
 export function leagueFirstDay(league: LeagueConfig): string {
   return league.firstDayOfPlay ?? league.startDate ?? '';
 }
@@ -40,7 +55,9 @@ export function ageOnLeagueStart(dateOfBirth: string | null | undefined, league:
   return ageOnDate(dateOfBirth, firstDay);
 }
 
-export function calculateClubExperienceYears(completedSessions: RegistrationContext['experience']['completedSessions']): number {
+export function calculateComputedClubExperienceYears(
+  completedSessions: RegistrationContext['experience']['completedSessions']
+): number {
   const sessionsBySeason = new Map<string, number>();
   for (const session of completedSessions) {
     sessionsBySeason.set(session.seasonKey, (sessionsBySeason.get(session.seasonKey) ?? 0) + 1);
@@ -48,17 +65,50 @@ export function calculateClubExperienceYears(completedSessions: RegistrationCont
 
   let years = 0;
   for (const completedSessionCount of sessionsBySeason.values()) {
-    years += Math.min(1, completedSessionCount * 0.5);
+    years += Math.min(1, completedSessionCount);
   }
   return years;
 }
 
+/** @deprecated Use {@link calculateComputedClubExperienceYears}. */
+export const calculateClubExperienceYears = calculateComputedClubExperienceYears;
+
+export function totalExperienceYears(input: {
+  experienceType: CurlingExperienceTypeSqlite;
+  selfReportedYears?: number | null;
+  baselines: MemberExperienceBaselines;
+  completedSessions: RegistrationContext['experience']['completedSessions'];
+}): number {
+  const computedClubYears = calculateComputedClubExperienceYears(input.completedSessions);
+  const baselineClubYears = Math.max(0, input.baselines.baselineClubExperienceYears);
+  if (input.experienceType === 'specified_years') {
+    const otherClubYears = Math.max(0, input.selfReportedYears ?? 0);
+    return otherClubYears + baselineClubYears + computedClubYears;
+  }
+  const baselineOtherClubYears = Math.max(0, input.baselines.baselineOtherClubExperienceYears);
+  return baselineOtherClubYears + baselineClubYears + computedClubYears;
+}
+
 export function effectiveExperienceYears(context: RegistrationContext): number {
-  if (context.experience.type === 'specified_years') {
-    return Math.max(0, context.experience.selfReportedYears ?? 0);
+  return totalExperienceYears({
+    experienceType: context.experience.type,
+    selfReportedYears: context.experience.selfReportedYears,
+    baselines: {
+      baselineOtherClubExperienceYears: context.experience.baselineOtherClubExperienceYears,
+      baselineClubExperienceYears: context.experience.baselineClubExperienceYears,
+    },
+    completedSessions: context.experience.completedSessions,
+  });
+}
+
+export function hasRecordedExperience(input: {
+  experienceType: CurlingExperienceTypeSqlite;
+  selfReportedYears?: number | null;
+  baselines: MemberExperienceBaselines;
+  completedSessions: RegistrationContext['experience']['completedSessions'];
+}): boolean {
+  if (input.experienceType === 'specified_years') {
+    return (input.selfReportedYears ?? 0) > 0;
   }
-  if (context.experience.type === 'known_existing') {
-    return calculateClubExperienceYears(context.experience.completedSessions);
-  }
-  return 0;
+  return totalExperienceYears(input) > 0;
 }

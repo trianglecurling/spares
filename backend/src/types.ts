@@ -46,6 +46,8 @@ export interface Member {
   email_visible: number;
   phone_visible: number;
   theme_preference: string | null;
+  baseline_other_club_experience_years?: number;
+  baseline_club_experience_years?: number;
   created_at: DbDate;
   updated_at: DbDate;
   authz?: AuthzClaims;
@@ -85,11 +87,13 @@ export interface League {
   registration_fee_override_minor?: number | null;
   requires_club_membership: number;
   min_experience_years: number | null;
+  max_experience_years?: number | null;
   min_age: number | null;
   max_age: number | null;
   first_day_of_play: DbDate | null;
   last_day_of_play: DbDate | null;
   allows_waitlist: number;
+  is_play_in_based?: number;
   allows_sabbatical: number;
   predecessor_league_id: number | null;
   successor_league_id: number | null;
@@ -282,6 +286,8 @@ export interface AuthenticatedMember {
 export interface MemberSummary {
   id: number;
   name: string;
+  firstName?: string | null;
+  lastName?: string | null;
   email: string | null;
   phone: string | null;
   validThrough?: string | null;
@@ -293,13 +299,15 @@ export interface MemberSummary {
   isContentAdmin?: boolean;
   isSponsorAdmin?: boolean;
   isLeagueAdministratorGlobal?: boolean;
-  isInServerAdminsList?: boolean;
+  isLastServerAdmin?: boolean;
   emailSubscribed: boolean;
   optedInSms: boolean;
   createdAt: string;
   emailVisible: boolean;
   phoneVisible: boolean;
   firstLoginCompleted: boolean;
+  baselineOtherClubExperienceYears?: number;
+  baselineClubExperienceYears?: number;
 }
 
 export interface SponsorshipLevel {

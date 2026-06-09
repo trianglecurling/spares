@@ -1,11 +1,25 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { canActorImpersonateTarget, listAccountSwitchOptions } from '../services/accountAccess.js';
 import type { Member } from '../types.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
-import { canViewOrEditRegistration, getRegistrationById } from './registrationShellService.js';
+import { canCancelRegistrationDuringPriority, canEditRegistrationDuringPriority } from './registrationPriorityEdit.js';
+import {
+  canViewOrEditRegistration,
+  getDefaultRegistrationWindow,
+  getRegistrationById,
+} from './registrationShellService.js';
 import { listRegistrationOutboundMessages, sendRegistrationEmailForDashboard } from './registrationEmailService.js';
+import { syncCurlingRegistrationPaymentConfirmationForOrder } from './registrationMembershipPaymentService.js';
+import { resolvePlacementLeagueForWaitlist } from './waitlistEntityService.js';
+import { recordAndDeleteWaitlistEntry, waitlistMemberDisplayName } from './waitlistAudit.js';
+import {
+  isPrimaryWaitlistEntryMember,
+  memberParticipationOnWaitlistEntry,
+  waitlistEntryIncludesMember,
+  waitlistTeammateContactMessage,
+} from './waitlistMemberMembership.js';
 
 export class RegistrationMemberValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -45,6 +59,40 @@ function hostedCheckoutUrl(metadata: unknown): string | null {
   return null;
 }
 
+async function loadLatestRegistrationPaymentSnapshot(registrationId: number, registrationStatus: string) {
+  const { db, schema } = getDrizzleDb();
+  let [invoice] = await db
+    .select()
+    .from(schema.registrationInvoices)
+    .where(eq(schema.registrationInvoices.registration_id, registrationId))
+    .orderBy(desc(schema.registrationInvoices.updated_at), desc(schema.registrationInvoices.id))
+    .limit(1);
+  let order = invoice?.payment_order_id
+    ? (await db.select().from(schema.paymentOrders).where(eq(schema.paymentOrders.id, invoice.payment_order_id)).limit(1))[0]
+    : null;
+  if (invoice?.payment_order_id) {
+    try {
+      await syncCurlingRegistrationPaymentConfirmationForOrder(invoice.payment_order_id);
+      [invoice] = await db
+        .select()
+        .from(schema.registrationInvoices)
+        .where(eq(schema.registrationInvoices.registration_id, registrationId))
+        .orderBy(desc(schema.registrationInvoices.updated_at), desc(schema.registrationInvoices.id))
+        .limit(1);
+      order = invoice?.payment_order_id
+        ? (await db.select().from(schema.paymentOrders).where(eq(schema.paymentOrders.id, invoice.payment_order_id)).limit(1))[0]
+        : null;
+    } catch {
+      // Keep member views responsive even if payment sync fails.
+    }
+  }
+  return {
+    paymentStatus: invoice?.status ?? (registrationStatus === 'confirmed' ? 'paid' : 'not_required'),
+    amountDueMinor: invoice?.total_minor ?? null,
+    paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
+  };
+}
+
 async function actorManagedMemberIds(actor: Member): Promise<number[]> {
   if (isAdmin(actor) || isServerAdmin(actor)) {
     const { db, schema } = getDrizzleDb();
@@ -55,15 +103,146 @@ async function actorManagedMemberIds(actor: Member): Promise<number[]> {
   return [...new Set([actor.id, ...options.map((option) => option.id)])];
 }
 
-async function waitlistPosition(leagueId: number, entryId: number): Promise<number | null> {
+async function waitlistPosition(waitlistId: number, entryId: number): Promise<number | null> {
+  const { getActiveWaitlistEntryPosition } = await import('./waitlistEntityService.js');
+  const { position } = await getActiveWaitlistEntryPosition(waitlistId, entryId);
+  return position;
+}
+
+const ACTIVE_REGISTRATION_STATUSES = [
+  'identity_incomplete',
+  'policies_incomplete',
+  'demographics_incomplete',
+  'shell_complete',
+  'submitted',
+  'awaiting_staff_review',
+  'awaiting_placement',
+  'awaiting_payment',
+  'payment_started',
+  'paid',
+  'confirmed',
+] as const;
+
+type RegistrationViewSlotSource = {
+  id: number;
+  isDraft: boolean;
+};
+
+export function buildRegistrationViewSlotMap(registrations: RegistrationViewSlotSource[]): Map<number, number> {
+  const submitted = registrations
+    .filter((registration) => !registration.isDraft)
+    .sort((left, right) => left.id - right.id);
+  return new Map(submitted.map((registration, index) => [registration.id, index + 1]));
+}
+
+function getSubmittedRegistrationIdForViewSlot(registrations: RegistrationViewSlotSource[], viewSlot: number): number | null {
+  const submitted = registrations
+    .filter((registration) => !registration.isDraft)
+    .sort((left, right) => left.id - right.id);
+  return submitted[viewSlot - 1]?.id ?? null;
+}
+
+export type MemberCurrentRegistrationLookup = {
+  curlerMemberId?: number;
+  viewSlot?: number;
+};
+
+export async function getMemberDashboardRegistrationStatus(actor: Member) {
+  const window = await getDefaultRegistrationWindow();
+  if (!window) {
+    return { visible: false, window: null, registrations: [], showPriorityPrompt: false };
+  }
+
+  const ids = await actorManagedMemberIds(actor);
   const { db, schema } = getDrizzleDb();
+
   const rows = await db
-    .select({ id: schema.waitlistEntries.id })
-    .from(schema.waitlistEntries)
-    .where(and(eq(schema.waitlistEntries.league_id, leagueId), eq(schema.waitlistEntries.status, 'active')))
-    .orderBy(asc(schema.waitlistEntries.position_sort_key), asc(schema.waitlistEntries.joined_at), asc(schema.waitlistEntries.id));
-  const index = rows.findIndex((row) => row.id === entryId);
-  return index >= 0 ? index + 1 : null;
+        .select({
+          id: schema.curlingRegistrations.id,
+          status: schema.curlingRegistrations.status,
+          submittedAt: schema.curlingRegistrations.submitted_at,
+          updatedAt: schema.curlingRegistrations.updated_at,
+          membershipOption: schema.curlingRegistrations.membership_option,
+          curlerId: schema.members.id,
+          curlerName: schema.members.name,
+          curlerFirstName: schema.members.first_name,
+          curlerLastName: schema.members.last_name,
+          seasonName: schema.curlingSeasons.name,
+          sessionName: schema.curlingSessions.name,
+        })
+        .from(schema.curlingRegistrations)
+        .leftJoin(schema.members, eq(schema.curlingRegistrations.curler_member_id, schema.members.id))
+        .innerJoin(schema.curlingSeasons, eq(schema.curlingRegistrations.season_id, schema.curlingSeasons.id))
+        .innerJoin(schema.curlingSessions, eq(schema.curlingRegistrations.session_id, schema.curlingSessions.id))
+        .where(and(
+          eq(schema.curlingRegistrations.session_id, window.session.id),
+          inArray(schema.curlingRegistrations.status, [...ACTIVE_REGISTRATION_STATUSES]),
+          or(
+            ids.length > 0 ? inArray(schema.curlingRegistrations.curler_member_id, ids) : sql`0 = 1`,
+            eq(schema.curlingRegistrations.submitted_by_member_id, actor.id),
+          ),
+        ))
+        .orderBy(desc(schema.curlingRegistrations.updated_at), desc(schema.curlingRegistrations.id));
+
+  const registrations = [];
+  for (const row of rows) {
+    const payment = await loadLatestRegistrationPaymentSnapshot(row.id, row.status);
+    registrations.push({
+      id: row.id,
+      curlerId: row.curlerId,
+      curlerName: memberName({
+        name: row.curlerName,
+        first_name: row.curlerFirstName,
+        last_name: row.curlerLastName,
+      }) || 'Registration in progress',
+      seasonName: row.seasonName,
+      sessionName: row.sessionName,
+      registrationStatus: row.status,
+      isDraft: row.submittedAt == null,
+      paymentStatus: payment.paymentStatus,
+      membershipOption: row.membershipOption,
+      amountDueMinor: payment.amountDueMinor,
+      paymentLink: payment.paymentLink,
+      submittedAt: row.submittedAt,
+      updatedAt: row.updatedAt,
+    });
+  }
+
+  const viewSlotByRegistrationId = buildRegistrationViewSlotMap(registrations);
+  const registrationsWithViewSlots = registrations.map((registration) => ({
+    ...registration,
+    viewSlot: viewSlotByRegistrationId.get(registration.id) ?? null,
+  }));
+
+  const [selfRegistration] = await db
+    .select({ id: schema.curlingRegistrations.id })
+    .from(schema.curlingRegistrations)
+    .where(and(
+      eq(schema.curlingRegistrations.session_id, window.session.id),
+      inArray(schema.curlingRegistrations.status, [...ACTIVE_REGISTRATION_STATUSES]),
+      or(
+        eq(schema.curlingRegistrations.curler_member_id, actor.id),
+        and(
+          eq(schema.curlingRegistrations.submitted_by_member_id, actor.id),
+          eq(schema.curlingRegistrations.registering_for_self, 1),
+        ),
+      ),
+    ))
+    .limit(1);
+
+  const showPriorityPrompt = window.state === 'priority' && !selfRegistration;
+  const visible = registrationsWithViewSlots.length > 0 || showPriorityPrompt;
+
+  return {
+    visible,
+    window: {
+      state: window.state,
+      season: window.season,
+      session: window.session,
+    },
+    registrations: registrationsWithViewSlots,
+    showPriorityPrompt,
+  };
 }
 
 export async function listMemberRegistrationSummaries(actor: Member, seasonId?: number) {
@@ -96,15 +275,7 @@ export async function listMemberRegistrationSummaries(actor: Member, seasonId?: 
 
   const registrations = [];
   for (const row of rows) {
-    const [invoice] = await db
-      .select()
-      .from(schema.registrationInvoices)
-      .where(eq(schema.registrationInvoices.registration_id, row.id))
-      .orderBy(desc(schema.registrationInvoices.updated_at), desc(schema.registrationInvoices.id))
-      .limit(1);
-    const order = invoice?.payment_order_id
-      ? (await db.select().from(schema.paymentOrders).where(eq(schema.paymentOrders.id, invoice.payment_order_id)).limit(1))[0]
-      : null;
+    const payment = await loadLatestRegistrationPaymentSnapshot(row.id, row.status);
     registrations.push({
       id: row.id,
       curlerId: row.curlerId,
@@ -116,15 +287,75 @@ export async function listMemberRegistrationSummaries(actor: Member, seasonId?: 
       seasonName: row.seasonName,
       sessionName: row.sessionName,
       registrationStatus: row.status,
-      paymentStatus: invoice?.status ?? (row.status === 'confirmed' ? 'paid' : 'not_required'),
+      paymentStatus: payment.paymentStatus,
       membershipOption: row.membershipOption,
-      amountDueMinor: invoice?.total_minor ?? null,
-      paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
+      amountDueMinor: payment.amountDueMinor,
+      paymentLink: payment.paymentLink,
       submittedAt: row.submittedAt,
       updatedAt: row.updatedAt,
     });
   }
   return { registrations };
+}
+
+export async function getMemberCurrentRegistrationDetail(actor: Member, lookup?: MemberCurrentRegistrationLookup) {
+  const status = await getMemberDashboardRegistrationStatus(actor);
+  if (!status.window) {
+    throw new RegistrationMemberValidationError({ registration: 'Registration was not found.' });
+  }
+
+  const submitted = status.registrations.filter((registration) => !registration.isDraft);
+  let targetId: number | null = null;
+
+  if (lookup?.viewSlot != null) {
+    targetId = getSubmittedRegistrationIdForViewSlot(submitted, lookup.viewSlot);
+  } else if (lookup?.curlerMemberId != null) {
+    targetId = submitted.find((registration) => registration.curlerId === lookup.curlerMemberId)?.id ?? null;
+  } else {
+    const selfMatch = submitted.find((registration) => registration.curlerId === actor.id);
+    if (selfMatch) {
+      targetId = selfMatch.id;
+    } else if (submitted.length === 1) {
+      targetId = submitted[0]?.id ?? null;
+    }
+  }
+
+  if (targetId == null) {
+    throw new RegistrationMemberValidationError({ registration: 'Registration was not found.' });
+  }
+
+  return getMemberRegistrationDetail(targetId, actor);
+}
+
+export async function resolveRegistrationViewPath(registrationId: number, viewerMemberId?: number | null): Promise<string> {
+  const { db, schema } = getDrizzleDb();
+  const [registration] = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      submittedAt: schema.curlingRegistrations.submitted_at,
+      submittedByMemberId: schema.curlingRegistrations.submitted_by_member_id,
+      curlerMemberId: schema.curlingRegistrations.curler_member_id,
+    })
+    .from(schema.curlingRegistrations)
+    .where(eq(schema.curlingRegistrations.id, registrationId))
+    .limit(1);
+  if (!registration || registration.submittedAt == null) {
+    return '/dashboard';
+  }
+
+  const memberId = viewerMemberId ?? registration.submittedByMemberId ?? registration.curlerMemberId;
+  if (memberId == null) {
+    return '/registration/view/1';
+  }
+
+  const [memberRow] = await db.select().from(schema.members).where(eq(schema.members.id, memberId)).limit(1);
+  if (!memberRow) {
+    return '/registration/view/1';
+  }
+
+  const status = await getMemberDashboardRegistrationStatus(memberRow as Member);
+  const viewSlot = buildRegistrationViewSlotMap(status.registrations).get(registrationId);
+  return viewSlot != null ? `/registration/view/${viewSlot}` : '/dashboard';
 }
 
 export async function getMemberRegistrationDetail(registrationId: number, actor: Member) {
@@ -156,29 +387,103 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     .leftJoin(schema.leagues, eq(schema.registrationSelections.league_id, schema.leagues.id))
     .where(eq(schema.registrationSelections.registration_id, registrationId))
     .orderBy(asc(schema.registrationSelections.rank), asc(schema.registrationSelections.id));
-  const waitlists = registration.curler_member_id
+  const replacedLeagueIds = [
+    ...new Set(
+      selections
+        .map((selection) => selection.replacesLeagueId)
+        .filter((leagueId): leagueId is number => leagueId != null),
+    ),
+  ];
+  const replacedLeagues =
+    replacedLeagueIds.length > 0
+      ? await db
+          .select({ id: schema.leagues.id, name: schema.leagues.name })
+          .from(schema.leagues)
+          .where(inArray(schema.leagues.id, replacedLeagueIds))
+      : [];
+  const replacedLeagueNames = new Map(replacedLeagues.map((league) => [league.id, league.name]));
+  const selectionsWithContext = selections.map((selection) => ({
+    ...selection,
+    replacedLeagueName:
+      selection.replacesLeagueId != null
+        ? replacedLeagueNames.get(selection.replacesLeagueId) ?? null
+        : null,
+  }));
+  const waitlistRows = registration.curler_member_id
     ? await db
         .select({
           id: schema.waitlistEntries.id,
-          leagueId: schema.waitlistEntries.league_id,
+          waitlistId: schema.waitlistEntries.waitlist_id,
+          memberId: schema.waitlistEntries.member_id,
           entryType: schema.waitlistEntries.entry_type,
-          replacesLeagueId: schema.waitlistEntries.replaces_league_id,
+          replacesLineageStartLeagueId: schema.waitlistEntries.replaces_lineage_start_league_id,
+          originalReplacesLeagueId: schema.waitlistEntries.original_replaces_league_id,
+          teamRosterPlacements: schema.waitlistEntries.team_roster_placements,
           declineCount: schema.waitlistEntries.decline_count,
           status: schema.waitlistEntries.status,
           rolledOverFromWaitlistEntryId: schema.waitlistEntries.rolled_over_from_waitlist_entry_id,
+          leagueId: schema.leagues.id,
           leagueName: schema.leagues.name,
+          waitlistName: schema.leagueWaitlists.name,
+          primaryMemberName: schema.members.name,
+          primaryMemberFirstName: schema.members.first_name,
+          primaryMemberLastName: schema.members.last_name,
+          primaryMemberEmail: schema.members.email,
         })
         .from(schema.waitlistEntries)
-        .innerJoin(schema.leagues, eq(schema.waitlistEntries.league_id, schema.leagues.id))
-        .where(and(
-          eq(schema.waitlistEntries.member_id, registration.curler_member_id),
-          eq(schema.waitlistEntries.status, 'active')
-        ))
+        .innerJoin(schema.members, eq(schema.waitlistEntries.member_id, schema.members.id))
+        .innerJoin(schema.leagueWaitlists, eq(schema.waitlistEntries.waitlist_id, schema.leagueWaitlists.id))
+        .innerJoin(
+          schema.leagues,
+          and(
+            eq(schema.leagues.waitlist_id, schema.waitlistEntries.waitlist_id),
+            eq(schema.leagues.session_id, registration.session_id),
+          ),
+        )
+        .where(eq(schema.waitlistEntries.status, 'active'))
         .orderBy(asc(schema.waitlistEntries.position_sort_key), asc(schema.waitlistEntries.joined_at), asc(schema.waitlistEntries.id))
+    : [];
+  const waitlists = registration.curler_member_id
+    ? waitlistRows
+        .filter((entry) =>
+          waitlistEntryIncludesMember(registration.curler_member_id as number, {
+            memberId: entry.memberId,
+            teamRosterPlacements: entry.teamRosterPlacements,
+          }),
+        )
+        .map((entry) => {
+          const participation = memberParticipationOnWaitlistEntry(registration.curler_member_id as number, entry);
+          const primaryMemberName = memberName({
+            name: entry.primaryMemberName,
+            first_name: entry.primaryMemberFirstName,
+            last_name: entry.primaryMemberLastName,
+            email: entry.primaryMemberEmail,
+          });
+          const isPrimaryMember = isPrimaryWaitlistEntryMember(entry, registration.curler_member_id as number);
+          return {
+            id: entry.id,
+            waitlistId: entry.waitlistId,
+            entryType: participation.entryType,
+            replacesLineageStartLeagueId: entry.replacesLineageStartLeagueId,
+            originalReplacesLeagueId: participation.replacesLeagueId ?? entry.originalReplacesLeagueId,
+            declineCount: entry.declineCount,
+            status: entry.status,
+            rolledOverFromWaitlistEntryId: entry.rolledOverFromWaitlistEntryId,
+            leagueId: entry.leagueId,
+            leagueName: entry.leagueName,
+            waitlistName: entry.waitlistName,
+            isPrimaryMember,
+            canRemoveSelf: isPrimaryMember,
+            primaryMemberName,
+            teammateContactMessage: isPrimaryMember
+              ? null
+              : waitlistTeammateContactMessage(primaryMemberName),
+          };
+        })
     : [];
   const waitlistDetails = await Promise.all(waitlists.map(async (entry) => ({
     ...entry,
-    position: await waitlistPosition(entry.leagueId, entry.id),
+    position: await waitlistPosition(entry.waitlistId, entry.id),
   })));
   const [invoice] = await db
     .select()
@@ -189,6 +494,8 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
   const order = invoice?.payment_order_id
     ? (await db.select().from(schema.paymentOrders).where(eq(schema.paymentOrders.id, invoice.payment_order_id)).limit(1))[0]
     : null;
+  const canEditDuringPriority = await canEditRegistrationDuringPriority(actor, shellRegistration);
+  const canCancelDuringPriority = await canCancelRegistrationDuringPriority(actor, shellRegistration);
   return {
     registration: {
       id: registration.id,
@@ -203,7 +510,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       studentDiscountClaimed: registration.student_discount_claimed === 1,
       reciprocalDiscountClaimed: registration.reciprocal_discount_claimed === 1,
     },
-    selections,
+    selections: selectionsWithContext,
     waitlists: waitlistDetails,
     payment: {
       status: invoice?.status ?? (registration.status === 'confirmed' ? 'paid' : 'not_required'),
@@ -213,8 +520,12 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       deferredReason: invoice?.deferred_reason ?? null,
     },
     communications: await listRegistrationOutboundMessages({ registrationId, limit: 25 }),
+    canEditDuringPriority,
+    canCancelDuringPriority,
   };
 }
+
+export { cancelMemberRegistration } from './registrationPriorityEdit.js';
 
 export async function removeMemberWaitlistEntry(input: { entryId: number; actor: Member }) {
   const { db, schema } = getDrizzleDb();
@@ -222,31 +533,43 @@ export async function removeMemberWaitlistEntry(input: { entryId: number; actor:
   if (!entry || entry.status !== 'active') {
     throw new RegistrationMemberValidationError({ waitlistEntry: 'Active waitlist entry was not found.' });
   }
-  const allowed = isAdmin(input.actor) || isServerAdmin(input.actor) || await canActorImpersonateTarget(input.actor.id, entry.member_id);
-  if (!allowed) {
-    throw new RegistrationMemberValidationError({ waitlistEntry: 'You do not have access to remove this waitlist entry.' });
+  const removedByStaff = isAdmin(input.actor) || isServerAdmin(input.actor);
+  if (!removedByStaff) {
+    const [primaryMember] = await db
+      .select()
+      .from(schema.members)
+      .where(eq(schema.members.id, entry.member_id))
+      .limit(1);
+    const primaryMemberName = primaryMember ? waitlistMemberDisplayName(primaryMember) : 'the team contact';
+    if (
+      waitlistEntryIncludesMember(input.actor.id, entry) &&
+      !isPrimaryWaitlistEntryMember(entry, input.actor.id)
+    ) {
+      throw new RegistrationMemberValidationError({
+        waitlistEntry: waitlistTeammateContactMessage(primaryMemberName),
+      });
+    }
+    const canRemoveAsPrimary =
+      isPrimaryWaitlistEntryMember(entry, input.actor.id) ||
+      (await canActorImpersonateTarget(input.actor.id, entry.member_id));
+    if (!canRemoveAsPrimary) {
+      throw new RegistrationMemberValidationError({ waitlistEntry: 'You do not have access to remove this waitlist entry.' });
+    }
   }
+  const placement = await resolvePlacementLeagueForWaitlist(entry.waitlist_id);
+  const [member] = await db.select().from(schema.members).where(eq(schema.members.id, entry.member_id)).limit(1);
   await db.transaction(async (tx) => {
-    await tx
-      .update(schema.waitlistEntries)
-      .set({ status: 'removed', updated_at: sql`CURRENT_TIMESTAMP` })
-      .where(eq(schema.waitlistEntries.id, entry.id));
-    await tx.insert(schema.waitlistAuditEvents).values({
-      waitlist_entry_id: entry.id,
-      league_id: entry.league_id,
-      member_id: entry.member_id,
-      actor_member_id: input.actor.id,
-      source: isAdmin(input.actor) || isServerAdmin(input.actor) ? 'staff_action' : 'member_self',
-      action: 'entry_removed',
+    await recordAndDeleteWaitlistEntry(tx, {
+      entry,
+      leagueId: placement?.leagueId ?? null,
+      actorMemberId: input.actor.id,
+      source: removedByStaff ? 'staff_action' : 'member_self',
       reason: 'WAITLIST_REMOVED_BY_MEMBER',
-      before_json: textJsonValue(entry),
-      after_json: textJsonValue({ ...entry, status: 'removed' }),
-      metadata_json: textJsonValue({ sourceRegistrationId: entry.source_registration_id }),
-      created_at: dbNow(),
+      metadata: { sourceRegistrationId: entry.source_registration_id },
+      memberName: member ? waitlistMemberDisplayName(member) : null,
+      actorMemberName: waitlistMemberDisplayName(input.actor),
     });
   });
-  const [member] = await db.select().from(schema.members).where(eq(schema.members.id, entry.member_id)).limit(1);
-  const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, entry.league_id)).limit(1);
   if (member?.email) {
     await sendRegistrationEmailForDashboard({
       messageType: 'waitlist_removed_by_member',
@@ -254,11 +577,11 @@ export async function removeMemberWaitlistEntry(input: { entryId: number; actor:
       recipientName: memberName(member),
       recipientMemberId: member.id,
       registrationId: entry.source_registration_id ?? null,
-      waitlistEntryId: entry.id,
+      waitlistEntryId: null,
       payload: {
-        leagueName: league?.name,
+        leagueName: placement?.leagueName,
       },
     });
   }
-  return { entryId: entry.id, status: 'removed' };
+  return { entryId: entry.id, deleted: true };
 }

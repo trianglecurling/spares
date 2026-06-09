@@ -129,6 +129,8 @@ Exceptions:
 ## Accessibility defaults
 
 - Every control must have an accessible name.
+- Navigation to another route or URL must use a real link: native `<a>` for normal URLs or React Router `Link`/`NavLink` for app routes. Do not use `<button>` plus programmatic navigation for content links, list item titles, table names, cards, menu items, or other interactions users expect to open in a new tab, copy as a link, or discover as link semantics.
+- Reserve `<button>` for actions that change state on the current page, submit forms, open dialogs/menus, or trigger commands without changing location.
 - Required state cannot rely on color alone.
 - Destructive and confirmation dialogs must remain keyboard operable.
 - Focus should land somewhere meaningful after dialogs open and close.

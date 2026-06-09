@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { calculateWaitlistVacancies, resolveWaitlistDecline } from './waitlistStaffService.js';
+import { sortAddEntriesByPriority } from './waitlistOfferCoordination.js';
 
 describe('Phase 8 staff waitlist helpers', () => {
   test('vacancy calculation separates permanent vacancies from temporary sabbatical-fill vacancies', () => {
@@ -42,6 +43,32 @@ describe('Phase 8 staff waitlist helpers', () => {
       positionSortKey: '001:first',
       movedToBottom: false,
     });
+  });
+
+  test('sortAddEntriesByPriority orders by rank then entry id', () => {
+    const sorted = sortAddEntriesByPriority([
+      {
+        id: 20,
+        member_id: 1,
+        waitlist_id: 1,
+        source_registration_id: 5,
+        entry_type: 'add',
+        desired_add_waitlist_league_count: 1,
+        add_waitlist_priority_rank: 2,
+        status: 'active',
+      },
+      {
+        id: 10,
+        member_id: 1,
+        waitlist_id: 2,
+        source_registration_id: 5,
+        entry_type: 'add',
+        desired_add_waitlist_league_count: 1,
+        add_waitlist_priority_rank: 1,
+        status: 'active',
+      },
+    ]);
+    expect(sorted.map((entry) => entry.id)).toEqual([10, 20]);
   });
 
   test('second decline moves the member to the bottom and resets decline count', () => {

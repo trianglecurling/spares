@@ -17,7 +17,6 @@ import {
   sendSpareOfferCancellationConfirmationEmail,
 } from '../services/email.js';
 import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } from '../services/sms.js';
-import { buildJwtPayloadForMember, generateToken, generateEmailLinkToken } from '../utils/auth.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
@@ -331,7 +330,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .limit(1);
         const requester = requesters[0];
         if (requester?.email && requester.email_subscribed === 1) {
-          const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
           const { sendPrivateInviteDeclinedEmail } = await import('../services/email.js');
           sendPrivateInviteDeclinedEmail(
             requester.email,
@@ -343,8 +341,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
               gameTime: spareRequest.game_time,
               position: spareRequest.position || undefined,
             },
-            comment,
-            requesterToken
+            comment
           ).catch((error: unknown) => {
             console.error('Error sending private invite declined email:', error);
           });
@@ -380,7 +377,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
           .limit(1);
         const requester = requesters[0];
         if (requester?.email && requester.email_subscribed === 1) {
-          const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
           const { sendAllPrivateInvitesDeclinedEmail } = await import('../services/email.js');
           sendAllPrivateInvitesDeclinedEmail(
             requester.email,
@@ -390,8 +386,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
               gameDate: normalizeDateString(spareRequest.game_date),
               gameTime: spareRequest.game_time,
               position: spareRequest.position || undefined,
-            },
-            requesterToken
+            }
           ).catch((error: unknown) => {
             console.error('Error sending all invites declined email:', error);
           });
@@ -598,7 +593,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       const toNotify = invitees.filter((m) => toNotifyIds.includes(m.id));
       for (const recipient of toNotify) {
-        const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
         if (recipient.email && recipient.email_subscribed === 1) {
           sendOnceWithDeliveryClaim(
             {
@@ -622,7 +616,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
                   message: spareRequest.message || undefined,
                   invitedMemberNames,
                 },
-                acceptToken,
                 requestId
               )
           ).catch((error: unknown) => console.error('Error sending private invite email:', error));
@@ -761,7 +754,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (isLessThan24Hours) {
       for (const recipient of recipientMembers) {
         if (recipient.email) {
-          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
           sendOnceWithDeliveryClaim(
             {
               spareRequestId: requestId,
@@ -783,7 +775,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
                   position: spareRequest.position || undefined,
                   message: spareRequest.message || undefined,
                 },
-                acceptToken,
                 requestId
               )
           ).catch((error: unknown) => console.error('Error sending public spare email:', error));
@@ -1183,7 +1174,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
     // Send confirmation email to creator + CC recipients (separately, no email-level CC)
     try {
       if (member.email && member.email_subscribed === 1) {
-        const requesterToken = generateToken(await buildJwtPayloadForMember(member));
         sendSpareRequestCreatedEmail(
           member.email,
           member.name,
@@ -1194,8 +1184,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
             gameTime: gameTimeValue,
             position: body.position,
             message: body.message,
-          },
-          requesterToken
+          }
         ).catch((error) => {
           console.error('Error sending spare request created email:', error);
         });
@@ -1209,7 +1198,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
         for (const ccMember of ccMembers) {
           if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
-          const ccToken = generateToken(await buildJwtPayloadForMember(ccMember));
           sendSpareRequestCcCreatedEmail(
             ccMember.email,
             ccMember.name,
@@ -1221,8 +1209,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
               gameTime: gameTimeValue,
               position: body.position,
               message: body.message,
-            },
-            ccToken
+            }
           ).catch((error) => {
             console.error('Error sending spare request CC created email:', error);
           });
@@ -1272,8 +1259,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
       // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
       for (const recipient of recipientMembers) {
         if (recipient.email) {
-          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
-          
           // Don't await - send in background
           sendOnceWithDeliveryClaim(
             {
@@ -1297,7 +1282,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
                   message: body.message,
                   invitedMemberNames: invitedMemberNames,
                 },
-                acceptToken,
                 requestId
               )
           ).catch((error) => {
@@ -1624,8 +1608,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
     // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
     // The user experience is more important than waiting for external API calls
     if (requester.email && requester.email_subscribed === 1) {
-      const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
-      
       // Don't await - send in background
       sendSpareResponseEmail(
         requester.email,
@@ -1637,8 +1619,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
-        body.comment,
-        requesterToken
+        body.comment
       ).catch((error) => {
         console.error('Error sending spare response email:', error);
       });
@@ -1646,7 +1627,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Confirmation email to the responder (the member who signed up to spare)
     if (member.email && member.email_subscribed === 1) {
-      const responderToken = generateToken(await buildJwtPayloadForMember(member));
       sendSpareOfferConfirmationEmail(
         member.email,
         member.name,
@@ -1657,8 +1637,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
-        body.comment,
-        responderToken
+        body.comment
       ).catch((error) => {
         console.error('Error sending spare offer confirmation email:', error);
       });
@@ -1666,7 +1645,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     for (const ccMember of ccMembers) {
       if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
-      const ccToken = generateToken(await buildJwtPayloadForMember(ccMember));
       sendSpareRequestCcFilledEmail(
         ccMember.email,
         ccMember.name,
@@ -1678,8 +1656,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
-        body.comment,
-        ccToken
+        body.comment
       ).catch((error) => {
         console.error('Error sending spare request CC filled email:', error);
       });
@@ -1781,12 +1758,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       // Canceller confirmation
       if (member.email && member.email_subscribed === 1) {
-        const cancellerToken = generateToken(await buildJwtPayloadForMember(member));
         sendSpareRequestCancelConfirmationEmail(
           member.email,
           member.name,
-          requestDetails,
-          cancellerToken
+          requestDetails
         ).catch((error) => {
           console.error('Error sending spare request cancellation confirmation email:', error);
         });
@@ -1813,13 +1788,11 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       for (const recipient of notifyMap.values()) {
         if (!recipient.email) continue;
-        const recipientToken = generateToken(await buildJwtPayloadForMember(recipient));
         sendSpareRequestCancelledEmail(
           recipient.email,
           recipient.name,
           member.name,
-          requestDetails,
-          recipientToken
+          requestDetails
         ).catch((error) => {
           console.error('Error sending spare request cancelled email:', error);
         });
@@ -1916,8 +1889,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
     if (requester.email && requester.email_subscribed === 1) {
-      const requesterToken = generateToken(await buildJwtPayloadForMember(requester));
-      
       // Don't await - send in background
       sendSpareCancellationEmail(
         requester.email,
@@ -1929,8 +1900,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
-        body.comment,
-        requesterToken
+        body.comment
       ).catch((error) => {
         console.error('Error sending spare cancellation email:', error);
       });
@@ -1938,7 +1908,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     // Confirmation email to the responder (the member who cancelled sparing)
     if (member.email && member.email_subscribed === 1) {
-      const responderToken = generateToken(await buildJwtPayloadForMember(member));
       sendSpareOfferCancellationConfirmationEmail(
         member.email,
         member.name,
@@ -1949,8 +1918,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
-        body.comment,
-        responderToken
+        body.comment
       ).catch((error) => {
         console.error('Error sending spare offer cancellation confirmation email:', error);
       });
@@ -1958,7 +1926,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     for (const ccMember of ccMembers) {
       if (!ccMember.email || ccMember.email_subscribed !== 1) continue;
-      const ccToken = generateToken(await buildJwtPayloadForMember(ccMember));
       sendSpareRequestCcCancellationEmail(
         ccMember.email,
         ccMember.name,
@@ -1970,8 +1937,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           gameTime: spareRequest.game_time,
           position: spareRequest.position || undefined,
         },
-        body.comment,
-        ccToken
+        body.comment
       ).catch((error) => {
         console.error('Error sending spare request CC cancellation email:', error);
       });
@@ -2117,8 +2083,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
       // Send notifications asynchronously (fire-and-forget) to avoid blocking the response
       for (const recipient of recipientMembers) {
         if (recipient.email) {
-          const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
-          
           console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
           // Don't await - send in background
           sendOnceWithDeliveryClaim(
@@ -2142,7 +2106,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
                   message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
                   invitedMemberNames: invitedMemberNames,
                 },
-                acceptToken,
                 requestId
               )
           )
@@ -2266,8 +2229,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
         console.log(`[Re-issue] Sending immediate notifications (<24h path)`);
         for (const recipient of recipientMembers) {
           if (recipient.email) {
-            const acceptToken = generateEmailLinkToken(await buildJwtPayloadForMember(recipient));
-            
             console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
             // Don't await - send in background
             sendOnceWithDeliveryClaim(
@@ -2290,7 +2251,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
                     position: spareRequest.position || undefined,
                     message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
                   },
-                  acceptToken,
                   requestId
                 )
             )

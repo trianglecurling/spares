@@ -1,9 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post, put } from '../../api/client';
-import { formatApiError } from '../../utils/api';
+import api, { formatApiError } from '../../utils/api';
 import AppStateCard from '../../components/AppStateCard';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -20,6 +20,7 @@ import LeagueMaintenance from './LeagueMaintenance';
 import Modal from '../../components/Modal';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormCheckbox from '../../components/FormCheckbox';
+import FormField from '../../components/FormField';
 
 const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Sunday',
@@ -58,21 +59,25 @@ function leagueFormatDisplayLabel(format: LeaguePlayFormat): string {
 
 const LEAGUE_REGISTRATION_FLAG_OPTIONS: ChoiceOption<string>[] = [
   { value: 'requiresClubMembership', label: 'Requires club membership' },
-  { value: 'allowsWaitlist', label: 'Allows waitlist' },
   { value: 'allowsSabbatical', label: 'Allows sabbaticals' },
 ];
 
 function leagueRegistrationFlagKeys(form: {
   requiresClubMembership: boolean;
-  allowsWaitlist: boolean;
   allowsSabbatical: boolean;
 }): string[] {
   const keys: string[] = [];
   if (form.requiresClubMembership) keys.push('requiresClubMembership');
-  if (form.allowsWaitlist) keys.push('allowsWaitlist');
   if (form.allowsSabbatical) keys.push('allowsSabbatical');
   return keys;
 }
+
+type WaitlistOption = {
+  id: number;
+  name: string;
+  activeEntryCount: number;
+  attachedLeagues: Array<{ id: number; name: string; sessionName: string | null }>;
+};
 
 function leagueScheduleFormat(format: LeaguePlayFormat): 'teams' | 'doubles' {
   return format === 'doubles' ? 'doubles' : 'teams';
@@ -103,11 +108,14 @@ interface League {
   registrationFeeOverrideMinor: number | null;
   requiresClubMembership: boolean;
   minExperienceYears: number | null;
+  maxExperienceYears?: number | null;
   minAge: number | null;
   maxAge: number | null;
   firstDayOfPlay: string | null;
   lastDayOfPlay: string | null;
   allowsWaitlist: boolean;
+  waitlistId?: number | null;
+  isPlayInBased?: boolean;
   allowsSabbatical: boolean;
   predecessorLeagueId: number | null;
   successorLeagueId: number | null;
@@ -314,16 +322,22 @@ export default function LeagueDetail() {
     leagueFeeOverrideDollars: '' as number | '',
     requiresClubMembership: true,
     minExperienceYears: '' as number | '',
+    maxExperienceYears: '' as number | '',
     minAge: '' as number | '',
     maxAge: '' as number | '',
-    allowsWaitlist: true,
     allowsSabbatical: true,
+    isPlayInBased: false,
     predecessorLeagueId: 0,
   });
   const [showExceptionPicker, setShowExceptionPicker] = useState(false);
   const [exceptionToAdd, setExceptionToAdd] = useState('');
   const [leagueSubmitting, setLeagueSubmitting] = useState(false);
   const [clubDefaultLeagueFeeDollars, setClubDefaultLeagueFeeDollars] = useState<number | null>(null);
+  const [waitlistModalOpen, setWaitlistModalOpen] = useState(false);
+  const [waitlistOptions, setWaitlistOptions] = useState<WaitlistOption[]>([]);
+  const [attachWaitlistId, setAttachWaitlistId] = useState<number | null>(null);
+  const [newWaitlistName, setNewWaitlistName] = useState('');
+  const [waitlistActionLoading, setWaitlistActionLoading] = useState(false);
 
   const [rosterMembers, setRosterMembers] = useState<LeagueRosterMember[]>([]);
   const [bulkRosterModalOpen, setBulkRosterModalOpen] = useState(false);
@@ -794,11 +808,12 @@ export default function LeagueDetail() {
           ? league.registrationFeeOverrideMinor / 100
           : '',
       requiresClubMembership: league.requiresClubMembership,
-      minExperienceYears: league.minExperienceYears ?? '',
-      minAge: league.minAge ?? '',
-      maxAge: league.maxAge ?? '',
-      allowsWaitlist: league.allowsWaitlist,
+      minExperienceYears: league.minExperienceYears == null || league.minExperienceYears <= 0 ? '' : league.minExperienceYears,
+      maxExperienceYears: league.maxExperienceYears == null || league.maxExperienceYears <= 0 ? '' : league.maxExperienceYears,
+      minAge: league.minAge == null || league.minAge <= 0 ? '' : league.minAge,
+      maxAge: league.maxAge == null || league.maxAge <= 0 ? '' : league.maxAge,
       allowsSabbatical: league.allowsSabbatical,
+      isPlayInBased: league.isPlayInBased ?? false,
       predecessorLeagueId: league.predecessorLeagueId ?? 0,
     });
     setShowExceptionPicker(false);
@@ -845,6 +860,101 @@ export default function LeagueDetail() {
     }
   }, [leagueForm.startDate, leagueForm.endDate, leagueForm.dayOfWeek]);
 
+  useEffect(() => {
+    const shouldLoadOptions =
+      canManageSetup &&
+      (waitlistModalOpen || (normalizedTab === 'configuration' && Boolean(league?.waitlistId)));
+    if (!shouldLoadOptions) return;
+    let cancelled = false;
+    void api
+      .get<WaitlistOption[]>('/leagues/waitlist-options')
+      .then((response) => {
+        if (!cancelled) setWaitlistOptions(response.data);
+      })
+      .catch(() => {
+        if (!cancelled) setWaitlistOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [waitlistModalOpen, canManageSetup, normalizedTab, league?.waitlistId]);
+
+  const attachedWaitlistSummary = useMemo(() => {
+    if (!league?.waitlistId) return null;
+    const option = waitlistOptions.find((row) => row.id === league.waitlistId);
+    return option?.name ?? `Waitlist #${league.waitlistId}`;
+  }, [league?.waitlistId, waitlistOptions]);
+
+  const closeWaitlistModal = () => {
+    setWaitlistModalOpen(false);
+    setAttachWaitlistId(null);
+    setNewWaitlistName('');
+  };
+
+  const refreshLeague = async () => {
+    const leaguesResponse = await get('/leagues');
+    const updated = leaguesResponse.find((row) => row.id === numericLeagueId);
+    if (!updated) return;
+    setLeague(updated);
+    setAllLeagues(leaguesResponse);
+  };
+
+  const handleCreateWaitlist = async () => {
+    if (!league) return;
+    setWaitlistActionLoading(true);
+    try {
+      const defaultName = newWaitlistName.trim() || `${league.name} waitlist`;
+      await api.post(`/leagues/${numericLeagueId}/waitlist`, { mode: 'create', name: defaultName });
+      await refreshLeague();
+      closeWaitlistModal();
+      showAlert('Waitlist created and attached.', 'success');
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to create waitlist'), 'error');
+    } finally {
+      setWaitlistActionLoading(false);
+    }
+  };
+
+  const handleAttachWaitlist = async () => {
+    if (attachWaitlistId == null) {
+      showAlert('Select a waitlist to attach.', 'warning');
+      return;
+    }
+    setWaitlistActionLoading(true);
+    try {
+      await api.post(`/leagues/${numericLeagueId}/waitlist`, { mode: 'attach', waitlistId: attachWaitlistId });
+      await refreshLeague();
+      closeWaitlistModal();
+      showAlert('Waitlist attached.', 'success');
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to attach waitlist'), 'error');
+    } finally {
+      setWaitlistActionLoading(false);
+    }
+  };
+
+  const handleDetachWaitlist = async () => {
+    const confirmed = await confirm({
+      title: 'Detach waitlist?',
+      message:
+        'This removes the waitlist from this league only. The waitlist and its queue entries are not deleted.',
+      variant: 'danger',
+      confirmText: 'Detach waitlist',
+    });
+    if (!confirmed) return;
+
+    setWaitlistActionLoading(true);
+    try {
+      await api.delete(`/leagues/${numericLeagueId}/waitlist`);
+      await refreshLeague();
+      showAlert('Waitlist detached from this league.', 'success');
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to detach waitlist'), 'error');
+    } finally {
+      setWaitlistActionLoading(false);
+    }
+  };
+
   const handleLeagueSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!league) return;
@@ -880,13 +990,16 @@ export default function LeagueDetail() {
           ? Math.round(Number(leagueForm.leagueFeeOverrideDollars) * 100)
           : null,
         requiresClubMembership: leagueForm.requiresClubMembership,
-        minExperienceYears: leagueForm.minExperienceYears === '' ? null : leagueForm.minExperienceYears,
-        minAge: leagueForm.minAge === '' ? null : leagueForm.minAge,
-        maxAge: leagueForm.maxAge === '' ? null : leagueForm.maxAge,
+        minExperienceYears:
+          leagueForm.minExperienceYears === '' || leagueForm.minExperienceYears <= 0 ? null : leagueForm.minExperienceYears,
+        maxExperienceYears:
+          leagueForm.maxExperienceYears === '' || leagueForm.maxExperienceYears <= 0 ? null : leagueForm.maxExperienceYears,
+        minAge: leagueForm.minAge === '' || leagueForm.minAge <= 0 ? null : leagueForm.minAge,
+        maxAge: leagueForm.maxAge === '' || leagueForm.maxAge <= 0 ? null : leagueForm.maxAge,
         firstDayOfPlay: null,
         lastDayOfPlay: null,
-        allowsWaitlist: leagueForm.allowsWaitlist,
         allowsSabbatical: leagueForm.allowsSabbatical,
+        isPlayInBased: leagueForm.isPlayInBased,
         predecessorLeagueId: leagueForm.predecessorLeagueId || null,
       };
 
@@ -1666,8 +1779,13 @@ export default function LeagueDetail() {
                     options={LEAGUE_FORMAT_SELECT_OPTIONS}
                     value={leagueForm.format}
                     onChange={(next) => {
-                      if (next != null && !Array.isArray(next))
-                        setLeagueForm({ ...leagueForm, format: next });
+                      if (next != null && !Array.isArray(next)) {
+                        setLeagueForm({
+                          ...leagueForm,
+                          format: next,
+                          isPlayInBased: next === 'instructional' ? false : leagueForm.isPlayInBased,
+                        });
+                      }
                     }}
                     listboxLabel="League format"
                     required
@@ -1719,7 +1837,6 @@ export default function LeagueDetail() {
                               ...(next === 'bring_your_own_team'
                                 ? {
                                     capacityType: 'team' as const,
-                                    allowsWaitlist: false,
                                     allowsSabbatical: false,
                                   }
                                 : { capacityType: 'individual' as const }),
@@ -1808,9 +1925,19 @@ export default function LeagueDetail() {
                     <LeagueConfigurationNumberInput
                       id="leagueCfgMinExperienceYears"
                       label="Minimum experience years"
+                      step={0.5}
                       value={leagueForm.minExperienceYears}
                       onChange={(minExperienceYears) =>
                         setLeagueForm({ ...leagueForm, minExperienceYears })
+                      }
+                    />
+                    <LeagueConfigurationNumberInput
+                      id="leagueCfgMaxExperienceYears"
+                      label="Maximum experience years"
+                      step={0.5}
+                      value={leagueForm.maxExperienceYears}
+                      onChange={(maxExperienceYears) =>
+                        setLeagueForm({ ...leagueForm, maxExperienceYears })
                       }
                     />
                     <LeagueConfigurationNumberInput
@@ -1844,13 +1971,74 @@ export default function LeagueDetail() {
                         setLeagueForm((prev) => ({
                           ...prev,
                           requiresClubMembership: selected.has('requiresClubMembership'),
-                          allowsWaitlist: selected.has('allowsWaitlist'),
                           allowsSabbatical: selected.has('allowsSabbatical'),
                         }));
                       }}
                       listboxLabel="League registration options"
                     />
                   </fieldset>
+
+                  {leagueForm.format !== 'instructional' ? (
+                    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                      <FormCheckbox
+                        label="Play-in based roster"
+                        helperText="Rosters are filled from play-in results instead of a waitlist."
+                        checked={leagueForm.isPlayInBased}
+                        disabled={Boolean(league?.waitlistId)}
+                        onChange={(checked) =>
+                          setLeagueForm((prev) => ({
+                            ...prev,
+                            isPlayInBased: checked,
+                          }))
+                        }
+                      />
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-col gap-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <h3 className="app-section-title">Waitlist</h3>
+                      {leagueForm.isPlayInBased ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Play-in based leagues do not use waitlists. Disable play-in registration to attach a waitlist.
+                        </p>
+                      ) : leagueForm.leagueType === 'bring_your_own_team' ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          BYOT waitlists require registrants to submit a full team roster when joining the queue.
+                        </p>
+                      ) : null}
+                      {league?.waitlistId ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          <Link
+                            to={`/waitlists/${league.waitlistId}`}
+                            className="font-medium text-primary-teal hover:underline"
+                          >
+                            View {attachedWaitlistSummary ?? `waitlist #${league.waitlistId}`}
+                          </Link>
+                        </p>
+                      ) : (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          No waitlist is attached.
+                        </p>
+                      )}
+                    </div>
+                    <div className="shrink-0">
+                      {league?.waitlistId ? (
+                        <Button
+                          type="button"
+                          variant="outline-danger"
+                          disabled={waitlistActionLoading}
+                          onClick={() => void handleDetachWaitlist()}
+                        >
+                          Detach waitlist
+                        </Button>
+                      ) : leagueForm.isPlayInBased ? null : (
+                        <Button type="button" variant="secondary" onClick={() => setWaitlistModalOpen(true)}>
+                          Add waitlist
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
                   <div>
                     <label htmlFor="leagueCfgPredecessorLeagueId" className="app-label">
@@ -2500,6 +2688,68 @@ export default function LeagueDetail() {
         </Modal>
       )}
 
+      <Modal isOpen={waitlistModalOpen} onClose={closeWaitlistModal} title="Add waitlist" size="md">
+        <div className="space-y-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Create a new waitlist for this league or attach an existing one. Attaching merges queue continuity with
+            other leagues that use the same waitlist.
+          </p>
+          <FormField label="New waitlist name" htmlFor="leagueWaitlistDialogName">
+            <input
+              id="leagueWaitlistDialogName"
+              className="app-input"
+              value={newWaitlistName}
+              onChange={(event) => setNewWaitlistName(event.target.value)}
+              placeholder={league ? `${league.name} waitlist` : 'League waitlist'}
+            />
+          </FormField>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={waitlistActionLoading}
+            onClick={() => void handleCreateWaitlist()}
+          >
+            Create and attach waitlist
+          </Button>
+          <div className="relative border-t border-gray-200 pt-6 dark:border-gray-700">
+            <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+              Or
+            </span>
+            <FormField label="Attach existing waitlist" htmlFor="leagueWaitlistDialogAttach">
+              <ChoiceInput<number>
+                inputId="leagueWaitlistDialogAttach"
+                layout="popover"
+                value={attachWaitlistId}
+                onChange={(next) => {
+                  if (typeof next === 'number') setAttachWaitlistId(next);
+                }}
+                options={waitlistOptions.map((option) => ({
+                  value: option.id,
+                  label: option.name,
+                  description: `${option.activeEntryCount} active entries · ${option.attachedLeagues
+                    .map((attached) => `${attached.name}${attached.sessionName ? ` (${attached.sessionName})` : ''}`)
+                    .join(', ') || 'No leagues attached yet'}`,
+                }))}
+                emptyText="No waitlists available yet."
+              />
+            </FormField>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" disabled={waitlistActionLoading} onClick={closeWaitlistModal}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={waitlistActionLoading || attachWaitlistId == null}
+                onClick={() => void handleAttachWaitlist()}
+              >
+                Attach selected waitlist
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
       <Modal
         isOpen={Boolean(selectedTeam)}
         onClose={() => setSelectedTeam(null)}
@@ -2810,11 +3060,15 @@ function LeagueConfigurationNumberInput({
   label,
   value,
   onChange,
+  step = 1,
+  min = 0,
 }: {
   id: string;
   label: string;
   value: number | '';
   onChange: (value: number | '') => void;
+  step?: number;
+  min?: number;
 }) {
   return (
     <div>
@@ -2824,6 +3078,8 @@ function LeagueConfigurationNumberInput({
       <input
         id={id}
         type="number"
+        min={min}
+        step={step}
         value={value}
         onChange={(event) => onChange(event.target.value === '' ? '' : Number(event.target.value))}
         className="app-input"

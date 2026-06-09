@@ -20,7 +20,6 @@ export default function AdminDatabaseConfig() {
   const [postgresPassword, setPostgresPassword] = useState('');
   const [postgresSSL, setPostgresSSL] = useState(false);
   const [hasExistingPostgresConfig, setHasExistingPostgresConfig] = useState(false);
-  const [adminEmails, setAdminEmails] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loadingConfig, setLoadingConfig] = useState(true);
@@ -47,9 +46,6 @@ export default function AdminDatabaseConfig() {
           setPostgresSSL(config.postgres.ssl || false);
           setHasExistingPostgresConfig(true);
         }
-        if (config.adminEmails) {
-          setAdminEmails(config.adminEmails.join(', '));
-        }
       }
     } catch (error: unknown) {
       console.error('Failed to load database config:', error);
@@ -65,20 +61,8 @@ export default function AdminDatabaseConfig() {
     setLoading(true);
 
     try {
-      const adminEmailList = adminEmails
-        .split(',')
-        .map((email) => email.trim())
-        .filter(Boolean);
-
-      if (adminEmailList.length === 0) {
-        setError('Please provide at least one admin email address');
-        setLoading(false);
-        return;
-      }
-
       const payload: {
         databaseType: 'sqlite' | 'postgres';
-        adminEmails: string[];
         sqlite?: { path: string };
         postgres?: {
           host: string;
@@ -90,7 +74,6 @@ export default function AdminDatabaseConfig() {
         };
       } = {
         databaseType,
-        adminEmails: adminEmailList,
       };
 
       if (databaseType === 'sqlite') {
@@ -297,25 +280,6 @@ export default function AdminDatabaseConfig() {
                 </div>
               </div>
             )}
-
-            {/* Admin Emails */}
-            <div>
-              <label className="app-label">
-                Administrator Email Addresses
-              </label>
-              <textarea
-                value={adminEmails}
-                onChange={(e) => setAdminEmails(e.target.value)}
-                className="app-input"
-                rows={3}
-                placeholder="admin1@example.com, admin2@example.com"
-                required
-              />
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Enter email addresses separated by commas. These users will have administrator
-                privileges.
-              </p>
-            </div>
 
             {error && (
               <div className="app-alert-error">

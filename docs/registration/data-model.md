@@ -714,6 +714,7 @@ Recommended fields:
 - Position sort key
 - Joined at
 - Decline count
+- Offer response preference
 - Status
 - Rolled over from waitlist entry ID, nullable
 - Created at
@@ -723,6 +724,14 @@ Recommended fields:
 
 - `add`
 - `replace`
+
+### Offer response preference enum
+
+- `ask`
+- `auto_accept`
+- `auto_decline`
+
+Default: `ask`.
 
 ### Status enum
 

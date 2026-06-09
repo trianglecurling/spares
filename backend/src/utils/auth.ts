@@ -5,7 +5,6 @@ import {
   buildAuthzClaimsForMember,
   buildAuthzClaimsForImpersonatedMember,
   hasScope,
-  isInServerAdminListsByEmail,
 } from './rbac.js';
 
 export function generateAuthCode(): string {
@@ -32,14 +31,8 @@ export async function buildJwtPayloadForMember(
   };
 }
 
-export function generateToken(payload: JWTPayload): string {
-  // Token expires in 30 minutes.
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: '30m' });
-}
-
-export function generateEmailLinkToken(payload: JWTPayload): string {
-  // Token expires in 24 hours for email links
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: '24h' });
+export function generateAccessToken(payload: JWTPayload, expiresInMinutes: number): string {
+  return jwt.sign(payload, config.jwtSecret, { expiresIn: `${expiresInMinutes}m` });
 }
 
 export function verifyToken(token: string): JWTPayload | null {
@@ -100,12 +93,7 @@ export function isServerAdmin(member: Member): boolean {
     return member.authz?.isServerAdmin === true;
   }
   if (member.authz?.isServerAdmin) return true;
-  if (isInServerAdminsList(member)) return true;
   return member.is_server_admin === 1;
-}
-
-export function isInServerAdminsList(member: Member): boolean {
-  return isInServerAdminListsByEmail(member.email);
 }
 
 export function normalizePhone(phone: string): string {

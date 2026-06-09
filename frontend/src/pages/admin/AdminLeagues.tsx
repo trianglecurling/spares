@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { HiChevronDown } from 'react-icons/hi2';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
@@ -52,11 +52,13 @@ interface League {
   registrationFeeOverrideMinor: number | null;
   requiresClubMembership: boolean;
   minExperienceYears: number | null;
+  maxExperienceYears?: number | null;
   minAge: number | null;
   maxAge: number | null;
   firstDayOfPlay: string | null;
   lastDayOfPlay: string | null;
   allowsWaitlist: boolean;
+  waitlistId?: number | null;
   allowsSabbatical: boolean;
   predecessorLeagueId: number | null;
   successorLeagueId: number | null;
@@ -93,7 +95,6 @@ function compareIsoDate(a: string, b: string): number {
 export default function Leagues() {
   const { showAlert } = useAlert();
   const { member } = useAuth();
-  const navigate = useNavigate();
   const headerExtrasId = useId();
   const histSeasonFieldId = `${headerExtrasId}-hist-season`;
   const histSessionFieldId = `${headerExtrasId}-hist-session`;
@@ -495,13 +496,12 @@ export default function Leagues() {
         <div key={league.id} className="app-card p-6">
           <div className="flex justify-between items-start">
             <div className="flex-1">
-              <button
-                type="button"
-                onClick={() => navigate(`/leagues/${league.id}`)}
-                className="text-left text-xl font-semibold mb-2 text-primary-teal hover:underline"
+              <Link
+                to={`/leagues/${league.id}`}
+                className="mb-2 inline-block text-left text-xl font-semibold text-primary-teal hover:underline"
               >
                 {league.name}
-              </button>
+              </Link>
               <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                 <p>
                   <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
@@ -518,6 +518,11 @@ export default function Leagues() {
                   <span className="font-medium dark:text-gray-300">Season:</span>{' '}
                   {formatDateDisplay(league.startDate)} – {formatDateDisplay(league.endDate)}
                 </p>
+                {league.waitlistId ? (
+                  <p>
+                    <span className="font-medium dark:text-gray-300">Waitlist:</span> #{league.waitlistId}
+                  </p>
+                ) : null}
                 <p>
                   <span className="font-medium dark:text-gray-300">Registration:</span>{' '}
                   {getSessionName(league.sessionId)} -{' '}
@@ -572,17 +577,14 @@ export default function Leagues() {
                     className="absolute right-0 top-full z-50 mt-1 min-w-[16rem] rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-800"
                   >
                     <li role="none">
-                      <button
-                        type="button"
+                      <Link
+                        to="/leagues/copy-to-session"
                         role="menuitem"
-                        className="w-full px-4 py-2 text-left text-sm text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-700"
-                        onClick={() => {
-                          setAddLeagueMenuOpen(false);
-                          navigate('/leagues/copy-to-session');
-                        }}
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-700"
+                        onClick={() => setAddLeagueMenuOpen(false)}
                       >
                         Copy leagues to next session
-                      </button>
+                      </Link>
                     </li>
                   </ul>
                 ) : null}

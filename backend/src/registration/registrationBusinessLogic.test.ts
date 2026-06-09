@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ageOnLeagueStart, calculateClubExperienceYears } from './registrationAgeExperience.js';
+import { ageOnLeagueStart, calculateClubExperienceYears, totalExperienceYears } from './registrationAgeExperience.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import { calculateRegistrationFees } from './registrationFeeCalculator.js';
 import { validateLeagueEligibility, validateSpareOnlyEligibility, validateWaitlistEligibility } from './registrationEligibility.js';
@@ -83,6 +83,91 @@ describe('registration business logic', () => {
     expect(fees.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee', 'spare_only_fee']);
     expect(fees.totalDueMinor).toBe(12500);
     expect(validateSpareOnlyEligibility(context).eligible).toBe(true);
+  });
+
+  test('league play with only fee-0 leagues silently charges the basic ice fee', () => {
+    const freeLeague = league({ id: 200, name: 'Daytime League', registrationFeeMinor: 0, predecessorLeagueId: null });
+    const context = registrationContext({
+      membershipOption: 'regular',
+      leagues: { [freeLeague.id]: freeLeague },
+      participatedLeagueIds: [],
+      selections: [selection({ selectionType: 'waitlist_add', leagueId: freeLeague.id })],
+    });
+    const fees = calculateRegistrationFees(context);
+    expect(fees.lineItems.map((item) => item.lineType)).toContain('spare_only_fee');
+  });
+
+  test('basic ice daytime leagues register directly without waitlists', () => {
+    const daytimeLeague = league({
+      id: 201,
+      name: 'Tuesday Daytime',
+      registrationFeeMinor: 0,
+      allowsWaitlist: false,
+      predecessorLeagueId: null,
+    });
+    const context = registrationContext({
+      membershipOption: 'regular_spare_only',
+      leagues: { [daytimeLeague.id]: daytimeLeague },
+      selections: [selection({ selectionType: 'instructional_join', leagueId: daytimeLeague.id })],
+    });
+    expect(validateRegistrationSelections(context).allowed).toBe(true);
+    expect(evaluateRegistrationDraft(context).paymentDecision.outcome).toBe('immediate_payment');
+  });
+
+  test('basic ice daytime leagues reject stale waitlist fulfillment preferences', () => {
+    const daytimeLeague = league({
+      id: 202,
+      name: 'Wednesday Daytime',
+      registrationFeeMinor: 0,
+      allowsWaitlist: false,
+      predecessorLeagueId: null,
+    });
+    const context = registrationContext({
+      membershipOption: 'regular_spare_only',
+      leagues: { [daytimeLeague.id]: daytimeLeague },
+      selections: [selection({ selectionType: 'instructional_join', leagueId: daytimeLeague.id })],
+      desiredAddWaitlistLeagueCount: 2,
+    });
+    expect(validateRegistrationSelections(context).blockingErrors.map((error) => error.code)).toContain(
+      'waitlist_fulfillment_not_applicable',
+    );
+  });
+
+  test('instructional join does not count toward the first two league limit', () => {
+    const instructionalLeague = league({
+      id: 210,
+      name: 'Instructional',
+      format: 'instructional',
+      allowsWaitlist: false,
+      predecessorLeagueId: null,
+      minExperienceYears: 0,
+    });
+    const leagueA = league({ id: 211, predecessorLeagueId: 90 });
+    const leagueB = league({ id: 212, predecessorLeagueId: 91 });
+    const context = registrationContext({
+      leagues: {
+        [instructionalLeague.id]: instructionalLeague,
+        [leagueA.id]: leagueA,
+        [leagueB.id]: leagueB,
+        91: league({ id: 91, predecessorLeagueId: null }),
+      },
+      participatedLeagueIds: [90, 91],
+      selections: [
+        selection({ selectionType: 'guaranteed_return', leagueId: leagueA.id }),
+        selection({ selectionType: 'guaranteed_return', leagueId: leagueB.id }),
+        selection({ selectionType: 'instructional_join', leagueId: instructionalLeague.id }),
+      ],
+    });
+    expect(validateRegistrationSelections(context).allowed).toBe(true);
+  });
+
+  test('league play with a paid league does not charge the basic ice fee', () => {
+    const context = registrationContext({
+      membershipOption: 'regular',
+      selections: [selection({ selectionType: 'guaranteed_return', leagueId: 100 })],
+    });
+    const fees = calculateRegistrationFees(context);
+    expect(fees.lineItems.map((item) => item.lineType)).not.toContain('spare_only_fee');
   });
 
   test('social membership cannot include spare-only basic ice privileges', () => {
@@ -210,7 +295,43 @@ describe('registration business logic', () => {
     expectReason(experienced, 'insufficient_experience');
   });
 
-  test('session experience accrues as half-years and is capped per season', () => {
+  test('blank league age and experience constraints stored as zero are ignored for eligibility', () => {
+    const context = registrationContext({
+      registrant: { memberId: 20, hasUserAccount: true, isReturningMember: true, dateOfBirth: '1990-01-01' },
+      experience: {
+        type: 'specified_years',
+        selfReportedYears: 4,
+        baselineOtherClubExperienceYears: 0,
+        baselineClubExperienceYears: 0,
+        completedSessions: [],
+      },
+    });
+
+    expect(validateLeagueEligibility(context, league({ minAge: 0, maxAge: 0 })).eligible).toBe(true);
+    expect(validateLeagueEligibility(context, league({ minExperienceYears: 0, maxExperienceYears: 0 })).eligible).toBe(true);
+    expect(validateLeagueEligibility(context, league({ maxAge: 17 })).eligible).toBe(false);
+    expect(validateLeagueEligibility(context, league({ maxExperienceYears: 2 })).eligible).toBe(false);
+  });
+
+  test('total experience combines baselines, self-report, and computed club sessions', () => {
+    expect(
+      totalExperienceYears({
+        experienceType: 'known_existing',
+        baselines: { baselineOtherClubExperienceYears: 2, baselineClubExperienceYears: 1.5 },
+        completedSessions: [{ leagueId: 1, seasonKey: '2025-26' }],
+      })
+    ).toBe(4.5);
+    expect(
+      totalExperienceYears({
+        experienceType: 'specified_years',
+        selfReportedYears: 3,
+        baselines: { baselineOtherClubExperienceYears: 0, baselineClubExperienceYears: 0 },
+        completedSessions: [],
+      })
+    ).toBe(3);
+  });
+
+  test('session experience accrues as one year per season regardless of session count', () => {
     expect(
       calculateClubExperienceYears([
         { leagueId: 1, seasonKey: '2025-26' },
@@ -218,7 +339,7 @@ describe('registration business logic', () => {
         { leagueId: 3, seasonKey: '2025-26' },
         { leagueId: 4, seasonKey: '2026-27' },
       ])
-    ).toBe(1.5);
+    ).toBe(2);
   });
 
   test('returning member can select two guaranteed leagues but not three protected claims', () => {
@@ -322,8 +443,21 @@ describe('registration business logic', () => {
   });
 
   test('ADD waitlists are allowed with zero or one league, unlimited, and blocked with two leagues', () => {
+    const friday = league({ id: 51 });
+    const thursday = league({ id: 52 });
+    const addFriday = selection({ selectionType: 'waitlist_add', leagueId: friday.id, rank: 1 });
+    const addThursday = selection({ selectionType: 'waitlist_add', leagueId: thursday.id, rank: 2 });
+    const twoAddWaitlists = validateRegistrationSelections(
+      registrationContext({
+        activeLeagueIds: [],
+        leagues: { [friday.id]: friday, [thursday.id]: thursday },
+        selections: [addFriday, addThursday],
+        desiredAddWaitlistLeagueCount: 1,
+      }),
+    );
+    expect(twoAddWaitlists.allowed).toBe(true);
+
     const addSelection = selection({ selectionType: 'waitlist_add' });
-    expect(validateRegistrationSelections(registrationContext({ activeLeagueIds: [], selections: [addSelection, addSelection] })).allowed).toBe(true);
     expect(validateRegistrationSelections(registrationContext({ activeLeagueIds: [1], selections: [addSelection] })).allowed).toBe(true);
     const blocked = validateRegistrationSelections(registrationContext({ activeLeagueIds: [1, 2], selections: [addSelection] }));
     expectReason(blocked, 'add_waitlist_requires_zero_or_one_leagues');
@@ -354,8 +488,8 @@ describe('registration business logic', () => {
 
     const context = registrationContext({
       existingWaitlistEntries: [
-        { leagueId: 10, entryType: 'replace', replacesLeagueId: 1, status: 'active' },
-        { leagueId: 11, entryType: 'replace', replacesLeagueId: 2, status: 'active' },
+        { waitlistId: 10, leagueId: 10, entryType: 'replace', replacesLeagueId: 1, status: 'active' },
+        { waitlistId: 11, leagueId: 11, entryType: 'replace', replacesLeagueId: 2, status: 'active' },
       ],
       selections: [selection({ selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
     });
@@ -380,10 +514,29 @@ describe('registration business logic', () => {
     const result = evaluateWaitlistCleanup(
       registrationContext({
         activeLeagueIds: [1, 2],
-        existingWaitlistEntries: [{ leagueId: 100, entryType: 'add', status: 'active' }],
+        existingWaitlistEntries: [{ waitlistId: 100, leagueId: 100, entryType: 'add', status: 'active' }],
       })
     );
     expectReason(result, 'add_waitlist_cleanup_required');
+  });
+
+  test('existing waitlist entries are keyed by waitlist, not league row', () => {
+    const context = registrationContext({
+      leagues: {
+        200: league({ id: 200, sessionId: 10, waitlistId: 50, allowsWaitlist: true }),
+        201: league({ id: 201, sessionId: 9, waitlistId: 50, allowsWaitlist: true }),
+      },
+      existingWaitlistEntries: [
+        {
+          waitlistId: 50,
+          leagueId: 201,
+          entryType: 'add',
+          status: 'active',
+        },
+      ],
+      selections: [selection({ selectionType: 'waitlist_add', leagueId: 200 })],
+    });
+    expect(validateRegistrationSelections(context).allowed).toBe(true);
   });
 
   test('third-league interest preserves ranking, has no limit, defers payment, and blocks BYOT', () => {
@@ -418,8 +571,8 @@ describe('registration business logic', () => {
     expectReason(validateRegistrationSelections(context), 'guaranteed_return_requires_predecessor_participation');
   });
 
-  test('new members can request BYOT with teammates, BYOT cannot be third, and BYOT does not use waitlist', () => {
-    const byot = league({ leagueType: 'bring_your_own_team', capacityType: 'team', allowsWaitlist: false, allowsSabbatical: false });
+  test('new members can request BYOT with teammates, BYOT cannot be third, and BYOT waitlists require a full roster', () => {
+    const byot = league({ leagueType: 'bring_your_own_team', capacityType: 'team', allowsWaitlist: true, allowsSabbatical: false });
     const context = registrationContext({
       registrant: { memberId: 20, hasUserAccount: true, isReturningMember: false, dateOfBirth: '1990-01-01' },
       leagues: { [byot.id]: byot },
@@ -428,7 +581,71 @@ describe('registration business logic', () => {
     expect(validateRegistrationSelections(context).allowed).toBe(true);
     expectReason(validateRegistrationSelections({ ...context, selections: [selection({ selectionType: 'byot_request' })] }), 'byot_requires_teammates');
     expectReason(validateRegistrationSelections({ ...context, activeLeagueIds: [1, 2] }), 'byot_cannot_be_third_league');
-    expectReason(validateRegistrationSelections({ ...context, selections: [selection({ selectionType: 'waitlist_add' })] }), 'byot_no_waitlist');
+    expectReason(
+      validateRegistrationSelections({ ...context, selections: [selection({ selectionType: 'waitlist_add', byotTeammateText: 'A, B' })] }),
+      'byot_waitlist_requires_full_roster'
+    );
+    expect(
+      validateRegistrationSelections({
+        ...context,
+        selections: [selection({ selectionType: 'waitlist_add', byotTeammateText: 'A, B, C, D' })],
+      }).allowed
+    ).toBe(true);
+
+    expect(
+      validateRegistrationSelections({
+        ...context,
+        selections: [
+          selection({
+            selectionType: 'waitlist_add',
+            teamRosterPlacements: [
+              { memberId: 20, entryType: 'add' },
+              { memberId: 21, entryType: 'add' },
+              { memberId: 22, entryType: 'add' },
+            ],
+            byotTeammateText: 'Pending Teammate',
+          }),
+        ],
+      }).allowed
+    ).toBe(true);
+
+    const playInLeague = league({
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+    });
+    const playInContext = registrationContext({
+      registrant: { memberId: 20, hasUserAccount: true, isReturningMember: false, dateOfBirth: '1990-01-01' },
+      leagues: { [playInLeague.id]: playInLeague },
+      selections: [
+        selection({
+          leagueId: playInLeague.id,
+          selectionType: 'play_in_request',
+          teamRosterPlacements: [
+            { memberId: 20, entryType: 'add' },
+            { memberId: 21, entryType: 'add' },
+            { memberId: 22, entryType: 'add' },
+          ],
+          byotTeammateText: 'Pending Teammate',
+        }),
+      ],
+    });
+    expect(validateRegistrationSelections(playInContext).allowed).toBe(true);
+
+    expect(
+      validateRegistrationSelections({
+        ...playInContext,
+        selections: [
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            byotTeammateText: 'Amy\nBob\nCara',
+          }),
+        ],
+      }).allowed,
+    ).toBe(true);
   });
 
   test('Junior Recreational blocks other leagues and spare-only', () => {
@@ -458,7 +675,66 @@ describe('registration business logic', () => {
     expectReason(assisted.paymentDecision, 'junior_financial_assistance_requires_review');
 
     const jacFees = calculateRegistrationFees(registrationContext({ selections: [selection({ selectionType: 'return_subject_to_availability' })] }));
-    expect(jacFees.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee', 'league_fee']);
+    expect(jacFees.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);
+  });
+
+  test('play-in ADD defers payment and same-fee REPLACE allows immediate payment', () => {
+    const playInLeague = league({
+      id: 110,
+      isPlayInBased: true,
+      allowsWaitlist: false,
+      registrationFeeMinor: 30000,
+    });
+    const heldLeague = league({
+      id: 111,
+      name: 'Monday League',
+      registrationFeeMinor: 30000,
+    });
+    const higherFeeLeague = league({
+      id: 112,
+      name: 'Wednesday League',
+      registrationFeeMinor: 35000,
+    });
+
+    const addDraft = evaluateRegistrationDraft(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [selection({ leagueId: playInLeague.id, selectionType: 'play_in_request' })],
+      }),
+    );
+    expect(addDraft.paymentDecision.outcome).toBe('deferred_payment');
+    expectReason(addDraft.paymentDecision, 'play_in_placement_pending');
+
+    const sameFeeReplaceDraft = evaluateRegistrationDraft(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague, [heldLeague.id]: heldLeague },
+        activeLeagueIds: [heldLeague.id],
+        selections: [
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            replacesLeagueId: heldLeague.id,
+          }),
+        ],
+      }),
+    );
+    expect(sameFeeReplaceDraft.paymentDecision.outcome).toBe('immediate_payment');
+
+    const diffFeeReplaceDraft = evaluateRegistrationDraft(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague, [higherFeeLeague.id]: higherFeeLeague },
+        activeLeagueIds: [higherFeeLeague.id],
+        selections: [
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            replacesLeagueId: higherFeeLeague.id,
+          }),
+        ],
+      }),
+    );
+    expect(diffFeeReplaceDraft.paymentDecision.outcome).toBe('deferred_payment');
+    expectReason(diffFeeReplaceDraft.paymentDecision, 'play_in_placement_pending');
   });
 
   test('payment decision covers guaranteed, waitlist-only, non-guaranteed, sabbatical, and BYOT cases', () => {
@@ -471,7 +747,7 @@ describe('registration business logic', () => {
       registrationContext({ selections: [selection({ selectionType: 'return_subject_to_availability' })] })
     );
     expect(nonGuaranteed.paymentDecision.outcome).toBe('deferred_payment');
-    expectReason(nonGuaranteed.paymentDecision, 'non_guaranteed_league_defers_payment');
+    expectReason(nonGuaranteed.paymentDecision, 'third_league_interest_defers_payment');
 
     expect(
       evaluateRegistrationDraft(registrationContext({ membershipOption: 'none', selections: [selection({ selectionType: 'sabbatical' })] }))
@@ -522,6 +798,29 @@ describe('registration business logic', () => {
     const decision = decideRegistrationPayment({ context, feePreview });
     expect(decision.totalDueMinor).toBe(10000);
     expect(decision.createStripeCheckoutNow).toBe(true);
+  });
+
+  test('multiple ADD waitlists require fulfillment count and priority ranks', () => {
+    const friday = league({ id: 41, name: 'Friday' });
+    const thursday = league({ id: 42, name: 'Thursday' });
+    const context = registrationContext({
+      activeLeagueIds: [],
+      leagues: { [friday.id]: friday, [thursday.id]: thursday },
+      selections: [
+        selection({ selectionType: 'waitlist_add', leagueId: friday.id, rank: 1 }),
+        selection({ selectionType: 'waitlist_add', leagueId: thursday.id, rank: 2 }),
+      ],
+      desiredAddWaitlistLeagueCount: null,
+    });
+    const missingCount = validateRegistrationSelections(context);
+    expect(missingCount.allowed).toBe(false);
+    expectReason(missingCount, 'waitlist_fulfillment_count_required');
+
+    const valid = validateRegistrationSelections({
+      ...context,
+      desiredAddWaitlistLeagueCount: 1,
+    });
+    expect(valid.allowed).toBe(true);
   });
 
   test('Membership-only and basic ice curling registrations require immediate payment', () => {

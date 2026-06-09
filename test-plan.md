@@ -856,20 +856,21 @@
 
 ---
 
-### Test Case 10.6: Authentication Token Expiration
-**Objective:** Verify authentication tokens expire appropriately
+### Test Case 10.6: Authentication Token Refresh
+**Objective:** Verify expired access tokens refresh transparently while refresh tokens remain valid
 
 **Steps:**
 1. User logs in successfully
-2. Note current time
-3. Wait for token expiration (if implemented)
-4. Attempt to access protected route
-5. Verify user is redirected to login
-6. Verify user must log in again
+2. Set a short session token lifetime on Server config
+3. Wait for the access token to expire while keeping the refresh token valid
+4. Attempt to access a protected route or make a protected API request
+5. Verify the request succeeds after a transparent refresh
+6. Expire or revoke the refresh token and make another protected request
 
 **Expected Results:**
-- Expired tokens are rejected
-- Users are prompted to re-authenticate
+- Expired access tokens are rejected by the API
+- The frontend uses the refresh token to obtain a new access token and retries once
+- Users are only prompted to re-authenticate when the refresh token is invalid, revoked, or expired
 
 ---
 

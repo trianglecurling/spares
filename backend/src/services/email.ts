@@ -154,14 +154,14 @@ export interface EmailDeliveryResult {
   error?: string;
 }
 
-function getUnsubscribeFooter(memberToken?: string): string {
-  const unsubscribeUrl = memberToken
-    ? `${config.frontendUrl}/unsubscribe?token=${memberToken}`
-    : `${config.frontendUrl}/unsubscribe`;
+function getLoginRedirectUrl(pathAndSearch: string): string {
+  return `${config.frontendUrl}/login?redirect=${encodeURIComponent(pathAndSearch)}`;
+}
 
+function getUnsubscribeFooter(): string {
+  const unsubscribeUrl = `${config.frontendUrl}/unsubscribe`;
   return `
     <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 12px;">
-      <p><strong style="color: #d32f2f;">⚠️ Do not forward this email!</strong> The links in this email are tied to your account. If someone else has access to them, they will be able to access your account.</p>
       <p>Triangle Curling Club</p>
       <p><a href="${unsubscribeUrl}" style="color: #666;">Unsubscribe from all emails</a></p>
     </div>
@@ -170,7 +170,7 @@ function getUnsubscribeFooter(memberToken?: string): string {
 
 function buildFullHtmlContent(
   htmlContent: string,
-  memberToken?: string,
+  _memberToken?: string,
   includeUnsubscribeFooter = true
 ): string {
   return `
@@ -181,7 +181,7 @@ function buildFullHtmlContent(
     </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       ${htmlContent}
-      ${includeUnsubscribeFooter ? getUnsubscribeFooter(memberToken) : ''}
+      ${includeUnsubscribeFooter ? getUnsubscribeFooter() : ''}
     </body>
     </html>
   `;
@@ -296,50 +296,6 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
   }
 }
 
-export async function sendWaitlistOfferEmail(input: {
-  recipientEmail: string;
-  recipientName: string;
-  leagueName: string;
-  offerType: 'permanent' | 'temporary_sabbatical_fill';
-  deadline: Date;
-  declineUrl: string;
-}): Promise<void> {
-  const isTemporary = input.offerType === 'temporary_sabbatical_fill';
-  const deadlineText = input.deadline.toLocaleString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  });
-  const temporaryNotice = isTemporary
-    ? `
-      <p><strong>This is a temporary sabbatical-fill spot.</strong> You may play in this spot for the session, but the original member may reclaim the spot in a future session. You will keep your position on the waitlist for a permanent spot.</p>
-    `
-    : '';
-
-  await sendEmail(
-    {
-      to: input.recipientEmail,
-      recipientName: input.recipientName,
-      subject: `${isTemporary ? 'Temporary sabbatical-fill' : 'League'} offer: ${input.leagueName}`,
-      htmlContent: `
-        <h2>${isTemporary ? 'Temporary sabbatical-fill offer' : 'League spot offer'}</h2>
-        <p>Hi ${input.recipientName},</p>
-        <p>Triangle Curling Club has an offer for you in <strong>${input.leagueName}</strong>.</p>
-        ${temporaryNotice}
-        <p><strong>Deadline to decline:</strong> ${deadlineText}</p>
-        <p>If you do not decline this offer within 24 hours, we will treat the offer as accepted and add you to the league. If payment is required, staff will follow up with you.</p>
-        <p>If you need to decline this offer, use this link before the deadline:</p>
-        <p><a href="${input.declineUrl}">Decline this waitlist offer</a></p>
-        <p>If you have questions, reply to this email or contact Triangle Curling Club staff.</p>
-      `,
-      includeUnsubscribeFooter: false,
-    }
-  );
-}
-
 export async function sendAuthCodeEmail(
   email: string,
   name: string,
@@ -376,7 +332,6 @@ export async function sendSpareRequestEmail(
     message?: string;
     invitedMemberNames?: string[]; // For private requests
   },
-  acceptToken: string,
   spareRequestId: number
 ): Promise<void> {
   const positionText = requestDetails.position
@@ -402,6 +357,8 @@ export async function sendSpareRequestEmail(
   const leagueLine = requestDetails.leagueName
     ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
     : '';
+  const acceptUrl = getLoginRedirectUrl(`/spare-request/respond?requestId=${spareRequestId}`);
+  const declineUrl = getLoginRedirectUrl(`/spare-request/decline?requestId=${spareRequestId}`);
 
   const htmlContent = `
     <h2>New Spare Request</h2>
@@ -413,7 +370,7 @@ export async function sendSpareRequestEmail(
     ${invitedMembersList}
     ${messageText}
     <p>
-      <a href="${config.frontendUrl}/spare-request/respond?token=${acceptToken}&requestId=${spareRequestId}" 
+      <a href="${acceptUrl}" 
          style="display: inline-block; background-color: #01B9BC; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 10px;">
         Accept This Spare
       </a>
@@ -421,7 +378,7 @@ export async function sendSpareRequestEmail(
     ${
       requestDetails.invitedMemberNames && requestDetails.invitedMemberNames.length > 0
         ? `<p>
-      <a href="${config.frontendUrl}/spare-request/decline?token=${acceptToken}&requestId=${spareRequestId}"
+      <a href="${declineUrl}"
          style="display: inline-block; background-color: #6b7280; color: white; padding: 10px 18px; text-decoration: none; border-radius: 4px; margin-top: 8px;">
         Decline
       </a>
@@ -429,7 +386,7 @@ export async function sendSpareRequestEmail(
     <p style="color: #666; font-size: 14px;">If you decline, you can optionally include a message.</p>`
         : ''
     }
-    <p style="color: #666; font-size: 14px;">Or copy this link: ${config.frontendUrl}/spare-request/respond?token=${acceptToken}&requestId=${spareRequestId}</p>
+    <p style="color: #666; font-size: 14px;">Or copy this link: ${acceptUrl}</p>
   `;
 
   await sendEmail(
@@ -438,8 +395,7 @@ export async function sendSpareRequestEmail(
       subject: `Spare needed: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName,
-    },
-    acceptToken
+    }
   );
 }
 
@@ -970,16 +926,16 @@ export async function sendSpareOfferCancellationConfirmationEmail(
 
 export async function sendWelcomeEmail(
   email: string,
-  name: string,
-  loginToken: string
+  name: string
 ): Promise<void> {
+  const loginUrl = `${config.frontendUrl}/login`;
   const htmlContent = `
     <h2>Welcome to Triangle Curling</h2>
     <p>Hi ${name},</p>
     <p>Your Triangle Curling Club member account gives you access to leagues, events, and other club resources—including finding spares when you can&rsquo;t make your game, and signing up to spare for others.</p>
-    <p>To get started, click the link below to set up your profile and availability:</p>
+    <p>To get started, sign in with your email address and the one-time code we send you.</p>
     <p>
-      <a href="${config.frontendUrl}?token=${loginToken}" 
+      <a href="${loginUrl}" 
          style="display: inline-block; background-color: #fa4c06; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 10px;">
         Get Started
       </a>
@@ -993,8 +949,7 @@ export async function sendWelcomeEmail(
       subject: 'Welcome to Triangle Curling',
       htmlContent,
       recipientName: name,
-    },
-    loginToken
+    }
   );
 }
 
@@ -1073,6 +1028,7 @@ interface DonationReceiptEmailOptions {
   currency: string;
   receivedAt: Date;
   treasurerName: string;
+  paymentDetailsUrl?: string | null;
 }
 
 function formatDonationAmount(amountMinor: number, currency: string): string {
@@ -1099,12 +1055,17 @@ export async function sendDonationReceiptEmail(options: DonationReceiptEmailOpti
   const receivedDate = escapeHtmlEmail(formatDonationReceiptDate(options.receivedAt));
   const treasurerName = escapeHtmlEmail(options.treasurerName);
 
+  const paymentDetailsLine = options.paymentDetailsUrl
+    ? `<p><a href="${escapeHtmlEmail(options.paymentDetailsUrl)}">View payment details</a></p>`
+    : '';
+
   const htmlContent = `
     <p>Dear ${donorName},</p>
     <p>
       Thank you for your generous donation of ${amount} to Triangle Curling Club, received on ${receivedDate}.
       We sincerely appreciate your support of our mission and the impact your contribution makes.
     </p>
+    ${paymentDetailsLine}
     <p>
       Triangle Curling Club of North Carolina is a qualified 501(c)(3) tax-exempt organization.
       Our EIN is 56-1997682. No goods or services were provided in exchange for this contribution, so the full
@@ -1122,10 +1083,27 @@ export async function sendDonationReceiptEmail(options: DonationReceiptEmailOpti
     </p>
   `;
 
+  const textContent = [
+    `Dear ${options.donorName},`,
+    '',
+    `Thank you for your generous donation of ${formatDonationAmount(options.amountMinor, options.currency)} to Triangle Curling Club, received on ${formatDonationReceiptDate(options.receivedAt)}.`,
+    options.paymentDetailsUrl ? `View payment details: ${options.paymentDetailsUrl}` : null,
+    '',
+    'Triangle Curling Club of North Carolina is a qualified 501(c)(3) tax-exempt organization.',
+    'Our EIN is 56-1997682. No goods or services were provided in exchange for this contribution, so the full amount of your donation may be tax-deductible to the extent allowed by law.',
+    '',
+    'Thank you again for your kindness and support.',
+    '',
+    options.treasurerName,
+    'Treasurer',
+    'Triangle Curling Club of North Carolina',
+  ].filter(Boolean).join('\n');
+
   await sendEmail({
     to: options.to,
     subject: `Donation receipt - Triangle Curling Club (${receivedDate})`,
     htmlContent,
+    textContent,
     recipientName: options.donorName,
     includeUnsubscribeFooter: false,
   });
@@ -1197,6 +1175,57 @@ export async function sendIceBookingConfirmationEmail(
 }
 
 // ========== Event Registration Emails ==========
+
+export async function sendEventRegistrationPaymentConfirmationEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  eventDateStr: string,
+  groupSize: number,
+  paymentDetailsUrl: string,
+  memberToken?: string
+): Promise<void> {
+  const groupLine = groupSize > 1
+    ? `<p><strong>Group size:</strong> ${groupSize}</p>`
+    : '';
+
+  const htmlContent = `
+    <h2>Payment received</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>We received your payment and your registration is confirmed.</p>
+    <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
+    <p><strong>When:</strong> ${escapeHtmlEmail(eventDateStr)}</p>
+    ${groupLine}
+    <p><a href="${escapeHtmlEmail(paymentDetailsUrl)}">View payment details</a></p>
+    <p>If you need to cancel your registration, you can do so from the event page.</p>
+  `;
+
+  const textBody = [
+    'Payment received',
+    '',
+    `Hi ${recipientName},`,
+    '',
+    'We received your payment and your registration is confirmed.',
+    '',
+    `Event: ${eventTitle}`,
+    `When: ${eventDateStr}`,
+    groupSize > 1 ? `Group size: ${groupSize}` : null,
+    `View payment details: ${paymentDetailsUrl}`,
+    '',
+    'If you need to cancel your registration, you can do so from the event page.',
+  ].filter(Boolean).join('\n');
+
+  await sendEmail(
+    {
+      to,
+      subject: `Payment received: ${eventTitle}`,
+      htmlContent,
+      textContent: textBody,
+      recipientName,
+    },
+    memberToken
+  );
+}
 
 export async function sendEventRegistrationConfirmationEmail(
   to: string,

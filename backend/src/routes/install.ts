@@ -1,22 +1,26 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, sql } from 'drizzle-orm';
 import { getDatabaseConfig, saveDatabaseConfig, isDatabaseConfigured } from '../db/config.js';
 import { testDatabaseConnection, initializeDatabase } from '../db/index.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { normalizeEmail } from '../utils/auth.js';
+import { resolveMemberNameFields } from '../utils/memberName.js';
 import {
   installConfigResponseSchema,
-  installCreateAdminResponseSchema,
   installStatusResponseSchema,
   successResponseSchema,
 } from '../api/schemas.js';
 import type {
   ApiErrorResponse,
   InstallConfigResponse,
-  InstallCreateAdminResponse,
   InstallStatusResponse,
 } from '../api/types.js';
+
+const initialAdminSchema = z.object({
+  firstName: z.string().trim().min(1),
+  lastName: z.string().trim().min(1),
+  email: z.string().email(),
+});
 
 const installSchema = z.object({
   databaseType: z.enum(['sqlite', 'postgres']),
@@ -31,7 +35,7 @@ const installSchema = z.object({
     password: z.string(),
     ssl: z.boolean().optional(),
   }).optional(),
-  adminEmails: z.array(z.string().email()).min(1),
+  initialAdmin: initialAdminSchema,
 });
 
 const installBodySchema = {
@@ -59,9 +63,18 @@ const installBodySchema = {
       },
       required: ['host', 'port', 'database', 'username', 'password'],
     },
-    adminEmails: { type: 'array', items: { type: 'string' }, minItems: 1 },
+    initialAdmin: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        firstName: { type: 'string' },
+        lastName: { type: 'string' },
+        email: { type: 'string' },
+      },
+      required: ['firstName', 'lastName', 'email'],
+    },
   },
-  required: ['databaseType', 'adminEmails'],
+  required: ['databaseType', 'initialAdmin'],
 } as const;
 
 export async function installRoutes(fastify: FastifyInstance) {
@@ -139,6 +152,11 @@ export async function installRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'PostgreSQL configuration required' });
     }
 
+    const resolvedName = resolveMemberNameFields(body.initialAdmin);
+    if (!resolvedName) {
+      return reply.code(400).send({ error: 'First name and last name are required for the initial admin account' });
+    }
+
     // Build test configuration (without saving yet)
     const testConfig = {
       type: body.databaseType,
@@ -146,7 +164,6 @@ export async function installRoutes(fastify: FastifyInstance) {
         path: body.sqlite?.path || './data/spares.sqlite',
       } : undefined,
       postgres: body.databaseType === 'postgres' ? body.postgres : undefined,
-      adminEmails: body.adminEmails,
     };
 
     // Test database connection FIRST - before saving anything
@@ -178,8 +195,12 @@ export async function installRoutes(fastify: FastifyInstance) {
     try {
       await initializeDatabase(testConfig);
       
-      // Create initial admin members from the provided email addresses
-      await createAdminMembers(body.adminEmails);
+      await createInitialAdminMember({
+        firstName: resolvedName.firstName,
+        lastName: resolvedName.lastName,
+        email: normalizeEmail(body.initialAdmin.email),
+        name: resolvedName.name,
+      });
       
       return { success: true };
     } catch (error: unknown) {
@@ -207,98 +228,29 @@ export async function installRoutes(fastify: FastifyInstance) {
     }
     }
   );
-
-  // Create admin members from config (useful if installation was done before this feature)
-  fastify.post<{ Reply: InstallCreateAdminResponse | ApiErrorResponse }>(
-    '/install/create-admin-members',
-    {
-      schema: {
-        tags: ['install'],
-        response: {
-          200: installCreateAdminResponseSchema,
-        },
-      },
-    },
-    async (request, reply) => {
-    if (!isDatabaseConfigured()) {
-      return reply.code(400).send({ error: 'Database not configured' });
-    }
-
-    const config = getDatabaseConfig();
-    if (!config || !config.adminEmails || config.adminEmails.length === 0) {
-      return reply.code(400).send({ error: 'No admin emails configured' });
-    }
-
-    try {
-      const results = await createAdminMembers(config.adminEmails);
-      return { 
-        success: true, 
-        created: results.created,
-        updated: results.updated,
-        total: results.created + results.updated
-      };
-    } catch (error: unknown) {
-      console.error('Failed to create admin members:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return reply.code(500).send({ 
-        error: `Failed to create admin members: ${message}` 
-      });
-    }
-    }
-  );
 }
 
-// Helper function to create admin members
-async function createAdminMembers(adminEmails: string[]): Promise<{ created: number; updated: number }> {
+async function createInitialAdminMember(input: {
+  firstName: string;
+  lastName: string;
+  name: string;
+  email: string;
+}): Promise<void> {
   const { db, schema } = getDrizzleDb();
-  let created = 0;
-  let updated = 0;
 
-  for (const email of adminEmails) {
-    const normalizedEmail = normalizeEmail(email);
-    
-    // Extract a name from email (part before @) or use a default
-    const emailName = normalizedEmail.split('@')[0];
-    const name = emailName
-      .split(/[._-]/)
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ') || 'Admin User';
-    
-    // Check if member already exists
-    const existingMembers = await db
-      .select()
-      .from(schema.members)
-      .where(sql`LOWER(${schema.members.email}) = LOWER(${normalizedEmail})`)
-      .limit(1);
-    
-    const existingMember = existingMembers[0];
-    
-    if (!existingMember) {
-      // Create new server admin member (adminEmails from database config are server admins)
-      await db.insert(schema.members).values({
-        name,
-        email: normalizedEmail,
-        is_admin: 0,
-        is_server_admin: 1,
-        email_subscribed: 1,
-        opted_in_sms: 0,
-        first_login_completed: 0,
-        email_visible: 0,
-        phone_visible: 0,
-      });
-      console.log(`Created server admin member: ${normalizedEmail}`);
-      created++;
-    } else {
-      // Update existing member to be server admin
-      await db
-        .update(schema.members)
-        .set({ is_admin: 0, is_server_admin: 1 })
-        .where(eq(schema.members.id, existingMember.id));
-      console.log(`Updated existing member to server admin: ${normalizedEmail}`);
-      updated++;
-    }
-  }
+  await db.insert(schema.members).values({
+    name: input.name,
+    first_name: input.firstName,
+    last_name: input.lastName,
+    email: input.email,
+    is_admin: 0,
+    is_server_admin: 1,
+    email_subscribed: 1,
+    opted_in_sms: 0,
+    first_login_completed: 0,
+    email_visible: 0,
+    phone_visible: 0,
+  });
 
-  return { created, updated };
+  console.log(`Created initial server admin member: ${input.email}`);
 }
-

@@ -1,4 +1,6 @@
-import axios from 'axios';
+import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
+
+type RetriableRequestConfig = AxiosRequestConfig & { _retry?: boolean };
 
 const api = axios.create({
   baseURL: '/api',
@@ -7,9 +9,58 @@ const api = axios.create({
   },
 });
 
+export function getAccessToken(): string | null {
+  return localStorage.getItem('accessToken') || localStorage.getItem('authToken');
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem('refreshToken');
+}
+
+export function storeAuthTokens(accessToken: string, refreshToken: string): void {
+  localStorage.setItem('accessToken', accessToken);
+  localStorage.setItem('refreshToken', refreshToken);
+  localStorage.removeItem('authToken');
+}
+
+export function clearAuthTokens(): void {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('authToken');
+}
+
+let refreshPromise: Promise<string | null> | null = null;
+
+function hasRequiresInstallation(data: unknown): data is { requiresInstallation: boolean } {
+  return typeof data === 'object' && data !== null && (data as { requiresInstallation?: unknown }).requiresInstallation === true;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post<{ accessToken: string; refreshToken: string }>('/api/auth/refresh', { refreshToken })
+      .then((response) => {
+        storeAuthTokens(response.data.accessToken, response.data.refreshToken);
+        return response.data.accessToken;
+      })
+      .catch(() => {
+        clearAuthTokens();
+        return null;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+}
+
 // Add auth token to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('authToken');
+  const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -19,8 +70,8 @@ api.interceptors.request.use((config) => {
 // Handle auth errors
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 503 && error.response?.data?.requiresInstallation) {
+  async (error: AxiosError) => {
+    if (error.response?.status === 503 && hasRequiresInstallation(error.response.data)) {
       const currentPath = window.location.pathname;
       // Don't redirect when on / - Install page redirects configured users to /,
       // so redirecting / -> /install -> / would create an infinite loop
@@ -31,6 +82,25 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
+      const originalRequest = error.config as RetriableRequestConfig | undefined;
+      const requestUrl = originalRequest?.url || '';
+      const isAuthEndpoint =
+        requestUrl.includes('/auth/refresh') ||
+        requestUrl.includes('/auth/request-code') ||
+        requestUrl.includes('/auth/verify-code') ||
+        requestUrl.includes('/auth/select-member');
+      if (originalRequest && !originalRequest._retry && !isAuthEndpoint && getRefreshToken()) {
+        originalRequest._retry = true;
+        const newAccessToken = await refreshAccessToken();
+        if (newAccessToken) {
+          originalRequest.headers = {
+            ...originalRequest.headers,
+            Authorization: `Bearer ${newAccessToken}`,
+          };
+          return api(originalRequest);
+        }
+      }
+
       const currentPath = window.location.pathname;
       // Don't redirect when on public pages - user can stay and browse
       const isPublicPath =
@@ -43,7 +113,7 @@ api.interceptors.response.use(
         currentPath.startsWith('/mailing-list/') ||
         /^\/go\/[^/]+\/info(\/|$)/.test(currentPath);
       if (!currentPath.startsWith('/install') && currentPath !== '/login' && !isPublicPath) {
-        localStorage.removeItem('authToken');
+        clearAuthTokens();
         window.location.href = '/login';
       }
     }

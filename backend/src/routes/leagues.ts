@@ -17,6 +17,7 @@ import {
 } from '../api/schemas.js';
 import type { ApiReply } from '../api/types.js';
 import { hasClubLeagueAdministratorAccess } from '../utils/leagueAccess.js';
+import { sortLeaguesByDayOfWeekThenFirstDrawTime } from '../utils/leagueOrdering.js';
 import { config } from '../config.js';
 import {
   RegistrationConfigValidationError,
@@ -26,6 +27,15 @@ import {
   assertValidLeagueRegistrationSettings,
   effectiveLeagueRegistrationFeeMinor,
 } from '../registration/registrationConfigValidation.js';
+import { isValidHalfYearExperienceValue } from '../registration/curlingExperienceYears.js';
+import { normalizeLeagueConstraintForStorage } from '../registration/leagueEligibilityConstraints.js';
+import {
+  WaitlistEntityValidationError,
+  attachWaitlistToLeague,
+  createAndAttachWaitlistToLeague,
+  detachWaitlistFromLeague,
+  listLeagueWaitlistsForAttach,
+} from '../registration/waitlistEntityService.js';
 
 const createLeagueSchema = z.object({
   name: z.string().min(1),
@@ -39,10 +49,36 @@ const createLeagueSchema = z.object({
 
 /** Clients often send whole numeric fields as floats (HTML inputs, JSON); DB columns are integers. */
 function preprocessRoundFiniteInt(val: unknown): unknown {
-  if (val === null || val === undefined) return val;
+  if (val === undefined) return undefined;
+  if (val === null || val === '') return null;
   if (typeof val === 'number' && Number.isFinite(val)) return Math.round(val);
   return val;
 }
+
+function preprocessOptionalNullableNumber(val: unknown): unknown {
+  if (val === undefined) return undefined;
+  if (val === null || val === '') return null;
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed === '') return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : val;
+  }
+  return val;
+}
+
+const halfYearExperienceYearsSchema = z
+  .preprocess(preprocessOptionalNullableNumber, z.number().nullable().optional())
+  .superRefine((value, ctx) => {
+    if (value === null || value === undefined) return;
+    if (!isValidHalfYearExperienceValue(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Experience years must be at least 0, less than 100, and a whole number or end in .5.',
+      });
+    }
+  });
 
 const bulkCopyLeaguesBodySchema = z.object({
   sourceLeagueIds: z
@@ -81,12 +117,14 @@ const updateLeagueSchema = z.object({
     z.number().int().nonnegative().nullable().optional()
   ),
   requiresClubMembership: z.boolean().optional(),
-  minExperienceYears: z.preprocess(preprocessRoundFiniteInt, z.number().int().nullable().optional()),
+  minExperienceYears: halfYearExperienceYearsSchema,
+  maxExperienceYears: halfYearExperienceYearsSchema,
   minAge: z.preprocess(preprocessRoundFiniteInt, z.number().int().nullable().optional()),
   maxAge: z.preprocess(preprocessRoundFiniteInt, z.number().int().nullable().optional()),
   firstDayOfPlay: z.string().nullable().optional(),
   lastDayOfPlay: z.string().nullable().optional(),
   allowsWaitlist: z.boolean().optional(),
+  isPlayInBased: z.boolean().optional(),
   allowsSabbatical: z.boolean().optional(),
   predecessorLeagueId: z.preprocess(preprocessRoundFiniteInt, z.number().int().positive().nullable().optional()),
   successorLeagueId: z.preprocess(preprocessRoundFiniteInt, z.number().int().positive().nullable().optional()),
@@ -203,53 +241,6 @@ async function loadDefaultLeagueFeeMinor(): Promise<number> {
   return row?.minor ?? 0;
 }
 
-type DrizzleBundle = ReturnType<typeof getDrizzleDb>;
-
-function normalizeDrawTimeForSort(value: unknown): string {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  return String(value);
-}
-
-/** Order leagues by calendar day-of-week, then earliest configured draw time, then name. */
-async function sortLeaguesByDayOfWeekThenFirstDrawTime(
-  db: DrizzleBundle['db'],
-  schema: DrizzleBundle['schema'],
-  leaguesUnsorted: League[],
-): Promise<League[]> {
-  if (leaguesUnsorted.length === 0) return leaguesUnsorted;
-
-  const minDrawRows = await db
-    .select({
-      league_id: schema.leagueDrawTimes.league_id,
-      first_draw: sql<string>`min(${schema.leagueDrawTimes.draw_time})`,
-    })
-    .from(schema.leagueDrawTimes)
-    .groupBy(schema.leagueDrawTimes.league_id);
-
-  const firstDrawByLeagueId = new Map<number, string>();
-  for (const row of minDrawRows) {
-    firstDrawByLeagueId.set(row.league_id, normalizeDrawTimeForSort(row.first_draw));
-  }
-
-  return [...leaguesUnsorted].sort((a, b) => {
-    const dowDiff = a.day_of_week - b.day_of_week;
-    if (dowDiff !== 0) return dowDiff;
-
-    const ta = firstDrawByLeagueId.get(a.id);
-    const tb = firstDrawByLeagueId.get(b.id);
-    const hasA = ta !== undefined && ta !== '';
-    const hasB = tb !== undefined && tb !== '';
-    if (hasA && hasB && ta !== tb) {
-      return ta.localeCompare(tb);
-    }
-    if (hasA !== hasB) {
-      return hasA ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
-}
-
 function mapLeagueResponse(
   league: League,
   drawTimes: string[],
@@ -266,11 +257,14 @@ function mapLeagueResponse(
     registration_fee_override_minor?: number | null;
     requires_club_membership?: number | boolean;
     min_experience_years?: number | null;
+    max_experience_years?: number | null;
     min_age?: number | null;
     max_age?: number | null;
     first_day_of_play?: string | Date | number | null;
     last_day_of_play?: string | Date | number | null;
     allows_waitlist?: number | boolean;
+    waitlist_id?: number | null;
+    is_play_in_based?: number | boolean;
     allows_sabbatical?: number | boolean;
     predecessor_league_id?: number | null;
     successor_league_id?: number | null;
@@ -294,11 +288,14 @@ function mapLeagueResponse(
     registrationFeeOverrideMinor: row.registration_fee_override_minor ?? null,
     requiresClubMembership: toBool(row.requires_club_membership ?? 1),
     minExperienceYears: row.min_experience_years ?? null,
+    maxExperienceYears: row.max_experience_years ?? null,
     minAge: row.min_age ?? null,
     maxAge: row.max_age ?? null,
     firstDayOfPlay: row.first_day_of_play ? normalizeDateString(row.first_day_of_play) : null,
     lastDayOfPlay: row.last_day_of_play ? normalizeDateString(row.last_day_of_play) : null,
-    allowsWaitlist: toBool(row.allows_waitlist ?? 1),
+    allowsWaitlist: row.waitlist_id != null,
+    waitlistId: row.waitlist_id ?? null,
+    isPlayInBased: toBool(row.is_play_in_based ?? 0),
     allowsSabbatical: toBool(row.allows_sabbatical ?? 1),
     predecessorLeagueId: row.predecessor_league_id ?? null,
     successorLeagueId: row.successor_league_id ?? null,
@@ -309,12 +306,37 @@ function mapLeagueResponse(
 }
 
 function handleRegistrationValidationError(reply: FastifyReply, error: unknown): boolean {
-  if (error instanceof RegistrationConfigValidationError) {
+  if (error instanceof RegistrationConfigValidationError || error instanceof WaitlistEntityValidationError) {
     sendValidationError(reply, error.message, error.details);
     return true;
   }
   return false;
 }
+
+const leagueWaitlistBodySchema = {
+  type: 'object',
+  additionalProperties: true,
+} as const;
+
+const leagueIdParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' },
+  },
+  required: ['id'],
+} as const;
+
+const leagueWaitlistAttachSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('create'),
+    name: z.string().min(1).optional(),
+  }),
+  z.object({
+    mode: z.literal('attach'),
+    waitlistId: z.number().int().positive(),
+  }),
+]);
 
 export async function leagueRoutes(fastify: FastifyInstance) {
   const leagueManagerLeagueIdsFromMember = (member: Member): number[] => {
@@ -508,6 +530,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             registrationFeeMinor: { type: 'number' },
             requiresClubMembership: { type: 'boolean' },
             minExperienceYears: { type: ['number', 'null'] },
+            maxExperienceYears: { type: ['number', 'null'] },
             minAge: { type: ['number', 'null'] },
             maxAge: { type: ['number', 'null'] },
             firstDayOfPlay: { type: ['string', 'null'] },
@@ -774,11 +797,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
                 registration_fee_override_minor: src.registration_fee_override_minor ?? null,
                 requires_club_membership: src.requires_club_membership,
                 min_experience_years: src.min_experience_years,
+                max_experience_years: src.max_experience_years,
                 min_age: src.min_age,
                 max_age: src.max_age,
                 first_day_of_play: null,
                 last_day_of_play: null,
                 allows_waitlist: src.allows_waitlist,
+                waitlist_id: (src as { waitlist_id?: number | null }).waitlist_id ?? null,
                 allows_sabbatical: src.allows_sabbatical,
                 predecessor_league_id: src.id,
                 successor_league_id: null,
@@ -869,16 +894,20 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             if (!row) continue;
             assertValidLeagueRegistrationSettings({
               id: newId,
+              format: row.format,
               leagueType: row.league_type ?? 'standard',
               capacityType: row.capacity_type ?? 'individual',
               capacityValue: row.capacity_value ?? 0,
               registrationFeeOverrideMinor: row.registration_fee_override_minor ?? null,
               minExperienceYears: row.min_experience_years,
+              maxExperienceYears: row.max_experience_years,
               minAge: row.min_age,
               maxAge: row.max_age,
               firstDayOfPlay: row.first_day_of_play ? normalizeDateString(row.first_day_of_play) : null,
               lastDayOfPlay: row.last_day_of_play ? normalizeDateString(row.last_day_of_play) : null,
-              allowsWaitlist: toBool(row.allows_waitlist ?? 1),
+              allowsWaitlist: row.waitlist_id != null,
+              hasAttachedWaitlist: row.waitlist_id != null,
+              isPlayInBased: toBool((row as { is_play_in_based?: number }).is_play_in_based ?? 0),
               allowsSabbatical: toBool(row.allows_sabbatical ?? 1),
               predecessorLeagueId: row.predecessor_league_id,
               successorLeagueId: row.successor_league_id,
@@ -947,11 +976,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             registrationFeeOverrideMinor: { type: ['number', 'null'] },
             requiresClubMembership: { type: 'boolean' },
             minExperienceYears: { type: ['number', 'null'] },
+            maxExperienceYears: { type: ['number', 'null'] },
             minAge: { type: ['number', 'null'] },
             maxAge: { type: ['number', 'null'] },
             firstDayOfPlay: { type: ['string', 'null'] },
             lastDayOfPlay: { type: ['string', 'null'] },
             allowsWaitlist: { type: 'boolean' },
+            isPlayInBased: { type: 'boolean' },
             allowsSabbatical: { type: 'boolean' },
             predecessorLeagueId: { type: ['number', 'null'] },
             successorLeagueId: { type: ['number', 'null'] },
@@ -977,6 +1008,18 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
     const body = updateLeagueSchema.parse(request.body);
+    const nextMinExperienceYears =
+      body.minExperienceYears === undefined
+        ? undefined
+        : normalizeLeagueConstraintForStorage(body.minExperienceYears, 'minimum');
+    const nextMaxExperienceYears =
+      body.maxExperienceYears === undefined
+        ? undefined
+        : normalizeLeagueConstraintForStorage(body.maxExperienceYears, 'maximum');
+    const nextMinAge =
+      body.minAge === undefined ? undefined : normalizeLeagueConstraintForStorage(body.minAge, 'minimum');
+    const nextMaxAge =
+      body.maxAge === undefined ? undefined : normalizeLeagueConstraintForStorage(body.maxAge, 'maximum');
     const { db, schema } = getDrizzleDb();
 
     const existingLeagueRows = await db
@@ -999,19 +1042,34 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
     const effectiveRegistrationFeeMinor = effectiveLeagueRegistrationFeeMinor(nextFeeOverride, defaultLeagueFeeMinor);
 
+    const nextFormat = body.format ?? existingLeague.format;
+    const nextWaitlistId =
+      body.allowsWaitlist === false
+        ? null
+        : existingLeague.waitlist_id;
+    const nextIsPlayInBased =
+      body.isPlayInBased !== undefined
+        ? body.isPlayInBased
+        : toBool((existingLeague as { is_play_in_based?: number }).is_play_in_based ?? 0);
+
     const nextLeagueRegistrationSettings = {
       id: leagueId,
+      format: nextFormat,
       leagueType: body.leagueType ?? existingLeague.league_type,
       capacityType: body.capacityType ?? existingLeague.capacity_type,
       capacityValue: body.capacityValue ?? existingLeague.capacity_value,
       registrationFeeOverrideMinor: nextFeeOverride,
       minExperienceYears:
-        body.minExperienceYears === undefined ? existingLeague.min_experience_years : body.minExperienceYears,
-      minAge: body.minAge === undefined ? existingLeague.min_age : body.minAge,
-      maxAge: body.maxAge === undefined ? existingLeague.max_age : body.maxAge,
+        nextMinExperienceYears === undefined ? existingLeague.min_experience_years : nextMinExperienceYears,
+      maxExperienceYears:
+        nextMaxExperienceYears === undefined ? existingLeague.max_experience_years : nextMaxExperienceYears,
+      minAge: nextMinAge === undefined ? existingLeague.min_age : nextMinAge,
+      maxAge: nextMaxAge === undefined ? existingLeague.max_age : nextMaxAge,
       firstDayOfPlay: body.firstDayOfPlay === undefined ? existingLeague.first_day_of_play : body.firstDayOfPlay,
       lastDayOfPlay: body.lastDayOfPlay === undefined ? existingLeague.last_day_of_play : body.lastDayOfPlay,
-      allowsWaitlist: body.allowsWaitlist ?? toBool(existingLeague.allows_waitlist),
+      allowsWaitlist: nextWaitlistId != null,
+      hasAttachedWaitlist: nextWaitlistId != null,
+      isPlayInBased: nextIsPlayInBased,
       allowsSabbatical: body.allowsSabbatical ?? toBool(existingLeague.allows_sabbatical),
       predecessorLeagueId:
         body.predecessorLeagueId === undefined ? existingLeague.predecessor_league_id : body.predecessorLeagueId,
@@ -1059,11 +1117,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       registration_fee_override_minor: number | null;
       requires_club_membership: number;
       min_experience_years: number | null;
+      max_experience_years: number | null;
       min_age: number | null;
       max_age: number | null;
       first_day_of_play: string | null;
       last_day_of_play: string | null;
       allows_waitlist: number;
+      is_play_in_based: number;
       allows_sabbatical: number;
       predecessor_league_id: number | null;
       successor_league_id: number | null;
@@ -1104,14 +1164,17 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     if (body.requiresClubMembership !== undefined) {
       updateData.requires_club_membership = body.requiresClubMembership ? 1 : 0;
     }
-    if (body.minExperienceYears !== undefined) {
-      updateData.min_experience_years = body.minExperienceYears;
+    if (nextMinExperienceYears !== undefined) {
+      updateData.min_experience_years = nextMinExperienceYears;
     }
-    if (body.minAge !== undefined) {
-      updateData.min_age = body.minAge;
+    if (nextMaxExperienceYears !== undefined) {
+      updateData.max_experience_years = nextMaxExperienceYears;
     }
-    if (body.maxAge !== undefined) {
-      updateData.max_age = body.maxAge;
+    if (nextMinAge !== undefined) {
+      updateData.min_age = nextMinAge;
+    }
+    if (nextMaxAge !== undefined) {
+      updateData.max_age = nextMaxAge;
     }
     if (body.firstDayOfPlay !== undefined) {
       updateData.first_day_of_play = body.firstDayOfPlay;
@@ -1121,6 +1184,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
     if (body.allowsWaitlist !== undefined) {
       updateData.allows_waitlist = body.allowsWaitlist ? 1 : 0;
+    }
+    if (body.isPlayInBased !== undefined) {
+      updateData.is_play_in_based = body.isPlayInBased ? 1 : 0;
+      if (body.isPlayInBased) {
+        updateData.waitlist_id = null;
+        updateData.allows_waitlist = 0;
+      }
     }
     if (body.allowsSabbatical !== undefined) {
       updateData.allows_sabbatical = body.allowsSabbatical ? 1 : 0;
@@ -1529,6 +1599,93 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       imported: importedLeagues.length,
       leagues: importedLeagues,
     };
+    }
+  );
+
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/leagues/waitlist-options',
+    {
+      schema: {
+        tags: ['leagues'],
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+      if (!isAdmin(member) && !isServerAdmin(member) && !hasScope(member.authz, 'leagues.manage')) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      return listLeagueWaitlistsForAttach();
+    }
+  );
+
+  fastify.post<{ Params: { id: string }; Body: z.infer<typeof leagueWaitlistAttachSchema> }>(
+    '/leagues/:id/waitlist',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: leagueIdParamsSchema,
+        body: leagueWaitlistBodySchema,
+        response: { 200: leagueWaitlistBodySchema, 400: leagueWaitlistBodySchema, 403: leagueWaitlistBodySchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+      const leagueId = parseInt(request.params.id, 10);
+      if (!Number.isFinite(leagueId)) return reply.code(400).send({ error: 'Invalid league id' });
+      const canManage =
+        isAdmin(member) ||
+        isServerAdmin(member) ||
+        hasScope(member.authz, 'leagues.manage') ||
+        leagueManagerLeagueIdsFromMember(member).includes(leagueId);
+      if (!canManage) return reply.code(403).send({ error: 'Forbidden' });
+
+      const body = leagueWaitlistAttachSchema.parse(request.body);
+      try {
+        if (body.mode === 'create') {
+          const { db, schema } = getDrizzleDb();
+          const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1);
+          const defaultName = body.name?.trim() || `${league?.name ?? 'League'} waitlist`;
+          const waitlist = await createAndAttachWaitlistToLeague({ leagueId, name: defaultName });
+          return { waitlistId: waitlist.id, name: waitlist.name };
+        }
+        await attachWaitlistToLeague({ leagueId, waitlistId: body.waitlistId });
+        return { waitlistId: body.waitlistId };
+      } catch (error) {
+        if (handleRegistrationValidationError(reply, error)) return;
+        throw error;
+      }
+    }
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/leagues/:id/waitlist',
+    {
+      schema: {
+        tags: ['leagues'],
+        params: leagueIdParamsSchema,
+        response: { 200: successResponseSchema, 403: leagueWaitlistBodySchema },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) return reply.code(401).send({ error: 'Unauthorized' });
+      const leagueId = parseInt(request.params.id, 10);
+      if (!Number.isFinite(leagueId)) return reply.code(400).send({ error: 'Invalid league id' });
+      const canManage =
+        isAdmin(member) ||
+        isServerAdmin(member) ||
+        hasScope(member.authz, 'leagues.manage') ||
+        leagueManagerLeagueIdsFromMember(member).includes(leagueId);
+      if (!canManage) return reply.code(403).send({ error: 'Forbidden' });
+      try {
+        await detachWaitlistFromLeague(leagueId);
+        return { success: true };
+      } catch (error) {
+        if (handleRegistrationValidationError(reply, error)) return;
+        throw error;
+      }
     }
   );
 }

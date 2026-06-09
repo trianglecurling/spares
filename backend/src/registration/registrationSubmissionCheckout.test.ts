@@ -40,7 +40,14 @@ describe('Phase 7 submission and checkout decisions', () => {
   test('deferred and no-payment registration types do not create checkout-now decisions', () => {
     const deferredCases = [
       registrationContext({ selections: [selection({ selectionType: 'waitlist_add' })] }),
-      registrationContext({ activeLeagueIds: [1], selections: [selection({ selectionType: 'waitlist_replace', replacesLeagueId: 1 })] }),
+      registrationContext({
+        activeLeagueIds: [1],
+        selections: [selection({ leagueId: 100, selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
+        leagues: {
+          1: league({ id: 1, registrationFeeMinor: 30000 }),
+          100: league({ id: 100, registrationFeeMinor: 35000 }),
+        },
+      }),
       registrationContext({ selections: [selection({ selectionType: 'third_league_interest' })] }),
       registrationContext({
         membershipOption: 'junior_recreational',
@@ -62,6 +69,39 @@ describe('Phase 7 submission and checkout decisions', () => {
     ).paymentDecision;
     expect(waitlistOnly.outcome).toBe('no_payment_required');
     expect(waitlistOnly.createStripeCheckoutNow).toBe(false);
+  });
+
+  test('REPLACE waitlists allow immediate payment when replacement league fees match', () => {
+    const sameFeeCases = [
+      registrationContext({
+        activeLeagueIds: [1],
+        selections: [selection({ leagueId: 100, selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
+        leagues: {
+          1: league({ id: 1, registrationFeeMinor: 30000 }),
+          100: league({ id: 100, registrationFeeMinor: 30000 }),
+        },
+      }),
+      registrationContext({
+        selections: [
+          selection({ leagueId: 101, selectionType: 'guaranteed_return' }),
+          selection({ leagueId: 102, selectionType: 'guaranteed_return' }),
+          selection({ leagueId: 103, selectionType: 'waitlist_replace', replacesLeagueId: 101 }),
+        ],
+        leagues: {
+          101: league({ id: 101, registrationFeeMinor: 30000, predecessorLeagueId: 91 }),
+          102: league({ id: 102, registrationFeeMinor: 30000, predecessorLeagueId: 92 }),
+          103: league({ id: 103, registrationFeeMinor: 30000 }),
+        },
+        participatedLeagueIds: [91, 92],
+      }),
+    ];
+
+    for (const context of sameFeeCases) {
+      const result = evaluateRegistrationDraft(context).paymentDecision;
+      expect(result.outcome).toBe('immediate_payment');
+      expect(result.createStripeCheckoutNow).toBe(true);
+      expect(result.deferralReasons).not.toContain('waitlist_placement_pending');
+    }
   });
 
   test('client success redirect remains confirming until webhook-confirmed rows are paid', () => {
@@ -93,6 +133,17 @@ describe('Phase 7 submission and checkout decisions', () => {
     ).toBe('failed');
   });
 
+  test('deferred-to-immediate edit preview does not create checkout until confirmed', () => {
+    const waitlistContext = registrationContext({ selections: [selection({ selectionType: 'waitlist_add' })] });
+    const deferred = evaluateRegistrationDraft(waitlistContext).paymentDecision;
+    expect(deferred.outcome).toBe('deferred_payment');
+
+    const guaranteedContext = registrationContext({ selections: [selection({ selectionType: 'guaranteed_return' })] });
+    const immediate = evaluateRegistrationDraft(guaranteedContext).paymentDecision;
+    expect(immediate.outcome).toBe('immediate_payment');
+    expect(immediate.createStripeCheckoutNow).toBe(true);
+  });
+
   test('checkout cancellation cannot regress paid or confirmed registrations', () => {
     expect(
       shouldMarkCheckoutCancelled({
@@ -114,5 +165,25 @@ describe('Phase 7 submission and checkout decisions', () => {
         registrationStatus: 'confirmed',
       })
     ).toBe(false);
+  });
+
+  test('client success redirect confirms once payment order succeeds even if invoice still says checkout started', () => {
+    expect(
+      resolveRegistrationPaymentStatus({
+        invoiceStatus: 'checkout_started',
+        registrationStatus: 'payment_started',
+        paymentOrderStatus: 'succeeded',
+        totalDueMinor: 12500,
+      })
+    ).toBe('confirming');
+
+    expect(
+      resolveRegistrationPaymentStatus({
+        invoiceStatus: 'paid',
+        registrationStatus: 'confirmed',
+        paymentOrderStatus: 'succeeded',
+        totalDueMinor: 12500,
+      })
+    ).toBe('confirmed');
   });
 });

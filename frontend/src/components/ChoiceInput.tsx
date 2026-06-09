@@ -113,6 +113,12 @@ type ChoiceInputProps<Value extends ChoicePrimitiveValue> = {
   required?: boolean
   /** Text combobox only; defaults to `off` to suppress browser autocomplete. */
   autoComplete?: string
+  /**
+   * When true (popover text combobox only), uses `autocomplete="chrome-off"` only while the field is focused,
+   * and omits the attribute on blur so Chromium’s ~5-instance cap for `chrome-off` is not exhausted.
+   * Native autofill overlays can otherwise cover custom suggestion lists (e.g. Nominatim).
+   */
+  chromeOffAutocompleteWhileFocused?: boolean
   /** Popover layout: defaults to `max-w-md` on the trigger shell; override with any `max-w-*` utility here. */
   inputClassName?: string
   /** Omit to use the built-in clear control when `allowCustomValue` is true (popover text combobox). */
@@ -446,6 +452,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   ariaInvalid,
   required = false,
   autoComplete,
+  chromeOffAutocompleteWhileFocused = false,
   inputClassName = 'app-input',
   clearButton,
   shouldShowDropdown = true,
@@ -457,6 +464,8 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   renderOption,
 }: ChoiceInputProps<Value>) {
   const generatedTriggerId = useId()
+  /** See `chromeOffAutocompleteWhileFocused`; only read when `isTextInput`. */
+  const [, setPopoverComboboxFocused] = useState(false)
   const triggerId = inputId ?? generatedTriggerId
   const popoverId = `${triggerId}-popover`
   const listboxId = `${triggerId}-listbox`
@@ -1059,8 +1068,12 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
 
   const toggleValue = (nextValue: Value) => {
     if (!multiple) {
-      selectValues([nextValue])
+      // Close the panel before notifying parents. A synchronous `onChange` can trigger a large
+      // ancestor re-render and make the popover feel sluggish or "stuck" closing.
       closePopover(false)
+      queueMicrotask(() => {
+        selectValues([nextValue])
+      })
       return
     }
 
@@ -1192,9 +1205,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
         onInputValueChange?.(getOptionText(option))
       }
 
-      if (!multiple) {
-        closePopover(false)
-      }
+      // Single-select: `toggleValue` already closes the popover before deferring `onChange`.
     }
 
     const helpers: ChoiceActionHelpers<Value> = {
@@ -2297,6 +2308,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
             aria-invalid={ariaInvalid || undefined}
             aria-haspopup="listbox"
             onFocus={() => {
+              if (chromeOffAutocompleteWhileFocused) setPopoverComboboxFocused(true)
               onInputFocus?.()
             }}
             onClick={() => {
@@ -2308,6 +2320,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
             onBlur={(event) => {
               const nextTarget = event.relatedTarget as Node | null
               if (nextTarget && rootContainerRef.current?.contains(nextTarget)) return
+              if (chromeOffAutocompleteWhileFocused) setPopoverComboboxFocused(false)
               onComboboxTextBlur?.()
             }}
             onChange={(event) => {

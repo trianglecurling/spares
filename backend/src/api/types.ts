@@ -29,8 +29,18 @@ export type AuthSelectMemberBody = {
 };
 
 export type AuthVerifySuccessResponse<TMember> = {
-  token: string;
+  accessToken: string;
+  refreshToken: string;
   member: TMember;
+};
+
+export type AuthRefreshBody = {
+  refreshToken: string;
+};
+
+export type AuthTokenPairResponse = {
+  accessToken: string;
+  refreshToken: string;
 };
 
 export type AuthVerifyCodeResponse<TMember> =
@@ -53,11 +63,88 @@ export type UpdateMemberAccountAccessDelegatesBody = {
   memberIds: number[];
 };
 
+export type MemberPaymentHistorySubjectType =
+  | 'donation'
+  | 'membership'
+  | 'event_registration'
+  | 'curling_registration';
+
+export type MemberPaymentHistoryStatus =
+  | 'created'
+  | 'pending'
+  | 'succeeded'
+  | 'failed'
+  | 'refunded'
+  | 'partially_refunded';
+
+export type MemberPaymentHistoryItem = {
+  orderToken: string;
+  subjectType: MemberPaymentHistorySubjectType;
+  description: string;
+  amountMinor: number;
+  currency: string;
+  status: MemberPaymentHistoryStatus;
+  paidAt: string | null;
+  createdAt: string;
+};
+
+export type MemberPaymentHistoryResponse = {
+  total: number;
+  limit: number;
+  offset: number;
+  payments: MemberPaymentHistoryItem[];
+};
+
+export type MemberPaymentLineItem = {
+  description: string;
+  amountMinor: number;
+};
+
+export type MemberPaymentRefundSummary = {
+  amountMinor: number;
+  currency: string;
+  status: string;
+  reason: string | null;
+  processedAt: string | null;
+  createdAt: string;
+};
+
+export type MemberPaymentContextField = {
+  label: string;
+  value: string;
+};
+
+export type MemberPaymentDetail = {
+  orderToken: string;
+  subjectType: MemberPaymentHistorySubjectType;
+  description: string;
+  amountMinor: number;
+  currency: string;
+  status: MemberPaymentHistoryStatus;
+  provider: 'stripe' | 'paypal' | 'square';
+  providerReference: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lineItems: MemberPaymentLineItem[];
+  subtotalMinor: number | null;
+  discountMinor: number | null;
+  totalMinor: number | null;
+  refunds: MemberPaymentRefundSummary[];
+  context: MemberPaymentContextField[];
+};
+
 export type MemberProfileResponse = {
   id: number;
   name: string;
   email: string | null;
   phone: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  dateOfBirth: string | null;
+  mailingAddress: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
   validThrough: string | null;
   spareOnly: boolean;
   socialMember: boolean;
@@ -79,16 +166,27 @@ export type MemberLeaguesResponse = Array<{
   teamName: string | null;
 }>;
 
+export type MemberEmergencyContactResponse = {
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+};
+
+export type MemberExperienceSummaryResponse = {
+  totalExperienceYears: number;
+};
+
 export type MemberSummaryResponse = {
   id: number;
   name: string;
+  firstName?: string | null;
+  lastName?: string | null;
   isAdmin: boolean;
   isServerAdmin: boolean;
   isCalendarAdmin?: boolean;
   isContentAdmin?: boolean;
   isSponsorAdmin?: boolean;
   isLeagueAdministratorGlobal?: boolean;
-  isInServerAdminsList: boolean;
+  isLastServerAdmin: boolean;
   emailSubscribed: boolean;
   optedInSms: boolean;
   emailVisible: boolean;
@@ -100,6 +198,8 @@ export type MemberSummaryResponse = {
   validThrough?: string | null;
   spareOnly?: boolean;
   socialMember?: boolean;
+  baselineOtherClubExperienceYears?: number;
+  baselineClubExperienceYears?: number;
 };
 
 export type MemberCreateResponse = {
@@ -189,15 +289,7 @@ export type InstallConfigResponse =
         password?: string | null;
         ssl?: boolean;
       };
-      adminEmails: string[];
     };
-
-export type InstallCreateAdminResponse = {
-  success: boolean;
-  created: number;
-  updated: number;
-  total: number;
-};
 
 export type FeedbackCaptchaResponse = {
   token: string;
@@ -242,6 +334,8 @@ export type ConfigResponse = {
   captureBackendLogs: boolean;
   testCurrentTime: string | null;
   notificationDelaySeconds: number;
+  sessionTokenTtlMinutes: number;
+  refreshTokenTtlDays: number;
   updatedAt: string | null;
 };
 
@@ -266,6 +360,8 @@ export type UpdateConfigBody = {
   captureBackendLogs?: boolean;
   testCurrentTime?: string | null;
   notificationDelaySeconds?: number;
+  sessionTokenTtlMinutes?: number;
+  refreshTokenTtlDays?: number;
 };
 
 export type DatabaseConfigBody = {
@@ -279,7 +375,6 @@ export type DatabaseConfigBody = {
     password?: string;
     ssl?: boolean;
   };
-  adminEmails: string[];
 };
 
 export type ObservabilityResponse = {
@@ -328,7 +423,6 @@ export type DatabaseConfigResponse = {
     username: string;
     ssl?: boolean;
   };
-  adminEmails: string[];
 };
 
 export type SpareCcResponse = Array<{
@@ -506,6 +600,12 @@ export type UpdateProfileBody = {
   name?: string;
   email?: string;
   phone?: string;
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  mailingAddress?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   optedInSms?: boolean;
   emailVisible?: boolean;
   phoneVisible?: boolean;
@@ -513,7 +613,9 @@ export type UpdateProfileBody = {
 };
 
 export type CreateMemberBody = {
-  name: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
   email: string;
   phone?: string;
   validThrough?: string | null;
@@ -525,6 +627,8 @@ export type CreateMemberBody = {
 };
 
 export type UpdateMemberBody = {
+  firstName?: string;
+  lastName?: string;
   name?: string;
   email?: string;
   phone?: string;
@@ -534,6 +638,32 @@ export type UpdateMemberBody = {
   isServerAdmin?: boolean;
   isContentAdmin?: boolean;
   isSponsorAdmin?: boolean;
+  baselineOtherClubExperienceYears?: number;
+  baselineClubExperienceYears?: number;
+};
+
+export type BulkExperienceBaselinesBody = {
+  rows: Array<{
+    email?: string;
+    baselineOtherClubExperienceYears: number;
+    baselineClubExperienceYears: number;
+    name?: string;
+  }>;
+};
+
+export type BulkExperienceBaselinesResponse = {
+  success: boolean;
+  updatedCount: number;
+  unchangedCount: number;
+  failedCount: number;
+  results: Array<{
+    email?: string;
+    name?: string;
+    status: 'updated' | 'unchanged' | 'not_found' | 'ambiguous_email' | 'ambiguous_name' | 'invalid';
+    memberId?: number;
+    memberName?: string;
+    message?: string;
+  }>;
 };
 
 export type BulkDeleteBody = {

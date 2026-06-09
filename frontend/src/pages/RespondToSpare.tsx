@@ -10,8 +10,6 @@ export default function RespondToSpare() {
   useEffect(() => {
     if (!isLoading) {
       const requestId = searchParams.get('requestId');
-      // Token (if present) is handled by AuthContext; it may also be stripped from the URL.
-      // We only need requestId to continue the flow.
       setTimeout(() => {
         if (requestId) {
           navigate(`/dashboard?requestId=${requestId}`);

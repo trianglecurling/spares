@@ -17,6 +17,7 @@ export type LeagueConfig = {
   id: number;
   sessionId?: number | null;
   name: string;
+  dayOfWeek?: number | null;
   leagueType: 'standard' | 'bring_your_own_team';
   capacityType: 'individual' | 'team';
   capacityValue: number;
@@ -24,6 +25,7 @@ export type LeagueConfig = {
   requiresClubMembership: boolean;
   format: 'teams' | 'doubles' | 'instructional';
   minExperienceYears?: number | null;
+  maxExperienceYears?: number | null;
   minAge?: number | null;
   maxAge?: number | null;
   startDate?: string | null;
@@ -31,6 +33,9 @@ export type LeagueConfig = {
   firstDayOfPlay?: string | null;
   lastDayOfPlay?: string | null;
   allowsWaitlist: boolean;
+  waitlistId?: number | null;
+  activeWaitlistEntryCount?: number;
+  isPlayInBased: boolean;
   allowsSabbatical: boolean;
   predecessorLeagueId?: number | null;
   successorLeagueId?: number | null;
@@ -43,6 +48,12 @@ export type RegistrationSelectionInput = {
   rank?: number | null;
   replacesLeagueId?: number | null;
   byotTeammateText?: string | null;
+  teamRosterText?: string | null;
+  teamRosterPlacements?: Array<{
+    memberId: number;
+    entryType: 'add' | 'replace';
+    replacesLeagueId?: number | null;
+  }> | null;
   isTemporarySabbaticalFill?: boolean;
 };
 
@@ -57,10 +68,15 @@ export type ExistingSabbatical = {
 };
 
 export type ExistingWaitlistEntry = {
+  waitlistId: number;
   leagueId: number;
   entryType: WaitlistEntryTypeSqlite;
+  replacesLineageStartLeagueId?: number | null;
   replacesLeagueId?: number | null;
   status: 'active' | 'offered' | 'accepted' | 'declined' | 'placed' | 'removed' | 'moved_to_bottom' | 'rolled_over' | 'cancelled';
+  position?: number | null;
+  queueTotal?: number | null;
+  declineCount?: number | null;
 };
 
 export type CompletedLeagueSession = {
@@ -89,6 +105,7 @@ export type JuniorAssistanceRequest = {
 };
 
 export type RegistrationContext = {
+  desiredAddWaitlistLeagueCount?: number | null;
   season: {
     id: number;
     name: string;
@@ -117,6 +134,8 @@ export type RegistrationContext = {
   experience: {
     type: CurlingExperienceTypeSqlite;
     selfReportedYears?: number | null;
+    baselineOtherClubExperienceYears: number;
+    baselineClubExperienceYears: number;
     completedSessions: CompletedLeagueSession[];
   };
   activeLeagueIds: number[];
@@ -151,4 +170,51 @@ export function isActiveWaitlistEntry(entry: ExistingWaitlistEntry): boolean {
 
 export function activeLeagueCount(context: RegistrationContext): number {
   return context.activeLeagueIds.length;
+}
+
+export function replaceWaitlistDefersPayment(
+  context: RegistrationContext,
+  selection: RegistrationSelectionInput
+): boolean {
+  if (selection.selectionType !== 'waitlist_replace') return false;
+  if (selection.leagueId == null || selection.replacesLeagueId == null) return true;
+
+  const targetLeague = getLeague(context, selection.leagueId);
+  const replacedLeague = getLeague(context, selection.replacesLeagueId);
+  if (!targetLeague || !replacedLeague) return true;
+
+  return targetLeague.registrationFeeMinor !== replacedLeague.registrationFeeMinor;
+}
+
+export function playInSelectionDefersPayment(
+  context: RegistrationContext,
+  selection: RegistrationSelectionInput,
+): boolean {
+  if (selection.selectionType !== 'play_in_request') return false;
+  if (!selection.replacesLeagueId) return true;
+  if (selection.leagueId == null) return true;
+
+  const playInLeague = getLeague(context, selection.leagueId);
+  const replacedLeague = getLeague(context, selection.replacesLeagueId);
+  if (!playInLeague || !replacedLeague) return true;
+
+  return playInLeague.registrationFeeMinor !== replacedLeague.registrationFeeMinor;
+}
+
+export function waitlistSelectionDefersPayment(
+  context: RegistrationContext,
+  selection: RegistrationSelectionInput
+): boolean {
+  if (
+    selection.selectionType === 'waitlist_add' ||
+    selection.selectionType === 'waitlist_add_auto_decline' ||
+    selection.selectionType === 'waitlist_keep_auto_accept' ||
+    selection.selectionType === 'waitlist_keep_auto_decline'
+  ) {
+    return true;
+  }
+  if (selection.selectionType === 'waitlist_replace' || selection.selectionType === 'waitlist_replace_auto_decline') {
+    return replaceWaitlistDefersPayment(context, selection);
+  }
+  return false;
 }

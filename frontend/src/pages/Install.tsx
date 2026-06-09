@@ -18,7 +18,9 @@ export default function Install() {
   const [postgresUsername, setPostgresUsername] = useState('');
   const [postgresPassword, setPostgresPassword] = useState('');
   const [postgresSSL, setPostgresSSL] = useState(false);
-  const [adminEmails, setAdminEmails] = useState('');
+  const [initialAdminFirstName, setInitialAdminFirstName] = useState('');
+  const [initialAdminLastName, setInitialAdminLastName] = useState('');
+  const [initialAdminEmail, setInitialAdminEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(true);
@@ -51,20 +53,29 @@ export default function Install() {
     setLoading(true);
 
     try {
-      const adminEmailList = adminEmails
-        .split(',')
-        .map((email) => email.trim())
-        .filter(Boolean);
+      const trimmedFirstName = initialAdminFirstName.trim();
+      const trimmedLastName = initialAdminLastName.trim();
+      const trimmedEmail = initialAdminEmail.trim();
 
-      if (adminEmailList.length === 0) {
-        setError('Please provide at least one admin email address');
+      if (!trimmedFirstName || !trimmedLastName) {
+        setError('Please provide your first and last name');
+        setLoading(false);
+        return;
+      }
+
+      if (!trimmedEmail) {
+        setError('Please provide your email address');
         setLoading(false);
         return;
       }
 
       const payload: {
         databaseType: 'sqlite' | 'postgres';
-        adminEmails: string[];
+        initialAdmin: {
+          firstName: string;
+          lastName: string;
+          email: string;
+        };
         sqlite?: { path: string };
         postgres?: {
           host: string;
@@ -76,7 +87,11 @@ export default function Install() {
         };
       } = {
         databaseType,
-        adminEmails: adminEmailList,
+        initialAdmin: {
+          firstName: trimmedFirstName,
+          lastName: trimmedLastName,
+          email: trimmedEmail,
+        },
       };
 
       if (databaseType === 'sqlite') {
@@ -138,8 +153,8 @@ export default function Install() {
               Database Installation
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-8">
-              Configure your database connection and administrator accounts to complete the
-              installation.
+              Configure your database connection and create the first server admin account to complete
+              the installation.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -280,23 +295,61 @@ export default function Install() {
                 </div>
               )}
 
-              {/* Admin Emails */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Administrator Email Addresses
-                </label>
-                <textarea
-                  value={adminEmails}
-                  onChange={(e) => setAdminEmails(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
-                  rows={3}
-                  placeholder="admin1@example.com, admin2@example.com"
-                  required
-                />
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Enter email addresses separated by commas. These users will have administrator
-                  privileges.
-                </p>
+              {/* Initial server admin account */}
+              <div className="space-y-4 border-t border-gray-200 pt-6 dark:border-gray-700">
+                <div>
+                  <h2 className="text-lg font-semibold text-[#121033] dark:text-gray-100">
+                    Server admin account
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    This account will be the first server admin. You can sign in with this email after
+                    installation completes.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      First name
+                    </label>
+                    <input
+                      type="text"
+                      value={initialAdminFirstName}
+                      onChange={(e) => setInitialAdminFirstName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      autoComplete="given-name"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Last name
+                    </label>
+                    <input
+                      type="text"
+                      value={initialAdminLastName}
+                      onChange={(e) => setInitialAdminLastName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                      autoComplete="family-name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={initialAdminEmail}
+                    onChange={(e) => setInitialAdminEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-teal"
+                    autoComplete="email"
+                    required
+                  />
+                </div>
               </div>
 
               {error && (

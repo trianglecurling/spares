@@ -9,7 +9,6 @@ import {
   calendarIntervalBlocksSheet,
 } from '../services/calendarExpansion.js';
 import { sendIceBookingConfirmationEmail } from '../services/email.js';
-import { buildJwtPayloadForMember, generateToken } from '../utils/auth.js';
 
 const MS_HOUR = 60 * 60 * 1000;
 const MAX_ADVANCE_MS = 7 * 24 * MS_HOUR;
@@ -217,7 +216,6 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
     }
 
     if (member.email) {
-      const token = generateToken(await buildJwtPayloadForMember(member));
       sendIceBookingConfirmationEmail(
         member.email,
         member.name,
@@ -228,8 +226,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
           purpose: body.purpose,
           purposeOther: purposeOtherTrimmed,
           guestNames: guestNamesTrimmed,
-        },
-        token
+        }
       ).catch((err) => console.error('Ice booking confirmation email failed:', err));
     }
 

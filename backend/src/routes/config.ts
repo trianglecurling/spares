@@ -9,6 +9,7 @@ import { sendSMS } from '../services/sms.js';
 import { getDatabaseConfig, saveDatabaseConfig } from '../db/config.js';
 import { resetDatabaseState, testDatabaseConnection } from '../db/index.js';
 import { setBackendLogCaptureEnabled } from '../otel.js';
+import { invalidateAuthTokenTtlCache } from '../services/authSessionService.js';
 import {
   configResponseSchema,
   databaseConfigResponseSchema,
@@ -52,6 +53,8 @@ const updateConfigSchema = z.object({
   captureBackendLogs: z.boolean().optional(),
   testCurrentTime: z.string().nullable().optional(),
   notificationDelaySeconds: z.number().int().min(1).optional(),
+  sessionTokenTtlMinutes: z.number().int().min(5).max(1440).optional(),
+  refreshTokenTtlDays: z.number().int().min(1).max(365).optional(),
 });
 
 const observabilityQuerySchema = z.object({
@@ -89,6 +92,8 @@ const updateConfigBodySchema = {
     captureBackendLogs: { type: 'boolean' },
     testCurrentTime: { type: ['string', 'null'] },
     notificationDelaySeconds: { type: 'number' },
+    sessionTokenTtlMinutes: { type: 'number' },
+    refreshTokenTtlDays: { type: 'number' },
   },
 } as const;
 
@@ -125,9 +130,8 @@ const databaseConfigBodySchema = {
       },
       required: ['host', 'port', 'database', 'username'],
     },
-    adminEmails: { type: 'array', items: { type: 'string' }, minItems: 1 },
   },
-  required: ['databaseType', 'adminEmails'],
+  required: ['databaseType'],
 } as const;
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -175,6 +179,8 @@ export async function configRoutes(fastify: FastifyInstance) {
         disableSms: false,
         testCurrentTime: null,
         notificationDelaySeconds: 180,
+        sessionTokenTtlMinutes: 30,
+        refreshTokenTtlDays: 60,
         frontendOtelEnabled: true,
         captureFrontendLogs: true,
         captureBackendLogs: true,
@@ -202,6 +208,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       captureBackendLogs: config.capture_backend_logs !== 0,
       testCurrentTime: normalizeTimestamp(config.test_current_time),
       notificationDelaySeconds: config.notification_delay_seconds ?? 180,
+      sessionTokenTtlMinutes: config.session_token_ttl_minutes ?? 30,
+      refreshTokenTtlDays: config.refresh_token_ttl_days ?? 60,
       updatedAt: normalizeTimestamp(config.updated_at),
     };
     }
@@ -420,6 +428,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       capture_backend_logs: number;
       test_current_time: Date | null;
       notification_delay_seconds: number;
+      session_token_ttl_minutes: number;
+      refresh_token_ttl_days: number;
       updated_at: SQL<unknown>;
     }> = {};
 
@@ -486,6 +496,12 @@ export async function configRoutes(fastify: FastifyInstance) {
     if (body.notificationDelaySeconds !== undefined) {
       updateData.notification_delay_seconds = body.notificationDelaySeconds;
     }
+    if (body.sessionTokenTtlMinutes !== undefined) {
+      updateData.session_token_ttl_minutes = body.sessionTokenTtlMinutes;
+    }
+    if (body.refreshTokenTtlDays !== undefined) {
+      updateData.refresh_token_ttl_days = body.refreshTokenTtlDays;
+    }
 
     if (Object.keys(updateData).length > 0) {
       updateData.updated_at = sql`CURRENT_TIMESTAMP`;
@@ -498,6 +514,10 @@ export async function configRoutes(fastify: FastifyInstance) {
       // Invalidate test time cache if test time was updated
       if (body.testCurrentTime !== undefined) {
         invalidateTestTimeCache();
+      }
+
+      if (body.sessionTokenTtlMinutes !== undefined || body.refreshTokenTtlDays !== undefined) {
+        invalidateAuthTokenTtlCache();
       }
       
       // Invalidate cached clients in email and SMS services
@@ -546,6 +566,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       captureBackendLogs: updatedConfig.capture_backend_logs !== 0,
       testCurrentTime: normalizeTimestamp(updatedConfig.test_current_time),
       notificationDelaySeconds: updatedConfig.notification_delay_seconds ?? 180,
+      sessionTokenTtlMinutes: updatedConfig.session_token_ttl_minutes ?? 30,
+      refreshTokenTtlDays: updatedConfig.refresh_token_ttl_days ?? 60,
       updatedAt: normalizeTimestamp(updatedConfig.updated_at),
     };
     }
@@ -655,7 +677,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
 
     // Return config without password for security
-      return {
+    return {
       type: config.type,
       sqlite: config.sqlite,
       postgres: config.postgres ? {
@@ -666,7 +688,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         // Don't return password
         ssl: config.postgres.ssl,
       } : undefined,
-      adminEmails: config.adminEmails,
     };
     }
   );
@@ -685,7 +706,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       password: z.string().optional(), // Optional - if not provided, keep existing
       ssl: z.boolean().optional(),
     }).optional(),
-    adminEmails: z.array(z.string().email()).min(1),
   });
 
   fastify.post<{ Body: DatabaseConfigBody; Reply: { success: boolean; message: string } | ApiErrorResponse }>(
@@ -741,7 +761,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         password: passwordToUse!,
         ssl: body.postgres.ssl || false,
       } : undefined,
-      adminEmails: body.adminEmails,
     };
 
     // Test database connection FIRST - before saving anything

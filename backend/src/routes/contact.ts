@@ -70,7 +70,8 @@ const requestSchema = z.object({
 });
 
 const confirmSchema = z.object({
-  token: z.string().trim().min(20).max(300),
+  email: z.string().email().max(320),
+  code: z.string().trim().length(6),
 });
 
 type PendingContactMessage = {
@@ -101,14 +102,17 @@ function escapeHtml(input: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function createToken(): string {
-  return `${crypto.randomUUID()}${crypto.randomUUID().replace(/-/g, '')}`;
+function createCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-function publicContactConfirmUrl(token: string): string {
+function pendingMessageKey(email: string, code: string): string {
+  return `${email.toLowerCase().trim()}:${code}`;
+}
+
+function publicContactConfirmUrl(): string {
   const base = config.frontendUrl.replace(/\/+$/, '');
-  const encodedToken = encodeURIComponent(token);
-  return `${base}/contact/confirm?token=${encodedToken}`;
+  return `${base}/contact/confirm`;
 }
 
 export async function contactRoutes(fastify: FastifyInstance) {
@@ -125,11 +129,11 @@ export async function contactRoutes(fastify: FastifyInstance) {
 
     cleanupExpiredPendingMessages();
 
-    const token = createToken();
+    const code = createCode();
     const now = Date.now();
     const expiresAt = now + pendingContactTtlMs;
 
-    pendingMessages.set(token, {
+    pendingMessages.set(pendingMessageKey(payload.email, code), {
       recipient: payload.recipient,
       senderEmail: payload.email,
       subject: payload.subject,
@@ -139,29 +143,31 @@ export async function contactRoutes(fastify: FastifyInstance) {
     });
 
     const recipientInfo = contactRecipients[payload.recipient];
-    const confirmUrl = publicContactConfirmUrl(token);
+    const confirmUrl = publicContactConfirmUrl();
     const safeSubject = escapeHtml(payload.subject);
     const safeBody = escapeHtml(payload.body);
     const safeSenderEmail = escapeHtml(payload.email);
 
     const htmlContent = `
       <h2>Confirm your contact message</h2>
-      <p>Please click &quot;Send now&quot; to confirm sending your message below.</p>
+      <p>Please enter this code on the contact confirmation page to send your message:</p>
+
+      <p style="font-size: 24px; font-weight: 700; letter-spacing: 0.08em;">${code}</p>
 
       <div style="margin: 18px 0;">
         <a href="${confirmUrl}" style="display: inline-block; background-color: #0f766e; color: #ffffff; padding: 14px 24px; text-decoration: none; font-weight: 700; border-radius: 8px; font-size: 16px;">
-          Send now
+          Open confirmation page
         </a>
       </div>
 
-      <p style="font-size: 13px; color: #555;">This link expires in 30 minutes.</p>
+      <p style="font-size: 13px; color: #555;">This code expires in 30 minutes.</p>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
       <p><strong>From:</strong> ${safeSenderEmail}</p>
       <p><strong>To:</strong> ${escapeHtml(recipientInfo.label)}</p>
       <p><strong>Subject:</strong> ${safeSubject}</p>
       <p><strong>Message:</strong></p>
       <pre style="white-space: pre-wrap; padding: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px;">${safeBody}</pre>
-      <p style="font-size: 13px; color: #555;">If the button does not work, use this link: ${confirmUrl}</p>
+      <p style="font-size: 13px; color: #555;">If the button does not work, visit ${confirmUrl} and enter the code above.</p>
     `;
 
     await sendEmail({
@@ -182,13 +188,13 @@ export async function contactRoutes(fastify: FastifyInstance) {
 
     cleanupExpiredPendingMessages();
 
-    const token = parsed.data.token;
-    const pending = pendingMessages.get(token);
+    const key = pendingMessageKey(parsed.data.email, parsed.data.code);
+    const pending = pendingMessages.get(key);
     if (!pending) {
-      return reply.code(400).send({ error: 'This confirmation link is invalid or has expired.' });
+      return reply.code(400).send({ error: 'This confirmation code is invalid or has expired.' });
     }
 
-    pendingMessages.delete(token);
+    pendingMessages.delete(key);
 
     const recipientInfo = contactRecipients[pending.recipient];
     const safeSubject = escapeHtml(pending.subject);

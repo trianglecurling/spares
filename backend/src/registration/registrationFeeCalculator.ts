@@ -27,6 +27,31 @@ function positiveMinor(value: number): number {
   return Math.max(0, Math.round(value));
 }
 
+const REAL_LEAGUE_SELECTION_TYPES = new Set([
+  'guaranteed_return',
+  'return_subject_to_availability',
+  'waitlist_add',
+  'waitlist_replace',
+  'byot_request',
+  'play_in_request',
+  'instructional_join',
+]);
+
+/**
+ * A curler gets the basic (spare-only) ice privilege fee when they explicitly chose basic ice
+ * (regular_spare_only), or when they chose league play but only selected fee-0 leagues, which is
+ * equivalent to basic ice. In the latter case the fee is added silently.
+ */
+function qualifiesForSpareOnlyIce(context: RegistrationContext): boolean {
+  if (context.membershipOption === 'regular_spare_only') return true;
+  if (context.membershipOption !== 'regular') return false;
+  const realSelections = context.selections.filter(
+    (selection) => selection.leagueId != null && REAL_LEAGUE_SELECTION_TYPES.has(selection.selectionType)
+  );
+  if (realSelections.length === 0) return false;
+  return realSelections.every((selection) => (context.leagues[selection.leagueId!]?.registrationFeeMinor ?? 0) === 0);
+}
+
 function addCharge(
   lineItems: RegistrationFeeLineItem[],
   input: Omit<RegistrationFeeLineItem, 'amountMinor'> & { amountMinor: number }
@@ -148,7 +173,7 @@ function addSelectionCharges(context: RegistrationContext, lineItems: Registrati
     const league = getSelectionLeague(context, selection);
     if (
       league &&
-      ['guaranteed_return', 'return_subject_to_availability', 'byot_request'].includes(selection.selectionType)
+      ['guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join'].includes(selection.selectionType)
     ) {
       addCharge(lineItems, {
         lineType: 'league_fee',
@@ -208,10 +233,10 @@ export function calculateRegistrationFees(context: RegistrationContext): Registr
       discountEligible: false,
     });
   }
-  if (context.membershipOption === 'regular_spare_only') {
+  if (qualifiesForSpareOnlyIce(context)) {
     addCharge(lineItems, {
       lineType: 'spare_only_fee',
-      description: 'Spare-only ice privilege',
+      description: 'Basic ice privileges',
       amountMinor: context.priceConfig.spareOnlyIcePrivilegeFeeMinor,
       discountEligible: context.isSocialToRegularUpgrade !== true,
       discountScope: 'eligible_invoice_items',

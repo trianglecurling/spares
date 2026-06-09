@@ -1,15 +1,15 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import AutocompleteInput from '../components/AutocompleteInput';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
-import FormSection from '../components/FormSection';
+import PhysicalAddressCollect from '../components/PhysicalAddressCollect';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import api, { formatApiError } from '../utils/api';
 import { TeamPlayersField, defaultTeamPlayersJson } from '../components/eventRegistration/TeamPlayersField';
 import { isSubheadingFieldType, TEAM_POSITIONS_DOUBLES, TEAM_POSITIONS_FOUR } from '../utils/eventRegistrationFieldPresets';
+import { structuredPostalFromEventJson, structuredPostalToEventJson } from '../utils/structuredPostalAddress';
 
 const publicInput =
   'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-teal focus:outline-none focus:ring-2 focus:ring-primary-teal/20 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:placeholder:text-gray-400 disabled:opacity-80 disabled:focus:border-gray-200 disabled:focus:ring-0 read-only:cursor-default read-only:border-gray-200 read-only:bg-gray-50 read-only:text-gray-700 read-only:focus:border-gray-300 read-only:focus:ring-0';
@@ -171,7 +171,7 @@ export default function PublicEventRegisterPage() {
 
   useEffect(() => {
     if (!event) return;
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
     if (!token) return;
     api
       .get('/members/me')
@@ -784,191 +784,20 @@ function PresetAddressField({
   value: string;
   onChange: (value: string) => void;
 }) {
-  let parsed: { street?: string; city?: string; state?: string; postalCode?: string; country?: string };
-  try {
-    const o = value ? JSON.parse(value) : {};
-    parsed =
-      typeof o === 'object' && o !== null
-        ? (o as typeof parsed)
-        : { street: '', city: '', state: '', postalCode: '', country: '' };
-  } catch {
-    parsed = { street: '', city: '', state: '', postalCode: '', country: '' };
-  }
-
-  const setPart = (key: keyof typeof parsed, v: string) => {
-    onChange(JSON.stringify({ ...parsed, [key]: v }));
-  };
-
-  const streetVal = parsed.street ?? '';
-  /** Avoid Nominatim calls for prefilled addresses until the user edits street. */
-  const [streetDirty, setStreetDirty] = useState(false);
-  const [lookupLoading, setLookupLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<Array<{ label: string; json: string }>>([]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addressLookupSeqRef = useRef(0);
-  const addressFetchAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    addressFetchAbortRef.current?.abort();
-    const seq = ++addressLookupSeqRef.current;
-    if (!streetDirty) {
-      setSuggestions([]);
-      setLookupLoading(false);
-      return;
-    }
-    const q = streetVal.trim();
-    if (q.length === 0) {
-      setSuggestions([]);
-      setLookupLoading(false);
-      return;
-    }
-    if (q.length < 3) {
-      debounceRef.current = setTimeout(() => {
-        if (seq !== addressLookupSeqRef.current) return;
-        setLookupLoading(false);
-        setSuggestions([]);
-      }, 450);
-      return () => {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-      };
-    }
-    debounceRef.current = setTimeout(() => {
-      if (seq !== addressLookupSeqRef.current) return;
-      const ac = new AbortController();
-      addressFetchAbortRef.current = ac;
-      void (async () => {
-        try {
-          setLookupLoading(true);
-          const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&addressdetails=1&limit=5`;
-          const res = await fetch(url, {
-            signal: ac.signal,
-            headers: {
-              Accept: 'application/json',
-              'User-Agent': 'BroomStack/1.0 (event registration)',
-            },
-          });
-          const data = (await res.json()) as Array<{
-            display_name?: string;
-            address?: Record<string, string>;
-          }>;
-          if (seq !== addressLookupSeqRef.current) return;
-          const mapped = data.map((item) => {
-            const a = item.address ?? {};
-            const street = [a.house_number, a.road].filter(Boolean).join(' ').trim() || a.road || '';
-            const city = a.city || a.town || a.village || a.hamlet || '';
-            const state = a.state || '';
-            const postalCode = a.postcode || '';
-            const country = a.country || '';
-            const json = JSON.stringify({ street, city, state, postalCode, country });
-            return { label: item.display_name || street || city, json };
-          });
-          setSuggestions(mapped);
-        } catch (e) {
-          if (e instanceof DOMException && e.name === 'AbortError') return;
-          if (seq !== addressLookupSeqRef.current) return;
-          setSuggestions([]);
-        } finally {
-          if (seq === addressLookupSeqRef.current) setLookupLoading(false);
-        }
-      })();
-    }, 450);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [streetVal, streetDirty]);
-
-  const idPrefix = `reg-addr-${field.id}`;
-  const trimmedStreet = streetVal.trim();
-  const showStreetDropdown = streetDirty && trimmedStreet.length > 0;
-
-  const applyStreetSuggestion = (s: { label: string; json: string }) => {
-    setStreetDirty(false);
-    setLookupLoading(false);
-    onChange(s.json);
-    setSuggestions([]);
-  };
-
+  const structured = useMemo(() => structuredPostalFromEventJson(value), [value]);
   return (
-    <FormSection
+    <PhysicalAddressCollect
+      sectionTitle={field.label}
+      sectionDescription={field.required === 1 ? 'Required' : 'Optional'}
+      value={structured}
+      onChange={(next) => onChange(structuredPostalToEventJson(next))}
+      entryMode="auto"
+      required={field.required === 1}
       tone="public"
-      title={field.label}
-      description={field.required === 1 ? 'Required' : 'Optional'}
+      textInputClassName={publicInput}
+      nominatimContext="event registration"
       className="space-y-3"
-    >
-      <FormField tone="public" label="Street" htmlFor={`${idPrefix}-street`} required={field.required === 1}>
-        <div className="relative">
-          <AutocompleteInput
-            inputId={`${idPrefix}-street`}
-            inputValue={streetVal}
-            onInputValueChange={(v) => {
-              setStreetDirty(true);
-              setPart('street', v);
-              if (v.trim().length >= 1) setLookupLoading(true);
-            }}
-            options={suggestions}
-            onSelectOption={applyStreetSuggestion}
-            getOptionKey={(suggestion) => suggestion.json}
-            renderOption={(suggestion) => <span>{suggestion.label}</span>}
-            placeholder="Street"
-            disabled={false}
-            loading={lookupLoading}
-            loadingText="Loading..."
-            noMatchesText={trimmedStreet.length >= 3 ? 'No results' : 'Keep typing to search.'}
-            listboxLabel="Street suggestions"
-            shouldShowDropdown={showStreetDropdown}
-            inputClassName={publicInput}
-            required={field.required === 1}
-            autoComplete="off"
-          />
-        </div>
-      </FormField>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <FormField tone="public" label="City" htmlFor={`${idPrefix}-city`} required={field.required === 1}>
-          <input
-            id={`${idPrefix}-city`}
-            type="text"
-            required={field.required === 1}
-            value={parsed.city ?? ''}
-            onChange={(e) => setPart('city', e.target.value)}
-            className={publicInput}
-            placeholder="City"
-          />
-        </FormField>
-        <FormField tone="public" label="State / province" htmlFor={`${idPrefix}-state`}>
-          <input
-            id={`${idPrefix}-state`}
-            type="text"
-            value={parsed.state ?? ''}
-            onChange={(e) => setPart('state', e.target.value)}
-            className={publicInput}
-            placeholder="State / province"
-          />
-        </FormField>
-      </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <FormField tone="public" label="Postal code" htmlFor={`${idPrefix}-postal`}>
-          <input
-            id={`${idPrefix}-postal`}
-            type="text"
-            value={parsed.postalCode ?? ''}
-            onChange={(e) => setPart('postalCode', e.target.value)}
-            className={publicInput}
-            placeholder="Postal code"
-          />
-        </FormField>
-        <FormField tone="public" label="Country" htmlFor={`${idPrefix}-country`}>
-          <input
-            id={`${idPrefix}-country`}
-            type="text"
-            value={parsed.country ?? ''}
-            onChange={(e) => setPart('country', e.target.value)}
-            className={publicInput}
-            placeholder="Country"
-          />
-        </FormField>
-      </div>
-    </FormSection>
+    />
   );
 }
 

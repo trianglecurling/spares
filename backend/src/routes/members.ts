@@ -2,17 +2,23 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { isAdmin, isServerAdmin, isInServerAdminsList, isSponsorAdmin } from '../utils/auth.js';
-import { hasScope, isEmailChangeToReservedServerAdminAddress } from '../utils/rbac.js';
+import { isAdmin, isServerAdmin, isSponsorAdmin } from '../utils/auth.js';
+import { hasScope } from '../utils/rbac.js';
 import { Member } from '../types.js';
 import {
   bulkCreateResponseSchema,
   bulkDeleteResponseSchema,
+  bulkExperienceBaselinesBodySchema,
+  bulkExperienceBaselinesResponseSchema,
   bulkSendWelcomeResponseSchema,
   loginLinkResponseSchema,
   memberCreateResponseSchema,
+  memberEmergencyContactResponseSchema,
+  memberExperienceSummaryResponseSchema,
   memberLeaguesResponseSchema,
   memberListResponseSchema,
+  memberPaymentDetailSchema,
+  memberPaymentHistoryResponseSchema,
   memberProfileResponseSchema,
   memberUpdateResponseSchema,
   successResponseSchema,
@@ -25,12 +31,18 @@ import type {
   BulkCreateResponse,
   BulkDeleteBody,
   BulkDeleteResponse,
+  BulkExperienceBaselinesBody,
+  BulkExperienceBaselinesResponse,
   BulkSendWelcomeResponse,
   CreateMemberBody,
   LoginLinkResponse,
   MemberAccountAccessDelegatesResponse,
   MemberCreateResponse,
+  MemberEmergencyContactResponse,
+  MemberExperienceSummaryResponse,
   MemberLeaguesResponse,
+  MemberPaymentDetail,
+  MemberPaymentHistoryResponse,
   MemberProfileResponse,
   MemberSummaryResponse,
   MemberUpdateResponse,
@@ -39,44 +51,95 @@ import type {
   UpdateProfileBody,
 } from '../api/types.js';
 import { sendWelcomeEmail } from '../services/email.js';
-import { buildJwtPayloadForMember, generateEmailLinkToken, normalizeEmail } from '../utils/auth.js';
+import { getMemberPaymentDetail, listMemberPaymentHistory } from '../services/memberPaymentHistoryService.js';
+import { normalizeEmail } from '../utils/auth.js';
 import { config } from '../config.js';
 import {
-  findMemberIdWithConflictingNormalizedEmail,
+  findMemberIdWithConflictingNormalizedEmailChange,
   listDelegateGranteesForGrantor,
   memberIdsWithSameNormalizedEmailAs,
 } from '../services/accountAccess.js';
+import {
+  applyMemberDemographicsUpdate,
+  MemberDemographicsUpdateError,
+  MemberDemographicsValidationError,
+} from '../services/memberDemographics.js';
+import { sendValidationError } from '../api/errors.js';
+import { resolveMemberNameFields, splitMemberDisplayName } from '../utils/memberName.js';
+import {
+  countServerAdminsFromRows,
+  countServerAdminsInDb,
+  isLastServerAdminInDb,
+  isLastServerAdminRow,
+  LAST_SERVER_ADMIN_ERROR,
+} from '../utils/serverAdmin.js';
+import {
+  normalizeHalfYearExperienceValue,
+  validateHalfYearExperienceValue,
+} from '../registration/curlingExperienceYears.js';
+import { importMemberExperienceBaselines } from '../services/memberExperienceBaselineImport.js';
+import { getMemberTotalExperienceYears } from '../services/memberExperienceSummary.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
 }
 
+const profileDemographicFieldKeys = [
+  'firstName',
+  'lastName',
+  'dateOfBirth',
+  'mailingAddress',
+  'emergencyContactName',
+  'emergencyContactPhone',
+] as const;
+
 const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  dateOfBirth: z.string().min(1).optional(),
+  mailingAddress: z.string().min(1).optional(),
+  emergencyContactName: z.string().min(1).optional(),
+  emergencyContactPhone: z.string().min(1).optional(),
   optedInSms: z.boolean().optional(),
   emailVisible: z.boolean().optional(),
   phoneVisible: z.boolean().optional(),
   themePreference: z.enum(['light', 'dark', 'system']).optional(),
 });
 
-const createMemberSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  phone: z.string().optional(),
-  validThrough: z.string().nullable().optional(),
-  spareOnly: z.boolean().optional(),
-  socialMember: z.boolean().optional(),
-  isAdmin: z.boolean().optional(),
-  isServerAdmin: z.boolean().optional(),
-  isCalendarAdmin: z.boolean().optional(),
-  isContentAdmin: z.boolean().optional(),
-  isSponsorAdmin: z.boolean().optional(),
-  isLeagueAdministrator: z.boolean().optional(),
-});
+const createMemberSchema = z
+  .object({
+    firstName: z.string().min(1).optional(),
+    lastName: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    email: z.string().email(),
+    phone: z.string().optional(),
+    validThrough: z.string().nullable().optional(),
+    spareOnly: z.boolean().optional(),
+    socialMember: z.boolean().optional(),
+    isAdmin: z.boolean().optional(),
+    isServerAdmin: z.boolean().optional(),
+    isCalendarAdmin: z.boolean().optional(),
+    isContentAdmin: z.boolean().optional(),
+    isSponsorAdmin: z.boolean().optional(),
+    isLeagueAdministrator: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const resolved = resolveMemberNameFields(data);
+    if (!resolved) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'First name and last name are required.',
+        path: ['firstName'],
+      });
+    }
+  });
 
 const updateMemberSchema = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
@@ -89,6 +152,8 @@ const updateMemberSchema = z.object({
   isContentAdmin: z.boolean().optional(),
   isSponsorAdmin: z.boolean().optional(),
   isLeagueAdministrator: z.boolean().optional(),
+  baselineOtherClubExperienceYears: z.coerce.number().optional(),
+  baselineClubExperienceYears: z.coerce.number().optional(),
 });
 
 const bulkDeleteSchema = z.object({
@@ -112,6 +177,29 @@ const bulkCreateRequestSchema = z.union([
     socialMember: z.boolean().optional(),
   }),
 ]);
+
+const bulkExperienceBaselinesSchema = z.object({
+  rows: z
+    .array(
+      z
+        .object({
+          email: z.string().optional(),
+          name: z.string().optional(),
+          baselineOtherClubExperienceYears: z.coerce.number(),
+          baselineClubExperienceYears: z.coerce.number(),
+        })
+        .superRefine((row, ctx) => {
+          if (!row.email?.trim() && !row.name?.trim()) {
+            ctx.addIssue({
+              code: 'custom',
+              message: 'Each row must include an email or a name.',
+              path: ['email'],
+            });
+          }
+        }),
+    )
+    .min(1),
+});
 
 const directoryQuerySchema = z.object({
   leagueId: z.coerce.number().int().positive().optional(),
@@ -147,6 +235,12 @@ const updateProfileBodySchema = {
     name: { type: 'string', minLength: 1 },
     email: { type: 'string' },
     phone: { type: 'string' },
+    firstName: { type: 'string', minLength: 1 },
+    lastName: { type: 'string', minLength: 1 },
+    dateOfBirth: { type: 'string', minLength: 1 },
+    mailingAddress: { type: 'string', minLength: 1 },
+    emergencyContactName: { type: 'string', minLength: 1 },
+    emergencyContactPhone: { type: 'string', minLength: 1 },
     optedInSms: { type: 'boolean' },
     emailVisible: { type: 'boolean' },
     phoneVisible: { type: 'boolean' },
@@ -158,6 +252,8 @@ const createMemberBodySchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    firstName: { type: 'string', minLength: 1 },
+    lastName: { type: 'string', minLength: 1 },
     name: { type: 'string', minLength: 1 },
     email: { type: 'string' },
     phone: { type: 'string' },
@@ -171,13 +267,15 @@ const createMemberBodySchema = {
     isSponsorAdmin: { type: 'boolean' },
     isLeagueAdministrator: { type: 'boolean' },
   },
-  required: ['name', 'email'],
+  required: ['email'],
 } as const;
 
 const updateMemberBodySchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    firstName: { type: 'string', minLength: 1 },
+    lastName: { type: 'string', minLength: 1 },
     name: { type: 'string', minLength: 1 },
     email: { type: 'string' },
     phone: { type: 'string' },
@@ -189,6 +287,8 @@ const updateMemberBodySchema = {
     isCalendarAdmin: { type: 'boolean' },
     isContentAdmin: { type: 'boolean' },
     isSponsorAdmin: { type: 'boolean' },
+    baselineOtherClubExperienceYears: { type: 'number' },
+    baselineClubExperienceYears: { type: 'number' },
   },
 } as const;
 
@@ -253,6 +353,8 @@ const directoryQuerySchemaJson = {
 
 interface MemberUpdateData {
   name?: string;
+  first_name?: string;
+  last_name?: string;
   email?: string;
   phone?: string | null;
   valid_through?: string | null;
@@ -267,7 +369,31 @@ interface MemberUpdateData {
   is_calendar_admin?: number;
   is_content_admin?: number;
   is_sponsor_admin?: number;
+  baseline_other_club_experience_years?: number;
+  baseline_club_experience_years?: number;
   updated_at?: ReturnType<typeof sql>;
+}
+
+function memberExperienceBaselineDetails(body: {
+  baselineOtherClubExperienceYears?: number;
+  baselineClubExperienceYears?: number;
+}): Record<string, string> | null {
+  const details: Record<string, string> = {};
+  if (body.baselineOtherClubExperienceYears !== undefined) {
+    const error = validateHalfYearExperienceValue(
+      body.baselineOtherClubExperienceYears,
+      'Years of experience at another club',
+    );
+    if (error) details.baselineOtherClubExperienceYears = error;
+  }
+  if (body.baselineClubExperienceYears !== undefined) {
+    const error = validateHalfYearExperienceValue(
+      body.baselineClubExperienceYears,
+      'Baseline years of experience at this club',
+    );
+    if (error) details.baselineClubExperienceYears = error;
+  }
+  return Object.keys(details).length > 0 ? details : null;
 }
 
 async function setGlobalLeagueAdministrator(
@@ -320,6 +446,48 @@ function isMemberExpired(member: Member): boolean {
   return today > validThrough;
 }
 
+function memberSummaryNameFields(member: Member): { firstName: string | null; lastName: string | null } {
+  const storedFirst = member.first_name?.trim() ?? '';
+  const storedLast = member.last_name?.trim() ?? '';
+  if (storedFirst || storedLast) {
+    return {
+      firstName: storedFirst || null,
+      lastName: storedLast || null,
+    };
+  }
+  const split = splitMemberDisplayName(member.name);
+  return {
+    firstName: split.firstName || null,
+    lastName: split.lastName || null,
+  };
+}
+
+function buildMemberProfileResponse(member: Member): MemberProfileResponse {
+  return {
+    id: member.id,
+    name: member.name,
+    email: member.email,
+    phone: member.phone,
+    firstName: member.first_name ?? null,
+    lastName: member.last_name ?? null,
+    dateOfBirth: normalizeDateString(member.date_of_birth),
+    mailingAddress: member.mailing_address ?? null,
+    emergencyContactName: member.emergency_contact_name ?? null,
+    emergencyContactPhone: member.emergency_contact_phone ?? null,
+    validThrough: normalizeDateString(member.valid_through),
+    spareOnly: member.spare_only === 1,
+    socialMember: (member.social_member ?? 0) === 1,
+    isAdmin: isAdmin(member),
+    isServerAdmin: isServerAdmin(member),
+    firstLoginCompleted: member.first_login_completed === 1,
+    optedInSms: member.opted_in_sms === 1,
+    emailSubscribed: member.email_subscribed === 1,
+    emailVisible: member.email_visible === 1,
+    phoneVisible: member.phone_visible === 1,
+    themePreference: member.theme_preference || 'system',
+  };
+}
+
 function leagueManagerLeagueIdsFromMember(member: Member): number[] {
   const roleIds = new Set<number>();
   for (const rule of member.authz?.scopeRules ?? []) {
@@ -345,31 +513,90 @@ export async function memberRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, _reply) => {
-    const member = (request as AuthenticatedRequest).member;
+    const authMember = (request as AuthenticatedRequest).member;
+    const { db, schema } = getDrizzleDb();
+    const rows = await db
+      .select()
+      .from(schema.members)
+      .where(eq(schema.members.id, authMember.id))
+      .limit(1);
+    const member = (rows[0] as Member | undefined) ?? authMember;
 
     const leagueManagerLeagueIds = leagueManagerLeagueIdsFromMember(member);
     const isLeagueAdministratorGlobal = hasScope(member.authz, 'leagues.manage');
 
     return {
-      id: member.id,
-      name: member.name,
-      email: member.email,
-      phone: member.phone,
-      validThrough: normalizeDateString(member.valid_through),
-      spareOnly: member.spare_only === 1,
-      socialMember: (member.social_member ?? 0) === 1,
-      isAdmin: isAdmin(member),
-      isServerAdmin: isServerAdmin(member),
+      ...buildMemberProfileResponse(member),
       leagueManagerLeagueIds,
       isLeagueAdministrator: isLeagueAdministratorGlobal,
       isLeagueAdministratorGlobal,
-      firstLoginCompleted: member.first_login_completed === 1,
-      optedInSms: member.opted_in_sms === 1,
-      emailSubscribed: member.email_subscribed === 1,
-      emailVisible: member.email_visible === 1,
-      phoneVisible: member.phone_visible === 1,
-      themePreference: member.theme_preference || 'system',
     };
+    }
+  );
+
+  fastify.get<{ Reply: MemberPaymentHistoryResponse | ApiErrorResponse }>(
+    '/members/me/payment-history',
+    {
+      schema: {
+        tags: ['members'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            limit: { type: 'number' },
+            offset: { type: 'number' },
+          },
+        },
+        response: {
+          200: memberPaymentHistoryResponseSchema,
+        },
+      },
+    },
+    async (request, _reply) => {
+      const memberId = (request as AuthenticatedRequest).member.id;
+      const query = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(200).optional(),
+          offset: z.coerce.number().int().min(0).optional(),
+        })
+        .parse(request.query ?? {});
+
+      return listMemberPaymentHistory(memberId, {
+        limit: query.limit,
+        offset: query.offset,
+      });
+    }
+  );
+
+  fastify.get<{
+    Params: { orderToken: string };
+    Reply: MemberPaymentDetail | ApiErrorResponse;
+  }>(
+    '/members/me/payment-history/:orderToken',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            orderToken: { type: 'string' },
+          },
+          required: ['orderToken'],
+        },
+        response: {
+          200: memberPaymentDetailSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const memberId = (request as AuthenticatedRequest).member.id;
+      const params = z.object({ orderToken: z.string().uuid() }).parse(request.params);
+      const detail = await getMemberPaymentDetail(memberId, params.orderToken);
+      if (!detail) {
+        return reply.code(404).send({ error: 'Payment not found' });
+      }
+      return detail;
     }
   );
 
@@ -464,29 +691,68 @@ export async function memberRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    async (request, _reply) => {
+    async (request, reply) => {
     const member = (request as AuthenticatedRequest).member;
 
     const body = updateProfileSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
+    const hasAnyDemographicField = profileDemographicFieldKeys.some((key) => body[key] !== undefined);
+    const hasAllDemographicFields = profileDemographicFieldKeys.every((key) => body[key] !== undefined);
+    if (hasAnyDemographicField && !hasAllDemographicFields) {
+      return sendValidationError(reply, 'Validation failed', {
+        demographics: 'Provide first name, last name, date of birth, mailing address, and emergency contact together.',
+      });
+    }
+
+    if (hasAllDemographicFields) {
+      const email = body.email ?? member.email;
+      const phone = body.phone ?? member.phone;
+      if (!email) {
+        return sendValidationError(reply, 'Validation failed', { email: 'Email address is required.' });
+      }
+      try {
+        await applyMemberDemographicsUpdate(member.id, {
+          firstName: body.firstName!,
+          lastName: body.lastName!,
+          dateOfBirth: body.dateOfBirth!,
+          email,
+          phone: phone ?? '',
+          mailingAddress: body.mailingAddress!,
+          emergencyContactName: body.emergencyContactName!,
+          emergencyContactPhone: body.emergencyContactPhone!,
+        });
+      } catch (error) {
+        if (error instanceof MemberDemographicsValidationError) {
+          return sendValidationError(reply, error.message, error.details);
+        }
+        if (error instanceof MemberDemographicsUpdateError) {
+          return reply.code(409).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+
     const updateData: MemberUpdateData = {};
 
-    if (body.name !== undefined) {
+    if (body.name !== undefined && !hasAllDemographicFields) {
       updateData.name = body.name;
     }
-    if (body.email !== undefined) {
+    if (body.email !== undefined && !hasAllDemographicFields) {
       const normalizedEmail = normalizeEmail(body.email);
-      if (isEmailChangeToReservedServerAdminAddress(member.email, normalizedEmail)) {
-        return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
-      }
-      const conflictId = await findMemberIdWithConflictingNormalizedEmail(normalizedEmail, member.id);
+      const conflictId = await findMemberIdWithConflictingNormalizedEmailChange(
+        normalizedEmail,
+        member.email,
+        member.id
+      );
       if (conflictId != null) {
-        return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
+        return reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
       }
-      updateData.email = normalizedEmail;
+      if (normalizedEmail !== (member.email ? normalizeEmail(member.email) : null)) {
+        updateData.email = normalizedEmail;
+      }
     }
-    if (body.phone !== undefined) {
+    if (body.phone !== undefined && !hasAllDemographicFields) {
       updateData.phone = body.phone;
     }
     if (body.optedInSms !== undefined) {
@@ -515,26 +781,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .from(schema.members)
       .where(eq(schema.members.id, member.id))
       .limit(1);
-    
-    const updatedMember = updatedMembers[0] as Member;
 
-    return {
-      id: updatedMember.id,
-      name: updatedMember.name,
-      email: updatedMember.email,
-      phone: updatedMember.phone,
-      validThrough: normalizeDateString(updatedMember.valid_through),
-      spareOnly: updatedMember.spare_only === 1,
-      socialMember: (updatedMember.social_member ?? 0) === 1,
-      isAdmin: isAdmin(updatedMember),
-      isServerAdmin: isServerAdmin(updatedMember),
-      firstLoginCompleted: updatedMember.first_login_completed === 1,
-      optedInSms: updatedMember.opted_in_sms === 1,
-      emailSubscribed: updatedMember.email_subscribed === 1,
-      emailVisible: updatedMember.email_visible === 1,
-      phoneVisible: updatedMember.phone_visible === 1,
-      themePreference: updatedMember.theme_preference || 'system',
-    };
+    const updatedMember = updatedMembers[0] as Member;
+    return buildMemberProfileResponse(updatedMember);
     }
   );
 
@@ -622,6 +871,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         )
       );
     const leagueAdminIds = new Set(leagueAdminRows.map((row) => row.member_id));
+    const serverAdminCount = countServerAdminsFromRows(members);
 
     return members.map((m) => {
       // Basic info always visible
@@ -635,7 +885,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         isContentAdmin: (m.is_content_admin ?? 0) === 1,
         isSponsorAdmin: isSponsorAdmin(m),
         isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
-        isInServerAdminsList: isInServerAdminsList(m),
+        isLastServerAdmin: isLastServerAdminRow(m, serverAdminCount),
         emailSubscribed: Boolean(m.email_subscribed === 1),
         optedInSms: Boolean(m.opted_in_sms === 1),
         emailVisible: Boolean(m.email_visible === 1),
@@ -652,6 +902,17 @@ export async function memberRoutes(fastify: FastifyInstance) {
         response.validThrough = normalizeDateString(m.valid_through);
         response.spareOnly = m.spare_only === 1;
         response.socialMember = (m.social_member ?? 0) === 1;
+        if (isCurrentUserAdmin) {
+          const nameFields = memberSummaryNameFields(m);
+          response.firstName = nameFields.firstName;
+          response.lastName = nameFields.lastName;
+          response.baselineOtherClubExperienceYears = normalizeHalfYearExperienceValue(
+            m.baseline_other_club_experience_years ?? 0
+          );
+          response.baselineClubExperienceYears = normalizeHalfYearExperienceValue(
+            m.baseline_club_experience_years ?? 0
+          );
+        }
       } else {
         // Others see based on privacy settings
         response.email = m.email_visible === 1 ? m.email : null;
@@ -741,6 +1002,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         )
       );
     const leagueAdminIds = new Set(leagueAdminRows.map((row) => row.member_id));
+    const serverAdminCount = countServerAdminsFromRows(activeMembers);
 
     return activeMembers.map((m) => {
       const response: MemberSummaryResponse = {
@@ -752,7 +1014,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         isContentAdmin: (m.is_content_admin ?? 0) === 1,
         isSponsorAdmin: isSponsorAdmin(m),
         isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
-        isInServerAdminsList: isInServerAdminsList(m),
+        isLastServerAdmin: isLastServerAdminRow(m, serverAdminCount),
         emailSubscribed: Boolean(m.email_subscribed === 1),
         optedInSms: Boolean(m.opted_in_sms === 1),
         emailVisible: Boolean(m.email_visible === 1),
@@ -841,6 +1103,97 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // Total curling experience for a member (visible to all authenticated members)
+  fastify.get<{ Params: { memberId: string }; Reply: MemberExperienceSummaryResponse | ApiErrorResponse }>(
+    '/members/:memberId/experience',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            memberId: { type: 'string' },
+          },
+          required: ['memberId'],
+        },
+        response: {
+          200: memberExperienceSummaryResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const targetMemberId = parseInt(request.params.memberId, 10);
+      if (Number.isNaN(targetMemberId)) {
+        return reply.code(400).send({ error: 'Invalid member ID' });
+      }
+
+      const totalExperienceYears = await getMemberTotalExperienceYears(targetMemberId);
+      if (totalExperienceYears === null) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+
+      return { totalExperienceYears };
+    },
+  );
+
+  // Emergency contact for a member (visible to all authenticated members)
+  fastify.get<{ Params: { memberId: string }; Reply: MemberEmergencyContactResponse | ApiErrorResponse }>(
+    '/members/:memberId/emergency-contact',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            memberId: { type: 'string' },
+          },
+          required: ['memberId'],
+        },
+        response: {
+          200: memberEmergencyContactResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const targetMemberId = parseInt(request.params.memberId, 10);
+      if (Number.isNaN(targetMemberId)) {
+        return reply.code(400).send({ error: 'Invalid member ID' });
+      }
+
+      const { db, schema } = getDrizzleDb();
+      const rows = await db
+        .select({
+          emergency_contact_name: schema.members.emergency_contact_name,
+          emergency_contact_phone: schema.members.emergency_contact_phone,
+        })
+        .from(schema.members)
+        .where(eq(schema.members.id, targetMemberId))
+        .limit(1);
+
+      const target = rows[0];
+      if (!target) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+
+      return {
+        emergencyContactName: target.emergency_contact_name ?? null,
+        emergencyContactPhone: target.emergency_contact_phone ?? null,
+      };
+    }
+  );
+
   // Admin: Create member
   fastify.post<{ Body: CreateMemberBody; Reply: MemberCreateResponse | ApiErrorResponse }>(
     '/members',
@@ -862,6 +1215,13 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const body = createMemberSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
+    const resolvedName = resolveMemberNameFields(body);
+    if (!resolvedName) {
+      return sendValidationError(_reply, 'Validation failed', {
+        firstName: 'First name and last name are required.',
+      });
+    }
+
     if (body.spareOnly && body.socialMember) {
       return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
     }
@@ -874,7 +1234,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const result = await db
       .insert(schema.members)
       .values({
-        name: body.name,
+        name: resolvedName.name,
+        first_name: resolvedName.firstName,
+        last_name: resolvedName.lastName,
         email: body.email,
         phone: body.phone || null,
         valid_through: body.validThrough ?? null,
@@ -948,10 +1310,14 @@ export async function memberRoutes(fastify: FastifyInstance) {
       const ids: number[] = [];
       
       for (const memberData of body) {
+        const resolvedName = resolveMemberNameFields({ name: memberData.name });
+        if (!resolvedName) continue;
         const result = await tx
           .insert(schema.members)
           .values({
-            name: memberData.name,
+            name: resolvedName.name,
+            first_name: resolvedName.firstName,
+            last_name: resolvedName.lastName,
             email: memberData.email,
             phone: memberData.phone || null,
             valid_through: bulkValidThrough === undefined ? null : bulkValidThrough,
@@ -977,6 +1343,29 @@ export async function memberRoutes(fastify: FastifyInstance) {
       count: insertedIds.length,
       ids: insertedIds,
     };
+    }
+  );
+
+  // Admin: Bulk import curling experience baselines (match by email)
+  fastify.post<{ Body: BulkExperienceBaselinesBody; Reply: BulkExperienceBaselinesResponse | ApiErrorResponse }>(
+    '/members/bulk-experience-baselines',
+    {
+      schema: {
+        tags: ['members'],
+        body: bulkExperienceBaselinesBodySchema,
+        response: {
+          200: bulkExperienceBaselinesResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!isAdmin(member)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const body = bulkExperienceBaselinesSchema.parse(request.body);
+      return importMemberExperienceBaselines(body.rows);
     }
   );
 
@@ -1007,6 +1396,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const { id } = request.params;
     const memberId = parseInt(id, 10);
     const body = updateMemberSchema.parse(request.body);
+    const experienceBaselineDetails = memberExperienceBaselineDetails(body);
+    if (experienceBaselineDetails) {
+      return sendValidationError(_reply, 'Validation failed', experienceBaselineDetails);
+    }
     const { db, schema } = getDrizzleDb();
 
     const targetMembers = await db
@@ -1045,17 +1438,12 @@ export async function memberRoutes(fastify: FastifyInstance) {
       return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
     }
 
-    // Prevent changing role for users in SERVER_ADMINS (they are always server admins)
-    if (isInServerAdminsList(targetMember)) {
-      // Cannot change server admin status - they are always server admins
-      if (body.isServerAdmin !== undefined && body.isServerAdmin === false) {
-        return _reply.code(400).send({ error: 'Cannot remove server admin status from users in SERVER_ADMINS' });
-      }
-      // If trying to set isAdmin=true, ensure isServerAdmin is also true
-      if (body.isAdmin === true) {
-        // Force isServerAdmin to true for SERVER_ADMINS users
-        body.isServerAdmin = true;
-      }
+    if (
+      body.isServerAdmin === false &&
+      (targetMember.is_server_admin === 1 || isServerAdmin(targetMember)) &&
+      (await isLastServerAdminInDb(memberId))
+    ) {
+      return _reply.code(400).send({ error: LAST_SERVER_ADMIN_ERROR });
     }
 
     // Regular admins cannot modify server admin roles
@@ -1073,22 +1461,36 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
     const updateData: MemberUpdateData = {};
 
-    if (body.name !== undefined) {
-      updateData.name = body.name;
+    const hasNameFieldUpdate =
+      body.firstName !== undefined || body.lastName !== undefined || body.name !== undefined;
+    if (hasNameFieldUpdate) {
+      const resolvedName = resolveMemberNameFields({
+        firstName: body.firstName,
+        lastName: body.lastName,
+        name: body.name ?? targetMember.name,
+      });
+      if (!resolvedName) {
+        return sendValidationError(_reply, 'Validation failed', {
+          firstName: 'First name and last name are required.',
+        });
+      }
+      updateData.name = resolvedName.name;
+      updateData.first_name = resolvedName.firstName;
+      updateData.last_name = resolvedName.lastName;
     }
     if (body.email !== undefined) {
       const normalizedEmail = normalizeEmail(body.email);
-      if (
-        isEmailChangeToReservedServerAdminAddress(targetMember.email, normalizedEmail) &&
-        !isServerAdmin(member)
-      ) {
-        return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
-      }
-      const conflictId = await findMemberIdWithConflictingNormalizedEmail(normalizedEmail, memberId);
+      const conflictId = await findMemberIdWithConflictingNormalizedEmailChange(
+        normalizedEmail,
+        targetMember.email,
+        memberId
+      );
       if (conflictId != null) {
         return _reply.code(409).send({ error: MEMBER_PROFILE_EMAIL_UNAVAILABLE });
       }
-      updateData.email = normalizedEmail;
+      if (normalizedEmail !== (targetMember.email ? normalizeEmail(targetMember.email) : null)) {
+        updateData.email = normalizedEmail;
+      }
     }
     if (body.phone !== undefined) {
       updateData.phone = body.phone;
@@ -1112,18 +1514,21 @@ export async function memberRoutes(fastify: FastifyInstance) {
       updateData.is_admin = body.isAdmin ? 1 : 0;
     }
     if (body.isServerAdmin !== undefined) {
-      // If user is in SERVER_ADMINS, force is_server_admin to 1
-      if (isInServerAdminsList(targetMember)) {
-        updateData.is_server_admin = 1;
-      } else {
-        updateData.is_server_admin = body.isServerAdmin ? 1 : 0;
-      }
+      updateData.is_server_admin = body.isServerAdmin ? 1 : 0;
     }
     if (body.isCalendarAdmin !== undefined) {
       updateData.is_calendar_admin = body.isCalendarAdmin ? 1 : 0;
     }
     if (body.isContentAdmin !== undefined) {
       updateData.is_content_admin = body.isContentAdmin ? 1 : 0;
+    }
+    if (body.baselineOtherClubExperienceYears !== undefined) {
+      updateData.baseline_other_club_experience_years = normalizeHalfYearExperienceValue(
+        body.baselineOtherClubExperienceYears
+      );
+    }
+    if (body.baselineClubExperienceYears !== undefined) {
+      updateData.baseline_club_experience_years = normalizeHalfYearExperienceValue(body.baselineClubExperienceYears);
     }
     if (body.isSponsorAdmin !== undefined) {
       updateData.is_sponsor_admin = body.isSponsorAdmin ? 1 : 0;
@@ -1220,11 +1625,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
       if (isAdmin(targetMember) || isServerAdmin(targetMember)) {
         return _reply.code(403).send({ error: 'You can only delete regular members' });
       }
-    } else {
-      // Server admin can delete anyone except SERVER_ADMINS
-      if (isInServerAdminsList(targetMember)) {
-        return _reply.code(403).send({ error: 'Cannot delete server admin' });
-      }
+    } else if (isServerAdmin(targetMember) && (await isLastServerAdminInDb(memberId))) {
+      return _reply.code(400).send({ error: LAST_SERVER_ADMIN_ERROR });
     }
 
     await db.transaction(async (tx) => {
@@ -1264,6 +1666,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .where(inArray(schema.members.id, body.ids)) as Member[];
 
     const isCurrentUserServerAdmin = isServerAdmin(member);
+    let remainingServerAdmins = await countServerAdminsInDb();
 
     // Filter based on permissions
     const deletableIds = membersToDelete
@@ -1274,10 +1677,14 @@ export async function memberRoutes(fastify: FastifyInstance) {
         if (!isCurrentUserServerAdmin) {
           // Regular admin can only delete regular users (not admins or server admins)
           return !isAdmin(m) && !isServerAdmin(m);
-        } else {
-          // Server admin can delete anyone except SERVER_ADMINS
-          return !isInServerAdminsList(m);
         }
+
+        if (isServerAdmin(m)) {
+          if (remainingServerAdmins <= 1) return false;
+          remainingServerAdmins -= 1;
+        }
+
+        return true;
       })
       .map((m: Member) => m.id);
 
@@ -1358,8 +1765,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       return _reply.code(404).send({ error: 'Member not found' });
     }
 
-    const token = generateEmailLinkToken(await buildJwtPayloadForMember(targetMember));
-    const loginLink = `${config.frontendUrl}?token=${token}`;
+    const loginLink = `${config.frontendUrl}/login`;
 
     return { loginLink };
     }
@@ -1404,9 +1810,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
       return _reply.code(404).send({ error: 'Member not found or has no email' });
     }
 
-    const token = generateEmailLinkToken(await buildJwtPayloadForMember(targetMember));
     // Send welcome email asynchronously (fire-and-forget) to avoid blocking the response
-    sendWelcomeEmail(targetMember.email, targetMember.name, token).catch((error) => {
+    sendWelcomeEmail(targetMember.email, targetMember.name).catch((error) => {
       console.error('Error sending welcome email:', error);
     });
 
@@ -1453,8 +1858,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     // Send welcome emails asynchronously (fire-and-forget) to avoid blocking the response
     for (const targetMember of targetMembers) {
       if (targetMember.email) {
-        const token = generateEmailLinkToken(await buildJwtPayloadForMember(targetMember));
-        sendWelcomeEmail(targetMember.email, targetMember.name, token).catch((error) => {
+        sendWelcomeEmail(targetMember.email, targetMember.name).catch((error) => {
           console.error(`Error sending welcome email to ${targetMember.email}:`, error);
         });
       }

@@ -45,7 +45,19 @@ describe('registration configuration validation', () => {
     );
   });
 
-  test('rejects invalid BYOT league settings', () => {
+  test('accepts BYOT waitlists but rejects invalid BYOT league settings', () => {
+    expect(() =>
+      assertValidLeagueRegistrationSettings({
+        id: 10,
+        leagueType: 'bring_your_own_team',
+        capacityType: 'team',
+        capacityValue: 24,
+        registrationFeeOverrideMinor: 5000,
+        allowsWaitlist: true,
+        allowsSabbatical: false,
+      })
+    ).not.toThrow();
+
     expectValidationError(
       () =>
         assertValidLeagueRegistrationSettings({
@@ -57,7 +69,7 @@ describe('registration configuration validation', () => {
           allowsWaitlist: true,
           allowsSabbatical: true,
         }),
-      'allowsWaitlist'
+      'allowsSabbatical'
     );
   });
 

@@ -1,7 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
+import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { createPaymentService, PaymentServiceError } from '../services/paymentService.js';
+import type { Member } from '../types.js';
 
 const donationCheckoutSchema = z.object({
   amountMinor: z.coerce.number().int().min(100).max(5_000_000),
@@ -46,6 +48,7 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: unknown }>(
     '/public/donations/checkout',
     {
+      preHandler: optionalAuthMiddleware,
       schema: {
         tags: ['payments'],
       },
@@ -57,6 +60,7 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const payload = parsed.data;
+      const member = (request as { member?: Member }).member;
       const donationMetadata: Record<string, unknown> = {
         source: 'public_donation',
       };
@@ -72,7 +76,7 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
           amountMinor: payload.amountMinor,
           currency: 'usd',
           metadata: donationMetadata,
-          createdByMemberId: null,
+          createdByMemberId: member?.id ?? null,
         });
 
         const orderTokenEncoded = encodeURIComponent(order.orderToken);
