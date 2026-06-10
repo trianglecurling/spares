@@ -73,6 +73,8 @@ export const config = {
         ? parseCsvEnv(process.env.PAYMENT_ENABLED_PROVIDERS)
         : ['stripe'],
     defaultProvider: process.env.PAYMENT_DEFAULT_PROVIDER || 'stripe',
+    /** Public base URL of this API (no trailing slash), used for Square webhook signature verification. */
+    webhookBaseUrl: (process.env.PAYMENT_WEBHOOK_BASE_URL || '').trim().replace(/\/+$/, ''),
     providers: {
       stripe: {
         apiKey: process.env.STRIPE_API_KEY || '',
@@ -86,6 +88,8 @@ export const config = {
       square: {
         accessToken: process.env.SQUARE_ACCESS_TOKEN || '',
         webhookSecret: process.env.SQUARE_WEBHOOK_SECRET || '',
+        locationId: process.env.SQUARE_LOCATION_ID || '',
+        environment: (process.env.SQUARE_ENVIRONMENT || 'sandbox').trim().toLowerCase(),
       },
     },
     webhookTestDelayMs: Math.max(0, parseIntEnv(process.env.PAYMENT_WEBHOOK_TEST_DELAY_MS, 0)),

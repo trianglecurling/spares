@@ -9,7 +9,7 @@ import type {
   RegistrationInvoiceLineKindSqlite,
   WaitlistAuditActionSqlite,
 } from '../db/drizzle-schema.js';
-import { createPaymentService, PaymentServiceError } from '../services/paymentService.js';
+import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import { effectiveExperienceYears, isJuniorRecreationalEligible } from './registrationAgeExperience.js';
@@ -299,6 +299,12 @@ function dateColumnValue(value: unknown): never {
 
 function frontendBaseUrl(): string {
   return config.frontendUrl.replace(/\/+$/, '');
+}
+
+function registrationCheckoutSuccessUrl(registrationId: number, orderToken: string): string {
+  return buildCheckoutSuccessUrl(
+    `${frontendBaseUrl()}/registration/success?registration_id=${registrationId}&order_token=${encodeURIComponent(orderToken)}`
+  );
 }
 
 function memberDisplayName(row: { name?: string | null; first_name?: string | null; last_name?: string | null; email?: string | null } | null | undefined): string {
@@ -2016,7 +2022,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       try {
         const paymentService = createPaymentService();
         const order = await paymentService.createPaymentOrder({
-          provider: 'stripe',
+          provider: getDefaultPaymentProvider(),
           subjectType: 'curling_registration',
           subjectId: input.registrationId,
           amountMinor: adjustmentMinor,
@@ -2037,7 +2043,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         });
         const checkout = await paymentService.createHostedCheckoutForOrder({
           orderId: order.id,
-          successUrl: `${frontendBaseUrl()}/registration/success?registration_id=${input.registrationId}&order_token=${order.orderToken}&session_id={CHECKOUT_SESSION_ID}`,
+          successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken),
           cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
         });
         await db
@@ -2137,7 +2143,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     try {
       const paymentService = createPaymentService();
       const order = await paymentService.createPaymentOrder({
-        provider: 'stripe',
+        provider: getDefaultPaymentProvider(),
         subjectType: 'curling_registration',
         subjectId: input.registrationId,
         amountMinor: evaluation.feePreview.totalDueMinor,
@@ -2156,7 +2162,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       });
       const checkout = await paymentService.createHostedCheckoutForOrder({
         orderId: order.id,
-        successUrl: `${frontendBaseUrl()}/registration/success?registration_id=${input.registrationId}&order_token=${order.orderToken}&session_id={CHECKOUT_SESSION_ID}`,
+        successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken),
         cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
       });
       await db
@@ -2324,7 +2330,7 @@ export async function triggerDeferredRegistrationPayment(input: {
   try {
     const paymentService = createPaymentService();
     const order = await paymentService.createPaymentOrder({
-      provider: 'stripe',
+      provider: getDefaultPaymentProvider(),
       subjectType: 'curling_registration',
       subjectId: input.registrationId,
       amountMinor: feePreview.totalDueMinor,
@@ -2344,7 +2350,7 @@ export async function triggerDeferredRegistrationPayment(input: {
     });
     const checkout = await paymentService.createHostedCheckoutForOrder({
       orderId: order.id,
-      successUrl: `${frontendBaseUrl()}/registration/success?registration_id=${input.registrationId}&order_token=${order.orderToken}&session_id={CHECKOUT_SESSION_ID}`,
+      successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken),
       cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
     });
     await db

@@ -7,6 +7,7 @@ import { sendDonationReceiptEmail, sendEventRegistrationPaymentConfirmationEmail
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { logEvent } from './observability.js';
 import { dispatchWebhookEvent } from './webhookService.js';
+import { SquarePaymentProviderAdapter } from './squarePaymentProviderAdapter.js';
 
 export type PaymentProvider = 'stripe' | 'paypal' | 'square';
 export type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
@@ -682,6 +683,9 @@ export class PaymentService {
 
   async createPaymentOrder(input: CreatePaymentOrderInput): Promise<{ id: number; orderToken: string; status: PaymentOrderStatus }> {
     const provider = input.provider ?? this.defaultProvider;
+    if (!getEnabledPaymentProviders().includes(provider)) {
+      throw new PaymentServiceError(`Payment provider ${provider} is not enabled`, 400);
+    }
     if (!this.adapters[provider]) {
       throw new PaymentServiceError(`Unsupported payment provider: ${provider}`, 400);
     }
@@ -1856,25 +1860,63 @@ function normalizeProvider(value: string): PaymentProvider | null {
   return null;
 }
 
+export function getEnabledPaymentProviders(): PaymentProvider[] {
+  const providers = config.payment.enabledProviders
+    .map(normalizeProvider)
+    .filter((provider): provider is PaymentProvider => provider !== null);
+  return providers.length > 0 ? providers : ['stripe'];
+}
+
+export function getDefaultPaymentProvider(): PaymentProvider {
+  const enabled = getEnabledPaymentProviders();
+  const configuredDefault = normalizeProvider(config.payment.defaultProvider) ?? 'stripe';
+  if (enabled.includes(configuredDefault)) {
+    return configuredDefault;
+  }
+  return enabled[0] ?? 'stripe';
+}
+
+export function buildCheckoutSuccessUrl(baseSuccessUrl: string, provider: PaymentProvider = getDefaultPaymentProvider()): string {
+  if (provider !== 'stripe') {
+    return baseSuccessUrl;
+  }
+  const separator = baseSuccessUrl.includes('?') ? '&' : '?';
+  return `${baseSuccessUrl}${separator}session_id={CHECKOUT_SESSION_ID}`;
+}
+
 function buildDefaultAdapters(): Record<PaymentProvider, PaymentProviderAdapter> {
   const adapters: Partial<Record<PaymentProvider, PaymentProviderAdapter>> = {};
   adapters.stripe = new StripePaymentProviderAdapter(
     config.payment.providers.stripe.apiKey,
     config.payment.providers.stripe.webhookSecret
   );
-  const configuredProviders = config.payment.enabledProviders
-    .map(normalizeProvider)
-    .filter((provider): provider is PaymentProvider => provider !== null);
+  const configuredProviders = getEnabledPaymentProviders();
 
   for (const provider of configuredProviders) {
     if (provider === 'stripe') continue;
+    if (provider === 'square') {
+      adapters.square = new SquarePaymentProviderAdapter(
+        config.payment.providers.square.accessToken,
+        config.payment.providers.square.webhookSecret,
+        config.payment.providers.square.locationId
+      );
+      continue;
+    }
     adapters[provider] = new HmacPaymentProviderAdapter(provider, config.payment.providers[provider].webhookSecret);
   }
 
   return {
     stripe: adapters.stripe ?? new StripePaymentProviderAdapter('', null),
     paypal: adapters.paypal ?? new HmacPaymentProviderAdapter('paypal', null),
-    square: adapters.square ?? new HmacPaymentProviderAdapter('square', null),
+    square:
+      adapters.square
+      ?? (configuredProviders.includes('square')
+        ? new SquarePaymentProviderAdapter(
+            config.payment.providers.square.accessToken,
+            config.payment.providers.square.webhookSecret,
+            config.payment.providers.square.locationId
+          )
+        : new HmacPaymentProviderAdapter('square', null)),
   };
 }
 
@@ -1894,6 +1936,5 @@ export function normalizeRequestHeaders(
 
 export function createPaymentService(): PaymentService {
   const { db, schema } = getDrizzleDb();
-  const defaultProvider = normalizeProvider(config.payment.defaultProvider) ?? 'stripe';
-  return new PaymentService(db, schema, buildDefaultAdapters(), defaultProvider);
+  return new PaymentService(db, schema, buildDefaultAdapters(), getDefaultPaymentProvider());
 }

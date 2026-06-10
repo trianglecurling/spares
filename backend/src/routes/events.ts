@@ -2,7 +2,7 @@ import { FastifyInstance, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin } from '../utils/auth.js';
-import { createPaymentService, PaymentServiceError } from '../services/paymentService.js';
+import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import {
   sendEventRegistrationConfirmationEmail,
   sendEventRegistrationCancelledEmail,
@@ -1563,8 +1563,9 @@ async function createCheckoutForRegistration(
   createdByMemberId?: number | null
 ) {
   const paymentService = createPaymentService();
+  const paymentProvider = getDefaultPaymentProvider();
   const order = await paymentService.createPaymentOrder({
-    provider: 'stripe',
+    provider: paymentProvider,
     subjectType: 'event_registration',
     subjectId: registrationResult.registrationId,
     amountMinor: registrationResult.totalFee,
@@ -1584,7 +1585,10 @@ async function createCheckoutForRegistration(
     .set({ payment_order_id: order.id })
     .where(eq(schema.eventRegistrations.id, registrationResult.registrationId));
 
-  const successUrl = `${frontendBaseUrl()}/events/${encodeURIComponent(event.slug)}/register/success?registrationId=${registrationResult.registrationId}&session_id={CHECKOUT_SESSION_ID}`;
+  const successUrl = buildCheckoutSuccessUrl(
+    `${frontendBaseUrl()}/events/${encodeURIComponent(event.slug)}/register/success?registrationId=${registrationResult.registrationId}`,
+    paymentProvider
+  );
   const cancelUrl = `${frontendBaseUrl()}/events/${encodeURIComponent(event.slug)}/register?cancelled=true`;
 
   const checkout = await paymentService.createHostedCheckoutForOrder({

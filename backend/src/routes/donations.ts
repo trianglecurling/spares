@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
-import { createPaymentService, PaymentServiceError } from '../services/paymentService.js';
+import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import type { Member } from '../types.js';
 
 const donationCheckoutSchema = z.object({
@@ -69,9 +69,10 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
       if (payload.message) donationMetadata.message = payload.message;
 
       const paymentService = createPaymentService();
+      const paymentProvider = getDefaultPaymentProvider();
       try {
         const order = await paymentService.createPaymentOrder({
-          provider: 'stripe',
+          provider: paymentProvider,
           subjectType: 'donation',
           amountMinor: payload.amountMinor,
           currency: 'usd',
@@ -80,7 +81,10 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
         });
 
         const orderTokenEncoded = encodeURIComponent(order.orderToken);
-        const successUrl = `${frontendBaseUrl()}/donate/success?orderToken=${orderTokenEncoded}&session_id={CHECKOUT_SESSION_ID}`;
+        const successUrl = buildCheckoutSuccessUrl(
+          `${frontendBaseUrl()}/donate/success?orderToken=${orderTokenEncoded}`,
+          paymentProvider
+        );
         const cancelUrl = `${frontendBaseUrl()}/donate/cancel?orderToken=${orderTokenEncoded}`;
 
         const checkout = await paymentService.createHostedCheckoutForOrder({
