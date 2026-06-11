@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { config } from '../config.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
+import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import type { Member } from '../types.js';
 
 const donationCheckoutSchema = z.object({
@@ -17,12 +17,8 @@ const donationOrderParamsSchema = z.object({
 });
 
 const resolveDonationOrderSchema = z.object({
-  sessionId: z.string().trim().min(3).max(255),
+  sessionId: z.string().trim().min(3).max(255).optional(),
 });
-
-function frontendBaseUrl(): string {
-  return config.frontendUrl.replace(/\/+$/, '');
-}
 
 function handlePaymentServiceError(error: unknown): { status: number; body: { error: string } } | null {
   if (error instanceof PaymentServiceError) {
@@ -80,12 +76,13 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
           createdByMemberId: member?.id ?? null,
         });
 
+        const frontendBaseUrl = resolveFrontendBaseUrl(request);
         const orderTokenEncoded = encodeURIComponent(order.orderToken);
         const successUrl = buildCheckoutSuccessUrl(
-          `${frontendBaseUrl()}/donate/success?orderToken=${orderTokenEncoded}`,
+          `${frontendBaseUrl}/donate/success?orderToken=${orderTokenEncoded}`,
           paymentProvider
         );
-        const cancelUrl = `${frontendBaseUrl()}/donate/cancel?orderToken=${orderTokenEncoded}`;
+        const cancelUrl = `${frontendBaseUrl}/donate/cancel?orderToken=${orderTokenEncoded}`;
 
         const checkout = await paymentService.createHostedCheckoutForOrder({
           orderId: order.id,
@@ -187,14 +184,14 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
       }
       const parsedBody = resolveDonationOrderSchema.safeParse(request.body ?? {});
       if (!parsedBody.success) {
-        return reply.code(400).send({ error: 'Invalid checkout session id' });
+        return reply.code(400).send({ error: 'Invalid checkout return payload' });
       }
 
       const paymentService = createPaymentService();
       try {
         const reconciliation = await paymentService.reconcilePaymentOrderByToken(
           parsedParams.data.orderToken,
-          parsedBody.data.sessionId,
+          parsedBody.data.sessionId ?? null,
           'checkout-return'
         );
         const order = await paymentService.getPaymentOrderByToken(parsedParams.data.orderToken);

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { sendApiError, sendValidationError } from '../api/errors.js';
 import type { ApiErrorResponse } from '../api/types.js';
 import { PaymentServiceError } from '../services/paymentService.js';
+import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import type { Member } from '../types.js';
 import {
   RegistrationLeagueSelectionValidationError,
@@ -66,7 +67,7 @@ const windowQuerySchema = z.object({
 });
 const paymentStatusParamsSchema = z.object({ orderToken: z.string().uuid() });
 const resolveRegistrationPaymentSchema = z.object({
-  sessionId: z.string().trim().min(3).max(255),
+  sessionId: z.string().trim().min(3).max(255).optional(),
 });
 const createDraftSchema = z.object({
   seasonId: z.number().int().positive(),
@@ -337,7 +338,7 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       try {
         const body = guestSubmitSchema.parse(request.body);
-        return await submitGuestRegistration(body);
+        return await submitGuestRegistration(body, resolveFrontendBaseUrl(request));
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
@@ -385,7 +386,7 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
       try {
         const { orderToken } = paymentStatusParamsSchema.parse(request.params);
         const body = resolveRegistrationPaymentSchema.parse(request.body ?? {});
-        return await resolveRegistrationPaymentFromCheckoutReturn(orderToken, body.sessionId);
+        return await resolveRegistrationPaymentFromCheckoutReturn(orderToken, body.sessionId ?? null);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
@@ -870,6 +871,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
           registrationId: id,
           actor: (request as AuthenticatedRequest).member,
           confirmImmediatePayment: body.confirmImmediatePayment,
+          frontendBaseUrl: resolveFrontendBaseUrl(request),
         });
       } catch (error) {
         return handleRegistrationError(reply, error);

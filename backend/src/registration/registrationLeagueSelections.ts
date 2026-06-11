@@ -1,6 +1,7 @@
 import { countHybridRoster } from './waitlistTeamRoster.js';
 import { validateLeagueEligibility, validateRegistrationIsOpen, validateSpareOnlyEligibility, validateWaitlistEligibility } from './registrationEligibility.js';
 import { evaluateGuaranteedReturnEligibility, evaluateSabbaticalEligibility, protectedClaimCount } from './registrationReturningRights.js';
+import { firstTwoLeagueSlotCount } from './waitlistFulfillment.js';
 import { blockingError, createDecision, type BusinessDecision, type DecisionMessage, type RegistrationReasonCode } from './registrationDecisionTypes.js';
 import {
   activeLeagueCount,
@@ -12,6 +13,7 @@ import {
   type RegistrationContext,
   type RegistrationSelectionInput,
 } from './registrationContext.js';
+import { validateContinuingSabbaticalDecisions } from './registrationSabbaticalContinuity.js';
 import { validateWaitlistFulfillment } from './waitlistFulfillment.js';
 
 export type SelectionValidationResult = BusinessDecision<'valid' | 'invalid'> & {
@@ -251,7 +253,7 @@ function validateSelection(context: RegistrationContext, selection: Registration
       );
     }
 
-    if (selection.selectionType === 'waitlist_add' && activeLeagueCount(context) > 1) {
+    if (selection.selectionType === 'waitlist_add' && firstTwoLeagueSlotCount(context) > 1) {
       blockingErrors.push(
         blockingError('add_waitlist_requires_zero_or_one_leagues', 'ADD waitlist entries are only available for members with zero or one current leagues.')
       );
@@ -383,6 +385,7 @@ export function validateRegistrationSelections(context: RegistrationContext): Se
   }
 
   blockingErrors.push(...validateWaitlistFulfillment(context, context.desiredAddWaitlistLeagueCount));
+  blockingErrors.push(...validateContinuingSabbaticalDecisions(context));
 
   const rankedThirdLeagueInterest = context.selections
     .filter((selection) => isNonGuaranteedLeagueInterest(selection))

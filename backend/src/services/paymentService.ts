@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -193,6 +193,11 @@ export interface HostedCheckoutSession {
   metadata?: Record<string, unknown>;
 }
 
+export interface CheckoutLineItem {
+  description: string;
+  amountMinor: number;
+}
+
 export interface CreateCheckoutInput {
   orderId: number;
   orderToken: string;
@@ -205,6 +210,32 @@ export interface CreateCheckoutInput {
   description?: string | null;
   customerEmail?: string | null;
   metadata?: Record<string, unknown>;
+  lineItems?: CheckoutLineItem[];
+}
+
+function checkoutLineItemsTotalMinor(lineItems: CheckoutLineItem[]): number {
+  return lineItems.reduce((sum, item) => sum + item.amountMinor, 0);
+}
+
+export function truncateCheckoutText(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1)}…`;
+}
+
+function defaultCheckoutDescription(subjectType: PaymentSubjectType, metadata: Record<string, unknown>): string {
+  if (subjectType === 'donation') return 'Donation to Triangle Curling Club';
+  if (subjectType === 'curling_registration') {
+    if (asString(metadata.paymentKind) === 'registration_balance') {
+      return 'Registration balance payment';
+    }
+    return 'League registration';
+  }
+  if (subjectType === 'event_registration') {
+    const eventTitle = asString(metadata.eventTitle ?? metadata.event_title);
+    return eventTitle ? `Event registration — ${eventTitle}` : 'Event registration';
+  }
+  return 'Triangle Curling Club payment';
 }
 
 export interface VerifyWebhookInput {
@@ -259,6 +290,39 @@ export interface PaymentProviderAdapter {
   createRefund(input: CreateRefundInput): Promise<ProviderRefundResult>;
 }
 
+function buildStripeCheckoutLineItems(input: CreateCheckoutInput): Stripe.Checkout.SessionCreateParams.LineItem[] {
+  const fallbackName = input.description?.trim() || 'Triangle Curling Club payment';
+  const lineItems = input.lineItems?.filter((item) => item.amountMinor !== 0) ?? [];
+  const hasDiscounts = lineItems.some((item) => item.amountMinor < 0);
+  const totalFromLineItems = checkoutLineItemsTotalMinor(lineItems);
+
+  if (lineItems.length === 0 || hasDiscounts || totalFromLineItems !== input.amountMinor) {
+    return [
+      {
+        quantity: 1,
+        price_data: {
+          currency: input.currency.toLowerCase(),
+          unit_amount: input.amountMinor,
+          product_data: {
+            name: fallbackName,
+          },
+        },
+      },
+    ];
+  }
+
+  return lineItems.map((item) => ({
+    quantity: 1,
+    price_data: {
+      currency: input.currency.toLowerCase(),
+      unit_amount: item.amountMinor,
+      product_data: {
+        name: truncateCheckoutText(item.description, 250),
+      },
+    },
+  }));
+}
+
 class StripePaymentProviderAdapter implements PaymentProviderAdapter {
   readonly provider: PaymentProvider = 'stripe';
   private readonly client: Stripe | null;
@@ -305,18 +369,7 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
       payment_intent_data: {
         metadata,
       },
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: input.currency.toLowerCase(),
-            unit_amount: input.amountMinor,
-            product_data: {
-              name: input.description?.trim() || 'Triangle Curling Club payment',
-            },
-          },
-        },
-      ],
+      line_items: buildStripeCheckoutLineItems(input),
     });
 
     if (!session.url) {
@@ -732,6 +785,75 @@ export class PaymentService {
     };
   }
 
+  private async resolveCheckoutLineItems(input: {
+    orderId: number;
+    subjectType: PaymentSubjectType;
+    amountMinor: number;
+    metadata: Record<string, unknown>;
+  }): Promise<CheckoutLineItem[] | undefined> {
+    if (input.subjectType === 'curling_registration') {
+      if (asString(input.metadata.paymentKind) === 'registration_balance') {
+        return [
+          {
+            description: 'Registration balance payment',
+            amountMinor: input.amountMinor,
+          },
+        ];
+      }
+
+      const invoiceIdFromMetadata = asNumber(input.metadata.invoiceId);
+      const [invoice] = await this.db
+        .select({ id: this.schema.registrationInvoices.id })
+        .from(this.schema.registrationInvoices)
+        .where(
+          invoiceIdFromMetadata != null
+            ? eq(this.schema.registrationInvoices.id, invoiceIdFromMetadata)
+            : eq(this.schema.registrationInvoices.payment_order_id, input.orderId)
+        )
+        .orderBy(desc(this.schema.registrationInvoices.updated_at), desc(this.schema.registrationInvoices.id))
+        .limit(1);
+
+      if (!invoice) return undefined;
+
+      const lineRows = await this.db
+        .select({
+          description: this.schema.registrationInvoiceLineItems.description,
+          amountMinor: this.schema.registrationInvoiceLineItems.amount_minor,
+        })
+        .from(this.schema.registrationInvoiceLineItems)
+        .where(eq(this.schema.registrationInvoiceLineItems.invoice_id, invoice.id))
+        .orderBy(
+          asc(this.schema.registrationInvoiceLineItems.sort_order),
+          asc(this.schema.registrationInvoiceLineItems.id)
+        );
+
+      const lineItems = lineRows
+        .map((line) => ({
+          description: line.description.trim(),
+          amountMinor: line.amountMinor,
+        }))
+        .filter((line) => line.description.length > 0 && line.amountMinor !== 0);
+
+      if (lineItems.length === 0 || checkoutLineItemsTotalMinor(lineItems) !== input.amountMinor) {
+        return undefined;
+      }
+
+      return lineItems;
+    }
+
+    if (input.subjectType === 'event_registration') {
+      const eventTitle = asString(input.metadata.eventTitle ?? input.metadata.event_title);
+      return [
+        {
+          description: eventTitle ? `Event registration — ${eventTitle}` : 'Event registration',
+          amountMinor: input.amountMinor,
+        },
+      ];
+    }
+
+    return undefined;
+  }
+
   async createHostedCheckoutForOrder(input: CreateHostedCheckoutForOrderInput): Promise<CreateHostedCheckoutForOrderResult> {
     const [order] = await this.db
       .select({
@@ -760,18 +882,26 @@ export class PaymentService {
     }
 
     const parsedMetadata = safeJsonParseObject(order.metadata);
+    const subjectType = order.subject_type as PaymentSubjectType;
+    const checkoutLineItems = await this.resolveCheckoutLineItems({
+      orderId: order.id,
+      subjectType,
+      amountMinor: order.amount_minor,
+      metadata: parsedMetadata,
+    });
     const checkoutSession = await adapter.createHostedCheckoutSession({
       orderId: order.id,
       orderToken: order.order_token,
       amountMinor: order.amount_minor,
       currency: order.currency,
-      subjectType: order.subject_type as PaymentSubjectType,
+      subjectType,
       subjectId: order.subject_id ?? null,
       successUrl: input.successUrl,
       cancelUrl: input.cancelUrl,
-      description: order.subject_type === 'donation' ? 'Donation to Triangle Curling Club' : undefined,
+      description: defaultCheckoutDescription(subjectType, parsedMetadata),
       customerEmail: asString(parsedMetadata.donorEmail ?? parsedMetadata.donor_email),
       metadata: parsedMetadata,
+      lineItems: checkoutLineItems,
     });
 
     await this.db

@@ -7,6 +7,7 @@ import {
   RegistrationMembershipPaymentValidationError,
   submitStaffRegistrationEdits,
 } from '../registration/registrationMembershipPaymentService.js';
+import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import {
   getStaffRegistrationDetail,
   listStaffRegistrations,
@@ -115,6 +116,7 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
         actor: (request as AuthenticatedRequest).member,
         changedSummary: body.changedSummary,
         confirmImmediatePayment: body.confirmImmediatePayment,
+        frontendBaseUrl: resolveFrontendBaseUrl(request),
       });
     } catch (error) {
       if (handleStaffRegistrationError(reply, error)) return;

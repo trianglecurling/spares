@@ -3,6 +3,7 @@ import { SquareClient, SquareEnvironment, WebhooksHelper } from 'square';
 import type { Currency } from 'square';
 import { config } from '../config.js';
 import type {
+  CheckoutLineItem,
   CreateCheckoutInput,
   CreateRefundInput,
   HostedCheckoutSession,
@@ -13,7 +14,7 @@ import type {
   VerifiedWebhookEvent,
   VerifyWebhookInput,
 } from './paymentService.js';
-import { PaymentServiceError, PaymentSignatureError } from './paymentService.js';
+import { PaymentServiceError, PaymentSignatureError, truncateCheckoutText } from './paymentService.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -69,8 +70,60 @@ function mapSquareOrderState(state: string | null): PaymentOrderStatus | null {
   const normalized = state.trim().toUpperCase();
   if (normalized === 'COMPLETED') return 'succeeded';
   if (normalized === 'CANCELED' || normalized === 'CANCELLED') return 'failed';
-  if (normalized === 'OPEN' || normalized === 'DRAFT') return 'pending';
+  if (normalized === 'DRAFT') return 'pending';
   return null;
+}
+
+function resolveSquareOrderPaymentStatusFromRecord(order: unknown): PaymentOrderStatus | null {
+  if (!isRecord(order)) return null;
+
+  const mappedState = mapSquareOrderState(asString(order.state));
+  if (mappedState === 'succeeded' || mappedState === 'failed') {
+    return mappedState;
+  }
+
+  const netAmountDue = moneyAmountMinor(order.netAmountDueMoney ?? order.net_amount_due_money);
+  const tenders = Array.isArray(order.tenders) ? order.tenders : [];
+  if (netAmountDue === 0 && tenders.length > 0) {
+    return 'succeeded';
+  }
+
+  if (mappedState === 'pending') {
+    return 'pending';
+  }
+
+  return null;
+}
+
+async function resolveSquareOrderPaymentStatus(
+  client: SquareClient,
+  order: unknown
+): Promise<PaymentOrderStatus> {
+  const resolved = resolveSquareOrderPaymentStatusFromRecord(order);
+  if (resolved === 'succeeded' || resolved === 'failed') {
+    return resolved;
+  }
+
+  if (!isRecord(order) || !Array.isArray(order.tenders)) {
+    return 'pending';
+  }
+
+  for (const tender of order.tenders) {
+    if (!isRecord(tender)) continue;
+    const paymentId = asString(tender.paymentId ?? tender.payment_id);
+    if (!paymentId) continue;
+    try {
+      const paymentResponse = await client.payments.get({ paymentId });
+      const paymentStatus = mapSquarePaymentStatus(asString(paymentResponse.payment?.status));
+      if (paymentStatus === 'succeeded' || paymentStatus === 'failed') {
+        return paymentStatus;
+      }
+    } catch {
+      // Fall through to pending when Square has not materialized the payment yet.
+    }
+  }
+
+  return resolved ?? 'pending';
 }
 
 function mapSquareRefundStatus(status: string | null): RefundStatus {
@@ -85,6 +138,78 @@ function mapSquareRefundStatus(status: string | null): RefundStatus {
 
 function squareCurrency(currency: string): Currency {
   return currency.trim().toUpperCase() as Currency;
+}
+
+function checkoutLineItemsTotalMinor(lineItems: CheckoutLineItem[]): number {
+  return lineItems.reduce((sum, item) => sum + item.amountMinor, 0);
+}
+
+function buildSquareOrderDetails(input: CreateCheckoutInput): {
+  lineItems: Array<{
+    name: string;
+    quantity: string;
+    basePriceMoney: {
+      amount: bigint;
+      currency: Currency;
+    };
+  }>;
+  discounts?: Array<{
+    uid: string;
+    name: string;
+    scope: 'ORDER';
+    type: 'FIXED_AMOUNT';
+    amountMoney: {
+      amount: bigint;
+      currency: Currency;
+    };
+  }>;
+} {
+  const currency = squareCurrency(input.currency);
+  const fallbackName = input.description?.trim() || 'Triangle Curling Club payment';
+  const lineItems = input.lineItems?.filter((item) => item.amountMinor !== 0) ?? [];
+  const totalFromLineItems = checkoutLineItemsTotalMinor(lineItems);
+
+  if (lineItems.length === 0 || totalFromLineItems !== input.amountMinor) {
+    return {
+      lineItems: [
+        {
+          name: fallbackName,
+          quantity: '1',
+          basePriceMoney: {
+            amount: BigInt(input.amountMinor),
+            currency,
+          },
+        },
+      ],
+    };
+  }
+
+  const positiveItems = lineItems.filter((item) => item.amountMinor > 0);
+  const discountItems = lineItems.filter((item) => item.amountMinor < 0);
+
+  return {
+    lineItems: positiveItems.map((item) => ({
+      name: truncateCheckoutText(item.description, 512),
+      quantity: '1',
+      basePriceMoney: {
+        amount: BigInt(item.amountMinor),
+        currency,
+      },
+    })),
+    discounts:
+      discountItems.length > 0
+        ? discountItems.map((item, index) => ({
+            uid: `discount-${index}`,
+            name: truncateCheckoutText(item.description, 255),
+            scope: 'ORDER' as const,
+            type: 'FIXED_AMOUNT' as const,
+            amountMoney: {
+              amount: BigInt(Math.abs(item.amountMinor)),
+              currency,
+            },
+          }))
+        : undefined,
+  };
 }
 
 function squareWebhookNotificationUrl(): string {
@@ -156,6 +281,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       }
     }
 
+    const squareOrderDetails = buildSquareOrderDetails(input);
     const response = await client.checkout.paymentLinks.create({
       idempotencyKey: crypto.randomUUID(),
       description: `Payment order ${input.orderId}`,
@@ -163,16 +289,8 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       order: {
         locationId,
         referenceId: input.orderToken,
-        lineItems: [
-          {
-            name: input.description?.trim() || 'Triangle Curling Club payment',
-            quantity: '1',
-            basePriceMoney: {
-              amount: BigInt(input.amountMinor),
-              currency: squareCurrency(input.currency),
-            },
-          },
-        ],
+        lineItems: squareOrderDetails.lineItems,
+        discounts: squareOrderDetails.discounts,
       },
       checkoutOptions: {
         redirectUrl: input.successUrl,
@@ -278,7 +396,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
 
     let nextStatus = mapSquarePaymentStatus(asString(payment?.status));
     if (!nextStatus && order) {
-      nextStatus = mapSquareOrderState(asString(order.state));
+      nextStatus = resolveSquareOrderPaymentStatusFromRecord(order);
     }
     if (!nextStatus && eventType.toLowerCase().includes('refund')) {
       nextStatus = 'refunded';
@@ -327,9 +445,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     }
 
     const orderResponse = await client.orders.get({ orderId: squareOrderId });
-    const orderState = asString(orderResponse.order?.state);
-    const mapped = mapSquareOrderState(orderState);
-    return mapped ?? 'pending';
+    return resolveSquareOrderPaymentStatus(client, orderResponse.order);
   }
 
   async createRefund(input: CreateRefundInput): Promise<ProviderRefundResult> {

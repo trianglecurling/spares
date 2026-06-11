@@ -4,6 +4,7 @@ import type { WaitlistEntryTypeSqlite } from '../db/drizzle-schema.js';
 import type { Member } from '../types.js';
 import { RegistrationMemberValidationError } from './registrationMemberService.js';
 import { effectiveExperienceYears } from './registrationAgeExperience.js';
+import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
 import { leagueMinimumExperienceConstraint } from './leagueEligibilityConstraints.js';
 import { memberExperienceBaselinesFromRow } from './curlingExperienceYears.js';
 import { blockingError, type DecisionMessage } from './registrationDecisionTypes.js';
@@ -413,7 +414,7 @@ async function buildMemberWaitlistContext(input: {
     selections: [],
     discountClaims: {},
     ...settings,
-    sabbaticalDurationLimitYears: 3,
+    sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
   };
 }
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin } from '../utils/auth.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
+import { resolveFrontendBaseUrl, normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
 import {
   sendEventRegistrationConfirmationEmail,
   sendEventRegistrationCancelledEmail,
@@ -245,8 +246,8 @@ const createTournamentTeamBodySchema = z.object({
 
 const updateTournamentTeamBodySchema = createTournamentTeamBodySchema.partial();
 
-function frontendBaseUrl(): string {
-  return config.frontendUrl.replace(/\/+$/, '');
+function canonicalFrontendBaseUrl(): string {
+  return normalizeFrontendBaseUrl(config.frontendUrl);
 }
 
 function canManageEvent(member: Member, eventId?: number): Promise<boolean> | boolean {
@@ -543,7 +544,13 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         });
 
         if (result.needsPayment && result.status !== 'waitlisted') {
-          return createCheckoutForRegistration(event, result, parsed.data.contactEmail, regMember?.id ?? null);
+          return createCheckoutForRegistration(
+            event,
+            result,
+            parsed.data.contactEmail,
+            regMember?.id ?? null,
+            resolveFrontendBaseUrl(request)
+          );
         }
 
         sendEventRegistrationConfirmationEmail(
@@ -1058,7 +1065,13 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         });
 
         if (result.needsPayment && result.status !== 'waitlisted') {
-          return createCheckoutForRegistration(event, result, parsed.data.contactEmail, member.id);
+          return createCheckoutForRegistration(
+            event,
+            result,
+            parsed.data.contactEmail,
+            member.id,
+            resolveFrontendBaseUrl(request)
+          );
         }
 
         sendEventRegistrationConfirmationEmail(
@@ -1385,7 +1398,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       }
 
       const result = await createSpecialLink(eventId, parsed.data);
-      const registrationUrl = `${frontendBaseUrl()}/events/${encodeURIComponent((await getEventById(eventId))?.slug ?? String(eventId))}/register?slk=${result.token}`;
+      const registrationUrl = `${canonicalFrontendBaseUrl()}/events/${encodeURIComponent((await getEventById(eventId))?.slug ?? String(eventId))}/register?slk=${result.token}`;
       return reply.code(201).send({ ...result, registrationUrl });
     }
   );
@@ -1560,7 +1573,8 @@ async function createCheckoutForRegistration(
   event: EventFormattingSource,
   registrationResult: { registrationId: number; totalFee: number },
   contactEmail: string,
-  createdByMemberId?: number | null
+  createdByMemberId?: number | null,
+  checkoutFrontendBaseUrl: string = canonicalFrontendBaseUrl()
 ) {
   const paymentService = createPaymentService();
   const paymentProvider = getDefaultPaymentProvider();
@@ -1586,10 +1600,10 @@ async function createCheckoutForRegistration(
     .where(eq(schema.eventRegistrations.id, registrationResult.registrationId));
 
   const successUrl = buildCheckoutSuccessUrl(
-    `${frontendBaseUrl()}/events/${encodeURIComponent(event.slug)}/register/success?registrationId=${registrationResult.registrationId}`,
+    `${checkoutFrontendBaseUrl}/events/${encodeURIComponent(event.slug)}/register/success?registrationId=${registrationResult.registrationId}`,
     paymentProvider
   );
-  const cancelUrl = `${frontendBaseUrl()}/events/${encodeURIComponent(event.slug)}/register?cancelled=true`;
+  const cancelUrl = `${checkoutFrontendBaseUrl}/events/${encodeURIComponent(event.slug)}/register?cancelled=true`;
 
   const checkout = await paymentService.createHostedCheckoutForOrder({
     orderId: order.id,

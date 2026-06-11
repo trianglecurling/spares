@@ -502,11 +502,23 @@ export function waitlistFulfillmentSummaryText(input: {
   return `If multiple waitlist spots open, place this curler in up to ${count} ${count === 1 ? 'league' : 'leagues'} using this priority order: ${priorityText}.`;
 }
 
+export type ContinuingSabbaticalSummary = {
+  sabbaticalId: number;
+  leagueId: number;
+  leagueName: string;
+  priorLeagueId: number;
+  firstSabbaticalStartDate: string;
+  canExtend: boolean;
+  extensionBlockedMessage: string | null;
+  sabbaticalFeeMinor: number;
+};
+
 export type RegistrationLeagueSelectionPayload = {
   leagues: LeagueCatalogItem[];
   selections: RegistrationSelectionInput[];
   activeLeagueIds: number[];
   participatedLeagueIds: number[];
+  continuingSabbaticals?: ContinuingSabbaticalSummary[];
   desiredAddWaitlistLeagueCount?: number | null;
   existingWaitlistEntries?: Array<{
     waitlistId: number;
@@ -605,6 +617,18 @@ export const REAL_LEAGUE_SELECTION_TYPES = new Set<RegistrationSelectionType>([
 
 export const PROTECTED_RETURN_SELECTION_TYPES = new Set<RegistrationSelectionType>(['guaranteed_return', 'sabbatical']);
 
+export function countPriorSeasonProtectedReturnSelections(
+  selections: RegistrationSelectionInput[],
+  priorSeasonReturnLeagueIds: ReadonlySet<number>,
+): number {
+  return selections.filter(
+    (selection) =>
+      selection.leagueId != null &&
+      priorSeasonReturnLeagueIds.has(selection.leagueId) &&
+      PROTECTED_RETURN_SELECTION_TYPES.has(selection.selectionType),
+  ).length;
+}
+
 const CONFIRMED_LEAGUE_PLACEMENT_STATUSES = new Set(['confirmed', 'placed']);
 
 export const CONFIRMED_LEAGUE_PLACEMENT_SELECTION_TYPES = new Set<RegistrationSelectionType>([
@@ -638,6 +662,56 @@ export function priorLeagueChoiceValue(selection: RegistrationSelectionInput | u
   if (!selection) return null;
   if (selection.selectionType === 'third_league_interest') return 'return_subject_to_availability';
   return selection.selectionType;
+}
+
+export function continuingSabbaticalForLeague(
+  payload: Pick<RegistrationLeagueSelectionPayload, 'continuingSabbaticals'> | null | undefined,
+  leagueId: number,
+): ContinuingSabbaticalSummary | undefined {
+  return payload?.continuingSabbaticals?.find((entry) => entry.leagueId === leagueId);
+}
+
+export function hasPriorSeasonReturnLeagues(
+  payload: Pick<RegistrationLeagueSelectionPayload, 'leagues' | 'participatedLeagueIds' | 'continuingSabbaticals'> | null | undefined,
+  registrationState: RegistrationWindow['state'] | undefined,
+): boolean {
+  if (!payload || registrationState !== 'priority') return false;
+  if ((payload.continuingSabbaticals?.length ?? 0) > 0) return true;
+  return payload.leagues.some(
+    (league) =>
+      league.predecessorLeagueId != null && payload.participatedLeagueIds.includes(league.predecessorLeagueId),
+  );
+}
+
+export function priorSeasonReturnLeaguesFromPayload(
+  payload: Pick<RegistrationLeagueSelectionPayload, 'leagues' | 'participatedLeagueIds' | 'continuingSabbaticals'> | null | undefined,
+  registrationState: RegistrationWindow['state'] | undefined,
+): LeagueCatalogItem[] {
+  if (!payload || registrationState !== 'priority') return [];
+
+  const byId = new Map<number, LeagueCatalogItem>();
+  for (const league of payload.leagues) {
+    if (league.predecessorLeagueId != null && payload.participatedLeagueIds.includes(league.predecessorLeagueId)) {
+      byId.set(league.id, league);
+    }
+  }
+  for (const summary of payload.continuingSabbaticals ?? []) {
+    const league = payload.leagues.find((entry) => entry.id === summary.leagueId);
+    if (league) byId.set(league.id, league);
+  }
+  return [...byId.values()];
+}
+
+export function leagueHasReturnRights(
+  payload: Pick<RegistrationLeagueSelectionPayload, 'participatedLeagueIds' | 'continuingSabbaticals'> | null | undefined,
+  registrationState: RegistrationWindow['state'] | undefined,
+  league: Pick<LeagueCatalogItem, 'id' | 'predecessorLeagueId'>,
+): boolean {
+  if (registrationState !== 'priority' || !payload) return false;
+  if (league.predecessorLeagueId != null && payload.participatedLeagueIds.includes(league.predecessorLeagueId)) {
+    return true;
+  }
+  return Boolean(continuingSabbaticalForLeague(payload, league.id));
 }
 
 export function leagueScheduleText(league: Pick<LeagueCatalogItem, 'dayOfWeek'>): string {

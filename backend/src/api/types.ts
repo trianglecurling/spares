@@ -166,6 +166,25 @@ export type MemberLeaguesResponse = Array<{
   teamName: string | null;
 }>;
 
+export type MemberMembershipCardResponse = {
+  name: string;
+  membershipStatus: {
+    kind: 'regular' | 'social' | 'former' | 'non_member';
+    validThrough: string | null;
+  };
+  icePrivilegesValidThrough: string | null;
+  session: {
+    id: number;
+    name: string;
+    isUpcoming: boolean;
+  } | null;
+  leagues: Array<{
+    leagueId: number;
+    leagueName: string;
+    participation: 'roster' | 'sabbatical' | 'waitlist';
+  }>;
+};
+
 export type MemberEmergencyContactResponse = {
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;

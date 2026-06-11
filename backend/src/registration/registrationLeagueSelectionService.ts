@@ -18,6 +18,7 @@ import { removeOrphanedRegistrationRosterPlacements } from './registrationRoster
 import { removeExistingWaitlistsMarkedForRemoval, removeOrphanedRegistrationWaitlistEntries } from './registrationWaitlistCleanup.js';
 import type { LeagueConfig, RegistrationContext, RegistrationSelectionInput } from './registrationContext.js';
 import { applyAddWaitlistPriorityRanks, requiresWaitlistFulfillmentPreferences } from './waitlistFulfillment.js';
+import { listContinuingSabbaticalSummaries } from './registrationSabbaticalContinuity.js';
 import { loadActiveWaitlistEntryCountsByLeagueId } from './waitlistEntityService.js';
 
 export class RegistrationLeagueSelectionValidationError extends Error {
@@ -227,6 +228,7 @@ async function buildRegistrationLeagueSelectionPayload(registrationId: number) {
     selections: context.selections,
     activeLeagueIds: context.activeLeagueIds,
     participatedLeagueIds: context.participatedLeagueIds,
+    continuingSabbaticals: listContinuingSabbaticalSummaries(context),
     existingWaitlistEntries: context.existingWaitlistEntries,
     desiredAddWaitlistLeagueCount: context.desiredAddWaitlistLeagueCount ?? null,
     basicIceFallbackInterest: basicIceFallbackInterestFromRow(registration?.basic_ice_fallback_interest),

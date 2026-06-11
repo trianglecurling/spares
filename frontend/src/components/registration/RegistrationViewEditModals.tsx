@@ -16,6 +16,7 @@ import {
   applyAddWaitlistPriorityOrder,
   defaultDesiredAddWaitlistLeagueCount,
   getAddWaitlistSelections,
+  countPriorSeasonProtectedReturnSelections,
   PROTECTED_RETURN_SELECTION_TYPES,
   REAL_LEAGUE_SELECTION_TYPES,
   remainingFirstTwoLeagueSlots,
@@ -31,7 +32,10 @@ import {
   leagueScheduleText,
   loadMembershipEditContext,
   loadRegistrationEditContext,
+  continuingSabbaticalForLeague,
+  formatCurrency,
   priorLeagueChoiceValue,
+  priorSeasonReturnLeaguesFromPayload,
   registrationDiscountLabel,
   saveLeagueSelections,
   setThirdLeagueInterestSelections,
@@ -155,12 +159,7 @@ function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdi
   }, [isOpen, registrationId]);
 
   const priorSeasonReturnLeagues = useMemo(
-    () =>
-      (leaguePayload?.leagues ?? []).filter(
-        (league) =>
-          windowState?.state === 'priority' &&
-          Boolean(league.predecessorLeagueId && leaguePayload?.participatedLeagueIds.includes(league.predecessorLeagueId)),
-      ),
+    () => priorSeasonReturnLeaguesFromPayload(leaguePayload, windowState?.state),
     [leaguePayload, windowState?.state],
   );
 
@@ -201,14 +200,8 @@ function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdi
     return order;
   }, [leaguePayload]);
 
-  const protectedReturnSelectionCount = useMemo(
-    () =>
-      selections.filter(
-        (selection) =>
-          selection.leagueId != null &&
-          priorSeasonReturnLeagueIds.has(selection.leagueId) &&
-          PROTECTED_RETURN_SELECTION_TYPES.has(selection.selectionType),
-      ).length,
+  const priorSeasonProtectedReturnCount = useMemo(
+    () => countPriorSeasonProtectedReturnSelections(selections, priorSeasonReturnLeagueIds),
     [selections, priorSeasonReturnLeagueIds],
   );
 
@@ -311,7 +304,7 @@ function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdi
     selectedLeagueIds,
     waitlistEligibleLeagues,
     leagueCatalogOrder,
-    protectedReturnSelectionCount,
+    priorSeasonProtectedReturnCount,
     scheduledLeagueSelections,
     leagueName,
     selectionLabel,
@@ -704,10 +697,10 @@ function PriorLeagueEditModal({
       (league) => !state.selections.some((selection) => selection.leagueId === league.id),
     );
     if (undecidedLeague) {
-      state.setError('Choose whether to return, take a sabbatical, or drop each prior league before saving.');
+      state.setError('Choose whether to return, extend sabbatical, or drop each prior league before saving.');
       return;
     }
-    if (state.protectedReturnSelectionCount > 2) {
+    if (state.priorSeasonProtectedReturnCount > 2) {
       state.setError('You can protect at most two league spots. Choose subject-to-availability return for any additional leagues.');
       return;
     }
@@ -739,13 +732,20 @@ function PriorLeagueEditModal({
       ) : (
         <div className="space-y-5">
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            Update guaranteed return, sabbatical, and drop choices for prior-season leagues.
+            Update return, sabbatical extension, and drop choices for prior-season leagues and continuing sabbaticals.
           </p>
+          {(state.leaguePayload?.continuingSabbaticals?.length ?? 0) > 0 ? (
+            <InlineStateMessage
+              tone="neutral"
+              title="Continuing sabbaticals"
+              description="This curler can return this session, extend the sabbatical for a fee, or release the protected spot."
+            />
+          ) : null}
           {showsAvailabilityReturn ? (
             <InlineStateMessage
               tone="neutral"
               title="More than two prior leagues"
-              description="A curler can protect up to two prior league spots. Additional prior leagues can be requested subject to availability."
+              description="A curler can protect up to two prior league spots. Additional leagues can be requested subject to availability."
             />
           ) : null}
           {state.priorSeasonReturnLeagues.map((league) => {
@@ -754,9 +754,19 @@ function PriorLeagueEditModal({
             const selectedProtected = currentSelection
               ? PROTECTED_RETURN_SELECTION_TYPES.has(currentSelection.selectionType)
               : false;
-            const protectedLimitReached = state.protectedReturnSelectionCount >= 2 && !selectedProtected;
+            const protectedLimitReached = state.priorSeasonProtectedReturnCount >= 2 && !selectedProtected;
+            const continuingSabbatical = continuingSabbaticalForLeague(state.leaguePayload, league.id);
+            const sabbaticalFeeLabel = continuingSabbatical
+              ? formatCurrency(continuingSabbatical.sabbaticalFeeMinor)
+              : null;
             return (
               <FormField key={league.id} label={league.name} htmlFor={`edit-prior-league-${league.id}`} required>
+                {continuingSabbatical ? (
+                  <p className="mb-2 text-xs text-amber-800 dark:text-amber-200">
+                    Currently on sabbatical since{' '}
+                    {new Date(`${continuingSabbatical.firstSabbaticalStartDate}T00:00:00`).toLocaleDateString()}.
+                  </p>
+                ) : null}
                 <ChoiceInput
                   inputId={`edit-prior-league-${league.id}`}
                   layout="block"
@@ -769,13 +779,19 @@ function PriorLeagueEditModal({
                   options={[
                     {
                       value: 'guaranteed_return',
-                      label: showsAvailabilityReturn ? 'Return to league (guaranteed)' : 'Return to league',
+                      label: continuingSabbatical
+                        ? 'Return to league this session'
+                        : showsAvailabilityReturn
+                          ? 'Return to league (guaranteed)'
+                          : 'Return to league',
                       description: protectedLimitReached
                         ? 'You have already selected two protected league spots.'
-                        : 'Claim this guaranteed return spot.',
+                        : continuingSabbatical
+                          ? 'End the sabbatical and play in this league this session.'
+                          : 'Claim this guaranteed return spot.',
                       disabled: protectedLimitReached,
                     },
-                    ...(showsAvailabilityReturn
+                    ...(!continuingSabbatical && showsAvailabilityReturn
                       ? [
                           {
                             value: 'return_subject_to_availability',
@@ -788,15 +804,28 @@ function PriorLeagueEditModal({
                       ? [
                           {
                             value: 'sabbatical',
-                            label: 'Take a sabbatical for the league',
-                            description: protectedLimitReached
-                              ? 'Sabbaticals also count toward the two protected league spots.'
-                              : 'Preserve the spot while stepping away for this session.',
-                            disabled: protectedLimitReached,
+                            label: continuingSabbatical ? 'Extend sabbatical' : 'Take a sabbatical for the league',
+                            description: continuingSabbatical
+                              ? continuingSabbatical.canExtend
+                                ? `Remain on sabbatical for this session. Sabbatical fee: ${sabbaticalFeeLabel}.`
+                                : continuingSabbatical.extensionBlockedMessage ??
+                                  'The sabbatical duration limit has been reached.'
+                              : protectedLimitReached
+                                ? 'Sabbaticals also count toward the two protected league spots.'
+                                : 'Preserve the spot while stepping away for this session.',
+                            disabled:
+                              protectedLimitReached ||
+                              Boolean(continuingSabbatical && !continuingSabbatical.canExtend),
                           },
                         ]
                       : []),
-                    { value: 'drop', label: 'Drop the league', description: 'Release this guaranteed return spot.' },
+                    {
+                      value: 'drop',
+                      label: continuingSabbatical ? 'Release protected spot' : 'Drop the league',
+                      description: continuingSabbatical
+                        ? 'Permanently release this sabbatical-protected spot.'
+                        : 'Release this guaranteed return spot.',
+                    },
                   ]}
                 />
               </FormField>

@@ -31,6 +31,7 @@ export type RegistrationReasonCode =
   | 'sabbatical_requires_return_right'
   | 'sabbatical_limit_exceeded'
   | 'sabbatical_duration_limit_exceeded'
+  | 'continuing_sabbatical_decision_required'
   | 'sabbatical_staff_override_required'
   | 'sabbatical_not_for_temporary_fill'
   | 'protected_claim_limit_exceeded'

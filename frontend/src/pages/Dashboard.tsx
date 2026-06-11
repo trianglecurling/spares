@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  HiChevronDown,
+  HiChevronRight,
   HiOutlineUserPlus,
   HiOutlineCalendar,
   HiOutlineCalendarDays,
@@ -22,6 +25,7 @@ import Modal from '../components/Modal';
 import Button from '../components/Button';
 import AppStateCard from '../components/AppStateCard';
 import DashboardRegistrationStatus from '../components/DashboardRegistrationStatus';
+import DashboardMembershipCard from '../components/DashboardMembershipCard';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -115,6 +119,26 @@ const roleLabels: Record<string, string> = {
   player1: 'Player 1',
   player2: 'Player 2',
 };
+
+function DashboardSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="app-section-title">{title}</h2>
+        {action ?? null}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export default function Dashboard() {
   const { member } = useAuth();
@@ -714,13 +738,18 @@ export default function Dashboard() {
   return (
     <Layout>
       <AppPage>
-        <AppPageHeader title="Dashboard" />
+        <AppPageHeader
+          title="Dashboard"
+          description={
+            member?.name ? `Welcome back, ${member.name.split(' ')[0]}.` : undefined
+          }
+        />
 
         {dashboardAlert &&
           (() => {
             const styles = dashboardAlertStyles(dashboardAlert.variant);
             return (
-              <div className={`${styles.container} p-4 rounded shadow-sm`}>
+              <div className={`${styles.container} rounded-lg p-4 shadow-sm`}>
                 <div className="flex items-start gap-3">
                   {dashboardAlert.icon !== 'none' && (
                     <div className={`${styles.text} mt-0.5`}>
@@ -744,66 +773,88 @@ export default function Dashboard() {
             );
           })()}
 
-        {!member?.socialMember && (
-          <div className="flex flex-col sm:flex-row gap-3">
-            {!member?.spareOnly && (
-              <Link
-                to="/request-spare"
-                className="group flex items-center gap-3 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm hover:shadow-md hover:border-primary-orange/40 dark:hover:border-primary-orange/40 transition-all"
-              >
-                <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary-orange/10 dark:bg-primary-orange/20 flex items-center justify-center text-primary-orange">
-                  <HiOutlineUserPlus className="w-5 h-5" />
-                </div>
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-100 group-hover:text-primary-orange transition-colors">
-                  Request a spare
-                </span>
-              </Link>
-            )}
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+          <DashboardMembershipCard />
 
-            <Link
-              to="/availability"
-              className="group flex items-center gap-3 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm hover:shadow-md hover:border-primary-teal/40 dark:hover:border-primary-teal/40 transition-all"
-            >
-              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary-teal/10 dark:bg-primary-teal/20 flex items-center justify-center text-primary-teal">
-                <HiOutlineCalendar className="w-5 h-5" />
-              </div>
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-100 group-hover:text-primary-teal transition-colors">
-                Set availability
-              </span>
-            </Link>
+          {!member?.socialMember ? (
+            <div className="app-card flex flex-col">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal/80 dark:text-primary-teal">
+                Quick actions
+              </p>
+              <div className="mt-4 flex flex-1 flex-col justify-center gap-2.5">
+                {!member?.spareOnly && (
+                  <Link
+                    to="/request-spare"
+                    className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-orange/40 hover:bg-primary-orange/5 dark:hover:border-primary-orange/40 dark:hover:bg-primary-orange/10"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-orange/10 text-primary-orange dark:bg-primary-orange/20">
+                      <HiOutlineUserPlus className="h-5 w-5" />
+                    </span>
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                      Request a spare
+                    </span>
+                    <HiChevronRight
+                      className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-orange"
+                      aria-hidden="true"
+                    />
+                  </Link>
+                )}
 
-            <Link
-              to="/book-ice"
-              className="group flex items-center gap-3 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm hover:shadow-md hover:border-primary-dark/30 dark:hover:border-indigo-500/40 transition-all"
-            >
-              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary-dark/[0.08] dark:bg-indigo-500/15 flex items-center justify-center text-primary-dark dark:text-indigo-300">
-                <HiOutlineCalendarDays className="w-5 h-5" />
+                <Link
+                  to="/availability"
+                  className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-teal/40 hover:bg-primary-teal/5 dark:hover:border-primary-teal/40 dark:hover:bg-primary-teal/10"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-teal/10 text-primary-teal dark:bg-primary-teal/20">
+                    <HiOutlineCalendar className="h-5 w-5" />
+                  </span>
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                    Set availability
+                  </span>
+                  <HiChevronRight
+                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal"
+                    aria-hidden="true"
+                  />
+                </Link>
+
+                <Link
+                  to="/book-ice"
+                  className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-dark/30 hover:bg-primary-dark/[0.04] dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-dark/[0.08] text-primary-dark dark:bg-indigo-500/15 dark:text-indigo-300">
+                    <HiOutlineCalendarDays className="h-5 w-5" />
+                  </span>
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                    Book ice time
+                  </span>
+                  <HiChevronRight
+                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-dark dark:group-hover:text-indigo-300"
+                    aria-hidden="true"
+                  />
+                </Link>
               </div>
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-100 group-hover:text-primary-dark dark:group-hover:text-indigo-300 transition-colors">
-                Book ice time
-              </span>
-            </Link>
-          </div>
-        )}
+            </div>
+          ) : null}
+        </div>
 
         <DashboardRegistrationStatus />
 
         {loading ? (
           <AppStateCard title="Loading dashboard..." />
         ) : (
-          <div className="space-y-6">
-            {/* My Upcoming Games */}
+          <div className="space-y-8">
+            {/* My ice bookings */}
             {!member?.socialMember && upcomingIceBookings.length > 0 && (
-              <div>
-                <h2 className="app-section-title mb-4">
-                  My ice bookings{' '}
+              <DashboardSection
+                title="My ice bookings"
+                action={
                   <Link
                     to="/book-ice"
-                    className="text-sm font-normal text-primary-teal hover:underline"
+                    className="text-sm font-medium text-primary-teal hover:underline"
                   >
-                    (book time)
+                    Book ice time →
                   </Link>
-                </h2>
+                }
+              >
                 <div className="space-y-3">
                   {upcomingIceBookings.map((b) => (
                     <div
@@ -842,14 +893,11 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </DashboardSection>
             )}
 
             {upcomingGames.length > 0 && (
-              <div>
-                <h2 className="app-section-title mb-4">
-                  My upcoming games
-                </h2>
+              <DashboardSection title="My upcoming games">
                 <div className="space-y-3">
                   {upcomingGames.map((game) => (
                     <div
@@ -896,34 +944,32 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </DashboardSection>
             )}
 
-            {/* My Upcoming Sparing */}
+            {/* My upcoming sparing */}
             {mySparing.length > 0 && (
-              <div>
-                <h2 className="app-section-title mb-4">
-                  My upcoming sparing
-                </h2>
-                <div className="space-y-4">
+              <DashboardSection title="My upcoming sparing">
+                <div className="space-y-3">
                   {mySparing.map((request) => renderRequestCard(request, false, true, true))}
                 </div>
-              </div>
+              </DashboardSection>
             )}
 
-            {/* My Spare Requests */}
+            {/* My spare requests */}
             {myRequests.length > 0 && (
-              <div>
-                <h2 className="app-section-title mb-4">
-                  My spare requests{' '}
+              <DashboardSection
+                title="My spare requests"
+                action={
                   <Link
                     to="/my-requests"
-                    className="text-sm font-normal text-primary-teal hover:underline"
+                    className="text-sm font-medium text-primary-teal hover:underline"
                   >
-                    (manage)
+                    Manage requests →
                   </Link>
-                </h2>
-                <div className="space-y-4">
+                }
+              >
+                <div className="space-y-3">
                   {myRequests.map((request) => (
                     <div
                       key={request.id}
@@ -1013,16 +1059,13 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </DashboardSection>
             )}
 
             {/* Requests I've been CC'd on */}
             {ccRequests.length > 0 && (
-              <div>
-                <h2 className="app-section-title mb-4">
-                  Requests I&apos;ve been CC&apos;d on
-                </h2>
-                <div className="space-y-4">
+              <DashboardSection title="Requests I've been CC'd on">
+                <div className="space-y-3">
                   {ccRequests.map((request) => (
                     <div
                       key={request.id}
@@ -1068,14 +1111,11 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </DashboardSection>
             )}
 
-            {/* Outstanding Spare Requests */}
-            <div>
-              <h2 className="app-section-title mb-4">
-                Outstanding spare requests
-              </h2>
+            {/* Outstanding spare requests */}
+            <DashboardSection title="Outstanding spare requests">
               {openRequests.length === 0 ? (
                 <div className="app-card py-8 text-center">
                   <div className="flex justify-center mb-2">
@@ -1086,29 +1126,37 @@ export default function Dashboard() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {openRequests.map((request) => renderRequestCard(request, true))}
                 </div>
               )}
-            </div>
+            </DashboardSection>
 
-            {/* Filled Spare Requests */}
+            {/* Filled spare requests */}
             {filledRequests.length > 0 && (
-              <div>
+              <section>
                 <div className="app-card overflow-hidden p-0">
-                  <button
-                    type="button"
-                    onClick={() => setShowFilled(!showFilled)}
-                    className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                    aria-expanded={showFilled}
-                  >
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                      Filled spare requests
-                    </h2>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {showFilled ? '▼' : '▶'} {filledRequests.length}
-                    </span>
-                  </button>
+                  <h2>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilled(!showFilled)}
+                      className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      aria-expanded={showFilled}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <span className="app-section-title">Filled spare requests</span>
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                          {filledRequests.length}
+                        </span>
+                      </span>
+                      <HiChevronDown
+                        className={`h-5 w-5 shrink-0 text-gray-400 transition-transform ${
+                          showFilled ? 'rotate-180' : ''
+                        }`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </h2>
 
                   {showFilled && (
                     <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4">
@@ -1151,7 +1199,7 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-              </div>
+              </section>
             )}
           </div>
         )}

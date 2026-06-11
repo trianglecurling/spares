@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import PublicLayout from '../components/PublicLayout';
 import SeoMeta from '../components/SeoMeta';
 import api, { formatApiError } from '../utils/api';
+import { donationCheckoutIntro, donationCheckoutStepTwo } from '../utils/paymentProcessorCopy';
 
 const suggestedAmounts = [25, 50, 100, 250];
 
@@ -73,9 +74,7 @@ export default function PublicDonatePage() {
               Your donation helps us grow learn-to-curl programs, maintain our dedicated facility, and keep the sport
               accessible for our community.
             </p>
-            <p className="text-sm text-emerald-900/80">
-              Donations are processed securely through Stripe hosted checkout.
-            </p>
+            <p className="text-sm text-emerald-900/80">{donationCheckoutIntro()}</p>
           </div>
         </section>
 
@@ -162,7 +161,7 @@ export default function PublicDonatePage() {
               disabled={!canSubmit}
               className="inline-flex items-center rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? 'Redirecting to Stripe...' : 'Continue to secure checkout'}
+              {submitting ? 'Redirecting to checkout...' : 'Continue to secure checkout'}
             </button>
           </form>
 
@@ -170,7 +169,7 @@ export default function PublicDonatePage() {
             <h2 className="public-subheading">How it works</h2>
             <ol className="mt-4 space-y-3 text-sm text-gray-700">
               <li className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">1) Enter your donation amount.</li>
-              <li className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">2) Complete payment on Stripe's hosted page.</li>
+              <li className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">2) {donationCheckoutStepTwo()}</li>
               <li className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                 3) Return here for confirmation and receipt status.
               </li>

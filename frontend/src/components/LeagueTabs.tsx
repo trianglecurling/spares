@@ -19,6 +19,7 @@ const leagueTabs = [
   { label: 'Roster', path: 'roster' },
   { label: 'Divisions', path: 'divisions' },
   { label: 'League managers', path: 'managers' },
+  { label: 'Sabbaticals', path: 'sabbaticals' },
   { label: 'Maintenance', path: 'maintenance', requiresAdmin: true },
 ];
 

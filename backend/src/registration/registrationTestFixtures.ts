@@ -1,4 +1,5 @@
 import type { LeagueConfig, RegistrationContext, RegistrationSelectionInput } from './registrationContext.js';
+import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
 
 export function league(overrides: Partial<LeagueConfig> = {}): LeagueConfig {
   return {
@@ -104,7 +105,7 @@ export function registrationContext(overrides: Partial<RegistrationContext> = {}
       reciprocal: { amountType: 'percent', amountValue: 10 },
       winterOnly: { amountType: 'dollar', amountValue: 2500 },
     },
-    sabbaticalDurationLimitYears: 3,
+    sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
     ...overrides,
   };
 }

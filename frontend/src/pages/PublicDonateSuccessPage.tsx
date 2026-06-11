@@ -74,12 +74,12 @@ export default function PublicDonateSuccessPage() {
     }, PROCESSING_GRACE_MS);
 
     const tryResolveFromCheckoutReturn = async (): Promise<boolean> => {
-      if (!sessionId || resolveAttempted) return false;
+      if (resolveAttempted) return false;
       resolveAttempted = true;
 
       try {
         const response = await api.post(`/public/donations/orders/${encodeURIComponent(orderToken)}/resolve`, {
-          sessionId,
+          ...(sessionId ? { sessionId } : {}),
         });
         if (cancelled) return false;
         const resolvedOrder: DonationOrder | null = response.data?.order ?? null;

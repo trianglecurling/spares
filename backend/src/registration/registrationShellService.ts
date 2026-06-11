@@ -796,7 +796,7 @@ export type GuestRegistrationSubmitInput = {
   experienceSelfReportedYears: number | null;
 };
 
-export async function submitGuestRegistration(input: GuestRegistrationSubmitInput) {
+export async function submitGuestRegistration(input: GuestRegistrationSubmitInput, frontendBaseUrl?: string) {
   await assertRegistrationOpen(input.seasonId, input.sessionId);
   validateDemographics(input.curler);
   const minor = isMinorOnRegistrationDate(input.curler.dateOfBirth);
@@ -866,5 +866,9 @@ export async function submitGuestRegistration(input: GuestRegistrationSubmitInpu
     await membershipPayment.updateMembership(draft.id, actor, { membershipOption: 'regular', basicIcePrivileges: input.basicIcePrivileges });
   }
 
-  return membershipPayment.submitRegistrationMembershipPayment({ registrationId: draft.id, actor });
+  return membershipPayment.submitRegistrationMembershipPayment({
+    registrationId: draft.id,
+    actor,
+    frontendBaseUrl,
+  });
 }

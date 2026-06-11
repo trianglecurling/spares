@@ -13,6 +13,10 @@ import {
   managerListResponseSchema,
   managerSearchResponseSchema,
   memberSearchResponseSchema,
+  sabbaticalAddBodySchema,
+  sabbaticalAddResponseSchema,
+  sabbaticalListResponseSchema,
+  sabbaticalRemoveBodySchema,
   rosterAddBodySchema,
   rosterAddResponseSchema,
   rosterBulkBodySchema,
@@ -37,6 +41,13 @@ import {
   hasLeagueAdministratorAccess,
   hasLeagueSetupAccess,
 } from '../utils/leagueAccess.js';
+import { hasScope } from '../utils/rbac.js';
+import {
+  addLeagueSabbatical,
+  listLeagueSabbaticals,
+  removeLeagueSabbatical,
+  SabbaticalStaffValidationError,
+} from '../registration/sabbaticalStaffService.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
 type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
@@ -155,6 +166,16 @@ const rosterBulkAddSchema = z.object({
 const managerAddSchema = z.object({
   memberId: z.number().int().positive(),
 });
+
+const sabbaticalAddSchema = z.object({
+  memberId: z.number().int().positive(),
+  reason: z.string().min(1),
+});
+
+const sabbaticalRemoveSchema = z.object({
+  reason: z.string().min(1),
+});
+
 
 const idParamsSchema = {
   type: 'object',
@@ -1349,6 +1370,115 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
+    }
+  );
+
+  // League sabbaticals
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/leagues/:id/sabbaticals',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: sabbaticalListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      try {
+        return await listLeagueSabbaticals(leagueId);
+      } catch (error) {
+        if (error instanceof SabbaticalStaffValidationError) {
+          return reply.code(400).send({ error: 'Validation failed', details: error.details });
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.post<{ Reply: ApiReply<unknown> }>(
+    '/leagues/:id/sabbaticals',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: sabbaticalAddBodySchema,
+        response: {
+          200: sabbaticalAddResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+
+      if (!member || !hasScope(member.authz, 'members.manage')) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const body = sabbaticalAddSchema.parse(request.body);
+      try {
+        return await addLeagueSabbatical({
+          leagueId,
+          memberId: body.memberId,
+          reason: body.reason,
+          actorMemberId: member.id,
+        });
+      } catch (error) {
+        if (error instanceof SabbaticalStaffValidationError) {
+          return reply.code(400).send({ error: 'Validation failed', details: error.details });
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.delete<{ Reply: ApiReply<unknown> }>(
+    '/leagues/:id/sabbaticals/:memberId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueMemberParamsSchema,
+        body: sabbaticalRemoveBodySchema,
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const { id, memberId } = request.params as { id: string; memberId: string };
+      const leagueId = parseInt(id, 10);
+      const memberIdNum = parseInt(memberId, 10);
+
+      if (!member || !hasScope(member.authz, 'members.manage')) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const body = sabbaticalRemoveSchema.parse(request.body ?? {});
+      try {
+        return await removeLeagueSabbatical({
+          leagueId,
+          memberId: memberIdNum,
+          reason: body.reason,
+          actorMemberId: member.id,
+        });
+      } catch (error) {
+        if (error instanceof SabbaticalStaffValidationError) {
+          return reply.code(400).send({ error: 'Validation failed', details: error.details });
+        }
+        throw error;
+      }
     }
   );
 

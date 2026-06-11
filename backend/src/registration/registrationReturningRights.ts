@@ -1,4 +1,4 @@
-import { addYears, compareDateLike, leagueLastDay } from './registrationAgeExperience.js';
+import { canExtendSabbaticalIntoLeague } from './sabbaticalDurationLimit.js';
 import { blockingError, createDecision, type BusinessDecision, type DecisionMessage } from './registrationDecisionTypes.js';
 import type { ExistingSabbatical, LeagueConfig, RegistrationContext } from './registrationContext.js';
 
@@ -17,7 +17,7 @@ function sabbaticalMatchesLeagueLineage(sabbatical: ExistingSabbatical, league: 
 
 export function protectedClaimCount(context: RegistrationContext): number {
   return context.selections.filter(
-    (selection) => selection.selectionType === 'guaranteed_return' || selection.selectionType === 'sabbatical'
+    (selection) => selection.selectionType === 'guaranteed_return' || selection.selectionType === 'sabbatical',
   ).length;
 }
 
@@ -108,20 +108,25 @@ export function evaluateSabbaticalEligibility(
 
   const relevantSabbatical = findRelevantSabbatical(context, league);
   if (relevantSabbatical) {
-    const cutoff = addYears(relevantSabbatical.firstSabbaticalStartDate, context.sabbaticalDurationLimitYears);
-    if (compareDateLike(leagueLastDay(league), cutoff) >= 0) {
-      const hasOverride = context.staffOverrideSabbaticalDuration || relevantSabbatical.staffOverride;
-      if (hasOverride) {
-        warnings.push({
-          code: 'sabbatical_staff_override_required',
-          message: 'Sabbatical duration limit requires staff override.',
-          severity: 'warning',
-        });
-      } else {
-        blockingErrors.push(
-          blockingError('sabbatical_duration_limit_exceeded', 'Sabbatical duration limit has been reached.')
-        );
-      }
+    const durationCheck = canExtendSabbaticalIntoLeague({
+      sabbatical: relevantSabbatical,
+      league,
+      durationLimitYears: context.sabbaticalDurationLimitYears,
+      staffOverrideSabbaticalDuration: context.staffOverrideSabbaticalDuration,
+    });
+    if (durationCheck.requiresStaffReview) {
+      warnings.push({
+        code: 'sabbatical_staff_override_required',
+        message: 'Sabbatical duration limit requires staff override.',
+        severity: 'warning',
+      });
+    } else if (!durationCheck.allowed) {
+      blockingErrors.push(
+        blockingError(
+          'sabbatical_duration_limit_exceeded',
+          durationCheck.blockedMessage ?? 'Sabbatical duration limit has been reached.',
+        ),
+      );
     }
   }
 

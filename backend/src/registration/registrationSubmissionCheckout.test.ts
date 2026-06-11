@@ -186,4 +186,24 @@ describe('Phase 7 submission and checkout decisions', () => {
       })
     ).toBe('confirmed');
   });
+
+  test('cancelled registration stops confirming once payment succeeds without confirmation', () => {
+    expect(
+      resolveRegistrationPaymentStatus({
+        invoiceStatus: 'cancelled',
+        registrationStatus: 'cancelled',
+        paymentOrderStatus: 'succeeded',
+        totalDueMinor: 44000,
+      })
+    ).toBe('payment_unapplied');
+
+    expect(
+      resolveRegistrationPaymentStatus({
+        invoiceStatus: 'cancelled',
+        registrationStatus: 'cancelled',
+        paymentOrderStatus: 'pending',
+        totalDueMinor: 44000,
+      })
+    ).toBe('cancelled');
+  });
 });

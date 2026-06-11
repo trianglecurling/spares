@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
+import { setCachedDefaultPaymentProvider, type PaymentProvider } from '../utils/paymentProcessorCopy';
 
 interface SiteConfig {
   clubName: string | null;
@@ -26,6 +27,7 @@ interface MenuItemNode {
 interface PublicBootstrapResponse {
   siteConfig: SiteConfig | null;
   navbarMenu: MenuItemNode[];
+  defaultPaymentProvider?: PaymentProvider;
 }
 
 interface PublicLayoutProps {
@@ -278,6 +280,7 @@ export default function PublicLayout({
         const menu = Array.isArray(r.data?.navbarMenu) ? r.data.navbarMenu : [];
         cachedSiteConfig = config;
         cachedMenuItems = menu;
+        setCachedDefaultPaymentProvider(r.data?.defaultPaymentProvider);
         setSiteConfig(config);
         setMenuItems(menu);
         setPublicDataReady(true);

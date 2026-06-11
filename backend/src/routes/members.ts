@@ -17,6 +17,7 @@ import {
   memberExperienceSummaryResponseSchema,
   memberLeaguesResponseSchema,
   memberListResponseSchema,
+  memberMembershipCardResponseSchema,
   memberPaymentDetailSchema,
   memberPaymentHistoryResponseSchema,
   memberProfileResponseSchema,
@@ -25,6 +26,7 @@ import {
 } from '../api/schemas.js';
 import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
 import { clearMemberRestrictedRelations } from '../services/clearMemberRestrictedRelations.js';
+import { getMemberMembershipCard } from '../services/memberMembershipCardService.js';
 import type {
   ApiErrorResponse,
   BulkCreateBody,
@@ -41,6 +43,7 @@ import type {
   MemberEmergencyContactResponse,
   MemberExperienceSummaryResponse,
   MemberLeaguesResponse,
+  MemberMembershipCardResponse,
   MemberPaymentDetail,
   MemberPaymentHistoryResponse,
   MemberProfileResponse,
@@ -532,6 +535,26 @@ export async function memberRoutes(fastify: FastifyInstance) {
       isLeagueAdministratorGlobal,
     };
     }
+  );
+
+  fastify.get<{ Reply: MemberMembershipCardResponse | ApiErrorResponse }>(
+    '/members/me/membership-card',
+    {
+      schema: {
+        tags: ['members'],
+        response: {
+          200: memberMembershipCardResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const authMember = (request as AuthenticatedRequest).member;
+      if (!authMember) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      return getMemberMembershipCard(authMember);
+    },
   );
 
   fastify.get<{ Reply: MemberPaymentHistoryResponse | ApiErrorResponse }>(

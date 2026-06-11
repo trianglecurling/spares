@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
+import { setCachedDefaultPaymentProvider } from '../utils/paymentProcessorCopy';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
@@ -70,6 +71,7 @@ interface PublicHomeBootstrapResponse {
   siteConfig: SiteConfig | null;
   navbarMenu: MenuItemNode[];
   home: HomeData | null;
+  defaultPaymentProvider?: 'stripe' | 'paypal' | 'square';
 }
 
 const HOMEPAGE_COPY = {
@@ -128,6 +130,7 @@ export default function PublicHomePage() {
     api
       .get<PublicHomeBootstrapResponse>('/public/bootstrap', { params: { includeHome: 'true' } })
       .then((res) => {
+        setCachedDefaultPaymentProvider(res.data?.defaultPaymentProvider);
         setLayoutSiteConfig(res.data?.siteConfig ?? null);
         setLayoutMenuItems(Array.isArray(res.data?.navbarMenu) ? res.data.navbarMenu : []);
         if (res.data?.home) {

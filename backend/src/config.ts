@@ -28,6 +28,8 @@ export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  /** Extra checkout redirect origins (comma-separated). Subdomains of FRONTEND_URL are also allowed. */
+  frontendUrlAliases: parseCsvEnv(process.env.FRONTEND_URL_ALIASES),
   jwtSecret: process.env.JWT_SECRET || 'change-this-secret-key',
   databasePath: process.env.DATABASE_PATH || './data/spares.sqlite',
   fileStoragePath: process.env.FILE_STORAGE_PATH || './data/uploads',
@@ -124,6 +126,11 @@ export const config = {
       membership: parseIntEnv(process.env.MAUTIC_SEGMENT_ID_MEMBERSHIP, 0),
       learnToCurl: parseIntEnv(process.env.MAUTIC_SEGMENT_ID_LEARN_TO_CURL, 0),
     },
+  },
+
+  registration: {
+    /** Max sabbatical span from first_sabbatical_start_date; see docs/registration/sabbaticals.md */
+    sabbaticalDurationLimitYears: Math.max(1, parseIntEnv(process.env.SABBATICAL_DURATION_LIMIT_YEARS, 3)),
   },
 };
 

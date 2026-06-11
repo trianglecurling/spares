@@ -7726,6 +7726,234 @@
         }
       }
     },
+    "/leagues/{id}/sabbaticals": {
+      "get": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "memberId": {
+                        "type": "number"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "active",
+                          "returning",
+                          "staff_overridden"
+                        ]
+                      },
+                      "firstSabbaticalStartDate": {
+                        "type": "string"
+                      },
+                      "staffOverride": {
+                        "type": "boolean"
+                      },
+                      "staffOverrideReason": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "sourceRegistrationId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "memberId",
+                      "name",
+                      "email",
+                      "status",
+                      "firstSabbaticalStartDate",
+                      "staffOverride",
+                      "staffOverrideReason",
+                      "sourceRegistrationId",
+                      "createdAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "league-setup"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "memberId": {
+                    "type": "number"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "memberId",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "leagueId": {
+                      "type": "number"
+                    },
+                    "memberId": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "leagueId",
+                    "memberId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/sabbaticals/{memberId}": {
+      "delete": {
+        "tags": [
+          "league-setup"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/leagues/{id}/teams": {
       "get": {
         "tags": [

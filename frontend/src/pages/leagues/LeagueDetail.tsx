@@ -21,6 +21,7 @@ import Modal from '../../components/Modal';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
+import { memberHasScope } from '../../utils/permissions';
 
 const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Sunday',
@@ -169,6 +170,19 @@ interface LeagueManager {
   email: string | null;
 }
 
+interface LeagueSabbaticalMember {
+  id: number;
+  memberId: number;
+  name: string;
+  email: string | null;
+  status: 'active' | 'returning' | 'staff_overridden';
+  firstSabbaticalStartDate: string;
+  staffOverride: boolean;
+  staffOverrideReason: string | null;
+  sourceRegistrationId: number | null;
+  createdAt: string | null;
+}
+
 interface LeagueRosterMember {
   memberId: number;
   name: string;
@@ -219,6 +233,7 @@ const leagueParamTabs = [
   'roster',
   'divisions',
   'managers',
+  'sabbaticals',
   'maintenance',
 ] as const;
 type LeagueParamTab = (typeof leagueParamTabs)[number];
@@ -357,6 +372,10 @@ export default function LeagueDetail() {
   const [bulkRosterSelection, setBulkRosterSelection] = useState<MemberSearchResult | null>(null);
 
   const [managers, setManagers] = useState<LeagueManager[]>([]);
+  const [sabbaticalMembers, setSabbaticalMembers] = useState<LeagueSabbaticalMember[]>([]);
+  const [sabbaticalAddReason, setSabbaticalAddReason] = useState('');
+  const [sabbaticalAddSubmitting, setSabbaticalAddSubmitting] = useState(false);
+  const sabbaticalAddReasonId = useId();
 
   const [divisionModalOpen, setDivisionModalOpen] = useState(false);
   const [editingDivision, setEditingDivision] = useState<Division | null>(null);
@@ -397,6 +416,9 @@ export default function LeagueDetail() {
   const rosterMemberIds = useMemo(() => {
     return new Set(rosterMembers.map((member) => member.memberId));
   }, [rosterMembers]);
+  const sabbaticalMemberIds = useMemo(() => {
+    return new Set(sabbaticalMembers.map((entry) => entry.memberId));
+  }, [sabbaticalMembers]);
   const leagueAccess = useMemo(() => {
     if (!member || !Number.isFinite(numericLeagueId)) {
       return {
@@ -444,6 +466,10 @@ export default function LeagueDetail() {
     () => leagueAccess.hasGlobalLeagueAdmin || leagueAccess.isLeagueManagerForLeague,
     [leagueAccess]
   );
+  const canManageSabbaticals = useMemo(
+    () => Boolean(member && memberHasScope(member, 'members.manage')),
+    [member]
+  );
 
   const selectedRoleMemberIds = useMemo(() => {
     return teamRoles
@@ -490,6 +516,13 @@ export default function LeagueDetail() {
       id: String(numericLeagueId),
     });
     setManagers(managersResponse);
+  };
+
+  const loadSabbaticals = async () => {
+    const sabbaticalsResponse = await get('/leagues/{id}/sabbaticals', undefined, {
+      id: String(numericLeagueId),
+    });
+    setSabbaticalMembers(sabbaticalsResponse);
   };
 
   const getUntyped = get as (
@@ -603,12 +636,13 @@ export default function LeagueDetail() {
       }
       setLeague(currentLeague);
 
-      const [divisionsResponse, teamsResponse, rosterResponse, managersResponse, settingsResponse] =
+      const [divisionsResponse, teamsResponse, rosterResponse, managersResponse, sabbaticalsResponse, settingsResponse] =
         await Promise.all([
           get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
           get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
           get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
           get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
+          get('/leagues/{id}/sabbaticals', undefined, { id: String(numericLeagueId) }),
           (
             get as (
               path: string,
@@ -622,6 +656,7 @@ export default function LeagueDetail() {
       setTeams(teamsResponse);
       setRosterMembers(rosterResponse);
       setManagers(managersResponse);
+      setSabbaticalMembers(sabbaticalsResponse);
       setLeagueSettings(
         settingsResponse?.collectByeRequests !== undefined
           ? { collectByeRequests: settingsResponse.collectByeRequests }
@@ -1169,6 +1204,56 @@ export default function LeagueDetail() {
     } catch (error: unknown) {
       console.error('Failed to remove manager:', error);
       showAlert(formatApiError(error, 'Failed to remove manager'), 'error');
+    }
+  };
+
+  const handleAddSabbatical = async (candidate: MemberSearchResult) => {
+    const reason = sabbaticalAddReason.trim();
+    if (!reason) {
+      showAlert('Enter a reason before adding a sabbatical.', 'warning');
+      return;
+    }
+    setSabbaticalAddSubmitting(true);
+    try {
+      await post(
+        '/leagues/{id}/sabbaticals',
+        { memberId: candidate.id, reason },
+        { id: String(numericLeagueId) }
+      );
+      setSabbaticalAddReason('');
+      await loadSabbaticals();
+      showAlert(`${candidate.name} added to sabbatical.`, 'success');
+    } catch (error: unknown) {
+      console.error('Failed to add sabbatical:', error);
+      showAlert(formatApiError(error, 'Failed to add sabbatical'), 'error');
+    } finally {
+      setSabbaticalAddSubmitting(false);
+    }
+  };
+
+  const handleRemoveSabbatical = async (entry: LeagueSabbaticalMember) => {
+    const confirmed = await confirm({
+      title: 'Remove sabbatical',
+      message: `Remove ${entry.name} from the sabbatical list for this league? Their protected spot will be released.`,
+      confirmText: 'Remove',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await del(
+        '/leagues/{id}/sabbaticals/{memberId}',
+        { reason: 'Removed by staff from league sabbatical list' },
+        {
+          id: String(numericLeagueId),
+          memberId: String(entry.memberId),
+        }
+      );
+      await loadSabbaticals();
+      showAlert(`${entry.name} removed from sabbatical.`, 'success');
+    } catch (error: unknown) {
+      console.error('Failed to remove sabbatical:', error);
+      showAlert(formatApiError(error, 'Failed to remove sabbatical'), 'error');
     }
   };
 
@@ -2535,6 +2620,112 @@ export default function LeagueDetail() {
                 />
               </div>
             )}
+          </div>
+        )}
+
+        {normalizedTab === 'sabbaticals' && (
+          <div className="space-y-4">
+            <div className="app-card space-y-2">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                <div>
+                  <h2 className="app-section-title">Sabbaticals</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Members holding a protected sabbatical spot for this league.
+                  </p>
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Total: <span className="font-medium">{sabbaticalMembers.length}</span>
+                </div>
+              </div>
+              {league && !league.allowsSabbatical && (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  This league is configured not to allow sabbaticals.
+                </p>
+              )}
+              {league?.leagueType === 'bring_your_own_team' && (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Bring-your-own-team leagues do not use sabbaticals.
+                </p>
+              )}
+            </div>
+
+            {canManageSabbaticals &&
+              league?.allowsSabbatical &&
+              league.leagueType !== 'bring_your_own_team' && (
+                <div className="app-card space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Add member to sabbatical
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Search for a member and record a staff reason. This bypasses normal registration
+                      eligibility checks.
+                    </p>
+                  </div>
+                  <FormField label="Staff reason" htmlFor={sabbaticalAddReasonId} required>
+                    <input
+                      id={sabbaticalAddReasonId}
+                      type="text"
+                      className="app-input"
+                      value={sabbaticalAddReason}
+                      onChange={(event) => setSabbaticalAddReason(event.target.value)}
+                      placeholder="Why is this sabbatical being added?"
+                      disabled={sabbaticalAddSubmitting}
+                    />
+                  </FormField>
+                  <MemberAutocomplete
+                    value=""
+                    onChange={() => {}}
+                    onSelectOption={handleAddSabbatical}
+                    placeholder="Search members by name or email"
+                    minQueryLength={2}
+                    openOnFocus={false}
+                    noMatchesText="No members found"
+                    disabled={sabbaticalAddSubmitting || !sabbaticalAddReason.trim()}
+                    filterOption={(option) => !sabbaticalMemberIds.has(option.id)}
+                  />
+                </div>
+              )}
+
+            <div className="app-card">
+              {sabbaticalMembers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  No members are on sabbatical for this league.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {sabbaticalMembers.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded-md p-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                          {entry.name}
+                        </div>
+                        {entry.email && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">{entry.email}</div>
+                        )}
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Sabbatical since {formatDateDisplay(entry.firstSabbaticalStartDate)}
+                          {entry.staffOverride && entry.staffOverrideReason
+                            ? ` · Staff override: ${entry.staffOverrideReason}`
+                            : ''}
+                          {entry.sourceRegistrationId
+                            ? ` · Registration #${entry.sourceRegistrationId}`
+                            : ''}
+                        </div>
+                      </div>
+                      {canManageSabbaticals && (
+                        <Button variant="danger" onClick={() => handleRemoveSabbatical(entry)}>
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

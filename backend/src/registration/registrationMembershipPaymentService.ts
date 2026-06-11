@@ -10,8 +10,10 @@ import type {
   WaitlistAuditActionSqlite,
 } from '../db/drizzle-schema.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
+import { normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
+import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
 import { effectiveExperienceYears, isJuniorRecreationalEligible } from './registrationAgeExperience.js';
 import { memberExperienceBaselinesFromRow, type MemberExperienceBaselines } from './curlingExperienceYears.js';
 import { effectiveLeagueRegistrationFeeMinor } from './registrationConfigValidation.js';
@@ -30,6 +32,10 @@ import {
   removeOrphanedRegistrationRosterPlacements,
   syncRegistrationRosterPlacements,
 } from './registrationRosterService.js';
+import {
+  isActiveSabbaticalRecord,
+  sabbaticalMatchesLeagueLineage,
+} from './registrationSabbaticalContinuity.js';
 import { removeExistingWaitlistsMarkedForRemoval, removeOrphanedRegistrationWaitlistEntries } from './registrationWaitlistCleanup.js';
 import { getWaitlistQueuePosition, insertWaitlistAuditEvent } from './waitlistAudit.js';
 import { loadExistingWaitlistEntriesForMember, waitlistEntryIncludesMember } from './waitlistMemberMembership.js';
@@ -130,6 +136,7 @@ type SubmitRegistrationInput = {
   confirmImmediatePayment?: boolean;
   staffEdit?: boolean;
   changedSummary?: string;
+  frontendBaseUrl?: string;
 };
 
 export type RegistrationPaymentAdjustmentResult = {
@@ -178,12 +185,31 @@ type SubmitRegistrationResult =
 
 export type RegistrationPaymentStatusPayload = {
   registrationId: number | null;
-  paymentStatus: 'confirming' | 'confirmed' | 'failed' | 'deferred' | 'no_payment_due' | 'unknown';
+  paymentStatus:
+    | 'confirming'
+    | 'confirmed'
+    | 'failed'
+    | 'deferred'
+    | 'no_payment_due'
+    | 'cancelled'
+    | 'payment_unapplied'
+    | 'unknown';
   registrationStatus: string | null;
   invoiceStatus: string | null;
   paymentOrderStatus: string | null;
   totalDueMinor: number | null;
 };
+
+function isCancelledRegistrationState(input: {
+  invoiceStatus: string | null;
+  registrationStatus: string | null;
+}): boolean {
+  return (
+    input.registrationStatus === 'cancelled'
+    || input.invoiceStatus === 'cancelled'
+    || input.invoiceStatus === 'refunded'
+  );
+}
 
 export function resolveRegistrationPaymentStatus(input: {
   invoiceStatus: string | null;
@@ -195,6 +221,14 @@ export function resolveRegistrationPaymentStatus(input: {
   if (input.invoiceStatus === 'failed' || input.paymentOrderStatus === 'failed') return 'failed';
   if (input.invoiceStatus === 'deferred') return 'deferred';
   if (input.totalDueMinor === 0) return 'no_payment_due';
+
+  if (isCancelledRegistrationState(input)) {
+    if (input.paymentOrderStatus === 'succeeded' || input.paymentOrderStatus === 'partially_refunded') {
+      return 'payment_unapplied';
+    }
+    return 'cancelled';
+  }
+
   return 'confirming';
 }
 
@@ -297,13 +331,13 @@ function dateColumnValue(value: unknown): never {
   return dbValue(normalized);
 }
 
-function frontendBaseUrl(): string {
-  return config.frontendUrl.replace(/\/+$/, '');
+function checkoutFrontendBaseUrl(override?: string): string {
+  return normalizeFrontendBaseUrl(override ?? config.frontendUrl);
 }
 
-function registrationCheckoutSuccessUrl(registrationId: number, orderToken: string): string {
+function registrationCheckoutSuccessUrl(registrationId: number, orderToken: string, frontendBaseUrl?: string): string {
   return buildCheckoutSuccessUrl(
-    `${frontendBaseUrl()}/registration/success?registration_id=${registrationId}&order_token=${encodeURIComponent(orderToken)}`
+    `${checkoutFrontendBaseUrl(frontendBaseUrl)}/registration/success?registration_id=${registrationId}&order_token=${encodeURIComponent(orderToken)}`
   );
 }
 
@@ -900,7 +934,7 @@ async function buildRegistrationContextFromSourceRow(
           },
     ...settings,
     juniorAssistance,
-    sabbaticalDurationLimitYears: 3,
+    sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
     desiredAddWaitlistLeagueCount: registration.desired_add_waitlist_league_count ?? null,
   };
 }
@@ -1665,6 +1699,85 @@ function sabbaticalFeeForLeague(feePreview: RegistrationFeePreview, leagueId: nu
   return feePreview.lineItems.find((item) => item.lineType === 'sabbatical_fee' && item.relatedLeagueId === leagueId)?.amountMinor ?? 0;
 }
 
+type SabbaticalPersistenceRow = {
+  id: number;
+  member_id: number;
+  original_league_id: number;
+  current_league_id: number;
+  first_sabbatical_league_id: number;
+  first_sabbatical_start_date: string | Date;
+  status: string;
+  staff_override?: number | null;
+};
+
+function findActiveLineageSabbaticalRow(
+  rows: SabbaticalPersistenceRow[],
+  league: LeagueConfig,
+): SabbaticalPersistenceRow | undefined {
+  return rows.find(
+    (row) =>
+      isActiveSabbaticalRecord({
+        id: row.id,
+        originalLeagueId: row.original_league_id,
+        currentLeagueId: row.current_league_id,
+        firstSabbaticalLeagueId: row.first_sabbatical_league_id,
+        firstSabbaticalStartDate: normalizeDate(row.first_sabbatical_start_date),
+        status: row.status as RegistrationContext['existingSabbaticals'][number]['status'],
+        staffOverride: row.staff_override === 1,
+      }) &&
+      sabbaticalMatchesLeagueLineage(
+        { currentLeagueId: row.current_league_id, originalLeagueId: row.original_league_id },
+        league,
+      ),
+  );
+}
+
+async function loadMemberSabbaticalRows(tx: any, memberId: number): Promise<SabbaticalPersistenceRow[]> {
+  const { schema } = getDrizzleDb();
+  return tx.select().from(schema.curlingLeagueSabbaticals).where(eq(schema.curlingLeagueSabbaticals.member_id, memberId));
+}
+
+async function persistSabbaticalDecisions(input: {
+  tx: any;
+  curlerMemberId: number;
+  context: RegistrationContext;
+}): Promise<void> {
+  const { schema } = getDrizzleDb();
+  const rows = await loadMemberSabbaticalRows(input.tx, input.curlerMemberId);
+
+  for (const selection of input.context.selections) {
+    if (!selection.leagueId) continue;
+    const league = input.context.leagues[selection.leagueId];
+    if (!league) continue;
+
+    const lineageRow = findActiveLineageSabbaticalRow(rows, league);
+    if (!lineageRow) continue;
+
+    if (selection.selectionType === 'drop') {
+      await input.tx
+        .update(schema.curlingLeagueSabbaticals)
+        .set({
+          status: 'released',
+          released_at: sql`CURRENT_TIMESTAMP`,
+          released_reason: 'REGISTRATION_DROP',
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.curlingLeagueSabbaticals.id, lineageRow.id));
+      continue;
+    }
+
+    if (selection.selectionType === 'guaranteed_return') {
+      await input.tx
+        .update(schema.curlingLeagueSabbaticals)
+        .set({
+          status: 'returning',
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.curlingLeagueSabbaticals.id, lineageRow.id));
+    }
+  }
+}
+
 async function persistRegistrationSabbaticals(input: {
   tx: any;
   registrationId: number;
@@ -1678,6 +1791,7 @@ async function persistRegistrationSabbaticals(input: {
   }>;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
+  const memberRows = await loadMemberSabbaticalRows(input.tx, input.curlerMemberId);
   const sabbaticalSelections = input.context.selections.filter(
     (selection) => selection.selectionType === 'sabbatical' && selection.leagueId
   );
@@ -1687,33 +1801,51 @@ async function persistRegistrationSabbaticals(input: {
     if (!league) continue;
     const startDate = league.firstDayOfPlay ?? league.startDate;
     const endDate = league.lastDayOfPlay ?? league.endDate;
-    const [existing] = await input.tx
-      .select()
-      .from(schema.curlingLeagueSabbaticals)
-      .where(
-        and(
-          eq(schema.curlingLeagueSabbaticals.member_id, input.curlerMemberId),
-          eq(schema.curlingLeagueSabbaticals.current_league_id, leagueId),
-          eq(schema.curlingLeagueSabbaticals.source_registration_id, input.registrationId)
-        )
-      )
-      .limit(1);
-    const sabbaticalId = existing?.id ?? (
+    const lineageRow = findActiveLineageSabbaticalRow(memberRows, league);
+    let sabbaticalId = lineageRow?.id;
+
+    if (sabbaticalId) {
       await input.tx
-        .insert(schema.curlingLeagueSabbaticals)
-        .values({
-          member_id: input.curlerMemberId,
-          lineage_key: `${input.curlerMemberId}:${leagueId}`,
-          original_league_id: leagueId,
+        .update(schema.curlingLeagueSabbaticals)
+        .set({
           current_league_id: leagueId,
           source_registration_id: input.registrationId,
-          first_sabbatical_league_id: leagueId,
-          first_sabbatical_start_date: dateColumnValue(startDate),
           status: 'active',
           updated_at: sql`CURRENT_TIMESTAMP`,
         })
-        .returning({ id: schema.curlingLeagueSabbaticals.id })
-    )[0].id;
+        .where(eq(schema.curlingLeagueSabbaticals.id, sabbaticalId));
+    } else {
+      const [existingForRegistration] = await input.tx
+        .select({ id: schema.curlingLeagueSabbaticals.id })
+        .from(schema.curlingLeagueSabbaticals)
+        .where(
+          and(
+            eq(schema.curlingLeagueSabbaticals.member_id, input.curlerMemberId),
+            eq(schema.curlingLeagueSabbaticals.current_league_id, leagueId),
+            eq(schema.curlingLeagueSabbaticals.source_registration_id, input.registrationId)
+          )
+        )
+        .limit(1);
+      sabbaticalId =
+        existingForRegistration?.id ??
+        (
+          await input.tx
+            .insert(schema.curlingLeagueSabbaticals)
+            .values({
+              member_id: input.curlerMemberId,
+              lineage_key: `${input.curlerMemberId}:${leagueId}`,
+              original_league_id: leagueId,
+              current_league_id: leagueId,
+              source_registration_id: input.registrationId,
+              first_sabbatical_league_id: leagueId,
+              first_sabbatical_start_date: dateColumnValue(startDate),
+              status: 'active',
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            })
+            .returning({ id: schema.curlingLeagueSabbaticals.id })
+        )[0].id;
+    }
+    if (!sabbaticalId) continue;
 
     const [existingSession] = await input.tx
       .select({ id: schema.curlingSabbaticalSessions.id })
@@ -1928,6 +2060,11 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       curlerMemberId: registration.curler_member_id,
       selections: context.selections,
     });
+    await persistSabbaticalDecisions({
+      tx,
+      curlerMemberId: registration.curler_member_id,
+      context,
+    });
     await persistRegistrationSabbaticals({
       tx,
       registrationId: input.registrationId,
@@ -2043,8 +2180,8 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         });
         const checkout = await paymentService.createHostedCheckoutForOrder({
           orderId: order.id,
-          successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken),
-          cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
+          successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken, input.frontendBaseUrl),
+          cancelUrl: `${checkoutFrontendBaseUrl(input.frontendBaseUrl)}/registration/cancel?registration_id=${input.registrationId}`,
         });
         await db
           .update(schema.registrationInvoices)
@@ -2162,8 +2299,8 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       });
       const checkout = await paymentService.createHostedCheckoutForOrder({
         orderId: order.id,
-        successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken),
-        cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
+        successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken, input.frontendBaseUrl),
+        cancelUrl: `${checkoutFrontendBaseUrl(input.frontendBaseUrl)}/registration/cancel?registration_id=${input.registrationId}`,
       });
       await db
         .update(schema.registrationInvoices)
@@ -2259,6 +2396,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
 export async function triggerDeferredRegistrationPayment(input: {
   registrationId: number;
   actorMemberId: number;
+  frontendBaseUrl?: string;
 }): Promise<SubmitRegistrationResult> {
   const registration = await loadFullRegistration(input.registrationId);
   if (!registration.curler_member_id) {
@@ -2350,8 +2488,8 @@ export async function triggerDeferredRegistrationPayment(input: {
     });
     const checkout = await paymentService.createHostedCheckoutForOrder({
       orderId: order.id,
-      successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken),
-      cancelUrl: `${frontendBaseUrl()}/registration/cancel?registration_id=${input.registrationId}`,
+      successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken, input.frontendBaseUrl),
+      cancelUrl: `${checkoutFrontendBaseUrl(input.frontendBaseUrl)}/registration/cancel?registration_id=${input.registrationId}`,
     });
     await db
       .update(schema.registrationInvoices)
@@ -2715,7 +2853,7 @@ export async function getRegistrationPaymentStatusByOrderToken(orderToken: strin
 
 export async function resolveRegistrationPaymentFromCheckoutReturn(
   orderToken: string,
-  sessionId: string,
+  sessionId: string | null = null,
 ): Promise<RegistrationPaymentStatusPayload> {
   const paymentService = createPaymentService();
   const order = await paymentService.getPaymentOrderByToken(orderToken);

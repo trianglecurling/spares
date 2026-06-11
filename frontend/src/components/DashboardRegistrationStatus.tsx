@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { registrationWasPaymentDeferred } from './registration/registrationViewEditShared';
 import Button from './Button';
 import InlineStateMessage from './InlineStateMessage';
+import { useAuth } from '../contexts/AuthContext';
 import api, { getApiErrorMessage } from '../utils/api';
 
 type RegistrationSummary = {
@@ -37,13 +38,14 @@ function money(minor: number | null) {
 }
 
 function statusLabel(value: string) {
-  return value.replace(/_/g, ' ');
+  const label = value.replace(/_/g, ' ');
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function membershipOptionLabel(value: string) {
-  if (value === 'social') return 'Social membership';
+  if (value === 'social') return 'Social';
   if (value === 'junior_recreational') return 'Junior Recreational';
-  return 'Regular membership';
+  return 'Regular';
 }
 
 function amountLabel(registration: RegistrationSummary) {
@@ -68,18 +70,27 @@ function isRegistrationPaid(registration: RegistrationSummary) {
 }
 
 export default function DashboardRegistrationStatus() {
+  const { member } = useAuth();
   const [data, setData] = useState<DashboardRegistrationPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
+
     async function load() {
       try {
-        const response = await api.get<DashboardRegistrationPayload>('/registration/member/dashboard-status');
+        const response = await api.get<DashboardRegistrationPayload>(
+          '/registration/member/dashboard-status'
+        );
         if (!cancelled) setData(response.data);
       } catch (err) {
-        if (!cancelled) setError(getApiErrorMessage(err, 'Unable to load registration status.'));
+        if (!cancelled) {
+          setData(null);
+          setError(getApiErrorMessage(err, 'Unable to load registration status.'));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -88,12 +99,12 @@ export default function DashboardRegistrationStatus() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [member?.id]);
 
   if (loading) {
     return (
-      <section>
-        <h2 className="app-section-title mb-4">Registration status</h2>
+      <section className="space-y-3">
+        <h2 className="app-section-title">Registration status</h2>
         <InlineStateMessage title="Loading registration status" />
       </section>
     );
@@ -101,8 +112,8 @@ export default function DashboardRegistrationStatus() {
 
   if (error) {
     return (
-      <section>
-        <h2 className="app-section-title mb-4">Registration status</h2>
+      <section className="space-y-3">
+        <h2 className="app-section-title">Registration status</h2>
         <InlineStateMessage title="Unable to load registration status" description={error} />
       </section>
     );
@@ -117,15 +128,13 @@ export default function DashboardRegistrationStatus() {
       <h2 className="app-section-title">Registration status</h2>
 
       {data.showPriorityPrompt ? (
-        <div className="app-card">
+        <div className="app-card flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-gray-800 dark:text-gray-100">
             You are not registered for {sessionName} yet.
           </p>
-          <div className="mt-4">
-            <Link to="/registration/start">
-              <Button>Begin {sessionName} registration</Button>
-            </Link>
-          </div>
+          <Link to="/registration/start" className="sm:shrink-0">
+            <Button>Begin {sessionName} registration</Button>
+          </Link>
         </div>
       ) : null}
 
@@ -133,34 +142,47 @@ export default function DashboardRegistrationStatus() {
         <div className="space-y-3">
           {data.registrations.map((registration) => (
             <article key={registration.id} className="app-card">
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold uppercase tracking-wide text-primary-teal">
-                    {registration.seasonName} / {registration.sessionName}
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal/80 dark:text-primary-teal">
+                    {registration.seasonName} · {registration.sessionName}
                   </p>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{registration.curlerName}</h3>
-                  <div className="flex flex-wrap gap-2 text-sm">
-                    <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-800 dark:bg-gray-800 dark:text-gray-100">
-                      {registration.isDraft ? 'In progress' : statusLabel(registration.registrationStatus)}
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {registration.curlerName}
+                    </h3>
+                    <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                      {registration.isDraft
+                        ? 'In progress'
+                        : statusLabel(registration.registrationStatus)}
                     </span>
                     {!registration.isDraft ? (
-                      <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-800 dark:bg-gray-800 dark:text-gray-100">
-                        Payment: {statusLabel(registration.paymentStatus)}
+                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                        Payment: {statusLabel(registration.paymentStatus).toLowerCase()}
                       </span>
                     ) : null}
                   </div>
                   {!registration.isDraft ? (
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      {membershipOptionLabel(registration.membershipOption)}. {amountLabel(registration)}:{' '}
-                      {money(registration.amountDueMinor)}.
-                    </p>
+                    <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                      <div className="flex gap-1.5 text-gray-500 dark:text-gray-400">
+                        {membershipOptionLabel(registration.membershipOption)} membership
+                      </div>
+                      <div className="flex gap-1.5">
+                        <dt className="text-gray-500 dark:text-gray-400">
+                          {amountLabel(registration)}
+                        </dt>
+                        <dd className="font-medium text-gray-900 dark:text-gray-100">
+                          {money(registration.amountDueMinor)}
+                        </dd>
+                      </div>
+                    </dl>
                   ) : (
                     <p className="text-sm text-gray-600 dark:text-gray-300">
                       This registration has not been submitted yet.
                     </p>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 md:shrink-0">
                   {registration.paymentLink ? (
                     <a href={registration.paymentLink}>
                       <Button>Pay now</Button>

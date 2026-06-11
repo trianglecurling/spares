@@ -307,3 +307,70 @@ export const teamResponseSchema = {
 } as const;
 
 export const memberSearchResponseSchema = rosterSearchResponseSchema;
+
+export const sabbaticalMemberSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    memberId: { type: 'number' },
+    name: { type: 'string' },
+    email: { type: ['string', 'null'] },
+    status: {
+      type: 'string',
+      enum: ['active', 'returning', 'staff_overridden'],
+    },
+    firstSabbaticalStartDate: { type: 'string' },
+    staffOverride: { type: 'boolean' },
+    staffOverrideReason: { type: ['string', 'null'] },
+    sourceRegistrationId: { type: ['number', 'null'] },
+    createdAt: { type: ['string', 'null'] },
+  },
+  required: [
+    'id',
+    'memberId',
+    'name',
+    'email',
+    'status',
+    'firstSabbaticalStartDate',
+    'staffOverride',
+    'staffOverrideReason',
+    'sourceRegistrationId',
+    'createdAt',
+  ],
+} as const;
+
+export const sabbaticalListResponseSchema = {
+  type: 'array',
+  items: sabbaticalMemberSchema,
+} as const;
+
+export const sabbaticalAddBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    memberId: { type: 'number' },
+    reason: { type: 'string', minLength: 1 },
+  },
+  required: ['memberId', 'reason'],
+} as const;
+
+export const sabbaticalAddResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    leagueId: { type: 'number' },
+    memberId: { type: 'number' },
+  },
+  required: ['id', 'leagueId', 'memberId'],
+} as const;
+
+export const sabbaticalRemoveBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    reason: { type: 'string', minLength: 1 },
+  },
+  required: ['reason'],
+} as const;

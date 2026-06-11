@@ -451,6 +451,54 @@ export const memberLeaguesResponseSchema = {
   },
 } as const;
 
+export const memberMembershipCardResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string' },
+    membershipStatus: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['regular', 'social', 'former', 'non_member'],
+        },
+        validThrough: { type: ['string', 'null'] },
+      },
+      required: ['kind', 'validThrough'],
+    },
+    icePrivilegesValidThrough: { type: ['string', 'null'] },
+    session: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        id: { type: 'number' },
+        name: { type: 'string' },
+        isUpcoming: { type: 'boolean' },
+      },
+      required: ['id', 'name', 'isUpcoming'],
+    },
+    leagues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          leagueId: { type: 'number' },
+          leagueName: { type: 'string' },
+          participation: {
+            type: 'string',
+            enum: ['roster', 'sabbatical', 'waitlist'],
+          },
+        },
+        required: ['leagueId', 'leagueName', 'participation'],
+      },
+    },
+  },
+  required: ['name', 'membershipStatus', 'icePrivilegesValidThrough', 'session', 'leagues'],
+} as const;
+
 export const memberEmergencyContactResponseSchema = {
   type: 'object',
   additionalProperties: false,

@@ -35,8 +35,14 @@ import {
   isLeagueSelectionEligibleLeague,
   isThirdLeagueInterestEligibleLeague,
   calculateEstimatedTotalRange,
+  continuingSabbaticalForLeague,
+  countPriorSeasonProtectedReturnSelections,
+  formatCurrency,
   formatEstimatedTotalRange,
+  hasPriorSeasonReturnLeagues,
+  leagueHasReturnRights,
   leagueSelectionsForSave,
+  priorSeasonReturnLeaguesFromPayload,
   nextLeagueFlowStepAfterLeagueRequests,
   nextLeagueFlowStepAfterPriorLeagueSelection,
   nextLeagueFlowStepAfterSelections,
@@ -53,6 +59,7 @@ import {
   waitlistFulfillmentSummaryText,
   waitlistJoinOptionDescription,
   type LeagueEligibilityInput,
+  type RegistrationLeagueSelectionPayload as RegistrationLeagueSelectionPayloadBase,
   type SubmitRegistrationEditsResult,
 } from '../components/registration/registrationViewEditShared';
 import type { WaitlistTeamMemberPlacementOptions } from '../components/waitlists/waitlistTeamRosterShared';
@@ -74,6 +81,11 @@ import {
   resumePointerMatchesGuestDraft,
   type RegistrationResumePointerV1,
 } from '../utils/registrationResume';
+import {
+  registrationPaymentConfirmedMessage,
+  registrationPaymentFailedMessage,
+  registrationPaymentPendingMessage,
+} from '../utils/paymentProcessorCopy';
 type RegistrationPriorityEditLocationState = {
   priorityEdit?: boolean;
   returnTo?: string;
@@ -211,7 +223,15 @@ type RegistrationMembershipPaymentPayload = {
 
 type RegistrationPaymentStatusPayload = {
   registrationId: number | null;
-  paymentStatus: 'confirming' | 'confirmed' | 'failed' | 'deferred' | 'no_payment_due' | 'unknown';
+  paymentStatus:
+    | 'confirming'
+    | 'confirmed'
+    | 'failed'
+    | 'deferred'
+    | 'no_payment_due'
+    | 'cancelled'
+    | 'payment_unapplied'
+    | 'unknown';
   registrationStatus: RegistrationStatus | null;
   invoiceStatus: string | null;
   paymentOrderStatus: string | null;
@@ -273,7 +293,6 @@ const WAITLIST_PREFERENCE_OPTIONS: Array<{ value: WaitlistPreference; label: str
   },
 ];
 
-const PROTECTED_RETURN_SELECTION_TYPES = new Set<RegistrationSelectionType>(['guaranteed_return', 'sabbatical']);
 const EMPTY_BYOT_PLACEMENT_OPTIONS: Record<number, WaitlistTeamMemberPlacementOptions> = {};
 const NON_GUARANTEED_LEAGUE_INTEREST_TYPES = new Set<RegistrationSelectionType>([
   'third_league_interest',
@@ -336,17 +355,6 @@ function priorLeagueChoiceValue(selection: RegistrationSelectionInput | undefine
   if (!selection) return null;
   if (selection.selectionType === 'third_league_interest') return 'return_subject_to_availability';
   return selection.selectionType;
-}
-
-function hasPriorSeasonReturnLeagues(
-  payload: Pick<RegistrationLeagueSelectionPayload, 'leagues' | 'participatedLeagueIds'> | null | undefined,
-  registrationState: RegistrationWindow['state'] | undefined,
-): boolean {
-  if (!payload || registrationState !== 'priority') return false;
-  return payload.leagues.some(
-    (league) =>
-      league.predecessorLeagueId != null && payload.participatedLeagueIds.includes(league.predecessorLeagueId),
-  );
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -543,14 +551,8 @@ function applyWaitlistPreferenceSelection(
   ];
 }
 
-type RegistrationLeagueSelectionPayload = {
-  leagues: LeagueCatalogItem[];
-  selections: RegistrationSelectionInput[];
-  activeLeagueIds: number[];
-  participatedLeagueIds: number[];
-  desiredAddWaitlistLeagueCount?: number | null;
+type RegistrationLeagueSelectionPayload = RegistrationLeagueSelectionPayloadBase & {
   basicIceFallbackInterest?: boolean | null;
-  existingWaitlistEntries?: ExistingWaitlistEntrySummary[];
   evaluation: {
     feePreview: RegistrationMembershipPaymentPayload['feePreview'];
     paymentDecision: RegistrationMembershipPaymentPayload['paymentDecision'];
@@ -598,10 +600,6 @@ function errorMessage(error: unknown, fallback: string): string {
     return error.response?.data?.error || fallback;
   }
   return fallback;
-}
-
-function formatCurrency(amountMinor: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountMinor / 100);
 }
 
 function formatRegistrationDiscountOffPhrase(slot: RegistrationDiscountSlot): string {
@@ -1203,14 +1201,10 @@ export default function RegistrationShellPage() {
   const identityRegisteringForOther =
     registeringForSomeoneElse || registeringForSelf === 'other' || Boolean(member);
 
-  const priorSeasonReturnLeagues = useMemo(() => {
-    if (!hasPriorSeasonReturnLeagues(leaguePayload, windowState?.state)) return [];
-    return (leaguePayload?.leagues ?? []).filter(
-      (league) =>
-        league.predecessorLeagueId != null &&
-        leaguePayload?.participatedLeagueIds.includes(league.predecessorLeagueId),
-    );
-  }, [leaguePayload, windowState?.state]);
+  const priorSeasonReturnLeagues = useMemo(
+    () => priorSeasonReturnLeaguesFromPayload(leaguePayload, windowState?.state),
+    [leaguePayload, windowState?.state],
+  );
 
   const priorSeasonReturnLeagueIds = useMemo(
     () => new Set(priorSeasonReturnLeagues.map((league) => league.id)),
@@ -1256,21 +1250,10 @@ export default function RegistrationShellPage() {
     return order;
   }, [leaguePayload]);
 
-  const guaranteedReturnSelectionCount = useMemo(
-    () => leagueSelections.filter((selection) => selection.selectionType === 'guaranteed_return').length,
-    [leagueSelections],
-  );
-
   const isBasicIceLeagueSelection = icePrivilegesChoice === 'basic_ice';
 
-  const protectedReturnSelectionCount = useMemo(
-    () =>
-      leagueSelections.filter(
-        (selection) =>
-          selection.leagueId != null &&
-          priorSeasonReturnLeagueIds.has(selection.leagueId) &&
-          PROTECTED_RETURN_SELECTION_TYPES.has(selection.selectionType),
-      ).length,
+  const priorSeasonProtectedReturnCount = useMemo(
+    () => countPriorSeasonProtectedReturnSelections(leagueSelections, priorSeasonReturnLeagueIds),
     [leagueSelections, priorSeasonReturnLeagueIds],
   );
 
@@ -1996,13 +1979,13 @@ export default function RegistrationShellPage() {
     }, REGISTRATION_PAYMENT_PROCESSING_GRACE_MS);
 
     const tryResolveFromCheckoutReturn = async (): Promise<boolean> => {
-      if (!paymentSessionId || resolveAttempted) return false;
+      if (resolveAttempted) return false;
       resolveAttempted = true;
 
       try {
         const { data } = await api.post<RegistrationPaymentStatusPayload>(
           `/registration/payment-status/${encodeURIComponent(paymentOrderToken)}/resolve`,
-          { sessionId: paymentSessionId },
+          paymentSessionId ? { sessionId: paymentSessionId } : {},
         );
         if (cancelled) return false;
         setPaymentStatus(data);
@@ -2858,17 +2841,9 @@ export default function RegistrationShellPage() {
         const catalog = data as RegistrationLeagueSelectionPayload;
         setLeaguePayload(catalog);
         setLeagueSelections(catalog.selections);
-        const priorReturnLeagueIds = hasPriorSeasonReturnLeagues(catalog, windowState?.state)
-          ? new Set(
-              catalog.leagues
-                .filter(
-                  (league) =>
-                    league.predecessorLeagueId != null &&
-                    catalog.participatedLeagueIds.includes(league.predecessorLeagueId),
-                )
-                .map((league) => league.id),
-            )
-          : new Set<number>();
+        const priorReturnLeagueIds = new Set(
+          priorSeasonReturnLeaguesFromPayload(catalog, windowState?.state).map((league) => league.id),
+        );
         navigate(
           hasPriorSeasonReturnLeagues(catalog, windowState?.state)
             ? '/registration/prior-league-selection'
@@ -4483,10 +4458,10 @@ export default function RegistrationShellPage() {
         (league) => !leagueSelections.some((selection) => selection.leagueId === league.id),
       );
       if (undecidedLeague) {
-        setError('Choose whether to return, take a sabbatical, or drop each prior league before continuing.');
+        setError('Choose whether to return, extend sabbatical, or drop each prior league before continuing.');
         return;
       }
-      if (protectedReturnSelectionCount > 2) {
+      if (priorSeasonProtectedReturnCount > 2) {
         setError('You can protect at most two league spots. Choose subject-to-availability return for any additional leagues.');
         return;
       }
@@ -4507,11 +4482,16 @@ export default function RegistrationShellPage() {
         <RegistrationFlowHeader />
         <h1 className="text-3xl font-bold text-[#121033]">Returning leagues</h1>
         <p className="mt-3 text-gray-600">
-          Decide what this curler wants to do with each guaranteed return spot from the prior season before choosing any new leagues for {seasonSessionLabel}.
+          Decide what this curler wants to do with each guaranteed return spot or continuing sabbatical from the prior session before choosing any new leagues for {seasonSessionLabel}.
         </p>
+        {(leaguePayload?.continuingSabbaticals?.length ?? 0) > 0 ? (
+          <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            This curler is currently on sabbatical for one or more leagues. They can return this session, extend the sabbatical for a fee, or release the protected spot.
+          </p>
+        ) : null}
         {showsAvailabilityReturn ? (
           <p className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-            A curler can protect up to two prior league spots. Additional prior leagues can still be requested subject to availability.
+            A curler can protect up to two prior league spots. Additional leagues can still be requested subject to availability.
           </p>
         ) : null}
         <div className="mt-6 space-y-5">
@@ -4528,11 +4508,21 @@ export default function RegistrationShellPage() {
               const currentSelection = leagueSelections.find((selection) => selection.leagueId === league.id);
               const value = priorLeagueChoiceValue(currentSelection);
               const selectedProtected = currentSelection
-                ? PROTECTED_RETURN_SELECTION_TYPES.has(currentSelection.selectionType)
+                ? currentSelection.selectionType === 'guaranteed_return' || currentSelection.selectionType === 'sabbatical'
                 : false;
-              const protectedLimitReached = protectedReturnSelectionCount >= 2 && !selectedProtected;
+              const protectedLimitReached = priorSeasonProtectedReturnCount >= 2 && !selectedProtected;
+              const continuingSabbatical = continuingSabbaticalForLeague(leaguePayload, league.id);
+              const sabbaticalFeeLabel = continuingSabbatical
+                ? formatCurrency(continuingSabbatical.sabbaticalFeeMinor)
+                : null;
               return (
                 <div key={league.id} className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                  {continuingSabbatical ? (
+                    <p className="mb-3 text-sm text-amber-900">
+                      Currently on sabbatical since{' '}
+                      {new Date(`${continuingSabbatical.firstSabbaticalStartDate}T00:00:00`).toLocaleDateString()}.
+                    </p>
+                  ) : null}
                   <FormField label={league.name} htmlFor={`prior-league-${league.id}`} tone="public" required>
                     <ChoiceInput
                       inputId={`prior-league-${league.id}`}
@@ -4542,13 +4532,19 @@ export default function RegistrationShellPage() {
                       options={[
                         {
                           value: 'guaranteed_return',
-                          label: showsAvailabilityReturn ? 'Return to league (guaranteed)' : 'Return to league',
+                          label: continuingSabbatical
+                            ? 'Return to league this session'
+                            : showsAvailabilityReturn
+                              ? 'Return to league (guaranteed)'
+                              : 'Return to league',
                           description: protectedLimitReached
                             ? 'You have already selected two protected league spots.'
-                            : 'Claim this guaranteed return spot.',
+                            : continuingSabbatical
+                              ? 'End the sabbatical and play in this league this session.'
+                              : 'Claim this guaranteed return spot.',
                           disabled: protectedLimitReached,
                         },
-                        ...(showsAvailabilityReturn
+                        ...(!continuingSabbatical && showsAvailabilityReturn
                           ? [
                               {
                                 value: 'return_subject_to_availability',
@@ -4561,15 +4557,28 @@ export default function RegistrationShellPage() {
                           ? [
                               {
                                 value: 'sabbatical',
-                                label: 'Take a sabbatical for the league',
-                                description: protectedLimitReached
-                                  ? 'Sabbaticals also count toward the two protected league spots.'
-                                  : 'Preserve the spot while stepping away for this session.',
-                                disabled: protectedLimitReached,
+                                label: continuingSabbatical ? 'Extend sabbatical' : 'Take a sabbatical for the league',
+                                description: continuingSabbatical
+                                  ? continuingSabbatical.canExtend
+                                    ? `Remain on sabbatical for this session. Sabbatical fee: ${sabbaticalFeeLabel}.`
+                                    : continuingSabbatical.extensionBlockedMessage ??
+                                      'The sabbatical duration limit has been reached.'
+                                  : protectedLimitReached
+                                    ? 'Sabbaticals also count toward the two protected league spots.'
+                                    : 'Preserve the spot while stepping away for this session.',
+                                disabled:
+                                  protectedLimitReached ||
+                                  Boolean(continuingSabbatical && !continuingSabbatical.canExtend),
                               },
                             ]
                           : []),
-                        { value: 'drop', label: 'Drop the league', description: 'Release this guaranteed return spot.' },
+                        {
+                          value: 'drop',
+                          label: continuingSabbatical ? 'Release protected spot' : 'Drop the league',
+                          description: continuingSabbatical
+                            ? 'Permanently release this sabbatical-protected spot. The curler would need to join the waitlist to return later.'
+                            : 'Release this guaranteed return spot.',
+                        },
                       ]}
                     />
                   </FormField>
@@ -4623,7 +4632,8 @@ export default function RegistrationShellPage() {
               </div>
             </div>
           ) : null}
-          {guaranteedReturnSelectionCount < 2 && priorAddWaitlistLeagueOptions.length > 0 ? (
+          {remainingFirstTwoLeagueSlots(leaguePayload?.activeLeagueIds ?? [], leagueSelections) > 0 &&
+          priorAddWaitlistLeagueOptions.length > 0 ? (
             <div className="space-y-3">
               {showPriorWaitlistAddPicker ? (
                 <FormField label="Select a league to join its waitlist" htmlFor="prior-add-waitlist-league" tone="public">
@@ -4804,9 +4814,7 @@ export default function RegistrationShellPage() {
             ) : (
               leagues.map((league) => {
                 const currentSelection = leagueSelections.find((selection) => selection.leagueId === league.id);
-                const hasReturnRight =
-                  windowState?.state === 'priority' &&
-                  Boolean(league.predecessorLeagueId && leaguePayload?.participatedLeagueIds.includes(league.predecessorLeagueId));
+                const hasReturnRight = leagueHasReturnRights(leaguePayload, windowState?.state, league);
                 const value =
                   currentSelection?.selectionType === 'third_league_interest'
                     ? 'return_subject_to_availability'
@@ -5494,19 +5502,27 @@ export default function RegistrationShellPage() {
     const title =
       paymentStatus?.paymentStatus === 'confirmed'
         ? 'Payment confirmed'
-        : paymentStatus?.paymentStatus === 'failed'
-          ? 'Payment was not completed'
-          : showPaymentProcessingScreen
-            ? 'Confirming payment'
-            : 'Registration submitted';
+        : paymentStatus?.paymentStatus === 'payment_unapplied'
+          ? 'Payment received'
+          : paymentStatus?.paymentStatus === 'cancelled'
+            ? 'Registration cancelled'
+            : paymentStatus?.paymentStatus === 'failed'
+              ? 'Payment was not completed'
+              : showPaymentProcessingScreen
+                ? 'Confirming payment'
+                : 'Registration submitted';
     const description = paymentOrderToken
       ? paymentStatus?.paymentStatus === 'confirmed'
-        ? 'Stripe has confirmed your payment and your registration is confirmed.'
-        : paymentStatus?.paymentStatus === 'failed'
-          ? 'Stripe did not complete this payment. Your registration remains unpaid and unconfirmed.'
-          : showPaymentProcessingScreen
-            ? 'Processing your payment confirmation...'
-            : 'Your payment was submitted. We are confirming it with Stripe. This usually takes a few moments.'
+        ? registrationPaymentConfirmedMessage()
+        : paymentStatus?.paymentStatus === 'payment_unapplied'
+          ? 'Your registration was cancelled before checkout finished. Your payment was received but could not be applied to this registration. Please contact treasurer@trianglecurling.com for help with a refund.'
+          : paymentStatus?.paymentStatus === 'cancelled'
+            ? 'This registration was cancelled. No payment was applied.'
+            : paymentStatus?.paymentStatus === 'failed'
+              ? registrationPaymentFailedMessage()
+              : showPaymentProcessingScreen
+                ? 'Processing your payment confirmation...'
+                : registrationPaymentPendingMessage()
       : 'Your registration has been submitted. No payment is due right now, or payment will be handled after placement review.';
     content = (
       <RegistrationCard>

@@ -376,6 +376,22 @@ describe('registration business logic', () => {
     expectReason(result, 'protected_claim_limit_exceeded');
   });
 
+  test('returning member with one return and one sabbatical may join an ADD waitlist', () => {
+    const leagueA = league({ id: 100, predecessorLeagueId: 90 });
+    const leagueB = league({ id: 101, predecessorLeagueId: 91 });
+    const waitlistLeague = league({ id: 200 });
+    const context = registrationContext({
+      leagues: { 100: leagueA, 101: leagueB, 200: waitlistLeague },
+      participatedLeagueIds: [90, 91],
+      selections: [
+        selection({ leagueId: 100, selectionType: 'guaranteed_return' }),
+        selection({ leagueId: 101, selectionType: 'sabbatical' }),
+        selection({ leagueId: 200, selectionType: 'waitlist_add', rank: 1 }),
+      ],
+    });
+    expect(validateRegistrationSelections(context).allowed).toBe(true);
+  });
+
   test('guaranteed return is unavailable outside priority and skipped predecessor loses guarantee', () => {
     const open = evaluateGuaranteedReturnEligibility(registrationContext({ registrationState: 'open' }), league());
     expectReason(open, 'not_priority_registration');
@@ -475,6 +491,23 @@ describe('registration business logic', () => {
     expect(validateRegistrationSelections(registrationContext({ activeLeagueIds: [1], selections: [addSelection] })).allowed).toBe(true);
     const blocked = validateRegistrationSelections(registrationContext({ activeLeagueIds: [1, 2], selections: [addSelection] }));
     expectReason(blocked, 'add_waitlist_requires_zero_or_one_leagues');
+
+    const twoReturns = validateRegistrationSelections(
+      registrationContext({
+        activeLeagueIds: [],
+        leagues: {
+          100: league({ id: 100 }),
+          101: league({ id: 101 }),
+          200: league({ id: 200 }),
+        },
+        selections: [
+          selection({ leagueId: 100, selectionType: 'guaranteed_return' }),
+          selection({ leagueId: 101, selectionType: 'guaranteed_return' }),
+          selection({ leagueId: 200, selectionType: 'waitlist_add', rank: 1 }),
+        ],
+      }),
+    );
+    expectReason(twoReturns, 'add_waitlist_requires_zero_or_one_leagues');
   });
 
   test('REPLACE waitlist requires replaced league and is limited to two', () => {
