@@ -133,18 +133,15 @@ export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (!member) {
-      leaguesRef.current = [];
-      loadedRef.current = false;
-      setLeagues([]);
-      setRegistrationWindowSessionId(null);
-      setLoaded(false);
-      setError(null);
-      inFlightRef.current = null;
-      return;
-    }
-    void loadLeagues(false).catch(() => {});
-  }, [loadLeagues, member]);
+    if (member) return;
+    leaguesRef.current = [];
+    loadedRef.current = false;
+    setLeagues([]);
+    setRegistrationWindowSessionId(null);
+    setLoaded(false);
+    setError(null);
+    inFlightRef.current = null;
+  }, [member]);
 
   const value = useMemo<LeagueOptionsContextValue>(
     () => ({

@@ -64,7 +64,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const [mobileDirectoryExpanded, setMobileDirectoryExpanded] = useState(false);
   const [mobileAdminExpanded, setMobileAdminExpanded] = useState(false);
   const [mobileCalendarExpanded, setMobileCalendarExpanded] = useState(false);
-  const { leagues: sessionLeagues, registrationWindowSessionId } = useLeagueOptions();
+  const { leagues: sessionLeagues, registrationWindowSessionId } = useLeagueOptions({ autoLoad: true });
   const leagues = sessionLeagues as League[];
   const [myRosterLeagueIds, setMyRosterLeagueIds] = useState<number[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -117,7 +117,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     isNavLinkActive('/admin/payments') ||
     isNavLinkActive('/admin/webhooks') ||
     isNavLinkActive('/admin/config') ||
-    isNavLinkActive('/admin/registration', true);
+    isNavLinkActive('/admin/registrations', true);
 
   const canManageLeagues = Boolean(
     member && memberHasScope(member, 'leagues.manage')
@@ -145,8 +145,9 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canManageEvents ? [{ to: '/admin/events', label: 'Manage events' }] : []),
-    ...(canManageRegistrations ? [{ to: '/admin/registrations', label: 'Manage registrations' }] : []),
-    ...(canManageRegistration ? [{ to: '/admin/registration/seasons', label: 'Registration configuration' }] : []),
+    ...(canManageRegistrations || canManageRegistration
+      ? [{ to: '/admin/registrations', label: 'Manage registration' }]
+      : []),
     ...(canManageSponsorship ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
     ...(canReadPayments ? [{ to: '/admin/payments', label: 'Payment activity' }] : []),
     ...(canManageWebhooks ? [{ to: '/admin/webhooks', label: 'Outbound webhooks' }] : []),

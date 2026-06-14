@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { get, post } from '../api/client';
 import api, { clearAuthTokens, getAccessToken, getRefreshToken, storeAuthTokens } from '../utils/api';
+import { isPublicLightPath } from '../utils/publicLightPaths';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 export type AccountSwitchOption = { id: number; name: string };
@@ -81,15 +82,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Verify existing token
     const verifyToken = async () => {
       const currentToken = getAccessToken();
-
-      // Skip verification if we're on the install page
       const currentPath = window.location.pathname;
+
       if (currentPath.startsWith('/install')) {
         setIsLoading(false);
         return;
+      }
+
+      const allowImmediateRender = isPublicLightPath(currentPath);
+      if (allowImmediateRender) {
+        setIsLoading(false);
       }
 
       if (currentToken) {
@@ -103,14 +107,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           setToken(getAccessToken());
         } catch (error: unknown) {
-          // If database is not configured (503), don't clear token - just fail silently
           if (
             axios.isAxiosError(error) &&
             error.response?.status === 503 &&
             error.response?.data?.requiresInstallation
           ) {
             // Database not configured - don't verify token, but don't clear it either
-            // Intentionally silent: user may be on the install flow
           } else {
             console.error('Token verification failed:', error);
             clearAuthTokens();
@@ -119,11 +121,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
-      setIsLoading(false);
+
+      if (!allowImmediateRender) {
+        setIsLoading(false);
+      }
     };
 
-    verifyToken();
-  }, []);
+    void verifyToken();
+  }, [applySessionPayload, clearAccountSwitchState]);
 
   const login = async (
     accessToken: string,

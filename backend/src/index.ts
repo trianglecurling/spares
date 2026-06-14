@@ -16,9 +16,15 @@ import { startNotificationProcessor } from './services/notificationProcessor.js'
 import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
 import { startWaitlistOfferProcessor } from './services/waitlistOfferProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
+import { warmPublicBootstrapCache } from './services/publicBootstrapCache.js';
+import { maybeInvalidatePublicBootstrapCache } from './services/publicBootstrapCacheInvalidation.js';
 
 const fastify = Fastify({
   logger: config.nodeEnv === 'development',
+});
+
+fastify.addHook('onResponse', async (request, reply) => {
+  maybeInvalidatePublicBootstrapCache(request, reply.statusCode);
 });
 
 // Register CORS
@@ -115,8 +121,11 @@ fastify.addHook('onRequest', async (request, reply) => {
       dbInitError = null;
       console.log('Database verified on first request');
       await loadBackendLogCaptureFromDb();
+      void warmPublicBootstrapCache().catch((error) => {
+        console.error('Failed to warm public bootstrap cache on first request:', error);
+      });
       startBackgroundProcessorsIfReady();
-      
+
       // Allow request to proceed
       return;
     } catch (error: unknown) {
@@ -165,6 +174,11 @@ const start = async () => {
   try {
     await fastify.listen({ port: config.port, host: '0.0.0.0' });
     console.log(`Server listening on port ${config.port}`);
+    if (dbInitialized) {
+      void warmPublicBootstrapCache().catch((error) => {
+        console.error('Failed to warm public bootstrap cache after listen:', error);
+      });
+    }
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

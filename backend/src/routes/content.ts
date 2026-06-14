@@ -34,9 +34,39 @@ const articleBodySchema = z.object({
   publishedAt: z.string().nullable().optional(),
 });
 
+function isAbsoluteOrRootRelativeUrl(value: string): boolean {
+  if (value.startsWith('/')) return true;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const absoluteOrRootRelativeUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(isAbsoluteOrRootRelativeUrl, 'URL must be absolute or root-relative');
+
+const optionalAbsoluteOrRootRelativeUrlSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((value) => {
+    if (value == null) return value;
+    const trimmed = value.trim();
+    return trimmed === '' ? null : trimmed;
+  })
+  .refine(
+    (value) => value == null || isAbsoluteOrRootRelativeUrl(value),
+    'URL must be absolute or root-relative',
+  );
+
 const siteConfigBodySchema = z.object({
   clubName: z.string().nullable().optional(),
-  logoUrl: z.string().nullable().optional(),
+  logoUrl: optionalAbsoluteOrRootRelativeUrlSchema,
   contactEmail: z.string().nullable().optional(),
   contactPhone: z.string().nullable().optional(),
   footerMarkdown: z.string().nullable().optional(),
@@ -60,19 +90,7 @@ function siteConfigTimestampToIso(value: string | Date | null | undefined): stri
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-const showcaseImageUrlSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .refine((value) => {
-    if (value.startsWith('/')) return true;
-    try {
-      new URL(value);
-      return true;
-    } catch {
-      return false;
-    }
-  }, 'URL must be absolute or root-relative');
+const showcaseImageUrlSchema = absoluteOrRootRelativeUrlSchema;
 
 const showcaseImageBodySchema = z.object({
   url: showcaseImageUrlSchema,

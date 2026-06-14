@@ -18,6 +18,11 @@ type MembershipCardPayload = {
   }>;
 };
 
+type PublicSiteConfigPayload = {
+  clubName: string | null;
+  logoUrl: string | null;
+};
+
 function memberInitials(name: string) {
   return name
     .split(' ')
@@ -62,6 +67,8 @@ function participationLabel(participation: MembershipCardPayload['leagues'][numb
 export default function DashboardMembershipCard() {
   const { member } = useAuth();
   const [data, setData] = useState<MembershipCardPayload | null>(null);
+  const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(null);
+  const [clubName, setClubName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,12 +79,26 @@ export default function DashboardMembershipCard() {
 
     async function load() {
       try {
-        const response = await api.get<MembershipCardPayload>('/members/me/membership-card');
-        if (!cancelled) setData(response.data);
-      } catch (err) {
-        if (!cancelled) {
+        const [cardResult, siteConfigResult] = await Promise.allSettled([
+          api.get<MembershipCardPayload>('/members/me/membership-card'),
+          api.get<PublicSiteConfigPayload>('/public/site-config'),
+        ]);
+
+        if (cancelled) return;
+
+        if (cardResult.status === 'fulfilled') {
+          setData(cardResult.value.data);
+        } else {
           setData(null);
-          setError(getApiErrorMessage(err, 'Unable to load membership card.'));
+          setError(getApiErrorMessage(cardResult.reason, 'Unable to load membership card.'));
+        }
+
+        if (siteConfigResult.status === 'fulfilled') {
+          setClubLogoUrl(siteConfigResult.value.data.logoUrl ?? null);
+          setClubName(siteConfigResult.value.data.clubName ?? null);
+        } else {
+          setClubLogoUrl(null);
+          setClubName(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -124,12 +145,20 @@ export default function DashboardMembershipCard() {
         className="pointer-events-none absolute -bottom-10 -left-6 h-24 w-24 rounded-full bg-primary-orange/10 dark:bg-primary-orange/15"
       />
 
+      {clubLogoUrl ? (
+        <img
+          src={clubLogoUrl}
+          alt={clubName ? `${clubName} logo` : 'Club logo'}
+          className="absolute right-5 top-5 h-[4.5rem] w-[4.5rem] object-contain"
+        />
+      ) : null}
+
       <div className="relative flex items-start gap-4">
         <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-teal text-lg font-semibold text-white shadow-sm ring-4 ring-white/80 dark:ring-gray-800/80">
           {initials || '?'}
         </span>
 
-        <div className="min-w-0 flex-1 space-y-3">
+        <div className={`min-w-0 flex-1 space-y-3${clubLogoUrl ? ' pr-20' : ''}`}>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal/80 dark:text-primary-teal">
               Membership card

@@ -231,7 +231,8 @@ function Section({
 }
 
 export default function AdminRegistrationDetail() {
-  const { registrationId } = useParams();
+  const { segment } = useParams<{ segment?: string }>();
+  const registrationId = segment;
   const numericId = Number(registrationId);
   const navigate = useNavigate();
   const { confirm } = useConfirm();
@@ -580,7 +581,7 @@ export default function AdminRegistrationDetail() {
                   </div>
                 ))}
               </div>
-              <Link to="/admin/registration/communications" className="text-sm text-primary-teal hover:underline">
+              <Link to="/admin/registrations/communications" className="text-sm text-primary-teal hover:underline">
                 Open registration communications
               </Link>
             </Section>

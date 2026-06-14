@@ -2,55 +2,58 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
-import { initOtel, type RuntimeOtelConfig } from './otel';
 
-const loadRuntimeOtelConfig = async (): Promise<RuntimeOtelConfig | undefined> => {
-  const accessToken = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
-  const isAuthenticated = Boolean(accessToken);
+const accessToken = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
 
-  // Authenticated-only server config is the source of truth for frontend OTEL.
-  // Unauthenticated sessions never fetch protected config and never capture console logs.
-  if (!isAuthenticated || !accessToken) {
-    return {
-      enabled: false,
-      captureConsoleLogs: false,
-    };
+const scheduleDeferredOtelInit = () => {
+  if (!accessToken) {
+    return;
   }
 
-  try {
-    const response = await fetch('/api/public-config', {
-      cache: 'no-store',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (response.ok) {
-      const data = (await response.json()) as {
-        captureFrontendLogs?: boolean;
-        frontendOtelEnabled?: boolean;
+  const run = () => {
+    void (async () => {
+      let runtimeConfig: import('./otel').RuntimeOtelConfig = {
+        enabled: false,
+        captureConsoleLogs: false,
       };
-      return {
-        enabled: typeof data?.frontendOtelEnabled === 'boolean' ? data.frontendOtelEnabled : false,
-        captureConsoleLogs: typeof data?.captureFrontendLogs === 'boolean' ? data.captureFrontendLogs : false,
-      };
-    }
-  } catch {
-    // Ignore protected config errors.
-  }
 
-  return {
-    enabled: false,
-    captureConsoleLogs: false,
+      try {
+        const response = await fetch('/api/public-config', {
+          cache: 'no-store',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (response.ok) {
+          const data = (await response.json()) as {
+            captureFrontendLogs?: boolean;
+            frontendOtelEnabled?: boolean;
+          };
+          runtimeConfig = {
+            enabled:
+              typeof data?.frontendOtelEnabled === 'boolean' ? data.frontendOtelEnabled : false,
+            captureConsoleLogs:
+              typeof data?.captureFrontendLogs === 'boolean' ? data.captureFrontendLogs : false,
+          };
+        }
+      } catch {
+        // Ignore protected config errors.
+      }
+
+      const { initOtel } = await import('./otel');
+      initOtel(runtimeConfig);
+    })();
   };
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 3000 });
+  } else {
+    window.setTimeout(run, 0);
+  }
 };
 
-const startApp = async () => {
-  const runtimeConfig = await loadRuntimeOtelConfig();
-  initOtel(runtimeConfig);
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
 
-  ReactDOM.createRoot(document.getElementById('root')!).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>
-  );
-};
-
-void startApp();
+scheduleDeferredOtelInit();

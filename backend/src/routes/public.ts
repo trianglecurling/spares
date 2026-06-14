@@ -10,11 +10,14 @@ import {
   getPublicArticleBySlug,
   getPublishedPublicEventSlugForArticlePathAlias,
   getPublicArticleBodyByIdForPublishedPublicEvent,
-  getPublicBootstrap,
   getPublicHomeData,
   getPublicSiteConfig,
   listPublicArticles,
 } from '../domains/public/queries/publicReadFacade.js';
+import {
+  getCachedPublicBootstrap,
+  getPublicBootstrapCacheEtag,
+} from '../services/publicBootstrapCache.js';
 
 export async function publicRoutes(fastify: FastifyInstance) {
   const { db, schema } = getDrizzleDb();
@@ -143,9 +146,15 @@ export async function publicRoutes(fastify: FastifyInstance) {
   });
 
   // GET /public/bootstrap?includeHome=true - Shared payload for public shell (+ optional homepage content)
-  fastify.get<{ Querystring: { includeHome?: string } }>('/public/bootstrap', async (request) => {
+  fastify.get<{ Querystring: { includeHome?: string } }>('/public/bootstrap', async (request, reply) => {
     const includeHome = request.query.includeHome === 'true' || request.query.includeHome === '1';
-    return getPublicBootstrap(includeHome);
+    const etag = getPublicBootstrapCacheEtag(includeHome);
+    reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    reply.header('ETag', etag);
+    if (request.headers['if-none-match'] === etag) {
+      return reply.code(304).send();
+    }
+    return getCachedPublicBootstrap(includeHome);
   });
 
   // GET /public/home - Homepage data

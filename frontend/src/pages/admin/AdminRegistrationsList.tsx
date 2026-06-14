@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import Layout from '../../components/Layout';
-import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
@@ -56,7 +54,7 @@ function money(minor: number | null) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(minor / 100);
 }
 
-export default function AdminRegistrations() {
+export default function AdminRegistrationsList() {
   const sessionFieldId = useId();
   const statusFieldId = useId();
   const searchFieldId = useId();
@@ -182,85 +180,78 @@ export default function AdminRegistrations() {
   ];
 
   return (
-    <Layout>
-      <AppPage>
-        <AppPageHeader
-          title="Registrations"
-          description="View and edit submitted registrations for any session."
-        />
-
-        <AppPageControlsRow
-          left={
-            <>
-              <FormField label="Session" htmlFor={sessionFieldId}>
-                <ChoiceInput
-                  inputId={sessionFieldId}
-                  layout="popover"
-                  value={sessionId ? String(sessionId) : ''}
-                  onChange={(value) => {
-                    const next = Array.isArray(value) ? value[0] : value;
-                    if (next) setQuery({ sessionId: next, page: '1' });
-                  }}
-                  options={sessionOptions}
-                  placeholder="Select session"
-                />
-              </FormField>
-              <FormField label="Status" htmlFor={statusFieldId}>
-                <ChoiceInput
-                  inputId={statusFieldId}
-                  layout="popover"
-                  value={status}
-                  onChange={(value) => {
-                    const next = Array.isArray(value) ? value[0] : value;
-                    setQuery({ status: next ?? '', page: '1' });
-                  }}
-                  options={STATUS_OPTIONS}
-                />
-              </FormField>
-              <FormField label="Search" htmlFor={searchFieldId}>
-                <input
-                  id={searchFieldId}
-                  className="app-input"
-                  value={search}
-                  onChange={(event) => setQuery({ search: event.target.value, page: '1' })}
-                  placeholder="Name, email, or registration ID"
-                />
-              </FormField>
-            </>
-          }
-        />
-
-        {loading ? <AppStateCard title="Loading registrations" description="Gathering session registrations." /> : null}
-        {error ? (
-          <AppStateCard
-            title="Unable to load registrations"
-            description={error}
-            action={<Button onClick={() => void loadRegistrations()}>Try again</Button>}
-          />
-        ) : null}
-
-        {!loading && !error ? (
-          <DataTable
-            columns={columns}
-            rows={registrations}
-            rowKey={(row) => row.id}
-            emptyState={
-              <AppStateCard
-                compact
-                title="No registrations found"
-                description="Try another session, status filter, or search term."
+    <>
+      <AppPageControlsRow
+        left={
+          <>
+            <FormField label="Session" htmlFor={sessionFieldId}>
+              <ChoiceInput
+                inputId={sessionFieldId}
+                layout="popover"
+                value={sessionId ? String(sessionId) : ''}
+                onChange={(value) => {
+                  const next = Array.isArray(value) ? value[0] : value;
+                  if (next) setQuery({ sessionId: next, page: '1' });
+                }}
+                options={sessionOptions}
+                placeholder="Select session"
               />
-            }
-            pagination={{
-              page,
-              pageSize: PAGE_SIZE,
-              totalRecords: total,
-              currentCount: registrations.length,
-              onPageChange: (nextPage) => setQuery({ page: String(nextPage) }),
-            }}
-          />
-        ) : null}
-      </AppPage>
-    </Layout>
+            </FormField>
+            <FormField label="Status" htmlFor={statusFieldId}>
+              <ChoiceInput
+                inputId={statusFieldId}
+                layout="popover"
+                value={status}
+                onChange={(value) => {
+                  const next = Array.isArray(value) ? value[0] : value;
+                  setQuery({ status: next ?? '', page: '1' });
+                }}
+                options={STATUS_OPTIONS}
+              />
+            </FormField>
+            <FormField label="Search" htmlFor={searchFieldId}>
+              <input
+                id={searchFieldId}
+                className="app-input"
+                value={search}
+                onChange={(event) => setQuery({ search: event.target.value, page: '1' })}
+                placeholder="Name, email, or registration ID"
+              />
+            </FormField>
+          </>
+        }
+      />
+
+      {loading ? <AppStateCard title="Loading registrations" description="Gathering session registrations." /> : null}
+      {error ? (
+        <AppStateCard
+          title="Unable to load registrations"
+          description={error}
+          action={<Button onClick={() => void loadRegistrations()}>Try again</Button>}
+        />
+      ) : null}
+
+      {!loading && !error ? (
+        <DataTable
+          columns={columns}
+          rows={registrations}
+          rowKey={(row) => row.id}
+          emptyState={
+            <AppStateCard
+              compact
+              title="No registrations found"
+              description="Try another session, status filter, or search term."
+            />
+          }
+          pagination={{
+            page,
+            pageSize: PAGE_SIZE,
+            totalRecords: total,
+            currentCount: registrations.length,
+            onPageChange: (nextPage) => setQuery({ page: String(nextPage) }),
+          }}
+        />
+      ) : null}
+    </>
   );
 }

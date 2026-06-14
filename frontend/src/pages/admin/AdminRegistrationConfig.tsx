@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
@@ -8,9 +8,13 @@ import Button from '../../components/Button';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
 import { useAlert } from '../../contexts/AlertContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { del, get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
+import { memberHasScope } from '../../utils/permissions';
+import AdminRegistrationCommunicationsPanel from './AdminRegistrationCommunicationsPanel';
+import AdminRegistrationsList from './AdminRegistrationsList';
 
 type RegistrationState = 'closed' | 'priority' | 'open';
 
@@ -67,7 +71,9 @@ type DiscountFormState = {
   winterOnlyDiscount: DiscountSlotForm;
 };
 
-type TabKey = 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts';
+type TabKey = 'registrations' | 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts' | 'communications';
+
+const CONFIG_TAB_KEYS = ['seasons', 'sessions', 'periods', 'prices', 'discounts', 'communications'] as const;
 
 const REGISTRATION_STATE_OPTIONS: ChoiceOption<RegistrationState>[] = [
   { value: 'closed', label: 'Closed' },
@@ -156,8 +162,10 @@ function joinClasses(...parts: Array<string | false | null | undefined>): string
 
 export default function AdminRegistrationConfig() {
   const { showAlert } = useAlert();
+  const { member } = useAuth();
   const { confirm } = useConfirm();
   const location = useLocation();
+  const canManageConfig = Boolean(member && memberHasScope(member, 'admin.manage'));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -171,10 +179,16 @@ export default function AdminRegistrationConfig() {
   const [discountForm, setDiscountForm] = useState(emptyDiscountForm);
 
   const activeTab = useMemo<TabKey>(() => {
-    const last = location.pathname.split('/').filter(Boolean).at(-1);
-    if (last === 'sessions' || last === 'periods' || last === 'prices' || last === 'discounts') return last;
-    return 'seasons';
+    const segments = location.pathname.split('/').filter(Boolean);
+    const last = segments.at(-1);
+    if (last === 'seasons' || last === 'sessions' || last === 'periods' || last === 'prices' || last === 'discounts') {
+      return last;
+    }
+    if (last === 'communications') return 'communications';
+    return 'registrations';
   }, [location.pathname]);
+
+  const isConfigTab = (CONFIG_TAB_KEYS as readonly string[]).includes(activeTab);
 
   const seasonOptions = useMemo<ChoiceOption<number>[]>(
     () => seasons.map((season) => ({ value: season.id, label: season.name })),
@@ -234,8 +248,12 @@ export default function AdminRegistrationConfig() {
   };
 
   useEffect(() => {
-    loadAll();
-  }, []);
+    if (!isConfigTab) {
+      setLoading(false);
+      return;
+    }
+    void loadAll();
+  }, [activeTab, isConfigTab]);
 
   const handleSaveSeason = async (event: FormEvent) => {
     event.preventDefault();
@@ -388,32 +406,57 @@ export default function AdminRegistrationConfig() {
     }
   };
 
+  if (!canManageConfig && activeTab !== 'registrations') {
+    return <Navigate to="/admin/registrations" replace />;
+  }
+
   const tabs = [
-    { key: 'seasons', label: 'Seasons', to: '/admin/registration/seasons', isActive: activeTab === 'seasons' },
-    { key: 'sessions', label: 'Sessions', to: '/admin/registration/sessions', isActive: activeTab === 'sessions' },
-    {
-      key: 'periods',
-      label: 'Registration schedule',
-      to: '/admin/registration/periods',
-      isActive: activeTab === 'periods',
-    },
-    { key: 'prices', label: 'Prices', to: '/admin/registration/prices', isActive: activeTab === 'prices' },
-    { key: 'discounts', label: 'Discounts', to: '/admin/registration/discounts', isActive: activeTab === 'discounts' },
+    { key: 'registrations', label: 'Registrations', to: '/admin/registrations', isActive: activeTab === 'registrations' },
+    ...(canManageConfig
+      ? [
+          { key: 'seasons', label: 'Seasons', to: '/admin/registrations/seasons', isActive: activeTab === 'seasons' },
+          { key: 'sessions', label: 'Sessions', to: '/admin/registrations/sessions', isActive: activeTab === 'sessions' },
+          {
+            key: 'periods',
+            label: 'Registration schedule',
+            to: '/admin/registrations/periods',
+            isActive: activeTab === 'periods',
+          },
+          { key: 'prices', label: 'Prices', to: '/admin/registrations/prices', isActive: activeTab === 'prices' },
+          {
+            key: 'discounts',
+            label: 'Discounts',
+            to: '/admin/registrations/discounts',
+            isActive: activeTab === 'discounts',
+          },
+          {
+            key: 'communications',
+            label: 'Communications',
+            to: '/admin/registrations/communications',
+            isActive: activeTab === 'communications',
+          },
+        ]
+      : []),
   ];
 
   return (
     <Layout>
       <AppPage>
         <AppPageHeader
-          title="Registration configuration"
-          description="Configure curling seasons, sessions, when registration opens or closes for each session, and global pricing."
+          title="Registration management"
+          description="View submitted registrations and configure seasons, sessions, registration schedule, and pricing."
         />
 
         <PageTabs items={tabs} />
 
-        {loading ? (
+        {activeTab === 'registrations' ? <AdminRegistrationsList /> : null}
+        {activeTab === 'communications' ? <AdminRegistrationCommunicationsPanel /> : null}
+
+        {isConfigTab && loading ? (
           <AppStateCard title="Loading registration configuration" description="Fetching the latest staff configuration." />
-        ) : (
+        ) : null}
+
+        {isConfigTab && !loading ? (
           <>
             {activeTab === 'seasons' && (
               <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
@@ -793,7 +836,7 @@ export default function AdminRegistrationConfig() {
               </section>
             )}
           </>
-        )}
+        ) : null}
       </AppPage>
     </Layout>
   );

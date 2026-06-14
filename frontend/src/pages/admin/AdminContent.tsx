@@ -1235,9 +1235,10 @@ export default function AdminContent() {
                 <FormField label="Logo URL" htmlFor={`${formFieldId}-site-logo-url`}>
                   <input
                     id={`${formFieldId}-site-logo-url`}
-                    type="url"
+                    type="text"
                     value={siteConfig.logoUrl ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, logoUrl: e.target.value || null })}
+                    placeholder="https://example.com/logo.png or /images/logo.png"
                     className="app-input"
                   />
                 </FormField>
