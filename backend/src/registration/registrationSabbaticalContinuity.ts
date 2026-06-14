@@ -76,6 +76,22 @@ export function listContinuingSabbaticalSummaries(context: RegistrationContext):
   return summaries.sort((a, b) => a.leagueName.localeCompare(b.leagueName));
 }
 
+function hasGuaranteedReturnToSabbaticalLeague(context: RegistrationContext): boolean {
+  if (context.registrationState !== 'priority' || !context.registrant.isReturningMember) return false;
+
+  return Object.values(context.leagues).some(
+    (league) =>
+      league.allowsSabbatical &&
+      league.predecessorLeagueId != null &&
+      context.participatedLeagueIds.includes(league.predecessorLeagueId),
+  );
+}
+
+/** True when the curler may register without membership to extend a prior-session sabbatical. */
+export function canChooseNoMembership(context: RegistrationContext): boolean {
+  return listContinuingSabbaticalSummaries(context).length > 0 || hasGuaranteedReturnToSabbaticalLeague(context);
+}
+
 export function validateContinuingSabbaticalDecisions(context: RegistrationContext): DecisionMessage[] {
   const blockingErrors: DecisionMessage[] = [];
   for (const summary of listContinuingSabbaticalSummaries(context)) {

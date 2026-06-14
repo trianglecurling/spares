@@ -1,6 +1,6 @@
 /**
  * Canonical list of permission scopes for documentation and admin pickers.
- * Keep in sync with route checks (hasScope) and RBAC seed data in schema.ts.
+ * Keep in sync with route checks (hasScope) and RBAC seed data in bootstrap.ts.
  */
 export type ScopeRegistryEntry = {
   scope: string;

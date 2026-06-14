@@ -8,6 +8,34 @@
       "when": 1780352498441,
       "tag": "0000_furry_annihilus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780352498442,
+      "tag": "0001_remove_members_is_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780352498443,
+      "tag": "0002_add_members_lifetime_member",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780352498444,
+      "tag": "0003_remove_members_first_login_completed",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780352498445,
+      "tag": "0006_add_leagues_drop_in_fields",
+      "breakpoints": true
     }
   ]
 }

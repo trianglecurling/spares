@@ -1,10 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  HiArrowRight,
+  HiChevronLeft,
+  HiChevronRight,
+  HiOutlineCalendarDays,
+  HiOutlineEnvelope,
+  HiOutlineIdentification,
+  HiOutlineMapPin,
+  HiOutlineMegaphone,
+  HiOutlinePhone,
+  HiOutlineSparkles,
+  HiOutlineTrophy,
+  HiOutlineUserGroup,
+} from 'react-icons/hi2';
 import api from '../utils/api';
 import { setCachedDefaultPaymentProvider } from '../utils/paymentProcessorCopy';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { useAuth } from '../contexts/AuthContext';
 
 interface HomeData {
@@ -14,6 +29,11 @@ interface HomeData {
     contactEmail: string | null;
     contactPhone: string | null;
     footerMarkdown: string | null;
+    heroBadge?: string | null;
+    heroTitle?: string | null;
+    heroSubtitle?: string | null;
+    /** Already filtered server-side: only present when set and unexpired. */
+    announcementMarkdown?: string | null;
     disableSms?: boolean;
     fiscalYearStartMmdd?: string;
   } | null;
@@ -37,6 +57,7 @@ interface HomeData {
     start: string;
     end: string;
     allDay: boolean;
+    eventSlug?: string | null;
   }>;
   currentSponsorships: Array<{
     sponsorshipId: number;
@@ -48,15 +69,7 @@ interface HomeData {
   }>;
 }
 
-interface SiteConfig {
-  clubName: string | null;
-  logoUrl: string | null;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  footerMarkdown: string | null;
-  disableSms?: boolean;
-  fiscalYearStartMmdd?: string;
-}
+type SiteConfig = NonNullable<HomeData['siteConfig']>;
 
 interface MenuItemNode {
   id: number;
@@ -75,15 +88,206 @@ interface PublicHomeBootstrapResponse {
 }
 
 const HOMEPAGE_COPY = {
+  badge: 'Raleigh, Durham, and Chapel Hill area of North Carolina',
   title: 'Curling in the Triangle',
   subtitle:
     'Triangle Curling Club is a dedicated, four-sheet curling facility offering leagues, bonspiels, public curling events, and daytime group events.',
 };
 
+const CLUB_ADDRESS = 'Triangle Curling Center, 2310 So Hi Drive, Durham, NC 27703';
+const DIRECTIONS_URL = 'https://www.google.com/maps/search/?api=1&query=Triangle+Curling+Center%2C+2310+So+Hi+Drive%2C+Durham%2C+NC+27703';
+
 function snippetPreview(text: string): string {
   const normalized = text.replace(/[#>*_`[\]()!-]/g, ' ').replace(/\s+/g, ' ').trim();
   if (normalized.length <= 220) return normalized;
   return `${normalized.slice(0, 217)}...`;
+}
+
+/** Curling house (target rings) ornament; colored via currentColor. */
+function HouseRings({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 200 200" className={className} aria-hidden="true" focusable="false">
+      <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.4" />
+      <circle cx="100" cy="100" r="66" fill="currentColor" opacity="0.07" />
+      <circle cx="100" cy="100" r="40" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
+      <circle cx="100" cy="100" r="13" fill="currentColor" opacity="0.55" />
+    </svg>
+  );
+}
+
+function formatBonspielDates(ev: { start: string; end: string; allDay: boolean }): {
+  monthLabel: string;
+  dayLabel: string;
+  fullLabel: string;
+} {
+  const start = new Date(ev.start);
+  const end = new Date(ev.end);
+  const sameDay = start.toDateString() === end.toDateString();
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+
+  const month = (d: Date) => d.toLocaleDateString(undefined, { month: 'short' });
+  const monthDay = (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const year = start.getFullYear() === end.getFullYear() ? `${start.getFullYear()}` : null;
+
+  if (sameDay) {
+    return {
+      monthLabel: month(start),
+      dayLabel: `${start.getDate()}`,
+      fullLabel: start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+    };
+  }
+  if (sameMonth) {
+    return {
+      monthLabel: month(start),
+      dayLabel: `${start.getDate()}\u2013${end.getDate()}`,
+      fullLabel: `${monthDay(start)}\u2013${end.getDate()}, ${start.getFullYear()}`,
+    };
+  }
+  return {
+    monthLabel: month(start),
+    dayLabel: `${start.getDate()}`,
+    fullLabel: year
+      ? `${monthDay(start)} \u2013 ${monthDay(end)}, ${year}`
+      : `${monthDay(start)}, ${start.getFullYear()} \u2013 ${monthDay(end)}, ${end.getFullYear()}`,
+  };
+}
+
+function HeroCarousel({ images }: { images: Array<{ src: string; caption: string }> }) {
+  const [index, setIndex] = useState(0);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [hovering, setHovering] = useState(false);
+  const touchStartXRef = useRef<number | null>(null);
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    []
+  );
+
+  useEffect(() => {
+    if (index >= images.length) setIndex(0);
+  }, [index, images.length]);
+
+  useEffect(() => {
+    if (images.length <= 1 || !autoScroll || hovering || prefersReducedMotion) return;
+    const intervalId = window.setInterval(() => {
+      setIndex((prev) => (prev + 1) % images.length);
+    }, 6000);
+    return () => window.clearInterval(intervalId);
+  }, [autoScroll, hovering, images.length, prefersReducedMotion]);
+
+  const goTo = (next: number, manual = false) => {
+    if (manual) setAutoScroll(false);
+    setIndex(((next % images.length) + images.length) % images.length);
+  };
+
+  return (
+    <div
+      className="group relative"
+      role="group"
+      aria-roledescription="carousel"
+      aria-label="Club photos"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onTouchStart={(e) => {
+        touchStartXRef.current = e.touches[0]?.clientX ?? null;
+      }}
+      onTouchEnd={(e) => {
+        const startX = touchStartXRef.current;
+        touchStartXRef.current = null;
+        if (startX == null) return;
+        const delta = (e.changedTouches[0]?.clientX ?? startX) - startX;
+        if (Math.abs(delta) < 40) return;
+        goTo(delta < 0 ? index + 1 : index - 1, true);
+      }}
+    >
+      <div className="relative aspect-[4/3] sm:aspect-[16/10] overflow-hidden rounded-3xl bg-teal-950/5 shadow-xl shadow-teal-900/10 ring-1 ring-black/5">
+        {images.map((image, i) => (
+          <div
+            key={`${image.src}-${i}`}
+            className={`absolute inset-0 transition-opacity duration-700 ease-out motion-reduce:transition-none ${
+              i === index ? 'opacity-100' : 'opacity-0'
+            }`}
+            aria-hidden={i !== index}
+          >
+            <img
+              src={image.src}
+              alt={image.caption}
+              className="h-full w-full object-cover"
+              loading={i === 0 ? 'eager' : 'lazy'}
+              draggable={false}
+            />
+          </div>
+        ))}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black/60 via-black/25 to-transparent p-4 pt-12">
+          <p className="min-w-0 truncate text-sm font-medium text-white drop-shadow">{images[index]?.caption}</p>
+          {images.length > 1 && (
+            <div className="pointer-events-auto flex shrink-0 items-center gap-1.5" role="tablist" aria-label="Choose photo">
+              {images.slice(0, 8).map((image, i) => (
+                <button
+                  key={`${image.src}-dot-${i}`}
+                  type="button"
+                  className="flex h-8 w-5 items-center justify-center"
+                  aria-label={`Show photo ${i + 1} of ${images.length}`}
+                  aria-current={i === index}
+                  onClick={() => goTo(i, true)}
+                >
+                  <span
+                    className={`block h-2 rounded-full transition-all motion-reduce:transition-none ${
+                      i === index ? 'w-5 bg-white' : 'w-2 bg-white/55 hover:bg-white/80'
+                    }`}
+                    aria-hidden
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {images.length > 1 && (
+          <>
+            <button
+              type="button"
+              className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur transition-opacity hover:bg-black/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 motion-reduce:transition-none"
+              aria-label="Show previous photo"
+              onClick={() => goTo(index - 1, true)}
+            >
+              <HiChevronLeft className="h-6 w-6" aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur transition-opacity hover:bg-black/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 motion-reduce:transition-none"
+              aria-label="Show next photo"
+              onClick={() => goTo(index + 1, true)}
+            >
+              <HiChevronRight className="h-6 w-6" aria-hidden />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeading({
+  eyebrow,
+  title,
+  id,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  id?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+      <div>
+        <p className="public-eyebrow">{eyebrow}</p>
+        <h2 id={id} className="public-display mt-1 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
+          {title}
+        </h2>
+      </div>
+      {action}
+    </div>
+  );
 }
 
 export default function PublicHomePage() {
@@ -94,8 +298,6 @@ export default function PublicHomePage() {
   const [layoutSiteConfig, setLayoutSiteConfig] = useState<SiteConfig | null | undefined>(undefined);
   const [layoutMenuItems, setLayoutMenuItems] = useState<MenuItemNode[] | undefined>(undefined);
   const [deferLayoutBootstrapLoad, setDeferLayoutBootstrapLoad] = useState(true);
-  const [heroImageIndex, setHeroImageIndex] = useState(0);
-  const [heroAutoScrollEnabled, setHeroAutoScrollEnabled] = useState(true);
 
   const heroImages = useMemo(() => {
     const showcase = data?.showcaseImages ?? [];
@@ -156,34 +358,46 @@ export default function PublicHomePage() {
     return () => window.clearTimeout(timerId);
   }, [data, error]);
 
-  useEffect(() => {
-    if (heroImages.length <= 1 || !heroAutoScrollEnabled) return;
-    const intervalId = window.setInterval(() => {
-      setHeroImageIndex((prev) => (prev + 1) % heroImages.length);
-    }, 5000);
-    return () => window.clearInterval(intervalId);
-  }, [heroAutoScrollEnabled, heroImages.length]);
+  const isMemberSignedIn = !isLoading && Boolean(token && member);
 
-  useEffect(() => {
-    if (heroImageIndex >= heroImages.length) {
-      setHeroImageIndex(0);
-    }
-  }, [heroImageIndex, heroImages.length]);
-
-  const showPreviousHeroImage = (manual = false) => {
-    if (manual) setHeroAutoScrollEnabled(false);
-    setHeroImageIndex((prev) => (prev - 1 + heroImages.length) % heroImages.length);
-  };
-
-  const showNextHeroImage = (manual = false) => {
-    if (manual) setHeroAutoScrollEnabled(false);
-    setHeroImageIndex((prev) => (prev + 1) % heroImages.length);
-  };
-
-  const showHeroImageAt = (index: number) => {
-    setHeroAutoScrollEnabled(false);
-    setHeroImageIndex(index);
-  };
+  const pathways = [
+    {
+      key: 'new',
+      eyebrow: 'New to curling?',
+      title: 'Try curling',
+      description: 'No experience needed. Learn-to-curl sessions and public events are the perfect first slide onto the ice.',
+      cta: 'Learn how to start',
+      to: '/articles/try-curling',
+      Icon: HiOutlineSparkles,
+    },
+    {
+      key: 'bonspiel',
+      eyebrow: 'Visiting curlers',
+      title: 'Bonspiels',
+      description: 'Curlers from every club are welcome at our tournaments. See what is coming up and register your team.',
+      cta: 'Upcoming bonspiels',
+      href: '#upcoming-bonspiels',
+      Icon: HiOutlineTrophy,
+    },
+    {
+      key: 'group',
+      eyebrow: 'Groups and teams',
+      title: 'Group events',
+      description: 'Team building, parties, and daytime outings on real curling ice, guided by our volunteer instructors.',
+      cta: 'Plan a group event',
+      to: '/articles/team-building-group-events',
+      Icon: HiOutlineUserGroup,
+    },
+    {
+      key: 'member',
+      eyebrow: 'Club members',
+      title: 'Member area',
+      description: 'League schedules, ice booking, spare requests, registration, and everything else for club life.',
+      cta: isMemberSignedIn ? 'Go to your dashboard' : 'Member login',
+      to: isMemberSignedIn ? '/dashboard' : '/login',
+      Icon: HiOutlineIdentification,
+    },
+  ];
 
   if (error) {
     return (
@@ -207,6 +421,13 @@ export default function PublicHomePage() {
     );
   }
 
+  const heroBadge = data?.siteConfig?.heroBadge?.trim() || HOMEPAGE_COPY.badge;
+  const heroTitle = data?.siteConfig?.heroTitle?.trim() || HOMEPAGE_COPY.title;
+  const heroSubtitle = data?.siteConfig?.heroSubtitle?.trim() || HOMEPAGE_COPY.subtitle;
+  const announcementMarkdown = data?.siteConfig?.announcementMarkdown?.trim() || null;
+  const contactEmail = data?.siteConfig?.contactEmail || 'info@trianglecurling.com';
+  const contactPhone = data?.siteConfig?.contactPhone || null;
+
   return (
     <PublicLayout
       initialSiteConfig={layoutSiteConfig}
@@ -229,227 +450,356 @@ export default function PublicHomePage() {
           url: typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
         }}
       />
-      <div className="public-container">
-        {!data ? (
-          showDelayedLoading ? (
-            <section className="public-section">
+      {!data ? (
+        showDelayedLoading ? (
+          <section className="public-section">
+            <div className="public-container">
               <div className="public-content">
                 <PublicStateCard
                   title="Loading homepage..."
                   description="Pulling in the latest public content, featured updates, and club highlights."
                 />
               </div>
-            </section>
-          ) : null
-        ) : (
-          <>
-            <section className="public-section pb-8 sm:pb-12">
-              <div className="rounded-3xl border border-teal-100 bg-gradient-to-br from-teal-50 via-sky-50 to-white p-5 sm:p-8 lg:p-10 shadow-sm">
-                <div className="grid gap-8 lg:grid-cols-[1.05fr_1fr] lg:items-start">
-                  <div className="space-y-6">
-                    <p className="inline-flex items-center rounded-full bg-primary-teal/10 px-3 py-1 text-sm font-medium text-primary-teal-link">
-                      Raleigh, Durham, and Chapel Hill area of North Carolina
-                    </p>
-                    <div className="public-page-title-rule">
-                      <h1 className="public-heading text-balance">{HOMEPAGE_COPY.title}</h1>
-                    </div>
-                    <p className="public-body text-lg">{HOMEPAGE_COPY.subtitle}</p>
-                    <div className="flex flex-wrap gap-3">
-                      <Link
-                        to="/articles/try-curling"
-                        className="rounded-md bg-primary-teal px-4 py-2 text-sm font-medium text-white hover:bg-primary-teal/90"
-                      >
-                        Learn about curling
-                      </Link>
-                      <Link
-                        to="/articles/team-building-group-events"
-                        className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
-                      >
-                        Plan a group event
-                      </Link>
-                      <Link
-                        to="/donate"
-                        className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                      >
-                        Donate
-                      </Link>
-                      <a
-                        href="#upcoming-bonspiels"
-                        className="rounded-md border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50"
-                      >
-                        Upcoming bonspiels
-                      </a>
-                      {!isLoading && !token && !member && (
-                        <Link
-                          to="/login"
-                          className="rounded-md border border-teal-200 bg-white px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
-                        >
-                          Member login
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-white shadow-md">
-                      <button
-                        type="button"
-                        className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-white/70 bg-black/30 p-2 text-white backdrop-blur hover:bg-black/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                        aria-label="Show previous image"
-                        onClick={() => showPreviousHeroImage(true)}
-                      >
-                        &#8592;
-                      </button>
-                      <button
-                        type="button"
-                        className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-white/70 bg-black/30 p-2 text-white backdrop-blur hover:bg-black/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                        aria-label="Show next image"
-                        onClick={() => showNextHeroImage(true)}
-                      >
-                        &#8594;
-                      </button>
-                      <div
-                        className="flex transition-transform duration-300 ease-out motion-reduce:transition-none"
-                        style={{ transform: `translateX(-${heroImageIndex * 100}%)` }}
-                      >
-                        {heroImages.map((image, index) => (
-                          <div key={`${image.src}-${index}`} className="relative w-full shrink-0">
-                            <img
-                              src={image.src}
-                              alt={image.caption || 'Triangle Curling Club'}
-                              className="aspect-[16/10] w-full object-cover"
-                            />
-                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-3 text-sm text-white">
-                              {image.caption || 'Triangle Curling Club'}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex flex-wrap gap-2">
-                        {heroImages.slice(0, 6).map((image, index) => (
-                          <button
-                            key={`${image.src}-${index}`}
-                            type="button"
-                            className={`h-2.5 w-7 rounded-full transition-colors motion-reduce:transition-none ${index === heroImageIndex ? 'bg-primary-teal' : 'bg-gray-300 hover:bg-gray-400'}`}
-                            aria-label={`Show image ${index + 1}`}
-                            onClick={() => showHeroImageAt(index)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            </div>
+          </section>
+        ) : null
+      ) : (
+        <>
+          {announcementMarkdown && (
+            <div className="border-b border-amber-200/80 bg-amber-50">
+              <div className="public-container flex items-start gap-3 py-3">
+                <HiOutlineMegaphone className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden />
+                <ArticleMarkdown
+                  markdown={announcementMarkdown}
+                  className="markdown-content max-w-none flex-1 !text-sm text-amber-900 [&_a]:font-medium [&_a]:text-amber-900 [&_a]:underline"
+                />
               </div>
-            </section>
+            </div>
+          )}
 
-            <section className="public-section pt-2">
-              <h2 className="public-subheading">Latest updates</h2>
+          <section className="public-home-hero-bg relative overflow-hidden">
+            <HouseRings className="pointer-events-none absolute -right-32 -top-36 h-[30rem] w-[30rem] text-primary-teal opacity-70 max-lg:hidden" />
+            <HouseRings className="pointer-events-none absolute -bottom-44 -left-36 h-[26rem] w-[26rem] text-primary-teal opacity-30" />
+            <div className="public-container relative py-10 sm:py-14 lg:py-20">
+              <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_1fr]">
+                <div className="max-w-xl">
+                  <p className="inline-flex items-center gap-2 rounded-full border border-primary-teal/25 bg-white/80 px-3.5 py-1.5 text-sm font-medium text-primary-teal-link shadow-sm backdrop-blur">
+                    <HiOutlineMapPin className="h-4 w-4 shrink-0" aria-hidden />
+                    {heroBadge}
+                  </p>
+                  <h1 className="public-display mt-5 text-4xl font-semibold leading-[1.05] tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
+                    {heroTitle}
+                  </h1>
+                  <p className="public-body mt-5 text-lg sm:text-xl">{heroSubtitle}</p>
+                  <div className="mt-7 flex flex-wrap items-center gap-3">
+                    <Link
+                      to="/articles/try-curling"
+                      className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full bg-primary-teal px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-teal/25 transition hover:bg-primary-teal/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 focus-visible:ring-offset-2 motion-reduce:transition-none"
+                    >
+                      Try curling
+                      <HiArrowRight className="h-4 w-4" aria-hidden />
+                    </Link>
+                    <a
+                      href="#upcoming-bonspiels"
+                      className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-gray-300 bg-white px-6 py-2.5 text-sm font-semibold text-gray-800 shadow-sm transition hover:border-primary-teal/50 hover:text-primary-teal-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 focus-visible:ring-offset-2 motion-reduce:transition-none"
+                    >
+                      <HiOutlineCalendarDays className="h-4 w-4" aria-hidden />
+                      Upcoming bonspiels
+                    </a>
+                  </div>
+                  <p className="mt-6 text-sm text-gray-500">
+                    A 501(c)(3) nonprofit, 100% volunteer-run since day one.
+                  </p>
+                </div>
+                <HeroCarousel images={heroImages} />
+              </div>
+            </div>
+          </section>
+
+          <section aria-labelledby="home-pathways-heading">
+            <div className="public-container py-12 sm:py-16">
+              <SectionHeading eyebrow="Start here" title="Find your way onto the ice" id="home-pathways-heading" />
+              <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {pathways.map(({ key, eyebrow, title, description, cta, to, href, Icon }) => {
+                  const cardInner = (
+                    <>
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-teal/10 text-primary-teal-link transition group-hover:bg-primary-teal group-hover:text-white motion-reduce:transition-none">
+                        <Icon className="h-6 w-6" aria-hidden />
+                      </span>
+                      <span className="mt-4 block text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+                        {eyebrow}
+                      </span>
+                      <span className="public-display mt-1 block text-xl font-semibold text-gray-900">{title}</span>
+                      <span className="mt-2 block text-sm leading-relaxed text-gray-600">{description}</span>
+                      <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-teal-link">
+                        {cta}
+                        <HiArrowRight
+                          className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+                          aria-hidden
+                        />
+                      </span>
+                    </>
+                  );
+                  const cardClass =
+                    'group flex flex-col rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none motion-reduce:hover:translate-y-0';
+                  return href ? (
+                    <a key={key} href={href} className={cardClass}>
+                      {cardInner}
+                    </a>
+                  ) : (
+                    <Link key={key} to={to!} className={cardClass}>
+                      {cardInner}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          <section className="public-home-band" aria-labelledby="home-updates-heading">
+            <div className="public-container py-12 sm:py-16">
+              <SectionHeading eyebrow="Club news" title="Latest updates" id="home-updates-heading" />
               {data.featuredArticles.length === 0 ? (
-                <div className="mt-4">
+                <div className="mt-6">
                   <PublicStateCard
                     title="No featured resources yet."
                     description="Check back soon for club updates, guides, and highlighted articles."
                   />
                 </div>
               ) : (
-                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {data.featuredArticles.map((article) => {
                     const featuredHref = article.eventSlug
                       ? `/events/${article.eventSlug}`
                       : `/articles/${article.slug}`;
                     return (
-                      <article key={article.id} className="public-card p-5 bg-gradient-to-b from-white to-sky-50/30">
-                        <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
-                          <Link to={featuredHref} className="hover:text-primary-teal-link">
+                      <article
+                        key={article.id}
+                        className="group relative flex flex-col rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-teal/40 hover:shadow-md focus-within:ring-2 focus-within:ring-primary-teal/50 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                      >
+                        <h3 className="public-display text-lg font-semibold leading-snug text-gray-900 line-clamp-2">
+                          <Link
+                            to={featuredHref}
+                            className="after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none"
+                          >
                             {article.title}
                           </Link>
                         </h3>
                         {article.snippet && (
-                          <p className="mt-2 text-sm text-gray-600 line-clamp-4">{snippetPreview(article.snippet)}</p>
+                          <p className="mt-3 flex-1 text-sm leading-relaxed text-gray-600 line-clamp-4">
+                            {snippetPreview(article.snippet)}
+                          </p>
                         )}
-                        {article.hasMore && (
-                          <Link
-                            to={featuredHref}
-                            className="mt-3 inline-block text-sm font-medium text-primary-teal-link hover:underline"
-                          >
-                            Read more
-                          </Link>
-                        )}
+                        <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-teal-link">
+                          Read more
+                          <HiArrowRight
+                            className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+                            aria-hidden
+                          />
+                        </span>
                       </article>
                     );
                   })}
                 </div>
               )}
-            </section>
+            </div>
+          </section>
 
-            <section id="upcoming-bonspiels" className="public-section pt-2">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="public-subheading">Upcoming bonspiels</h2>
-                <Link
-                  to="/calendar/public"
-                  className="text-sm font-medium text-primary-teal-link hover:underline whitespace-nowrap"
-                >
-                  Full calendar
-                </Link>
-              </div>
+          <section id="upcoming-bonspiels" className="scroll-mt-24" aria-labelledby="home-bonspiels-heading">
+            <div className="public-container py-12 sm:py-16">
+              <SectionHeading
+                eyebrow="Competitive curling"
+                title="Upcoming bonspiels"
+                id="home-bonspiels-heading"
+                action={
+                  <Link
+                    to="/calendar/public"
+                    className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-primary-teal-link hover:underline"
+                  >
+                    Full calendar
+                    <HiArrowRight className="h-4 w-4" aria-hidden />
+                  </Link>
+                }
+              />
+              <p className="public-body mt-2 max-w-2xl">
+                Curlers from other clubs are always welcome at our four-sheet facility. Tap a bonspiel for details and
+                registration.
+              </p>
               {data.upcomingBonspiels.length === 0 ? (
-                <div className="public-card mt-4 p-5 text-gray-600">No upcoming bonspiels are listed right now.</div>
+                <div className="public-card mt-6 p-6 text-gray-600">
+                  No upcoming bonspiels are listed right now. Check the{' '}
+                  <Link to="/calendar/public" className="font-medium text-primary-teal-link hover:underline">
+                    club calendar
+                  </Link>{' '}
+                  for everything else happening on the ice.
+                </div>
               ) : (
-                <ul className="mt-4 space-y-3">
-                  {data.upcomingBonspiels.map((ev) => (
-                    <li key={ev.id} className="public-card p-4 sm:p-5">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm font-medium text-gray-500">
-                          {new Date(ev.start).toLocaleDateString(undefined, {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            year: ev.allDay ? 'numeric' : undefined,
-                            ...(ev.allDay ? {} : { hour: 'numeric', minute: '2-digit' }),
-                          })}
-                        </p>
-                        <p className="text-base font-semibold text-gray-900">{ev.title}</p>
-                      </div>
-                    </li>
-                  ))}
+                <ul className="mt-6 space-y-3">
+                  {data.upcomingBonspiels.map((ev) => {
+                    const dates = formatBonspielDates(ev);
+                    const rowInner = (
+                      <>
+                        <div
+                          className="flex w-20 shrink-0 flex-col items-center justify-center self-stretch rounded-xl bg-primary-teal/10 px-2 py-3 text-primary-teal-link"
+                          aria-hidden
+                        >
+                          <span className="text-xs font-bold uppercase tracking-widest">{dates.monthLabel}</span>
+                          <span className="public-display text-xl font-semibold leading-tight">{dates.dayLabel}</span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="public-display truncate text-lg font-semibold text-gray-900">{ev.title}</p>
+                          <p className="mt-0.5 text-sm text-gray-500">{dates.fullLabel}</p>
+                        </div>
+                        {ev.eventSlug ? (
+                          <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-primary-teal-link max-sm:hidden">
+                            Details and registration
+                            <HiArrowRight
+                              className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+                              aria-hidden
+                            />
+                          </span>
+                        ) : null}
+                      </>
+                    );
+                    return (
+                      <li key={ev.id}>
+                        {ev.eventSlug ? (
+                          <Link
+                            to={`/events/${ev.eventSlug}`}
+                            className="group flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 sm:p-5 motion-reduce:transition-none"
+                          >
+                            {rowInner}
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                            {rowInner}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
-            </section>
+            </div>
+          </section>
 
-            {displayedSponsorships.length > 0 && (
-              <section className="public-section pt-0">
-                <h2 className="public-subheading">Our sponsors</h2>
-                <p className="mt-2 text-sm text-gray-600">
-                  Triangle Curling extends its sincere gratitude to the sponsors below.
-                </p>
-                <div className="mt-5 flex flex-wrap justify-center gap-y-3">
-                  {displayedSponsorships.map((sponsorship) => (
-                    <a
-                      key={sponsorship.sponsorshipId}
-                      href={sponsorship.sponsorWebsiteUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={sponsorship.sponsorName}
-                      className="w-1/2 px-1.5 sm:w-1/3 md:w-1/4 lg:w-1/5"
+          <section aria-labelledby="home-visit-heading">
+            <div className="public-container pb-12 sm:pb-16">
+              <div className="relative overflow-hidden rounded-3xl bg-[#0b3d3f] text-white shadow-xl">
+                <HouseRings className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 text-white opacity-20" />
+                <div className="relative grid gap-10 p-7 sm:p-10 md:grid-cols-2 lg:p-12">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">
+                      A community nonprofit
+                    </p>
+                    <h2 id="home-visit-heading" className="public-display mt-2 text-2xl font-semibold sm:text-3xl">
+                      Built and run by volunteers
+                    </h2>
+                    <p className="mt-4 leading-relaxed text-teal-50/90">
+                      Triangle Curling Club is a 501(c)(3) nonprofit. Our members built this facility, maintain the
+                      ice, teach every class, and run every league and event. Everything you spend here goes back into
+                      growing curling in the Triangle.
+                    </p>
+                    <Link
+                      to="/donate"
+                      className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-teal-200 hover:text-white hover:underline"
                     >
-                      <div className="rounded p-2">
+                      Support the club
+                      <HiArrowRight className="h-4 w-4" aria-hidden />
+                    </Link>
+                  </div>
+                  <div className="md:border-l md:border-white/15 md:pl-10">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">Visit us</p>
+                    <ul className="mt-4 space-y-4 text-sm leading-relaxed">
+                      <li className="flex items-start gap-3">
+                        <HiOutlineMapPin className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
+                        <span>
+                          {CLUB_ADDRESS}
+                          <br />
+                          <a
+                            href={DIRECTIONS_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-semibold text-teal-200 hover:text-white hover:underline"
+                          >
+                            Get directions
+                          </a>
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <HiOutlineEnvelope className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
+                        <a href={`mailto:${contactEmail}`} className="hover:underline">
+                          {contactEmail}
+                        </a>
+                      </li>
+                      {contactPhone && (
+                        <li className="flex items-start gap-3">
+                          <HiOutlinePhone className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
+                          <a href={`tel:${contactPhone}`} className="hover:underline">
+                            {contactPhone}
+                          </a>
+                        </li>
+                      )}
+                    </ul>
+                    <Link
+                      to="/contact"
+                      className="mt-5 inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-white/30 bg-white/10 px-5 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 motion-reduce:transition-none"
+                    >
+                      Contact the club
+                      <HiArrowRight className="h-4 w-4" aria-hidden />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {displayedSponsorships.length > 0 && (
+            <section aria-labelledby="home-sponsors-heading">
+              <div className="public-container pb-14 sm:pb-20">
+                <SectionHeading
+                  eyebrow="Thank you"
+                  title="Our sponsors"
+                  id="home-sponsors-heading"
+                  action={
+                    <Link
+                      to="/contact"
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-primary-teal-link hover:underline"
+                    >
+                      Become a sponsor
+                      <HiArrowRight className="h-4 w-4" aria-hidden />
+                    </Link>
+                  }
+                />
+                <p className="public-body mt-2 max-w-2xl">
+                  Triangle Curling extends its sincere gratitude to the local businesses that keep our nonprofit club
+                  on the ice.
+                </p>
+                <ul className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {displayedSponsorships.map((sponsorship) => (
+                    <li key={sponsorship.sponsorshipId}>
+                      <a
+                        href={sponsorship.sponsorWebsiteUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={sponsorship.sponsorName}
+                        className="flex h-28 items-center justify-center rounded-2xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                      >
                         <img
                           src={sponsorship.sponsorLogoUrl || ''}
                           alt={sponsorship.sponsorName}
-                          title={sponsorship.sponsorName}
-                          className="mx-auto max-h-[122px] max-w-[calc(100%+10px)] w-full object-contain"
+                          className="max-h-full max-w-full object-contain"
                           loading="lazy"
                         />
-                      </div>
-                    </a>
+                      </a>
+                    </li>
                   ))}
-                </div>
-              </section>
-            )}
-          </>
-        )}
-      </div>
+                </ul>
+              </div>
+            </section>
+          )}
+        </>
+      )}
     </PublicLayout>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   HiChevronDown,
   HiChevronRight,
@@ -144,7 +144,6 @@ export default function Dashboard() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [openRequests, setOpenRequests] = useState<SpareRequest[]>([]);
   const [mySparing, setMySparing] = useState<SpareRequest[]>([]);
@@ -428,28 +427,6 @@ export default function Dashboard() {
       setComment('');
 
       showAlert(`You've successfully signed up to spare for ${selectedRequest.requestedForName}!`, 'success');
-
-      // If this user just came through first-login via a spare accept link, optionally prompt them
-      // to set their availability after they've successfully accepted.
-      try {
-        const shouldSuggest = sessionStorage.getItem('postFirstLoginSuggestAvailability') === '1';
-        if (shouldSuggest) {
-          sessionStorage.removeItem('postFirstLoginSuggestAvailability');
-          const go = await confirm({
-            title: 'Set your availability?',
-            message:
-              'Want to set your sparing availability now so others can find you for future spare requests?',
-            confirmText: 'Set availability',
-            cancelText: 'Not now',
-            variant: 'info',
-          });
-          if (go) {
-            navigate('/availability');
-          }
-        }
-      } catch {
-        // ignore
-      }
     } catch (error: unknown) {
       console.error('Failed to respond to spare request:', error);
 
@@ -529,28 +506,6 @@ export default function Dashboard() {
       setDeclineRequest(null);
       setDeclineComment('');
       showAlert(`You declined the private spare request for ${declineRequest.requestedForName}.`, 'success');
-
-      // If this user just came through first-login via a decline link, optionally prompt them
-      // to set their availability after they've declined.
-      try {
-        const shouldSuggest = sessionStorage.getItem('postFirstLoginSuggestAvailability') === '1';
-        if (shouldSuggest) {
-          sessionStorage.removeItem('postFirstLoginSuggestAvailability');
-          const go = await confirm({
-            title: 'Set your availability?',
-            message:
-              'Want to set your sparing availability now so others can find you for future spare requests?',
-            confirmText: 'Set availability',
-            cancelText: 'Not now',
-            variant: 'info',
-          });
-          if (go) {
-            navigate('/availability');
-          }
-        }
-      } catch {
-        // ignore
-      }
     } catch (error: unknown) {
       console.error('Failed to decline spare request:', error);
       showAlert(formatApiError(error, 'Failed to decline'), 'error');

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  canChooseNoMembership,
   listContinuingSabbaticalSummaries,
   listLeaguesRequiringPriorSessionDecision,
   validateContinuingSabbaticalDecisions,
@@ -36,6 +37,41 @@ describe('registrationSabbaticalContinuity', () => {
       }),
     ]);
     expect(listLeaguesRequiringPriorSessionDecision(context).map((item) => item.id)).toEqual([100]);
+  });
+
+  test('canChooseNoMembership is true when continuing sabbaticals exist', () => {
+    const context = registrationContext({
+      registrationState: 'priority',
+      participatedLeagueIds: [],
+      existingSabbaticals: [
+        {
+          id: 7,
+          originalLeagueId: 90,
+          currentLeagueId: 90,
+          firstSabbaticalLeagueId: 90,
+          firstSabbaticalStartDate: '2026-10-01',
+          status: 'active',
+        },
+      ],
+      leagues: {
+        100: league({ id: 100, predecessorLeagueId: 90 }),
+      },
+    });
+
+    expect(canChooseNoMembership(context)).toBe(true);
+    expect(canChooseNoMembership(registrationContext({ registrationState: 'open' }))).toBe(false);
+  });
+
+  test('canChooseNoMembership is true with guaranteed return to a sabbatical league', () => {
+    const context = registrationContext({
+      registrationState: 'priority',
+      participatedLeagueIds: [90],
+      leagues: {
+        100: league({ id: 100, predecessorLeagueId: 90, allowsSabbatical: true }),
+      },
+    });
+
+    expect(canChooseNoMembership(context)).toBe(true);
   });
 
   test('does not duplicate participation-based prior leagues in continuing summaries', () => {

@@ -138,10 +138,10 @@ describe('registration resume targeting', () => {
         pointer,
       }),
     ).toBe('discounts');
-    expect(nextStepFor(draft)).toBe('membership');
+    expect(nextStepFor(draft)).toBe('discounts');
   });
 
-  test('post-shell resume falls back to discounts after membership is saved', () => {
+  test('post-shell resume falls back to membership after discounts are saved', () => {
     const draft = shellDraft({ status: 'shell_complete' });
 
     expect(
@@ -156,7 +156,7 @@ describe('registration resume targeting', () => {
           icePrivilegesChoice: 'none',
         },
       }),
-    ).toBe('discounts');
+    ).toBe('membership');
   });
 
   test('resolvePostShellResumeStepFromPayment maps saved membership state to the next step', () => {
@@ -165,7 +165,7 @@ describe('registration resume targeting', () => {
         selection: { membershipOption: 'none', experienceType: null },
         icePrivilegesChoice: 'none',
       }),
-    ).toBe('membership');
+    ).toBe('discounts');
 
     expect(
       resolvePostShellResumeStepFromPayment({
@@ -183,5 +183,23 @@ describe('registration resume targeting', () => {
         { hasPriorSeasonReturnLeagues: true },
       ),
     ).toBe('prior-league-selection');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'regular', experienceType: null },
+        icePrivilegesChoice: 'none',
+        hasLifetimeMembership: true,
+        knownExperienceYears: 2,
+      }),
+    ).toBe('basic-ice');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'regular', experienceType: null },
+        icePrivilegesChoice: 'none',
+        hasLifetimeMembership: true,
+        knownExperienceYears: 0,
+      }),
+    ).toBe('experience');
   });
 });

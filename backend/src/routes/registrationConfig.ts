@@ -26,6 +26,7 @@ import {
   type PriceConfigInput,
   type RegistrationDiscountSettingsStored,
 } from '../registration/registrationConfigValidation.js';
+import { syncSeasonMembershipDatesForSeason } from '../services/memberSeasonMembershipAdminService.js';
 
 const SINGLETON_SCOPE = 'singleton';
 
@@ -492,7 +493,22 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
       if (body.startDate !== undefined) updateData.start_date = body.startDate;
       if (body.endDate !== undefined) updateData.end_date = body.endDate;
       updateData.updated_at = sql`CURRENT_TIMESTAMP`;
-      const rows = await db.update(schema.curlingSeasons).set(updateData).where(eq(schema.curlingSeasons.id, id)).returning();
+      const rows = await db.transaction(async (tx) => {
+        const updatedSeason = await tx
+          .update(schema.curlingSeasons)
+          .set(updateData)
+          .where(eq(schema.curlingSeasons.id, id))
+          .returning();
+        await syncSeasonMembershipDatesForSeason(
+          id,
+          {
+            startDate: body.startDate,
+            endDate: body.endDate,
+          },
+          tx,
+        );
+        return updatedSeason;
+      });
       return mapSeason(rows[0]);
     }
   );

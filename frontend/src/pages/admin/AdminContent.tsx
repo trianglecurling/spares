@@ -21,6 +21,7 @@ import type { DataTableColumn } from '../../components/table/tableTypes';
 import useTableQueryState from '../../hooks/useTableQueryState';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
+import FormSection from '../../components/FormSection';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import AdminContentPermalinksPanel, { type PermalinkAdminRow } from './AdminContentPermalinksPanel';
 
@@ -174,6 +175,21 @@ function extractReferencedFileIds(content: string): number[] {
 
 const VALID_TABS: Tab[] = ['site', 'home', 'menus', 'articles', 'showcase', 'files', 'permalinks'];
 
+/** ISO timestamp -> value for a `datetime-local` input in the admin's local time zone. */
+function isoToLocalDateTimeInput(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function localDateTimeInputToIso(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export default function AdminContent() {
   const { tab: tabParam } = useParams<{ tab: string }>();
   const navigate = useNavigate();
@@ -187,6 +203,11 @@ export default function AdminContent() {
     contactEmail: string | null;
     contactPhone: string | null;
     footerMarkdown: string | null;
+    heroBadge: string | null;
+    heroTitle: string | null;
+    heroSubtitle: string | null;
+    announcementMarkdown: string | null;
+    announcementExpiresAt: string | null;
   } | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [featuredHomeArticles, setFeaturedHomeArticles] = useState<Article[]>([]);
@@ -1555,7 +1576,90 @@ export default function AdminContent() {
             )}
 
             {activeTab === 'home' && (
-              <div>
+              <div className="space-y-8">
+                {siteConfig && (
+                  <form onSubmit={handleSaveSiteConfig} className="space-y-6">
+                    <FormSection
+                      title="Hero copy"
+                      description="Shown in the large banner at the top of the public homepage. Leave a field empty to use the built-in default."
+                      surface="panel"
+                    >
+                      <FormField label="Badge line (location or tagline)" htmlFor={`${formFieldId}-home-hero-badge`}>
+                        <input
+                          id={`${formFieldId}-home-hero-badge`}
+                          type="text"
+                          value={siteConfig.heroBadge ?? ''}
+                          onChange={(e) => setSiteConfig({ ...siteConfig, heroBadge: e.target.value || null })}
+                          placeholder="Raleigh, Durham, and Chapel Hill area of North Carolina"
+                          className="app-input"
+                        />
+                      </FormField>
+                      <FormField label="Headline" htmlFor={`${formFieldId}-home-hero-title`}>
+                        <input
+                          id={`${formFieldId}-home-hero-title`}
+                          type="text"
+                          value={siteConfig.heroTitle ?? ''}
+                          onChange={(e) => setSiteConfig({ ...siteConfig, heroTitle: e.target.value || null })}
+                          placeholder="Curling in the Triangle"
+                          className="app-input"
+                        />
+                      </FormField>
+                      <FormField label="Subtitle" htmlFor={`${formFieldId}-home-hero-subtitle`}>
+                        <textarea
+                          id={`${formFieldId}-home-hero-subtitle`}
+                          value={siteConfig.heroSubtitle ?? ''}
+                          onChange={(e) => setSiteConfig({ ...siteConfig, heroSubtitle: e.target.value || null })}
+                          rows={2}
+                          className="app-input"
+                        />
+                      </FormField>
+                    </FormSection>
+                    <FormSection
+                      title="Announcement banner"
+                      description="Optional banner shown above the homepage hero. Supports Markdown, including links. Leave empty to hide."
+                      surface="panel"
+                    >
+                      <FormField label="Announcement (Markdown)" htmlFor={`${formFieldId}-home-announcement`}>
+                        <textarea
+                          id={`${formFieldId}-home-announcement`}
+                          value={siteConfig.announcementMarkdown ?? ''}
+                          onChange={(e) =>
+                            setSiteConfig({ ...siteConfig, announcementMarkdown: e.target.value || null })
+                          }
+                          rows={3}
+                          placeholder="The club is closed for ice maintenance July 8-14. [Read more](/articles/ice-maintenance)"
+                          className="app-input"
+                        />
+                      </FormField>
+                      <FormField
+                        label="Optional expiration (your local time)"
+                        htmlFor={`${formFieldId}-home-announcement-expires`}
+                      >
+                        <input
+                          id={`${formFieldId}-home-announcement-expires`}
+                          type="datetime-local"
+                          value={isoToLocalDateTimeInput(siteConfig.announcementExpiresAt)}
+                          onChange={(e) =>
+                            setSiteConfig({
+                              ...siteConfig,
+                              announcementExpiresAt: localDateTimeInputToIso(e.target.value),
+                            })
+                          }
+                          className="app-input"
+                        />
+                      </FormField>
+                    </FormSection>
+                    <Button type="submit" disabled={saving}>
+                      {saving ? 'Saving...' : 'Save homepage content'}
+                    </Button>
+                  </form>
+                )}
+
+                <FormSection
+                  title="Featured articles"
+                  description="Shown in the latest updates section of the homepage."
+                  surface="plain"
+                >
                 <div className="mb-4 flex flex-wrap items-end gap-3">
                   <FormField
                     label="Add featured article"
@@ -1631,6 +1735,7 @@ export default function AdminContent() {
                     )}
                   />
                 )}
+                </FormSection>
               </div>
             )}
 

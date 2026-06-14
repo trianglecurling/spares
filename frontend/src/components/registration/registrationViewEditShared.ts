@@ -546,6 +546,7 @@ export type RegistrationMembershipPaymentPayload = {
   icePrivilegesChoice: IcePrivilegesChoice;
   isFirstSessionOfSeason: boolean;
   knownExperienceYears: number;
+  hasLifetimeMembership?: boolean;
   feePreview?: {
     totalDueMinor: number;
   };
@@ -590,11 +591,16 @@ export type SubmitRegistrationEditsResult = {
 
 export type RegistrationWindow = {
   state: 'closed' | 'priority' | 'open';
-  season: { id: number; name: string };
-  session: { id: number; name: string };
+  season: { id: number; name: string; startDate?: string; endDate?: string };
+  session: { id: number; name: string; startDate?: string; endDate?: string };
   availableDiscounts?: {
     student: { amountType: 'dollar' | 'percent'; value: number };
     reciprocal: { amountType: 'dollar' | 'percent'; value: number };
+  };
+  membershipFees?: {
+    regularMinor: number;
+    socialMinor: number;
+    juniorRecreationalMinor: number;
   };
 };
 
@@ -664,6 +670,14 @@ export function priorLeagueChoiceValue(selection: RegistrationSelectionInput | u
   return selection.selectionType;
 }
 
+export function formatRegistrationDisplayDate(dateString: string): string {
+  const date = new Date(`${dateString.slice(0, 10)}T12:00:00`);
+  const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const [month, ...rest] = formatted.split(' ');
+  if (!month || rest.length === 0) return formatted;
+  return `${month}. ${rest.join(' ')}`;
+}
+
 export function continuingSabbaticalForLeague(
   payload: Pick<RegistrationLeagueSelectionPayload, 'continuingSabbaticals'> | null | undefined,
   leagueId: number,
@@ -700,6 +714,20 @@ export function priorSeasonReturnLeaguesFromPayload(
     if (league) byId.set(league.id, league);
   }
   return [...byId.values()];
+}
+
+export function priorSeasonSabbaticalExtensionLeaguesFromPayload(
+  payload: Pick<RegistrationLeagueSelectionPayload, 'leagues' | 'participatedLeagueIds' | 'continuingSabbaticals'> | null | undefined,
+  registrationState: RegistrationWindow['state'] | undefined,
+): LeagueCatalogItem[] {
+  return priorSeasonReturnLeaguesFromPayload(payload, registrationState).filter((league) => {
+    if (continuingSabbaticalForLeague(payload, league.id)) return true;
+    return (
+      league.allowsSabbatical &&
+      league.predecessorLeagueId != null &&
+      Boolean(payload?.participatedLeagueIds.includes(league.predecessorLeagueId))
+    );
+  });
 }
 
 export function leagueHasReturnRights(

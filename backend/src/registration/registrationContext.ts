@@ -127,6 +127,7 @@ export type RegistrationContext = {
     hasUserAccount: boolean;
     isReturningMember: boolean;
     dateOfBirth?: string | null;
+    hasLifetimeMembership?: boolean;
   };
   submittedByMemberId?: number | null;
   membershipOption: RegistrationMembershipOption;

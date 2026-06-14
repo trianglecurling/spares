@@ -5,6 +5,7 @@ import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post, put } from '../../api/client';
 import api, { formatApiError } from '../../utils/api';
 import AppStateCard from '../../components/AppStateCard';
+import InlineStateMessage from '../../components/InlineStateMessage';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -118,6 +119,8 @@ interface League {
   waitlistId?: number | null;
   isPlayInBased?: boolean;
   allowsSabbatical: boolean;
+  allowsDropIns?: boolean;
+  dropInFeeMinor?: number | null;
   predecessorLeagueId: number | null;
   successorLeagueId: number | null;
   drawTimes: string[];
@@ -341,6 +344,8 @@ export default function LeagueDetail() {
     minAge: '' as number | '',
     maxAge: '' as number | '',
     allowsSabbatical: true,
+    allowsDropIns: false,
+    dropInFeeDollars: '' as number | '',
     isPlayInBased: false,
     predecessorLeagueId: 0,
   });
@@ -409,6 +414,7 @@ export default function LeagueDetail() {
   >(createDoublesRecord(null));
 
   const numericLeagueId = useMemo(() => parseInt(leagueId || '', 10), [leagueId]);
+  const leagueAllowsDropIns = Boolean(league?.allowsDropIns);
   const unassignedRosterMembers = useMemo(
     () => rosterMembers.filter((member) => !member.assignedTeamId),
     [rosterMembers]
@@ -745,6 +751,10 @@ export default function LeagueDetail() {
 
   const handleOpenTeamModal = (team?: Team) => {
     if (!league) return;
+    if (leagueAllowsDropIns) {
+      showAlert('Drop-in leagues keep a league roster only and cannot have teams.', 'warning');
+      return;
+    }
     if (!team && divisions.length === 0) {
       showAlert('Create a division before adding teams.', 'warning');
       return;
@@ -848,6 +858,11 @@ export default function LeagueDetail() {
       minAge: league.minAge == null || league.minAge <= 0 ? '' : league.minAge,
       maxAge: league.maxAge == null || league.maxAge <= 0 ? '' : league.maxAge,
       allowsSabbatical: league.allowsSabbatical,
+      allowsDropIns: league.allowsDropIns ?? false,
+      dropInFeeDollars:
+        league.dropInFeeMinor != null && league.dropInFeeMinor !== undefined
+          ? league.dropInFeeMinor / 100
+          : '',
       isPlayInBased: league.isPlayInBased ?? false,
       predecessorLeagueId: league.predecessorLeagueId ?? 0,
     });
@@ -1005,6 +1020,19 @@ export default function LeagueDetail() {
         return;
       }
 
+      if (
+        leagueForm.allowsDropIns &&
+        (leagueForm.dropInFeeDollars === '' || !Number.isFinite(Number(leagueForm.dropInFeeDollars)))
+      ) {
+        showAlert('Enter a drop-in fee when drop-ins are allowed.', 'warning');
+        return;
+      }
+
+      if (leagueForm.allowsDropIns && teams.length > 0) {
+        showAlert('Remove all teams before allowing drop-ins.', 'warning');
+        return;
+      }
+
       const uniqueExceptions = Array.from(new Set(leagueForm.exceptions)).sort();
       const payload = {
         name: leagueForm.name,
@@ -1034,6 +1062,10 @@ export default function LeagueDetail() {
         firstDayOfPlay: null,
         lastDayOfPlay: null,
         allowsSabbatical: leagueForm.allowsSabbatical,
+        allowsDropIns: leagueForm.allowsDropIns,
+        dropInFeeMinor: leagueForm.allowsDropIns
+          ? Math.round(Number(leagueForm.dropInFeeDollars) * 100)
+          : null,
         isPlayInBased: leagueForm.isPlayInBased,
         predecessorLeagueId: leagueForm.predecessorLeagueId || null,
       };
@@ -1554,6 +1586,8 @@ export default function LeagueDetail() {
             showConfigurationTab={canEditLeagueConfiguration}
             showSheetsTab={canManageSetup}
             showMaintenanceTab={canManageSetup}
+            hideTeamsAndDivisionsTabs={leagueAllowsDropIns}
+            showSabbaticalsTab={Boolean(league?.allowsSabbatical)}
           />
         )}
 
@@ -1615,16 +1649,28 @@ export default function LeagueDetail() {
 
             <div className="app-card space-y-4">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/leagues/${leagueId}/teams`)}
-                  className="text-left text-lg font-semibold text-primary-teal hover:underline"
-                >
-                  Teams
-                </button>
+                {leagueAllowsDropIns ? (
+                  <h2 className="app-section-title">League roster</h2>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/leagues/${leagueId}/teams`)}
+                    className="text-left text-lg font-semibold text-primary-teal hover:underline"
+                  >
+                    Teams
+                  </button>
+                )}
               </div>
 
-              {teams.length === 0 ? (
+              {leagueAllowsDropIns ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  This drop-in league keeps permanent members on the{' '}
+                  <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal hover:underline">
+                    league roster
+                  </Link>{' '}
+                  and does not use teams.
+                </p>
+              ) : teams.length === 0 ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">No teams yet.</div>
               ) : divisions.length > 1 ? (
                 <div className="space-y-4">
@@ -1875,6 +1921,40 @@ export default function LeagueDetail() {
                     listboxLabel="League format"
                     required
                   />
+                </div>
+
+                <div className="space-y-3">
+                  <FormCheckbox
+                    label="Allows drop-ins"
+                    checked={leagueForm.allowsDropIns}
+                    helperText={
+                      teams.length > 0
+                        ? 'Remove all teams before enabling drop-ins. Drop-in leagues keep a league roster only.'
+                        : 'Drop-in leagues keep a league roster only and do not use teams.'
+                    }
+                    onChange={(checked) =>
+                      setLeagueForm((prev) => ({
+                        ...prev,
+                        allowsDropIns: checked,
+                        dropInFeeDollars: checked
+                          ? prev.dropInFeeDollars === '' && league?.dropInFeeMinor != null
+                            ? league.dropInFeeMinor / 100
+                            : prev.dropInFeeDollars
+                          : '',
+                      }))
+                    }
+                  />
+                  {leagueForm.allowsDropIns ? (
+                    <LeagueConfigurationOptionalDollarInput
+                      id="leagueCfgDropInFee"
+                      label="Drop-in fee"
+                      description="Fee charged per drop-in session."
+                      value={leagueForm.dropInFeeDollars}
+                      onChange={(dropInFeeDollars) =>
+                        setLeagueForm({ ...leagueForm, dropInFeeDollars })
+                      }
+                    />
+                  ) : null}
                 </div>
 
                 <div className="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
@@ -2201,6 +2281,21 @@ export default function LeagueDetail() {
 
         {normalizedTab === 'divisions' && (
           <div className="space-y-4">
+            {leagueAllowsDropIns ? (
+              <InlineStateMessage
+                title="Drop-in leagues do not use divisions"
+                description={
+                  <>
+                    Manage permanent members on the{' '}
+                    <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal hover:underline">
+                      roster tab
+                    </Link>
+                    .
+                  </>
+                }
+              />
+            ) : (
+              <>
             {canManageSetup && (
               <div className="flex justify-end">
                 <Button onClick={() => handleOpenDivisionModal()}>Add division</Button>
@@ -2249,11 +2344,28 @@ export default function LeagueDetail() {
                   ))}
               </div>
             )}
+              </>
+            )}
           </div>
         )}
 
         {normalizedTab === 'teams' && (
           <div className="space-y-4">
+            {leagueAllowsDropIns ? (
+              <InlineStateMessage
+                title="Drop-in leagues do not use teams"
+                description={
+                  <>
+                    Manage permanent members on the{' '}
+                    <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal hover:underline">
+                      roster tab
+                    </Link>
+                    .
+                  </>
+                }
+              />
+            ) : (
+              <>
             {canManageSetup && (
               <div
                 ref={teamFormRef}
@@ -2541,6 +2653,8 @@ export default function LeagueDetail() {
                   <div className="text-xs text-gray-500 dark:text-gray-400">* Skip · ** Vice</div>
                 )}
               </div>
+            )}
+              </>
             )}
           </div>
         )}

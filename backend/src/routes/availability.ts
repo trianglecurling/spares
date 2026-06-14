@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, and, sql, asc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { MemberAvailability } from '../types.js';
 import {
   availabilityMembersResponseSchema,
   availabilityResponseSchema,
@@ -10,6 +9,10 @@ import {
   successResponseSchema,
 } from '../api/schemas.js';
 import type { ApiReply } from '../api/types.js';
+import { memberIsSocialMember } from '../utils/memberMembershipHelpers.js';
+import { memberIsNotSocialCondition } from '../services/memberMembershipStatusService.js';
+import { getCurrentDateStringAsync } from '../utils/time.js';
+import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility.js';
 
 const setAvailabilitySchema = z.object({
   leagueId: z.number(),
@@ -40,16 +43,31 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
 
     const { db, schema } = getDrizzleDb();
     const availability = await db
-      .select()
+      .select({
+        league_id: schema.memberAvailability.league_id,
+        available: schema.memberAvailability.available,
+        can_skip: schema.memberAvailability.can_skip,
+        format: schema.leagues.format,
+        allows_drop_ins: schema.leagues.allows_drop_ins,
+      })
       .from(schema.memberAvailability)
-      .where(eq(schema.memberAvailability.member_id, member.id)) as MemberAvailability[];
+      .innerJoin(schema.leagues, eq(schema.memberAvailability.league_id, schema.leagues.id))
+      .where(eq(schema.memberAvailability.member_id, member.id));
 
-    // Get can_skip value (should be same across all records for a member)
-    const canSkip = availability.length > 0 ? availability[0].can_skip === 1 : false;
+    const spareEligibleAvailability = availability.filter((row) =>
+      isLeagueEligibleForSpares(row),
+    );
+
+    const canSkip =
+      spareEligibleAvailability.length > 0
+        ? spareEligibleAvailability[0].can_skip === 1
+        : availability.length > 0
+          ? availability[0].can_skip === 1
+          : false;
 
     return {
       canSkip,
-      leagues: availability.map((a) => ({
+      leagues: spareEligibleAvailability.map((a) => ({
         leagueId: a.league_id,
         available: a.available === 1,
       })),
@@ -84,11 +102,26 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     }
 
     const body = setAvailabilitySchema.parse(request.body);
-    if (body.available && (member.social_member ?? 0) === 1) {
+    if (body.available && memberIsSocialMember(member)) {
       return reply.code(403).send({ error: 'Social members cannot sign up as a spare' });
     }
 
     const { db, schema } = getDrizzleDb();
+
+    const [league] = await db
+      .select({
+        format: schema.leagues.format,
+        allows_drop_ins: schema.leagues.allows_drop_ins,
+      })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, body.leagueId))
+      .limit(1);
+    if (!league) {
+      return reply.code(404).send({ error: 'League not found' });
+    }
+    if (body.available && !isLeagueEligibleForSpares(league)) {
+      return reply.code(400).send({ error: 'This league is not eligible for spares' });
+    }
 
     // Check if record exists
     const existing = await db
@@ -187,9 +220,11 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
         .select()
         .from(schema.leagues);
 
-      if (leagues.length > 0) {
+      const spareEligibleLeagues = leagues.filter((league) => isLeagueEligibleForSpares(league));
+
+      if (spareEligibleLeagues.length > 0) {
         await db.insert(schema.memberAvailability).values(
-          leagues.map((league) => ({
+          spareEligibleLeagues.map((league) => ({
             member_id: member.id,
             league_id: league.id,
             available: 0,
@@ -246,7 +281,13 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
         schema.leagues,
         eq(schema.memberAvailability.league_id, schema.leagues.id)
       )
-      .where(eq(schema.memberAvailability.member_id, targetMemberId))
+      .where(
+        and(
+          eq(schema.memberAvailability.member_id, targetMemberId),
+          sql`${schema.leagues.format} != 'instructional'`,
+          eq(schema.leagues.allows_drop_ins, 0),
+        ),
+      )
       .orderBy(schema.leagues.day_of_week, schema.leagues.name);
 
     // Get can_skip value (should be same across all records for a member)
@@ -304,12 +345,25 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     const leagueIdNum = parseInt(leagueId, 10);
     const { position } = request.query;
     const { db, schema } = getDrizzleDb();
+    const today = await getCurrentDateStringAsync();
+
+    const [league] = await db
+      .select({
+        format: schema.leagues.format,
+        allows_drop_ins: schema.leagues.allows_drop_ins,
+      })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, leagueIdNum))
+      .limit(1);
+    if (!league || !isLeagueEligibleForSpares(league)) {
+      return [];
+    }
 
     // Build where conditions
     const conditions = [
       eq(schema.memberAvailability.league_id, leagueIdNum),
       eq(schema.memberAvailability.available, 1),
-      eq(schema.members.social_member, 0),
+      memberIsNotSocialCondition(schema, today),
       sql`${schema.members.id} != ${member.id}`,
     ];
     

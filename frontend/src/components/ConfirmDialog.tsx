@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { HiXMark, HiExclamationTriangle } from 'react-icons/hi2';
 import Button from './Button';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -69,10 +70,10 @@ export default function ConfirmDialog({
 
   const styles = variantStyles[variant];
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-[120] overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4">
-        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" />
+        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" aria-hidden />
 
         <div
           ref={modalRef}
@@ -91,6 +92,7 @@ export default function ConfirmDialog({
             </div>
 
             <button
+              type="button"
               onClick={onCancel}
               className="ml-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
               aria-label="Close confirmation dialog"
@@ -109,6 +111,7 @@ export default function ConfirmDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -23,6 +23,10 @@ if (dbConfig.type === 'sqlite') {
     schema: './src/db/drizzle-schema.ts',
     out: './drizzle',
     dialect: 'sqlite',
+    migrations: {
+      table: '__drizzle_migrations',
+      schema: 'public',
+    },
     dbCredentials: {
       url: dbConfig.sqlite?.path || './data/spares.sqlite',
     },
@@ -35,6 +39,10 @@ if (dbConfig.type === 'sqlite') {
     schema: './src/db/drizzle-schema.ts',
     out: './drizzle',
     dialect: 'postgresql',
+    migrations: {
+      table: '__drizzle_migrations',
+      schema: 'public',
+    },
     dbCredentials: {
       host: dbConfig.postgres.host,
       port: dbConfig.postgres.port,

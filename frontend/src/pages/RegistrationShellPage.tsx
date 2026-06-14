@@ -39,10 +39,12 @@ import {
   countPriorSeasonProtectedReturnSelections,
   formatCurrency,
   formatEstimatedTotalRange,
+  formatRegistrationDisplayDate,
   hasPriorSeasonReturnLeagues,
   leagueHasReturnRights,
   leagueSelectionsForSave,
   priorSeasonReturnLeaguesFromPayload,
+  priorSeasonSabbaticalExtensionLeaguesFromPayload,
   nextLeagueFlowStepAfterLeagueRequests,
   nextLeagueFlowStepAfterPriorLeagueSelection,
   nextLeagueFlowStepAfterSelections,
@@ -81,6 +83,7 @@ import {
   resumePointerMatchesGuestDraft,
   type RegistrationResumePointerV1,
 } from '../utils/registrationResume';
+import { computeDiscountedRegularMembershipFeeMinor } from '../utils/registrationMembershipFees';
 import {
   registrationPaymentConfirmedMessage,
   registrationPaymentFailedMessage,
@@ -152,12 +155,17 @@ type RegistrationShellPayload = {
 
 type RegistrationWindow = {
   state: 'closed' | 'priority' | 'open';
-  season: { id: number; name: string };
-  session: { id: number; name: string };
+  season: { id: number; name: string; startDate?: string; endDate?: string };
+  session: { id: number; name: string; startDate?: string; endDate?: string };
   previousRegistrationSessionDisplayName?: string | null;
   availableDiscounts?: {
     student: RegistrationDiscountSlot;
     reciprocal: RegistrationDiscountSlot;
+  };
+  membershipFees?: {
+    regularMinor: number;
+    socialMinor: number;
+    juniorRecreationalMinor: number;
   };
 };
 
@@ -205,6 +213,8 @@ type RegistrationMembershipPaymentPayload = {
   isFirstSessionOfSeason: boolean;
   knownExperienceYears: number;
   spareOnlyIcePrivilegeFeeMinor?: number;
+  noMembershipEligible?: boolean;
+  hasLifetimeMembership?: boolean;
   feePreview: {
     lineItems: RegistrationFeeLineItem[];
     discountLineItems: RegistrationFeeLineItem[];
@@ -614,6 +624,27 @@ function registrationDiscountLabel(baseLabel: string, slot: RegistrationDiscount
   return `${baseLabel} (${formatRegistrationDiscountOffPhrase(slot)})`;
 }
 
+function membershipOptionTextValue(label: string, feeMinor: number | undefined): string {
+  if (feeMinor == null) return label;
+  return `${label}, ${formatCurrency(feeMinor)}`;
+}
+
+function renderMembershipChoiceContent(label: string, description: string, feeMinor: number | undefined) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-4">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium leading-5 text-gray-900">{label}</div>
+        <div className="mt-0.5 text-xs leading-4 text-gray-500">{description}</div>
+      </div>
+      {feeMinor != null ? (
+        <span className="ms-auto shrink-0 self-center text-base font-semibold tabular-nums text-[#121033]">
+          {formatCurrency(feeMinor)}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function hasClubExperienceRecord(knownExperienceYears: number | undefined | null): boolean {
   return (knownExperienceYears ?? 0) > 0;
 }
@@ -635,9 +666,8 @@ function stepAfterDiscounts(membershipPayment: RegistrationMembershipPaymentPayl
 /** Schema/API default is `none` before the member picks an ice privileges option. */
 function icePrivilegesChoiceForUi(
   stored: IcePrivilegesChoice | null | undefined,
-  onIcePrivilegesStep: boolean,
 ): IcePrivilegesChoice | null {
-  if (!stored || (stored === 'none' && onIcePrivilegesStep)) return null;
+  if (!stored || stored === 'none') return null;
   return stored;
 }
 
@@ -770,60 +800,85 @@ function resolveUseSubmitterEmailForCurler(
   return normalizeRegistrationEmail(curlerEmail) === normalizeRegistrationEmail(submitterEmail);
 }
 
-function registrationDemographicsFormIsComplete(form: DemographicsForm): boolean {
+function resolvedCurlerDateOfBirth(
+  curlerDateOfBirth: string | null | undefined,
+  demographics: DemographicsForm,
+): string {
+  return curlerDateOfBirth || demographics.dateOfBirth || '';
+}
+
+function registrationDemographicsFormIsComplete(
+  form: DemographicsForm,
+  curlerDateOfBirth?: string | null,
+): boolean {
+  const minor = isMinorDate(resolvedCurlerDateOfBirth(curlerDateOfBirth, form));
   return (
     form.firstName.trim() !== '' &&
     form.lastName.trim() !== '' &&
-    form.dateOfBirth.trim() !== '' &&
+    (!curlerDateOfBirth ? form.dateOfBirth.trim() !== '' : true) &&
     form.email.trim() !== '' &&
     form.phone.trim() !== '' &&
-    form.emergencyContactName.trim() !== '' &&
-    form.emergencyContactPhone.trim() !== '' &&
+    (minor || (form.emergencyContactName.trim() !== '' && form.emergencyContactPhone.trim() !== '')) &&
     registrationMailingAddressIsComplete(form)
   );
 }
 
-function guestNextStepAfterPolicies(demographics: DemographicsForm): string {
-  if (!registrationDemographicsFormIsComplete(demographics)) return 'demographics';
-  if (isMinorDate(demographics.dateOfBirth)) return 'guardian';
-  return 'membership';
+function guestNextStepAfterPolicies(
+  demographics: DemographicsForm,
+  curlerDateOfBirth?: string | null,
+): string {
+  if (!registrationDemographicsFormIsComplete(demographics, curlerDateOfBirth)) return 'demographics';
+  if (isMinorDate(resolvedCurlerDateOfBirth(curlerDateOfBirth, demographics))) return 'guardian';
+  return 'discounts';
 }
 
-function demographicsPayloadForIdentityApi(form: DemographicsForm): Record<string, string> & { email: string } {
+function demographicsPayloadForIdentityApi(
+  form: DemographicsForm,
+  curlerStoredDateOfBirth?: string | null,
+): Record<string, string> & { email: string } {
   const base = {
     firstName: form.firstName,
     lastName: form.lastName,
-    dateOfBirth: form.dateOfBirth,
     email: form.email,
     phone: form.phone,
     emergencyContactName: form.emergencyContactName,
     emergencyContactPhone: form.emergencyContactPhone,
   };
-  return registrationMailingAddressIsComplete(form)
+  const withMailing = registrationMailingAddressIsComplete(form)
     ? { ...base, mailingAddress: serializeRegistrationMailingAddress(form) }
     : base;
+  if (!curlerStoredDateOfBirth && form.dateOfBirth.trim()) {
+    return { ...withMailing, dateOfBirth: form.dateOfBirth };
+  }
+  return withMailing;
 }
 
-function demographicsPayloadForPersistedSave(form: DemographicsForm): {
+function demographicsPayloadForPersistedSave(
+  form: DemographicsForm,
+  curlerStoredDateOfBirth?: string | null,
+): {
   firstName: string;
   lastName: string;
-  dateOfBirth: string;
   email: string;
   phone: string;
   mailingAddress: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  dateOfBirth?: string;
 } {
-  return {
+  const payload = {
     firstName: form.firstName,
     lastName: form.lastName,
-    dateOfBirth: form.dateOfBirth,
     email: form.email,
     phone: form.phone,
     mailingAddress: serializeRegistrationMailingAddress(form),
     emergencyContactName: form.emergencyContactName,
     emergencyContactPhone: form.emergencyContactPhone,
   };
+  if (!curlerStoredDateOfBirth && form.dateOfBirth.trim()) {
+    return { ...payload, dateOfBirth: form.dateOfBirth };
+  }
+  return payload;
 }
 
 function loadLocalDraft(): LocalRegistrationDraftV1 | null {
@@ -1047,7 +1102,9 @@ export default function RegistrationShellPage() {
   }, []);
   const [guardian, setGuardian] = useState({ firstName: '', lastName: '', email: '', phone: '' });
   const [membershipPayment, setMembershipPayment] = useState<RegistrationMembershipPaymentPayload | null>(null);
-  const [membershipChoice, setMembershipChoice] = useState<'regular' | 'social' | 'junior_recreational'>('regular');
+  const [membershipChoice, setMembershipChoice] = useState<'regular' | 'social' | 'junior_recreational' | 'none'>('regular');
+  const isNoMembershipRegistration =
+    membershipPayment?.selection.membershipOption === 'none' || membershipChoice === 'none';
   const [juniorAssistancePercent, setJuniorAssistancePercent] = useState<'0' | '25' | '50' | '75'>('0');
   const [basicIcePrivileges, setBasicIcePrivileges] = useState(false);
   const [icePrivilegesChoice, setIcePrivilegesChoice] = useState<IcePrivilegesChoice | null>(null);
@@ -1096,6 +1153,7 @@ export default function RegistrationShellPage() {
   const [loading, setLoading] = useState(false);
   /** Suppresses one-shot auto-forward effects right after an explicit Back navigation. */
   const registrationNavigationIntentRef = useRef<'back' | null>(null);
+  const noMembershipPathActiveRef = useRef(false);
   /** Keeps the experience step reachable after Back until the user leaves the step. */
   const suppressExperienceAutoSkipRef = useRef(false);
   const backToStartInFlightRef = useRef(false);
@@ -1135,7 +1193,8 @@ export default function RegistrationShellPage() {
     [memberOptions.options],
   );
   const registeringCurlerMemberId = payload?.registration.curler_member_id ?? null;
-  const registeringCurlerDateOfBirth = payload?.curler?.dateOfBirth || demographics.dateOfBirth || null;
+  const curlerStoredDateOfBirth = payload?.curler?.dateOfBirth || null;
+  const registeringCurlerDateOfBirth = curlerStoredDateOfBirth || demographics.dateOfBirth || null;
   const leagueEligibilityInput = useMemo((): LeagueEligibilityInput => {
     const membershipOption =
       membershipPayment?.selection.membershipOption ??
@@ -1205,6 +1264,11 @@ export default function RegistrationShellPage() {
     () => priorSeasonReturnLeaguesFromPayload(leaguePayload, windowState?.state),
     [leaguePayload, windowState?.state],
   );
+
+  const priorLeagueDecisionLeagues = useMemo(() => {
+    if (!isNoMembershipRegistration) return priorSeasonReturnLeagues;
+    return priorSeasonSabbaticalExtensionLeaguesFromPayload(leaguePayload, windowState?.state);
+  }, [isNoMembershipRegistration, leaguePayload, priorSeasonReturnLeagues, windowState?.state]);
 
   const priorSeasonReturnLeagueIds = useMemo(
     () => new Set(priorSeasonReturnLeagues.map((league) => league.id)),
@@ -1296,36 +1360,78 @@ export default function RegistrationShellPage() {
   const isGuestLocal = !member;
 
   const juniorRecreationalEligible = useMemo(
-    () => isJuniorRecreationalEligibleDate(demographics.dateOfBirth),
-    [demographics.dateOfBirth],
+    () => isJuniorRecreationalEligibleDate(registeringCurlerDateOfBirth || ''),
+    [registeringCurlerDateOfBirth],
   );
 
   const membershipOptions = useMemo(() => {
+    const fees = windowState?.membershipFees;
+    const regularMinor =
+      fees?.regularMinor == null
+        ? undefined
+        : computeDiscountedRegularMembershipFeeMinor({
+            baseRegularMinor: fees.regularMinor,
+            studentDiscountClaimed,
+            reciprocalDiscountClaimed,
+            availableDiscounts: windowState?.availableDiscounts,
+          });
+    const regularDescription =
+      'Choose this if the curler plans to curl, spare, practice, or register for leagues.';
+    const socialDescription =
+      'Choose this if the individual wants to be a member but will not curl this session. All social members will have association dues paid on their behalf.';
+    const noMembershipDescription =
+      'Register or extend a sabbatical from the previous session without purchasing membership for this session.';
+    const juniorDescription = 'Choose this special junior program. It skips normal league selection.';
     const options: Array<{
-      value: 'regular' | 'social' | 'junior_recreational';
+      value: 'regular' | 'social' | 'junior_recreational' | 'none';
       label: string;
+      textValue: string;
       description: string;
+      render: () => ReturnType<typeof renderMembershipChoiceContent>;
     }> = [
       {
         value: 'regular',
         label: 'Regular membership',
-        description: 'Choose this if the curler plans to curl, spare, practice, or register for leagues.',
+        textValue: membershipOptionTextValue('Regular membership', regularMinor),
+        description: regularDescription,
+        render: () => renderMembershipChoiceContent('Regular membership', regularDescription, regularMinor),
       },
       {
         value: 'social',
         label: 'Social membership',
-        description: 'Choose this if the curler wants to be a member but will not curl this session.',
+        textValue: membershipOptionTextValue('Social membership', fees?.socialMinor),
+        description: socialDescription,
+        render: () => renderMembershipChoiceContent('Social membership', socialDescription, fees?.socialMinor),
       },
     ];
+    if (membershipPayment?.noMembershipEligible) {
+      options.push({
+        value: 'none',
+        label: 'No membership',
+        textValue: membershipOptionTextValue('No membership', 0),
+        description: noMembershipDescription,
+        render: () => renderMembershipChoiceContent('No membership', noMembershipDescription, 0),
+      });
+    }
     if (juniorRecreationalEligible) {
       options.push({
         value: 'junior_recreational',
         label: 'Junior Recreational',
-        description: 'Choose this special junior program. It skips normal league selection.',
+        textValue: membershipOptionTextValue('Junior Recreational', fees?.juniorRecreationalMinor),
+        description: juniorDescription,
+        render: () =>
+          renderMembershipChoiceContent('Junior Recreational', juniorDescription, fees?.juniorRecreationalMinor),
       });
     }
     return options;
-  }, [juniorRecreationalEligible]);
+  }, [
+    juniorRecreationalEligible,
+    membershipPayment?.noMembershipEligible,
+    windowState?.membershipFees,
+    windowState?.availableDiscounts,
+    studentDiscountClaimed,
+    reciprocalDiscountClaimed,
+  ]);
 
   const discountChoiceOptions = useMemo(() => {
     const studentSlot = windowState?.availableDiscounts?.student;
@@ -1394,7 +1500,8 @@ export default function RegistrationShellPage() {
           sameEmail,
           demographics: demographicsRef.current,
           guardian,
-          membershipChoice: membershipChoice === 'junior_recreational' ? 'regular' : membershipChoice,
+          membershipChoice:
+            membershipChoice === 'junior_recreational' || membershipChoice === 'none' ? 'regular' : membershipChoice,
           basicIcePrivileges,
           studentDiscountClaimed,
           studentInstitution,
@@ -1726,7 +1833,7 @@ export default function RegistrationShellPage() {
     if (
       !isPriorityEdit &&
       payload.registration.status !== 'shell_complete' &&
-      nextStepFor(shellResumePayload(payload, registrationId)) !== 'membership'
+      nextStepFor(shellResumePayload(payload, registrationId)) !== 'discounts'
     )
       return;
 
@@ -1771,12 +1878,20 @@ export default function RegistrationShellPage() {
         const data = response.data as RegistrationMembershipPaymentPayload;
         setMembershipPayment(data);
         const membershipOption = data.selection.membershipOption;
-        setMembershipChoice(membershipOption === 'junior_recreational' ? 'junior_recreational' : membershipOption === 'social' ? 'social' : 'regular');
+        if (membershipOption === 'none' && data.noMembershipEligible && noMembershipPathActiveRef.current) {
+          setMembershipChoice('none');
+        } else if (membershipOption === 'junior_recreational') {
+          setMembershipChoice('junior_recreational');
+        } else if (membershipOption === 'social') {
+          setMembershipChoice('social');
+        } else {
+          setMembershipChoice('regular');
+        }
         setBasicIcePrivileges(membershipOption === 'regular_spare_only');
         setIcePrivilegesChoice((current) => {
           const onIcePrivilegesStep = currentStep === 'basic-ice';
           if (onIcePrivilegesStep && current !== null) return current;
-          return icePrivilegesChoiceForUi(data.icePrivilegesChoice, onIcePrivilegesStep);
+          return icePrivilegesChoiceForUi(data.icePrivilegesChoice);
         });
         setStudentDiscountClaimed(data.selection.studentDiscountClaimed);
         setStudentInstitution(data.selection.studentInstitution || '');
@@ -1853,6 +1968,14 @@ export default function RegistrationShellPage() {
       registrationNavigationIntentRef.current = null;
       return;
     }
+    if (isNoMembershipRegistration) {
+      const sabbaticalLeagues = priorSeasonSabbaticalExtensionLeaguesFromPayload(leaguePayload, windowState?.state);
+      if (sabbaticalLeagues.length === 0) {
+        setError('');
+        navigate('/registration/review', { replace: true });
+      }
+      return;
+    }
     if (!hasPriorSeasonReturnLeagues(leaguePayload, windowState?.state)) {
       setError('');
       navigate(
@@ -1862,7 +1985,39 @@ export default function RegistrationShellPage() {
         { replace: true },
       );
     }
-  }, [currentStep, directLeagueRequestEligibleLeagues.length, leaguePayload, navigate, windowState?.state]);
+  }, [
+    currentStep,
+    directLeagueRequestEligibleLeagues.length,
+    isNoMembershipRegistration,
+    leaguePayload,
+    navigate,
+    windowState?.state,
+  ]);
+
+  useEffect(() => {
+    if (currentStep !== 'prior-league-selection' || !leaguePayload || !isNoMembershipRegistration) return;
+    const allowedLeagueIds = new Set(
+      priorSeasonSabbaticalExtensionLeaguesFromPayload(leaguePayload, windowState?.state).map((league) => league.id),
+    );
+    setLeagueSelections((current) => {
+      const next = current.filter((selection) => {
+        if (selection.selectionType === 'waitlist_add') return false;
+        if (selection.leagueId == null) return true;
+        if (!allowedLeagueIds.has(selection.leagueId)) {
+          return !(
+            selection.selectionType === 'guaranteed_return' ||
+            selection.selectionType === 'return_subject_to_availability' ||
+            selection.selectionType === 'sabbatical' ||
+            selection.selectionType === 'drop'
+          );
+        }
+        return !(
+          selection.selectionType === 'guaranteed_return' || selection.selectionType === 'return_subject_to_availability'
+        );
+      });
+      return next.length === current.length ? current : next;
+    });
+  }, [currentStep, isNoMembershipRegistration, leaguePayload, windowState?.state]);
 
   useEffect(() => {
     if (currentStep !== 'league-requests' || !leaguePayload) return;
@@ -1882,7 +2037,7 @@ export default function RegistrationShellPage() {
   ]);
 
   useEffect(() => {
-    const guestPhaseSteps = ['discounts', 'experience', 'basic-ice', 'review'];
+    const guestPhaseSteps = ['discounts', 'membership', 'experience', 'basic-ice', 'review'];
     if (!isGuestLocal || !windowState || !guestPhaseSteps.includes(currentStep)) return;
     let cancelled = false;
     (async () => {
@@ -1890,7 +2045,7 @@ export default function RegistrationShellPage() {
         const { data } = await api.post<RegistrationMembershipPaymentPayload>('/registration/guest/preview-membership-payment', {
           seasonId: windowState.season.id,
           sessionId: windowState.session.id,
-          curlerDateOfBirth: demographics.dateOfBirth,
+          curlerDateOfBirth: registeringCurlerDateOfBirth || '',
           membershipChoice,
           basicIcePrivileges,
           studentDiscountClaimed,
@@ -1912,7 +2067,7 @@ export default function RegistrationShellPage() {
     currentStep,
     isGuestLocal,
     windowState,
-    demographics.dateOfBirth,
+    registeringCurlerDateOfBirth,
     membershipChoice,
     basicIcePrivileges,
     studentDiscountClaimed,
@@ -1934,7 +2089,7 @@ export default function RegistrationShellPage() {
           if (payload?.registration.status !== 'shell_complete') {
             await api.post(`/registration/drafts/${registrationId}/complete-shell`);
           }
-          if (!cancelled) navigate('/registration/membership', { replace: true });
+          if (!cancelled) navigate('/registration/discounts', { replace: true });
         } catch (err) {
           if (!cancelled) {
             setError(errorMessage(err, 'Unable to continue registration.'));
@@ -1951,7 +2106,7 @@ export default function RegistrationShellPage() {
         cancelled = true;
       };
     }
-    navigate('/registration/membership', { replace: true });
+    navigate('/registration/discounts', { replace: true });
   }, [currentStep, member, registrationId, payload, navigate]);
 
   useEffect(() => {
@@ -2069,9 +2224,21 @@ export default function RegistrationShellPage() {
   ]);
 
   const seasonSessionLabel = useMemo(() => {
-    if (!windowState) return 'the upcoming season';
-    return `${windowState.session.name}`;
+    if (!windowState) return '';
+    return windowState.session.name;
   }, [windowState]);
+
+  const seasonName = useMemo(() => {
+    if (!windowState) return '';
+    return windowState.season.name;
+  }, [windowState]);
+
+  const membershipValidityLabel = useMemo(() => {
+    const startDate = windowState?.season.startDate;
+    const endDate = windowState?.season.endDate;
+    if (!startDate || !endDate) return null;
+    return `This membership will be valid from ${formatRegistrationDisplayDate(startDate)} to ${formatRegistrationDisplayDate(endDate)}.`;
+  }, [windowState?.season.endDate, windowState?.season.startDate]);
 
   const resumeCurlerName = useMemo(() => {
     if (resumeOffer === 'server' && serverResume?.curler) {
@@ -2089,6 +2256,7 @@ export default function RegistrationShellPage() {
   }, [resumeOffer, serverResume]);
 
   const registrationFlowHeaderTitle = useMemo(() => {
+    if (!windowState) return '';
     let curlerName = (payload?.curler?.name || demographicsCurlerName).trim();
     if (!curlerName && ['success', 'cancel'].includes(currentStep)) {
       const id = paymentRegistrationId ?? registrationId;
@@ -2107,6 +2275,7 @@ export default function RegistrationShellPage() {
     }
     return `${seasonSessionLabel} registration`;
   }, [
+    windowState,
     seasonSessionLabel,
     payload?.curler?.name,
     demographicsCurlerName,
@@ -2153,12 +2322,6 @@ export default function RegistrationShellPage() {
     setLoading(true);
     setError('');
     try {
-      if (!normalized.firstLoginCompleted) {
-        resetReturningGuestLoginFlow();
-        await login(accessToken, refreshToken, normalized, '/registration/start');
-        return;
-      }
-
       await login(accessToken, refreshToken, normalized, '/registration/identity', { suppressNavigation: true });
 
       const createResponse = await api.post('/registration/drafts', {
@@ -2347,6 +2510,7 @@ export default function RegistrationShellPage() {
       resetReturningGuestLoginFlow();
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
+      noMembershipPathActiveRef.current = false;
       navigate('/registration/start', { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Unable to clear registration.'));
@@ -2395,6 +2559,7 @@ export default function RegistrationShellPage() {
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
       setReturningProfilesFetchStatus('idle');
+      noMembershipPathActiveRef.current = false;
       navigate('/registration/start', { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Unable to go back.'));
@@ -2556,15 +2721,15 @@ export default function RegistrationShellPage() {
     setLoading(true);
     setError('');
     try {
-      if (!registrationDemographicsFormIsComplete(form)) {
+      if (!registrationDemographicsFormIsComplete(form, curlerStoredDateOfBirth)) {
         setError('Enter all required curler information before continuing.');
         return;
       }
       if (member && registrationId !== null) {
         await api.patch(`/registration/drafts/${registrationId}/identity-new`, {
           registeringForSelf: identityRegisteringForOther ? false : registeringForSelf === 'self',
-          curler: demographicsPayloadForIdentityApi(form),
-          submitter: member ? undefined : demographicsPayloadForIdentityApi(form),
+          curler: demographicsPayloadForIdentityApi(form, curlerStoredDateOfBirth),
+          submitter: member ? undefined : demographicsPayloadForIdentityApi(form, curlerStoredDateOfBirth),
           useSubmitterEmailForCurler,
         });
         const { data } = await api.get<RegistrationShellPayload>(`/registration/drafts/${registrationId}`);
@@ -2590,13 +2755,13 @@ export default function RegistrationShellPage() {
     setLoading(true);
     setError('');
     try {
-      if (!registrationDemographicsFormIsComplete(form)) {
+      if (!registrationDemographicsFormIsComplete(form, curlerStoredDateOfBirth)) {
         setError('Enter all required curler information before continuing.');
         return;
       }
       await api.patch(`/registration/drafts/${registrationId}/identity-new`, {
         registeringForSelf: false,
-        curler: demographicsPayloadForIdentityApi(form),
+        curler: demographicsPayloadForIdentityApi(form, curlerStoredDateOfBirth),
         useSubmitterEmailForCurler,
       });
       const { data } = await api.get<RegistrationShellPayload>(`/registration/drafts/${registrationId}`);
@@ -2624,7 +2789,7 @@ export default function RegistrationShellPage() {
         hydrateFromServerPayload({ id: registrationId, ...data });
         navigate(`/registration/${nextStepFor(shellResumePayload(data, registrationId))}`);
       } else {
-        const nextStep = guestNextStepAfterPolicies(demographics);
+        const nextStep = guestNextStepAfterPolicies(demographics, registeringCurlerDateOfBirth);
         persistGuestDraft(nextStep);
         navigate(`/registration/${nextStep}`);
       }
@@ -2648,28 +2813,28 @@ export default function RegistrationShellPage() {
       if (member && registrationId !== null) {
         const response = await api.patch(
           `/registration/drafts/${registrationId}/demographics`,
-          demographicsPayloadForPersistedSave(form),
+          demographicsPayloadForPersistedSave(form, curlerStoredDateOfBirth),
         );
         const data = response.data as RegistrationShellPayload;
         if (data.isMinor) {
           navigate('/registration/guardian');
         } else {
           await api.post(`/registration/drafts/${registrationId}/complete-shell`);
-          navigate('/registration/membership');
+          navigate('/registration/discounts');
         }
-      } else if (isMinorDate(form.dateOfBirth)) {
+      } else if (isMinorDate(resolvedCurlerDateOfBirth(curlerStoredDateOfBirth, form))) {
         persistGuestDraftRef.current('guardian');
         navigate('/registration/guardian');
       } else {
-        persistGuestDraftRef.current('membership');
-        navigate('/registration/membership');
+        persistGuestDraftRef.current('discounts');
+        navigate('/registration/discounts');
       }
     } catch (err) {
       setError(errorMessage(err, 'Unable to save demographic information.'));
     } finally {
       setLoading(false);
     }
-  }, [member, registrationId, navigate]);
+  }, [member, registrationId, navigate, curlerStoredDateOfBirth]);
 
   const handleRegistrationDemographicsBack = useCallback(() => {
     navigateRegistrationBack('/registration/policies');
@@ -2683,10 +2848,10 @@ export default function RegistrationShellPage() {
       if (member && registrationId !== null) {
         await api.patch(`/registration/drafts/${registrationId}/guardian`, guardian);
         await api.post(`/registration/drafts/${registrationId}/complete-shell`);
-        navigate('/registration/membership');
+        navigate('/registration/discounts');
       } else {
-        persistGuestDraft('membership');
-        navigate('/registration/membership');
+        persistGuestDraft('discounts');
+        navigate('/registration/discounts');
       }
     } catch (err) {
       setError(errorMessage(err, 'Unable to save parent/guardian information.'));
@@ -2711,16 +2876,30 @@ export default function RegistrationShellPage() {
           await finishPriorityEdit();
           return;
         }
+        const paymentPayload = response.data as RegistrationMembershipPaymentPayload;
         navigate(
-          membershipChoice === 'social'
-            ? '/registration/review'
-            : membershipChoice === 'junior_recreational'
-              ? '/registration/league-summary'
-              : '/registration/discounts'
+          membershipChoice === 'none'
+            ? '/registration/prior-league-selection'
+            : membershipChoice === 'social'
+              ? '/registration/review'
+              : membershipChoice === 'junior_recreational'
+                ? '/registration/league-summary'
+                : `/registration/${stepAfterDiscounts(paymentPayload)}`,
         );
+        if (membershipChoice === 'none') {
+          noMembershipPathActiveRef.current = true;
+        } else {
+          noMembershipPathActiveRef.current = false;
+        }
       } else {
-        persistGuestDraft(membershipChoice === 'social' ? 'review' : 'discounts');
-        navigate(membershipChoice === 'social' ? '/registration/review' : '/registration/discounts');
+        const guestNextStep =
+          membershipChoice === 'social'
+            ? 'review'
+            : membershipPayment
+              ? stepAfterDiscounts(membershipPayment)
+              : 'experience';
+        persistGuestDraft(guestNextStep);
+        navigate(`/registration/${guestNextStep}`);
       }
     } catch (err) {
       setError(errorMessage(err, 'Unable to save membership choice.'));
@@ -2757,10 +2936,10 @@ export default function RegistrationShellPage() {
           await finishPriorityEdit();
           return;
         }
-        navigate(`/registration/${stepAfterDiscounts(data)}`);
+        navigate('/registration/membership');
       } else {
-        persistGuestDraft('experience');
-        navigate('/registration/experience');
+        persistGuestDraft('membership');
+        navigate('/registration/membership');
       }
     } catch (err) {
       setError(errorMessage(err, 'Unable to save discounts.'));
@@ -3213,9 +3392,9 @@ export default function RegistrationShellPage() {
           sessionId: windowState.session.id,
           registeringForSelf: registeringForSelf === 'self',
           useSubmitterEmailForCurler,
-          submitter: registeringForSelf === 'self' ? undefined : demographicsPayloadForIdentityApi(demographics),
-          curler: demographicsPayloadForPersistedSave(demographics),
-          guardian: isMinorDate(demographics.dateOfBirth) ? guardian : undefined,
+          submitter: registeringForSelf === 'self' ? undefined : demographicsPayloadForIdentityApi(demographics, curlerStoredDateOfBirth),
+          curler: demographicsPayloadForPersistedSave(demographics, curlerStoredDateOfBirth),
+          guardian: isMinorDate(registeringCurlerDateOfBirth || '') ? guardian : undefined,
           membershipChoice,
           basicIcePrivileges,
           studentDiscountClaimed,
@@ -3282,7 +3461,7 @@ export default function RegistrationShellPage() {
     }
 
     const membershipBackTarget = (): string => {
-      const curlerIsMinor = payload?.isMinor ?? isMinorDate(demographics.dateOfBirth);
+      const curlerIsMinor = payload?.isMinor ?? isMinorDate(registeringCurlerDateOfBirth || '');
       const guardianCollected = Boolean(payload?.registration.guardian_email || guardian.email.trim());
       return curlerIsMinor && guardianCollected ? '/registration/guardian' : '/registration/demographics';
     };
@@ -3295,24 +3474,35 @@ export default function RegistrationShellPage() {
       case 'guardian':
         return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/demographics') };
       case 'complete':
-      case 'membership':
-        return { label: 'Back', onClick: () => navigateRegistrationBack(membershipBackTarget()) };
       case 'discounts':
-        return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/membership') };
-      case 'experience':
+        return { label: 'Back', onClick: () => navigateRegistrationBack(membershipBackTarget()) };
+      case 'membership':
         return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/discounts') };
+      case 'experience':
+        return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/membership') };
       case 'basic-ice':
         return {
           label: 'Back',
           onClick: () =>
             navigateRegistrationBack(
               shouldSkipExperienceStep(membershipPayment, experienceChoice)
-                ? '/registration/discounts'
+                ? '/registration/membership'
                 : '/registration/experience',
             ),
         };
       case 'prior-league-selection':
-        return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/basic-ice') };
+        return {
+          label: 'Back',
+          onClick: () => {
+            if (
+              membershipPayment?.selection.membershipOption === 'none' ||
+              membershipChoice === 'none'
+            ) {
+              noMembershipPathActiveRef.current = true;
+            }
+            navigateRegistrationBack('/registration/membership');
+          },
+        };
       case 'league-selection':
         return {
           label: 'Back',
@@ -3370,13 +3560,18 @@ export default function RegistrationShellPage() {
       case 'review': {
         const membershipOption =
           membershipPayment?.selection.membershipOption ??
-          (membershipChoice === 'junior_recreational'
-            ? 'junior_recreational'
-            : membershipChoice === 'social'
-              ? 'social'
-              : null);
+          (membershipChoice === 'none'
+            ? 'none'
+            : membershipChoice === 'junior_recreational'
+              ? 'junior_recreational'
+              : membershipChoice === 'social'
+                ? 'social'
+                : null);
         if (membershipOption === 'social') {
           return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/membership') };
+        }
+        if (membershipOption === 'none') {
+          return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/prior-league-selection') };
         }
         if (membershipOption === 'junior_recreational') {
           return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/league-summary') };
@@ -3402,7 +3597,7 @@ export default function RegistrationShellPage() {
     }
   }, [
     currentStep,
-    demographics.dateOfBirth,
+    registeringCurlerDateOfBirth,
     experienceChoice,
     guardian.email,
     icePrivilegesChoice,
@@ -3437,9 +3632,11 @@ export default function RegistrationShellPage() {
             </Button>
           ) : null}
         </div>
-        <p className="order-3 w-full basis-full text-center text-sm font-medium text-gray-700 sm:order-2 sm:w-auto sm:flex-1 sm:basis-auto">
-          {registrationFlowHeaderTitle}
-        </p>
+        {registrationFlowHeaderTitle ? (
+          <p className="order-3 w-full basis-full text-center text-sm font-medium text-gray-700 sm:order-2 sm:w-auto sm:flex-1 sm:basis-auto">
+            {registrationFlowHeaderTitle}
+          </p>
+        ) : null}
         <div className="order-2 ms-auto shrink-0 sm:order-3 sm:ms-0">
           {showStartOver ? (
             <Button type="button" variant="secondary" className="text-sm" disabled={loading} onClick={handleStartOver}>
@@ -3464,6 +3661,7 @@ export default function RegistrationShellPage() {
         key={`${registrationId ?? 'guest'}-identity-${identityKey}`}
         ref={identityDemographicFieldsRef}
         initialValue={demographics}
+        curlerDateOfBirth={curlerStoredDateOfBirth}
         lockCurlerEmailToSubmitter={syncCurlerEmailChoice && lockCurlerEmailToSubmitter}
         submitterEmailForCurler={submitterEmailForCurler}
         onSubmitterEmailMatch={syncCurlerEmailChoice ? handleSubmitterEmailMatch : undefined}
@@ -3477,7 +3675,9 @@ export default function RegistrationShellPage() {
       return <PublicStateCard title="Loading fees" description="Calculating your registration total." />;
     }
     const allLines = [...membershipPayment.feePreview.lineItems, ...membershipPayment.feePreview.discountLineItems];
-    const showEstimatedRange = shouldShowEstimatedTotalRange(membershipPayment.paymentDecision.outcome);
+    const showEstimatedRange =
+      membershipPayment.hasLifetimeMembership !== true &&
+      shouldShowEstimatedTotalRange(membershipPayment.paymentDecision.outcome);
     const estimatedRange = showEstimatedRange
       ? calculateEstimatedTotalRange({
           feePreview: membershipPayment.feePreview,
@@ -3902,19 +4102,45 @@ export default function RegistrationShellPage() {
     );
   } else if (!windowState) {
     content = (
-      <PublicStateCard title="Loading registration" description="Checking the current registration window." />
+      <RegistrationCard>
+        <RegistrationFlowHeader />
+        <div className="mt-12 flex min-h-[200px] flex-col items-center justify-start">
+          <span
+            className="h-10 w-10 animate-spin rounded-full border-2 border-primary-teal border-t-transparent"
+            aria-hidden
+          />
+          <p className="mt-4 text-sm text-gray-600" role="status">
+            Loading registration…
+          </p>
+        </div>
+      </RegistrationCard>
     );
   } else if (windowState.state === 'closed') {
     content = (
-      <PublicStateCard
-        title="Registration is closed"
-        description={`Registration for ${seasonSessionLabel} is not open yet.`}
-        tone="warning"
-      />
+      <RegistrationCard>
+        <RegistrationFlowHeader />
+        <h1 className="text-3xl font-bold text-[#121033]">Registration is closed</h1>
+        <p className="mt-3 min-h-[200px] text-gray-600">
+          Registration for {seasonSessionLabel} is not open yet.
+        </p>
+      </RegistrationCard>
     );
   } else if (currentStep === 'identity') {
     if (member && !payload) {
-      content = <PublicStateCard title="Loading registration" description="Restoring your registration draft." />;
+      content = (
+        <RegistrationCard>
+          <RegistrationFlowHeader />
+          <div className="mt-12 flex min-h-[200px] flex-col items-center justify-start">
+            <span
+              className="h-10 w-10 animate-spin rounded-full border-2 border-primary-teal border-t-transparent"
+              aria-hidden
+            />
+            <p className="mt-4 text-sm text-gray-600" role="status">
+              Loading registration…
+            </p>
+          </div>
+        </RegistrationCard>
+      );
     } else if (payload?.registration.returning_member_answer === 1) {
       const returningPickerLoading =
         Boolean(member) &&
@@ -4127,6 +4353,7 @@ export default function RegistrationShellPage() {
       <RegistrationDemographicsStep
         registrationId={registrationId}
         initialDemographics={demographics}
+        curlerDateOfBirth={curlerStoredDateOfBirth}
         returningDemographics={payload?.registration.returning_member_answer === 1}
         headerTitle={registrationFlowHeaderTitle}
         showStartOver={Boolean(showStartOver)}
@@ -4188,27 +4415,60 @@ export default function RegistrationShellPage() {
       </RegistrationCard>
     );
   } else if (currentStep === 'membership') {
+    if (member && registrationId && !membershipPayment) {
+      content = (
+        <RegistrationCard>
+          <RegistrationFlowHeader />
+          <PublicStateCard title="Loading membership" description="Checking membership options for this curler." />
+        </RegistrationCard>
+      );
+    } else {
+    const isLifetimeMember = membershipPayment?.hasLifetimeMembership === true;
     content = (
       <RegistrationCard>
         <RegistrationFlowHeader />
-        <h1 className="text-3xl font-bold text-[#121033]">Choose membership</h1>
-        <p className="mt-3 text-gray-600">Choose the membership or program path for this curler.</p>
+        <h1 className="text-3xl font-bold text-[#121033]">
+          Choose {seasonName ? `${seasonName} ` : ''}membership
+        </h1>
+        <p className="mt-3 text-gray-600">
+          {isLifetimeMember
+            ? 'Your lifetime membership applies to this registration.'
+            : (membershipValidityLabel ?? 'Choose the membership for this curler.')}
+        </p>
         <form onSubmit={saveMembership} className="mt-6 space-y-6">
-          <FormField label="Membership type" htmlFor={membershipInputId} required tone="public">
-            <ChoiceInput
-              inputId={membershipInputId}
-              layout="block"
-              value={membershipChoice}
-              onChange={(value) => setMembershipChoice(value as 'regular' | 'social' | 'junior_recreational')}
-              options={membershipOptions}
-            />
-          </FormField>
-          {membershipChoice === 'social' ? (
+          {isLifetimeMember ? (
+            <p className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              Your Lifetime Membership has been applied. No membership or league fees will be charged for this
+              registration.
+            </p>
+          ) : (
+            <FormField label="Membership type" htmlFor={membershipInputId} required tone="public">
+              <ChoiceInput
+                inputId={membershipInputId}
+                layout="block"
+                value={membershipChoice}
+                onChange={(value) => {
+                  const next = value as 'regular' | 'social' | 'junior_recreational' | 'none';
+                  setMembershipChoice(next);
+                  if (next !== 'none') {
+                    noMembershipPathActiveRef.current = false;
+                  }
+                }}
+                options={membershipOptions}
+              />
+            </FormField>
+          )}
+          {membershipChoice === 'none' ? (
             <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              Social members do not receive discounts, basic ice privileges, or league access.
+              You will choose which sabbaticals to extend on the next step. No membership fee applies for this session.
             </p>
           ) : null}
-          {membershipChoice === 'junior_recreational' ? (
+          {membershipChoice === 'social' ? (
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Social members do not receive ice privileges.
+            </p>
+          ) : null}
+          {!isLifetimeMember && membershipChoice === 'junior_recreational' ? (
             <FormField label="Financial assistance request" htmlFor={`${membershipInputId}-assistance`} tone="public">
               <ChoiceInput
                 inputId={`${membershipInputId}-assistance`}
@@ -4233,6 +4493,7 @@ export default function RegistrationShellPage() {
         </form>
       </RegistrationCard>
     );
+    }
   } else if (currentStep === 'discounts') {
     const showWinterOnly = membershipPayment && !membershipPayment.isFirstSessionOfSeason;
     content = (
@@ -4387,7 +4648,7 @@ export default function RegistrationShellPage() {
               <ChoiceInput
                 inputId={icePrivilegesInputId}
                 layout="block"
-                value={icePrivilegesChoiceForUi(icePrivilegesChoice, true)}
+                value={icePrivilegesChoice}
                 onChange={(raw) => {
                   setIcePrivilegesChoice((raw as IcePrivilegesChoice | null) ?? null);
                   setError('');
@@ -4437,31 +4698,40 @@ export default function RegistrationShellPage() {
       );
     }
   } else if (currentStep === 'prior-league-selection') {
-    const showsAvailabilityReturn = priorSeasonReturnLeagues.length > 2;
-    const addWaitlistSelections = leagueSelections
-      .filter((selection) => selection.selectionType === 'waitlist_add' && selection.leagueId != null)
-      .sort(
-        (a, b) =>
-          (leagueCatalogOrder.get(a.leagueId as number) ?? Number.MAX_SAFE_INTEGER) -
-          (leagueCatalogOrder.get(b.leagueId as number) ?? Number.MAX_SAFE_INTEGER),
-      );
-    const priorAddWaitlistLeagueOptions = waitlistEligibleLeagues
-      .filter((league) => !priorSeasonReturnLeagueIds.has(league.id) && !selectedLeagueIds.has(league.id))
-      .map((league) => ({
-        value: league.id,
-        label: league.name,
-        description: waitlistJoinOptionDescription(league, leagueScheduleText(league)),
-      }));
+    const priorLeaguesForStep = isNoMembershipRegistration ? priorLeagueDecisionLeagues : priorSeasonReturnLeagues;
+    const showsAvailabilityReturn = !isNoMembershipRegistration && priorSeasonReturnLeagues.length > 2;
+    const addWaitlistSelections = isNoMembershipRegistration
+      ? []
+      : leagueSelections
+          .filter((selection) => selection.selectionType === 'waitlist_add' && selection.leagueId != null)
+          .sort(
+            (a, b) =>
+              (leagueCatalogOrder.get(a.leagueId as number) ?? Number.MAX_SAFE_INTEGER) -
+              (leagueCatalogOrder.get(b.leagueId as number) ?? Number.MAX_SAFE_INTEGER),
+          );
+    const priorAddWaitlistLeagueOptions = isNoMembershipRegistration
+      ? []
+      : waitlistEligibleLeagues
+          .filter((league) => !priorSeasonReturnLeagueIds.has(league.id) && !selectedLeagueIds.has(league.id))
+          .map((league) => ({
+            value: league.id,
+            label: league.name,
+            description: waitlistJoinOptionDescription(league, leagueScheduleText(league)),
+          }));
     const continuePriorLeagueSelection = () => {
       if (!leaguePayload) return;
-      const undecidedLeague = priorSeasonReturnLeagues.find(
+      const undecidedLeague = priorLeaguesForStep.find(
         (league) => !leagueSelections.some((selection) => selection.leagueId === league.id),
       );
       if (undecidedLeague) {
-        setError('Choose whether to return, extend sabbatical, or drop each prior league before continuing.');
+        setError(
+          isNoMembershipRegistration
+            ? 'Choose whether to extend sabbatical or drop each league before continuing.'
+            : 'Choose whether to return, extend sabbatical, or drop each prior league before continuing.',
+        );
         return;
       }
-      if (priorSeasonProtectedReturnCount > 2) {
+      if (!isNoMembershipRegistration && priorSeasonProtectedReturnCount > 2) {
         setError('You can protect at most two league spots. Choose subject-to-availability return for any additional leagues.');
         return;
       }
@@ -4471,9 +4741,11 @@ export default function RegistrationShellPage() {
         return;
       }
       void saveLeagueSelections(
-        nextLeagueFlowStepAfterPriorLeagueSelection({
-          hasDirectLeagueRequests: directLeagueRequestEligibleLeagues.length > 0,
-        }),
+        isNoMembershipRegistration
+          ? '/registration/review'
+          : nextLeagueFlowStepAfterPriorLeagueSelection({
+              hasDirectLeagueRequests: directLeagueRequestEligibleLeagues.length > 0,
+            }),
         isPriorityEdit ? finishPriorityEdit : undefined,
       );
     };
@@ -4482,11 +4754,15 @@ export default function RegistrationShellPage() {
         <RegistrationFlowHeader />
         <h1 className="text-3xl font-bold text-[#121033]">Returning leagues</h1>
         <p className="mt-3 text-gray-600">
-          Decide what this curler wants to do with each guaranteed return spot or continuing sabbatical from the prior session before choosing any new leagues for {seasonSessionLabel}.
+          {isNoMembershipRegistration
+            ? `Choose which sabbaticals to extend for ${seasonSessionLabel}. No membership fee applies for this session.`
+            : `Decide what this curler wants to do with each guaranteed return spot or continuing sabbatical from the prior session before choosing any new leagues for ${seasonSessionLabel}.`}
         </p>
         {(leaguePayload?.continuingSabbaticals?.length ?? 0) > 0 ? (
           <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-            This curler is currently on sabbatical for one or more leagues. They can return this session, extend the sabbatical for a fee, or release the protected spot.
+            {isNoMembershipRegistration
+              ? 'This curler is currently on sabbatical for one or more leagues. They can extend the sabbatical for a fee or release the protected spot.'
+              : 'This curler is currently on sabbatical for one or more leagues. They can return this session, extend the sabbatical for a fee, or release the protected spot.'}
           </p>
         ) : null}
         {showsAvailabilityReturn ? (
@@ -4501,20 +4777,51 @@ export default function RegistrationShellPage() {
             ) : (
               <PublicStateCard title="Loading prior leagues" description="Checking this curler's guaranteed return spots." />
             )
-          ) : priorSeasonReturnLeagues.length === 0 ? (
-            <PublicStateCard title="No prior league spots" description="Continue to choose leagues for this session." />
+          ) : priorLeaguesForStep.length === 0 ? (
+            <PublicStateCard
+              title={isNoMembershipRegistration ? 'No sabbatical leagues' : 'No prior league spots'}
+              description={
+                isNoMembershipRegistration ? 'Continue to review your registration.' : 'Continue to choose leagues for this session.'
+              }
+            />
           ) : (
-            priorSeasonReturnLeagues.map((league) => {
+            priorLeaguesForStep.map((league) => {
               const currentSelection = leagueSelections.find((selection) => selection.leagueId === league.id);
               const value = priorLeagueChoiceValue(currentSelection);
               const selectedProtected = currentSelection
                 ? currentSelection.selectionType === 'guaranteed_return' || currentSelection.selectionType === 'sabbatical'
                 : false;
-              const protectedLimitReached = priorSeasonProtectedReturnCount >= 2 && !selectedProtected;
+              const protectedLimitReached = !isNoMembershipRegistration && priorSeasonProtectedReturnCount >= 2 && !selectedProtected;
               const continuingSabbatical = continuingSabbaticalForLeague(leaguePayload, league.id);
               const sabbaticalFeeLabel = continuingSabbatical
                 ? formatCurrency(continuingSabbatical.sabbaticalFeeMinor)
                 : null;
+              const sabbaticalOption = league.allowsSabbatical || continuingSabbatical
+                ? {
+                    value: 'sabbatical' as const,
+                    label: continuingSabbatical ? 'Extend sabbatical' : 'Take a sabbatical for the league',
+                    description: continuingSabbatical
+                      ? continuingSabbatical.canExtend
+                        ? `Remain on sabbatical for this session. Sabbatical fee: ${sabbaticalFeeLabel}.`
+                        : continuingSabbatical.extensionBlockedMessage ??
+                          'The sabbatical duration limit has been reached.'
+                      : isNoMembershipRegistration
+                        ? 'Preserve the spot while stepping away for this session without membership.'
+                        : protectedLimitReached
+                          ? 'Sabbaticals also count toward the two protected league spots.'
+                          : 'Preserve the spot while stepping away for this session.',
+                    disabled:
+                      (!isNoMembershipRegistration && protectedLimitReached) ||
+                      Boolean(continuingSabbatical && !continuingSabbatical.canExtend),
+                  }
+                : null;
+              const dropOption = {
+                value: 'drop' as const,
+                label: continuingSabbatical ? 'Release protected spot' : 'Drop the league',
+                description: continuingSabbatical
+                  ? 'Permanently release this sabbatical-protected spot. The curler would need to join the waitlist to return later.'
+                  : 'Release this guaranteed return spot.',
+              };
               return (
                 <div key={league.id} className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
                   {continuingSabbatical ? (
@@ -4529,57 +4836,37 @@ export default function RegistrationShellPage() {
                       layout="popover"
                       value={value}
                       onChange={(next) => updateLeagueSelection(league.id, (next ?? 'none') as RegistrationSelectionType | 'none')}
-                      options={[
-                        {
-                          value: 'guaranteed_return',
-                          label: continuingSabbatical
-                            ? 'Return to league this session'
-                            : showsAvailabilityReturn
-                              ? 'Return to league (guaranteed)'
-                              : 'Return to league',
-                          description: protectedLimitReached
-                            ? 'You have already selected two protected league spots.'
-                            : continuingSabbatical
-                              ? 'End the sabbatical and play in this league this session.'
-                              : 'Claim this guaranteed return spot.',
-                          disabled: protectedLimitReached,
-                        },
-                        ...(!continuingSabbatical && showsAvailabilityReturn
-                          ? [
+                      options={
+                        isNoMembershipRegistration
+                          ? [sabbaticalOption, dropOption].filter((option): option is NonNullable<typeof option> => option != null)
+                          : [
                               {
-                                value: 'return_subject_to_availability',
-                                label: 'Attempt to return to the league (subject to availability)',
-                                description: 'Request this league without using one of the two guaranteed return spots.',
+                                value: 'guaranteed_return',
+                                label: continuingSabbatical
+                                  ? 'Return to league this session'
+                                  : showsAvailabilityReturn
+                                    ? 'Return to league (guaranteed)'
+                                    : 'Return to league',
+                                description: protectedLimitReached
+                                  ? 'You have already selected two protected league spots.'
+                                  : continuingSabbatical
+                                    ? 'End the sabbatical and play in this league this session.'
+                                    : 'Claim this guaranteed return spot.',
+                                disabled: protectedLimitReached,
                               },
+                              ...(!continuingSabbatical && showsAvailabilityReturn
+                                ? [
+                                    {
+                                      value: 'return_subject_to_availability' as const,
+                                      label: 'Attempt to return to the league (subject to availability)',
+                                      description: 'Request this league without using one of the two guaranteed return spots.',
+                                    },
+                                  ]
+                                : []),
+                              ...(sabbaticalOption ? [sabbaticalOption] : []),
+                              dropOption,
                             ]
-                          : []),
-                        ...(league.allowsSabbatical
-                          ? [
-                              {
-                                value: 'sabbatical',
-                                label: continuingSabbatical ? 'Extend sabbatical' : 'Take a sabbatical for the league',
-                                description: continuingSabbatical
-                                  ? continuingSabbatical.canExtend
-                                    ? `Remain on sabbatical for this session. Sabbatical fee: ${sabbaticalFeeLabel}.`
-                                    : continuingSabbatical.extensionBlockedMessage ??
-                                      'The sabbatical duration limit has been reached.'
-                                  : protectedLimitReached
-                                    ? 'Sabbaticals also count toward the two protected league spots.'
-                                    : 'Preserve the spot while stepping away for this session.',
-                                disabled:
-                                  protectedLimitReached ||
-                                  Boolean(continuingSabbatical && !continuingSabbatical.canExtend),
-                              },
-                            ]
-                          : []),
-                        {
-                          value: 'drop',
-                          label: continuingSabbatical ? 'Release protected spot' : 'Drop the league',
-                          description: continuingSabbatical
-                            ? 'Permanently release this sabbatical-protected spot. The curler would need to join the waitlist to return later.'
-                            : 'Release this guaranteed return spot.',
-                        },
-                      ]}
+                      }
                     />
                   </FormField>
                 </div>
@@ -5411,9 +5698,11 @@ export default function RegistrationShellPage() {
               <span className="font-medium text-gray-900">Membership:</span>{' '}
               {membershipPayment?.selection.membershipOption === 'social'
                 ? 'Social membership'
-                : membershipPayment?.selection.membershipOption === 'junior_recreational'
-                  ? 'Junior Recreational'
-                  : 'Regular membership'}
+                : membershipPayment?.selection.membershipOption === 'none'
+                  ? 'No membership'
+                  : membershipPayment?.selection.membershipOption === 'junior_recreational'
+                    ? 'Junior Recreational'
+                    : 'Regular membership'}
             </p>
             {membershipPayment?.feePreview.lineItems.some((item) => item.lineType === 'spare_only_fee') ? (
               <p>

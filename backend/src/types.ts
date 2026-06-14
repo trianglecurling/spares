@@ -1,5 +1,12 @@
 type DbDate = string | Date;
 
+export type MemberMembershipStatus = {
+  validThrough: string | null;
+  isSocialMember: boolean;
+  isSpareOnly: boolean;
+  isActive: boolean;
+};
+
 export type ScopeEffect = 'allow' | 'deny';
 
 export interface ScopeContext {
@@ -32,17 +39,17 @@ export interface Member {
   mailing_address?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_phone?: string | null;
-  valid_through: DbDate | null;
-  spare_only: number;
-  social_member: number;
-  is_admin: number;
+  guardian_first_name?: string | null;
+  guardian_last_name?: string | null;
+  guardian_email?: string | null;
+  guardian_phone?: string | null;
+  lifetime_member?: number;
   is_server_admin: number;
   is_calendar_admin?: number;
   is_content_admin?: number;
   is_sponsor_admin?: number;
   opted_in_sms: number;
   email_subscribed: number;
-  first_login_completed: number;
   email_visible: number;
   phone_visible: number;
   theme_preference: string | null;
@@ -51,6 +58,7 @@ export interface Member {
   created_at: DbDate;
   updated_at: DbDate;
   authz?: AuthzClaims;
+  membershipStatus?: MemberMembershipStatus;
   /** When true, permission helpers must not use legacy flags or email-based server admin outside {@link AuthzClaims}. */
   impersonationSession?: boolean;
 }
@@ -95,6 +103,8 @@ export interface League {
   allows_waitlist: number;
   is_play_in_based?: number;
   allows_sabbatical: number;
+  allows_drop_ins?: number;
+  drop_in_fee_minor?: number | null;
   predecessor_league_id: number | null;
   successor_league_id: number | null;
   created_at: DbDate;
@@ -275,7 +285,6 @@ export interface AuthenticatedMember {
   roleCodes: string[];
   roleNames: string[];
   scopeRules: AuthzRule[];
-  firstLoginCompleted: boolean;
   optedInSms: boolean;
   emailSubscribed: boolean;
   emailVisible: boolean;
@@ -290,9 +299,7 @@ export interface MemberSummary {
   lastName?: string | null;
   email: string | null;
   phone: string | null;
-  validThrough?: string | null;
-  spareOnly?: boolean;
-  socialMember?: boolean;
+  lifetimeMember?: boolean;
   isAdmin: boolean;
   isServerAdmin?: boolean;
   isCalendarAdmin?: boolean;
@@ -305,7 +312,6 @@ export interface MemberSummary {
   createdAt: string;
   emailVisible: boolean;
   phoneVisible: boolean;
-  firstLoginCompleted: boolean;
   baselineOtherClubExperienceYears?: number;
   baselineClubExperienceYears?: number;
 }

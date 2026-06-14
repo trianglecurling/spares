@@ -40,7 +40,25 @@ const siteConfigBodySchema = z.object({
   contactEmail: z.string().nullable().optional(),
   contactPhone: z.string().nullable().optional(),
   footerMarkdown: z.string().nullable().optional(),
+  heroBadge: z.string().nullable().optional(),
+  heroTitle: z.string().nullable().optional(),
+  heroSubtitle: z.string().nullable().optional(),
+  announcementMarkdown: z.string().nullable().optional(),
+  announcementExpiresAt: z
+    .string()
+    .nullable()
+    .optional()
+    .refine((value) => value == null || !Number.isNaN(new Date(value).getTime()), {
+      message: 'Invalid date',
+    }),
 });
+
+function siteConfigTimestampToIso(value: string | Date | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
 
 const showcaseImageUrlSchema = z
   .string()
@@ -881,13 +899,31 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .where(eq(schema.siteConfig.id, 1))
       .limit(1);
     const row = rows[0];
-    if (!row) return { clubName: null, logoUrl: null, contactEmail: null, contactPhone: null, footerMarkdown: null };
+    if (!row) {
+      return {
+        clubName: null,
+        logoUrl: null,
+        contactEmail: null,
+        contactPhone: null,
+        footerMarkdown: null,
+        heroBadge: null,
+        heroTitle: null,
+        heroSubtitle: null,
+        announcementMarkdown: null,
+        announcementExpiresAt: null,
+      };
+    }
     return {
       clubName: row.club_name ?? null,
       logoUrl: row.logo_url ?? null,
       contactEmail: row.contact_email ?? null,
       contactPhone: row.contact_phone ?? null,
       footerMarkdown: row.footer_markdown ?? null,
+      heroBadge: row.hero_badge ?? null,
+      heroTitle: row.hero_title ?? null,
+      heroSubtitle: row.hero_subtitle ?? null,
+      announcementMarkdown: row.announcement_markdown ?? null,
+      announcementExpiresAt: siteConfigTimestampToIso(row.announcement_expires_at),
     };
   });
 
@@ -904,6 +940,16 @@ export async function contentRoutes(fastify: FastifyInstance) {
     if (parsed.data.contactEmail !== undefined) updates.contact_email = parsed.data.contactEmail;
     if (parsed.data.contactPhone !== undefined) updates.contact_phone = parsed.data.contactPhone;
     if (parsed.data.footerMarkdown !== undefined) updates.footer_markdown = parsed.data.footerMarkdown;
+    if (parsed.data.heroBadge !== undefined) updates.hero_badge = parsed.data.heroBadge;
+    if (parsed.data.heroTitle !== undefined) updates.hero_title = parsed.data.heroTitle;
+    if (parsed.data.heroSubtitle !== undefined) updates.hero_subtitle = parsed.data.heroSubtitle;
+    if (parsed.data.announcementMarkdown !== undefined) updates.announcement_markdown = parsed.data.announcementMarkdown;
+    if (parsed.data.announcementExpiresAt !== undefined) {
+      // Same convention as the dashboard alert expiry: store a Date (pg timestamp / sqlite text).
+      updates.announcement_expires_at = parsed.data.announcementExpiresAt
+        ? new Date(parsed.data.announcementExpiresAt)
+        : null;
+    }
     if (Object.keys(updates).length === 0) {
       return reply.code(400).send({ error: 'No fields to update' });
     }
@@ -923,6 +969,11 @@ export async function contentRoutes(fastify: FastifyInstance) {
       contactEmail: r.contact_email ?? null,
       contactPhone: r.contact_phone ?? null,
       footerMarkdown: r.footer_markdown ?? null,
+      heroBadge: r.hero_badge ?? null,
+      heroTitle: r.hero_title ?? null,
+      heroSubtitle: r.hero_subtitle ?? null,
+      announcementMarkdown: r.announcement_markdown ?? null,
+      announcementExpiresAt: siteConfigTimestampToIso(r.announcement_expires_at),
     };
   });
 

@@ -13,6 +13,9 @@ import {
 } from 'drizzle-orm';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { getCurrentDateStringAsync, getCurrentTimeAsync } from '../../../utils/time.js';
+import {
+  memberIsNotSocialCondition,
+} from '../../../services/memberMembershipStatusService.js';
 import type { Member, SpareRequest } from '../../../types.js';
 
 type SpareRequestDb = SpareRequest & {
@@ -670,11 +673,12 @@ export async function getNotificationStatusForRequester(requestId: number, reque
 
       if (matchingLeagues.length > 0) {
         const leagueIds = matchingLeagues.map((league) => league.id);
+        const today = await getCurrentDateStringAsync();
         const conditions = [
           inArray(schema.memberAvailability.league_id, leagueIds),
           eq(schema.memberAvailability.available, 1),
           eq(schema.members.email_subscribed, 1),
-          eq(schema.members.social_member, 0),
+          memberIsNotSocialCondition(schema, today),
           ne(schema.members.id, spareRequest.requester_id),
         ];
 

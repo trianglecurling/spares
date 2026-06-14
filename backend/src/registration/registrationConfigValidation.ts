@@ -202,9 +202,6 @@ export function assertValidLeagueRegistrationSettings(input: LeagueRegistrationS
   if (input.format === 'instructional' && isPlayInBased) {
     details.isPlayInBased = 'Instructional leagues cannot be play-in based.';
   }
-  if (input.format !== 'instructional' && input.format !== undefined && !hasAttachedWaitlist && !isPlayInBased) {
-    details.isPlayInBased = 'Non-instructional leagues must use a waitlist or be play-in based.';
-  }
   if (hasAttachedWaitlist && isPlayInBased) {
     details.isPlayInBased = 'A league cannot use both a waitlist and play-in based registration.';
   }

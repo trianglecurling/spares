@@ -41,13 +41,24 @@ import {
   hasLeagueAdministratorAccess,
   hasLeagueSetupAccess,
 } from '../utils/leagueAccess.js';
+import {
+  DROP_IN_LEAGUE_NO_TEAMS_MESSAGE,
+  leagueAllowsDropIns,
+} from '../utils/leagueDropIn.js';
 import { hasScope } from '../utils/rbac.js';
+import {
+  getMemberMembershipStatus,
+  isMemberExpiredForAccess,
+  memberHasActiveMembershipCondition,
+  memberIsNotSocialCondition,
+} from '../services/memberMembershipStatusService.js';
 import {
   addLeagueSabbatical,
   listLeagueSabbaticals,
   removeLeagueSabbatical,
   SabbaticalStaffValidationError,
 } from '../registration/sabbaticalStaffService.js';
+import type { Member } from '../types.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
 type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
@@ -60,15 +71,7 @@ function todayDateString(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-/** Condition: member is not expired (valid_through is null or >= today). */
-function memberNotExpiredCondition(schema: DrizzleSchema, today: string) {
-  return or(
-    sql`${schema.members.valid_through} IS NULL`,
-    sql`${schema.members.valid_through} >= ${today}`
-  );
-}
-
-/** Returns true if the member is expired (valid_through set and in the past). */
+/** Returns true if the member is expired (no active season membership). */
 async function isMemberExpired(
   db: DrizzleDb,
   schema: DrizzleSchema,
@@ -77,15 +80,26 @@ async function isMemberExpired(
 ): Promise<boolean> {
   const todayStr = today ?? todayDateString();
   const rows = await db
-    .select({ valid_through: schema.members.valid_through })
+    .select({
+      lifetime_member: schema.members.lifetime_member,
+      is_server_admin: schema.members.is_server_admin,
+    })
     .from(schema.members)
     .where(eq(schema.members.id, memberId))
     .limit(1);
   if (rows.length === 0) return false;
-  const vt = rows[0].valid_through;
-  if (vt == null) return false;
-  const vtStr = typeof vt === 'string' ? vt : (vt as Date).toISOString().split('T')[0];
-  return todayStr > vtStr;
+  const row = rows[0];
+  const status = await getMemberMembershipStatus(memberId, {
+    isLifetimeMember: (row.lifetime_member ?? 0) === 1,
+    today: todayStr,
+  });
+  return isMemberExpiredForAccess(
+    {
+      lifetime_member: row.lifetime_member,
+      is_server_admin: row.is_server_admin,
+    } as Member,
+    status
+  );
 }
 
 const sheetCreateSchema = z.object({
@@ -891,8 +905,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(schema.leagueRoster.league_id, leagueId),
-            eq(schema.members.social_member, 0),
-            memberNotExpiredCondition(schema, today),
+            memberIsNotSocialCondition(schema, today),
+            memberHasActiveMembershipCondition(schema, today),
             or(
               sql`LOWER(${schema.members.name}) LIKE ${search}`,
               sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -921,8 +935,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .where(
         and(
           rosterIdSet.length > 0 ? notInArray(schema.members.id, rosterIdSet) : sql`1=1`,
-          eq(schema.members.social_member, 0),
-          memberNotExpiredCondition(schema, today),
+          memberIsNotSocialCondition(schema, today),
+          memberHasActiveMembershipCondition(schema, today),
           or(
             sql`LOWER(${schema.members.name}) LIKE ${search}`,
             sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -975,7 +989,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
 
     const memberRows = await db
-      .select({ id: schema.members.id, social_member: schema.members.social_member })
+      .select({ id: schema.members.id, lifetime_member: schema.members.lifetime_member })
       .from(schema.members)
       .where(eq(schema.members.id, body.memberId))
       .limit(1);
@@ -984,7 +998,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Member not found.' });
     }
 
-    if ((memberRows[0].social_member ?? 0) === 1) {
+    const membershipStatus = await getMemberMembershipStatus(body.memberId, {
+      isLifetimeMember: (memberRows[0].lifetime_member ?? 0) === 1,
+    });
+    if (membershipStatus.isSocialMember) {
       return reply.code(400).send({ error: 'Social members cannot be added to a league roster.' });
     }
 
@@ -1039,8 +1056,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .from(schema.members)
       .where(
         and(
-          memberNotExpiredCondition(schema, today),
-          eq(schema.members.social_member, 0),
+          memberHasActiveMembershipCondition(schema, today),
+          memberIsNotSocialCondition(schema, today),
           inArray(lowerName, uniqueNormalized)
         )
       )
@@ -1105,8 +1122,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .from(schema.members)
         .where(
           and(
-            memberNotExpiredCondition(schema, today),
-            eq(schema.members.social_member, 0),
+            memberHasActiveMembershipCondition(schema, today),
+            memberIsNotSocialCondition(schema, today),
             or(
               sql`LOWER(${schema.members.name}) LIKE ${search}`,
               sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -1263,7 +1280,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .where(
         and(
           existingIds.length > 0 ? notInArray(schema.members.id, existingIds) : sql`1=1`,
-          memberNotExpiredCondition(schema, today),
+          memberHasActiveMembershipCondition(schema, today),
           or(
             sql`LOWER(${schema.members.name}) LIKE ${search}`,
             sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -1608,6 +1625,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'League not found' });
     }
 
+    if (await leagueAllowsDropIns(leagueId)) {
+      return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
+    }
+
     const format = leagues[0].format;
 
     let divisionId = body.divisionId;
@@ -1764,6 +1785,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
     if (!member || !(await hasLeagueSetupAccess(member, team.league_id))) {
       return reply.code(403).send({ error: 'Forbidden' });
+    }
+
+    if (await leagueAllowsDropIns(team.league_id)) {
+      return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -1941,6 +1966,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
+    if (await leagueAllowsDropIns(team.league_id)) {
+      return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
+    }
+
     try {
       const roster = validateRoster(team.format, body.members);
       const memberIds = roster.map((entry) => entry.memberId);
@@ -2055,7 +2084,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .from(schema.members)
       .where(
         and(
-          memberNotExpiredCondition(schema, today),
+          memberHasActiveMembershipCondition(schema, today),
           or(
             sql`LOWER(${schema.members.name}) LIKE ${search}`,
             sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`

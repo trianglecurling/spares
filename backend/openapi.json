@@ -526,9 +526,6 @@
                                 ]
                               }
                             },
-                            "firstLoginCompleted": {
-                              "type": "boolean"
-                            },
                             "optedInSms": {
                               "type": "boolean"
                             },
@@ -563,7 +560,6 @@
                             "roleCodes",
                             "roleNames",
                             "scopeRules",
-                            "firstLoginCompleted",
                             "optedInSms",
                             "emailSubscribed",
                             "emailVisible",
@@ -775,9 +771,6 @@
                                 ]
                               }
                             },
-                            "firstLoginCompleted": {
-                              "type": "boolean"
-                            },
                             "optedInSms": {
                               "type": "boolean"
                             },
@@ -812,7 +805,6 @@
                             "roleCodes",
                             "roleNames",
                             "scopeRules",
-                            "firstLoginCompleted",
                             "optedInSms",
                             "emailSubscribed",
                             "emailVisible",
@@ -1021,9 +1013,6 @@
                                 ]
                               }
                             },
-                            "firstLoginCompleted": {
-                              "type": "boolean"
-                            },
                             "optedInSms": {
                               "type": "boolean"
                             },
@@ -1058,7 +1047,6 @@
                             "roleCodes",
                             "roleNames",
                             "scopeRules",
-                            "firstLoginCompleted",
                             "optedInSms",
                             "emailSubscribed",
                             "emailVisible",
@@ -2454,9 +2442,6 @@
                             ]
                           }
                         },
-                        "firstLoginCompleted": {
-                          "type": "boolean"
-                        },
                         "optedInSms": {
                           "type": "boolean"
                         },
@@ -2491,7 +2476,6 @@
                         "roleCodes",
                         "roleNames",
                         "scopeRules",
-                        "firstLoginCompleted",
                         "optedInSms",
                         "emailSubscribed",
                         "emailVisible",
@@ -2679,9 +2663,6 @@
                             ]
                           }
                         },
-                        "firstLoginCompleted": {
-                          "type": "boolean"
-                        },
                         "optedInSms": {
                           "type": "boolean"
                         },
@@ -2716,7 +2697,6 @@
                         "roleCodes",
                         "roleNames",
                         "scopeRules",
-                        "firstLoginCompleted",
                         "optedInSms",
                         "emailSubscribed",
                         "emailVisible",
@@ -2887,9 +2867,6 @@
                             ]
                           }
                         },
-                        "firstLoginCompleted": {
-                          "type": "boolean"
-                        },
                         "optedInSms": {
                           "type": "boolean"
                         },
@@ -2924,7 +2901,6 @@
                         "roleCodes",
                         "roleNames",
                         "scopeRules",
-                        "firstLoginCompleted",
                         "optedInSms",
                         "emailSubscribed",
                         "emailVisible",
@@ -3041,25 +3017,40 @@
                         "string"
                       ]
                     },
-                    "validThrough": {
+                    "guardianFirstName": {
                       "type": [
                         "null",
                         "string"
                       ]
                     },
-                    "spareOnly": {
+                    "guardianLastName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianEmail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "isMinor": {
                       "type": "boolean"
                     },
-                    "socialMember": {
+                    "lifetimeMember": {
                       "type": "boolean"
                     },
                     "isAdmin": {
                       "type": "boolean"
                     },
                     "isServerAdmin": {
-                      "type": "boolean"
-                    },
-                    "firstLoginCompleted": {
                       "type": "boolean"
                     },
                     "optedInSms": {
@@ -3089,12 +3080,13 @@
                     "mailingAddress",
                     "emergencyContactName",
                     "emergencyContactPhone",
-                    "validThrough",
-                    "spareOnly",
-                    "socialMember",
+                    "guardianFirstName",
+                    "guardianLastName",
+                    "guardianEmail",
+                    "guardianPhone",
+                    "isMinor",
                     "isAdmin",
                     "isServerAdmin",
-                    "firstLoginCompleted",
                     "optedInSms",
                     "emailSubscribed",
                     "emailVisible",
@@ -3150,6 +3142,21 @@
                     "minLength": 1
                   },
                   "emergencyContactPhone": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "guardianFirstName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "guardianLastName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "guardianEmail": {
+                    "type": "string"
+                  },
+                  "guardianPhone": {
                     "type": "string",
                     "minLength": 1
                   },
@@ -3238,25 +3245,40 @@
                         "string"
                       ]
                     },
-                    "validThrough": {
+                    "guardianFirstName": {
                       "type": [
                         "null",
                         "string"
                       ]
                     },
-                    "spareOnly": {
+                    "guardianLastName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianEmail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "isMinor": {
                       "type": "boolean"
                     },
-                    "socialMember": {
+                    "lifetimeMember": {
                       "type": "boolean"
                     },
                     "isAdmin": {
                       "type": "boolean"
                     },
                     "isServerAdmin": {
-                      "type": "boolean"
-                    },
-                    "firstLoginCompleted": {
                       "type": "boolean"
                     },
                     "optedInSms": {
@@ -3286,17 +3308,133 @@
                     "mailingAddress",
                     "emergencyContactName",
                     "emergencyContactPhone",
-                    "validThrough",
-                    "spareOnly",
-                    "socialMember",
+                    "guardianFirstName",
+                    "guardianLastName",
+                    "guardianEmail",
+                    "guardianPhone",
+                    "isMinor",
                     "isAdmin",
                     "isServerAdmin",
-                    "firstLoginCompleted",
                     "optedInSms",
                     "emailSubscribed",
                     "emailVisible",
                     "phoneVisible",
                     "themePreference"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/me/membership-card": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "membershipStatus": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "regular",
+                            "social",
+                            "former",
+                            "non_member",
+                            "lifetime"
+                          ]
+                        },
+                        "validThrough": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "validThrough"
+                      ]
+                    },
+                    "icePrivilegesValidThrough": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "session": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "isUpcoming": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "isUpcoming"
+                      ]
+                    },
+                    "leagues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "leagueId": {
+                            "type": "number"
+                          },
+                          "leagueName": {
+                            "type": "string"
+                          },
+                          "participation": {
+                            "type": "string",
+                            "enum": [
+                              "roster",
+                              "sabbatical",
+                              "waitlist"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "leagueId",
+                          "leagueName",
+                          "participation"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "membershipStatus",
+                    "icePrivilegesValidThrough",
+                    "session",
+                    "leagues"
                   ]
                 }
               }
@@ -3722,34 +3860,6 @@
         }
       }
     },
-    "/members/me/complete-first-login": {
-      "post": {
-        "tags": [
-          "members"
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/members/me/unsubscribe": {
       "post": {
         "tags": [
@@ -3830,16 +3940,7 @@
                           "string"
                         ]
                       },
-                      "validThrough": {
-                        "type": [
-                          "null",
-                          "string"
-                        ]
-                      },
-                      "spareOnly": {
-                        "type": "boolean"
-                      },
-                      "socialMember": {
+                      "lifetimeMember": {
                         "type": "boolean"
                       },
                       "isAdmin": {
@@ -3866,9 +3967,6 @@
                       "phoneVisible": {
                         "type": "boolean"
                       },
-                      "firstLoginCompleted": {
-                        "type": "boolean"
-                      },
                       "baselineOtherClubExperienceYears": {
                         "type": "number"
                       },
@@ -3886,8 +3984,7 @@
                       "emailSubscribed",
                       "optedInSms",
                       "emailVisible",
-                      "phoneVisible",
-                      "firstLoginCompleted"
+                      "phoneVisible"
                     ]
                   }
                 }
@@ -3926,16 +4023,7 @@
                   "phone": {
                     "type": "string"
                   },
-                  "validThrough": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "spareOnly": {
-                    "type": "boolean"
-                  },
-                  "socialMember": {
+                  "lifetimeMember": {
                     "type": "boolean"
                   },
                   "isAdmin": {
@@ -3991,18 +4079,6 @@
                         "string"
                       ]
                     },
-                    "validThrough": {
-                      "type": [
-                        "null",
-                        "string"
-                      ]
-                    },
-                    "spareOnly": {
-                      "type": "boolean"
-                    },
-                    "socialMember": {
-                      "type": "boolean"
-                    },
                     "isAdmin": {
                       "type": "boolean"
                     },
@@ -4018,9 +4094,6 @@
                     "name",
                     "email",
                     "phone",
-                    "validThrough",
-                    "spareOnly",
-                    "socialMember",
                     "isAdmin",
                     "emailSubscribed",
                     "optedInSms"
@@ -4045,6 +4118,30 @@
             "in": "query",
             "name": "leagueId",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "pageSize",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
           }
         ],
         "responses": {
@@ -4053,107 +4150,115 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                      "id": {
-                        "type": "number"
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "firstName": {
-                        "type": [
-                          "null",
-                          "string"
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "firstName": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "lastName": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "email": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "phone": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "lifetimeMember": {
+                            "type": "boolean"
+                          },
+                          "isAdmin": {
+                            "type": "boolean"
+                          },
+                          "isServerAdmin": {
+                            "type": "boolean"
+                          },
+                          "isLeagueAdministratorGlobal": {
+                            "type": "boolean"
+                          },
+                          "isLastServerAdmin": {
+                            "type": "boolean"
+                          },
+                          "emailSubscribed": {
+                            "type": "boolean"
+                          },
+                          "optedInSms": {
+                            "type": "boolean"
+                          },
+                          "emailVisible": {
+                            "type": "boolean"
+                          },
+                          "phoneVisible": {
+                            "type": "boolean"
+                          },
+                          "baselineOtherClubExperienceYears": {
+                            "type": "number"
+                          },
+                          "baselineClubExperienceYears": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "isAdmin",
+                          "isServerAdmin",
+                          "isLeagueAdministratorGlobal",
+                          "isLastServerAdmin",
+                          "emailSubscribed",
+                          "optedInSms",
+                          "emailVisible",
+                          "phoneVisible"
                         ]
-                      },
-                      "lastName": {
-                        "type": [
-                          "null",
-                          "string"
-                        ]
-                      },
-                      "email": {
-                        "type": [
-                          "null",
-                          "string"
-                        ]
-                      },
-                      "phone": {
-                        "type": [
-                          "null",
-                          "string"
-                        ]
-                      },
-                      "createdAt": {
-                        "type": [
-                          "null",
-                          "string"
-                        ]
-                      },
-                      "validThrough": {
-                        "type": [
-                          "null",
-                          "string"
-                        ]
-                      },
-                      "spareOnly": {
-                        "type": "boolean"
-                      },
-                      "socialMember": {
-                        "type": "boolean"
-                      },
-                      "isAdmin": {
-                        "type": "boolean"
-                      },
-                      "isServerAdmin": {
-                        "type": "boolean"
-                      },
-                      "isLeagueAdministratorGlobal": {
-                        "type": "boolean"
-                      },
-                      "isLastServerAdmin": {
-                        "type": "boolean"
-                      },
-                      "emailSubscribed": {
-                        "type": "boolean"
-                      },
-                      "optedInSms": {
-                        "type": "boolean"
-                      },
-                      "emailVisible": {
-                        "type": "boolean"
-                      },
-                      "phoneVisible": {
-                        "type": "boolean"
-                      },
-                      "firstLoginCompleted": {
-                        "type": "boolean"
-                      },
-                      "baselineOtherClubExperienceYears": {
-                        "type": "number"
-                      },
-                      "baselineClubExperienceYears": {
-                        "type": "number"
                       }
                     },
-                    "required": [
-                      "id",
-                      "name",
-                      "isAdmin",
-                      "isServerAdmin",
-                      "isLeagueAdministratorGlobal",
-                      "isLastServerAdmin",
-                      "emailSubscribed",
-                      "optedInSms",
-                      "emailVisible",
-                      "phoneVisible",
-                      "firstLoginCompleted"
-                    ]
-                  }
+                    "total": {
+                      "type": "number"
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "pageSize": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ]
                 }
               }
             }
@@ -4167,6 +4272,26 @@
           "members"
         ],
         "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "relevantSession",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -4371,18 +4496,6 @@
                           ]
                         },
                         "minItems": 1
-                      },
-                      "validThrough": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
-                      },
-                      "spareOnly": {
-                        "type": "boolean"
-                      },
-                      "socialMember": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -4428,53 +4541,37 @@
         }
       }
     },
-    "/members/bulk-experience-baselines": {
-      "post": {
+    "/members/{id}/payment-history": {
+      "get": {
         "tags": [
           "members"
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "rows": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "email": {
-                          "type": "string"
-                        },
-                        "name": {
-                          "type": "string"
-                        },
-                        "baselineOtherClubExperienceYears": {
-                          "type": "number"
-                        },
-                        "baselineClubExperienceYears": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "baselineOtherClubExperienceYears",
-                        "baselineClubExperienceYears"
-                      ]
-                    }
-                  }
-                },
-                "required": [
-                  "rows"
-                ]
-              }
-            }
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
           }
-        },
+        ],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -4484,66 +4581,242 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "updatedCount": {
+                    "total": {
                       "type": "number"
                     },
-                    "unchangedCount": {
+                    "limit": {
                       "type": "number"
                     },
-                    "failedCount": {
+                    "offset": {
                       "type": "number"
                     },
-                    "results": {
+                    "payments": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
                         "properties": {
-                          "email": {
+                          "orderToken": {
                             "type": "string"
                           },
-                          "name": {
+                          "subjectType": {
+                            "type": "string",
+                            "enum": [
+                              "donation",
+                              "membership",
+                              "event_registration",
+                              "curling_registration"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "pending",
+                              "succeeded",
+                              "failed",
+                              "refunded",
+                              "partially_refunded"
+                            ]
+                          },
+                          "paidAt": {
                             "type": [
                               "null",
                               "string"
                             ]
                           },
-                          "status": {
-                            "type": "string",
-                            "enum": [
-                              "updated",
-                              "unchanged",
-                              "not_found",
-                              "ambiguous_email",
-                              "ambiguous_name",
-                              "invalid"
-                            ]
-                          },
-                          "memberId": {
-                            "type": "number"
-                          },
-                          "memberName": {
-                            "type": "string"
-                          },
-                          "message": {
+                          "createdAt": {
                             "type": "string"
                           }
                         },
                         "required": [
-                          "status"
+                          "orderToken",
+                          "subjectType",
+                          "description",
+                          "amountMinor",
+                          "currency",
+                          "status",
+                          "paidAt",
+                          "createdAt"
                         ]
                       }
                     }
                   },
                   "required": [
-                    "success",
-                    "updatedCount",
-                    "unchangedCount",
-                    "failedCount",
-                    "results"
+                    "total",
+                    "limit",
+                    "offset",
+                    "payments"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/{id}/profile": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "phone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "firstName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "dateOfBirth": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "emergencyContactName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "emergencyContactPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianFirstName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianLastName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianEmail": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "guardianPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "isMinor": {
+                      "type": "boolean"
+                    },
+                    "lifetimeMember": {
+                      "type": "boolean"
+                    },
+                    "isAdmin": {
+                      "type": "boolean"
+                    },
+                    "isServerAdmin": {
+                      "type": "boolean"
+                    },
+                    "optedInSms": {
+                      "type": "boolean"
+                    },
+                    "emailSubscribed": {
+                      "type": "boolean"
+                    },
+                    "emailVisible": {
+                      "type": "boolean"
+                    },
+                    "phoneVisible": {
+                      "type": "boolean"
+                    },
+                    "themePreference": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "phone",
+                    "firstName",
+                    "lastName",
+                    "dateOfBirth",
+                    "mailingAddress",
+                    "emergencyContactName",
+                    "emergencyContactPhone",
+                    "guardianFirstName",
+                    "guardianLastName",
+                    "guardianEmail",
+                    "guardianPhone",
+                    "isMinor",
+                    "isAdmin",
+                    "isServerAdmin",
+                    "optedInSms",
+                    "emailSubscribed",
+                    "emailVisible",
+                    "phoneVisible",
+                    "themePreference"
                   ]
                 }
               }
@@ -4583,16 +4856,19 @@
                   "phone": {
                     "type": "string"
                   },
-                  "validThrough": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                  "dateOfBirth": {
+                    "type": "string"
                   },
-                  "spareOnly": {
-                    "type": "boolean"
+                  "mailingAddress": {
+                    "type": "string"
                   },
-                  "socialMember": {
+                  "emergencyContactName": {
+                    "type": "string"
+                  },
+                  "emergencyContactPhone": {
+                    "type": "string"
+                  },
+                  "lifetimeMember": {
                     "type": "boolean"
                   },
                   "isAdmin": {
@@ -4615,6 +4891,24 @@
                   },
                   "baselineClubExperienceYears": {
                     "type": "number"
+                  },
+                  "emailVisible": {
+                    "type": "boolean"
+                  },
+                  "phoneVisible": {
+                    "type": "boolean"
+                  },
+                  "guardianFirstName": {
+                    "type": "string"
+                  },
+                  "guardianLastName": {
+                    "type": "string"
+                  },
+                  "guardianEmail": {
+                    "type": "string"
+                  },
+                  "guardianPhone": {
+                    "type": "string"
                   }
                 }
               }
@@ -4658,12 +4952,6 @@
                         "string"
                       ]
                     },
-                    "validThrough": {
-                      "type": [
-                        "null",
-                        "string"
-                      ]
-                    },
                     "isAdmin": {
                       "type": "boolean"
                     },
@@ -4682,7 +4970,6 @@
                     "name",
                     "email",
                     "phone",
-                    "validThrough",
                     "isAdmin",
                     "isServerAdmin",
                     "emailSubscribed",
@@ -4778,6 +5065,243 @@
                   "required": [
                     "success",
                     "deletedCount"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/{id}/season-memberships": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "seasonId": {
+                        "type": "number"
+                      },
+                      "seasonName": {
+                        "type": "string"
+                      },
+                      "membershipType": {
+                        "type": "string",
+                        "enum": [
+                          "regular",
+                          "social",
+                          "junior_recreational"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "active",
+                          "cancelled",
+                          "refunded",
+                          "expired"
+                        ]
+                      },
+                      "startsAt": {
+                        "type": "string"
+                      },
+                      "endsAt": {
+                        "type": "string"
+                      },
+                      "sourceRegistrationId": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "seasonId",
+                      "seasonName",
+                      "membershipType",
+                      "status",
+                      "startsAt",
+                      "endsAt",
+                      "sourceRegistrationId"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "seasonId": {
+                    "type": "number"
+                  },
+                  "membershipType": {
+                    "type": "string",
+                    "enum": [
+                      "regular",
+                      "social",
+                      "junior_recreational"
+                    ]
+                  }
+                },
+                "required": [
+                  "seasonId",
+                  "membershipType"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "seasonId": {
+                      "type": "number"
+                    },
+                    "seasonName": {
+                      "type": "string"
+                    },
+                    "membershipType": {
+                      "type": "string",
+                      "enum": [
+                        "regular",
+                        "social",
+                        "junior_recreational"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "active",
+                        "cancelled",
+                        "refunded",
+                        "expired"
+                      ]
+                    },
+                    "startsAt": {
+                      "type": "string"
+                    },
+                    "endsAt": {
+                      "type": "string"
+                    },
+                    "sourceRegistrationId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seasonId",
+                    "seasonName",
+                    "membershipType",
+                    "status",
+                    "startsAt",
+                    "endsAt",
+                    "sourceRegistrationId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/{id}/season-memberships/{membershipId}": {
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "membershipId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
                   ]
                 }
               }
@@ -4922,6 +5446,40 @@
         "tags": [
           "leagues"
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "relevantSession",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "summary",
+            "required": false
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -5042,6 +5600,15 @@
                       "allowsSabbatical": {
                         "type": "boolean"
                       },
+                      "allowsDropIns": {
+                        "type": "boolean"
+                      },
+                      "dropInFeeMinor": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
                       "predecessorLeagueId": {
                         "type": [
                           "null",
@@ -5091,6 +5658,8 @@
                       "waitlistId",
                       "isPlayInBased",
                       "allowsSabbatical",
+                      "allowsDropIns",
+                      "dropInFeeMinor",
                       "predecessorLeagueId",
                       "successorLeagueId",
                       "drawTimes",
@@ -5206,6 +5775,15 @@
                   },
                   "allowsSabbatical": {
                     "type": "boolean"
+                  },
+                  "allowsDropIns": {
+                    "type": "boolean"
+                  },
+                  "dropInFeeMinor": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   },
                   "predecessorLeagueId": {
                     "type": [
@@ -5362,6 +5940,15 @@
                     "allowsSabbatical": {
                       "type": "boolean"
                     },
+                    "allowsDropIns": {
+                      "type": "boolean"
+                    },
+                    "dropInFeeMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
                     "predecessorLeagueId": {
                       "type": [
                         "null",
@@ -5411,6 +5998,8 @@
                     "waitlistId",
                     "isPlayInBased",
                     "allowsSabbatical",
+                    "allowsDropIns",
+                    "dropInFeeMinor",
                     "predecessorLeagueId",
                     "successorLeagueId",
                     "drawTimes",
@@ -5636,6 +6225,15 @@
                           "allowsSabbatical": {
                             "type": "boolean"
                           },
+                          "allowsDropIns": {
+                            "type": "boolean"
+                          },
+                          "dropInFeeMinor": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "predecessorLeagueId": {
                             "type": [
                               "null",
@@ -5685,6 +6283,8 @@
                           "waitlistId",
                           "isPlayInBased",
                           "allowsSabbatical",
+                          "allowsDropIns",
+                          "dropInFeeMinor",
                           "predecessorLeagueId",
                           "successorLeagueId",
                           "drawTimes",
@@ -5816,6 +6416,15 @@
                   },
                   "allowsSabbatical": {
                     "type": "boolean"
+                  },
+                  "allowsDropIns": {
+                    "type": "boolean"
+                  },
+                  "dropInFeeMinor": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   },
                   "predecessorLeagueId": {
                     "type": [
@@ -5974,6 +6583,15 @@
                     "allowsSabbatical": {
                       "type": "boolean"
                     },
+                    "allowsDropIns": {
+                      "type": "boolean"
+                    },
+                    "dropInFeeMinor": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
                     "predecessorLeagueId": {
                       "type": [
                         "null",
@@ -6023,6 +6641,8 @@
                     "waitlistId",
                     "isPlayInBased",
                     "allowsSabbatical",
+                    "allowsDropIns",
+                    "dropInFeeMinor",
                     "predecessorLeagueId",
                     "successorLeagueId",
                     "drawTimes",
@@ -6367,6 +6987,15 @@
                           "allowsSabbatical": {
                             "type": "boolean"
                           },
+                          "allowsDropIns": {
+                            "type": "boolean"
+                          },
+                          "dropInFeeMinor": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "predecessorLeagueId": {
                             "type": [
                               "null",
@@ -6416,6 +7045,8 @@
                           "waitlistId",
                           "isPlayInBased",
                           "allowsSabbatical",
+                          "allowsDropIns",
+                          "dropInFeeMinor",
                           "predecessorLeagueId",
                           "successorLeagueId",
                           "drawTimes",

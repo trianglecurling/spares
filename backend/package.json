@@ -18,7 +18,7 @@
     "openapi:generate": "bun run src/openapi.ts",
     "db:init": "bun run src/scripts/init-db.ts",
     "db:generate": "bunx drizzle-kit generate",
-    "db:migrate": "bunx drizzle-kit migrate",
+    "db:migrate": "bun run src/scripts/init-db.ts",
     "db:push": "bunx drizzle-kit push",
     "db:studio": "bunx drizzle-kit studio",
     "db:add-disable-columns": "bun run add-columns.js",

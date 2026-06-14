@@ -9,6 +9,7 @@ import RegistrationFlowHeaderBar from './RegistrationFlowHeaderBar';
 type RegistrationDemographicsStepProps = {
   registrationId: number | null;
   initialDemographics: RegistrationDemographicsFormFields;
+  curlerDateOfBirth?: string | null;
   returningDemographics: boolean;
   headerTitle: string;
   showStartOver: boolean;
@@ -24,6 +25,7 @@ type RegistrationDemographicsStepProps = {
 function RegistrationDemographicsStep({
   registrationId,
   initialDemographics,
+  curlerDateOfBirth = null,
   returningDemographics,
   headerTitle,
   showStartOver,
@@ -64,6 +66,7 @@ function RegistrationDemographicsStep({
           key={`${registrationId ?? 'guest'}-demographics`}
           ref={fieldsRef}
           initialValue={initialDemographics}
+          curlerDateOfBirth={curlerDateOfBirth}
           onCommit={onCommitDraft}
         />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}

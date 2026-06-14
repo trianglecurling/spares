@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
-import { buildJwtPayloadForMember, generateAccessToken, isAdmin, isServerAdmin } from '../utils/auth.js';
+import { buildJwtPayloadForMember, generateAccessToken } from '../utils/auth.js';
 import { buildAuthzClaimsForMember, buildAuthzClaimsForImpersonatedMember } from '../utils/rbac.js';
 import { canActorImpersonateTarget } from './accountAccess.js';
 
@@ -49,14 +49,6 @@ function normalizeDateString(value: string | Date | number | null | undefined): 
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString().split('T')[0];
   return String(value);
-}
-
-function isMemberExpired(member: Member): boolean {
-  if (isAdmin(member) || isServerAdmin(member)) return false;
-  const validThrough = normalizeDateString(member.valid_through);
-  if (!validThrough) return false;
-  const today = new Date().toISOString().split('T')[0];
-  return today > validThrough;
 }
 
 export function invalidateAuthTokenTtlCache(): void {
@@ -142,7 +134,7 @@ export async function refreshAuthSession(refreshToken: string): Promise<AuthSess
     .limit(1);
 
   const member = rawMember as Member | undefined;
-  if (!member || isMemberExpired(member)) {
+  if (!member) {
     await revokeRefreshToken(refreshToken);
     return null;
   }

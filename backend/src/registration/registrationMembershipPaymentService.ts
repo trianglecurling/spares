@@ -33,6 +33,7 @@ import {
   syncRegistrationRosterPlacements,
 } from './registrationRosterService.js';
 import {
+  canChooseNoMembership,
   isActiveSabbaticalRecord,
   sabbaticalMatchesLeagueLineage,
 } from './registrationSabbaticalContinuity.js';
@@ -95,12 +96,14 @@ export type RegistrationMembershipPaymentPayload = {
   isFirstSessionOfSeason: boolean;
   knownExperienceYears: number;
   spareOnlyIcePrivilegeFeeMinor: number;
+  noMembershipEligible: boolean;
+  hasLifetimeMembership: boolean;
   feePreview: RegistrationFeePreview;
   paymentDecision: RegistrationPaymentDecision;
 };
 
 type UpdateMembershipInput = {
-  membershipOption: 'regular' | 'social' | 'junior_recreational';
+  membershipOption: 'regular' | 'social' | 'junior_recreational' | 'none';
   basicIcePrivileges?: boolean;
   juniorAssistancePercent?: number | null;
 };
@@ -814,6 +817,21 @@ export async function getPublicRegistrationDiscountSettings(): Promise<{
   };
 }
 
+export type RegistrationPublicMembershipFees = {
+  regularMinor: number;
+  socialMinor: number;
+  juniorRecreationalMinor: number;
+};
+
+export async function getPublicRegistrationMembershipFees(): Promise<RegistrationPublicMembershipFees> {
+  const { priceConfig } = await loadRegistrationSettings();
+  return {
+    regularMinor: priceConfig.regularMembershipFeeMinor,
+    socialMinor: priceConfig.socialMembershipFeeMinor,
+    juniorRecreationalMinor: priceConfig.juniorRecreationalFeeMinor,
+  };
+}
+
 type RegistrationMembershipPaymentSourceRow = {
   season_id: number;
   session_id: number;
@@ -836,6 +854,7 @@ async function buildRegistrationContextFromSourceRow(
   options: {
     registrationId?: number;
     curlerDateOfBirth: string | null | undefined;
+    curlerHasLifetimeMembership?: boolean;
     completedSessions: RegistrationContext['experience']['completedSessions'];
     experienceBaselines?: MemberExperienceBaselines;
   },
@@ -902,6 +921,7 @@ async function buildRegistrationContextFromSourceRow(
       hasUserAccount: Boolean(registration.curler_member_id),
       isReturningMember: registration.returning_member_answer === 1,
       dateOfBirth: normalizeDate(options.curlerDateOfBirth),
+      hasLifetimeMembership: options.curlerHasLifetimeMembership === true,
     },
     submittedByMemberId: registration.submitted_by_member_id,
     membershipOption,
@@ -950,6 +970,7 @@ export async function buildRegistrationContextForDraft(registrationId: number): 
   return buildRegistrationContextFromSourceRow(registration, {
     registrationId,
     curlerDateOfBirth: curler?.date_of_birth,
+    curlerHasLifetimeMembership: (curler?.lifetime_member ?? 0) === 1,
     completedSessions,
     experienceBaselines,
   });
@@ -1013,6 +1034,8 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
     isFirstSessionOfSeason: context.isFirstSessionOfSeason,
     knownExperienceYears: effectiveExperienceYears(context),
     spareOnlyIcePrivilegeFeeMinor: context.priceConfig.spareOnlyIcePrivilegeFeeMinor,
+    noMembershipEligible: false,
+    hasLifetimeMembership: context.registrant.hasLifetimeMembership === true,
     feePreview: evaluation.feePreview,
     paymentDecision: evaluation.paymentDecision,
   };
@@ -1033,6 +1056,8 @@ export async function getRegistrationMembershipPaymentPayload(
     isFirstSessionOfSeason: context.isFirstSessionOfSeason,
     knownExperienceYears: effectiveExperienceYears(context),
     spareOnlyIcePrivilegeFeeMinor: context.priceConfig.spareOnlyIcePrivilegeFeeMinor,
+    noMembershipEligible: canChooseNoMembership(context),
+    hasLifetimeMembership: context.registrant.hasLifetimeMembership === true,
     feePreview: evaluation.feePreview,
     paymentDecision: evaluation.paymentDecision,
   };
@@ -1081,14 +1106,25 @@ export async function updateMembership(registrationId: number, actor: Member, in
     }
   }
 
+  if (input.membershipOption === 'none') {
+    const context = await buildRegistrationContextForDraft(registrationId);
+    if (!canChooseNoMembership(context)) {
+      throw new RegistrationMembershipPaymentValidationError({
+        membershipOption: 'No membership is only available when extending a sabbatical from the previous session.',
+      });
+    }
+  }
+
   const membershipOption: CurlingMembershipOptionSqlite =
-    input.membershipOption === 'social'
-      ? 'social'
-      : input.membershipOption === 'junior_recreational'
-        ? 'junior_recreational'
-        : input.basicIcePrivileges
-          ? 'regular_spare_only'
-          : 'regular';
+    input.membershipOption === 'none'
+      ? 'none'
+      : input.membershipOption === 'social'
+        ? 'social'
+        : input.membershipOption === 'junior_recreational'
+          ? 'junior_recreational'
+          : input.basicIcePrivileges
+            ? 'regular_spare_only'
+            : 'regular';
   const { db, schema } = getDrizzleDb();
   await db.transaction(async (tx) => {
     await tx
@@ -1096,17 +1132,29 @@ export async function updateMembership(registrationId: number, actor: Member, in
       .set({
         membership_option: membershipOption,
         student_discount_claimed:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' ? 0 : registration.student_discount_claimed,
+          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
+            ? 0
+            : registration.student_discount_claimed,
         student_institution:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.student_institution,
+          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
+            ? null
+            : registration.student_institution,
         reciprocal_discount_claimed:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' ? 0 : registration.reciprocal_discount_claimed,
+          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
+            ? 0
+            : registration.reciprocal_discount_claimed,
         reciprocal_club_name:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.reciprocal_club_name,
+          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
+            ? null
+            : registration.reciprocal_club_name,
         experience_type:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.experience_type,
+          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
+            ? null
+            : registration.experience_type,
         experience_self_reported_years:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' ? null : registration.experience_self_reported_years,
+          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
+            ? null
+            : registration.experience_self_reported_years,
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.curlingRegistrations.id, registrationId));
@@ -1233,16 +1281,14 @@ async function assertShellStillComplete(registrationId: number): Promise<void> {
   if (!registration.submitted_by_member_id) details.submitter = 'The submitting user is required.';
   if (!registration.curler_member_id) details.curler = 'The curler is required.';
   if (!policiesComplete) details.policies = 'All required policies must be accepted.';
-  if (
+  const demographicsIncomplete =
     !curler?.firstName ||
     !curler.lastName ||
-    !curler.dateOfBirth ||
     !curler.email ||
     !curler.phone ||
     !curler.mailingAddress ||
-    !curler.emergencyContactName ||
-    !curler.emergencyContactPhone
-  ) {
+    (!isMinor && (!curler.emergencyContactName || !curler.emergencyContactPhone));
+  if (demographicsIncomplete) {
     details.demographics = 'Required curler demographic information is incomplete.';
   }
   if (isMinor && (!registration.guardian_first_name || !registration.guardian_last_name || !registration.guardian_email || !registration.guardian_phone)) {
@@ -1305,12 +1351,18 @@ function assertReadyToSubmit(
     context.membershipOption !== 'regular' &&
     context.membershipOption !== 'regular_spare_only' &&
     context.membershipOption !== 'social' &&
-    context.membershipOption !== 'junior_recreational'
+    context.membershipOption !== 'junior_recreational' &&
+    context.membershipOption !== 'none'
   ) {
     throw new RegistrationMembershipPaymentValidationError({ membershipOption: 'Choose regular, social, or Junior Recreational membership.' });
   }
+  if (context.membershipOption === 'none' && !canChooseNoMembership(context)) {
+    throw new RegistrationMembershipPaymentValidationError({
+      membershipOption: 'No membership is only available when extending a sabbatical from the previous session.',
+    });
+  }
   const details: Record<string, string> = {};
-  if (registration.ice_privileges_choice === 'league_play') {
+  if (registration.ice_privileges_choice === 'league_play' && context.membershipOption !== 'none') {
     const hasLeagueSelection = context.selections.some(
       (selection) => selection.leagueId != null && REAL_LEAGUE_SELECTION_TYPES_FOR_SUBMIT.has(selection.selectionType)
     );
@@ -1335,7 +1387,9 @@ function assertReadyToSubmit(
   if (Object.keys(details).length > 0) {
     throw new RegistrationMembershipPaymentValidationError(details);
   }
-  if (context.membershipOption === 'social' || context.membershipOption === 'junior_recreational') return;
+  if (context.membershipOption === 'social' || context.membershipOption === 'junior_recreational' || context.membershipOption === 'none') {
+    return;
+  }
   if (!context.experience.type) {
     throw new RegistrationMembershipPaymentValidationError({ experience: 'Curling experience is required.' });
   }
@@ -1784,11 +1838,6 @@ async function persistRegistrationSabbaticals(input: {
   curlerMemberId: number;
   context: RegistrationContext;
   feePreview: RegistrationFeePreview;
-  notifications?: Array<{
-    leagueId: number;
-    leagueName: string;
-    feeAmountMinor: number;
-  }>;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
   const memberRows = await loadMemberSabbaticalRows(input.tx, input.curlerMemberId);
@@ -1875,11 +1924,6 @@ async function persistRegistrationSabbaticals(input: {
         .where(eq(schema.curlingSabbaticalSessions.id, existingSession.id));
     } else {
       await input.tx.insert(schema.curlingSabbaticalSessions).values(sessionValues);
-      input.notifications?.push({
-        leagueId,
-        leagueName: league.name,
-        feeAmountMinor: sessionValues.fee_amount_minor,
-      });
     }
 
     await input.tx
@@ -2026,7 +2070,6 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     entryType: 'add' | 'replace';
     replacesLeagueId: number | null;
   }> = [];
-  const sabbaticalNotifications: Array<{ leagueId: number; leagueName: string; feeAmountMinor: number }> = [];
   const invoiceId = await db.transaction(async (tx) => {
     if (!registration.curler_member_id) {
       throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
@@ -2071,7 +2114,6 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       curlerMemberId: registration.curler_member_id,
       context,
       feePreview: evaluation.feePreview,
-      notifications: sabbaticalNotifications,
     });
     await setSubmittedSelectionStatuses(tx, input.registrationId);
     const snapshotId = await createInvoiceSnapshot({
@@ -2123,6 +2165,28 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       selections: context.selections,
       registrationStatus: submittedStatus,
     });
+    if (
+      context.registrant.hasLifetimeMembership === true &&
+      evaluation.paymentDecision.outcome === 'no_payment_required' &&
+      registration.membership_option !== 'none'
+    ) {
+      const [season] = await tx
+        .select()
+        .from(schema.curlingSeasons)
+        .where(eq(schema.curlingSeasons.id, registration.season_id))
+        .limit(1);
+      if (season) {
+        await applyConfirmedRegistrationEntitlementsInTx({
+          tx,
+          registrationId: input.registrationId,
+          registration,
+          invoiceId: snapshotId,
+          curlerMemberId: registration.curler_member_id,
+          season,
+          paymentOrderId: null,
+        });
+      }
+    }
     return snapshotId;
   });
 
@@ -2260,20 +2324,6 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       addedBySource: 'registration_submission',
       registrationId: input.registrationId,
     });
-  }
-
-  for (const notification of sabbaticalNotifications) {
-    if (!(await hasSentRegistrationMessage(input.registrationId, 'sabbatical_confirmation'))) {
-      await safeSendRegistrationEmail({
-        registrationId: input.registrationId,
-        messageType: 'sabbatical_confirmation',
-        payload: {
-          leagueName: notification.leagueName,
-          sabbaticalFeeStatus: notification.feeAmountMinor > 0 ? 'unpaid' : 'no payment required',
-          summaryLines: registrationSummaryLines(context),
-        },
-      });
-    }
   }
 
   if (evaluation.paymentDecision.outcome === 'immediate_payment') {
@@ -2536,6 +2586,97 @@ export async function triggerDeferredRegistrationPayment(input: {
 
 const UNCONFIRMED_REGISTRATION_INVOICE_STATUSES = ['checkout_started', 'awaiting_payment'] as const;
 
+async function applyConfirmedRegistrationEntitlementsInTx(input: {
+  tx: any;
+  registrationId: number;
+  registration: {
+    id: number;
+    season_id: number;
+    session_id: number;
+    membership_option: CurlingMembershipOptionSqlite | string;
+  };
+  invoiceId: number;
+  curlerMemberId: number;
+  season: { start_date: string | Date; end_date: string | Date };
+  paymentOrderId?: number | null;
+}): Promise<void> {
+  const { schema } = getDrizzleDb();
+
+  await input.tx
+    .update(schema.curlingSabbaticalSessions)
+    .set({ payment_status: 'paid', updated_at: sql`CURRENT_TIMESTAMP` })
+    .where(eq(schema.curlingSabbaticalSessions.registration_id, input.registration.id));
+
+  const [existingMembership] = await input.tx
+    .select({ id: schema.seasonMemberships.id })
+    .from(schema.seasonMemberships)
+    .where(eq(schema.seasonMemberships.source_registration_id, input.registration.id))
+    .limit(1);
+  if (!existingMembership && input.registration.membership_option !== 'none') {
+    const membershipType = input.registration.membership_option === 'social' ? 'social' : 'regular';
+    await input.tx.insert(schema.seasonMemberships).values({
+      member_id: input.curlerMemberId,
+      season_id: input.registration.season_id,
+      membership_type: membershipType,
+      starts_at: dateColumnValue(input.season.start_date),
+      ends_at: dateColumnValue(input.season.end_date),
+      source_registration_id: input.registration.id,
+      payment_order_id: input.paymentOrderId ?? null,
+      status: 'active',
+    } as any);
+  }
+
+  const [spareOnlyLineItem] = await input.tx
+    .select({ id: schema.registrationInvoiceLineItems.id })
+    .from(schema.registrationInvoiceLineItems)
+    .where(
+      and(
+        eq(schema.registrationInvoiceLineItems.invoice_id, input.invoiceId),
+        eq(schema.registrationInvoiceLineItems.line_type, 'spare_only_fee')
+      )
+    )
+    .limit(1);
+  const grantsSpareOnlyIce =
+    input.registration.membership_option === 'regular_spare_only' || Boolean(spareOnlyLineItem);
+  if (grantsSpareOnlyIce) {
+    const [existingPrivilege] = await input.tx
+      .select({ id: schema.curlingIcePrivileges.id })
+      .from(schema.curlingIcePrivileges)
+      .where(eq(schema.curlingIcePrivileges.source_registration_id, input.registration.id))
+      .limit(1);
+    if (!existingPrivilege) {
+      await input.tx.insert(schema.curlingIcePrivileges).values({
+        member_id: input.curlerMemberId,
+        season_id: input.registration.season_id,
+        session_id: input.registration.session_id,
+        source_type: 'spare_only',
+        source_registration_id: input.registration.id,
+        status: 'active',
+      } as any);
+    }
+  }
+
+  const selectionRows = await input.tx
+    .select({
+      leagueId: schema.registrationSelections.league_id,
+      selectionType: schema.registrationSelections.selection_type,
+    })
+    .from(schema.registrationSelections)
+    .where(eq(schema.registrationSelections.registration_id, input.registrationId));
+  await syncRegistrationRosterPlacements({
+    tx: input.tx,
+    registrationId: input.registrationId,
+    curlerMemberId: input.curlerMemberId,
+    selections: selectionRows
+      .filter((row: { leagueId: number | null; selectionType: string }) => row.leagueId != null)
+      .map((row: { leagueId: number | null; selectionType: string }) => ({
+        leagueId: row.leagueId,
+        selectionType: row.selectionType,
+      })),
+    registrationStatus: 'confirmed',
+  });
+}
+
 export async function confirmCurlingRegistrationForPaymentOrder(orderId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const [order] = await db
@@ -2638,77 +2779,14 @@ export async function confirmCurlingRegistrationForPaymentOrder(orderId: number)
           sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'sabbatical', 'spare_only', 'junior_recreational')`
         )
       );
-    await tx
-      .update(schema.curlingSabbaticalSessions)
-      .set({ payment_status: 'paid', updated_at: sql`CURRENT_TIMESTAMP` })
-      .where(eq(schema.curlingSabbaticalSessions.registration_id, registration.id));
-
-    const [existingMembership] = await tx
-      .select({ id: schema.seasonMemberships.id })
-      .from(schema.seasonMemberships)
-      .where(eq(schema.seasonMemberships.source_registration_id, registration.id))
-      .limit(1);
-    if (!existingMembership && registration.membership_option !== 'none') {
-      const membershipType = registration.membership_option === 'social' ? 'social' : 'regular';
-      await tx.insert(schema.seasonMemberships).values({
-        member_id: curlerMemberId,
-        season_id: registration.season_id,
-        membership_type: membershipType,
-        starts_at: dateColumnValue(season.start_date),
-        ends_at: dateColumnValue(season.end_date),
-        source_registration_id: registration.id,
-        payment_order_id: order.id,
-        status: 'active',
-      } as any);
-    }
-
-    const [spareOnlyLineItem] = await tx
-      .select({ id: schema.registrationInvoiceLineItems.id })
-      .from(schema.registrationInvoiceLineItems)
-      .where(
-        and(
-          eq(schema.registrationInvoiceLineItems.invoice_id, invoice.id),
-          eq(schema.registrationInvoiceLineItems.line_type, 'spare_only_fee')
-        )
-      )
-      .limit(1);
-    const grantsSpareOnlyIce = registration.membership_option === 'regular_spare_only' || Boolean(spareOnlyLineItem);
-    if (grantsSpareOnlyIce) {
-      const [existingPrivilege] = await tx
-        .select({ id: schema.curlingIcePrivileges.id })
-        .from(schema.curlingIcePrivileges)
-        .where(eq(schema.curlingIcePrivileges.source_registration_id, registration.id))
-        .limit(1);
-      if (!existingPrivilege) {
-        await tx.insert(schema.curlingIcePrivileges).values({
-          member_id: curlerMemberId,
-          season_id: registration.season_id,
-          session_id: registration.session_id,
-          source_type: 'spare_only',
-          source_registration_id: registration.id,
-          status: 'active',
-        } as any);
-      }
-    }
-
-    const selectionRows = await tx
-      .select({
-        leagueId: schema.registrationSelections.league_id,
-        selectionType: schema.registrationSelections.selection_type,
-      })
-      .from(schema.registrationSelections)
-      .where(eq(schema.registrationSelections.registration_id, registrationId));
-    await syncRegistrationRosterPlacements({
+    await applyConfirmedRegistrationEntitlementsInTx({
       tx,
       registrationId,
+      registration,
+      invoiceId: invoice.id,
       curlerMemberId,
-      selections: selectionRows
-        .filter((row) => row.leagueId != null)
-        .map((row) => ({
-          leagueId: row.leagueId,
-          selectionType: row.selectionType,
-        })),
-      registrationStatus: 'confirmed',
+      season,
+      paymentOrderId: order.id,
     });
   });
   if (!confirmedNow) return;

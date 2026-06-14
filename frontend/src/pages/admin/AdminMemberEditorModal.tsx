@@ -1,12 +1,34 @@
-import { useEffect, useId, useState } from 'react';
-import { patch, post } from '../../api/client';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { del, get, patch, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import Button from '../../components/Button';
-import ChoiceInput from '../../components/ChoiceInput';
+import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
+import InlineStateMessage from '../../components/InlineStateMessage';
 import Modal from '../../components/Modal';
+import PageTabs from '../../components/PageTabs';
+import PhysicalAddressCollect from '../../components/PhysicalAddressCollect';
+import ProfilePaymentHistoryTab from '../../components/profile/ProfilePaymentHistoryTab';
 import api, { formatApiError } from '../../utils/api';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
+import type { MemberProfileResponse, MemberSeasonMembershipResponse } from '../../../../backend/src/api/types.ts';
+import {
+  emptyMemberDemographicsForm,
+  memberDemographicsFormFromProfile,
+  type MemberDemographicsFormFields,
+} from '../../utils/memberDemographicsForm';
+import {
+  emptyMemberGuardianForm,
+  isMemberMinor,
+  memberGuardianFormFromProfile,
+  type MemberGuardianFormFields,
+} from '../../utils/memberGuardianForm';
+import {
+  DEFAULT_REGISTRATION_MAILING_COUNTRY,
+  DEFAULT_REGISTRATION_MAILING_STATE,
+  serializeRegistrationMailingAddress,
+} from '../../utils/registrationMailingAddress';
 
 function memberNameParts(member: Pick<Member, 'name' | 'firstName' | 'lastName'>): {
   firstName: string;
@@ -25,16 +47,22 @@ function memberNameParts(member: Pick<Member, 'name' | 'firstName' | 'lastName'>
 type MemberUpdatePayload = {
   firstName: string;
   lastName: string;
-  email?: string;
-  phone?: string;
+  email: string;
+  phone: string;
+  dateOfBirth: string;
+  mailingAddress: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   emailVisible: boolean;
   phoneVisible: boolean;
-  validThrough?: string | null;
-  spareOnly?: boolean;
-  socialMember?: boolean;
+  lifetimeMember?: boolean;
   isServerAdmin?: boolean;
   baselineOtherClubExperienceYears?: number;
   baselineClubExperienceYears?: number;
+  guardianFirstName: string;
+  guardianLastName: string;
+  guardianEmail: string;
+  guardianPhone: string;
 };
 
 type MemberCreatePayload = {
@@ -42,9 +70,6 @@ type MemberCreatePayload = {
   lastName: string;
   email: string;
   phone?: string;
-  validThrough: string | null;
-  spareOnly: boolean;
-  socialMember: boolean;
   isServerAdmin?: boolean;
 };
 
@@ -75,6 +100,56 @@ type AssignmentDraft = {
   resourceType: string;
   resourceId: string;
 };
+
+type MemberModalTab = 'member' | 'details' | 'memberships' | 'permissions' | 'payment-history';
+
+type SeasonOption = {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+};
+
+type MembershipType = 'regular' | 'social' | 'junior_recreational';
+
+const MEMBERSHIP_TYPE_OPTIONS: ChoiceOption<MembershipType>[] = [
+  { value: 'regular', label: 'Regular membership' },
+  { value: 'social', label: 'Social membership' },
+  { value: 'junior_recreational', label: 'Junior recreational membership' },
+];
+
+const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, string> = {
+  regular: 'Regular membership',
+  social: 'Social membership',
+  junior_recreational: 'Junior recreational membership',
+};
+
+function membershipTypeLabel(type: MembershipType): string {
+  return MEMBERSHIP_TYPE_LABELS[type];
+}
+
+function membershipStatusLabel(status: MemberSeasonMembershipResponse['status']): string {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'active':
+      return 'Active';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'refunded':
+      return 'Refunded';
+    case 'expired':
+      return 'Expired';
+    default:
+      return status;
+  }
+}
+
+function formatMembershipDate(dateString: string): string {
+  const date = new Date(`${dateString}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateString;
+  return date.toLocaleDateString();
+}
 
 function makeAssignmentDraft(roleId: number): AssignmentDraft {
   return {
@@ -107,8 +182,14 @@ export default function AdminMemberEditorModal({
   onSaved,
 }: Props) {
   const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
   const firstNameInputId = useId();
   const lastNameInputId = useId();
+  const emailInputId = useId();
+  const phoneInputId = useId();
+  const dateOfBirthInputId = useId();
+  const emergencyContactNameInputId = useId();
+  const emergencyContactPhoneInputId = useId();
   const baselineOtherClubExperienceInputId = useId();
   const baselineClubExperienceInputId = useId();
   const [formData, setFormData] = useState({
@@ -116,9 +197,7 @@ export default function AdminMemberEditorModal({
     lastName: '',
     email: '',
     phone: '',
-    validThrough: '',
-    spareOnly: false,
-    socialMember: false,
+    lifetimeMember: false,
     isServerAdmin: false,
     emailVisible: false,
     phoneVisible: false,
@@ -130,7 +209,20 @@ export default function AdminMemberEditorModal({
   const [memberAssignments, setMemberAssignments] = useState<AssignmentDraft[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
-  const [activeMemberModalTab, setActiveMemberModalTab] = useState<'details' | 'permissions'>('details');
+  const [activeMemberModalTab, setActiveMemberModalTab] = useState<MemberModalTab>('member');
+  const [seasonMemberships, setSeasonMemberships] = useState<MemberSeasonMembershipResponse[]>([]);
+  const [seasonMembershipsLoading, setSeasonMembershipsLoading] = useState(false);
+  const [seasonMembershipsError, setSeasonMembershipsError] = useState<string | null>(null);
+  const [seasonOptions, setSeasonOptions] = useState<SeasonOption[]>([]);
+  const [seasonOptionsLoading, setSeasonOptionsLoading] = useState(false);
+  const [newMembershipSeasonId, setNewMembershipSeasonId] = useState<number | null>(null);
+  const [newMembershipType, setNewMembershipType] = useState<MembershipType>('regular');
+  const [membershipActionSubmitting, setMembershipActionSubmitting] = useState(false);
+  const addMembershipSeasonInputId = useId();
+  const addMembershipTypeInputId = useId();
+  const [demographics, setDemographics] = useState<MemberDemographicsFormFields>(emptyMemberDemographicsForm);
+  const [guardian, setGuardian] = useState<MemberGuardianFormFields>(emptyMemberGuardianForm);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const resetFormClosed = () => {
     setFormData({
@@ -138,9 +230,7 @@ export default function AdminMemberEditorModal({
       lastName: '',
       email: '',
       phone: '',
-      validThrough: '',
-      spareOnly: false,
-      socialMember: false,
+      lifetimeMember: false,
       isServerAdmin: false,
       emailVisible: false,
       phoneVisible: false,
@@ -150,7 +240,18 @@ export default function AdminMemberEditorModal({
     setAssignableRoles([]);
     setMemberAssignments([]);
     setAssignmentsError(null);
-    setActiveMemberModalTab('details');
+    setActiveMemberModalTab('member');
+    setSeasonMemberships([]);
+    setSeasonMembershipsError(null);
+    setSeasonMembershipsLoading(false);
+    setSeasonOptions([]);
+    setSeasonOptionsLoading(false);
+    setNewMembershipSeasonId(null);
+    setNewMembershipType('regular');
+    setMembershipActionSubmitting(false);
+    setDemographics(emptyMemberDemographicsForm());
+    setGuardian(emptyMemberGuardianForm());
+    setProfileLoading(false);
   };
 
   useEffect(() => {
@@ -160,7 +261,7 @@ export default function AdminMemberEditorModal({
     }
 
     setAssignmentsError(null);
-    setActiveMemberModalTab('details');
+    setActiveMemberModalTab('member');
 
     if (editingMember) {
       const isServerAdmin = editingMember.isServerAdmin || false;
@@ -170,9 +271,7 @@ export default function AdminMemberEditorModal({
         lastName,
         email: editingMember.email || '',
         phone: editingMember.phone || '',
-        validThrough: editingMember.validThrough || '',
-        spareOnly: Boolean(editingMember.spareOnly),
-        socialMember: Boolean(editingMember.socialMember),
+        lifetimeMember: Boolean(editingMember.lifetimeMember),
         isServerAdmin: isServerAdmin,
         emailVisible: editingMember.emailVisible,
         phoneVisible: editingMember.phoneVisible,
@@ -193,9 +292,7 @@ export default function AdminMemberEditorModal({
         lastName: '',
         email: '',
         phone: '',
-        validThrough: '',
-        spareOnly: false,
-        socialMember: false,
+        lifetimeMember: false,
         isServerAdmin: false,
         emailVisible: false,
         phoneVisible: false,
@@ -206,6 +303,32 @@ export default function AdminMemberEditorModal({
       setMemberAssignments([]);
     }
   }, [isOpen, editingMember?.id, currentMember?.isServerAdmin]);
+
+  useEffect(() => {
+    const memberId = editingMember?.id;
+    if (!isOpen || memberId === undefined) return;
+    let cancelled = false;
+    async function fetchProfile() {
+      setProfileLoading(true);
+      try {
+        const profile = await api.get<MemberProfileResponse>(`/members/${memberId}/profile`);
+        if (cancelled) return;
+        setDemographics(memberDemographicsFormFromProfile(profile.data));
+        setGuardian(memberGuardianFormFromProfile(profile.data));
+      } catch {
+        if (!cancelled) {
+          setDemographics(emptyMemberDemographicsForm());
+          setGuardian(emptyMemberGuardianForm());
+        }
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
+    }
+    void fetchProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, editingMember?.id]);
 
   useEffect(() => {
     const memberId = editingMember?.id;
@@ -251,6 +374,152 @@ export default function AdminMemberEditorModal({
     };
   }, [isOpen, editingMember?.id, currentMember?.isServerAdmin]);
 
+  useEffect(() => {
+    const memberId = editingMember?.id;
+    if (!isOpen || memberId === undefined || activeMemberModalTab !== 'memberships') return;
+    if (formData.lifetimeMember) {
+      setSeasonMemberships([]);
+      setSeasonMembershipsLoading(false);
+      setSeasonMembershipsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function fetchSeasonMemberships() {
+      setSeasonMembershipsLoading(true);
+      setSeasonMembershipsError(null);
+      try {
+        const memberships = await get('/members/{id}/season-memberships', undefined, { id: String(memberId) });
+        if (!cancelled) setSeasonMemberships(memberships);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setSeasonMemberships([]);
+          setSeasonMembershipsError(formatApiError(error, 'Failed to load memberships'));
+        }
+      } finally {
+        if (!cancelled) setSeasonMembershipsLoading(false);
+      }
+    }
+
+    void fetchSeasonMemberships();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, editingMember?.id, activeMemberModalTab, formData.lifetimeMember]);
+
+  useEffect(() => {
+    if (!isOpen || activeMemberModalTab !== 'memberships') return;
+
+    let cancelled = false;
+    async function fetchSeasonOptions() {
+      setSeasonOptionsLoading(true);
+      try {
+        const seasons = await get('/registration-config/seasons');
+        if (!cancelled) {
+          setSeasonOptions(
+            seasons.map((season) => ({
+              id: season.id,
+              name: season.name,
+              startDate: season.startDate,
+              endDate: season.endDate,
+            }))
+          );
+        }
+      } catch {
+        if (!cancelled) setSeasonOptions([]);
+      } finally {
+        if (!cancelled) setSeasonOptionsLoading(false);
+      }
+    }
+
+    void fetchSeasonOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, activeMemberModalTab]);
+
+  const availableSeasonOptions = useMemo(() => {
+    const blockedSeasonIds = new Set(
+      seasonMemberships
+        .filter((membership) => membership.status === 'pending' || membership.status === 'active')
+        .map((membership) => membership.seasonId)
+    );
+    return seasonOptions
+      .filter((season) => !blockedSeasonIds.has(season.id))
+      .map((season) => ({
+        value: season.id,
+        label: season.name,
+      }));
+  }, [seasonMemberships, seasonOptions]);
+
+  useEffect(() => {
+    if (availableSeasonOptions.length === 0) {
+      setNewMembershipSeasonId(null);
+      return;
+    }
+    if (
+      newMembershipSeasonId == null ||
+      !availableSeasonOptions.some((option) => option.value === newMembershipSeasonId)
+    ) {
+      setNewMembershipSeasonId(availableSeasonOptions[0].value);
+    }
+  }, [availableSeasonOptions, newMembershipSeasonId]);
+
+  const handleAddSeasonMembership = async () => {
+    const selectedSeasonId = newMembershipSeasonId ?? availableSeasonOptions[0]?.value ?? null;
+    if (!editingMember || selectedSeasonId == null) return;
+
+    setMembershipActionSubmitting(true);
+    try {
+      const createdMembership = await post(
+        '/members/{id}/season-memberships',
+        {
+          seasonId: selectedSeasonId,
+          membershipType: newMembershipType,
+        },
+        { id: String(editingMember.id) }
+      );
+      setSeasonMemberships((current) =>
+        [...current, createdMembership].sort((left, right) => right.endsAt.localeCompare(left.endsAt))
+      );
+      setNewMembershipSeasonId(null);
+      setNewMembershipType('regular');
+      showAlert('Membership added.', 'success');
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to add membership'), 'error');
+    } finally {
+      setMembershipActionSubmitting(false);
+    }
+  };
+
+  const handleDeleteSeasonMembership = async (membership: MemberSeasonMembershipResponse) => {
+    if (!editingMember) return;
+
+    const confirmed = await confirm({
+      title: 'Delete membership',
+      message: `Remove the ${membershipTypeLabel(membership.membershipType).toLowerCase()} for ${membership.seasonName}?`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    setMembershipActionSubmitting(true);
+    try {
+      await del(
+        '/members/{id}/season-memberships/{membershipId}',
+        undefined,
+        { id: String(editingMember.id), membershipId: String(membership.id) }
+      );
+      setSeasonMemberships((current) => current.filter((row) => row.id !== membership.id));
+      showAlert('Membership deleted.', 'success');
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to delete membership'), 'error');
+    } finally {
+      setMembershipActionSubmitting(false);
+    }
+  };
+
   const addAssignmentDraft = () => {
     const defaultRoleId = assignableRoles[0]?.id;
     if (!defaultRoleId) return;
@@ -273,6 +542,33 @@ export default function AdminMemberEditorModal({
       currentMember &&
       editingMember.id !== currentMember.id
   );
+  const canEditLifetimeMembership = Boolean(currentMember?.isServerAdmin && editingMember);
+  const savedLifetimeMember = Boolean(editingMember?.lifetimeMember);
+  const lifetimeMembershipDirty =
+    canEditLifetimeMembership && formData.lifetimeMember !== savedLifetimeMember;
+  const detailsIsMinor = isMemberMinor(demographics.dateOfBirth);
+  const mailingStructuredAddress = useMemo(
+    () => ({
+      addressLine1: demographics.mailingAddressLine1,
+      addressLine2: demographics.mailingAddressLine2,
+      city: demographics.mailingCity,
+      state: demographics.mailingState,
+      country: demographics.mailingCountry,
+      postalCode: demographics.mailingPostalCode,
+    }),
+    [
+      demographics.mailingAddressLine1,
+      demographics.mailingAddressLine2,
+      demographics.mailingCity,
+      demographics.mailingState,
+      demographics.mailingCountry,
+      demographics.mailingPostalCode,
+    ],
+  );
+
+  const revertLifetimeMembershipDraft = () => {
+    setFormData((current) => ({ ...current, lifetimeMember: savedLifetimeMember }));
+  };
 
   const handleCloseModal = () => {
     resetFormClosed();
@@ -288,18 +584,26 @@ export default function AdminMemberEditorModal({
         const updateData: MemberUpdatePayload = {
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
-          email: formData.email || undefined,
-          phone: formData.phone || undefined,
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          dateOfBirth: demographics.dateOfBirth.trim(),
+          mailingAddress: serializeRegistrationMailingAddress(demographics),
           emailVisible: formData.emailVisible,
           phoneVisible: formData.phoneVisible,
+          guardianFirstName: guardian.guardianFirstName.trim(),
+          guardianLastName: guardian.guardianLastName.trim(),
+          guardianEmail: guardian.guardianEmail.trim(),
+          guardianPhone: guardian.guardianPhone.trim(),
         };
 
-        if (editingMember?.id !== currentMember?.id) {
-          updateData.validThrough = formData.validThrough ? formData.validThrough : null;
-          updateData.spareOnly = Boolean(formData.spareOnly);
-          updateData.socialMember = Boolean(formData.socialMember);
+        if (!detailsIsMinor) {
+          updateData.emergencyContactName = demographics.emergencyContactName.trim();
+          updateData.emergencyContactPhone = demographics.emergencyContactPhone.trim();
         }
 
+        if (currentMember?.isServerAdmin) {
+          updateData.lifetimeMember = Boolean(formData.lifetimeMember);
+        }
         if (currentMember?.isServerAdmin && editingMember?.id !== currentMember?.id) {
           updateData.isServerAdmin = formData.isServerAdmin;
         }
@@ -336,9 +640,6 @@ export default function AdminMemberEditorModal({
           lastName: formData.lastName.trim(),
           email: formData.email,
           phone: formData.phone || undefined,
-          validThrough: formData.validThrough ? formData.validThrough : null,
-          spareOnly: Boolean(formData.spareOnly),
-          socialMember: Boolean(formData.socialMember),
         };
 
         if (currentMember?.isServerAdmin) {
@@ -366,35 +667,44 @@ export default function AdminMemberEditorModal({
     <Modal isOpen={isOpen} onClose={handleCancel} title={editingMember ? 'Edit member' : 'Add member'} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         {editingMember && (
-          <div className="rounded-lg border border-gray-200 p-1 dark:border-gray-700">
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                onClick={() => setActiveMemberModalTab('details')}
-                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  activeMemberModalTab === 'details'
-                    ? 'bg-primary-teal text-white'
-                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
-                }`}
-              >
-                Details
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveMemberModalTab('permissions')}
-                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  activeMemberModalTab === 'permissions'
-                    ? 'bg-primary-teal text-white'
-                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
-                }`}
-              >
-                Permissions
-              </button>
-            </div>
-          </div>
+          <PageTabs
+            className="mb-4"
+            items={[
+              {
+                key: 'member',
+                label: 'Member',
+                isActive: activeMemberModalTab === 'member',
+                onClick: () => setActiveMemberModalTab('member'),
+              },
+              {
+                key: 'details',
+                label: 'Details',
+                isActive: activeMemberModalTab === 'details',
+                onClick: () => setActiveMemberModalTab('details'),
+              },
+              {
+                key: 'memberships',
+                label: 'Memberships',
+                isActive: activeMemberModalTab === 'memberships',
+                onClick: () => setActiveMemberModalTab('memberships'),
+              },
+              {
+                key: 'permissions',
+                label: 'Permissions',
+                isActive: activeMemberModalTab === 'permissions',
+                onClick: () => setActiveMemberModalTab('permissions'),
+              },
+              {
+                key: 'payment-history',
+                label: 'Payment history',
+                isActive: activeMemberModalTab === 'payment-history',
+                onClick: () => setActiveMemberModalTab('payment-history'),
+              },
+            ]}
+          />
         )}
 
-        {(!editingMember || activeMemberModalTab === 'details') && (
+        {(!editingMember || activeMemberModalTab === 'member') && (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="First name" htmlFor={firstNameInputId} required>
@@ -421,55 +731,49 @@ export default function AdminMemberEditorModal({
               </FormField>
             </div>
 
-            <div>
-              <label htmlFor="email" className="app-label">
-                Email <span className="text-red-500">*</span>
-              </label>
+            <FormField label="Email" htmlFor={emailInputId} required={!editingMember}>
               <input
                 type="email"
-                id="email"
+                id={emailInputId}
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="app-input"
-                required
+                required={!editingMember}
               />
-              <div className="mt-2 flex items-center">
-                <input
-                  type="checkbox"
-                  id="emailVisible"
-                  checked={formData.emailVisible}
-                  onChange={(e) => setFormData({ ...formData, emailVisible: e.target.checked })}
-                  className="mr-2"
-                />
-                <label htmlFor="emailVisible" className="text-sm text-gray-600 dark:text-gray-400">
-                  Publicly visible
-                </label>
-              </div>
+            </FormField>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="emailVisible"
+                checked={formData.emailVisible}
+                onChange={(e) => setFormData({ ...formData, emailVisible: e.target.checked })}
+                className="mr-2"
+              />
+              <label htmlFor="emailVisible" className="text-sm text-gray-600 dark:text-gray-400">
+                Email publicly visible
+              </label>
             </div>
 
-            <div>
-              <label htmlFor="phone" className="app-label">
-                Phone
-              </label>
+            <FormField label="Phone" htmlFor={phoneInputId}>
               <input
                 type="tel"
-                id="phone"
+                id={phoneInputId}
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="app-input"
               />
-              <div className="mt-2 flex items-center">
-                <input
-                  type="checkbox"
-                  id="phoneVisible"
-                  checked={formData.phoneVisible}
-                  onChange={(e) => setFormData({ ...formData, phoneVisible: e.target.checked })}
-                  className="mr-2"
-                />
-                <label htmlFor="phoneVisible" className="text-sm text-gray-600 dark:text-gray-400">
-                  Publicly visible
-                </label>
-              </div>
+            </FormField>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="phoneVisible"
+                checked={formData.phoneVisible}
+                onChange={(e) => setFormData({ ...formData, phoneVisible: e.target.checked })}
+                className="mr-2"
+              />
+              <label htmlFor="phoneVisible" className="text-sm text-gray-600 dark:text-gray-400">
+                Phone publicly visible
+              </label>
             </div>
 
             {editingMember ? (
@@ -512,90 +816,254 @@ export default function AdminMemberEditorModal({
                 </FormField>
               </div>
             ) : null}
+          </>
+        )}
 
-            <div>
-              <label htmlFor="validThrough" className="app-label">
-                Valid through (optional)
-              </label>
-              <div className="flex items-center gap-2">
+        {editingMember && activeMemberModalTab === 'details' ? (
+          profileLoading ? (
+            <InlineStateMessage title="Loading member details…" />
+          ) : (
+            <div className="space-y-4">
+              <FormField label="Date of birth" htmlFor={dateOfBirthInputId}>
                 <input
                   type="date"
-                  id="validThrough"
-                  value={formData.validThrough}
-                  onChange={(e) => setFormData({ ...formData, validThrough: e.target.value })}
-                  disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
-                  className="flex-1 app-input disabled:opacity-60"
+                  id={dateOfBirthInputId}
+                  value={demographics.dateOfBirth}
+                  onChange={(event) =>
+                    setDemographics((current) => ({ ...current, dateOfBirth: event.target.value }))
+                  }
+                  autoComplete="bday"
+                  className="app-input"
                 />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setFormData({ ...formData, validThrough: '' })}
-                  disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
-                >
-                  Clear
-                </Button>
+              </FormField>
+
+              <PhysicalAddressCollect
+                value={mailingStructuredAddress}
+                onChange={(structured) =>
+                  setDemographics((current) => ({
+                    ...current,
+                    mailingAddressLine1: structured.addressLine1,
+                    mailingAddressLine2: structured.addressLine2,
+                    mailingCity: structured.city,
+                    mailingState: structured.state,
+                    mailingCountry: structured.country,
+                    mailingPostalCode: structured.postalCode,
+                  }))
+                }
+                fillWhenEmpty={{
+                  state: DEFAULT_REGISTRATION_MAILING_STATE,
+                  country: DEFAULT_REGISTRATION_MAILING_COUNTRY,
+                }}
+                entryMode="auto"
+                required={false}
+                tone="app"
+                nominatimContext="admin member editor"
+              />
+
+              {detailsIsMinor ? (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
+                  <h3 className="app-section-title mb-3">Parent information</h3>
+                  <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                    Parent or guardian contact for this member under 18. Also used as the emergency contact.
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {(
+                      [
+                        ['guardianFirstName', 'First name'],
+                        ['guardianLastName', 'Last name'],
+                        ['guardianEmail', 'Email address'],
+                        ['guardianPhone', 'Phone number'],
+                      ] as const
+                    ).map(([field, label]) => (
+                      <FormField key={field} label={label} htmlFor={`admin-guardian-${field}`}>
+                        <input
+                          id={`admin-guardian-${field}`}
+                          type={field === 'guardianEmail' ? 'email' : field === 'guardianPhone' ? 'tel' : 'text'}
+                          value={guardian[field]}
+                          onChange={(event) =>
+                            setGuardian((current) => ({ ...current, [field]: event.target.value }))
+                          }
+                          className="app-input"
+                        />
+                      </FormField>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField label="Emergency contact name" htmlFor={emergencyContactNameInputId}>
+                    <input
+                      id={emergencyContactNameInputId}
+                      type="text"
+                      value={demographics.emergencyContactName}
+                      onChange={(event) =>
+                        setDemographics((current) => ({
+                          ...current,
+                          emergencyContactName: event.target.value,
+                        }))
+                      }
+                      autoComplete="name"
+                      className="app-input"
+                    />
+                  </FormField>
+                  <FormField label="Emergency contact phone" htmlFor={emergencyContactPhoneInputId}>
+                    <input
+                      id={emergencyContactPhoneInputId}
+                      type="tel"
+                      value={demographics.emergencyContactPhone}
+                      onChange={(event) =>
+                        setDemographics((current) => ({
+                          ...current,
+                          emergencyContactPhone: event.target.value,
+                        }))
+                      }
+                      autoComplete="tel"
+                      className="app-input"
+                    />
+                  </FormField>
+                </div>
+              )}
+            </div>
+          )
+        ) : null}
+
+        {editingMember && activeMemberModalTab === 'memberships' ? (
+          <div className="space-y-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+            {canEditLifetimeMembership ? (
+              <div className="flex items-start rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+                <input
+                  type="checkbox"
+                  id="lifetimeMember"
+                  checked={formData.lifetimeMember}
+                  onChange={(e) => setFormData({ ...formData, lifetimeMember: e.target.checked })}
+                  className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
+                />
+                <label htmlFor="lifetimeMember" className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Lifetime member</span>
+                  <div className="text-gray-600 dark:text-gray-400">
+                    Member forever: no annual membership or registration league fees during registration.
+                  </div>
+                </label>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Leave empty for perpetual access. Admin/server admin users are always valid regardless of this date.
-                {editingMember && currentMember && editingMember.id === currentMember.id
-                  ? ' You cannot change your own date.'
-                  : ''}
+            ) : null}
+
+            {formData.lifetimeMember ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
+                This member has a lifetime membership. Season memberships are not required and are hidden here.
+              </p>
+            ) : (
+              <>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Season memberships</h3>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                Memberships are tied to a curling season and can be regular, social, or junior recreational.
               </p>
             </div>
 
-            <div className="flex items-start">
-              <input
-                type="checkbox"
-                id="spareOnly"
-                checked={formData.spareOnly}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    spareOnly: e.target.checked,
-                    socialMember: e.target.checked ? false : formData.socialMember,
-                  })
-                }
-                disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
-                className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal disabled:opacity-60"
-              />
-              <label htmlFor="spareOnly" className="text-sm text-gray-700 dark:text-gray-300">
-                <span className="font-medium">Spare-only member</span>
-                <div className="text-gray-600 dark:text-gray-400">
-                  Can sign up to spare, but cannot create spare requests.
-                  {editingMember && currentMember && editingMember.id === currentMember.id
-                    ? ' You cannot change your own status.'
-                    : ''}
-                </div>
-              </label>
-            </div>
+            {seasonMembershipsLoading ? (
+              <InlineStateMessage title="Loading memberships…" />
+            ) : seasonMembershipsError ? (
+              <InlineStateMessage title={seasonMembershipsError} tone="error" />
+            ) : seasonMemberships.length === 0 ? (
+              <InlineStateMessage title="No season memberships yet." />
+            ) : (
+              <div className="space-y-2">
+                {seasonMemberships.map((membership) => (
+                  <div
+                    key={membership.id}
+                    className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{membership.seasonName}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {membershipTypeLabel(membership.membershipType)}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatMembershipDate(membership.startsAt)} – {formatMembershipDate(membership.endsAt)}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Status: {membershipStatusLabel(membership.status)}
+                          {membership.sourceRegistrationId != null
+                            ? ` · Registration #${membership.sourceRegistrationId}`
+                            : ''}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        onClick={() => void handleDeleteSeasonMembership(membership)}
+                        disabled={membershipActionSubmitting}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-            <div className="flex items-start">
-              <input
-                type="checkbox"
-                id="socialMember"
-                checked={formData.socialMember}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    socialMember: e.target.checked,
-                    spareOnly: e.target.checked ? false : formData.spareOnly,
-                  })
-                }
-                disabled={Boolean(editingMember && currentMember && editingMember.id === currentMember.id)}
-                className="mt-1 mr-3 rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal disabled:opacity-60"
-              />
-              <label htmlFor="socialMember" className="text-sm text-gray-700 dark:text-gray-300">
-                <span className="font-medium">Social member</span>
-                <div className="text-gray-600 dark:text-gray-400">
-                  Member without ice privileges: cannot spare, request spares, or be on a league roster.
-                  {editingMember && currentMember && editingMember.id === currentMember.id
-                    ? ' You cannot change your own status.'
-                    : ''}
-                </div>
-              </label>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3 dark:border-gray-700 dark:bg-gray-900/30">
+              <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200">Add membership</h4>
+              {seasonOptionsLoading ? (
+                <InlineStateMessage title="Loading seasons…" />
+              ) : availableSeasonOptions.length === 0 ? (
+                <InlineStateMessage
+                  title="No seasons available."
+                  description="Every configured season already has an active or pending membership for this member."
+                />
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <FormField label="Season" htmlFor={addMembershipSeasonInputId} required>
+                      <ChoiceInput<number>
+                        options={availableSeasonOptions}
+                        value={newMembershipSeasonId ?? availableSeasonOptions[0]?.value ?? null}
+                        onChange={(next) => {
+                          if (next != null && !Array.isArray(next)) setNewMembershipSeasonId(next);
+                        }}
+                        inputId={addMembershipSeasonInputId}
+                        ariaLabel="Season"
+                        listboxLabel="Season"
+                        inputClassName="app-input"
+                        disabled={membershipActionSubmitting}
+                      />
+                    </FormField>
+                    <FormField label="Membership type" htmlFor={addMembershipTypeInputId} required>
+                      <ChoiceInput<MembershipType>
+                        options={MEMBERSHIP_TYPE_OPTIONS}
+                        value={newMembershipType}
+                        onChange={(next) => {
+                          if (next != null && !Array.isArray(next)) setNewMembershipType(next);
+                        }}
+                        inputId={addMembershipTypeInputId}
+                        ariaLabel="Membership type"
+                        listboxLabel="Membership type"
+                        inputClassName="app-input"
+                        disabled={membershipActionSubmitting}
+                      />
+                    </FormField>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void handleAddSeasonMembership()}
+                      disabled={
+                        membershipActionSubmitting ||
+                        (newMembershipSeasonId ?? availableSeasonOptions[0]?.value ?? null) == null
+                      }
+                    >
+                      {membershipActionSubmitting ? 'Saving…' : 'Add membership'}
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
-          </>
-        )}
+              </>
+            )}
+          </div>
+        ) : null}
 
         {editingMember && activeMemberModalTab === 'permissions' ? (
           currentMember?.isServerAdmin ? (
@@ -727,14 +1195,47 @@ export default function AdminMemberEditorModal({
           )
         ) : null}
 
-        <div className="flex space-x-3">
-          <Button type="submit" disabled={submitting} className="flex-1">
-            {submitting ? 'Saving...' : 'Save'}
-          </Button>
-          <Button type="button" variant="secondary" onClick={handleCancel} disabled={submitting} className="flex-1">
-            Cancel
-          </Button>
-        </div>
+        {editingMember && activeMemberModalTab === 'payment-history' ? (
+          <ProfilePaymentHistoryTab memberId={editingMember.id} />
+        ) : null}
+
+        {activeMemberModalTab !== 'memberships' && activeMemberModalTab !== 'payment-history' ? (
+          <div className="flex space-x-3">
+            <Button type="submit" disabled={submitting} className="flex-1">
+              {submitting ? 'Saving...' : 'Save'}
+            </Button>
+            <Button type="button" variant="secondary" onClick={handleCancel} disabled={submitting} className="flex-1">
+              Cancel
+            </Button>
+          </div>
+        ) : lifetimeMembershipDirty ? (
+          <div className="flex space-x-3">
+            <Button type="submit" disabled={submitting || membershipActionSubmitting} className="flex-1">
+              {submitting ? 'Saving…' : 'Save'}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={revertLifetimeMembershipDraft}
+              disabled={submitting || membershipActionSubmitting}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleCancel}
+              disabled={membershipActionSubmitting}
+              className="flex-1"
+            >
+              Close
+            </Button>
+          </div>
+        )}
       </form>
     </Modal>
   );

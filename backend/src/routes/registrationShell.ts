@@ -16,6 +16,7 @@ import {
   RegistrationMembershipPaymentValidationError,
   getGuestMembershipPaymentPreview,
   getPublicRegistrationDiscountSettings,
+  getPublicRegistrationMembershipFees,
   getRegistrationMembershipPaymentPayload,
   getRegistrationPaymentStatusByOrderToken,
   resolveRegistrationPaymentFromCheckoutReturn,
@@ -80,12 +81,12 @@ const returningIdentitySchema = z.object({
 const demographicsSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  dateOfBirth: z.string().min(1),
+  dateOfBirth: z.string().min(1).optional(),
   email: z.string().email(),
   phone: z.string().min(1),
   mailingAddress: z.string().min(1),
-  emergencyContactName: z.string().min(1),
-  emergencyContactPhone: z.string().min(1),
+  emergencyContactName: z.string().optional().default(''),
+  emergencyContactPhone: z.string().optional().default(''),
 });
 const newIdentitySchema = z.object({
   registeringForSelf: z.boolean(),
@@ -103,7 +104,7 @@ const guardianSchema = z.object({
   phone: z.string().min(1),
 });
 const membershipSchema = z.object({
-  membershipOption: z.enum(['regular', 'social', 'junior_recreational']),
+  membershipOption: z.enum(['regular', 'social', 'junior_recreational', 'none']),
   basicIcePrivileges: z.boolean().default(false),
   juniorAssistancePercent: z.number().int().refine((value) => [0, 25, 50, 75].includes(value)).nullable().optional(),
 });
@@ -296,11 +297,12 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
           ? await getEffectiveRegistrationWindow(query.seasonId, query.sessionId)
           : await getDefaultRegistrationWindow();
         if (!window) return sendApiError(reply, 404, 'Registration window not found');
-        const [previousRegistrationSessionDisplayName, availableDiscounts] = await Promise.all([
+        const [previousRegistrationSessionDisplayName, availableDiscounts, membershipFees] = await Promise.all([
           getImmediatelyPriorRegistrationSessionDisplayName(window.session.id),
           getPublicRegistrationDiscountSettings(),
+          getPublicRegistrationMembershipFees(),
         ]);
-        return { ...window, previousRegistrationSessionDisplayName, availableDiscounts };
+        return { ...window, previousRegistrationSessionDisplayName, availableDiscounts, membershipFees };
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

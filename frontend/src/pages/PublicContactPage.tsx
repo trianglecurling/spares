@@ -1,9 +1,9 @@
-import { FormEvent, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { FaFacebookF, FaInstagram, FaYoutube } from 'react-icons/fa';
 import { FaXTwitter } from 'react-icons/fa6';
 import FormField from '../components/FormField';
-import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
+import ChoiceInput, { type ChoiceRenderableOption } from '../components/ChoiceInput';
 import Modal from '../components/Modal';
 import PublicLayout from '../components/PublicLayout';
 import SeoMeta from '../components/SeoMeta';
@@ -21,7 +21,7 @@ type RecipientKey =
   | 'web'
   | 'president';
 
-const recipientChoiceOptions: ChoiceOption<RecipientKey>[] = [
+const recipientChoiceOptions: ChoiceRenderableOption<RecipientKey>[] = [
   { value: 'general', label: 'General info and questions' },
   { value: 'membership', label: 'Leagues and membership inquiries' },
   { value: 'marketing', label: 'Media inquiries, advertising, merchandise' },
@@ -33,6 +33,12 @@ const recipientChoiceOptions: ChoiceOption<RecipientKey>[] = [
   { value: 'web', label: 'Website issues' },
   { value: 'president', label: 'Contact the president' },
 ];
+
+const recipientKeys = new Set(recipientChoiceOptions.map((option) => option.value));
+
+function isRecipientKey(value: string | null): value is RecipientKey {
+  return value != null && recipientKeys.has(value as RecipientKey);
+}
 
 const facilityDetails: Array<{ title: string; body: string }> = [
   { title: 'Bar', body: 'Beer, wine, cider, soda, juice, sports beverages, water, seltzers (NA & alcoholic). Four-tap draft unit.' },
@@ -51,7 +57,12 @@ const facilityDetails: Array<{ title: string; body: string }> = [
 ];
 
 export default function PublicContactPage() {
-  const [recipient, setRecipient] = useState<RecipientKey>('general');
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const [recipient, setRecipient] = useState<RecipientKey>(() => {
+    const param = searchParams.get('recipient');
+    return isRecipientKey(param) ? param : 'general';
+  });
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -68,6 +79,18 @@ export default function PublicContactPage() {
     if (!target) return;
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  useEffect(() => {
+    const param = searchParams.get('recipient');
+    if (isRecipientKey(param)) {
+      setRecipient(param);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (location.hash !== '#send-message') return;
+    scrollToMessageForm();
+  }, [location.hash]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();

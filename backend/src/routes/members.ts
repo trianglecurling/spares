@@ -1,15 +1,14 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin, isSponsorAdmin } from '../utils/auth.js';
+import { loadGeneralAdminMemberIds, memberHasAdminAccess, setGeneralAdminRole } from '../utils/memberRoles.js';
 import { hasScope } from '../utils/rbac.js';
 import { Member } from '../types.js';
 import {
   bulkCreateResponseSchema,
   bulkDeleteResponseSchema,
-  bulkExperienceBaselinesBodySchema,
-  bulkExperienceBaselinesResponseSchema,
   bulkSendWelcomeResponseSchema,
   loginLinkResponseSchema,
   memberCreateResponseSchema,
@@ -17,7 +16,11 @@ import {
   memberExperienceSummaryResponseSchema,
   memberLeaguesResponseSchema,
   memberListResponseSchema,
+  memberDirectoryListResponseSchema,
   memberMembershipCardResponseSchema,
+  createMemberSeasonMembershipBodySchema,
+  memberSeasonMembershipListResponseSchema,
+  memberSeasonMembershipSchema,
   memberPaymentDetailSchema,
   memberPaymentHistoryResponseSchema,
   memberProfileResponseSchema,
@@ -27,14 +30,17 @@ import {
 import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
 import { clearMemberRestrictedRelations } from '../services/clearMemberRestrictedRelations.js';
 import { getMemberMembershipCard } from '../services/memberMembershipCardService.js';
+import { memberHasActiveMembershipCondition } from '../services/memberMembershipStatusService.js';
+import { getCurrentDateStringAsync } from '../utils/time.js';
+import { parseQueryBoolean } from '../utils/queryParams.js';
+import { resolveRelevantSessionIdForLeagues } from '../services/curlingSessionService.js';
+import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility.js';
 import type {
   ApiErrorResponse,
   BulkCreateBody,
   BulkCreateResponse,
   BulkDeleteBody,
   BulkDeleteResponse,
-  BulkExperienceBaselinesBody,
-  BulkExperienceBaselinesResponse,
   BulkSendWelcomeResponse,
   CreateMemberBody,
   LoginLinkResponse,
@@ -44,6 +50,9 @@ import type {
   MemberExperienceSummaryResponse,
   MemberLeaguesResponse,
   MemberMembershipCardResponse,
+  CreateMemberSeasonMembershipBody,
+  MemberSeasonMembershipListResponse,
+  MemberSeasonMembershipResponse,
   MemberPaymentDetail,
   MemberPaymentHistoryResponse,
   MemberProfileResponse,
@@ -67,6 +76,13 @@ import {
   MemberDemographicsUpdateError,
   MemberDemographicsValidationError,
 } from '../services/memberDemographics.js';
+import {
+  applyMemberGuardianUpdate,
+  clearMemberGuardian,
+  guardianEmergencyContactName,
+  MemberGuardianValidationError,
+} from '../services/memberGuardian.js';
+import { isMemberMinor } from '../utils/memberAge.js';
 import { sendValidationError } from '../api/errors.js';
 import { resolveMemberNameFields, splitMemberDisplayName } from '../utils/memberName.js';
 import {
@@ -80,8 +96,14 @@ import {
   normalizeHalfYearExperienceValue,
   validateHalfYearExperienceValue,
 } from '../registration/curlingExperienceYears.js';
-import { importMemberExperienceBaselines } from '../services/memberExperienceBaselineImport.js';
 import { getMemberTotalExperienceYears } from '../services/memberExperienceSummary.js';
+import {
+  createMemberSeasonMembership,
+  deleteMemberSeasonMembership,
+  listMemberSeasonMemberships,
+  MemberSeasonMembershipConflictError,
+  MemberSeasonMembershipNotFoundError,
+} from '../services/memberSeasonMembershipAdminService.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
@@ -96,6 +118,13 @@ const profileDemographicFieldKeys = [
   'emergencyContactPhone',
 ] as const;
 
+const profileGuardianFieldKeys = [
+  'guardianFirstName',
+  'guardianLastName',
+  'guardianEmail',
+  'guardianPhone',
+] as const;
+
 const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
@@ -106,6 +135,10 @@ const updateProfileSchema = z.object({
   mailingAddress: z.string().min(1).optional(),
   emergencyContactName: z.string().min(1).optional(),
   emergencyContactPhone: z.string().min(1).optional(),
+  guardianFirstName: z.string().min(1).optional(),
+  guardianLastName: z.string().min(1).optional(),
+  guardianEmail: z.string().email().optional(),
+  guardianPhone: z.string().min(1).optional(),
   optedInSms: z.boolean().optional(),
   emailVisible: z.boolean().optional(),
   phoneVisible: z.boolean().optional(),
@@ -119,9 +152,6 @@ const createMemberSchema = z
     name: z.string().min(1).optional(),
     email: z.string().email(),
     phone: z.string().optional(),
-    validThrough: z.string().nullable().optional(),
-    spareOnly: z.boolean().optional(),
-    socialMember: z.boolean().optional(),
     isAdmin: z.boolean().optional(),
     isServerAdmin: z.boolean().optional(),
     isCalendarAdmin: z.boolean().optional(),
@@ -140,15 +170,19 @@ const createMemberSchema = z
     }
   });
 
+const optionalAdminEmailField = z.union([z.literal(''), z.string().email()]).optional();
+
 const updateMemberSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
+  email: optionalAdminEmailField,
   phone: z.string().optional(),
-  validThrough: z.string().nullable().optional(),
-  spareOnly: z.boolean().optional(),
-  socialMember: z.boolean().optional(),
+  dateOfBirth: z.string().optional(),
+  mailingAddress: z.string().optional(),
+  emergencyContactName: z.string().optional(),
+  emergencyContactPhone: z.string().optional(),
+  lifetimeMember: z.boolean().optional(),
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
   isCalendarAdmin: z.boolean().optional(),
@@ -157,6 +191,17 @@ const updateMemberSchema = z.object({
   isLeagueAdministrator: z.boolean().optional(),
   baselineOtherClubExperienceYears: z.coerce.number().optional(),
   baselineClubExperienceYears: z.coerce.number().optional(),
+  emailVisible: z.boolean().optional(),
+  phoneVisible: z.boolean().optional(),
+  guardianFirstName: z.string().optional(),
+  guardianLastName: z.string().optional(),
+  guardianEmail: optionalAdminEmailField,
+  guardianPhone: z.string().optional(),
+});
+
+const createMemberSeasonMembershipSchema = z.object({
+  seasonId: z.number().int().positive(),
+  membershipType: z.enum(['regular', 'social', 'junior_recreational']),
 });
 
 const bulkDeleteSchema = z.object({
@@ -175,38 +220,24 @@ const bulkCreateRequestSchema = z.union([
   bulkCreateSchema,
   z.object({
     members: bulkCreateSchema,
-    validThrough: z.string().nullable().optional(),
-    spareOnly: z.boolean().optional(),
-    socialMember: z.boolean().optional(),
   }),
 ]);
 
-const bulkExperienceBaselinesSchema = z.object({
-  rows: z
-    .array(
-      z
-        .object({
-          email: z.string().optional(),
-          name: z.string().optional(),
-          baselineOtherClubExperienceYears: z.coerce.number(),
-          baselineClubExperienceYears: z.coerce.number(),
-        })
-        .superRefine((row, ctx) => {
-          if (!row.email?.trim() && !row.name?.trim()) {
-            ctx.addIssue({
-              code: 'custom',
-              message: 'Each row must include an email or a name.',
-              path: ['email'],
-            });
-          }
-        }),
-    )
-    .min(1),
-});
-
 const directoryQuerySchema = z.object({
   leagueId: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().optional(),
+  search: z.string().optional(),
 });
+
+const memberLeaguesQuerySchemaJson = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    sessionId: { type: 'number' },
+    relevantSession: { type: 'string', enum: ['true', 'false'] },
+  },
+} as const;
 
 const updateAccountAccessDelegatesSchema = z.object({
   memberIds: z.array(z.number().int().positive()),
@@ -244,6 +275,10 @@ const updateProfileBodySchema = {
     mailingAddress: { type: 'string', minLength: 1 },
     emergencyContactName: { type: 'string', minLength: 1 },
     emergencyContactPhone: { type: 'string', minLength: 1 },
+    guardianFirstName: { type: 'string', minLength: 1 },
+    guardianLastName: { type: 'string', minLength: 1 },
+    guardianEmail: { type: 'string' },
+    guardianPhone: { type: 'string', minLength: 1 },
     optedInSms: { type: 'boolean' },
     emailVisible: { type: 'boolean' },
     phoneVisible: { type: 'boolean' },
@@ -260,9 +295,7 @@ const createMemberBodySchema = {
     name: { type: 'string', minLength: 1 },
     email: { type: 'string' },
     phone: { type: 'string' },
-    validThrough: { type: ['string', 'null'] },
-    spareOnly: { type: 'boolean' },
-    socialMember: { type: 'boolean' },
+    lifetimeMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
@@ -282,9 +315,11 @@ const updateMemberBodySchema = {
     name: { type: 'string', minLength: 1 },
     email: { type: 'string' },
     phone: { type: 'string' },
-    validThrough: { type: ['string', 'null'] },
-    spareOnly: { type: 'boolean' },
-    socialMember: { type: 'boolean' },
+    dateOfBirth: { type: 'string' },
+    mailingAddress: { type: 'string' },
+    emergencyContactName: { type: 'string' },
+    emergencyContactPhone: { type: 'string' },
+    lifetimeMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isCalendarAdmin: { type: 'boolean' },
@@ -292,6 +327,12 @@ const updateMemberBodySchema = {
     isSponsorAdmin: { type: 'boolean' },
     baselineOtherClubExperienceYears: { type: 'number' },
     baselineClubExperienceYears: { type: 'number' },
+    emailVisible: { type: 'boolean' },
+    phoneVisible: { type: 'boolean' },
+    guardianFirstName: { type: 'string' },
+    guardianLastName: { type: 'string' },
+    guardianEmail: { type: 'string' },
+    guardianPhone: { type: 'string' },
   },
 } as const;
 
@@ -337,9 +378,6 @@ const bulkCreateBodySchema = {
           },
           minItems: 1,
         },
-        validThrough: { type: ['string', 'null'] },
-        spareOnly: { type: 'boolean' },
-        socialMember: { type: 'boolean' },
       },
       required: ['members'],
     },
@@ -351,6 +389,9 @@ const directoryQuerySchemaJson = {
   additionalProperties: false,
   properties: {
     leagueId: { type: 'number' },
+    page: { type: 'number' },
+    pageSize: { type: 'number' },
+    search: { type: 'string' },
   },
 } as const;
 
@@ -360,14 +401,15 @@ interface MemberUpdateData {
   last_name?: string;
   email?: string;
   phone?: string | null;
-  valid_through?: string | null;
-  spare_only?: number;
-  social_member?: number;
+  date_of_birth?: string | null;
+  mailing_address?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  lifetime_member?: number;
   opted_in_sms?: number;
   email_visible?: number;
   phone_visible?: number;
   theme_preference?: string;
-  is_admin?: number;
   is_server_admin?: number;
   is_calendar_admin?: number;
   is_content_admin?: number;
@@ -437,18 +479,6 @@ function normalizeTimestamp(value: string | Date | number | null | undefined): s
   return String(value);
 }
 
-function isMemberExpired(member: Member): boolean {
-  // Admins/server-admins are always valid
-  if (isAdmin(member) || isServerAdmin(member)) return false;
-
-  const validThrough = normalizeDateString(member.valid_through);
-  if (!validThrough) return false;
-
-  // Compare as YYYY-MM-DD to avoid TZ issues. Valid through is inclusive.
-  const today = new Date().toISOString().split('T')[0];
-  return today > validThrough;
-}
-
 function memberSummaryNameFields(member: Member): { firstName: string | null; lastName: string | null } {
   const storedFirst = member.first_name?.trim() ?? '';
   const storedLast = member.last_name?.trim() ?? '';
@@ -466,6 +496,20 @@ function memberSummaryNameFields(member: Member): { firstName: string | null; la
 }
 
 function buildMemberProfileResponse(member: Member): MemberProfileResponse {
+  const dateOfBirth = normalizeDateString(member.date_of_birth);
+  const minor = isMemberMinor(dateOfBirth);
+  const guardianFirstName = member.guardian_first_name ?? null;
+  const guardianLastName = member.guardian_last_name ?? null;
+  const guardianPhone = member.guardian_phone ?? null;
+  const guardianEmergencyName =
+    guardianFirstName || guardianLastName
+      ? guardianEmergencyContactName({
+          firstName: guardianFirstName ?? '',
+          lastName: guardianLastName ?? '',
+          email: member.guardian_email ?? '',
+          phone: guardianPhone ?? '',
+        })
+      : null;
   return {
     id: member.id,
     name: member.name,
@@ -473,16 +517,18 @@ function buildMemberProfileResponse(member: Member): MemberProfileResponse {
     phone: member.phone,
     firstName: member.first_name ?? null,
     lastName: member.last_name ?? null,
-    dateOfBirth: normalizeDateString(member.date_of_birth),
+    dateOfBirth,
     mailingAddress: member.mailing_address ?? null,
-    emergencyContactName: member.emergency_contact_name ?? null,
-    emergencyContactPhone: member.emergency_contact_phone ?? null,
-    validThrough: normalizeDateString(member.valid_through),
-    spareOnly: member.spare_only === 1,
-    socialMember: (member.social_member ?? 0) === 1,
+    emergencyContactName: minor ? guardianEmergencyName ?? member.emergency_contact_name ?? null : member.emergency_contact_name ?? null,
+    emergencyContactPhone: minor ? guardianPhone ?? member.emergency_contact_phone ?? null : member.emergency_contact_phone ?? null,
+    guardianFirstName,
+    guardianLastName,
+    guardianEmail: member.guardian_email ?? null,
+    guardianPhone,
+    isMinor: minor,
+    lifetimeMember: (member.lifetime_member ?? 0) === 1,
     isAdmin: isAdmin(member),
     isServerAdmin: isServerAdmin(member),
-    firstLoginCompleted: member.first_login_completed === 1,
     optedInSms: member.opted_in_sms === 1,
     emailSubscribed: member.email_subscribed === 1,
     emailVisible: member.email_visible === 1,
@@ -722,10 +768,38 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
     const hasAnyDemographicField = profileDemographicFieldKeys.some((key) => body[key] !== undefined);
     const hasAllDemographicFields = profileDemographicFieldKeys.every((key) => body[key] !== undefined);
+    const hasAnyGuardianField = profileGuardianFieldKeys.some((key) => body[key] !== undefined);
+    const hasAllGuardianFields = profileGuardianFieldKeys.every((key) => body[key] !== undefined);
     if (hasAnyDemographicField && !hasAllDemographicFields) {
       return sendValidationError(reply, 'Validation failed', {
         demographics: 'Provide first name, last name, date of birth, mailing address, and emergency contact together.',
       });
+    }
+    if (hasAnyGuardianField && !hasAllGuardianFields) {
+      return sendValidationError(reply, 'Validation failed', {
+        guardian: 'Provide all parent/guardian contact fields together.',
+      });
+    }
+    if (hasAllGuardianFields && !isMemberMinor(body.dateOfBirth ?? normalizeDateString(member.date_of_birth))) {
+      return sendValidationError(reply, 'Validation failed', {
+        guardian: 'Parent/guardian information applies only to members under 18.',
+      });
+    }
+
+    if (hasAllGuardianFields) {
+      try {
+        await applyMemberGuardianUpdate(member.id, {
+          firstName: body.guardianFirstName!,
+          lastName: body.guardianLastName!,
+          email: body.guardianEmail!,
+          phone: body.guardianPhone!,
+        });
+      } catch (error) {
+        if (error instanceof MemberGuardianValidationError) {
+          return sendValidationError(reply, error.message, error.details);
+        }
+        throw error;
+      }
     }
 
     if (hasAllDemographicFields) {
@@ -810,30 +884,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // Complete first login
-  fastify.post<{ Reply: { success: boolean } | ApiErrorResponse }>(
-    '/members/me/complete-first-login',
-    {
-      schema: {
-        tags: ['members'],
-        response: {
-          200: successResponseSchema,
-        },
-      },
-    },
-    async (request, _reply) => {
-    const member = (request as AuthenticatedRequest).member;
-
-    const { db, schema } = getDrizzleDb();
-    await db
-      .update(schema.members)
-      .set({ first_login_completed: 1 })
-      .where(eq(schema.members.id, member.id));
-
-    return { success: true };
-    }
-  );
-
   // Unsubscribe from emails
   fastify.post<{ Reply: { success: boolean } | ApiErrorResponse }>(
     '/members/me/unsubscribe',
@@ -894,6 +944,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         )
       );
     const leagueAdminIds = new Set(leagueAdminRows.map((row) => row.member_id));
+    const generalAdminMemberIds = await loadGeneralAdminMemberIds();
     const serverAdminCount = countServerAdminsFromRows(members);
 
     return members.map((m) => {
@@ -902,7 +953,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       const response: MemberSummaryResponse = {
         id: m.id,
         name: m.name,
-        isAdmin: isAdmin(m),
+        isAdmin: memberHasAdminAccess(m, { generalAdminMemberIds }),
         isServerAdmin: isServerAdmin(m),
         isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
         isContentAdmin: (m.is_content_admin ?? 0) === 1,
@@ -913,7 +964,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
         optedInSms: Boolean(m.opted_in_sms === 1),
         emailVisible: Boolean(m.email_visible === 1),
         phoneVisible: Boolean(m.phone_visible === 1),
-        firstLoginCompleted: Boolean(m.first_login_completed === 1),
       };
 
       // Sensitive info visibility logic
@@ -922,10 +972,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
         response.email = m.email;
         response.phone = m.phone;
         response.createdAt = normalizeTimestamp(m.created_at);
-        response.validThrough = normalizeDateString(m.valid_through);
-        response.spareOnly = m.spare_only === 1;
-        response.socialMember = (m.social_member ?? 0) === 1;
         if (isCurrentUserAdmin) {
+          response.lifetimeMember = (m.lifetime_member ?? 0) === 1;
           const nameFields = memberSummaryNameFields(m);
           response.firstName = nameFields.firstName;
           response.lastName = nameFields.lastName;
@@ -948,40 +996,60 @@ export async function memberRoutes(fastify: FastifyInstance) {
   );
 
   // Directory: active members only (expired members excluded)
-  fastify.get<{ Querystring: { leagueId?: number }; Reply: MemberSummaryResponse[] | ApiErrorResponse }>(
+  fastify.get<{ Querystring: { leagueId?: number; page?: number; pageSize?: number; search?: string }; Reply: unknown }>(
     '/members/directory',
     {
       schema: {
         tags: ['members'],
         querystring: directoryQuerySchemaJson,
         response: {
-          200: memberListResponseSchema,
+          200: memberDirectoryListResponseSchema,
         },
       },
     },
     async (request, _reply) => {
-    const member = (request as AuthenticatedRequest).member;
-
     const { db, schema } = getDrizzleDb();
-    const { leagueId } = directoryQuerySchema.parse(request.query ?? {});
+    const parsedQuery = directoryQuerySchema.parse(request.query ?? {});
+    const { leagueId, search } = parsedQuery;
+    const page = Math.max(1, parsedQuery.page ?? 1);
+    const pageSize = Math.max(1, Math.min(100, parsedQuery.pageSize ?? 50));
+    const today = await getCurrentDateStringAsync();
+    const directoryVisibilityCondition = or(
+      eq(schema.members.lifetime_member, 1),
+      eq(schema.members.is_server_admin, 1),
+      memberHasActiveMembershipCondition(schema, today),
+    );
+    const searchTerm = search?.trim().toLowerCase() ?? '';
+    const searchCondition =
+      searchTerm.length > 0
+        ? sql`LOWER(${schema.members.name}) LIKE ${`%${searchTerm}%`}`
+        : undefined;
 
-    // Explicit selection so joins don't create ambiguous column names
+    if (leagueId) {
+      const [league] = await db
+        .select({
+          format: schema.leagues.format,
+          allows_drop_ins: schema.leagues.allows_drop_ins,
+        })
+        .from(schema.leagues)
+        .where(eq(schema.leagues.id, leagueId))
+        .limit(1);
+      if (!league || !isLeagueEligibleForSpares(league)) {
+        return { items: [], total: 0, page: 1, pageSize };
+      }
+    }
+
     const memberSelect = {
       id: schema.members.id,
       name: schema.members.name,
       email: schema.members.email,
       phone: schema.members.phone,
-      valid_through: schema.members.valid_through,
-      spare_only: schema.members.spare_only,
-      social_member: schema.members.social_member,
-      is_admin: schema.members.is_admin,
       is_server_admin: schema.members.is_server_admin,
       is_calendar_admin: schema.members.is_calendar_admin,
       is_content_admin: schema.members.is_content_admin,
       is_sponsor_admin: schema.members.is_sponsor_admin,
       opted_in_sms: schema.members.opted_in_sms,
       email_subscribed: schema.members.email_subscribed,
-      first_login_completed: schema.members.first_login_completed,
       email_visible: schema.members.email_visible,
       phone_visible: schema.members.phone_visible,
       theme_preference: schema.members.theme_preference,
@@ -989,31 +1057,51 @@ export async function memberRoutes(fastify: FastifyInstance) {
       updated_at: schema.members.updated_at,
     };
 
-    let members: Member[];
-    if (leagueId) {
-      members = await db
-        .select(memberSelect)
-        .from(schema.members)
-        .innerJoin(
-          schema.memberAvailability,
-          eq(schema.memberAvailability.member_id, schema.members.id)
+    const listWhere = leagueId
+      ? and(
+          eq(schema.memberAvailability.league_id, leagueId),
+          eq(schema.memberAvailability.available, 1),
+          directoryVisibilityCondition,
+          ...(searchCondition ? [searchCondition] : []),
         )
-        .where(
-          and(
-            eq(schema.memberAvailability.league_id, leagueId),
-            eq(schema.memberAvailability.available, 1)
-          )
-        )
-        .orderBy(schema.members.name) as unknown as Member[];
-    } else {
-      members = await db
-        .select(memberSelect)
-        .from(schema.members)
-        .orderBy(schema.members.name) as unknown as Member[];
-    }
+      : and(directoryVisibilityCondition, ...(searchCondition ? [searchCondition] : []));
 
-    const isCurrentUserAdmin = isAdmin(member);
-    const activeMembers = members.filter((m) => !isMemberExpired(m));
+    const [totalRow] = leagueId
+      ? await db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.members)
+          .innerJoin(
+            schema.memberAvailability,
+            eq(schema.memberAvailability.member_id, schema.members.id),
+          )
+          .where(listWhere)
+      : await db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.members)
+          .where(listWhere);
+    const total = Number(totalRow?.count ?? 0);
+    const maxPage = Math.max(1, Math.ceil(total / pageSize));
+    const effectivePage = Math.min(page, maxPage);
+
+    const members = (leagueId
+      ? await db
+          .select(memberSelect)
+          .from(schema.members)
+          .innerJoin(
+            schema.memberAvailability,
+            eq(schema.memberAvailability.member_id, schema.members.id),
+          )
+          .where(listWhere)
+          .orderBy(schema.members.name)
+          .limit(pageSize)
+          .offset((effectivePage - 1) * pageSize)
+      : await db
+          .select(memberSelect)
+          .from(schema.members)
+          .where(listWhere)
+          .orderBy(schema.members.name)
+          .limit(pageSize)
+          .offset((effectivePage - 1) * pageSize)) as unknown as Member[];
 
     const leagueAdminRows = await db
       .select({ member_id: schema.leagueMemberRoles.member_id })
@@ -1021,42 +1109,44 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .where(
         and(
           eq(schema.leagueMemberRoles.role, 'league_administrator'),
-          isNull(schema.leagueMemberRoles.league_id)
-        )
+          isNull(schema.leagueMemberRoles.league_id),
+        ),
       );
     const leagueAdminIds = new Set(leagueAdminRows.map((row) => row.member_id));
-    const serverAdminCount = countServerAdminsFromRows(activeMembers);
+    const generalAdminMemberIds = await loadGeneralAdminMemberIds();
+    const [serverAdminCountRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.members)
+      .where(eq(schema.members.is_server_admin, 1));
+    const serverAdminCount = Number(serverAdminCountRow?.count ?? 0);
 
-    return activeMembers.map((m) => {
-      const response: MemberSummaryResponse = {
-        id: m.id,
-        name: m.name,
-        isAdmin: isAdmin(m),
-        isServerAdmin: isServerAdmin(m),
-        isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
-        isContentAdmin: (m.is_content_admin ?? 0) === 1,
-        isSponsorAdmin: isSponsorAdmin(m),
-        isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
-        isLastServerAdmin: isLastServerAdminRow(m, serverAdminCount),
-        emailSubscribed: Boolean(m.email_subscribed === 1),
-        optedInSms: Boolean(m.opted_in_sms === 1),
-        emailVisible: Boolean(m.email_visible === 1),
-        phoneVisible: Boolean(m.phone_visible === 1),
-        firstLoginCompleted: Boolean(m.first_login_completed === 1),
-      };
+    return {
+      items: members.map((m) => {
+        const response: MemberSummaryResponse = {
+          id: m.id,
+          name: m.name,
+          isAdmin: memberHasAdminAccess(m, { generalAdminMemberIds }),
+          isServerAdmin: isServerAdmin(m),
+          isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
+          isContentAdmin: (m.is_content_admin ?? 0) === 1,
+          isSponsorAdmin: isSponsorAdmin(m),
+          isLeagueAdministratorGlobal: leagueAdminIds.has(m.id),
+          isLastServerAdmin: isLastServerAdminRow(m, serverAdminCount),
+          emailSubscribed: Boolean(m.email_subscribed === 1),
+          optedInSms: Boolean(m.opted_in_sms === 1),
+          emailVisible: Boolean(m.email_visible === 1),
+          phoneVisible: Boolean(m.phone_visible === 1),
+        };
 
-      if (isCurrentUserAdmin || m.id === member.id) {
-        response.email = m.email;
-        response.phone = m.phone;
-        response.createdAt = normalizeTimestamp(m.created_at);
-        response.validThrough = normalizeDateString(m.valid_through);
-      } else {
         response.email = m.email_visible === 1 ? m.email : null;
         response.phone = m.phone_visible === 1 ? m.phone : null;
-      }
 
-      return response;
-    });
+        return response;
+      }),
+      total,
+      page: effectivePage,
+      pageSize,
+    };
     }
   );
 
@@ -1066,6 +1156,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     {
       schema: {
         tags: ['members'],
+        querystring: memberLeaguesQuerySchemaJson,
         params: {
           type: 'object',
           additionalProperties: false,
@@ -1087,7 +1178,29 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
     const { memberId } = request.params;
     const targetMemberId = parseInt(memberId, 10);
+    const rawQuery = (request.query ?? {}) as Record<string, unknown>;
+    const sessionIdParam =
+      rawQuery.sessionId != null && rawQuery.sessionId !== ''
+        ? Number.parseInt(String(rawQuery.sessionId), 10)
+        : undefined;
+    const relevantSession = parseQueryBoolean(rawQuery.relevantSession);
+    let filterSessionId =
+      sessionIdParam != null && Number.isFinite(sessionIdParam) && sessionIdParam > 0
+        ? sessionIdParam
+        : null;
+    if (filterSessionId == null && relevantSession) {
+      const today = await getCurrentDateStringAsync();
+      filterSessionId = await resolveRelevantSessionIdForLeagues(today);
+      if (filterSessionId == null) {
+        return [];
+      }
+    }
+
     const { db, schema } = getDrizzleDb();
+    const rosterFilters = [eq(schema.leagueRoster.member_id, targetMemberId)];
+    if (filterSessionId != null) {
+      rosterFilters.push(eq(schema.leagues.session_id, filterSessionId));
+    }
 
     const rows = (await db
       .select({
@@ -1107,7 +1220,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
           eq(schema.leagueTeams.league_id, schema.leagueRoster.league_id)
         )
       )
-      .where(eq(schema.leagueRoster.member_id, targetMemberId))
+      .where(and(...rosterFilters))
       .orderBy(schema.leagues.day_of_week, schema.leagues.name)) as {
       league_id: number;
       league_name: string;
@@ -1198,8 +1311,13 @@ export async function memberRoutes(fastify: FastifyInstance) {
       const { db, schema } = getDrizzleDb();
       const rows = await db
         .select({
+          date_of_birth: schema.members.date_of_birth,
           emergency_contact_name: schema.members.emergency_contact_name,
           emergency_contact_phone: schema.members.emergency_contact_phone,
+          guardian_first_name: schema.members.guardian_first_name,
+          guardian_last_name: schema.members.guardian_last_name,
+          guardian_email: schema.members.guardian_email,
+          guardian_phone: schema.members.guardian_phone,
         })
         .from(schema.members)
         .where(eq(schema.members.id, targetMemberId))
@@ -1210,9 +1328,25 @@ export async function memberRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Member not found' });
       }
 
+      const dateOfBirth = normalizeDateString(target.date_of_birth);
+      const minor = isMemberMinor(dateOfBirth);
+      const guardianEmergencyName =
+        target.guardian_first_name || target.guardian_last_name
+          ? guardianEmergencyContactName({
+              firstName: target.guardian_first_name ?? '',
+              lastName: target.guardian_last_name ?? '',
+              email: target.guardian_email ?? '',
+              phone: target.guardian_phone ?? '',
+            })
+          : null;
+
       return {
-        emergencyContactName: target.emergency_contact_name ?? null,
-        emergencyContactPhone: target.emergency_contact_phone ?? null,
+        emergencyContactName: minor
+          ? guardianEmergencyName ?? target.emergency_contact_name ?? null
+          : target.emergency_contact_name ?? null,
+        emergencyContactPhone: minor
+          ? target.guardian_phone ?? target.emergency_contact_phone ?? null
+          : target.emergency_contact_phone ?? null,
       };
     }
   );
@@ -1245,10 +1379,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
       });
     }
 
-    if (body.spareOnly && body.socialMember) {
-      return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
-    }
-
     // Only server admins can create server admins
     if (body.isServerAdmin && !isServerAdmin(member)) {
       return _reply.code(403).send({ error: 'Only server admins can create server admins' });
@@ -1262,17 +1392,12 @@ export async function memberRoutes(fastify: FastifyInstance) {
         last_name: resolvedName.lastName,
         email: body.email,
         phone: body.phone || null,
-        valid_through: body.validThrough ?? null,
-        spare_only: body.spareOnly ? 1 : 0,
-        social_member: body.socialMember ? 1 : 0,
-        is_admin: body.isAdmin ? 1 : 0,
         is_server_admin: body.isServerAdmin ? 1 : 0,
         is_calendar_admin: body.isCalendarAdmin ? 1 : 0,
         is_content_admin: body.isContentAdmin ? 1 : 0,
         is_sponsor_admin: body.isSponsorAdmin ? 1 : 0,
         opted_in_sms: 0,
         email_subscribed: 1,
-        first_login_completed: 0,
         email_visible: 0,
         phone_visible: 0,
       })
@@ -1283,16 +1408,16 @@ export async function memberRoutes(fastify: FastifyInstance) {
     if (body.isLeagueAdministrator) {
       await setGlobalLeagueAdministrator(db, schema, newMember.id, true);
     }
+    if (body.isAdmin) {
+      await setGeneralAdminRole(newMember.id, true);
+    }
 
     return {
       id: newMember.id,
       name: newMember.name,
       email: newMember.email,
       phone: newMember.phone,
-      validThrough: normalizeDateString(newMember.valid_through),
-      spareOnly: newMember.spare_only === 1,
-      socialMember: (newMember.social_member ?? 0) === 1,
-      isAdmin: isAdmin(newMember),
+      isAdmin: body.isAdmin ?? false,
       emailSubscribed: newMember.email_subscribed === 1,
       optedInSms: newMember.opted_in_sms === 1,
     };
@@ -1319,14 +1444,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
     const parsed = bulkCreateRequestSchema.parse(request.body);
     const body = Array.isArray(parsed) ? parsed : parsed.members;
-    const bulkValidThrough = Array.isArray(parsed) ? undefined : (parsed.validThrough ?? undefined);
-    const bulkSpareOnly = Array.isArray(parsed) ? undefined : (parsed.spareOnly ?? undefined);
-    const bulkSocialMember = Array.isArray(parsed) ? undefined : (parsed.socialMember ?? undefined);
     const { db, schema } = getDrizzleDb();
-
-    if (bulkSpareOnly && bulkSocialMember) {
-      return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
-    }
 
     // Use a transaction to ensure atomicity
     const insertedIds = await db.transaction(async (tx) => {
@@ -1343,13 +1461,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
             last_name: resolvedName.lastName,
             email: memberData.email,
             phone: memberData.phone || null,
-            valid_through: bulkValidThrough === undefined ? null : bulkValidThrough,
-            spare_only: bulkSpareOnly ? 1 : 0,
-            social_member: bulkSocialMember ? 1 : 0,
-            is_admin: 0,
             opted_in_sms: 0,
             email_subscribed: 1,
-            first_login_completed: 0,
             email_visible: 0,
             phone_visible: 0,
           })
@@ -1369,27 +1482,94 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // Admin: Bulk import curling experience baselines (match by email)
-  fastify.post<{ Body: BulkExperienceBaselinesBody; Reply: BulkExperienceBaselinesResponse | ApiErrorResponse }>(
-    '/members/bulk-experience-baselines',
+  fastify.get<{
+    Params: { id: string };
+    Reply: MemberPaymentHistoryResponse | ApiErrorResponse;
+  }>(
+    '/members/:id/payment-history',
     {
       schema: {
         tags: ['members'],
-        body: bulkExperienceBaselinesBodySchema,
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            limit: { type: 'number' },
+            offset: { type: 'number' },
+          },
+        },
         response: {
-          200: bulkExperienceBaselinesResponseSchema,
+          200: memberPaymentHistoryResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      const member = (request as AuthenticatedRequest).member;
-      if (!isAdmin(member)) {
+      const authMember = (request as AuthenticatedRequest).member;
+      if (!isAdmin(authMember)) {
         return reply.code(403).send({ error: 'Forbidden' });
       }
+      const memberId = parseInt(request.params.id, 10);
+      if (Number.isNaN(memberId)) {
+        return reply.code(400).send({ error: 'Invalid member ID' });
+      }
+      const { db, schema } = getDrizzleDb();
+      const rows = await db.select({ id: schema.members.id }).from(schema.members).where(eq(schema.members.id, memberId)).limit(1);
+      if (!rows[0]) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+      const query = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(200).optional(),
+          offset: z.coerce.number().int().min(0).optional(),
+        })
+        .parse(request.query ?? {});
 
-      const body = bulkExperienceBaselinesSchema.parse(request.body);
-      return importMemberExperienceBaselines(body.rows);
-    }
+      return listMemberPaymentHistory(memberId, {
+        limit: query.limit,
+        offset: query.offset,
+      });
+    },
+  );
+
+  fastify.get<{ Params: { id: string }; Reply: MemberProfileResponse | ApiErrorResponse }>(
+    '/members/:id/profile',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          200: memberProfileResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const authMember = (request as AuthenticatedRequest).member;
+      if (!isAdmin(authMember)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const memberId = parseInt(request.params.id, 10);
+      if (Number.isNaN(memberId)) {
+        return reply.code(400).send({ error: 'Invalid member ID' });
+      }
+      const { db, schema } = getDrizzleDb();
+      const rows = await db.select().from(schema.members).where(eq(schema.members.id, memberId)).limit(1);
+      const target = rows[0] as Member | undefined;
+      if (!target) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+      return buildMemberProfileResponse(target);
+    },
   );
 
   // Admin: Update member
@@ -1444,22 +1624,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
     ) {
       return _reply.code(400).send({ error: 'You cannot change your own role' });
     }
-    // Prevent users from changing their own valid-through date
-    if (memberId === member.id && body.validThrough !== undefined) {
-      return _reply.code(400).send({ error: 'You cannot change your own valid through date' });
-    }
-    // Prevent users from changing their own spare-only flag
-    if (memberId === member.id && body.spareOnly !== undefined) {
-      return _reply.code(400).send({ error: 'You cannot change your own spare-only status' });
-    }
-    // Prevent users from changing their own social-member flag
-    if (memberId === member.id && body.socialMember !== undefined) {
-      return _reply.code(400).send({ error: 'You cannot change your own social member status' });
-    }
-
-    if (body.spareOnly === true && body.socialMember === true) {
-      return _reply.code(400).send({ error: 'A member cannot be both spare-only and a social member.' });
-    }
 
     if (
       body.isServerAdmin === false &&
@@ -1480,6 +1644,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
     // Only server admins can update server admin status
     if (body.isServerAdmin !== undefined && !isServerAdmin(member)) {
       return _reply.code(403).send({ error: 'Only server admins can change server admin status' });
+    }
+    if (body.lifetimeMember !== undefined && !isServerAdmin(member)) {
+      return _reply.code(403).send({ error: 'Only server admins can change lifetime member status' });
     }
 
     const updateData: MemberUpdateData = {};
@@ -1516,25 +1683,46 @@ export async function memberRoutes(fastify: FastifyInstance) {
       }
     }
     if (body.phone !== undefined) {
-      updateData.phone = body.phone;
+      updateData.phone = body.phone.trim();
     }
-    if (body.validThrough !== undefined) {
-      updateData.valid_through = body.validThrough;
+    if (body.emailVisible !== undefined) {
+      updateData.email_visible = body.emailVisible ? 1 : 0;
     }
-    if (body.spareOnly === true) {
-      updateData.social_member = 0;
+    if (body.phoneVisible !== undefined) {
+      updateData.phone_visible = body.phoneVisible ? 1 : 0;
     }
-    if (body.socialMember === true) {
-      updateData.spare_only = 0;
+    if (body.dateOfBirth !== undefined) {
+      const dateOfBirth = body.dateOfBirth.trim();
+      if (!dateOfBirth) {
+        updateData.date_of_birth = null;
+      } else {
+        const parsed = new Date(`${dateOfBirth}T00:00:00Z`);
+        if (Number.isNaN(parsed.getTime()) || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+          return sendValidationError(_reply, 'Validation failed', {
+            dateOfBirth: 'Enter a valid date of birth.',
+          });
+        }
+        const today = new Date();
+        const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+        if (parsed.getTime() > todayUtc) {
+          return sendValidationError(_reply, 'Validation failed', {
+            dateOfBirth: 'Date of birth cannot be in the future.',
+          });
+        }
+        updateData.date_of_birth = dateOfBirth;
+      }
     }
-    if (body.spareOnly !== undefined) {
-      updateData.spare_only = body.spareOnly ? 1 : 0;
+    if (body.mailingAddress !== undefined) {
+      updateData.mailing_address = body.mailingAddress.trim() || null;
     }
-    if (body.socialMember !== undefined) {
-      updateData.social_member = body.socialMember ? 1 : 0;
+    if (body.emergencyContactName !== undefined) {
+      updateData.emergency_contact_name = body.emergencyContactName.trim() || null;
     }
-    if (body.isAdmin !== undefined) {
-      updateData.is_admin = body.isAdmin ? 1 : 0;
+    if (body.emergencyContactPhone !== undefined) {
+      updateData.emergency_contact_phone = body.emergencyContactPhone.trim() || null;
+    }
+    if (body.lifetimeMember !== undefined) {
+      updateData.lifetime_member = body.lifetimeMember ? 1 : 0;
     }
     if (body.isServerAdmin !== undefined) {
       updateData.is_server_admin = body.isServerAdmin ? 1 : 0;
@@ -1557,6 +1745,56 @@ export async function memberRoutes(fastify: FastifyInstance) {
       updateData.is_sponsor_admin = body.isSponsorAdmin ? 1 : 0;
     }
 
+    const hasAnyGuardianField =
+      body.guardianFirstName !== undefined ||
+      body.guardianLastName !== undefined ||
+      body.guardianEmail !== undefined ||
+      body.guardianPhone !== undefined;
+    const hasAllGuardianFields =
+      body.guardianFirstName !== undefined &&
+      body.guardianLastName !== undefined &&
+      body.guardianEmail !== undefined &&
+      body.guardianPhone !== undefined;
+    if (hasAnyGuardianField && !hasAllGuardianFields) {
+      return sendValidationError(_reply, 'Validation failed', {
+        guardian: 'Provide all parent/guardian contact fields together.',
+      });
+    }
+    if (hasAllGuardianFields) {
+      const guardianValues = {
+        firstName: body.guardianFirstName!.trim(),
+        lastName: body.guardianLastName!.trim(),
+        email: body.guardianEmail!.trim(),
+        phone: body.guardianPhone!.trim(),
+      };
+      const guardianIsEmpty =
+        !guardianValues.firstName &&
+        !guardianValues.lastName &&
+        !guardianValues.email &&
+        !guardianValues.phone;
+      if (guardianIsEmpty) {
+        await clearMemberGuardian(memberId);
+      } else {
+        const effectiveDateOfBirth =
+          body.dateOfBirth !== undefined
+            ? body.dateOfBirth.trim() || null
+            : normalizeDateString(targetMember.date_of_birth);
+        if (!isMemberMinor(effectiveDateOfBirth)) {
+          return sendValidationError(_reply, 'Validation failed', {
+            guardian: 'Parent/guardian information applies only to members under 18.',
+          });
+        }
+        try {
+          await applyMemberGuardianUpdate(memberId, guardianValues);
+        } catch (error) {
+          if (error instanceof MemberGuardianValidationError) {
+            return sendValidationError(_reply, error.message, error.details);
+          }
+          throw error;
+        }
+      }
+    }
+
     if (Object.keys(updateData).length > 0) {
       updateData.updated_at = sql`CURRENT_TIMESTAMP`;
       await db
@@ -1565,12 +1803,11 @@ export async function memberRoutes(fastify: FastifyInstance) {
         .where(eq(schema.members.id, memberId));
     }
 
-    if (body.socialMember === true) {
-      await db.delete(schema.memberAvailability).where(eq(schema.memberAvailability.member_id, memberId));
-    }
-
     if (body.isLeagueAdministrator !== undefined) {
       await setGlobalLeagueAdministrator(db, schema, memberId, body.isLeagueAdministrator);
+    }
+    if (body.isAdmin !== undefined) {
+      await setGeneralAdminRole(memberId, body.isAdmin);
     }
 
     const updatedMembers = await db
@@ -1580,14 +1817,14 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .limit(1);
     
     const updatedMember = updatedMembers[0] as Member;
+    const generalAdminMemberIds = await loadGeneralAdminMemberIds();
 
     return {
       id: updatedMember.id,
       name: updatedMember.name,
       email: updatedMember.email,
       phone: updatedMember.phone,
-      validThrough: normalizeDateString(updatedMember.valid_through),
-      isAdmin: isAdmin(updatedMember),
+      isAdmin: memberHasAdminAccess(updatedMember, { generalAdminMemberIds }),
       isServerAdmin: isServerAdmin(updatedMember),
       emailSubscribed: updatedMember.email_subscribed === 1,
       optedInSms: updatedMember.opted_in_sms === 1,
@@ -1641,11 +1878,12 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
 
     const isCurrentUserServerAdmin = isServerAdmin(member);
+    const generalAdminMemberIds = await loadGeneralAdminMemberIds();
 
     // Check deletion permissions
     if (!isCurrentUserServerAdmin) {
       // Regular admin can only delete regular users (not admins or server admins)
-      if (isAdmin(targetMember) || isServerAdmin(targetMember)) {
+      if (memberHasAdminAccess(targetMember, { generalAdminMemberIds }) || isServerAdmin(targetMember)) {
         return _reply.code(403).send({ error: 'You can only delete regular members' });
       }
     } else if (isServerAdmin(targetMember) && (await isLastServerAdminInDb(memberId))) {
@@ -1689,6 +1927,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .where(inArray(schema.members.id, body.ids)) as Member[];
 
     const isCurrentUserServerAdmin = isServerAdmin(member);
+    const generalAdminMemberIds = await loadGeneralAdminMemberIds();
     let remainingServerAdmins = await countServerAdminsInDb();
 
     // Filter based on permissions
@@ -1699,7 +1938,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
         if (!isCurrentUserServerAdmin) {
           // Regular admin can only delete regular users (not admins or server admins)
-          return !isAdmin(m) && !isServerAdmin(m);
+          return !memberHasAdminAccess(m, { generalAdminMemberIds }) && !isServerAdmin(m);
         }
 
         if (isServerAdmin(m)) {
@@ -1746,6 +1985,142 @@ export async function memberRoutes(fastify: FastifyInstance) {
     });
 
     return { success: true, deletedCount: deletableIds.length };
+    }
+  );
+
+  fastify.get<{ Params: { id: string }; Reply: MemberSeasonMembershipListResponse | ApiErrorResponse }>(
+    '/members/:id/season-memberships',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          200: memberSeasonMembershipListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!isAdmin(member)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const memberId = parseInt(request.params.id, 10);
+      if (!Number.isFinite(memberId)) {
+        return reply.code(400).send({ error: 'Invalid member id' });
+      }
+
+      const { db, schema } = getDrizzleDb();
+      const [targetMember] = await db
+        .select({ id: schema.members.id })
+        .from(schema.members)
+        .where(eq(schema.members.id, memberId))
+        .limit(1);
+      if (!targetMember) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+
+      return listMemberSeasonMemberships(memberId);
+    }
+  );
+
+  fastify.post<{
+    Params: { id: string };
+    Body: CreateMemberSeasonMembershipBody;
+    Reply: MemberSeasonMembershipResponse | ApiErrorResponse;
+  }>(
+    '/members/:id/season-memberships',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        body: createMemberSeasonMembershipBodySchema,
+        response: {
+          200: memberSeasonMembershipSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!isAdmin(member)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const memberId = parseInt(request.params.id, 10);
+      if (!Number.isFinite(memberId)) {
+        return reply.code(400).send({ error: 'Invalid member id' });
+      }
+
+      const body = createMemberSeasonMembershipSchema.parse(request.body);
+
+      try {
+        return await createMemberSeasonMembership({
+          memberId,
+          seasonId: body.seasonId,
+          membershipType: body.membershipType,
+        });
+      } catch (error) {
+        if (error instanceof MemberSeasonMembershipNotFoundError) {
+          return reply.code(404).send({ error: error.message });
+        }
+        if (error instanceof MemberSeasonMembershipConflictError) {
+          return reply.code(409).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.delete<{ Params: { id: string; membershipId: string }; Reply: { success: boolean } | ApiErrorResponse }>(
+    '/members/:id/season-memberships/:membershipId',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+            membershipId: { type: 'string' },
+          },
+          required: ['id', 'membershipId'],
+        },
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!isAdmin(member)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const memberId = parseInt(request.params.id, 10);
+      const membershipId = parseInt(request.params.membershipId, 10);
+      if (!Number.isFinite(memberId) || !Number.isFinite(membershipId)) {
+        return reply.code(400).send({ error: 'Invalid membership id' });
+      }
+
+      try {
+        await deleteMemberSeasonMembership({ memberId, membershipId });
+        return { success: true };
+      } catch (error) {
+        if (error instanceof MemberSeasonMembershipNotFoundError) {
+          return reply.code(404).send({ error: error.message });
+        }
+        throw error;
+      }
     }
   );
 

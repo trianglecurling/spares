@@ -7,7 +7,7 @@ import api, { getApiErrorMessage } from '../utils/api';
 type MembershipCardPayload = {
   name: string;
   membershipStatus: {
-    kind: 'regular' | 'social' | 'former' | 'non_member';
+    kind: 'regular' | 'social' | 'former' | 'non_member' | 'lifetime';
     validThrough: string | null;
   };
   icePrivilegesValidThrough: string | null;
@@ -35,13 +35,17 @@ function formatDateDisplay(dateString: string) {
 }
 
 function membershipStatusLabel(kind: MembershipCardPayload['membershipStatus']['kind']) {
+  if (kind === 'lifetime') return 'Lifetime Member';
   if (kind === 'former') return 'Former member';
   if (kind === 'non_member') return 'Non-member';
   if (kind === 'social') return 'Social member';
-  return 'Regular member';
+  return 'Member';
 }
 
 function membershipStatusLine(status: MembershipCardPayload['membershipStatus']) {
+  if (status.kind === 'lifetime') {
+    return 'Lifetime Member';
+  }
   const label = membershipStatusLabel(status.kind);
   if (status.validThrough) {
     return `${label} through ${formatDateDisplay(status.validThrough)}`;

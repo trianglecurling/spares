@@ -6,6 +6,8 @@ interface LeagueTabsProps {
   showConfigurationTab?: boolean;
   showSheetsTab?: boolean;
   showMaintenanceTab?: boolean;
+  hideTeamsAndDivisionsTabs?: boolean;
+  showSabbaticalsTab?: boolean;
 }
 
 const leagueTabs = [
@@ -28,6 +30,8 @@ export default function LeagueTabs({
   showConfigurationTab = false,
   showSheetsTab = false,
   showMaintenanceTab = false,
+  hideTeamsAndDivisionsTabs = false,
+  showSabbaticalsTab = false,
 }: LeagueTabsProps) {
   const location = useLocation();
   const basePath = `/leagues/${leagueId}`;
@@ -36,6 +40,12 @@ export default function LeagueTabs({
       if (tab.requiresConfigurationAccess) return showConfigurationTab;
       if (tab.requiresManager) return showSheetsTab;
       if (tab.requiresAdmin) return showMaintenanceTab;
+      if (hideTeamsAndDivisionsTabs && (tab.path === 'teams' || tab.path === 'divisions')) {
+        return false;
+      }
+      if (!showSabbaticalsTab && tab.path === 'sabbaticals') {
+        return false;
+      }
       return true;
     })
     .map((tab) => {

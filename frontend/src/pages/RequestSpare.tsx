@@ -133,7 +133,7 @@ export default function RequestSpare() {
     const initData = async () => {
       setLoading(true);
       try {
-        setLeagues(await get('/leagues'));
+        setLeagues(await get('/leagues', { relevantSession: 'true', summary: 'true' }));
       } catch (error) {
         console.error('Failed to load data:', error);
       } finally {

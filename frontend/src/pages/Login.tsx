@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { get, post } from '../api/client';
@@ -294,6 +294,23 @@ export default function Login() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="space-y-4 text-center">
+            <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+              User login is for Triangle Curling members. A login is not needed to register for public events. If you
+              are a member and are having trouble logging in, please contact the{' '}
+              <Link
+                to="/contact?recipient=membership#send-message"
+                className="text-primary-teal-link hover:underline"
+              >
+                Membership Committee
+              </Link>
+              .
+            </p>
+            <Link to="/" className="inline-block text-sm font-medium text-primary-teal-link hover:underline">
+              Back to home
+            </Link>
           </div>
         </div>
       </div>

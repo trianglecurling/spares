@@ -6,25 +6,7 @@ import { eq } from 'drizzle-orm';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { recordDailyActivity } from '../services/observability.js';
 import { buildAuthzClaimsForMember, buildAuthzClaimsForImpersonatedMember } from '../utils/rbac.js';
-
-function normalizeDateString(value: string | Date | number | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value;
-  if (value instanceof Date) return value.toISOString().split('T')[0];
-  return String(value);
-}
-
-function isMemberExpired(member: Member): boolean {
-  // Admins/server-admins are always valid
-  if (isAdmin(member) || isServerAdmin(member)) return false;
-
-  const validThrough = normalizeDateString(member.valid_through);
-  if (!validThrough) return false;
-
-  // Compare as YYYY-MM-DD (UTC) to avoid TZ issues. Valid through is inclusive.
-  const today = new Date().toISOString().split('T')[0];
-  return today > validThrough;
-}
+import { getMemberMembershipStatus } from '../services/memberMembershipStatusService.js';
 
 export async function authMiddleware(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization;
@@ -63,16 +45,15 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   const isImpersonating = actorMemberId !== payload.memberId;
 
   member.impersonationSession = isImpersonating;
+  member.membershipStatus = await getMemberMembershipStatus(member.id, {
+    isLifetimeMember: (member.lifetime_member ?? 0) === 1,
+  });
   member.authz = isImpersonating
     ? await buildAuthzClaimsForImpersonatedMember(member)
     : payload.authz ?? (await buildAuthzClaimsForMember(member));
   request.authz = member.authz;
   request.actorMemberId = actorMemberId;
   request.isImpersonating = isImpersonating;
-
-  if (isMemberExpired(member)) {
-    return reply.code(403).send({ error: 'Membership expired' });
-  }
 
   request.member = member;
 
@@ -82,7 +63,7 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
 
 /**
  * When a Bearer token is present and valid, sets `request.member` (and authz) like {@link authMiddleware}.
- * Missing, invalid, or expired membership leaves the request unauthenticated without an error response.
+ * Missing or invalid auth leaves the request unauthenticated without an error response.
  */
 export async function optionalAuthMiddleware(request: FastifyRequest, _reply: FastifyReply) {
   const authHeader = request.headers.authorization;
@@ -113,14 +94,15 @@ export async function optionalAuthMiddleware(request: FastifyRequest, _reply: Fa
   const isImpersonating = actorMemberId !== payload.memberId;
 
   member.impersonationSession = isImpersonating;
+  member.membershipStatus = await getMemberMembershipStatus(member.id, {
+    isLifetimeMember: (member.lifetime_member ?? 0) === 1,
+  });
   member.authz = isImpersonating
     ? await buildAuthzClaimsForImpersonatedMember(member)
     : payload.authz ?? (await buildAuthzClaimsForMember(member));
   request.authz = member.authz;
   request.actorMemberId = actorMemberId;
   request.isImpersonating = isImpersonating;
-
-  if (isMemberExpired(member)) return;
 
   request.member = member;
   recordDailyActivity(member.id).catch(() => {});

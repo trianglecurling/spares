@@ -5,6 +5,10 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member } from '../types.js';
 import { config } from '../config.js';
 import { isAdmin, normalizeEmail, verifyToken } from '../utils/auth.js';
+import {
+  getMemberMembershipStatus,
+  isMemberExpiredForAccess,
+} from '../services/memberMembershipStatusService.js';
 import { createCaptchaChallenge, verifyCaptchaAnswer } from '../utils/captcha.js';
 import { sendEmail } from '../services/email.js';
 import {
@@ -39,13 +43,11 @@ const submitFeedbackBodySchema = {
   required: ['category', 'body'],
 } as const;
 
-function isMemberExpired(member: Member): boolean {
-  if (!member.valid_through) return false;
-  const validThrough = new Date(member.valid_through);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  validThrough.setHours(0, 0, 0, 0);
-  return today > validThrough;
+async function isMemberExpired(member: Member): Promise<boolean> {
+  const status = await getMemberMembershipStatus(member.id, {
+    isLifetimeMember: (member.lifetime_member ?? 0) === 1,
+  });
+  return isMemberExpiredForAccess(member, status);
 }
 
 async function getMemberFromOptionalAuth(request: FastifyRequest): Promise<Member | null> {
@@ -65,7 +67,7 @@ async function getMemberFromOptionalAuth(request: FastifyRequest): Promise<Membe
 
   const member = members[0] as Member | undefined;
   if (!member) return null;
-  if (isMemberExpired(member)) return null;
+  if (await isMemberExpired(member)) return null;
   return member;
 }
 

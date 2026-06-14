@@ -478,10 +478,35 @@ export default function PublicLayout({
           <div className="space-y-2">
             <h2 className="text-sm font-semibold text-gray-700">Contact and address</h2>
             <div className="text-sm text-gray-600">
-              {siteConfig?.contactEmail ? <p>Email: {siteConfig.contactEmail}</p> : <p>Email: info@trianglecurling.com</p>}
-              {siteConfig?.contactPhone ? <p>Phone: {siteConfig.contactPhone}</p> : null}
+              <p>
+                Email:{' '}
+                <a
+                  href={`mailto:${siteConfig?.contactEmail || 'info@trianglecurling.com'}`}
+                  className="hover:text-gray-900 hover:underline"
+                >
+                  {siteConfig?.contactEmail || 'info@trianglecurling.com'}
+                </a>
+              </p>
+              {siteConfig?.contactPhone ? (
+                <p>
+                  Phone:{' '}
+                  <a href={`tel:${siteConfig.contactPhone}`} className="hover:text-gray-900 hover:underline">
+                    {siteConfig.contactPhone}
+                  </a>
+                </p>
+              ) : null}
               <p className="mt-2">Triangle Curling Center, 2310 So Hi Drive, Durham, NC 27703</p>
               <p>P.O. Box 14628, Durham, NC 27709</p>
+              <p className="mt-2">
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=Triangle+Curling+Center%2C+2310+So+Hi+Drive%2C+Durham%2C+NC+27703"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary-teal-link hover:underline"
+                >
+                  Get directions
+                </a>
+              </p>
             </div>
           </div>
         </div>

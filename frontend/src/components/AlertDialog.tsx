@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { HiXMark } from 'react-icons/hi2';
 import Button from './Button';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -46,12 +47,13 @@ export default function AlertDialog({
 
   const styles = variantStyles[variant];
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-[120] overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4">
         <div
           className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
           onClick={onClose}
+          aria-hidden
         />
 
         <div
@@ -124,6 +126,7 @@ export default function AlertDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

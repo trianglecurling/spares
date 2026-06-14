@@ -88,14 +88,7 @@ Or use a SQLite client to insert a member directly.
 3. You'll see a 6-digit code in the backend console (since email isn't configured yet)
 4. Enter that code to log in
 
-### 3. Complete First Login
-
-On your first login, you'll be asked to:
-- Confirm your name
-- Add/confirm contact info
-- Opt in to SMS (optional)
-
-### 4. Set Up Leagues (Admin)
+### 3. Set Up Leagues (Admin)
 
 1. Click "Leagues" in the navigation
 2. Click "Add League"
@@ -106,13 +99,13 @@ On your first login, you'll be asked to:
    - Format (Teams or Doubles)
    - Start and end dates
 
-### 5. Set Your Availability
+### 4. Set Your Availability
 
 1. Click "My Availability" in the navigation
 2. Toggle the leagues you're available for
 3. Check "Comfortable skipping?" if applicable
 
-### 6. Create a Test Spare Request
+### 5. Create a Test Spare Request
 
 1. Go back to Dashboard
 2. Click "Request a Spare"

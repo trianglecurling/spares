@@ -4,12 +4,14 @@ import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppStateCard from '../components/AppStateCard';
 import { get, post } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility';
 
 interface League {
   id: number;
   name: string;
   dayOfWeek: number;
   format: string;
+  allowsDropIns?: boolean;
   startDate: string;
   endDate: string;
   drawTimes: string[];
@@ -45,11 +47,11 @@ export default function SetAvailability() {
   const loadData = async () => {
     try {
       const [leaguesRes, availabilityRes] = await Promise.all([
-        get('/leagues'),
+        get('/leagues', { relevantSession: 'true' }),
         get('/availability'),
       ]);
 
-      setLeagues(leaguesRes);
+      setLeagues(leaguesRes.filter((league) => isLeagueEligibleForSpares(league)));
       setAvailability(availabilityRes.leagues);
       setCanSkip(availabilityRes.canSkip);
     } catch (error) {

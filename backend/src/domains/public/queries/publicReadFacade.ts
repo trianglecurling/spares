@@ -19,10 +19,30 @@ type PublicSiteConfig = {
   contactEmail: string | null;
   contactPhone: string | null;
   footerMarkdown: string | null;
+  heroBadge: string | null;
+  heroTitle: string | null;
+  heroSubtitle: string | null;
+  /** Homepage announcement banner; already filtered out when expired. */
+  announcementMarkdown: string | null;
   disableSms: boolean;
   /** `MM-DD` (month-day) fiscal year start from governance; used for public season labels (e.g. 2025-26). */
   fiscalYearStartMmdd: string;
 };
+
+function timestampToIso(value: string | Date | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function activeAnnouncement(markdown: string | null | undefined, expiresAt: string | Date | null | undefined): string | null {
+  const text = markdown?.trim();
+  if (!text) return null;
+  const expiresIso = timestampToIso(expiresAt);
+  if (expiresIso && expiresIso <= new Date().toISOString()) return null;
+  return text;
+}
 
 function findMarkerIndex(content: string): number {
   const idx = content.indexOf('⁂');
@@ -161,6 +181,10 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
       contactEmail: null,
       contactPhone: null,
       footerMarkdown: null,
+      heroBadge: null,
+      heroTitle: null,
+      heroSubtitle: null,
+      announcementMarkdown: null,
       disableSms: serverConfig?.disable_sms === 1,
       fiscalYearStartMmdd,
     };
@@ -172,6 +196,10 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
     contactEmail: siteConfig.contact_email ?? null,
     contactPhone: siteConfig.contact_phone ?? null,
     footerMarkdown: siteConfig.footer_markdown ?? null,
+    heroBadge: siteConfig.hero_badge ?? null,
+    heroTitle: siteConfig.hero_title ?? null,
+    heroSubtitle: siteConfig.hero_subtitle ?? null,
+    announcementMarkdown: activeAnnouncement(siteConfig.announcement_markdown, siteConfig.announcement_expires_at),
     disableSms: serverConfig?.disable_sms === 1,
     fiscalYearStartMmdd,
   };

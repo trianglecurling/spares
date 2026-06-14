@@ -16,7 +16,11 @@ import {
 const PAYMENT_TYPE_LINK_CLASS =
   'font-medium text-primary-teal hover:text-primary-teal/80 hover:underline dark:text-primary-teal dark:hover:text-primary-teal/80';
 
-export default function ProfilePaymentHistoryTab() {
+type ProfilePaymentHistoryTabProps = {
+  memberId?: number;
+};
+
+export default function ProfilePaymentHistoryTab({ memberId }: ProfilePaymentHistoryTabProps = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<MemberPaymentHistoryResponse | null>(null);
@@ -66,14 +70,28 @@ export default function ProfilePaymentHistoryTab() {
       setLoading(true);
       setError(null);
       try {
-        const response = await get('/members/me/payment-history', { limit: 50, offset: 0 });
+        const response =
+          memberId != null
+            ? await get(
+                '/members/{id}/payment-history',
+                { limit: 50, offset: 0 },
+                { id: String(memberId) },
+              )
+            : await get('/members/me/payment-history', { limit: 50, offset: 0 });
         if (!cancelled) {
           setHistory(response);
         }
       } catch (loadError) {
         if (!cancelled) {
           setHistory(null);
-          setError(getApiErrorMessage(loadError, 'Could not load your payment history.'));
+          setError(
+            getApiErrorMessage(
+              loadError,
+              memberId != null
+                ? 'Could not load payment history for this member.'
+                : 'Could not load your payment history.',
+            ),
+          );
         }
       } finally {
         if (!cancelled) {
@@ -86,16 +104,20 @@ export default function ProfilePaymentHistoryTab() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [memberId]);
 
   const emptyState = useMemo(
     () => (
       <InlineStateMessage
         title="No payments yet"
-        description="Payments you make while signed in to your account will appear here."
+        description={
+          memberId != null
+            ? 'Payments linked to this member account will appear here.'
+            : 'Payments you make while signed in to your account will appear here.'
+        }
       />
     ),
-    []
+    [memberId],
   );
 
   if (loading) {
@@ -109,8 +131,9 @@ export default function ProfilePaymentHistoryTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600 dark:text-gray-400">
-        Payments made while signed in to your account, including donations, event registrations, and league
-        registrations.
+        {memberId != null
+          ? 'Payments linked to this member account, including donations, event registrations, and league registrations.'
+          : 'Payments made while signed in to your account, including donations, event registrations, and league registrations.'}
       </p>
       <DataTable
         rows={history?.payments ?? []}

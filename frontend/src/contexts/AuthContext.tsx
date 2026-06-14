@@ -102,38 +102,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             accountSwitchOptions: response.accountSwitchOptions,
           });
           setToken(getAccessToken());
-
-          // Redirect to first login if needed
-          if (!response.member.firstLoginCompleted) {
-            // Preserve where the user was trying to go so we can return after first-login setup.
-            // Special-case spare accept links so we can restore the requestId flow reliably.
-            const intendedPath = window.location.pathname + window.location.search;
-            try {
-              const currentPathInner = window.location.pathname;
-              const currentSearch = window.location.search;
-              const params = new URLSearchParams(currentSearch);
-
-              if (currentPathInner === '/spare-request/respond') {
-                const requestId = params.get('requestId');
-                if (requestId) {
-                  sessionStorage.setItem('pendingSpareAcceptRequestId', requestId);
-                  sessionStorage.setItem('postFirstLoginSuggestAvailability', '1');
-                }
-              } else if (currentPathInner === '/spare-request/decline') {
-                const requestId = params.get('requestId');
-                if (requestId) {
-                  sessionStorage.setItem('pendingSpareDeclineRequestId', requestId);
-                  sessionStorage.setItem('postFirstLoginSuggestAvailability', '1');
-                }
-              } else if (currentPathInner !== '/first-login' && currentPathInner !== '/login') {
-                // Avoid storing /first-login as the redirect target (that creates a loop back to dashboard).
-                sessionStorage.setItem('postFirstLoginRedirect', intendedPath);
-              }
-            } catch {
-              // ignore
-            }
-            navigate('/first-login', { replace: true });
-          }
         } catch (error: unknown) {
           // If database is not configured (503), don't clear token - just fail silently
           if (
@@ -182,17 +150,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccountSwitchOptions([]);
     }
 
-    if (!newMember.firstLoginCompleted) {
-      try {
-        if (redirectTo) {
-          sessionStorage.setItem('postFirstLoginRedirect', redirectTo);
-        }
-      } catch {
-        // ignore
-      }
-      navigate('/first-login', { replace: true });
-      return;
-    }
     if (!options?.suppressNavigation) {
       navigate(redirectTo || '/dashboard');
     }

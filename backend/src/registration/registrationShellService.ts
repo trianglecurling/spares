@@ -13,6 +13,8 @@ import {
 import type { Member } from '../types.js';
 import { isAdmin, isServerAdmin, normalizeEmail } from '../utils/auth.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
+import { isMemberMinor } from '../utils/memberAge.js';
+import { applyMemberGuardianUpdate } from '../services/memberGuardian.js';
 
 export const REQUIRED_REGISTRATION_POLICIES: Array<{
   type: PolicyAcceptanceKindSqlite;
@@ -55,6 +57,7 @@ import {
   applyMemberDemographicsUpdate,
   MemberDemographicsUpdateError,
   MemberDemographicsValidationError,
+  normalizeMemberDateOfBirth,
   validateMemberDemographics,
 } from '../services/memberDemographics.js';
 
@@ -140,9 +143,27 @@ import {
   hasBlockingInProgressDraft,
 } from './registrationDraftProgress.js';
 
-export function validateDemographics(input: MemberDemographicsInput): void {
+export function validateDemographics(
+  input: Partial<MemberDemographicsInput> & Pick<MemberDemographicsInput, 'firstName' | 'lastName' | 'email' | 'phone' | 'mailingAddress'>,
+  resolvedDateOfBirth: string | null = null,
+): void {
   try {
-    validateMemberDemographics(input);
+    validateMemberDemographics(
+      {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        dateOfBirth: input.dateOfBirth?.trim() ?? '',
+        email: input.email,
+        phone: input.phone,
+        mailingAddress: input.mailingAddress,
+        emergencyContactName: input.emergencyContactName?.trim() ?? '',
+        emergencyContactPhone: input.emergencyContactPhone?.trim() ?? '',
+      },
+      {
+        skipEmergencyContactForMinor: isMemberMinor(resolvedDateOfBirth),
+        requireDateOfBirth: false,
+      },
+    );
   } catch (error) {
     if (error instanceof MemberDemographicsValidationError) {
       throw new RegistrationShellValidationError(error.details);
@@ -151,18 +172,23 @@ export function validateDemographics(input: MemberDemographicsInput): void {
   }
 }
 
-export function curlerDemographicsAreComplete(input: Partial<MemberDemographicsInput> & { email: string }): boolean {
+export function curlerDemographicsAreComplete(
+  input: Partial<MemberDemographicsInput> & { email: string },
+  resolvedDateOfBirth: string | null = null,
+): boolean {
   try {
-    validateDemographics({
-      firstName: input.firstName?.trim() ?? '',
-      lastName: input.lastName?.trim() ?? '',
-      dateOfBirth: input.dateOfBirth?.trim() ?? '',
-      email: input.email,
-      phone: input.phone?.trim() ?? '',
-      mailingAddress: input.mailingAddress?.trim() ?? '',
-      emergencyContactName: input.emergencyContactName?.trim() ?? '',
-      emergencyContactPhone: input.emergencyContactPhone?.trim() ?? '',
-    });
+    validateDemographics(
+      {
+        firstName: input.firstName?.trim() ?? '',
+        lastName: input.lastName?.trim() ?? '',
+        email: input.email,
+        phone: input.phone?.trim() ?? '',
+        mailingAddress: input.mailingAddress?.trim() ?? '',
+        emergencyContactName: input.emergencyContactName?.trim() ?? '',
+        emergencyContactPhone: input.emergencyContactPhone?.trim() ?? '',
+      },
+      resolvedDateOfBirth,
+    );
     return true;
   } catch {
     return false;
@@ -177,16 +203,7 @@ export function validateGuardian(input: GuardianInput): void {
 }
 
 export function isMinorOnRegistrationDate(dateOfBirth: string | null): boolean {
-  if (!dateOfBirth) return false;
-  const birth = new Date(`${dateOfBirth}T00:00:00Z`);
-  if (Number.isNaN(birth.getTime())) return false;
-  const today = new Date();
-  let age = today.getUTCFullYear() - birth.getUTCFullYear();
-  const monthDiff = today.getUTCMonth() - birth.getUTCMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < birth.getUTCDate())) {
-    age -= 1;
-  }
-  return age < 18;
+  return isMemberMinor(dateOfBirth);
 }
 
 export function mapRegistration(row: any): RegistrationShellRow {
@@ -603,7 +620,6 @@ export async function createMemberForRegistration(input: Partial<MemberDemograph
     emergency_contact_phone: input.emergencyContactPhone?.trim() || null,
     opted_in_sms: 0,
     email_subscribed: 1,
-    first_login_completed: 0,
     email_visible: 0,
     phone_visible: 0,
     updated_at: sql`CURRENT_TIMESTAMP`,
@@ -653,10 +669,13 @@ export async function attachNewCurler(input: {
   }
 
   const demographicsSource = input.registeringForSelf ? (input.submitter ?? input.curler) : input.curler;
-  const demographicsComplete = curlerDemographicsAreComplete({
-    ...demographicsSource,
-    email: input.registeringForSelf ? (submitter.email ?? input.curler.email) : resolvedCurlerEmail,
-  });
+  const demographicsComplete = curlerDemographicsAreComplete(
+    {
+      ...demographicsSource,
+      email: input.registeringForSelf ? (submitter.email ?? input.curler.email) : resolvedCurlerEmail,
+    },
+    normalizeMemberDateOfBirth(curler.dateOfBirth),
+  );
 
   const [row] = await db
     .update(schema.curlingRegistrations)
@@ -711,20 +730,56 @@ export async function acceptPolicies(registrationId: number, actorMemberId: numb
     .where(eq(schema.curlingRegistrations.id, registrationId));
 }
 
-export async function updateCurlerDemographics(registrationId: number, input: MemberDemographicsInput, confirmedCurrent = false): Promise<void> {
+export async function updateCurlerDemographics(
+  registrationId: number,
+  input: Partial<MemberDemographicsInput> & Pick<MemberDemographicsInput, 'firstName' | 'lastName' | 'email' | 'phone' | 'mailingAddress' | 'emergencyContactName' | 'emergencyContactPhone'> & { dateOfBirth?: string },
+  confirmedCurrent = false,
+): Promise<void> {
   const registration = await getRegistrationById(registrationId);
   if (!registration?.curler_member_id) {
     throw new RegistrationShellValidationError({ curler: 'A curler must be selected before demographics can be updated.' });
   }
+  const { db, schema } = getDrizzleDb();
+  const curlerRows = await db
+    .select({ date_of_birth: schema.members.date_of_birth })
+    .from(schema.members)
+    .where(eq(schema.members.id, registration.curler_member_id))
+    .limit(1);
+  const existingDateOfBirth = normalizeMemberDateOfBirth(curlerRows[0]?.date_of_birth);
+  const incomingDateOfBirth = input.dateOfBirth?.trim() || '';
+  if (existingDateOfBirth && incomingDateOfBirth && incomingDateOfBirth !== existingDateOfBirth) {
+    throw new RegistrationShellValidationError({
+      dateOfBirth: 'Date of birth cannot be changed once it has been set.',
+    });
+  }
+  const resolvedDateOfBirth = existingDateOfBirth ?? (incomingDateOfBirth || null);
+  if (!resolvedDateOfBirth) {
+    throw new RegistrationShellValidationError({
+      dateOfBirth: 'Enter your date of birth before saving.',
+    });
+  }
+  validateDemographics(input, resolvedDateOfBirth);
   try {
-    await applyMemberDemographicsUpdate(registration.curler_member_id, input);
+    await applyMemberDemographicsUpdate(
+      registration.curler_member_id,
+      {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        dateOfBirth: resolvedDateOfBirth,
+        email: input.email,
+        phone: input.phone,
+        mailingAddress: input.mailingAddress,
+        emergencyContactName: input.emergencyContactName,
+        emergencyContactPhone: input.emergencyContactPhone,
+      },
+      { registrationUpdate: true, resolvedDateOfBirth },
+    );
   } catch (error) {
     if (error instanceof MemberDemographicsUpdateError) {
       throw new RegistrationShellValidationError(error.details);
     }
     throw error;
   }
-  const { db, schema } = getDrizzleDb();
   await db
     .update(schema.curlingRegistrations)
     .set({
@@ -736,6 +791,7 @@ export async function updateCurlerDemographics(registrationId: number, input: Me
 
 export async function updateGuardian(registrationId: number, input: GuardianInput): Promise<void> {
   validateGuardian(input);
+  const registration = await getRegistrationById(registrationId);
   const { db, schema } = getDrizzleDb();
   await db
     .update(schema.curlingRegistrations)
@@ -747,6 +803,9 @@ export async function updateGuardian(registrationId: number, input: GuardianInpu
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));
+  if (registration?.curler_member_id) {
+    await applyMemberGuardianUpdate(registration.curler_member_id, input);
+  }
 }
 
 export async function completeShell(registrationId: number): Promise<RegistrationShellRow> {
@@ -757,7 +816,15 @@ export async function completeShell(registrationId: number): Promise<Registratio
   if (!registration.submitted_by_member_id) details.submitter = 'The submitting user is required.';
   if (!registration.curler_member_id) details.curler = 'The curler is required.';
   if (!policiesComplete) details.policies = 'All required policies must be accepted.';
-  if (!curler?.firstName || !curler.lastName || !curler.dateOfBirth || !curler.email || !curler.phone || !curler.mailingAddress || !curler.emergencyContactName || !curler.emergencyContactPhone) {
+  const demographicsIncomplete =
+    !curler?.firstName ||
+    !curler.lastName ||
+    !curler.dateOfBirth ||
+    !curler.email ||
+    !curler.phone ||
+    !curler.mailingAddress ||
+    (!isMinor && (!curler.emergencyContactName || !curler.emergencyContactPhone));
+  if (demographicsIncomplete) {
     details.demographics = 'Required curler demographic information is incomplete.';
   }
   if (isMinor && (!registration.guardian_first_name || !registration.guardian_last_name || !registration.guardian_email || !registration.guardian_phone)) {
@@ -784,7 +851,7 @@ export type GuestRegistrationSubmitInput = {
   registeringForSelf: boolean;
   useSubmitterEmailForCurler?: boolean;
   submitter?: Partial<MemberDemographicsInput> & { email: string };
-  curler: MemberDemographicsInput;
+  curler: Omit<MemberDemographicsInput, 'dateOfBirth'> & { dateOfBirth?: string };
   guardian?: GuardianInput;
   membershipChoice: 'regular' | 'social';
   basicIcePrivileges: boolean;
@@ -798,8 +865,8 @@ export type GuestRegistrationSubmitInput = {
 
 export async function submitGuestRegistration(input: GuestRegistrationSubmitInput, frontendBaseUrl?: string) {
   await assertRegistrationOpen(input.seasonId, input.sessionId);
-  validateDemographics(input.curler);
-  const minor = isMinorOnRegistrationDate(input.curler.dateOfBirth);
+  validateDemographics(input.curler, input.curler.dateOfBirth || null);
+  const minor = isMinorOnRegistrationDate(input.curler.dateOfBirth || null);
   if (minor) {
     if (!input.guardian) {
       throw new RegistrationShellValidationError({ guardian: 'Parent/guardian information is required for minors.' });

@@ -8,8 +8,9 @@ async function main() {
     process.exit(1);
   }
 
+  // Root `bun run db:migrate` runs this script: Drizzle SQL migrations, then idempotent seeds.
   await initializeDatabase(dbConfig);
-  console.log('Database initialized successfully.');
+  console.log('Database migrations and bootstrap completed successfully.');
 }
 
 main().catch((error) => {

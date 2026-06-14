@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { isMemberMinor } from '../../utils/memberAge';
 import FormField from '../FormField';
 import PhysicalAddressCollect from '../PhysicalAddressCollect';
 import {
@@ -41,15 +42,22 @@ type DemographicScalarField = Exclude<
   | 'mailingPostalCode'
 >;
 
-const DEMOGRAPHIC_ROWS: Array<[DemographicScalarField, string, string]> = [
+const BASE_DEMOGRAPHIC_ROWS: Array<[DemographicScalarField, string, string]> = [
   ['firstName', 'First name', 'given-name'],
   ['lastName', 'Last name', 'family-name'],
-  ['dateOfBirth', 'Date of birth', 'bday'],
   ['email', 'Email address', 'email'],
   ['phone', 'Phone number', 'tel'],
   ['emergencyContactName', 'Emergency contact name', 'name'],
   ['emergencyContactPhone', 'Emergency contact phone', 'tel'],
 ];
+
+function demographicRowsForCurler(curlerDateOfBirth: string | null): Array<[DemographicScalarField, string, string]> {
+  if (curlerDateOfBirth) return BASE_DEMOGRAPHIC_ROWS;
+  const rows = [...BASE_DEMOGRAPHIC_ROWS];
+  const lastNameIndex = rows.findIndex(([field]) => field === 'lastName');
+  rows.splice(lastNameIndex + 1, 0, ['dateOfBirth', 'Date of birth', 'bday']);
+  return rows;
+}
 
 function normalizeRegistrationEmail(email: string): string {
   return email.toLowerCase().trim();
@@ -167,6 +175,8 @@ export type RegistrationDemographicFieldsProps = {
   lockCurlerEmailToSubmitter?: boolean;
   submitterEmailForCurler?: string;
   onSubmitterEmailMatch?: () => void;
+  /** Curler date of birth already stored on the member record. When empty, the form collects an initial value. */
+  curlerDateOfBirth?: string | null;
   /** Called on unmount so parent draft state stays aligned when navigating away. */
   onCommit?: (value: RegistrationDemographicsFormFields) => void;
 };
@@ -181,6 +191,7 @@ const RegistrationDemographicFields = forwardRef<
     lockCurlerEmailToSubmitter = false,
     submitterEmailForCurler = '',
     onSubmitterEmailMatch,
+    curlerDateOfBirth = null,
     onCommit,
   },
   ref,
@@ -194,6 +205,10 @@ const RegistrationDemographicFields = forwardRef<
   useEffect(() => {
     draftRef.current = { ...initialValue };
   }, [initialValue]);
+
+  useEffect(() => {
+    setFormDateOfBirth(initialValue.dateOfBirth);
+  }, [initialValue.dateOfBirth]);
 
   useImperativeHandle(
     ref,
@@ -225,11 +240,27 @@ const RegistrationDemographicFields = forwardRef<
     draftRef.current = applyMailingToDraft(draftRef.current, structured);
   }, []);
 
+  const [formDateOfBirth, setFormDateOfBirth] = useState(initialValue.dateOfBirth);
+  const effectiveDateOfBirth = curlerDateOfBirth || formDateOfBirth || null;
+  const emergencyFieldsDisabled = isMemberMinor(effectiveDateOfBirth);
+  const demographicRows = demographicRowsForCurler(curlerDateOfBirth);
+
+  const handleScalarFieldChange = useCallback((field: DemographicScalarField, value: string) => {
+    if (field === 'dateOfBirth') {
+      setFormDateOfBirth(value);
+    }
+    handleFieldChange(field, value);
+  }, [handleFieldChange]);
+
   return (
     <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
-      {DEMOGRAPHIC_ROWS.map(([field, label, autoComplete]) => {
+      {demographicRows.map(([field, label, autoComplete]) => {
         const fieldId = `${idPrefix}-${String(field)}`;
         const emailLocked = field === 'email' && lockCurlerEmailToSubmitter;
+        const isEmergencyField = field === 'emergencyContactName' || field === 'emergencyContactPhone';
+        if (isEmergencyField && emergencyFieldsDisabled) {
+          return null;
+        }
         return (
           <DemographicScalarFieldRow
             key={field}
@@ -240,10 +271,15 @@ const RegistrationDemographicFields = forwardRef<
             initialValue={emailLocked ? submitterEmailForCurler : initialValue[field]}
             type={field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
             disabled={emailLocked}
-            onFieldChange={handleFieldChange}
+            onFieldChange={handleScalarFieldChange}
           />
         );
       })}
+      {emergencyFieldsDisabled ? (
+        <p className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Parent or guardian contact information will be collected on the next screen and used as the emergency contact.
+        </p>
+      ) : null}
       <DemographicMailingAddressSection initialValue={initialValue} onMailingChange={handleMailingChange} />
     </div>
   );

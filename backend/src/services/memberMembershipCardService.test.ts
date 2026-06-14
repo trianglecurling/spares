@@ -41,6 +41,23 @@ describe('resolveMembershipCardStatus', () => {
     ).toEqual({ kind: 'non_member', validThrough: null });
   });
 
+  test('returns lifetime member regardless of purchased season membership', () => {
+    expect(
+      resolveMembershipCardStatus({
+        today: '2026-03-01',
+        isLifetimeMember: true,
+        latestPurchasedSeasonMembership: null,
+      }),
+    ).toEqual({ kind: 'lifetime', validThrough: null });
+    expect(
+      resolveMembershipCardStatus({
+        today: '2026-03-01',
+        isLifetimeMember: true,
+        latestPurchasedSeasonMembership: { membershipType: 'regular', endsAt: '2025-12-31' },
+      }),
+    ).toEqual({ kind: 'lifetime', validThrough: null });
+  });
+
   test('always includes validThrough for active regular memberships', () => {
     const status = resolveMembershipCardStatus({
       today: '2026-03-01',
@@ -69,6 +86,17 @@ describe('resolveIcePrivilegesValidThrough', () => {
     expect(
       resolveIcePrivilegesValidThrough({
         membershipKind: 'regular',
+        sessionEndDate: '2026-12-31',
+        hasActiveSessionIcePrivilege: false,
+        onSessionRoster: true,
+      }),
+    ).toBe('2026-12-31');
+  });
+
+  test('includes ice privileges for lifetime members on session roster', () => {
+    expect(
+      resolveIcePrivilegesValidThrough({
+        membershipKind: 'lifetime',
         sessionEndDate: '2026-12-31',
         hasActiveSessionIcePrivilege: false,
         onSessionRoster: true,

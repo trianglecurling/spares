@@ -2016,7 +2016,9 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
       return (
         <div key={path} className={layout === 'inline' ? 'min-w-0' : 'w-full'}>
           <label
-            className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-sm ${
+            className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-2 text-sm ${
+              layout === 'block' ? 'items-center' : 'items-start'
+            } ${
               option.disabled || cappedOut
                 ? 'cursor-not-allowed opacity-60'
                 : 'hover:border-primary-teal/40 hover:bg-gray-50 dark:hover:bg-gray-800/70'

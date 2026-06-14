@@ -4,7 +4,7 @@ import { getDatabaseConfig } from './config.js';
 import { getDrizzleDb } from './drizzle-db.js';
 import { ensureLeagueWaitlistSchema } from './waitlistSchemaMigration.js';
 
-/** Registration shell DDL. Earlier prototype registration tables are intentionally replaced. */
+/** Registration shell DDL. */
 export const curlingRegistrationDDLBase = `
   CREATE TABLE IF NOT EXISTS curling_seasons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,7 +130,7 @@ export const curlingRegistrationDDLBase = `
   );
 `;
 
-/** Tables recreated after `legacyAlwaysDropTables`; must match `drizzle-schema` registration/league subgraph. */
+/** Registration subgraph DDL; must match `drizzle-schema` registration/league tables. */
 export const curlingRegistrationExtendedDDL = `
   CREATE TABLE IF NOT EXISTS curling_league_sabbaticals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -385,30 +385,6 @@ export const curlingRegistrationExtendedDDL = `
   CREATE INDEX IF NOT EXISTS idx_registration_outbound_messages_type ON registration_outbound_messages(message_type);
 `;
 
-const legacyRegistrationTables = [
-  'registration_outbound_messages',
-  'waitlist_audit_events',
-  'waitlist_offers',
-  'waitlist_entries',
-  'curling_sabbatical_sessions',
-  'curling_ice_privileges',
-  'season_memberships',
-  'registration_invoice_line_items',
-  'registration_invoices',
-  'financial_assistance_requests',
-  'registration_selections',
-  'registration_policy_acceptances',
-  'curling_league_sabbaticals',
-  'curling_registrations',
-  'registration_discount_configs',
-  'registration_price_configs',
-  'registration_periods',
-] as const;
-
-const legacyAlwaysDropTables = legacyRegistrationTables.filter(
-  (table) => table !== 'curling_registrations' && table !== 'registration_policy_acceptances'
-);
-
 const memberExperienceBaselineColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'baseline_other_club_experience_years', ddl: 'baseline_other_club_experience_years REAL NOT NULL DEFAULT 0' },
   { name: 'baseline_club_experience_years', ddl: 'baseline_club_experience_years REAL NOT NULL DEFAULT 0' },
@@ -421,6 +397,10 @@ const memberDemographicColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'mailing_address', ddl: 'mailing_address TEXT' },
   { name: 'emergency_contact_name', ddl: 'emergency_contact_name TEXT' },
   { name: 'emergency_contact_phone', ddl: 'emergency_contact_phone TEXT' },
+  { name: 'guardian_first_name', ddl: 'guardian_first_name TEXT' },
+  { name: 'guardian_last_name', ddl: 'guardian_last_name TEXT' },
+  { name: 'guardian_email', ddl: 'guardian_email TEXT' },
+  { name: 'guardian_phone', ddl: 'guardian_phone TEXT' },
 ];
 
 function curlingRegistrationDDLForDialect(isPostgres: boolean): string {
@@ -587,41 +567,6 @@ function ensureMemberDemographicColumnsSync(
   }
 }
 
-async function dropLegacyRegistrationTables(
-  db: DatabaseAdapter,
-  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
-): Promise<void> {
-  if (db.isAsync()) {
-    for (const table of legacyAlwaysDropTables) {
-      await execSQL(db, `DROP TABLE IF EXISTS ${table} CASCADE`);
-    }
-    return;
-  }
-
-  await execSQL(db, `PRAGMA foreign_keys = OFF`);
-  try {
-    for (const table of legacyAlwaysDropTables) {
-      await execSQL(db, `DROP TABLE IF EXISTS ${table}`);
-    }
-  } finally {
-    await execSQL(db, `PRAGMA foreign_keys = ON`);
-  }
-}
-
-function dropLegacyRegistrationTablesSync(
-  db: DatabaseAdapter,
-  execSQLSync: (d: DatabaseAdapter, s: string) => void
-): void {
-  execSQLSync(db, `PRAGMA foreign_keys = OFF`);
-  try {
-    for (const table of legacyAlwaysDropTables) {
-      execSQLSync(db, `DROP TABLE IF EXISTS ${table}`);
-    }
-  } finally {
-    execSQLSync(db, `PRAGMA foreign_keys = ON`);
-  }
-}
-
 const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'session_id', ddl: 'session_id INTEGER REFERENCES curling_sessions(id) ON DELETE SET NULL' },
   { name: 'league_type', ddl: "league_type TEXT NOT NULL DEFAULT 'standard' CHECK(league_type IN ('standard','bring_your_own_team'))" },
@@ -640,6 +585,8 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'waitlist_id', ddl: 'waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE SET NULL' },
   { name: 'is_play_in_based', ddl: 'is_play_in_based INTEGER NOT NULL DEFAULT 0' },
   { name: 'allows_sabbatical', ddl: 'allows_sabbatical INTEGER NOT NULL DEFAULT 1' },
+  { name: 'allows_drop_ins', ddl: 'allows_drop_ins INTEGER NOT NULL DEFAULT 0' },
+  { name: 'drop_in_fee_minor', ddl: 'drop_in_fee_minor INTEGER CHECK(drop_in_fee_minor IS NULL OR drop_in_fee_minor >= 0)' },
   { name: 'predecessor_league_id', ddl: 'predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
   { name: 'successor_league_id', ddl: 'successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
 ];
@@ -797,6 +744,8 @@ const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE SET NULL',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS is_play_in_based INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS allows_sabbatical INTEGER NOT NULL DEFAULT 1',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS allows_drop_ins INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS drop_in_fee_minor INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
 ];
@@ -884,15 +833,14 @@ async function ensureWaitlistEntryPostgres(db: DatabaseAdapter, execSQL: (d: Dat
 }
 
 /**
- * Applies clean registration-shell DDL and intentionally migrates away from
- * previous prototype registration tables.
+ * Ensures registration tables and columns exist. Uses CREATE TABLE IF NOT EXISTS
+ * and additive ALTERs only — never drops live registration data.
  */
 export async function ensureCurlingRegistrationBootstrap(
   db: DatabaseAdapter,
   execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
 ): Promise<void> {
   await ensureMemberDemographicColumns(db, execSQL);
-  await dropLegacyRegistrationTables(db, execSQL);
   await execSQL(db, curlingRegistrationDDLForDialect(Boolean(db.isAsync?.())));
   if (db.isAsync()) {
     await ensureRegistrationMembershipPaymentPostgres(db, execSQL);
@@ -918,7 +866,6 @@ export function ensureCurlingRegistrationBootstrapSync(
   execSQLSync: (d: DatabaseAdapter, s: string) => void
 ): void {
   ensureMemberDemographicColumnsSync(db, execSQLSync);
-  dropLegacyRegistrationTablesSync(db, execSQLSync);
   execSQLSync(db, curlingRegistrationDDLForDialect(false));
 
   const registrationStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(curling_registrations)`);

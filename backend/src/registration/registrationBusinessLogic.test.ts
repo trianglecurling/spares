@@ -63,6 +63,22 @@ describe('registration business logic', () => {
     expect(fees.discountLineItems).toHaveLength(0);
   });
 
+  test('lifetime membership waives all registration fees', () => {
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        registrant: {
+          memberId: 20,
+          hasUserAccount: true,
+          isReturningMember: true,
+          dateOfBirth: '1990-01-01',
+          hasLifetimeMembership: true,
+        },
+      }),
+    );
+    expect(fees.totalDueMinor).toBe(0);
+    expect(fees.lineItems).toHaveLength(0);
+  });
+
   test('social-to-regular upgrade gets no credit and no discounts', () => {
     const context = registrationContext({
       selections: [],

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get } from '../api/client';
@@ -7,12 +7,20 @@ import AppPageControlsRow from '../components/AppPageControlsRow';
 import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
-import { HiCheckCircle } from 'react-icons/hi2';
 import PageTabs from '../components/PageTabs';
 import AppStateCard from '../components/AppStateCard';
 import DataTable from '../components/table/DataTable';
 import type { DataTableColumn } from '../components/table/tableTypes';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
+import FormField from '../components/FormField';
+import useTableQueryState from '../hooks/useTableQueryState';
+import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
+import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility';
+
+const MEMBERS_PAGE_SIZE = 50;
+
+const MEMBER_DIRECTORY_TABLE_SORT_KEYS = ['name'] as const;
+type MemberDirectoryTableSortKey = (typeof MEMBER_DIRECTORY_TABLE_SORT_KEYS)[number];
 
 interface Member {
   id: number;
@@ -23,7 +31,6 @@ interface Member {
   isServerAdmin: boolean;
   emailVisible: boolean;
   phoneVisible: boolean;
-  firstLoginCompleted: boolean;
 }
 
 interface MemberAvailability {
@@ -33,12 +40,6 @@ interface MemberAvailability {
     leagueName: string;
     dayOfWeek: number;
   }[];
-}
-
-interface LeagueOption {
-  id: number;
-  name: string;
-  dayOfWeek: number;
 }
 
 interface MemberLeague {
@@ -58,7 +59,9 @@ interface MemberExperienceSummary {
   totalExperienceYears: number;
 }
 
-type MemberProfileTab = 'profile' | 'emergency-contact' | 'sparing' | 'leagues';
+type MemberProfileModalTab = 'profile' | 'emergency-contact' | 'sparing' | 'leagues';
+
+type MembersPageTab = 'directory' | 'spare-lists';
 
 function formatExperienceYears(years: number): string {
   const displayValue = Number.isInteger(years) ? String(years) : years.toFixed(1).replace(/\.0$/, '');
@@ -77,11 +80,16 @@ const roleLabels: Record<string, string> = {
 };
 
 export default function MembersDirectory() {
+  const membersSearchInputId = useId();
+  const spareLeagueInputId = useId();
+  const { leagues } = useLeagueOptions();
+  const [pageTab, setPageTab] = useState<MembersPageTab>('directory');
   const [members, setMembers] = useState<Member[]>([]);
+  const [totalMembers, setTotalMembers] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('');
-  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
-  const [leagueFilterId, setLeagueFilterId] = useState<string>(''); // '' = all leagues
+  const [spareLeagueId, setSpareLeagueId] = useState<number | null>(null);
+  const [spareMembers, setSpareMembers] = useState<Member[]>([]);
+  const [spareLoading, setSpareLoading] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [memberAvailability, setMemberAvailability] = useState<MemberAvailability | null>(null);
   const [memberLeagues, setMemberLeagues] = useState<MemberLeague[] | null>(null);
@@ -89,7 +97,7 @@ export default function MembersDirectory() {
     null
   );
   const [memberExperience, setMemberExperience] = useState<MemberExperienceSummary | null>(null);
-  const [activeTab, setActiveTab] = useState<MemberProfileTab>('profile');
+  const [profileModalTab, setProfileModalTab] = useState<MemberProfileModalTab>('profile');
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
   const [loadingEmergencyContact, setLoadingEmergencyContact] = useState(false);
@@ -103,10 +111,79 @@ export default function MembersDirectory() {
   >([]);
   const [teamRosterLoading, setTeamRosterLoading] = useState(false);
 
+  const memberFilterConfig = useMemo(
+    () => ({
+      search: {
+        queryKey: 'search',
+        defaultValue: '',
+        debounceMs: 250,
+      },
+    }),
+    []
+  );
+
+  const { page, filters, draftFilters, setPage, setDraftFilter } = useTableQueryState<
+    MemberDirectoryTableSortKey,
+    { search: string }
+  >({
+    defaultSort: { key: 'name', direction: 'asc' },
+    sortKeys: MEMBER_DIRECTORY_TABLE_SORT_KEYS,
+    filterConfig: memberFilterConfig,
+  });
+
+  const loadMembers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await get('/members/directory', {
+        page,
+        pageSize: MEMBERS_PAGE_SIZE,
+        ...(filters.search.trim() ? { search: filters.search.trim() } : {}),
+      });
+      const data = response as { items?: Member[]; total?: number; page?: number };
+      setMembers(Array.isArray(data.items) ? data.items : []);
+      setTotalMembers(typeof data.total === 'number' ? data.total : 0);
+      if (typeof data.page === 'number' && data.page !== page) {
+        setPage(data.page, { replace: true });
+      }
+    } catch (error) {
+      console.error('Failed to load members:', error);
+      setMembers([]);
+      setTotalMembers(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters.search, page, setPage]);
+
   useEffect(() => {
-    loadLeagues();
-    loadMembers();
+    if (pageTab !== 'directory') return;
+    void loadMembers();
+  }, [loadMembers, pageTab]);
+
+  const loadSpareMembers = useCallback(async (leagueId: number) => {
+    setSpareLoading(true);
+    try {
+      const response = await get('/members/directory', {
+        leagueId,
+        page: 1,
+        pageSize: 100,
+      });
+      const data = response as { items?: Member[] };
+      setSpareMembers(Array.isArray(data.items) ? data.items : []);
+    } catch (error) {
+      console.error('Failed to load spare list:', error);
+      setSpareMembers([]);
+    } finally {
+      setSpareLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (pageTab !== 'spare-lists' || spareLeagueId == null) {
+      setSpareMembers([]);
+      return;
+    }
+    void loadSpareMembers(spareLeagueId);
+  }, [loadSpareMembers, pageTab, spareLeagueId]);
 
   useEffect(() => {
     if (!teamRosterModal) return;
@@ -128,30 +205,97 @@ export default function MembersDirectory() {
       .finally(() => setTeamRosterLoading(false));
   }, [teamRosterModal]);
 
-  const loadLeagues = async () => {
-    try {
-      const response = await get('/leagues');
-      setLeagues(response || []);
-    } catch (error) {
-      console.error('Failed to load leagues:', error);
-      setLeagues([]);
-    }
-  };
+  const paginationConfig = useMemo(
+    () => ({
+      page,
+      pageSize: MEMBERS_PAGE_SIZE,
+      totalRecords: totalMembers,
+      currentCount: members.length,
+      onPageChange: setPage,
+    }),
+    [members.length, page, setPage, totalMembers]
+  );
 
-  const loadMembers = async (leagueId?: number) => {
-    setLoading(true);
+  const tableEmptyState = useMemo(() => {
+    if (totalMembers === 0 && !filters.search.trim()) {
+      return <AppStateCard compact title="No members in the directory." />;
+    }
+    const q = filters.search.trim();
+    return (
+      <AppStateCard
+        compact
+        title={q ? `No members found matching "${q}"` : 'No members match this filter.'}
+      />
+    );
+  }, [filters.search, totalMembers]);
+
+  const spareTableEmptyState = useMemo(() => {
+    if (spareLeagueId == null) {
+      return <AppStateCard compact title="Select a league to view members available to spare." />;
+    }
+    return (
+      <AppStateCard compact title="No members have marked themselves available to spare for this league." />
+    );
+  }, [spareLeagueId]);
+
+  const handleMemberClick = useCallback(async (member: Member) => {
+    setSelectedMember(member);
+    setProfileModalTab('profile');
+    setMemberAvailability(null);
+    setMemberLeagues(null);
+    setMemberEmergencyContact(null);
+    setMemberExperience(null);
+
+    setLoadingAvailability(true);
+    setLoadingLeagues(true);
+    setLoadingEmergencyContact(true);
+    setLoadingExperience(true);
     try {
-      const response = await get('/members/directory', leagueId ? { leagueId } : undefined);
-      setMembers(Array.isArray(response) ? response : []);
+      const memberId = String(member.id);
+      const [availabilityRes, leaguesRes, emergencyContactRes, experienceRes] = await Promise.all([
+        get('/members/{memberId}/availability', undefined, { memberId }),
+        get('/members/{memberId}/leagues', undefined, { memberId }),
+        get('/members/{memberId}/emergency-contact', undefined, { memberId }),
+        get('/members/{memberId}/experience', undefined, { memberId }),
+      ]);
+      setMemberAvailability(availabilityRes);
+      setMemberLeagues(Array.isArray(leaguesRes) ? leaguesRes : []);
+      setMemberEmergencyContact(emergencyContactRes);
+      setMemberExperience(experienceRes as MemberExperienceSummary);
     } catch (error) {
-      console.error('Failed to load members:', error);
-      setMembers([]);
+      console.error('Failed to load member data:', error);
+      setMemberAvailability({ canSkip: false, availableLeagues: [] });
+      setMemberLeagues([]);
+      setMemberEmergencyContact(null);
+      setMemberExperience(null);
     } finally {
-      setLoading(false);
+      setLoadingAvailability(false);
+      setLoadingLeagues(false);
+      setLoadingEmergencyContact(false);
+      setLoadingExperience(false);
     }
+  }, []);
+
+  const handleCloseModal = () => {
+    setSelectedMember(null);
+    setMemberAvailability(null);
+    setMemberLeagues(null);
+    setMemberEmergencyContact(null);
+    setMemberExperience(null);
+    setProfileModalTab('profile');
+    setTeamRosterModal(null);
   };
 
-  const filteredMembers = members.filter((member) => member.name.toLowerCase().includes(filter.toLowerCase()));
+  const leagueOptions = useMemo<ChoiceOption<number>[]>(
+    () =>
+      leagues
+        .filter((l) => isLeagueEligibleForSpares(l))
+        .map((l) => ({
+          value: l.id,
+          label: `${l.name} (${DAY_NAMES[l.dayOfWeek]})`,
+        })),
+    [leagues]
+  );
 
   const columns: Array<DataTableColumn<Member>> = useMemo(
     () => [
@@ -160,24 +304,13 @@ export default function MembersDirectory() {
         header: 'Name',
         cellClassName: 'whitespace-nowrap',
         renderCell: (member) => (
-          <div className="flex items-center gap-2">
-            <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
-              {member.firstLoginCompleted ? (
-                <div className="group relative">
-                  <HiCheckCircle className="h-5 w-5 text-green-500" />
-                  <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:opacity-100 dark:bg-gray-700">
-                    Verified spares list user
-                  </span>
-                </div>
-              ) : null}
-            </div>
-            <button
-              onClick={() => handleMemberClick(member)}
-              className="cursor-pointer text-left font-medium text-gray-900 hover:text-primary-teal dark:text-gray-100"
-            >
-              {member.name}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => handleMemberClick(member)}
+            className="cursor-pointer text-left font-medium text-gray-900 hover:text-primary-teal dark:text-gray-100"
+          >
+            {member.name}
+          </button>
         ),
       },
       {
@@ -227,64 +360,7 @@ export default function MembersDirectory() {
           ),
       },
     ],
-    [filter]
-  );
-
-  const handleMemberClick = async (member: Member) => {
-    setSelectedMember(member);
-    setActiveTab('profile');
-    setMemberAvailability(null);
-    setMemberLeagues(null);
-    setMemberEmergencyContact(null);
-    setMemberExperience(null);
-
-    setLoadingAvailability(true);
-    setLoadingLeagues(true);
-    setLoadingEmergencyContact(true);
-    setLoadingExperience(true);
-    try {
-      const memberId = String(member.id);
-      const [availabilityRes, leaguesRes, emergencyContactRes, experienceRes] = await Promise.all([
-        get('/members/{memberId}/availability', undefined, { memberId }),
-        get('/members/{memberId}/leagues', undefined, { memberId }),
-        get('/members/{memberId}/emergency-contact', undefined, { memberId }),
-        get('/members/{memberId}/experience', undefined, { memberId }),
-      ]);
-      setMemberAvailability(availabilityRes);
-      setMemberLeagues(Array.isArray(leaguesRes) ? leaguesRes : []);
-      setMemberEmergencyContact(emergencyContactRes);
-      setMemberExperience(experienceRes as MemberExperienceSummary);
-    } catch (error) {
-      console.error('Failed to load member data:', error);
-      setMemberAvailability({ canSkip: false, availableLeagues: [] });
-      setMemberLeagues([]);
-      setMemberEmergencyContact(null);
-      setMemberExperience(null);
-    } finally {
-      setLoadingAvailability(false);
-      setLoadingLeagues(false);
-      setLoadingEmergencyContact(false);
-      setLoadingExperience(false);
-    }
-  };
-
-  const handleCloseModal = () => {
-    setSelectedMember(null);
-    setMemberAvailability(null);
-    setMemberLeagues(null);
-    setMemberEmergencyContact(null);
-    setMemberExperience(null);
-    setActiveTab('profile');
-    setTeamRosterModal(null);
-  };
-
-  const leagueFilterOptions = useMemo<ChoiceOption<number>[]>(
-    () =>
-      leagues.map((l) => ({
-        value: l.id,
-        label: `${l.name} (${DAY_NAMES[l.dayOfWeek]})`,
-      })),
-    [leagues]
+    [handleMemberClick]
   );
 
   return (
@@ -292,54 +368,91 @@ export default function MembersDirectory() {
       <AppPage>
         <AppPageHeader title="Member directory" />
 
-        <AppPageControlsRow
-          right={
-            <>
-              <div className="w-full sm:w-72">
-                <ChoiceInput<number>
-                  ariaLabel="Filter members by league availability"
-                  options={leagueFilterOptions}
-                  value={leagueFilterId === '' ? null : parseInt(leagueFilterId, 10)}
-                  onChange={(next) => {
-                    if (next == null || Array.isArray(next)) {
-                      setLeagueFilterId('');
-                      loadMembers(undefined);
-                      return;
-                    }
-                    setLeagueFilterId(String(next));
-                    loadMembers(next);
-                  }}
-                  placeholder="Filter by league availability (all)"
-                  listboxLabel="League availability filter"
-                />
-              </div>
-              <div className="w-full sm:w-64">
-                <input
-                  type="text"
-                  placeholder="Search members..."
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  className="app-input"
-                />
-              </div>
-            </>
-          }
+        <PageTabs
+          items={[
+            {
+              key: 'directory',
+              label: 'Directory',
+              isActive: pageTab === 'directory',
+              onClick: () => setPageTab('directory'),
+            },
+            {
+              key: 'spare-lists',
+              label: 'Spare lists',
+              isActive: pageTab === 'spare-lists',
+              onClick: () => setPageTab('spare-lists'),
+            },
+          ]}
         />
 
-        {loading ? (
-          <AppStateCard title="Loading members..." />
-        ) : (
-          <DataTable
-            rows={filteredMembers}
-            rowKey={(member) => member.id}
-            columns={columns}
-            emptyState={
-              <AppStateCard
-                compact
-                title={members.length === 0 ? 'No members in the directory.' : `No members found matching "${filter}"`}
+        {pageTab === 'directory' ? (
+          <>
+            <AppPageControlsRow
+              right={
+                <div className="w-full sm:w-64">
+                  <FormField label="Search members by name" htmlFor={membersSearchInputId}>
+                    <input
+                      id={membersSearchInputId}
+                      type="search"
+                      placeholder="Search by name"
+                      value={draftFilters.search}
+                      onChange={(e) => setDraftFilter('search', e.target.value)}
+                      className="app-input"
+                    />
+                  </FormField>
+                </div>
+              }
+            />
+
+            {loading ? (
+              <AppStateCard title="Loading members..." />
+            ) : (
+              <DataTable
+                rows={members}
+                rowKey={(member) => member.id}
+                columns={columns}
+                pagination={paginationConfig}
+                emptyState={tableEmptyState}
               />
-            }
-          />
+            )}
+          </>
+        ) : (
+          <>
+            <AppPageControlsRow
+              right={
+                <div className="w-full sm:w-72">
+                  <FormField label="League" htmlFor={spareLeagueInputId}>
+                    <ChoiceInput<number>
+                      inputId={spareLeagueInputId}
+                      ariaLabel="Select league for spare list"
+                      options={leagueOptions}
+                      value={spareLeagueId}
+                      onChange={(next) => {
+                        if (next == null || Array.isArray(next)) {
+                          setSpareLeagueId(null);
+                          return;
+                        }
+                        setSpareLeagueId(next);
+                      }}
+                      placeholder="Select a league"
+                      listboxLabel="League spare list"
+                    />
+                  </FormField>
+                </div>
+              }
+            />
+
+            {spareLoading ? (
+              <AppStateCard title="Loading spare list..." />
+            ) : (
+              <DataTable
+                rows={spareLeagueId == null ? [] : spareMembers}
+                rowKey={(member) => member.id}
+                columns={columns}
+                emptyState={spareTableEmptyState}
+              />
+            )}
+          </>
         )}
 
         <Modal
@@ -356,33 +469,32 @@ export default function MembersDirectory() {
                   {
                     key: 'profile',
                     label: 'Profile',
-                    isActive: activeTab === 'profile',
-                    onClick: () => setActiveTab('profile'),
+                    isActive: profileModalTab === 'profile',
+                    onClick: () => setProfileModalTab('profile'),
                   },
                   {
                     key: 'emergency-contact',
                     label: 'Emergency contact',
-                    isActive: activeTab === 'emergency-contact',
-                    onClick: () => setActiveTab('emergency-contact'),
+                    isActive: profileModalTab === 'emergency-contact',
+                    onClick: () => setProfileModalTab('emergency-contact'),
                   },
                   {
                     key: 'sparing',
                     label: 'Sparing availability',
-                    isActive: activeTab === 'sparing',
-                    onClick: () => setActiveTab('sparing'),
+                    isActive: profileModalTab === 'sparing',
+                    onClick: () => setProfileModalTab('sparing'),
                   },
                   {
                     key: 'leagues',
                     label: 'Leagues',
-                    isActive: activeTab === 'leagues',
-                    onClick: () => setActiveTab('leagues'),
+                    isActive: profileModalTab === 'leagues',
+                    onClick: () => setProfileModalTab('leagues'),
                   },
                 ]}
               />
 
-              {/* Tab content */}
               <div className="overflow-y-auto flex-1 min-h-0">
-                {activeTab === 'profile' && (
+                {profileModalTab === 'profile' && (
                   <div className="space-y-6">
                     <div>
                       <h3 className="app-section-title mb-3">Contact information</h3>
@@ -455,7 +567,7 @@ export default function MembersDirectory() {
                   </div>
                 )}
 
-                {activeTab === 'emergency-contact' && (
+                {profileModalTab === 'emergency-contact' && (
                   <div>
                     <h3 className="app-section-title mb-3">Emergency contact</h3>
                     {loadingEmergencyContact ? (
@@ -499,7 +611,7 @@ export default function MembersDirectory() {
                   </div>
                 )}
 
-                {activeTab === 'sparing' && (
+                {profileModalTab === 'sparing' && (
                   <div>
                     <h3 className="app-section-title mb-3">
                       Sparing Availability
@@ -555,7 +667,7 @@ export default function MembersDirectory() {
                   </div>
                 )}
 
-                {activeTab === 'leagues' && (
+                {profileModalTab === 'leagues' && (
                   <div>
                     <h3 className="app-section-title mb-3">
                       Leagues & Teams

@@ -1,91 +1,36 @@
-# Database Migrations with Drizzle
+# Database Migrations
 
-## Schema Definition
+Schema is defined in `src/db/drizzle-schema.ts`. SQL migrations live in `drizzle/`.
 
-The database schema is defined in `src/db/drizzle-schema.ts`. This is the single source of truth for your database structure.
+## Apply migrations (canonical)
 
-## Migration Workflow
+From the **repository root**:
 
-Drizzle Kit provides several commands for managing migrations:
+```bash
+bun run db:migrate
+```
 
-## Initializing a Fresh Database
+This runs `backend/src/scripts/init-db.ts`, which:
 
-If you're starting with an empty database (e.g. a new `spares_test` Postgres DB), initialize the schema using the backend's built-in schema creator:
+1. Applies pending Drizzle SQL migrations from `drizzle/` via `src/db/migrate-runner.ts` (Postgres) or `drizzle-kit push` (SQLite)
+2. Baselines existing databases that predate Drizzle tracking (marks `0000` as applied when `members` exists but `public.__drizzle_migrations` is empty)
+3. Runs idempotent bootstrap seeds (RBAC roles/scopes, `server_config`, default league divisions, registration additive helpers)
+
+SQLite local databases use `drizzle-kit push` instead of migrate, then the same bootstrap step.
+
+## Generate a new migration
+
+After editing `src/db/drizzle-schema.ts`:
 
 ```bash
 cd backend
-npm run db:init
+bun run db:generate
 ```
 
-This:
-- Creates all tables (SQLite or Postgres, based on `data/db-config.json`)
-- Seeds the required `server_config` row
-- Creates initial server-admin members if the members table is empty (using `SERVER_ADMINS` and/or `adminEmails` in `data/db-config.json`)
+Review the SQL in `drizzle/`, then run `bun run db:migrate` from the repo root.
 
-### 1. Generate Migration Files
+## Notes
 
-When you change the schema in `drizzle-schema.ts`, generate migration files:
-
-```bash
-npm run db:generate
-```
-
-This will:
-- Compare your schema to the current database state
-- Generate SQL migration files in the `./drizzle` directory
-- Create migration files with timestamps (e.g., `0000_add_disable_email_sms.sql`)
-
-### 2. Review Generated Migrations
-
-Check the generated SQL files in `./drizzle/` to ensure they're correct before applying.
-
-### 3. Apply Migrations
-
-Run the migrations against your database:
-
-```bash
-npm run db:migrate
-```
-
-This will execute all pending migrations.
-
-### 4. Development: Push Schema Directly (Alternative)
-
-For development, you can push schema changes directly without generating migration files:
-
-```bash
-npm run db:push
-```
-
-**Note:** `db:push` is great for development but should NOT be used in production. Always use `db:generate` + `db:migrate` for production.
-
-## Adding the New Columns
-
-For the `disable_email` and `disable_sms` columns we just added:
-
-1. **Generate the migration:**
-   ```bash
-   cd backend
-   npm run db:generate
-   ```
-
-2. **Review the generated SQL** in `./drizzle/` directory
-
-3. **Apply the migration:**
-   ```bash
-   npm run db:migrate
-   ```
-
-## Migration Files Location
-
-- Generated migrations: `./drizzle/` (relative to backend directory)
-- Migration files are SQL files that can be version controlled
-- Drizzle tracks which migrations have been applied
-
-## Important Notes
-
-- Always review generated migrations before applying
-- Commit migration files to version control
-- Run migrations in the same order across environments
-- For production, use `db:generate` + `db:migrate`, not `db:push`
-
+- Do not use `drizzle-kit migrate` directly on Postgres unless debugging; the runner avoids `CREATE SCHEMA` (required on Azure) and uses `public.__drizzle_migrations`. Root `db:migrate` is the supported entry point.
+- `db:push` is for emergency local SQLite sync only, not the normal workflow.
+- Fresh installs and existing databases both use the same root command.

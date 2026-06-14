@@ -26,6 +26,14 @@ import {
   type MemberDemographicsFormFields,
 } from '../utils/memberDemographicsForm';
 import type { MemberProfileResponse } from '../../../backend/src/api/types';
+import {
+  emptyMemberGuardianForm,
+  isMemberMinor,
+  memberGuardianFormFromProfile,
+  memberGuardianFormIsComplete,
+  memberGuardianPayloadForSave,
+  type MemberGuardianFormFields,
+} from '../utils/memberGuardianForm';
 
 const PROFILE_BASE_PATH = '/profile';
 
@@ -33,6 +41,7 @@ const PROFILE_TAB_SLUGS = [
   'preferences',
   'personal-information',
   'emergency-contact',
+  'parent-information',
   'delegated-access',
   'payment-history',
 ] as const;
@@ -56,6 +65,9 @@ export default function Profile() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [smsDisabled, setSmsDisabled] = useState<boolean | null>(null);
   const [demographics, setDemographics] = useState<MemberDemographicsFormFields>(emptyMemberDemographicsForm);
+  const [guardian, setGuardian] = useState<MemberGuardianFormFields>(emptyMemberGuardianForm);
+  const [profileIsMinor, setProfileIsMinor] = useState(false);
+  const [dateOfBirthIsSet, setDateOfBirthIsSet] = useState(false);
   const profileLoadSeqRef = useRef(0);
   const [formData, setFormData] = useState({
     optedInSms: member?.optedInSms || false,
@@ -76,8 +88,16 @@ export default function Profile() {
   useEffect(() => {
     if (tabParam && !isProfileTabSlug(tabParam)) {
       navigate(`${PROFILE_BASE_PATH}/${DEFAULT_PROFILE_TAB}`, { replace: true });
+      return;
     }
-  }, [tabParam, navigate]);
+    if (tabParam === 'parent-information' && profileLoading === false && !profileIsMinor) {
+      navigate(`${PROFILE_BASE_PATH}/${DEFAULT_PROFILE_TAB}`, { replace: true });
+      return;
+    }
+    if (tabParam === 'emergency-contact' && profileLoading === false && profileIsMinor) {
+      navigate(`${PROFILE_BASE_PATH}/parent-information`, { replace: true });
+    }
+  }, [tabParam, navigate, profileLoading, profileIsMinor]);
 
   const normalizeThemePreference = (value?: string | null): 'light' | 'dark' | 'system' => {
     if (value === 'light' || value === 'dark' || value === 'system') return value;
@@ -86,6 +106,9 @@ export default function Profile() {
 
   const applyProfileToForm = (profile: MemberProfileResponse) => {
     setDemographics(memberDemographicsFormFromProfile(profile));
+    setGuardian(memberGuardianFormFromProfile(profile));
+    setProfileIsMinor(profile.isMinor ?? isMemberMinor(profile.dateOfBirth));
+    setDateOfBirthIsSet(Boolean(profile.dateOfBirth));
     setFormData({
       optedInSms: profile.optedInSms,
       emailVisible: profile.emailVisible,
@@ -131,12 +154,13 @@ export default function Profile() {
               mailingAddress: null,
               emergencyContactName: null,
               emergencyContactPhone: null,
-              validThrough: null,
-              spareOnly: member.spareOnly,
-              socialMember: member.socialMember,
+              guardianFirstName: null,
+              guardianLastName: null,
+              guardianEmail: null,
+              guardianPhone: null,
+              isMinor: false,
               isAdmin: member.isAdmin,
               isServerAdmin: member.isServerAdmin,
-              firstLoginCompleted: member.firstLoginCompleted,
               optedInSms: member.optedInSms,
               emailSubscribed: member.emailSubscribed,
               emailVisible: member.emailVisible,
@@ -256,6 +280,29 @@ export default function Profile() {
     }
   };
 
+  const saveGuardian = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage(null);
+    if (!memberGuardianFormIsComplete(guardian)) {
+      setMessage({ type: 'error', text: 'Enter the parent or guardian contact information before saving.' });
+      setLoading(false);
+      return;
+    }
+    try {
+      const response = await patch('/members/me', memberGuardianPayloadForSave(guardian));
+      applyProfileToForm(response);
+      setMessage({ type: 'success', text: 'Parent information updated successfully.' });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: getApiErrorMessage(error, 'Could not update parent information. Please try again.'),
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const saveDemographics = async (e: FormEvent, tab: 'personal-information' | 'emergency-contact') => {
     e.preventDefault();
     setLoading(true);
@@ -312,12 +359,26 @@ export default function Profile() {
       to: `${PROFILE_BASE_PATH}/personal-information`,
       isActive: activeTab === 'personal-information',
     },
-    {
-      key: 'emergency-contact',
-      label: 'Emergency contact',
-      to: `${PROFILE_BASE_PATH}/emergency-contact`,
-      isActive: activeTab === 'emergency-contact',
-    },
+    ...(!profileIsMinor
+      ? [
+          {
+            key: 'emergency-contact' as const,
+            label: 'Emergency contact',
+            to: `${PROFILE_BASE_PATH}/emergency-contact`,
+            isActive: activeTab === 'emergency-contact',
+          },
+        ]
+      : []),
+    ...(profileIsMinor
+      ? [
+          {
+            key: 'parent-information' as const,
+            label: 'Parent information',
+            to: `${PROFILE_BASE_PATH}/parent-information`,
+            isActive: activeTab === 'parent-information',
+          },
+        ]
+      : []),
     {
       key: 'delegated-access',
       label: 'Delegated access',
@@ -337,7 +398,9 @@ export default function Profile() {
       <AppPage narrow>
         <AppPageHeader title="My profile" />
 
-        {message && activeTab !== 'delegated-access' && activeTab !== 'payment-history' && (
+        {message &&
+          activeTab !== 'delegated-access' &&
+          activeTab !== 'payment-history' && (
           <div className={message.type === 'success' ? 'app-alert-success' : 'app-alert-error'}>
             {message.text}
           </div>
@@ -518,7 +581,52 @@ export default function Profile() {
                   onChange={setDemographics}
                   idPrefix="profile"
                   section="personal"
+                  lockDateOfBirth={dateOfBirthIsSet}
                 />
+              </FormSection>
+              <div>
+                <Button type="submit" disabled={loading}>
+                  {loading ? 'Saving…' : 'Save changes'}
+                </Button>
+              </div>
+            </form>
+          ) : activeTab === 'parent-information' ? (
+            <form
+              onSubmit={(e) => {
+                void saveGuardian(e);
+              }}
+              className="space-y-6"
+            >
+              <FormSection
+                title="Parent information"
+                description="Parent or guardian contact information for this member under 18. It is also used as the emergency contact."
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {(
+                    [
+                      ['guardianFirstName', 'First name'],
+                      ['guardianLastName', 'Last name'],
+                      ['guardianEmail', 'Email address'],
+                      ['guardianPhone', 'Phone number'],
+                    ] as const
+                  ).map(([field, label]) => {
+                    const fieldId = `profile-guardian-${field}`;
+                    return (
+                      <FormField key={field} label={label} htmlFor={fieldId} required>
+                        <input
+                          id={fieldId}
+                          type={field === 'guardianEmail' ? 'email' : field === 'guardianPhone' ? 'tel' : 'text'}
+                          value={guardian[field]}
+                          onChange={(event) =>
+                            setGuardian((current) => ({ ...current, [field]: event.target.value }))
+                          }
+                          className="app-input"
+                          required
+                        />
+                      </FormField>
+                    );
+                  })}
+                </div>
               </FormSection>
               <div>
                 <Button type="submit" disabled={loading}>

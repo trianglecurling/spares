@@ -21,12 +21,14 @@ export const memberProfileResponseSchema = {
     mailingAddress: { type: ['string', 'null'] },
     emergencyContactName: { type: ['string', 'null'] },
     emergencyContactPhone: { type: ['string', 'null'] },
-    validThrough: { type: ['string', 'null'] },
-    spareOnly: { type: 'boolean' },
-    socialMember: { type: 'boolean' },
+    guardianFirstName: { type: ['string', 'null'] },
+    guardianLastName: { type: ['string', 'null'] },
+    guardianEmail: { type: ['string', 'null'] },
+    guardianPhone: { type: ['string', 'null'] },
+    isMinor: { type: 'boolean' },
+    lifetimeMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
-    firstLoginCompleted: { type: 'boolean' },
     optedInSms: { type: 'boolean' },
     emailSubscribed: { type: 'boolean' },
     emailVisible: { type: 'boolean' },
@@ -44,12 +46,13 @@ export const memberProfileResponseSchema = {
     'mailingAddress',
     'emergencyContactName',
     'emergencyContactPhone',
-    'validThrough',
-    'spareOnly',
-    'socialMember',
+    'guardianFirstName',
+    'guardianLastName',
+    'guardianEmail',
+    'guardianPhone',
+    'isMinor',
     'isAdmin',
     'isServerAdmin',
-    'firstLoginCompleted',
     'optedInSms',
     'emailSubscribed',
     'emailVisible',
@@ -207,9 +210,7 @@ export const memberSummarySchema = {
     email: { type: ['string', 'null'] },
     phone: { type: ['string', 'null'] },
     createdAt: { type: ['string', 'null'] },
-    validThrough: { type: ['string', 'null'] },
-    spareOnly: { type: 'boolean' },
-    socialMember: { type: 'boolean' },
+    lifetimeMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
@@ -218,7 +219,6 @@ export const memberSummarySchema = {
     optedInSms: { type: 'boolean' },
     emailVisible: { type: 'boolean' },
     phoneVisible: { type: 'boolean' },
-    firstLoginCompleted: { type: 'boolean' },
     baselineOtherClubExperienceYears: { type: 'number' },
     baselineClubExperienceYears: { type: 'number' },
   },
@@ -233,13 +233,27 @@ export const memberSummarySchema = {
     'optedInSms',
     'emailVisible',
     'phoneVisible',
-    'firstLoginCompleted',
   ],
 } as const;
 
 export const memberListResponseSchema = {
   type: 'array',
   items: memberSummarySchema,
+} as const;
+
+export const memberDirectoryListResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: 'array',
+      items: memberSummarySchema,
+    },
+    total: { type: 'number' },
+    page: { type: 'number' },
+    pageSize: { type: 'number' },
+  },
+  required: ['items', 'total', 'page', 'pageSize'],
 } as const;
 
 export const memberCreateResponseSchema = {
@@ -250,9 +264,6 @@ export const memberCreateResponseSchema = {
     name: { type: 'string' },
     email: { type: ['string', 'null'] },
     phone: { type: ['string', 'null'] },
-    validThrough: { type: ['string', 'null'] },
-    spareOnly: { type: 'boolean' },
-    socialMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     emailSubscribed: { type: 'boolean' },
     optedInSms: { type: 'boolean' },
@@ -262,9 +273,6 @@ export const memberCreateResponseSchema = {
     'name',
     'email',
     'phone',
-    'validThrough',
-    'spareOnly',
-    'socialMember',
     'isAdmin',
     'emailSubscribed',
     'optedInSms',
@@ -290,7 +298,6 @@ export const memberUpdateResponseSchema = {
     name: { type: 'string' },
     email: { type: ['string', 'null'] },
     phone: { type: ['string', 'null'] },
-    validThrough: { type: ['string', 'null'] },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
     emailSubscribed: { type: 'boolean' },
@@ -301,7 +308,6 @@ export const memberUpdateResponseSchema = {
     'name',
     'email',
     'phone',
-    'validThrough',
     'isAdmin',
     'isServerAdmin',
     'emailSubscribed',
@@ -317,60 +323,6 @@ export const bulkDeleteResponseSchema = {
     deletedCount: { type: 'number' },
   },
   required: ['success', 'deletedCount'],
-} as const;
-
-export const bulkExperienceBaselinesBodySchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    rows: {
-      type: 'array',
-      minItems: 1,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          email: { type: 'string' },
-          name: { type: 'string' },
-          baselineOtherClubExperienceYears: { type: 'number' },
-          baselineClubExperienceYears: { type: 'number' },
-        },
-        required: ['baselineOtherClubExperienceYears', 'baselineClubExperienceYears'],
-      },
-    },
-  },
-  required: ['rows'],
-} as const;
-
-export const bulkExperienceBaselinesResponseSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    success: { type: 'boolean' },
-    updatedCount: { type: 'number' },
-    unchangedCount: { type: 'number' },
-    failedCount: { type: 'number' },
-    results: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          email: { type: 'string' },
-          name: { type: ['string', 'null'] },
-          status: {
-            type: 'string',
-            enum: ['updated', 'unchanged', 'not_found', 'ambiguous_email', 'ambiguous_name', 'invalid'],
-          },
-          memberId: { type: 'number' },
-          memberName: { type: 'string' },
-          message: { type: 'string' },
-        },
-        required: ['status'],
-      },
-    },
-  },
-  required: ['success', 'updatedCount', 'unchangedCount', 'failedCount', 'results'],
 } as const;
 
 export const loginLinkResponseSchema = {
@@ -462,7 +414,7 @@ export const memberMembershipCardResponseSchema = {
       properties: {
         kind: {
           type: 'string',
-          enum: ['regular', 'social', 'former', 'non_member'],
+          enum: ['regular', 'social', 'former', 'non_member', 'lifetime'],
         },
         validThrough: { type: ['string', 'null'] },
       },
@@ -518,6 +470,55 @@ export const memberExperienceSummaryResponseSchema = {
   required: ['totalExperienceYears'],
 } as const;
 
+export const memberSeasonMembershipSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    seasonId: { type: 'number' },
+    seasonName: { type: 'string' },
+    membershipType: {
+      type: 'string',
+      enum: ['regular', 'social', 'junior_recreational'],
+    },
+    status: {
+      type: 'string',
+      enum: ['pending', 'active', 'cancelled', 'refunded', 'expired'],
+    },
+    startsAt: { type: 'string' },
+    endsAt: { type: 'string' },
+    sourceRegistrationId: { type: ['number', 'null'] },
+  },
+  required: [
+    'id',
+    'seasonId',
+    'seasonName',
+    'membershipType',
+    'status',
+    'startsAt',
+    'endsAt',
+    'sourceRegistrationId',
+  ],
+} as const;
+
+export const memberSeasonMembershipListResponseSchema = {
+  type: 'array',
+  items: memberSeasonMembershipSchema,
+} as const;
+
+export const createMemberSeasonMembershipBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    seasonId: { type: 'number' },
+    membershipType: {
+      type: 'string',
+      enum: ['regular', 'social', 'junior_recreational'],
+    },
+  },
+  required: ['seasonId', 'membershipType'],
+} as const;
+
 export const availabilityMembersResponseSchema = {
   type: 'array',
   items: {
@@ -559,6 +560,8 @@ export const leagueResponseSchema = {
     waitlistId: { type: ['number', 'null'] },
     isPlayInBased: { type: 'boolean' },
     allowsSabbatical: { type: 'boolean' },
+    allowsDropIns: { type: 'boolean' },
+    dropInFeeMinor: { type: ['number', 'null'] },
     predecessorLeagueId: { type: ['number', 'null'] },
     successorLeagueId: { type: ['number', 'null'] },
     drawTimes: { type: 'array', items: { type: 'string' } },
@@ -588,6 +591,8 @@ export const leagueResponseSchema = {
     'waitlistId',
     'isPlayInBased',
     'allowsSabbatical',
+    'allowsDropIns',
+    'dropInFeeMinor',
     'predecessorLeagueId',
     'successorLeagueId',
     'drawTimes',

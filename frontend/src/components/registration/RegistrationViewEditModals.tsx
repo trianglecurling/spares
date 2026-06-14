@@ -541,7 +541,7 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
             <InlineStateMessage
               tone="warning"
               title="Social membership"
-              description="Social members do not receive discounts, basic ice privileges, or league access."
+              description="Social members do not receive ice privileges."
             />
           ) : null}
 

@@ -6,6 +6,7 @@ import {
   findMemberIdWithConflictingNormalizedEmailChange,
 } from './accountAccess.js';
 import { normalizeEmail } from '../utils/auth.js';
+import { isMemberMinor } from '../utils/memberAge.js';
 
 export type MemberDemographicsInput = {
   firstName: string;
@@ -63,23 +64,77 @@ function assertValidDateOfBirth(value: string): void {
   }
 }
 
-export function validateMemberDemographics(input: MemberDemographicsInput): void {
+export function validateMemberDemographics(
+  input: MemberDemographicsInput,
+  options?: { skipEmergencyContactForMinor?: boolean; requireDateOfBirth?: boolean },
+): void {
   assertNonEmpty(input.firstName, 'firstName');
   assertNonEmpty(input.lastName, 'lastName');
-  assertValidDateOfBirth(input.dateOfBirth);
+  if (options?.requireDateOfBirth !== false) {
+    assertValidDateOfBirth(input.dateOfBirth);
+  } else if (input.dateOfBirth.trim()) {
+    assertValidDateOfBirth(input.dateOfBirth);
+  }
   assertValidEmail(input.email);
   assertNonEmpty(input.phone, 'phone');
   assertNonEmpty(input.mailingAddress, 'mailingAddress');
-  assertNonEmpty(input.emergencyContactName, 'emergencyContactName');
-  assertNonEmpty(input.emergencyContactPhone, 'emergencyContactPhone');
+  const minorDateOfBirth = input.dateOfBirth.trim() || null;
+  const skipEmergency =
+    options?.skipEmergencyContactForMinor === true && isMemberMinor(minorDateOfBirth);
+  if (!skipEmergency) {
+    assertNonEmpty(input.emergencyContactName, 'emergencyContactName');
+    assertNonEmpty(input.emergencyContactPhone, 'emergencyContactPhone');
+  }
+}
+
+function resolveProfileDateOfBirth(
+  existingDateOfBirth: string | null,
+  incomingDateOfBirth: string,
+): string {
+  const incoming = incomingDateOfBirth.trim();
+  if (existingDateOfBirth) {
+    if (incoming && incoming !== existingDateOfBirth) {
+      throw new MemberDemographicsUpdateError('Date of birth cannot be changed once it has been set.', {
+        dateOfBirth: 'Date of birth cannot be changed once it has been set.',
+      });
+    }
+    return existingDateOfBirth;
+  }
+  if (!incoming) {
+    throw new MemberDemographicsValidationError({
+      dateOfBirth: 'Enter your date of birth before saving.',
+    });
+  }
+  return incoming;
 }
 
 /** Persist validated demographic fields on a member row (registration curler or profile self-update). */
 export async function applyMemberDemographicsUpdate(
   memberId: number,
   input: MemberDemographicsInput,
+  options?: { registrationUpdate?: boolean; resolvedDateOfBirth?: string | null },
 ): Promise<void> {
-  validateMemberDemographics(input);
+  const { db, schema } = getDrizzleDb();
+  const memberRows = await db
+    .select({ date_of_birth: schema.members.date_of_birth })
+    .from(schema.members)
+    .where(eq(schema.members.id, memberId))
+    .limit(1);
+  const existingDateOfBirth = normalizeMemberDateOfBirth(memberRows[0]?.date_of_birth);
+  const resolvedDateOfBirth = options?.registrationUpdate
+    ? (existingDateOfBirth ?? (input.dateOfBirth.trim() || null))
+    : resolveProfileDateOfBirth(existingDateOfBirth, input.dateOfBirth);
+  const effectiveDateOfBirth = options?.resolvedDateOfBirth ?? resolvedDateOfBirth ?? '';
+  const demographicsInput: MemberDemographicsInput = {
+    ...input,
+    dateOfBirth: effectiveDateOfBirth,
+  };
+
+  validateMemberDemographics(demographicsInput, {
+    skipEmergencyContactForMinor: isMemberMinor(effectiveDateOfBirth || null),
+    requireDateOfBirth: options?.registrationUpdate ? false : Boolean(resolvedDateOfBirth),
+  });
+
   const normalizedEmail = normalizeEmail(input.email);
   const curlerRow = await fetchMemberEmailRow(memberId);
   const conflictId = await findMemberIdWithConflictingNormalizedEmailChange(
@@ -92,21 +147,25 @@ export async function applyMemberDemographicsUpdate(
       email: MEMBER_PROFILE_EMAIL_UNAVAILABLE,
     });
   }
-  const { db, schema } = getDrizzleDb();
+
+  const updateData: Record<string, unknown> = {
+    name: memberName(input),
+    email: normalizedEmail,
+    phone: input.phone.trim(),
+    first_name: input.firstName.trim(),
+    last_name: input.lastName.trim(),
+    mailing_address: input.mailingAddress.trim(),
+    emergency_contact_name: input.emergencyContactName.trim(),
+    emergency_contact_phone: input.emergencyContactPhone.trim(),
+    updated_at: sql`CURRENT_TIMESTAMP`,
+  };
+  if (resolvedDateOfBirth) {
+    updateData.date_of_birth = resolvedDateOfBirth;
+  }
+
   await db
     .update(schema.members)
-    .set({
-      name: memberName(input),
-      email: normalizedEmail,
-      phone: input.phone.trim(),
-      first_name: input.firstName.trim(),
-      last_name: input.lastName.trim(),
-      date_of_birth: input.dateOfBirth as any,
-      mailing_address: input.mailingAddress.trim(),
-      emergency_contact_name: input.emergencyContactName.trim(),
-      emergency_contact_phone: input.emergencyContactPhone.trim(),
-      updated_at: sql`CURRENT_TIMESTAMP`,
-    } as any)
+    .set(updateData as any)
     .where(eq(schema.members.id, memberId));
 }
 

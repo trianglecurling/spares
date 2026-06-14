@@ -145,12 +145,14 @@ export type MemberProfileResponse = {
   mailingAddress: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-  validThrough: string | null;
-  spareOnly: boolean;
-  socialMember: boolean;
+  guardianFirstName: string | null;
+  guardianLastName: string | null;
+  guardianEmail: string | null;
+  guardianPhone: string | null;
+  isMinor: boolean;
+  lifetimeMember?: boolean;
   isAdmin: boolean;
   isServerAdmin: boolean;
-  firstLoginCompleted: boolean;
   optedInSms: boolean;
   emailSubscribed: boolean;
   emailVisible: boolean;
@@ -169,7 +171,7 @@ export type MemberLeaguesResponse = Array<{
 export type MemberMembershipCardResponse = {
   name: string;
   membershipStatus: {
-    kind: 'regular' | 'social' | 'former' | 'non_member';
+    kind: 'regular' | 'social' | 'former' | 'non_member' | 'lifetime';
     validThrough: string | null;
   };
   icePrivilegesValidThrough: string | null;
@@ -194,6 +196,24 @@ export type MemberExperienceSummaryResponse = {
   totalExperienceYears: number;
 };
 
+export type MemberSeasonMembershipResponse = {
+  id: number;
+  seasonId: number;
+  seasonName: string;
+  membershipType: 'regular' | 'social' | 'junior_recreational';
+  status: 'pending' | 'active' | 'cancelled' | 'refunded' | 'expired';
+  startsAt: string;
+  endsAt: string;
+  sourceRegistrationId: number | null;
+};
+
+export type MemberSeasonMembershipListResponse = MemberSeasonMembershipResponse[];
+
+export type CreateMemberSeasonMembershipBody = {
+  seasonId: number;
+  membershipType: 'regular' | 'social' | 'junior_recreational';
+};
+
 export type MemberSummaryResponse = {
   id: number;
   name: string;
@@ -210,13 +230,10 @@ export type MemberSummaryResponse = {
   optedInSms: boolean;
   emailVisible: boolean;
   phoneVisible: boolean;
-  firstLoginCompleted: boolean;
   email?: string | null;
   phone?: string | null;
   createdAt?: string | null;
-  validThrough?: string | null;
-  spareOnly?: boolean;
-  socialMember?: boolean;
+  lifetimeMember?: boolean;
   baselineOtherClubExperienceYears?: number;
   baselineClubExperienceYears?: number;
 };
@@ -226,9 +243,6 @@ export type MemberCreateResponse = {
   name: string;
   email: string | null;
   phone: string | null;
-  validThrough: string | null;
-  spareOnly: boolean;
-  socialMember: boolean;
   isAdmin: boolean;
   emailSubscribed: boolean;
   optedInSms: boolean;
@@ -239,7 +253,6 @@ export type MemberUpdateResponse = {
   name: string;
   email: string | null;
   phone: string | null;
-  validThrough: string | null;
   isAdmin: boolean;
   isServerAdmin: boolean;
   emailSubscribed: boolean;
@@ -625,6 +638,10 @@ export type UpdateProfileBody = {
   mailingAddress?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  guardianFirstName?: string;
+  guardianLastName?: string;
+  guardianEmail?: string;
+  guardianPhone?: string;
   optedInSms?: boolean;
   emailVisible?: boolean;
   phoneVisible?: boolean;
@@ -637,8 +654,6 @@ export type CreateMemberBody = {
   name?: string;
   email: string;
   phone?: string;
-  validThrough?: string | null;
-  spareOnly?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
   isContentAdmin?: boolean;
@@ -651,38 +666,23 @@ export type UpdateMemberBody = {
   name?: string;
   email?: string;
   phone?: string;
-  validThrough?: string | null;
-  spareOnly?: boolean;
+  dateOfBirth?: string;
+  mailingAddress?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  lifetimeMember?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
   isContentAdmin?: boolean;
   isSponsorAdmin?: boolean;
   baselineOtherClubExperienceYears?: number;
   baselineClubExperienceYears?: number;
-};
-
-export type BulkExperienceBaselinesBody = {
-  rows: Array<{
-    email?: string;
-    baselineOtherClubExperienceYears: number;
-    baselineClubExperienceYears: number;
-    name?: string;
-  }>;
-};
-
-export type BulkExperienceBaselinesResponse = {
-  success: boolean;
-  updatedCount: number;
-  unchangedCount: number;
-  failedCount: number;
-  results: Array<{
-    email?: string;
-    name?: string;
-    status: 'updated' | 'unchanged' | 'not_found' | 'ambiguous_email' | 'ambiguous_name' | 'invalid';
-    memberId?: number;
-    memberName?: string;
-    message?: string;
-  }>;
+  emailVisible?: boolean;
+  phoneVisible?: boolean;
+  guardianFirstName?: string;
+  guardianLastName?: string;
+  guardianEmail?: string;
+  guardianPhone?: string;
 };
 
 export type BulkDeleteBody = {
@@ -693,8 +693,6 @@ export type BulkCreateBody =
   | Array<{ name: string; email: string; phone?: string }>
   | {
       members: Array<{ name: string; email: string; phone?: string }>;
-      validThrough?: string | null;
-      spareOnly?: boolean;
     };
 
 export type GovernanceOfficerPosition = 'president' | 'vice_president' | 'treasurer' | 'secretary';

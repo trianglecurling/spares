@@ -630,7 +630,6 @@ CREATE TABLE "members" (
 	"valid_through" date,
 	"spare_only" integer DEFAULT 0 NOT NULL,
 	"social_member" integer DEFAULT 0 NOT NULL,
-	"is_admin" integer DEFAULT 0 NOT NULL,
 	"is_server_admin" integer DEFAULT 0 NOT NULL,
 	"is_calendar_admin" integer DEFAULT 0 NOT NULL,
 	"is_content_admin" integer DEFAULT 0 NOT NULL,

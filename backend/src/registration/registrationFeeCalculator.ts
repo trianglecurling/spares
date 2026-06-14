@@ -212,7 +212,25 @@ function addSabbaticalFillDiscounts(context: RegistrationContext): RegistrationF
   return discountLineItems;
 }
 
+function zeroRegistrationFeePreview(): RegistrationFeePreview {
+  return {
+    lineItems: [],
+    discountLineItems: [],
+    subtotalMinor: 0,
+    discountTotalMinor: 0,
+    totalDueMinor: 0,
+    discountEligibleSubtotalMinor: 0,
+    nonDiscountableSubtotalMinor: 0,
+    blockingErrors: [],
+    warnings: [],
+  };
+}
+
 export function calculateRegistrationFees(context: RegistrationContext): RegistrationFeePreview {
+  if (context.registrant.hasLifetimeMembership) {
+    return zeroRegistrationFeePreview();
+  }
+
   const lineItems: RegistrationFeeLineItem[] = [];
   const blockingErrors = validateDiscountClaims(context).blockingErrors;
 

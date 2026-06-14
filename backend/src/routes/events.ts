@@ -2,6 +2,7 @@ import { FastifyInstance, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin } from '../utils/auth.js';
+import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import { resolveFrontendBaseUrl, normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
 import {
@@ -665,7 +666,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     const query = request.query as { category?: string; from?: string; to?: string };
 
     const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public', 'active_members'];
-    if (member.spare_only !== 1 && member.social_member !== 1) {
+    if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
       visibilityFilter.push('ice_members');
     }
 

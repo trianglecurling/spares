@@ -73,21 +73,6 @@ export default function Authentication() {
 
                   <section>
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
-                      First-Time Login
-                    </h2>
-                    <p className="mb-3">
-                      On your first login, you'll be asked to complete your profile:
-                    </p>
-                    <ul className="list-disc list-inside space-y-2">
-                      <li>Confirm or update your name</li>
-                      <li>Set your email and phone visibility preferences</li>
-                      <li>Choose whether to receive SMS notifications</li>
-                      <li>Once completed, you can access all features</li>
-                    </ul>
-                  </section>
-
-                  <section>
-                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Staying Logged In
                     </h2>
                     <p className="mb-3">The system uses secure tokens to keep you logged in:</p>

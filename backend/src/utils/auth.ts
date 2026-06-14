@@ -48,9 +48,7 @@ export function isAdmin(member: Member): boolean {
     return hasScope(member.authz, 'admin.manage');
   }
   if (isServerAdmin(member)) return true;
-  if (member.authz) return hasScope(member.authz, 'admin.manage');
-  // Legacy fallback
-  return member.is_admin === 1;
+  return member.authz ? hasScope(member.authz, 'admin.manage') : false;
 }
 
 export function isCalendarAdmin(member: Member): boolean {

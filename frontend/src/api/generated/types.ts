@@ -305,7 +305,6 @@ export interface paths {
                                     resourceType?: null | string;
                                     resourceId?: null | number;
                                 }[];
-                                firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
                                 emailVisible: boolean;
@@ -389,7 +388,6 @@ export interface paths {
                                     resourceType?: null | string;
                                     resourceId?: null | number;
                                 }[];
-                                firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
                                 emailVisible: boolean;
@@ -473,7 +471,6 @@ export interface paths {
                                     resourceType?: null | string;
                                     resourceId?: null | number;
                                 }[];
-                                firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
                                 emailVisible: boolean;
@@ -2079,7 +2076,6 @@ export interface paths {
                                     resourceType?: null | string;
                                     resourceId?: null | number;
                                 }[];
-                                firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
                                 emailVisible: boolean;
@@ -2162,7 +2158,6 @@ export interface paths {
                                     resourceType?: null | string;
                                     resourceId?: null | number;
                                 }[];
-                                firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
                                 emailVisible: boolean;
@@ -2237,7 +2232,6 @@ export interface paths {
                                     resourceType?: null | string;
                                     resourceId?: null | number;
                                 }[];
-                                firstLoginCompleted: boolean;
                                 optedInSms: boolean;
                                 emailSubscribed: boolean;
                                 emailVisible: boolean;
@@ -2294,12 +2288,14 @@ export interface paths {
                             mailingAddress: null | string;
                             emergencyContactName: null | string;
                             emergencyContactPhone: null | string;
-                            validThrough: null | string;
-                            spareOnly: boolean;
-                            socialMember: boolean;
+                            guardianFirstName: null | string;
+                            guardianLastName: null | string;
+                            guardianEmail: null | string;
+                            guardianPhone: null | string;
+                            isMinor: boolean;
+                            lifetimeMember?: boolean;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
-                            firstLoginCompleted: boolean;
                             optedInSms: boolean;
                             emailSubscribed: boolean;
                             emailVisible: boolean;
@@ -2334,6 +2330,10 @@ export interface paths {
                         mailingAddress?: string;
                         emergencyContactName?: string;
                         emergencyContactPhone?: string;
+                        guardianFirstName?: string;
+                        guardianLastName?: string;
+                        guardianEmail?: string;
+                        guardianPhone?: string;
                         optedInSms?: boolean;
                         emailVisible?: boolean;
                         phoneVisible?: boolean;
@@ -2360,12 +2360,14 @@ export interface paths {
                             mailingAddress: null | string;
                             emergencyContactName: null | string;
                             emergencyContactPhone: null | string;
-                            validThrough: null | string;
-                            spareOnly: boolean;
-                            socialMember: boolean;
+                            guardianFirstName: null | string;
+                            guardianLastName: null | string;
+                            guardianEmail: null | string;
+                            guardianPhone: null | string;
+                            isMinor: boolean;
+                            lifetimeMember?: boolean;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
-                            firstLoginCompleted: boolean;
                             optedInSms: boolean;
                             emailSubscribed: boolean;
                             emailVisible: boolean;
@@ -2376,6 +2378,60 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/members/me/membership-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            name: string;
+                            membershipStatus: {
+                                /** @enum {string} */
+                                kind: "regular" | "social" | "former" | "non_member" | "lifetime";
+                                validThrough: null | string;
+                            };
+                            icePrivilegesValidThrough: null | string;
+                            session: null | {
+                                id: number;
+                                name: string;
+                                isUpcoming: boolean;
+                            };
+                            leagues: {
+                                leagueId: number;
+                                leagueName: string;
+                                /** @enum {string} */
+                                participation: "roster" | "sabbatical" | "waitlist";
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/members/me/payment-history": {
@@ -2569,43 +2625,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/members/me/complete-first-login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            success: boolean;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/members/me/unsubscribe": {
         parameters: {
             query?: never;
@@ -2673,9 +2692,7 @@ export interface paths {
                             email?: null | string;
                             phone?: null | string;
                             createdAt?: null | string;
-                            validThrough?: null | string;
-                            spareOnly?: boolean;
-                            socialMember?: boolean;
+                            lifetimeMember?: boolean;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
                             isLeagueAdministratorGlobal: boolean;
@@ -2684,7 +2701,6 @@ export interface paths {
                             optedInSms: boolean;
                             emailVisible: boolean;
                             phoneVisible: boolean;
-                            firstLoginCompleted: boolean;
                             baselineOtherClubExperienceYears?: number;
                             baselineClubExperienceYears?: number;
                         }[];
@@ -2708,9 +2724,7 @@ export interface paths {
                         name?: string;
                         email: string;
                         phone?: string;
-                        validThrough?: string | null;
-                        spareOnly?: boolean;
-                        socialMember?: boolean;
+                        lifetimeMember?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;
@@ -2732,9 +2746,6 @@ export interface paths {
                             name: string;
                             email: null | string;
                             phone: null | string;
-                            validThrough: null | string;
-                            spareOnly: boolean;
-                            socialMember: boolean;
                             isAdmin: boolean;
                             emailSubscribed: boolean;
                             optedInSms: boolean;
@@ -2760,6 +2771,9 @@ export interface paths {
             parameters: {
                 query?: {
                     leagueId?: number;
+                    page?: number;
+                    pageSize?: number;
+                    search?: string;
                 };
                 header?: never;
                 path?: never;
@@ -2774,28 +2788,30 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            id: number;
-                            name: string;
-                            firstName?: null | string;
-                            lastName?: null | string;
-                            email?: null | string;
-                            phone?: null | string;
-                            createdAt?: null | string;
-                            validThrough?: null | string;
-                            spareOnly?: boolean;
-                            socialMember?: boolean;
-                            isAdmin: boolean;
-                            isServerAdmin: boolean;
-                            isLeagueAdministratorGlobal: boolean;
-                            isLastServerAdmin: boolean;
-                            emailSubscribed: boolean;
-                            optedInSms: boolean;
-                            emailVisible: boolean;
-                            phoneVisible: boolean;
-                            firstLoginCompleted: boolean;
-                            baselineOtherClubExperienceYears?: number;
-                            baselineClubExperienceYears?: number;
-                        }[];
+                            items: {
+                                id: number;
+                                name: string;
+                                firstName?: null | string;
+                                lastName?: null | string;
+                                email?: null | string;
+                                phone?: null | string;
+                                createdAt?: null | string;
+                                lifetimeMember?: boolean;
+                                isAdmin: boolean;
+                                isServerAdmin: boolean;
+                                isLeagueAdministratorGlobal: boolean;
+                                isLastServerAdmin: boolean;
+                                emailSubscribed: boolean;
+                                optedInSms: boolean;
+                                emailVisible: boolean;
+                                phoneVisible: boolean;
+                                baselineOtherClubExperienceYears?: number;
+                                baselineClubExperienceYears?: number;
+                            }[];
+                            total: number;
+                            page: number;
+                            pageSize: number;
+                        };
                     };
                 };
             };
@@ -2817,7 +2833,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    sessionId?: number;
+                    relevantSession?: "true" | "false";
+                };
                 header?: never;
                 path: {
                     memberId: string;
@@ -2958,9 +2977,6 @@ export interface paths {
                             email: string;
                             phone?: string;
                         }[];
-                        validThrough?: string | null;
-                        spareOnly?: boolean;
-                        socialMember?: boolean;
                     };
                 };
             };
@@ -2986,34 +3002,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/members/bulk-experience-baselines": {
+    "/members/{id}/payment-history": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        post: {
+        get: {
             parameters: {
-                query?: never;
+                query?: {
+                    limit?: number;
+                    offset?: number;
+                };
                 header?: never;
-                path?: never;
+                path: {
+                    id: string;
+                };
                 cookie?: never;
             };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        rows: {
-                            email?: string;
-                            name?: string;
-                            baselineOtherClubExperienceYears: number;
-                            baselineClubExperienceYears: number;
-                        }[];
-                    };
-                };
-            };
+            requestBody?: never;
             responses: {
                 /** @description Default Response */
                 200: {
@@ -3022,24 +3030,89 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            success: boolean;
-                            updatedCount: number;
-                            unchangedCount: number;
-                            failedCount: number;
-                            results: {
-                                email?: string;
-                                name?: null | string;
+                            total: number;
+                            limit: number;
+                            offset: number;
+                            payments: {
+                                orderToken: string;
                                 /** @enum {string} */
-                                status: "updated" | "unchanged" | "not_found" | "ambiguous_email" | "ambiguous_name" | "invalid";
-                                memberId?: number;
-                                memberName?: string;
-                                message?: string;
+                                subjectType: "donation" | "membership" | "event_registration" | "curling_registration";
+                                description: string;
+                                amountMinor: number;
+                                currency: string;
+                                /** @enum {string} */
+                                status: "created" | "pending" | "succeeded" | "failed" | "refunded" | "partially_refunded";
+                                paidAt: null | string;
+                                createdAt: string;
                             }[];
                         };
                     };
                 };
             };
         };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/{id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            name: string;
+                            email: null | string;
+                            phone: null | string;
+                            firstName: null | string;
+                            lastName: null | string;
+                            dateOfBirth: null | string;
+                            mailingAddress: null | string;
+                            emergencyContactName: null | string;
+                            emergencyContactPhone: null | string;
+                            guardianFirstName: null | string;
+                            guardianLastName: null | string;
+                            guardianEmail: null | string;
+                            guardianPhone: null | string;
+                            isMinor: boolean;
+                            lifetimeMember?: boolean;
+                            isAdmin: boolean;
+                            isServerAdmin: boolean;
+                            optedInSms: boolean;
+                            emailSubscribed: boolean;
+                            emailVisible: boolean;
+                            phoneVisible: boolean;
+                            themePreference: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3099,9 +3172,11 @@ export interface paths {
                         name?: string;
                         email?: string;
                         phone?: string;
-                        validThrough?: string | null;
-                        spareOnly?: boolean;
-                        socialMember?: boolean;
+                        dateOfBirth?: string;
+                        mailingAddress?: string;
+                        emergencyContactName?: string;
+                        emergencyContactPhone?: string;
+                        lifetimeMember?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
                         isCalendarAdmin?: boolean;
@@ -3109,6 +3184,12 @@ export interface paths {
                         isSponsorAdmin?: boolean;
                         baselineOtherClubExperienceYears?: number;
                         baselineClubExperienceYears?: number;
+                        emailVisible?: boolean;
+                        phoneVisible?: boolean;
+                        guardianFirstName?: string;
+                        guardianLastName?: string;
+                        guardianEmail?: string;
+                        guardianPhone?: string;
                     };
                 };
             };
@@ -3124,7 +3205,6 @@ export interface paths {
                             name: string;
                             email: null | string;
                             phone: null | string;
-                            validThrough: null | string;
                             isAdmin: boolean;
                             isServerAdmin: boolean;
                             emailSubscribed: boolean;
@@ -3175,6 +3255,134 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/{id}/season-memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            seasonName: string;
+                            /** @enum {string} */
+                            membershipType: "regular" | "social" | "junior_recreational";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "cancelled" | "refunded" | "expired";
+                            startsAt: string;
+                            endsAt: string;
+                            sourceRegistrationId: null | number;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        seasonId: number;
+                        /** @enum {string} */
+                        membershipType: "regular" | "social" | "junior_recreational";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            seasonId: number;
+                            seasonName: string;
+                            /** @enum {string} */
+                            membershipType: "regular" | "social" | "junior_recreational";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "cancelled" | "refunded" | "expired";
+                            startsAt: string;
+                            endsAt: string;
+                            sourceRegistrationId: null | number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/{id}/season-memberships/{membershipId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    membershipId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -3311,7 +3519,11 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    sessionId?: number;
+                    relevantSession?: "true" | "false";
+                    summary?: "true" | "false";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -3351,6 +3563,8 @@ export interface paths {
                             waitlistId: null | number;
                             isPlayInBased: boolean;
                             allowsSabbatical: boolean;
+                            allowsDropIns: boolean;
+                            dropInFeeMinor: null | number;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
                             drawTimes: string[];
@@ -3393,6 +3607,8 @@ export interface paths {
                         lastDayOfPlay?: string | null;
                         allowsWaitlist?: boolean;
                         allowsSabbatical?: boolean;
+                        allowsDropIns?: boolean;
+                        dropInFeeMinor?: number | null;
                         predecessorLeagueId?: number | null;
                         successorLeagueId?: number | null;
                         drawTimes: string[];
@@ -3434,6 +3650,8 @@ export interface paths {
                             waitlistId: null | number;
                             isPlayInBased: boolean;
                             allowsSabbatical: boolean;
+                            allowsDropIns: boolean;
+                            dropInFeeMinor: null | number;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
                             drawTimes: string[];
@@ -3551,6 +3769,8 @@ export interface paths {
                                 waitlistId: null | number;
                                 isPlayInBased: boolean;
                                 allowsSabbatical: boolean;
+                                allowsDropIns: boolean;
+                                dropInFeeMinor: null | number;
                                 predecessorLeagueId: null | number;
                                 successorLeagueId: null | number;
                                 drawTimes: string[];
@@ -3645,6 +3865,8 @@ export interface paths {
                         allowsWaitlist?: boolean;
                         isPlayInBased?: boolean;
                         allowsSabbatical?: boolean;
+                        allowsDropIns?: boolean;
+                        dropInFeeMinor?: number | null;
                         predecessorLeagueId?: number | null;
                         successorLeagueId?: number | null;
                         drawTimes?: string[];
@@ -3686,6 +3908,8 @@ export interface paths {
                             waitlistId: null | number;
                             isPlayInBased: boolean;
                             allowsSabbatical: boolean;
+                            allowsDropIns: boolean;
+                            dropInFeeMinor: null | number;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
                             drawTimes: string[];
@@ -3812,6 +4036,8 @@ export interface paths {
                                 waitlistId: null | number;
                                 isPlayInBased: boolean;
                                 allowsSabbatical: boolean;
+                                allowsDropIns: boolean;
+                                dropInFeeMinor: null | number;
                                 predecessorLeagueId: null | number;
                                 successorLeagueId: null | number;
                                 drawTimes: string[];

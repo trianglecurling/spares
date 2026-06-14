@@ -31,21 +31,7 @@ import type {
 } from '../api/types.js';
 import { logEvent } from '../services/observability.js';
 import { issueAuthSession, refreshAuthSession, revokeRefreshToken } from '../services/authSessionService.js';
-
-function normalizeDateString(value: string | Date | number | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value;
-  if (value instanceof Date) return value.toISOString().split('T')[0];
-  return String(value);
-}
-
-function isMemberExpired(member: Member): boolean {
-  if (isAdmin(member) || isServerAdmin(member)) return false;
-  const validThrough = normalizeDateString(member.valid_through);
-  if (!validThrough) return false;
-  const today = new Date().toISOString().split('T')[0];
-  return today > validThrough;
-}
+import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 
 function normalizePhoneDigits10(input: string): string | null {
   const digits = input.replace(/\D/g, '');
@@ -119,7 +105,6 @@ const authMemberResponseSchema = {
         required: ['scope', 'effect'],
       },
     },
-    firstLoginCompleted: { type: 'boolean' },
     optedInSms: { type: 'boolean' },
     emailSubscribed: { type: 'boolean' },
     emailVisible: { type: 'boolean' },
@@ -144,7 +129,6 @@ const authMemberResponseSchema = {
     'roleCodes',
     'roleNames',
     'scopeRules',
-    'firstLoginCompleted',
     'optedInSms',
     'emailSubscribed',
     'emailVisible',
@@ -178,8 +162,8 @@ async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMe
     name: member.name,
     email: member.email,
     phone: member.phone,
-    spareOnly: member.spare_only === 1,
-    socialMember: (member.social_member ?? 0) === 1,
+    spareOnly: memberIsSpareOnly(member),
+    socialMember: memberIsSocialMember(member),
     isAdmin: isAdmin(member),
     isServerAdmin: isServerAdmin(member),
     isCalendarAdmin: isCalendarAdmin(member),
@@ -191,7 +175,6 @@ async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMe
     roleCodes: authz.roleCodes,
     roleNames: authz.roleNames,
     scopeRules: authz.scopeRules,
-    firstLoginCompleted: member.first_login_completed === 1,
     optedInSms: member.opted_in_sms === 1,
     emailSubscribed: member.email_subscribed === 1,
     emailVisible: member.email_visible === 1,
@@ -516,9 +499,6 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     if (testMode) {
       if (members.length === 1) {
         const member = members[0];
-        if (isMemberExpired(member)) {
-          return reply.code(403).send({ error: 'Membership expired' });
-        }
         const session = await issueAuthSession(member as Member);
 
         logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
@@ -657,9 +637,6 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     // If only one member, generate token and return
     if (members.length === 1) {
       const member = members[0];
-      if (isMemberExpired(member)) {
-        return reply.code(403).send({ error: 'Membership expired' });
-      }
       const session = await issueAuthSession(member as Member);
 
       // Best-effort analytics (do not block)
@@ -746,10 +723,6 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
 
     if (!member) {
       return reply.code(404).send({ error: 'Member not found' });
-    }
-
-    if (isMemberExpired(member)) {
-      return reply.code(403).send({ error: 'Membership expired' });
     }
 
     const session = await issueAuthSession(member as Member);
@@ -840,9 +813,6 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
 
       const targetMember = raw as Member;
       targetMember.authz = await buildAuthzClaimsForMember(targetMember);
-      if (isMemberExpired(targetMember)) {
-        return reply.code(403).send({ error: 'Membership expired' });
-      }
 
       const session = await issueAuthSession(targetMember, { actorMemberId: actorId });
       targetMember.impersonationSession = actorId !== targetMemberId;

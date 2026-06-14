@@ -1,6 +1,7 @@
 import { getDatabaseConfig as getDbConfigFromFile, DatabaseConfig } from './config.js';
 import { getDrizzleDb, resetDrizzleDb } from './drizzle-db.js';
-import { createSchema } from './schema.js';
+import { runDatabaseBootstrap } from './bootstrap.js';
+import { runDrizzleMigrations } from './migrate-runner.js';
 import { ensureRegistrationPriceDiscountSettingsTablesExist } from './registrationSchemaBootstrap.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -45,7 +46,6 @@ function configureDatabase(config?: DatabaseConfig): DatabaseConfig {
   return configToUse;
 }
 
-// Reset database state (useful when reinitializing)
 export function resetDatabaseState(): void {
   dbConfig = null;
   resetDrizzleDb();
@@ -84,47 +84,16 @@ export async function verifyDatabaseSchema(): Promise<void> {
 
 export async function initializeDatabase(config?: DatabaseConfig): Promise<void> {
   const configToUse = configureDatabase(config);
-
-  // Get Drizzle instance (this will initialize the connection)
-  const { db } = getDrizzleDb();
-
-  // Use Drizzle's push to sync schema (creates tables if they don't exist)
-  // Import the appropriate schema based on database type
-  if (configToUse.type === 'sqlite') {
-    const sqliteDb = db as unknown as { run: (query: ReturnType<typeof sql>) => Promise<void> | void };
-    const pragmaResult = sqliteDb.run(sql`PRAGMA foreign_keys = ON`);
-    if (pragmaResult instanceof Promise) {
-      await pragmaResult;
-    }
-    // Use Drizzle Kit's push for SQLite - but for now, use the old schema creation
-    // since it handles migrations better
-    const { SQLiteAdapter } = await import('./sqlite-adapter.js');
-    const dbPath = configToUse.sqlite?.path || path.join(__dirname, '../data/spares.sqlite');
-    const adapter = new SQLiteAdapter(dbPath);
-    await createSchema(adapter);
-    adapter.close();
-  } else {
-    // For PostgreSQL, use the old schema creation for now (handles migrations)
-    const { PostgresAdapter } = await import('./postgres-adapter.js');
-    if (!configToUse.postgres) {
-      throw new Error('PostgreSQL configuration missing');
-    }
-    const adapter = new PostgresAdapter(configToUse.postgres);
-    await createSchema(adapter);
-    await adapter.close();
-  }
+  getDrizzleDb();
+  await runDrizzleMigrations(configToUse);
+  await runDatabaseBootstrap(configToUse);
 }
 
-// Legacy functions - kept for backward compatibility but deprecated
-// All new code should use getDrizzleDb() instead
 export function getDatabase(): DatabaseAdapter {
-  // This is deprecated - use getDrizzleDb() instead
-  // But we'll return a mock adapter for any remaining code that needs it
   throw new Error('getDatabase() is deprecated. Use getDrizzleDb() instead.');
 }
 
 export async function getDatabaseAsync(): Promise<DatabaseAdapter> {
-  // This is deprecated - use getDrizzleDb() instead
   throw new Error('getDatabaseAsync() is deprecated. Use getDrizzleDb() instead.');
 }
 
@@ -155,32 +124,27 @@ export async function testDatabaseConnection(config: DatabaseConfig): Promise<vo
 }
 
 export function closeDatabase(): void | Promise<void> {
-  // Drizzle handles connection pooling, so we don't need to close manually
-  // But we can reset the state
   resetDrizzleDb();
 }
 
-// Helper function to execute database operations that may be sync or async
-export async function dbExec(sql: string): Promise<void> {
+export async function dbExec(sqlStatement: string): Promise<void> {
   const database = await getDatabaseAsync();
-  const result = database.exec(sql);
+  const result = database.exec(sqlStatement);
   if (result instanceof Promise) {
     await result;
   }
 }
 
-// Helper function to prepare statements
-export function dbPrepare(sql: string) {
+export function dbPrepare(sqlStatement: string) {
   const database = getDatabase();
-  return database.prepare(sql);
+  return database.prepare(sqlStatement);
 }
 
-export async function dbPrepareAsync(sql: string) {
+export async function dbPrepareAsync(sqlStatement: string) {
   const database = await getDatabaseAsync();
-  return database.prepare(sql);
+  return database.prepare(sqlStatement);
 }
 
-// Helper functions to execute queries that work with both sync and async databases
 export async function dbAll<T>(stmt: PreparedStatement<T, T[]>, ...params: unknown[]): Promise<T[]> {
   const result = stmt.all(...params);
   if (result instanceof Promise) {

@@ -8,7 +8,6 @@ alwaysApply: true
 - Do not assume `bun run dev` will migrate the database. It should not.
 - After any change that can require a schema or built-in migration update, run `bun run db:migrate` before finishing.
 - Treat these as migration-requiring changes:
-- edits to `backend/src/db/schema.ts`
 - edits to `backend/src/db/drizzle-schema.ts`
 - changes that add, remove, rename, or repurpose stored columns, tables, indexes, constraints, or seed rows expected by startup/runtime code
 - changes to DB initialization or installation flows that rely on new schema state

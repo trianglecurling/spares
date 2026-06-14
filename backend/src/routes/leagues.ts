@@ -17,7 +17,14 @@ import {
 } from '../api/schemas.js';
 import type { ApiReply } from '../api/types.js';
 import { hasClubLeagueAdministratorAccess } from '../utils/leagueAccess.js';
+import {
+  leagueTeamCount,
+  sendDropInLeagueTeamsValidationError,
+} from '../utils/leagueDropIn.js';
 import { sortLeaguesByDayOfWeekThenFirstDrawTime } from '../utils/leagueOrdering.js';
+import { resolveRelevantSessionIdForLeagues } from '../services/curlingSessionService.js';
+import { getCurrentDateStringAsync } from '../utils/time.js';
+import { parseQueryBoolean } from '../utils/queryParams.js';
 import { config } from '../config.js';
 import {
   RegistrationConfigValidationError,
@@ -36,6 +43,17 @@ import {
   detachWaitlistFromLeague,
   listLeagueWaitlistsForAttach,
 } from '../registration/waitlistEntityService.js';
+
+
+const leaguesListQuerySchemaJson = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    sessionId: { type: 'number' },
+    relevantSession: { type: 'string', enum: ['true', 'false'] },
+    summary: { type: 'string', enum: ['true', 'false'] },
+  },
+} as const;
 
 const createLeagueSchema = z.object({
   name: z.string().min(1),
@@ -126,6 +144,11 @@ const updateLeagueSchema = z.object({
   allowsWaitlist: z.boolean().optional(),
   isPlayInBased: z.boolean().optional(),
   allowsSabbatical: z.boolean().optional(),
+  allowsDropIns: z.boolean().optional(),
+  dropInFeeMinor: z.preprocess(
+    preprocessRoundFiniteInt,
+    z.number().int().nonnegative().nullable().optional()
+  ),
   predecessorLeagueId: z.preprocess(preprocessRoundFiniteInt, z.number().int().positive().nullable().optional()),
   successorLeagueId: z.preprocess(preprocessRoundFiniteInt, z.number().int().positive().nullable().optional()),
   drawTimes: z.array(z.string()).optional(),
@@ -241,6 +264,52 @@ async function loadDefaultLeagueFeeMinor(): Promise<number> {
   return row?.minor ?? 0;
 }
 
+async function loadDrawTimesByLeagueIds(
+  leagueIds: number[],
+): Promise<Map<number, string[]>> {
+  if (leagueIds.length === 0) return new Map();
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      leagueId: schema.leagueDrawTimes.league_id,
+      drawTime: schema.leagueDrawTimes.draw_time,
+    })
+    .from(schema.leagueDrawTimes)
+    .where(inArray(schema.leagueDrawTimes.league_id, leagueIds))
+    .orderBy(asc(schema.leagueDrawTimes.league_id), asc(schema.leagueDrawTimes.draw_time));
+
+  const byLeagueId = new Map<number, string[]>();
+  for (const row of rows) {
+    const existing = byLeagueId.get(row.leagueId) ?? [];
+    existing.push(row.drawTime);
+    byLeagueId.set(row.leagueId, existing);
+  }
+  return byLeagueId;
+}
+
+async function loadExceptionsByLeagueIds(
+  leagueIds: number[],
+): Promise<Map<number, string[]>> {
+  if (leagueIds.length === 0) return new Map();
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      leagueId: schema.leagueExceptions.league_id,
+      exceptionDate: schema.leagueExceptions.exception_date,
+    })
+    .from(schema.leagueExceptions)
+    .where(inArray(schema.leagueExceptions.league_id, leagueIds))
+    .orderBy(asc(schema.leagueExceptions.league_id), asc(schema.leagueExceptions.exception_date));
+
+  const byLeagueId = new Map<number, string[]>();
+  for (const row of rows) {
+    const existing = byLeagueId.get(row.leagueId) ?? [];
+    existing.push(normalizeDateString(row.exceptionDate));
+    byLeagueId.set(row.leagueId, existing);
+  }
+  return byLeagueId;
+}
+
 function mapLeagueResponse(
   league: League,
   drawTimes: string[],
@@ -266,6 +335,8 @@ function mapLeagueResponse(
     waitlist_id?: number | null;
     is_play_in_based?: number | boolean;
     allows_sabbatical?: number | boolean;
+    allows_drop_ins?: number | boolean;
+    drop_in_fee_minor?: number | null;
     predecessor_league_id?: number | null;
     successor_league_id?: number | null;
   };
@@ -297,6 +368,8 @@ function mapLeagueResponse(
     waitlistId: row.waitlist_id ?? null,
     isPlayInBased: toBool(row.is_play_in_based ?? 0),
     allowsSabbatical: toBool(row.allows_sabbatical ?? 1),
+    allowsDropIns: toBool(row.allows_drop_ins ?? 0),
+    dropInFeeMinor: row.drop_in_fee_minor ?? null,
     predecessorLeagueId: row.predecessor_league_id ?? null,
     successorLeagueId: row.successor_league_id ?? null,
     drawTimes,
@@ -357,6 +430,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     {
       schema: {
         tags: ['leagues'],
+        querystring: leaguesListQuerySchemaJson,
         response: {
           200: leagueListResponseSchema,
         },
@@ -366,6 +440,26 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const member = request.member;
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const rawQuery = (request.query ?? {}) as Record<string, unknown>;
+    const sessionIdParam =
+      rawQuery.sessionId != null && rawQuery.sessionId !== ''
+        ? Number.parseInt(String(rawQuery.sessionId), 10)
+        : undefined;
+    const relevantSession = parseQueryBoolean(rawQuery.relevantSession);
+    const summary = parseQueryBoolean(rawQuery.summary);
+
+    let filterSessionId =
+      sessionIdParam != null && Number.isFinite(sessionIdParam) && sessionIdParam > 0
+        ? sessionIdParam
+        : null;
+    if (filterSessionId == null && relevantSession) {
+      const today = await getCurrentDateStringAsync();
+      filterSessionId = await resolveRelevantSessionIdForLeagues(today);
+      if (filterSessionId == null) {
+        return [];
+      }
     }
 
     const { db, schema } = getDrizzleDb();
@@ -379,34 +473,30 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const leagueManagerInfo = canManageAll
       ? { leagueIds: [] as number[] }
       : { leagueIds: leagueManagerLeagueIdsFromMember(member) };
-    const leaguesUnsorted = (await db.select().from(schema.leagues)) as League[];
+    const leaguesUnsorted = (filterSessionId != null
+      ? await db
+          .select()
+          .from(schema.leagues)
+          .where(eq(schema.leagues.session_id, filterSessionId))
+      : await db.select().from(schema.leagues)) as League[];
     const leagues = await sortLeaguesByDayOfWeekThenFirstDrawTime(db, schema, leaguesUnsorted);
 
-    const defaultLeagueFeeMinor = await loadDefaultLeagueFeeMinor();
+    const leagueIds = leagues.map((league) => league.id);
+    const defaultLeagueFeeMinor = summary ? 0 : await loadDefaultLeagueFeeMinor();
+    const drawTimesByLeagueId = summary ? new Map<number, string[]>() : await loadDrawTimesByLeagueIds(leagueIds);
+    const exceptionsByLeagueId = summary ? new Map<number, string[]>() : await loadExceptionsByLeagueIds(leagueIds);
 
-    const result = await Promise.all(leagues.map(async (league) => {
-      const drawTimes = await db
-        .select({ draw_time: schema.leagueDrawTimes.draw_time })
-        .from(schema.leagueDrawTimes)
-        .where(eq(schema.leagueDrawTimes.league_id, league.id))
-        .orderBy(asc(schema.leagueDrawTimes.draw_time));
-
-      const exceptions = await db
-        .select({ exception_date: schema.leagueExceptions.exception_date })
-        .from(schema.leagueExceptions)
-        .where(eq(schema.leagueExceptions.league_id, league.id))
-        .orderBy(asc(schema.leagueExceptions.exception_date));
-
-      return mapLeagueResponse(
+    const result = leagues.map((league) =>
+      mapLeagueResponse(
         league,
-        drawTimes.map((dt) => dt.draw_time),
-        exceptions.map((ex) => normalizeDateString(ex.exception_date)),
+        drawTimesByLeagueId.get(league.id) ?? [],
+        exceptionsByLeagueId.get(league.id) ?? [],
         defaultLeagueFeeMinor,
         canManageAll ||
           leagueAdminInfo.isGlobal ||
           leagueManagerInfo.leagueIds.includes(league.id)
-      );
-    }));
+      )
+    );
 
     return result;
     }
@@ -537,6 +627,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             lastDayOfPlay: { type: ['string', 'null'] },
             allowsWaitlist: { type: 'boolean' },
             allowsSabbatical: { type: 'boolean' },
+            allowsDropIns: { type: 'boolean' },
+            dropInFeeMinor: { type: ['number', 'null'] },
             predecessorLeagueId: { type: ['number', 'null'] },
             successorLeagueId: { type: ['number', 'null'] },
             drawTimes: { type: 'array', items: { type: 'string' } },
@@ -805,6 +897,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
                 allows_waitlist: src.allows_waitlist,
                 waitlist_id: (src as { waitlist_id?: number | null }).waitlist_id ?? null,
                 allows_sabbatical: src.allows_sabbatical,
+                allows_drop_ins: (src as { allows_drop_ins?: number }).allows_drop_ins ?? 0,
+                drop_in_fee_minor: (src as { drop_in_fee_minor?: number | null }).drop_in_fee_minor ?? null,
                 predecessor_league_id: src.id,
                 successor_league_id: null,
               })
@@ -984,6 +1078,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             allowsWaitlist: { type: 'boolean' },
             isPlayInBased: { type: 'boolean' },
             allowsSabbatical: { type: 'boolean' },
+            allowsDropIns: { type: 'boolean' },
+            dropInFeeMinor: { type: ['number', 'null'] },
             predecessorLeagueId: { type: ['number', 'null'] },
             successorLeagueId: { type: ['number', 'null'] },
             drawTimes: { type: 'array', items: { type: 'string' } },
@@ -1030,6 +1126,29 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const existingLeague = existingLeagueRows[0];
     if (!existingLeague) {
       return reply.code(404).send({ error: 'League not found' });
+    }
+
+    const nextAllowsDropIns =
+      body.allowsDropIns !== undefined
+        ? body.allowsDropIns
+        : toBool((existingLeague as { allows_drop_ins?: number }).allows_drop_ins ?? 0);
+    const nextDropInFeeMinor =
+      body.dropInFeeMinor !== undefined
+        ? body.dropInFeeMinor
+        : (existingLeague as { drop_in_fee_minor?: number | null }).drop_in_fee_minor ?? null;
+
+    if (nextAllowsDropIns && (nextDropInFeeMinor == null || nextDropInFeeMinor < 0)) {
+      return sendValidationError(reply, 'Drop-in fee is required when drop-ins are allowed.', {
+        dropInFeeMinor: 'Enter a drop-in fee amount.',
+      });
+    }
+
+    if (nextAllowsDropIns && (await leagueTeamCount(leagueId)) > 0) {
+      return sendDropInLeagueTeamsValidationError(
+        reply,
+        'allowsDropIns',
+        'Remove all teams before allowing drop-ins.'
+      );
     }
 
     const defaultLeagueFeeMinor = await loadDefaultLeagueFeeMinor();
@@ -1126,6 +1245,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       waitlist_id: number | null;
       is_play_in_based: number;
       allows_sabbatical: number;
+      allows_drop_ins: number;
+      drop_in_fee_minor: number | null;
       predecessor_league_id: number | null;
       successor_league_id: number | null;
       updated_at: SQL<unknown>;
@@ -1195,6 +1316,15 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
     if (body.allowsSabbatical !== undefined) {
       updateData.allows_sabbatical = body.allowsSabbatical ? 1 : 0;
+    }
+    if (body.allowsDropIns !== undefined) {
+      updateData.allows_drop_ins = body.allowsDropIns ? 1 : 0;
+      if (!body.allowsDropIns) {
+        updateData.drop_in_fee_minor = null;
+      }
+    }
+    if (body.dropInFeeMinor !== undefined) {
+      updateData.drop_in_fee_minor = body.dropInFeeMinor;
     }
     if (body.predecessorLeagueId !== undefined) {
       updateData.predecessor_league_id = body.predecessorLeagueId;

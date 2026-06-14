@@ -27,7 +27,6 @@ import { HiEllipsisVertical } from 'react-icons/hi2';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
 import AdminMemberEditorModal from './AdminMemberEditorModal';
 import AdminMembersBulkImportModal from './AdminMembersBulkImportModal';
-import AdminMembersExperienceBaselinesImportModal from './AdminMembersExperienceBaselinesImportModal';
 import useTableQueryState from '../../hooks/useTableQueryState';
 
 const MEMBERS_PAGE_SIZE = 50;
@@ -51,35 +50,6 @@ function memberHaystack(member: Member): string {
   ]
     .join(' ')
     .toLowerCase();
-}
-
-function formatDateDisplay(dateString?: string | null) {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-  const adjustedDate = new Date(date.getTime() + userTimezoneOffset);
-  return adjustedDate.toLocaleDateString();
-}
-
-function formatDateIso(dateString?: string | null) {
-  if (!dateString) return '';
-  if (typeof dateString === 'string') return dateString;
-  try {
-    return new Date(dateString).toISOString().split('T')[0];
-  } catch {
-    return String(dateString);
-  }
-}
-
-function isExpired(
-  validThrough?: string | null,
-  isAdminFlag?: boolean,
-  isServerAdminFlag?: boolean
-) {
-  if (isAdminFlag || isServerAdminFlag) return false;
-  if (!validThrough) return false;
-  const today = new Date().toISOString().split('T')[0];
-  return today > validThrough;
 }
 
 function toTsvCell(value: unknown) {
@@ -131,19 +101,8 @@ const memberColumns: Array<DataTableColumn<Member>> = [
     header: 'Status',
     renderCell: (member) => (
       <div className="space-y-1">
-        {member.firstLoginCompleted ? (
-          <div className="text-green-600 dark:text-green-400">Registered</div>
-        ) : (
-          <div className="text-gray-400 dark:text-gray-500">Not registered</div>
-        )}
         {member.optedInSms ? (
           <div className="text-xs text-blue-600 dark:text-blue-400">SMS enabled</div>
-        ) : null}
-        {member.spareOnly ? (
-          <div className="text-xs text-amber-700 dark:text-amber-300">Spare-only</div>
-        ) : null}
-        {member.socialMember ? (
-          <div className="text-xs text-amber-700 dark:text-amber-300">Social member</div>
         ) : null}
         <div className="text-xs text-gray-400 dark:text-gray-500">
           {member.emailVisible ? 'Email public' : 'Email hidden'} •{' '}
@@ -151,24 +110,6 @@ const memberColumns: Array<DataTableColumn<Member>> = [
         </div>
       </div>
     ),
-  },
-  {
-    id: 'validThrough',
-    header: 'Valid through',
-    renderCell: (member) =>
-      member.isAdmin || member.isServerAdmin ? (
-        <span className="text-gray-600 dark:text-gray-400">Always valid (admin)</span>
-      ) : !member.validThrough ? (
-        <span className="text-gray-600 dark:text-gray-400">No expiry</span>
-      ) : isExpired(member.validThrough, member.isAdmin, member.isServerAdmin) ? (
-        <span className="text-red-600 dark:text-red-400">
-          Expired ({formatDateDisplay(member.validThrough)})
-        </span>
-      ) : (
-        <span className="text-gray-900 dark:text-gray-100">
-          {formatDateDisplay(member.validThrough)}
-        </span>
-      ),
   },
 ];
 
@@ -185,7 +126,6 @@ export default function AdminMembers() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportTsv, setExportTsv] = useState('');
   const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
-  const [isExperienceImportModalOpen, setIsExperienceImportModalOpen] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([]);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [memberActionsMenuPosition, setMemberActionsMenuPosition] = useState<{
@@ -238,9 +178,7 @@ export default function AdminMembers() {
       const response = await get('/members');
       const membersWithBooleans = (response as Member[]).map((m) => ({
         ...m,
-        validThrough: m.validThrough ?? null,
-        spareOnly: Boolean(m.spareOnly),
-        socialMember: Boolean(m.socialMember),
+        lifetimeMember: Boolean(m.lifetimeMember),
         emailVisible: Boolean(m.emailVisible),
         phoneVisible: Boolean(m.phoneVisible),
         emailSubscribed: Boolean(m.emailSubscribed),
@@ -253,14 +191,10 @@ export default function AdminMembers() {
         isLeagueAdministrator: Boolean(m.isLeagueAdministratorGlobal),
         isLeagueAdministratorGlobal: Boolean(m.isLeagueAdministratorGlobal),
         isLastServerAdmin: Boolean(m.isLastServerAdmin),
-        firstLoginCompleted: Boolean(m.firstLoginCompleted),
       }));
-      const sorted = membersWithBooleans.sort((a, b) => {
-        const aExpired = isExpired(a.validThrough, a.isAdmin, a.isServerAdmin) ? 1 : 0;
-        const bExpired = isExpired(b.validThrough, b.isAdmin, b.isServerAdmin) ? 1 : 0;
-        if (aExpired !== bExpired) return aExpired - bExpired;
-        return String(a.name || '').localeCompare(String(b.name || ''));
-      });
+      const sorted = membersWithBooleans.sort((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || '')),
+      );
       setMembers(sorted);
       setSelectedMemberIds([]);
     } catch (error) {
@@ -367,11 +301,6 @@ export default function AdminMembers() {
       'email',
       'phone',
       'role',
-      'spareOnly',
-      'socialMember',
-      'validThrough',
-      'expired',
-      'registered',
       'emailSubscribed',
       'optedInSms',
       'emailVisible',
@@ -387,18 +316,12 @@ export default function AdminMembers() {
           : m.isLeagueAdministratorGlobal
             ? 'league_admin'
             : 'member';
-      const expired = isExpired(m.validThrough, m.isAdmin, m.isServerAdmin);
       return [
         m.id,
         m.name,
         m.email || '',
         m.phone || '',
         role,
-        Boolean(m.spareOnly),
-        Boolean(m.socialMember),
-        formatDateIso(m.validThrough),
-        expired,
-        Boolean(m.firstLoginCompleted),
         Boolean(m.emailSubscribed),
         Boolean(m.optedInSms),
         Boolean(m.emailVisible),
@@ -733,13 +656,6 @@ export default function AdminMembers() {
               <Button type="button" onClick={() => setIsBulkAddModalOpen(true)} variant="secondary">
                 Bulk import
               </Button>
-              <Button
-                type="button"
-                onClick={() => setIsExperienceImportModalOpen(true)}
-                variant="secondary"
-              >
-                Import experience baselines
-              </Button>
               {selectedMemberIds.length > 0 && (
                 <>
                   <Button type="button" variant="secondary" onClick={handleBulkSendWelcome}>
@@ -780,13 +696,6 @@ export default function AdminMembers() {
       <AdminMembersBulkImportModal
         isOpen={isBulkAddModalOpen}
         onClose={() => setIsBulkAddModalOpen(false)}
-        onImported={loadMembers}
-      />
-
-      <AdminMembersExperienceBaselinesImportModal
-        isOpen={isExperienceImportModalOpen}
-        members={members}
-        onClose={() => setIsExperienceImportModalOpen(false)}
         onImported={loadMembers}
       />
 

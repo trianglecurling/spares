@@ -18,7 +18,7 @@
     "dev:mailpit": "mailpit",
     "dev:frontend": "bun run --filter frontend dev",
     "dev:backend": "bun run --filter backend dev",
-    "db:migrate": "bun run --filter backend db:init",
+    "db:migrate": "bun run --filter backend db:migrate",
     "build": "bun run --filter frontend build && bun run --filter backend build",
     "build:frontend": "bun run --filter frontend build",
     "build:backend": "bun run --filter backend build",

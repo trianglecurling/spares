@@ -190,7 +190,6 @@ Admins specified in the `.env` file cannot have their admin rights removed throu
 ### Members
 - `GET /api/members/me` - Get current member profile
 - `PATCH /api/members/me` - Update current member profile
-- `POST /api/members/me/complete-first-login` - Complete first login flow
 - `POST /api/members/me/unsubscribe` - Unsubscribe from emails
 - `GET /api/members` - Get all members (admin only)
 - `POST /api/members` - Create member (admin only)

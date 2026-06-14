@@ -1,4 +1,5 @@
 import type { MemberProfileResponse } from '../../../backend/src/api/types';
+import { isMemberMinor } from './memberAge';
 import {
   defaultRegistrationMailingAddressFormFields,
   parseRegistrationMailingAddressStored,
@@ -71,6 +72,7 @@ export function memberDemographicsPersonalFormIsComplete(form: MemberDemographic
 }
 
 export function memberDemographicsEmergencyFormIsComplete(form: MemberDemographicsFormFields): boolean {
+  if (isMemberMinor(form.dateOfBirth)) return true;
   return form.emergencyContactName.trim() !== '' && form.emergencyContactPhone.trim() !== '';
 }
 

@@ -9,6 +9,7 @@ import {
   calendarIntervalBlocksSheet,
 } from '../services/calendarExpansion.js';
 import { sendIceBookingConfirmationEmail } from '../services/email.js';
+import { memberIsSocialMember } from '../utils/memberMembershipHelpers.js';
 
 const MS_HOUR = 60 * 60 * 1000;
 const MAX_ADVANCE_MS = 7 * 24 * MS_HOUR;
@@ -67,7 +68,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
   fastify.get('/ice-bookings', async (request, reply) => {
     const member = request.member as Member | undefined;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
-    if (member.social_member === 1) {
+    if (memberIsSocialMember(member)) {
       return reply.code(403).send({ error: 'Social members cannot book ice time' });
     }
 
@@ -105,7 +106,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
   fastify.post('/ice-bookings', async (request, reply) => {
     const member = request.member as Member | undefined;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
-    if (member.social_member === 1) {
+    if (memberIsSocialMember(member)) {
       return reply.code(403).send({ error: 'Social members cannot book ice time' });
     }
 
@@ -245,7 +246,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
   fastify.delete<{ Params: { id: string } }>('/ice-bookings/:id', async (request, reply) => {
     const member = request.member as Member | undefined;
     if (!member) return reply.code(401).send({ error: 'Unauthorized' });
-    if (member.social_member === 1) {
+    if (memberIsSocialMember(member)) {
       return reply.code(403).send({ error: 'Social members cannot manage ice bookings' });
     }
 

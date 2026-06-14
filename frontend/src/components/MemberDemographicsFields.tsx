@@ -32,6 +32,8 @@ export type MemberDemographicsFieldsProps = {
   idPrefix?: string;
   tone?: 'public' | 'app';
   section?: MemberDemographicsFieldsSection;
+  /** When true, date of birth is shown read-only (already set on the member record). */
+  lockDateOfBirth?: boolean;
 };
 
 export default function MemberDemographicsFields({
@@ -40,6 +42,7 @@ export default function MemberDemographicsFields({
   idPrefix = 'member-demographics',
   tone = 'app',
   section = 'all',
+  lockDateOfBirth = false,
 }: MemberDemographicsFieldsProps) {
   const scalarRows =
     section === 'personal'
@@ -75,6 +78,19 @@ export default function MemberDemographicsFields({
     <div className="grid gap-4 sm:grid-cols-2">
       {scalarRows.map(([field, label, autoComplete]) => {
         const fieldId = `${idPrefix}-${String(field)}`;
+        if (field === 'dateOfBirth' && lockDateOfBirth) {
+          return (
+            <FormField key={field} label={label} htmlFor={fieldId} tone={tone}>
+              <input
+                id={fieldId}
+                type="text"
+                value={value.dateOfBirth}
+                readOnly
+                className="app-input"
+              />
+            </FormField>
+          );
+        }
         return (
           <FormField key={field} label={label} htmlFor={fieldId} required tone={tone}>
             <input
@@ -84,7 +100,7 @@ export default function MemberDemographicsFields({
               onChange={(event) => setField(field)(event.target.value)}
               autoComplete={autoComplete}
               className="app-input"
-              required
+              required={field !== 'dateOfBirth' || !lockDateOfBirth}
             />
           </FormField>
         );

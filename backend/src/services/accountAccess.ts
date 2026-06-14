@@ -1,6 +1,8 @@
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { normalizeEmail } from '../utils/auth.js';
+import { isMemberMinor } from '../utils/memberAge.js';
+import { normalizeMemberDateOfBirth } from './memberDemographics.js';
 import type { JWTPayload } from '../types.js';
 
 export function jwtActorMemberId(payload: JWTPayload): number {
@@ -61,6 +63,42 @@ export async function findMemberIdWithConflictingNormalizedEmailChange(
   return findMemberIdWithConflictingNormalizedEmail(normalizedEmail, excludeMemberId);
 }
 
+async function actorHasImplicitParentAccessToTarget(
+  actorEmail: string | null,
+  target: {
+    date_of_birth?: unknown;
+    guardian_email?: string | null;
+  } | null,
+): Promise<boolean> {
+  if (!actorEmail || !target) return false;
+  if (!isMemberMinor(normalizeMemberDateOfBirth(target.date_of_birth))) return false;
+  if (!target.guardian_email) return false;
+  return normalizeEmail(actorEmail) === normalizeEmail(target.guardian_email);
+}
+
+export async function listMinorChildrenForGuardianActor(
+  actorMemberId: number,
+): Promise<number[]> {
+  const actor = await fetchMemberEmailRow(actorMemberId);
+  if (!actor?.email) return [];
+  const norm = normalizeEmail(actor.email);
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      id: schema.members.id,
+      date_of_birth: schema.members.date_of_birth,
+      guardian_email: schema.members.guardian_email,
+    })
+    .from(schema.members)
+    .where(sql`lower(trim(${schema.members.guardian_email})) = ${norm}`);
+  const childIds: number[] = [];
+  for (const row of rows) {
+    if (row.id === actorMemberId) continue;
+    if (isMemberMinor(normalizeMemberDateOfBirth(row.date_of_birth))) childIds.push(row.id);
+  }
+  return childIds;
+}
+
 export async function canActorImpersonateTarget(
   actorMemberId: number,
   targetMemberId: number
@@ -77,6 +115,17 @@ export async function canActorImpersonateTarget(
     return true;
   }
   const { db, schema } = getDrizzleDb();
+  const targetRows = await db
+    .select({
+      date_of_birth: schema.members.date_of_birth,
+      guardian_email: schema.members.guardian_email,
+    })
+    .from(schema.members)
+    .where(eq(schema.members.id, targetMemberId))
+    .limit(1);
+  if (await actorHasImplicitParentAccessToTarget(actor.email, targetRows[0] ?? null)) {
+    return true;
+  }
   const rows = await db
     .select({ id: schema.memberAccountAccessDelegations.id })
     .from(schema.memberAccountAccessDelegations)
@@ -107,6 +156,9 @@ export async function listAccountSwitchOptions(
     .where(eq(schema.memberAccountAccessDelegations.grantee_member_id, actorMemberId));
   for (const row of delegations) {
     ids.add(row.grantorId);
+  }
+  for (const childId of await listMinorChildrenForGuardianActor(actorMemberId)) {
+    ids.add(childId);
   }
   const idList = [...ids];
   if (idList.length === 0) return [];

@@ -4,10 +4,10 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
 import { MemberOptionsProvider } from './contexts/MemberOptionsContext';
+import { LeagueOptionsProvider } from './contexts/LeagueOptionsContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import FirstLogin from './pages/FirstLogin';
 import SetAvailability from './pages/SetAvailability';
 import RequestSpare from './pages/RequestSpare';
 import RequestSpareConfirm from './pages/RequestSpareConfirm';
@@ -117,6 +117,7 @@ function App() {
           <AlertProvider>
             <ConfirmProvider>
               <MemberOptionsProvider>
+                <LeagueOptionsProvider>
                 <Routes>
                   <Route path="/login" element={<Login />} />
                   <Route
@@ -217,15 +218,6 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <PublicWaitlistOfferDeclinePage />
-                    </ProtectedRoute>
-                  }
-                />
-
-                <Route
-                  path="/first-login"
-                  element={
-                    <ProtectedRoute>
-                      <FirstLogin />
                     </ProtectedRoute>
                   }
                 />
@@ -599,6 +591,7 @@ function App() {
 
                 <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
+              </LeagueOptionsProvider>
               </MemberOptionsProvider>
             </ConfirmProvider>
           </AlertProvider>

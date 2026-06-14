@@ -28,7 +28,7 @@ let dashboardSessionCache: {
   session: DashboardSession;
 } | null = null;
 
-export type MembershipCardStatusKind = 'regular' | 'social' | 'former' | 'non_member';
+export type MembershipCardStatusKind = 'regular' | 'social' | 'former' | 'non_member' | 'lifetime';
 
 export type MembershipCardLeagueParticipation = 'roster' | 'sabbatical' | 'waitlist';
 
@@ -72,11 +72,16 @@ function isExpiredDate(validThrough: string | null, today: string): boolean {
 
 export function resolveMembershipCardStatus(input: {
   today: string;
+  isLifetimeMember?: boolean;
   latestPurchasedSeasonMembership: {
     membershipType: 'regular' | 'social' | 'junior_recreational';
     endsAt: string;
   } | null;
 }): MemberMembershipCardData['membershipStatus'] {
+  if (input.isLifetimeMember) {
+    return { kind: 'lifetime', validThrough: null };
+  }
+
   if (!input.latestPurchasedSeasonMembership) {
     return { kind: 'non_member', validThrough: null };
   }
@@ -319,6 +324,16 @@ async function loadSessionLeagues(memberId: number, sessionId: number): Promise<
   };
 }
 
+async function loadIsLifetimeMember(memberId: number): Promise<boolean> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({ lifetime_member: schema.members.lifetime_member })
+    .from(schema.members)
+    .where(eq(schema.members.id, memberId))
+    .limit(1);
+  return (row?.lifetime_member ?? 0) === 1;
+}
+
 async function memberHasActiveSessionIcePrivilege(memberId: number, sessionId: number): Promise<boolean> {
   const { db, schema } = getDrizzleDb();
   const [row] = await db
@@ -340,13 +355,15 @@ export async function getMemberMembershipCard(member: {
   name: string;
 }): Promise<MemberMembershipCardData> {
   const today = await getCurrentDateStringAsync();
-  const [latestPurchasedSeasonMembership, session] = await Promise.all([
+  const [latestPurchasedSeasonMembership, session, isLifetimeMember] = await Promise.all([
     loadLatestPurchasedSeasonMembership(member.id),
     resolveDashboardSession(today),
+    loadIsLifetimeMember(member.id),
   ]);
 
   const membershipStatus = resolveMembershipCardStatus({
     today,
+    isLifetimeMember,
     latestPurchasedSeasonMembership,
   });
 

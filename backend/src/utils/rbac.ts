@@ -1,6 +1,11 @@
 import { eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { AuthzClaims, AuthzRule, Member, ScopeContext, ScopeEffect } from '../types.js';
+import {
+  getMemberMembershipStatus,
+  hasIcePrivilegesForRbac,
+  isMemberActiveForRbac,
+} from '../services/memberMembershipStatusService.js';
 
 export const RBAC_ROLE_CODES = {
   anonymous: 'anonymous',
@@ -19,11 +24,29 @@ function normalizeScope(scope: string): string {
   return scope.trim().toLowerCase();
 }
 
-function normalizeDateString(value: string | Date | number | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value;
-  if (value instanceof Date) return value.toISOString().split('T')[0];
-  return String(value);
+function fallbackMembershipStatus(member: Member) {
+  return {
+    validThrough: null,
+    isSocialMember: false,
+    isSpareOnly: false,
+    isActive: (member.lifetime_member ?? 0) === 1,
+  };
+}
+
+async function ensureMemberMembershipStatus(member: Member) {
+  if (member.membershipStatus) return member.membershipStatus;
+  member.membershipStatus = await getMemberMembershipStatus(member.id, {
+    isLifetimeMember: (member.lifetime_member ?? 0) === 1,
+  });
+  return member.membershipStatus;
+}
+
+export function isMemberActive(member: Member): boolean {
+  return isMemberActiveForRbac(member, member.membershipStatus ?? fallbackMembershipStatus(member));
+}
+
+export function hasIcePrivileges(member: Member): boolean {
+  return hasIcePrivilegesForRbac(member, member.membershipStatus ?? fallbackMembershipStatus(member));
 }
 
 function scopeMatches(ruleScope: string, requestedScope: string): boolean {
@@ -82,17 +105,6 @@ export function hasScope(
   return resolveScopeEffect(claims, requestedScope, context) === 'allow';
 }
 
-export function isMemberActive(member: Member): boolean {
-  const validThrough = normalizeDateString(member.valid_through);
-  if (!validThrough) return true;
-  const today = new Date().toISOString().split('T')[0];
-  return today <= validThrough;
-}
-
-export function hasIcePrivileges(member: Member): boolean {
-  return isMemberActive(member) && (member.social_member ?? 0) !== 1;
-}
-
 function getComputedRoleCodes(member: Member): string[] {
   const roleCodes: string[] = [RBAC_ROLE_CODES.authenticatedUser];
   if (isMemberActive(member)) roleCodes.push(RBAC_ROLE_CODES.activeMember);
@@ -127,6 +139,7 @@ export async function buildAuthzClaimsForMember(member: Member): Promise<AuthzCl
   }
 
   try {
+    await ensureMemberMembershipStatus(member);
     const { db, schema } = getDrizzleDb();
     const computedRoleCodes = getComputedRoleCodes(member);
 
@@ -164,11 +177,6 @@ export async function buildAuthzClaimsForMember(member: Member): Promise<AuthzCl
       effectiveAssignments.push({ roleId: role.id, resourceType: null, resourceId: null });
     }
 
-    // Legacy fallback for users that still rely on old role flags.
-    if ((member.is_admin ?? 0) === 1) {
-      const role = roleByCode.get(RBAC_ROLE_CODES.generalAdmin);
-      if (role) effectiveAssignments.push({ roleId: role.id, resourceType: null, resourceId: null });
-    }
     if ((member.is_calendar_admin ?? 0) === 1) {
       const role = roleByCode.get(RBAC_ROLE_CODES.calendarAdmin);
       if (role) effectiveAssignments.push({ roleId: role.id, resourceType: null, resourceId: null });
@@ -283,6 +291,7 @@ export async function buildAuthzClaimsForMember(member: Member): Promise<AuthzCl
  */
 export async function buildAuthzClaimsForImpersonatedMember(member: Member): Promise<AuthzClaims> {
   try {
+    await ensureMemberMembershipStatus(member);
     const { db, schema } = getDrizzleDb();
     const computedRoleCodes = getComputedRoleCodes(member);
 

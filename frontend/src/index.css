@@ -223,6 +223,35 @@ html.dark body {
   }
 
   /**
+   * Homepage display type: Fraunces is intentionally scoped to public marketing
+   * surfaces (homepage hero + section titles); product UI keeps the system stack.
+   */
+  .public-display {
+    font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+    font-optical-sizing: auto;
+  }
+
+  .public-eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal-link;
+  }
+
+  /** Soft "frozen ice" wash behind the homepage hero. */
+  .public-home-hero-bg {
+    background-color: #ffffff;
+    background-image:
+      radial-gradient(42rem 26rem at 110% -20%, rgba(13, 171, 175, 0.14), transparent 70%),
+      radial-gradient(36rem 24rem at -16% 0%, rgba(13, 171, 175, 0.08), transparent 72%),
+      linear-gradient(180deg, rgba(236, 254, 255, 0.85) 0%, rgba(255, 255, 255, 1) 88%);
+  }
+
+  /** Faint pebble-ice dot texture for alternating homepage bands. */
+  .public-home-band {
+    background-color: #f4fafa;
+    background-image: radial-gradient(rgba(13, 171, 175, 0.07) 1px, transparent 1.5px);
+    background-size: 22px 22px;
+  }
+
+  /**
    * ReactMarkdown / article body: Tailwind preflight clears list markers and margins on ul/ol.
    * Use this wrapper anywhere markdown is rendered (public articles, event details, previews).
    */

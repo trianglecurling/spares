@@ -243,11 +243,9 @@ async function createInitialAdminMember(input: {
     first_name: input.firstName,
     last_name: input.lastName,
     email: input.email,
-    is_admin: 0,
     is_server_admin: 1,
     email_subscribed: 1,
     opted_in_sms: 0,
-    first_login_completed: 0,
     email_visible: 0,
     phone_visible: 0,
   });

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
+import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import Footer from './Footer';
 import { get } from '../api/client';
 import { HiBars3, HiChevronDown, HiXMark } from 'react-icons/hi2';
@@ -22,11 +23,7 @@ interface League {
   endDate: string;
   sessionId: number | null;
   drawTimes: string[];
-  exceptions: string[];
-}
-
-interface RegistrationWindowPayload {
-  session: { id: number };
+  exceptions?: string[];
 }
 
 const navLinkClass = (active: boolean) =>
@@ -67,8 +64,8 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   const [mobileDirectoryExpanded, setMobileDirectoryExpanded] = useState(false);
   const [mobileAdminExpanded, setMobileAdminExpanded] = useState(false);
   const [mobileCalendarExpanded, setMobileCalendarExpanded] = useState(false);
-  const [leagues, setLeagues] = useState<League[]>([]);
-  const [registrationWindowSessionId, setRegistrationWindowSessionId] = useState<number | null>(null);
+  const { leagues: sessionLeagues, registrationWindowSessionId } = useLeagueOptions();
+  const leagues = sessionLeagues as League[];
   const [myRosterLeagueIds, setMyRosterLeagueIds] = useState<number[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -158,43 +155,23 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   ];
   const hasAdminLinks = adminLinks.length > 0;
 
-  // Fetch leagues, registration session, and my roster for the Leagues nav submenu.
+  // Fetch my roster leagues for the Leagues nav submenu.
   useEffect(() => {
     let cancelled = false;
     const memberId = member?.id ?? null;
-    Promise.all([
-      get('/leagues'),
-      get('/registration/window').catch(() => null),
-      memberId != null
-        ? get('/members/{memberId}/leagues', undefined, {
-            memberId: String(memberId),
-          }).catch(() => [])
-        : Promise.resolve([]),
-    ])
-      .then(([leaguesData, windowRes, myLeaguesRows]) => {
+    if (memberId == null) {
+      setMyRosterLeagueIds([]);
+      return;
+    }
+
+    get('/members/{memberId}/leagues', { relevantSession: 'true' }, { memberId: String(memberId) })
+      .then((myLeaguesRows) => {
         if (cancelled) return;
-        setLeagues(leaguesData as League[]);
         const rows = Array.isArray(myLeaguesRows) ? myLeaguesRows : [];
         setMyRosterLeagueIds([...new Set(rows.map((r) => r.leagueId))]);
-        if (
-          windowRes &&
-          typeof windowRes === 'object' &&
-          windowRes !== null &&
-          'session' in windowRes
-        ) {
-          const w = windowRes as unknown as RegistrationWindowPayload;
-          if (typeof w.session?.id === 'number') {
-            setRegistrationWindowSessionId(w.session.id);
-          } else {
-            setRegistrationWindowSessionId(null);
-          }
-        } else {
-          setRegistrationWindowSessionId(null);
-        }
       })
       .catch(() => {
         if (!cancelled) {
-          setRegistrationWindowSessionId(null);
           setMyRosterLeagueIds([]);
         }
       });

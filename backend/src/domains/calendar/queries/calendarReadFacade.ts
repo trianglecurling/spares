@@ -5,6 +5,7 @@ import { getEventTimespansForCalendar } from '../../../services/eventService.js'
 import { fetchIceBookingsAsCalendarEvents } from '../../../services/iceBookingsCalendar.js';
 import type { Member } from '../../../types.js';
 import { isCalendarAdmin } from '../../../utils/auth.js';
+import { memberIsSocialMember, memberIsSpareOnly } from '../../../utils/memberMembershipHelpers.js';
 
 const UPCOMING_BONSPIEL_LIMIT = 10;
 
@@ -17,6 +18,8 @@ export type PublicUpcomingBonspiel = {
   start: string;
   end: string;
   allDay: boolean;
+  /** Set when the bonspiel comes from the events system; links to `/events/:slug`. */
+  eventSlug: string | null;
 };
 
 export type CalendarFeedInput = {
@@ -41,7 +44,7 @@ function getVisibilityFilter(member?: Member): CalendarVisibility[] {
   }
 
   visibilityFilter.push('active_members');
-  if (member.spare_only !== 1 && member.social_member !== 1) {
+  if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
     visibilityFilter.push('ice_members');
   }
   return visibilityFilter;
@@ -113,20 +116,32 @@ export async function getUpcomingBonspiels(now = new Date()) {
         start: item.start,
         end: item.end,
         allDay: item.allDay,
+        eventSlug: null,
       });
     }
   }
 
+  // Events can have several timespans (e.g. one per day); collapse them into a
+  // single homepage entry per event spanning the earliest start to latest end.
+  const byEventSlug = new Map<string, PublicUpcomingBonspiel>();
   for (const item of eventItems) {
-    if (item.typeId === 'bonspiel' && item.start >= nowIso) {
-      bonspiels.push({
+    if (item.typeId !== 'bonspiel' || item.start < nowIso) continue;
+    const existing = item.slug ? byEventSlug.get(item.slug) : undefined;
+    if (!existing) {
+      const entry: PublicUpcomingBonspiel = {
         id: item.id,
         title: item.title,
         start: item.start,
         end: item.end,
         allDay: item.allDay,
-      });
+        eventSlug: item.slug ?? null,
+      };
+      if (item.slug) byEventSlug.set(item.slug, entry);
+      bonspiels.push(entry);
+      continue;
     }
+    if (item.start < existing.start) existing.start = item.start;
+    if (item.end > existing.end) existing.end = item.end;
   }
 
   bonspiels.sort((a, b) => a.start.localeCompare(b.start));

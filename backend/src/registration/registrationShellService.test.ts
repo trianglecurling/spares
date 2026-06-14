@@ -8,25 +8,11 @@ import {
 } from './registrationShellService.js';
 
 describe('registration shell validation', () => {
-  test('demographics require valid email and non-future birth date', () => {
+  test('demographics require valid email', () => {
     expect(() =>
       validateDemographics({
         firstName: 'Jamie',
         lastName: 'Curler',
-        dateOfBirth: '2999-01-01',
-        email: 'jamie@example.com',
-        phone: '919-555-0100',
-        mailingAddress: '123 Curling Way',
-        emergencyContactName: 'Alex Curler',
-        emergencyContactPhone: '919-555-0110',
-      })
-    ).toThrow(RegistrationShellValidationError);
-
-    expect(() =>
-      validateDemographics({
-        firstName: 'Jamie',
-        lastName: 'Curler',
-        dateOfBirth: '2000-01-01',
         email: 'not-an-email',
         phone: '919-555-0100',
         mailingAddress: '123 Curling Way',
@@ -41,7 +27,6 @@ describe('registration shell validation', () => {
       validateDemographics({
         firstName: 'Jamie',
         lastName: 'Curler',
-        dateOfBirth: '2000-01-01',
         email: 'jamie@example.com',
         phone: '919-555-0100',
         mailingAddress: '123 Curling Way',
@@ -65,7 +50,6 @@ describe('registration shell validation', () => {
       curlerDemographicsAreComplete({
         firstName: 'Jamie',
         lastName: 'Curler',
-        dateOfBirth: '2000-01-01',
         email: 'jamie@example.com',
         phone: '919-555-0100',
         mailingAddress: '123 Curling Way',
@@ -78,7 +62,6 @@ describe('registration shell validation', () => {
       curlerDemographicsAreComplete({
         firstName: 'Jamie',
         lastName: 'Curler',
-        dateOfBirth: '2000-01-01',
         email: 'jamie@example.com',
       }),
     ).toBe(false);

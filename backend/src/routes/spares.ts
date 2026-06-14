@@ -17,7 +17,12 @@ import {
   sendSpareOfferCancellationConfirmationEmail,
 } from '../services/email.js';
 import { sendSpareRequestSMS, sendSpareFilledSMS, sendSpareCancellationSMS } from '../services/sms.js';
-import { getCurrentTimeAsync } from '../utils/time.js';
+import { getCurrentTimeAsync, getCurrentDateStringAsync } from '../utils/time.js';
+import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
+import {
+  getMemberMembershipStatus,
+  memberIsNotSocialCondition,
+} from '../services/memberMembershipStatusService.js';
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
 import { processAllNotificationsForRequest } from '../services/notificationProcessor.js';
@@ -183,6 +188,18 @@ export async function spareRoutes(fastify: FastifyInstance) {
     return String(value);
   }
 
+  async function membersIncludeSocialMember(
+    members: Array<{ id: number; lifetime_member?: number | null }>
+  ): Promise<boolean> {
+    for (const entry of members) {
+      const status = await getMemberMembershipStatus(entry.id, {
+        isLifetimeMember: (entry.lifetime_member ?? 0) === 1,
+      });
+      if (status.isSocialMember) return true;
+    }
+    return false;
+  }
+
   async function getCcMembersForRequest(requestId: number): Promise<Member[]> {
     const { db, schema } = getDrizzleDb();
     const rows = await db
@@ -191,14 +208,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
         name: schema.members.name,
         email: schema.members.email,
         phone: schema.members.phone,
-        valid_through: schema.members.valid_through,
-        spare_only: schema.members.spare_only,
-        social_member: schema.members.social_member,
-        is_admin: schema.members.is_admin,
         is_server_admin: schema.members.is_server_admin,
         opted_in_sms: schema.members.opted_in_sms,
         email_subscribed: schema.members.email_subscribed,
-        first_login_completed: schema.members.first_login_completed,
         email_visible: schema.members.email_visible,
         phone_visible: schema.members.phone_visible,
         theme_preference: schema.members.theme_preference,
@@ -508,7 +520,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (invitees.length !== memberIds.length) {
       return reply.code(400).send({ error: 'One or more invited members were not found' });
     }
-    if (invitees.some((m) => (m.social_member ?? 0) === 1)) {
+    if (await membersIncludeSocialMember(invitees)) {
       return reply.code(400).send({ error: 'Social members cannot be invited to spare requests' });
     }
 
@@ -717,11 +729,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
     await db.delete(schema.spareRequestNotificationQueue).where(eq(schema.spareRequestNotificationQueue.spare_request_id, requestId));
 
     // Recipient selection (public)
+    const today = await getCurrentDateStringAsync();
     const conditions: Array<ReturnType<typeof sql>> = [
       eq(schema.memberAvailability.league_id, leagueId),
       eq(schema.memberAvailability.available, 1),
       eq(schema.members.email_subscribed, 1),
-      eq(schema.members.social_member, 0),
+      memberIsNotSocialCondition(schema, today),
       ne(schema.members.id, member.id),
     ];
     if (spareRequest.position === 'skip') {
@@ -733,14 +746,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
         name: schema.members.name,
         email: schema.members.email,
         phone: schema.members.phone,
-        is_admin: schema.members.is_admin,
         is_server_admin: schema.members.is_server_admin,
-        valid_through: schema.members.valid_through,
-        spare_only: schema.members.spare_only,
-        social_member: schema.members.social_member,
         opted_in_sms: schema.members.opted_in_sms,
         email_subscribed: schema.members.email_subscribed,
-        first_login_completed: schema.members.first_login_completed,
         email_visible: schema.members.email_visible,
         phone_visible: schema.members.phone_visible,
         theme_preference: schema.members.theme_preference,
@@ -937,10 +945,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
-    if (member.spare_only === 1) {
+    if (memberIsSpareOnly(member)) {
       return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
     }
-    if ((member.social_member ?? 0) === 1) {
+    if (memberIsSocialMember(member)) {
       return reply.code(403).send({ error: 'Social members cannot request a spare' });
     }
 
@@ -1224,13 +1232,13 @@ export async function spareRoutes(fastify: FastifyInstance) {
       // Private requests: send immediately to all invited members
       if (body.invitedMemberIds.length > 0) {
         const inviteTargets = await db
-          .select({ id: schema.members.id, social_member: schema.members.social_member })
+          .select({ id: schema.members.id, lifetime_member: schema.members.lifetime_member })
           .from(schema.members)
           .where(inArray(schema.members.id, body.invitedMemberIds));
         if (inviteTargets.length !== body.invitedMemberIds.length) {
           return reply.code(400).send({ error: 'One or more invited members were not found' });
         }
-        if (inviteTargets.some((m) => m.social_member === 1)) {
+        if (await membersIncludeSocialMember(inviteTargets)) {
           return reply.code(400).send({ error: 'Social members cannot be invited to spare requests' });
         }
         await db.insert(schema.spareRequestInvitations).values(
@@ -1242,6 +1250,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       }
 
       // Get invited members
+      const inviteToday = await getCurrentDateStringAsync();
       recipientMembers = await db
         .select()
         .from(schema.members)
@@ -1249,7 +1258,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           and(
             inArray(schema.members.id, body.invitedMemberIds),
             eq(schema.members.email_subscribed, 1),
-            eq(schema.members.social_member, 0)
+            memberIsNotSocialCondition(schema, inviteToday)
           )
         );
 
@@ -1327,11 +1336,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Invalid game date' });
       }
       // Get members who are available for this league
+      const publicToday = await getCurrentDateStringAsync();
       const conditions = [
         eq(schema.memberAvailability.league_id, body.leagueId),
         eq(schema.memberAvailability.available, 1),
         eq(schema.members.email_subscribed, 1),
-        eq(schema.members.social_member, 0),
+        memberIsNotSocialCondition(schema, publicToday),
         ne(schema.members.id, member.id),
       ];
       // If position is skip, only notify those who can skip
@@ -1345,14 +1355,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
           name: schema.members.name,
           email: schema.members.email,
           phone: schema.members.phone,
-          is_admin: schema.members.is_admin,
           is_server_admin: schema.members.is_server_admin,
-          valid_through: schema.members.valid_through,
-          spare_only: schema.members.spare_only,
-          social_member: schema.members.social_member,
           opted_in_sms: schema.members.opted_in_sms,
           email_subscribed: schema.members.email_subscribed,
-          first_login_completed: schema.members.first_login_completed,
           email_visible: schema.members.email_visible,
           phone_visible: schema.members.phone_visible,
           theme_preference: schema.members.theme_preference,
@@ -1496,7 +1501,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
-    if ((member.social_member ?? 0) === 1) {
+    if (memberIsSocialMember(member)) {
       return reply.code(403).send({ error: 'Social members cannot sign up as a spare' });
     }
 
@@ -1979,10 +1984,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
       console.log(`[Re-issue] Unauthorized - no member`);
       return reply.code(401).send({ error: 'Unauthorized' });
     }
-    if (member.spare_only === 1) {
+    if (memberIsSpareOnly(member)) {
       return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
     }
-    if ((member.social_member ?? 0) === 1) {
+    if (memberIsSocialMember(member)) {
       return reply.code(403).send({ error: 'Social members cannot request a spare' });
     }
 
@@ -2063,6 +2068,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const invitedIds = invitations.map((inv) => inv.member_id);
       
       if (invitedIds.length > 0) {
+        const reissueToday = await getCurrentDateStringAsync();
         recipientMembers = await db
           .select()
           .from(schema.members)
@@ -2070,7 +2076,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
             and(
               inArray(schema.members.id, invitedIds),
               eq(schema.members.email_subscribed, 1),
-              eq(schema.members.social_member, 0)
+              memberIsNotSocialCondition(schema, reissueToday)
             )
         );
       }
@@ -2181,11 +2187,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
         const leagueIds = matchingLeagues.map((l) => l.id);
         
         // Get members who are available for these leagues
+        const reissuePublicToday = await getCurrentDateStringAsync();
         let conditions = [
           inArray(schema.memberAvailability.league_id, leagueIds),
           eq(schema.memberAvailability.available, 1),
           eq(schema.members.email_subscribed, 1),
-          eq(schema.members.social_member, 0),
+          memberIsNotSocialCondition(schema, reissuePublicToday),
           ne(schema.members.id, member.id),
         ];
         
@@ -2200,14 +2207,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
             name: schema.members.name,
             email: schema.members.email,
             phone: schema.members.phone,
-            is_admin: schema.members.is_admin,
             is_server_admin: schema.members.is_server_admin,
-            valid_through: schema.members.valid_through,
-            spare_only: schema.members.spare_only,
-            social_member: schema.members.social_member,
             opted_in_sms: schema.members.opted_in_sms,
             email_subscribed: schema.members.email_subscribed,
-            first_login_completed: schema.members.first_login_completed,
             email_visible: schema.members.email_visible,
             phone_visible: schema.members.phone_visible,
             theme_preference: schema.members.theme_preference,

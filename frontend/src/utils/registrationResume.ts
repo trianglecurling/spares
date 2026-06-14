@@ -42,6 +42,8 @@ export type RegistrationMembershipPaymentResumeShape = {
     experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing' | null;
   };
   icePrivilegesChoice: 'none' | 'league_play' | 'basic_ice';
+  hasLifetimeMembership?: boolean;
+  knownExperienceYears?: number;
 };
 
 export const REGISTRATION_FLOW_STEPS = new Set([
@@ -101,9 +103,9 @@ export function nextStepFor(payload: RegistrationShellResumePayload): string {
     case 'demographics_incomplete':
       if (!registration.demographics_current_confirmed) return 'demographics';
       if (payload.isMinor && !registration.guardian_email) return 'guardian';
-      return 'membership';
+      return 'discounts';
     case 'shell_complete':
-      return 'membership';
+      return 'discounts';
     case 'submitted':
     case 'awaiting_staff_review':
     case 'awaiting_placement':
@@ -146,7 +148,7 @@ export function resolvePostShellResumeStepFromPayment(
 ): string {
   const option = payment.selection.membershipOption;
 
-  if (option === 'none') return 'membership';
+  if (option === 'none') return 'discounts';
   if (option === 'social') return 'review';
   if (option === 'junior_recreational') return 'league-summary';
   if (option === 'regular_spare_only') return 'league-selection';
@@ -160,7 +162,11 @@ export function resolvePostShellResumeStepFromPayment(
     return 'basic-ice';
   }
 
-  return 'discounts';
+  if (payment.hasLifetimeMembership) {
+    return (payment.knownExperienceYears ?? 0) > 0 ? 'basic-ice' : 'experience';
+  }
+
+  return 'membership';
 }
 
 export function resolveResumeStepFromDraft(input: {
@@ -174,7 +180,7 @@ export function resolveResumeStepFromDraft(input: {
   }
 
   const shellStep = nextStepFor(input.draft);
-  if (shellStep !== 'membership' || input.draft.registration.status !== 'shell_complete') {
+  if (shellStep !== 'discounts' || input.draft.registration.status !== 'shell_complete') {
     return shellStep;
   }
 
