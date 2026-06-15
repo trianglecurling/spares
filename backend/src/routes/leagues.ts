@@ -151,6 +151,8 @@ const updateLeagueSchema = z.object({
   ),
   predecessorLeagueId: z.preprocess(preprocessRoundFiniteInt, z.number().int().positive().nullable().optional()),
   successorLeagueId: z.preprocess(preprocessRoundFiniteInt, z.number().int().positive().nullable().optional()),
+  publicNotes: z.string().nullable().optional(),
+  teamFormation: z.enum(['coordinator', 'skips_draft']).optional(),
   drawTimes: z.array(z.string()).optional(),
   exceptions: z.array(z.string()).optional(),
 });
@@ -339,6 +341,8 @@ function mapLeagueResponse(
     drop_in_fee_minor?: number | null;
     predecessor_league_id?: number | null;
     successor_league_id?: number | null;
+    public_notes?: string | null;
+    team_formation?: 'coordinator' | 'skips_draft';
   };
 
   return {
@@ -372,6 +376,8 @@ function mapLeagueResponse(
     dropInFeeMinor: row.drop_in_fee_minor ?? null,
     predecessorLeagueId: row.predecessor_league_id ?? null,
     successorLeagueId: row.successor_league_id ?? null,
+    publicNotes: row.public_notes?.trim() || null,
+    teamFormation: row.team_formation ?? 'coordinator',
     drawTimes,
     exceptions,
     ...(canManage === undefined ? {} : { canManage }),
@@ -899,6 +905,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
                 allows_sabbatical: src.allows_sabbatical,
                 allows_drop_ins: (src as { allows_drop_ins?: number }).allows_drop_ins ?? 0,
                 drop_in_fee_minor: (src as { drop_in_fee_minor?: number | null }).drop_in_fee_minor ?? null,
+                public_notes: (src as { public_notes?: string | null }).public_notes ?? null,
+                team_formation: (src as { team_formation?: 'coordinator' | 'skips_draft' }).team_formation ?? 'coordinator',
                 predecessor_league_id: src.id,
                 successor_league_id: null,
               })
@@ -1082,6 +1090,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             dropInFeeMinor: { type: ['number', 'null'] },
             predecessorLeagueId: { type: ['number', 'null'] },
             successorLeagueId: { type: ['number', 'null'] },
+            publicNotes: { type: ['string', 'null'] },
+            teamFormation: { type: 'string', enum: ['coordinator', 'skips_draft'] },
             drawTimes: { type: 'array', items: { type: 'string' } },
             exceptions: { type: 'array', items: { type: 'string' } },
           },
@@ -1249,6 +1259,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       drop_in_fee_minor: number | null;
       predecessor_league_id: number | null;
       successor_league_id: number | null;
+      public_notes: string | null;
+      team_formation: 'coordinator' | 'skips_draft';
       updated_at: SQL<unknown>;
     }> = {};
 
@@ -1331,6 +1343,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
     if (body.successorLeagueId !== undefined) {
       updateData.successor_league_id = body.successorLeagueId;
+    }
+    if (body.publicNotes !== undefined) {
+      const trimmed = body.publicNotes?.trim() ?? '';
+      updateData.public_notes = trimmed.length > 0 ? trimmed : null;
+    }
+    if (body.teamFormation !== undefined) {
+      updateData.team_formation = body.teamFormation;
     }
 
     if (Object.keys(updateData).length > 0) {

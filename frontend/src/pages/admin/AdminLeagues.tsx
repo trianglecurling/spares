@@ -1,7 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HiChevronDown } from 'react-icons/hi2';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { get, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
@@ -544,7 +543,7 @@ export default function Leagues() {
   );
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Leagues"
@@ -852,6 +851,6 @@ export default function Leagues() {
           </div>
         </form>
       </Modal>
-    </Layout>
+    </>
   );
 }

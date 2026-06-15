@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
@@ -124,7 +123,7 @@ export default function AdminSheets() {
   };
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Manage sheets"
@@ -239,6 +238,6 @@ export default function AdminSheets() {
           </div>
         </form>
       </Modal>
-    </Layout>
+    </>
   );
 }

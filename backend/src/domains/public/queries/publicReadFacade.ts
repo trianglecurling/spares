@@ -18,6 +18,10 @@ type PublicSiteConfig = {
   logoUrl: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  physicalAddressLine1: string | null;
+  physicalAddressLine2: string | null;
+  mailingAddressLine1: string | null;
+  mailingAddressLine2: string | null;
   footerMarkdown: string | null;
   heroBadge: string | null;
   heroTitle: string | null;
@@ -180,6 +184,10 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
       logoUrl: null,
       contactEmail: null,
       contactPhone: null,
+      physicalAddressLine1: null,
+      physicalAddressLine2: null,
+      mailingAddressLine1: null,
+      mailingAddressLine2: null,
       footerMarkdown: null,
       heroBadge: null,
       heroTitle: null,
@@ -195,6 +203,10 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
     logoUrl: siteConfig.logo_url ?? null,
     contactEmail: siteConfig.contact_email ?? null,
     contactPhone: siteConfig.contact_phone ?? null,
+    physicalAddressLine1: siteConfig.physical_address_line1 ?? null,
+    physicalAddressLine2: siteConfig.physical_address_line2 ?? null,
+    mailingAddressLine1: siteConfig.mailing_address_line1 ?? null,
+    mailingAddressLine2: siteConfig.mailing_address_line2 ?? null,
     footerMarkdown: siteConfig.footer_markdown ?? null,
     heroBadge: siteConfig.hero_badge ?? null,
     heroTitle: siteConfig.hero_title ?? null,

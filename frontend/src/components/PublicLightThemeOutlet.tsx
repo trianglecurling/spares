@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -15,5 +15,9 @@ export default function PublicLightThemeOutlet() {
     setForcedResolvedTheme('light');
     return () => setForcedResolvedTheme(null);
   }, [setForcedResolvedTheme]);
-  return <Outlet />;
+  return (
+    <Suspense fallback={null}>
+      <Outlet />
+    </Suspense>
+  );
 }

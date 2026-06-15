@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppStateCard from '../components/AppStateCard';
 import { get, post } from '../api/client';
@@ -120,17 +119,17 @@ export default function SetAvailability() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <AppPage narrow>
           <AppStateCard title="Loading sparing availability..." />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   if (isSocialMember) {
     return (
-      <Layout>
+      <>
         <AppPage narrow>
           <AppPageHeader title="Sparing availability" />
           <div className="app-alert border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
@@ -139,12 +138,12 @@ export default function SetAvailability() {
             If this is a mistake, contact an administrator.
           </div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Set your sparing availability"
@@ -245,6 +244,6 @@ export default function SetAvailability() {
           </div>
         )}
       </AppPage>
-    </Layout>
+    </>
   );
 }

@@ -9,7 +9,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, post } from '../../api/client';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
@@ -618,7 +617,7 @@ export default function AdminMembers() {
       : { id: currentMember.id, isServerAdmin: Boolean(currentMember.isServerAdmin) };
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Manage members"
@@ -796,6 +795,6 @@ export default function AdminMembers() {
             document.body
           )
         : null}
-    </Layout>
+    </>
   );
 }

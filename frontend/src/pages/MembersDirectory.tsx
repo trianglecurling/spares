@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get } from '../api/client';
 import { formatPhone } from '../utils/phone';
@@ -364,7 +363,7 @@ export default function MembersDirectory() {
   );
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader title="Member directory" />
 
@@ -753,6 +752,6 @@ export default function MembersDirectory() {
           )}
         </Modal>
       </AppPage>
-    </Layout>
+    </>
   );
 }

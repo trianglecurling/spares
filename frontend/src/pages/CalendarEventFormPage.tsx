@@ -8,7 +8,6 @@ import {
 } from 'react-router-dom';
 import { addYears, format, parseISO, subYears } from 'date-fns';
 import api from '../utils/api';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import BackButton from '../components/BackButton';
 import CalendarEventForm from '../components/CalendarEventForm';
@@ -128,7 +127,7 @@ export default function CalendarEventFormPage() {
 
   if (eventId && loadError) {
     return (
-      <Layout fullWidth>
+      <>
         <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
           <AppPage narrow>
             <AppPageHeader title={title} description={subtitle} />
@@ -136,25 +135,25 @@ export default function CalendarEventFormPage() {
             <BackButton label="Calendar" onClick={() => goBackToCalendar()} />
           </AppPage>
         </div>
-      </Layout>
+      </>
     );
   }
 
   if (eventId && event === undefined) {
     return (
-      <Layout fullWidth>
+      <>
         <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
           <AppPage narrow>
             <p className="text-sm text-gray-600 dark:text-gray-400">Loading event…</p>
           </AppPage>
         </div>
-      </Layout>
+      </>
     );
   }
 
   if (eventId && event && isReadOnlyCalendarEvent(event)) {
     return (
-      <Layout fullWidth>
+      <>
         <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
           <AppPage narrow>
             <AppPageHeader title="Cannot edit this event" />
@@ -164,12 +163,12 @@ export default function CalendarEventFormPage() {
             <BackButton label="Calendar" onClick={() => goBackToCalendar(event.start)} />
           </AppPage>
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout fullWidth>
+    <>
       <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
         <AppPage narrow>
           <AppPageHeader
@@ -194,6 +193,6 @@ export default function CalendarEventFormPage() {
           </div>
         </AppPage>
       </div>
-    </Layout>
+    </>
   );
 }

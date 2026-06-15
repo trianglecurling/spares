@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
@@ -180,7 +179,7 @@ export default function AdminEvents() {
   );
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Events"
@@ -241,6 +240,6 @@ export default function AdminEvents() {
           />
         )}
       </AppPage>
-    </Layout>
+    </>
   );
 }

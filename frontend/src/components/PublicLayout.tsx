@@ -1,18 +1,39 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { HiOutlineMapPin } from 'react-icons/hi2';
+import { PiMailbox } from 'react-icons/pi';
 import api from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
+import { memberDisplayInitials } from '../utils/memberDisplayCache';
 import { setCachedDefaultPaymentProvider, type PaymentProvider } from '../utils/paymentProcessorCopy';
+import {
+  PUBLIC_BOOTSTRAP_INVALIDATED_EVENT,
+  publicBootstrapFetchConfig,
+} from '../utils/publicBootstrapClient';
+import ObfuscatedEmailLink, { splitEmailAddress } from './ObfuscatedEmailLink';
+
+const DEFAULT_CONTACT_EMAIL_LOCAL = 'info';
+const DEFAULT_CONTACT_EMAIL_DOMAIN = 'trianglecurling.com';
 
 interface SiteConfig {
   clubName: string | null;
   logoUrl: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  physicalAddressLine1: string | null;
+  physicalAddressLine2: string | null;
+  mailingAddressLine1: string | null;
+  mailingAddressLine2: string | null;
   footerMarkdown: string | null;
   disableSms?: boolean;
   /** `MM-DD`; from governance fiscal year start (public site config). */
   fiscalYearStartMmdd?: string;
+}
+
+function mapsSearchUrl(...parts: Array<string | null | undefined>): string | null {
+  const query = parts.map((part) => part?.trim()).filter(Boolean).join(', ');
+  if (!query) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
 interface MenuItemNode {
@@ -48,6 +69,11 @@ const memberMenuItemClass =
 
 let cachedSiteConfig: SiteConfig | null = null;
 let cachedMenuItems: MenuItemNode[] = [];
+
+function clearPublicLayoutModuleCache(): void {
+  cachedSiteConfig = null;
+  cachedMenuItems = [];
+}
 
 function linkForItem(item: MenuItemNode): { kind: 'internal' | 'external' | 'none'; href: string | null } {
   if (item.linkType === 'internal' && item.url) return { kind: 'internal', href: item.url };
@@ -236,7 +262,7 @@ export default function PublicLayout({
   initialMenuItems,
   deferPublicBootstrapLoad = false,
 }: PublicLayoutProps) {
-  const { member, token, isLoading, logout } = useAuth();
+  const { memberDisplayName, isLoading, isLikelyAuthenticated, logout } = useAuth();
   const [siteConfig, setSiteConfig] = useState<SiteConfig | null>(initialSiteConfig ?? cachedSiteConfig);
   const [menuItems, setMenuItems] = useState<MenuItemNode[]>(initialMenuItems ?? cachedMenuItems);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -272,9 +298,9 @@ export default function PublicLayout({
     }
   }, [initialSiteConfig, initialMenuItems, deferPublicBootstrapLoad]);
 
-  useEffect(() => {
-    if (deferPublicBootstrapLoad) return;
-    api.get<PublicBootstrapResponse>('/public/bootstrap')
+  const loadPublicBootstrap = useCallback(() => {
+    return api
+      .get<PublicBootstrapResponse>('/public/bootstrap', publicBootstrapFetchConfig)
       .then((r) => {
         const config = r.data?.siteConfig ?? null;
         const menu = Array.isArray(r.data?.navbarMenu) ? r.data.navbarMenu : [];
@@ -292,6 +318,10 @@ export default function PublicLayout({
             logoUrl: null,
             contactEmail: null,
             contactPhone: null,
+            physicalAddressLine1: null,
+            physicalAddressLine2: null,
+            mailingAddressLine1: null,
+            mailingAddressLine2: null,
             footerMarkdown: null,
             disableSms: false,
           };
@@ -300,15 +330,34 @@ export default function PublicLayout({
         setMenuItems(cachedMenuItems);
         setPublicDataReady(true);
       });
-  }, [deferPublicBootstrapLoad]);
+  }, []);
+
+  useEffect(() => {
+    if (deferPublicBootstrapLoad) return;
+    void loadPublicBootstrap();
+  }, [deferPublicBootstrapLoad, loadPublicBootstrap]);
+
+  useEffect(() => {
+    const onInvalidated = () => {
+      clearPublicLayoutModuleCache();
+      void loadPublicBootstrap();
+    };
+    window.addEventListener(PUBLIC_BOOTSTRAP_INVALIDATED_EVENT, onInvalidated);
+    return () => window.removeEventListener(PUBLIC_BOOTSTRAP_INVALIDATED_EVENT, onInvalidated);
+  }, [loadPublicBootstrap]);
 
   const clubName = siteConfig?.clubName ?? '';
-  const initials = (member?.name ?? '?')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('');
+  const initials = memberDisplayName ? memberDisplayInitials(memberDisplayName) : '';
+  const physicalAddressLine1 = siteConfig?.physicalAddressLine1?.trim() || null;
+  const physicalAddressLine2 = siteConfig?.physicalAddressLine2?.trim() || null;
+  const mailingAddressLine1 = siteConfig?.mailingAddressLine1?.trim() || null;
+  const mailingAddressLine2 = siteConfig?.mailingAddressLine2?.trim() || null;
+  const facilityDirectionsUrl = mapsSearchUrl(physicalAddressLine1, physicalAddressLine2);
+  const contactEmailParts =
+    splitEmailAddress(siteConfig?.contactEmail ?? '') ?? {
+      local: DEFAULT_CONTACT_EMAIL_LOCAL,
+      domain: DEFAULT_CONTACT_EMAIL_DOMAIN,
+    };
 
   return (
     <div className="public-shell min-h-screen flex flex-col">
@@ -353,7 +402,7 @@ export default function PublicLayout({
                 </>
               ))}
             {!isLoading && (
-              token && member ? (
+              isLikelyAuthenticated ? (
                 <div className="relative ml-2" ref={profileMenuRef}>
                   <button
                     type="button"
@@ -363,7 +412,7 @@ export default function PublicLayout({
                     aria-haspopup="true"
                   >
                     <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-teal text-sm font-semibold text-white">
-                      {initials || '?'}
+                      {initials}
                     </span>
                   </button>
                   {profileMenuOpen && (
@@ -415,7 +464,7 @@ export default function PublicLayout({
                 </ul>
               )}
               {!isLoading && (
-                token && member ? (
+                isLikelyAuthenticated ? (
                   <div className="mt-3 rounded-lg border border-gray-200 p-2">
                     <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Member</p>
                     <Link to="/leagues" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Leagues</Link>
@@ -468,7 +517,7 @@ export default function PublicLayout({
               <Link to="/contact" className="text-gray-600 hover:text-gray-900 hover:underline">Contact</Link>
               <Link to="/donate" className="text-gray-600 hover:text-gray-900 hover:underline">Donate</Link>
               <Link to="/articles/try-curling" className="text-gray-600 hover:text-gray-900 hover:underline">Learn</Link>
-              {token && member ? (
+              {isLikelyAuthenticated ? (
                 <Link to="/leagues" className="text-gray-600 hover:text-gray-900 hover:underline">Leagues</Link>
               ) : (
                 <Link to="/login" className="text-gray-600 hover:text-gray-900 hover:underline">Member login</Link>
@@ -480,12 +529,11 @@ export default function PublicLayout({
             <div className="text-sm text-gray-600">
               <p>
                 Email:{' '}
-                <a
-                  href={`mailto:${siteConfig?.contactEmail || 'info@trianglecurling.com'}`}
+                <ObfuscatedEmailLink
+                  localPart={contactEmailParts.local}
+                  domain={contactEmailParts.domain}
                   className="hover:text-gray-900 hover:underline"
-                >
-                  {siteConfig?.contactEmail || 'info@trianglecurling.com'}
-                </a>
+                />
               </p>
               {siteConfig?.contactPhone ? (
                 <p>
@@ -495,18 +543,42 @@ export default function PublicLayout({
                   </a>
                 </p>
               ) : null}
-              <p className="mt-2">Triangle Curling Center, 2310 So Hi Drive, Durham, NC 27703</p>
-              <p>P.O. Box 14628, Durham, NC 27709</p>
-              <p className="mt-2">
-                <a
-                  href="https://www.google.com/maps/search/?api=1&query=Triangle+Curling+Center%2C+2310+So+Hi+Drive%2C+Durham%2C+NC+27703"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-primary-teal-link hover:underline"
-                >
-                  Get directions
-                </a>
-              </p>
+              {(physicalAddressLine1 || physicalAddressLine2 || mailingAddressLine1 || mailingAddressLine2) ? (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {(physicalAddressLine1 || physicalAddressLine2) ? (
+                    <div>
+                      <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <HiOutlineMapPin className="h-4 w-4 shrink-0" aria-hidden />
+                        Facility address
+                      </h3>
+                      {physicalAddressLine1 ? <p className="mt-2">{physicalAddressLine1}</p> : null}
+                      {physicalAddressLine2 ? <p>{physicalAddressLine2}</p> : null}
+                      {facilityDirectionsUrl ? (
+                        <p className="mt-2">
+                          <a
+                            href={facilityDirectionsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-primary-teal-link hover:underline"
+                          >
+                            Get directions
+                          </a>
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {(mailingAddressLine1 || mailingAddressLine2) ? (
+                    <div>
+                      <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <PiMailbox className="h-4 w-4 shrink-0" aria-hidden />
+                        Mailing address
+                      </h3>
+                      {mailingAddressLine1 ? <p className="mt-2">{mailingAddressLine1}</p> : null}
+                      {mailingAddressLine2 ? <p>{mailingAddressLine2}</p> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

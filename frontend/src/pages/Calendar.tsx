@@ -45,7 +45,6 @@ import {
 } from 'react-icons/hi2';
 import api from '../utils/api';
 import Button from '../components/Button';
-import Layout from '../components/Layout';
 import PublicLayout from '../components/PublicLayout';
 import Modal from '../components/Modal';
 import PageTabs from '../components/PageTabs';
@@ -1194,7 +1193,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">{calendarContent}</div>
     </PublicLayout>
   ) : (
-    <Layout fullWidth>{calendarContent}</Layout>
+    calendarContent
   );
 }
 

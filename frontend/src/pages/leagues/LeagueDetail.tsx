@@ -1,6 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post, put } from '../../api/client';
 import api, { formatApiError } from '../../utils/api';
@@ -95,6 +94,11 @@ const CAPACITY_TYPE_SELECT_OPTIONS: ChoiceOption<'individual' | 'team'>[] = [
   { value: 'team', label: 'Team' },
 ];
 
+const TEAM_FORMATION_SELECT_OPTIONS: ChoiceOption<'coordinator' | 'skips_draft'>[] = [
+  { value: 'coordinator', label: 'Teams formed by coordinator' },
+  { value: 'skips_draft', label: "Teams formed by skips' draft" },
+];
+
 interface League {
   id: number;
   name: string;
@@ -123,6 +127,8 @@ interface League {
   dropInFeeMinor?: number | null;
   predecessorLeagueId: number | null;
   successorLeagueId: number | null;
+  publicNotes?: string | null;
+  teamFormation?: 'coordinator' | 'skips_draft';
   drawTimes: string[];
   exceptions: string[];
 }
@@ -348,6 +354,8 @@ export default function LeagueDetail() {
     dropInFeeDollars: '' as number | '',
     isPlayInBased: false,
     predecessorLeagueId: 0,
+    teamFormation: 'coordinator' as 'coordinator' | 'skips_draft',
+    publicNotes: '',
   });
   const [showExceptionPicker, setShowExceptionPicker] = useState(false);
   const [exceptionToAdd, setExceptionToAdd] = useState('');
@@ -865,6 +873,8 @@ export default function LeagueDetail() {
           : '',
       isPlayInBased: league.isPlayInBased ?? false,
       predecessorLeagueId: league.predecessorLeagueId ?? 0,
+      teamFormation: league.teamFormation ?? 'coordinator',
+      publicNotes: league.publicNotes ?? '',
     });
     setShowExceptionPicker(false);
     setExceptionToAdd('');
@@ -1068,6 +1078,8 @@ export default function LeagueDetail() {
           : null,
         isPlayInBased: leagueForm.isPlayInBased,
         predecessorLeagueId: leagueForm.predecessorLeagueId || null,
+        teamFormation: leagueForm.teamFormation,
+        publicNotes: leagueForm.publicNotes.trim() || null,
       };
 
       const updated = await patch('/leagues/{id}', registrationPayload, { id: String(numericLeagueId) });
@@ -1553,26 +1565,26 @@ export default function LeagueDetail() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <AppStateCard title="Loading league..." />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   if (!league) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <AppStateCard title="League not found." />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title={league.name}
@@ -2012,6 +2024,25 @@ export default function LeagueDetail() {
                       />
                     </div>
 
+                    {leagueForm.leagueType === 'standard' ? (
+                      <div>
+                        <label htmlFor="leagueCfgTeamFormation" className="app-label">
+                          Team formation
+                        </label>
+                        <ChoiceInput<'coordinator' | 'skips_draft'>
+                          inputId="leagueCfgTeamFormation"
+                          options={TEAM_FORMATION_SELECT_OPTIONS}
+                          value={leagueForm.teamFormation}
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next)) {
+                              setLeagueForm({ ...leagueForm, teamFormation: next });
+                            }
+                          }}
+                          listboxLabel="Team formation"
+                        />
+                      </div>
+                    ) : null}
+
                     <div>
                       <label htmlFor="leagueCfgCapacityType" className="app-label">
                         Capacity type
@@ -2117,6 +2148,18 @@ export default function LeagueDetail() {
                       value={leagueForm.maxAge}
                       onChange={(maxAge) => setLeagueForm({ ...leagueForm, maxAge })}
                     />
+                    <div className="sm:col-span-2">
+                      <FormField label="Public notes" htmlFor="leagueCfgPublicNotes" optional>
+                        <textarea
+                          id="leagueCfgPublicNotes"
+                          value={leagueForm.publicNotes}
+                          onChange={(e) => setLeagueForm({ ...leagueForm, publicNotes: e.target.value })}
+                          rows={4}
+                          placeholder="Optional notes shown on the public leagues page"
+                          className="app-input min-h-[6rem] text-sm"
+                        />
+                      </FormField>
+                    </div>
                   </div>
 
                   <fieldset className="space-y-2 border-0 p-0 min-w-0">
@@ -3356,7 +3399,7 @@ export default function LeagueDetail() {
           </div>
         </form>
       </Modal>
-    </Layout>
+    </>
   );
 }
 

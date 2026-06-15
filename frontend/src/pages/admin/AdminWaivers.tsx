@@ -1,5 +1,4 @@
 import { useId, useMemo, useState } from 'react';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { post } from '../../api/client';
 import Button from '../../components/Button';
@@ -378,7 +377,7 @@ export default function AdminWaivers() {
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Manage waivers"
@@ -672,6 +671,6 @@ export default function AdminWaivers() {
           ) : null}
         </Modal>
       </AppPage>
-    </Layout>
+    </>
   );
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 import { marked } from 'marked';
-import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -120,9 +119,18 @@ export default function AdminArticleEditor() {
   const htmlEditorRef = useRef<HtmlCodeEditorRef>(null);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
+  const [articleUrlCopied, setArticleUrlCopied] = useState(false);
   const savedSnapshotRef = useRef<string | null>(null);
+  const articleUrlCopiedTimeoutRef = useRef<number | null>(null);
 
   const isNew = id === 'new';
+  const articlePublicPath = form.slug.trim() ? `/articles/${form.slug.trim()}` : null;
+
+  useEffect(() => {
+    return () => {
+      if (articleUrlCopiedTimeoutRef.current) window.clearTimeout(articleUrlCopiedTimeoutRef.current);
+    };
+  }, []);
 
   const applyArticleToForm = useCallback((article: ArticleResponse) => {
     const contentType = article.contentType ?? 'markdown';
@@ -523,6 +531,23 @@ th { font-weight: 600; background: #f3f4f6; }
     return () => document.removeEventListener('click', handleDocumentClick, true);
   }, [confirmDiscardChanges, isDirty, navigate]);
 
+  const handleCopyArticleUrl = useCallback(async () => {
+    const slug = form.slug.trim();
+    if (!slug) return;
+    const fullUrl = new URL(`/articles/${slug}`, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      if (articleUrlCopiedTimeoutRef.current) window.clearTimeout(articleUrlCopiedTimeoutRef.current);
+      setArticleUrlCopied(true);
+      articleUrlCopiedTimeoutRef.current = window.setTimeout(() => {
+        setArticleUrlCopied(false);
+        articleUrlCopiedTimeoutRef.current = null;
+      }, 2000);
+    } catch {
+      showAlert('Failed to copy URL', 'error');
+    }
+  }, [form.slug, showAlert]);
+
   const handleUploadMarkdownImage = async (
     blob: Blob
   ): Promise<{ url: string; altText?: string } | null> => {
@@ -560,16 +585,16 @@ th { font-weight: 600; background: #f3f4f6; }
 
   if (loading) {
     return (
-      <Layout fullWidth>
+      <>
         <div className="p-6">
           <div className="text-gray-500">Loading...</div>
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout fullWidth>
+    <>
       <div className="h-[calc(100vh-4rem)] flex flex-col">
         <div className="flex-shrink-0">
           <div className="max-w-[1600px] mx-auto px-4 pt-4 pb-2 flex items-center justify-between gap-4">
@@ -712,20 +737,32 @@ th { font-weight: 600; background: #f3f4f6; }
                   Settings
                 </h2>
                 <div className="space-y-4">
-                  <FormField label="Slug (URL)" htmlFor={`${articleFieldId}-slug`}>
-                    <input
-                      id={`${articleFieldId}-slug`}
-                      type="text"
-                      value={form.slug}
-                      onChange={(e) => {
-                        setSlugManuallyEdited(true);
-                        setForm((f) => ({ ...f, slug: e.target.value }));
-                      }}
-                      className="app-input font-mono text-sm"
-                      pattern="[-a-z0-9]+"
-                      required
-                    />
-                  </FormField>
+                  <div>
+                    <FormField label="Slug (URL)" htmlFor={`${articleFieldId}-slug`}>
+                      <input
+                        id={`${articleFieldId}-slug`}
+                        type="text"
+                        value={form.slug}
+                        onChange={(e) => {
+                          setSlugManuallyEdited(true);
+                          setForm((f) => ({ ...f, slug: e.target.value }));
+                        }}
+                        className="app-input font-mono text-sm"
+                        pattern="[-a-z0-9]+"
+                        required
+                      />
+                    </FormField>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyArticleUrl()}
+                        disabled={!form.slug.trim()}
+                        className="text-sm text-primary-teal hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+                      >
+                        {articleUrlCopied ? 'Copied!' : 'Copy URL'}
+                      </button>
+                    </div>
+                  </div>
                   <FormField label="Publish date (empty = draft)" htmlFor={`${articleFieldId}-published`}>
                     <input
                       id={`${articleFieldId}-published`}
@@ -809,6 +846,18 @@ th { font-weight: 600; background: #f3f4f6; }
                     </div>
                   )}
                 </div>
+                {!isNew && articlePublicPath ? (
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <a
+                      href={articlePublicPath}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex w-full items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 no-underline transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-teal/40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Open this article
+                    </a>
+                  </div>
+                ) : null}
               </aside>
             </div>
           </div>
@@ -871,6 +920,6 @@ th { font-weight: 600; background: #f3f4f6; }
           </div>
         </Modal>
       </div>
-    </Layout>
+    </>
   );
 }

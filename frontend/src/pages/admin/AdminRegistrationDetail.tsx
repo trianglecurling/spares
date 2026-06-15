@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
@@ -340,7 +339,7 @@ export default function AdminRegistrationDetail() {
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title={detail ? `Registration #${detail.registration.id}: ${detail.registration.curlerName}` : 'Registration details'}
@@ -597,6 +596,6 @@ export default function AdminRegistrationDetail() {
           </div>
         ) : null}
       </AppPage>
-    </Layout>
+    </>
   );
 }

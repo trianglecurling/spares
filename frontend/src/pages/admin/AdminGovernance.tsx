@@ -1,6 +1,5 @@
 import { FormEvent, KeyboardEvent, useEffect, useId, useMemo, useState } from 'react';
 import Button from '../../components/Button';
-import Layout from '../../components/Layout';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
 import Modal from '../../components/Modal';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
@@ -510,7 +509,7 @@ export default function AdminGovernance() {
   };
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Manage governance"
@@ -1139,6 +1138,6 @@ export default function AdminGovernance() {
           </div>
         </form>
       </Modal>
-    </Layout>
+    </>
   );
 }

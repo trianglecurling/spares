@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
@@ -388,16 +387,16 @@ export default function AdminConfig() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <AppStateCard title="Loading server configuration..." />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader title="Server configuration" />
 
@@ -1028,6 +1027,6 @@ export default function AdminConfig() {
           </form>
         </div>
       </AppPage>
-    </Layout>
+    </>
   );
 }

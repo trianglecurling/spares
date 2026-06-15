@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HiChevronDown, HiOutlineClipboardDocument, HiPlus } from 'react-icons/hi2';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import { formatApiError } from '../utils/api';
@@ -400,7 +399,7 @@ export default function MyRequests() {
   };
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="My spare requests"
@@ -901,6 +900,6 @@ export default function MyRequests() {
         )}
       </Modal>
 
-    </Layout>
+    </>
   );
 }

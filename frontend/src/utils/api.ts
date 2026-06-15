@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
+import { clearCachedMemberDisplayName } from './memberDisplayCache';
 
 type RetriableRequestConfig = AxiosRequestConfig & { _retry?: boolean };
 
@@ -27,6 +28,7 @@ export function clearAuthTokens(): void {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('authToken');
+  clearCachedMemberDisplayName();
 }
 
 let refreshPromise: Promise<string | null> | null = null;

@@ -3,7 +3,6 @@ import { AppPage, AppPageHeader } from '../../components/AppPage';
 import DragHandle from '../../components/dragDrop/DragHandle';
 import SortableList from '../../components/dragDrop/SortableList';
 import SortableRow from '../../components/dragDrop/SortableRow';
-import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
@@ -229,7 +228,7 @@ export default function AdminSponsorship() {
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader title="Sponsorship management" description="Manage sponsorship levels, sponsors, and sponsorships." />
 
@@ -918,6 +917,6 @@ export default function AdminSponsorship() {
           </div>
         </div>
       </Modal>
-    </Layout>
+    </>
   );
 }

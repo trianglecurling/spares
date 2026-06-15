@@ -36,6 +36,34 @@
       "when": 1780352498445,
       "tag": "0006_add_leagues_drop_in_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780352498446,
+      "tag": "0004_add_members_guardian_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780352498447,
+      "tag": "0005_remove_members_legacy_membership_flags",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780352498448,
+      "tag": "0007_add_league_public_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780352498449,
+      "tag": "0008_add_site_config_addresses",
+      "breakpoints": true
     }
   ]
 }

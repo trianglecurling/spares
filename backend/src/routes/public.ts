@@ -18,6 +18,7 @@ import {
   getCachedPublicBootstrap,
   getPublicBootstrapCacheEtag,
 } from '../services/publicBootstrapCache.js';
+import { getPublicLeaguesPage } from '../services/publicLeaguesService.js';
 
 export async function publicRoutes(fastify: FastifyInstance) {
   const { db, schema } = getDrizzleDb();
@@ -149,7 +150,7 @@ export async function publicRoutes(fastify: FastifyInstance) {
   fastify.get<{ Querystring: { includeHome?: string } }>('/public/bootstrap', async (request, reply) => {
     const includeHome = request.query.includeHome === 'true' || request.query.includeHome === '1';
     const etag = getPublicBootstrapCacheEtag(includeHome);
-    reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    reply.header('Cache-Control', 'private, max-age=0, must-revalidate');
     reply.header('ETag', etag);
     if (request.headers['if-none-match'] === etag) {
       return reply.code(304).send();
@@ -299,5 +300,22 @@ Sitemap: ${frontendBaseUrl}/api/sitemap.xml
       shortLinkUrl: `${frontendBaseUrl}/go/${row.slug}`,
       infoUrl: `${frontendBaseUrl}/go/${row.slug}/info`,
     };
+  });
+
+  fastify.get<{ Querystring: { sessionId?: string } }>('/public/leagues', async (request, reply) => {
+    const rawSessionId = request.query.sessionId;
+    const sessionId =
+      rawSessionId != null && rawSessionId !== ''
+        ? Number.parseInt(String(rawSessionId), 10)
+        : undefined;
+    if (sessionId != null && !Number.isFinite(sessionId)) {
+      return reply.code(400).send({ error: 'Invalid sessionId' });
+    }
+
+    const payload = await getPublicLeaguesPage(sessionId);
+    if (!payload) {
+      return reply.code(404).send({ error: 'No leagues found for the requested session' });
+    }
+    return payload;
   });
 }

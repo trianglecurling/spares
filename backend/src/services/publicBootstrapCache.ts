@@ -18,6 +18,7 @@ let staleHomeCache: CacheEntry | null = null;
 let rebuildPromise: Promise<void> | null = null;
 let scheduledInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
 let scheduledInvalidationAt: number | null = null;
+let rebuildRequestedDuringFlight = false;
 
 /** Node.js setTimeout maximum delay (~24.8 days). */
 const MAX_SET_TIMEOUT_MS = 2_147_483_647;
@@ -175,6 +176,12 @@ export async function warmPublicBootstrapCache(): Promise<void> {
     })
     .finally(() => {
       rebuildPromise = null;
+      if (rebuildRequestedDuringFlight) {
+        rebuildRequestedDuringFlight = false;
+        void warmPublicBootstrapCache().catch(() => {
+          // Errors are logged in warmPublicBootstrapCache.
+        });
+      }
     });
 
   await rebuildPromise;
@@ -187,11 +194,14 @@ export function invalidatePublicBootstrapCache(_reason?: string): void {
   homeCache = null;
   clearScheduledInvalidation();
 
-  if (!rebuildPromise) {
-    void warmPublicBootstrapCache().catch(() => {
-      // Errors are logged in warmPublicBootstrapCache.
-    });
+  if (rebuildPromise) {
+    rebuildRequestedDuringFlight = true;
+    return;
   }
+
+  void warmPublicBootstrapCache().catch(() => {
+    // Errors are logged in warmPublicBootstrapCache.
+  });
 }
 
 export async function getCachedPublicBootstrap(includeHome: boolean): Promise<PublicBootstrapPayload> {

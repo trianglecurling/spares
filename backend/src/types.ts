@@ -107,6 +107,8 @@ export interface League {
   drop_in_fee_minor?: number | null;
   predecessor_league_id: number | null;
   successor_league_id: number | null;
+  public_notes?: string | null;
+  team_formation?: 'coordinator' | 'skips_draft';
   created_at: DbDate;
   updated_at: DbDate;
 }

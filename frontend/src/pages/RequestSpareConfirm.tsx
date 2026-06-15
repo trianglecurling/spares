@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import Button from '../components/Button';
 
@@ -15,7 +14,7 @@ export default function RequestSpareConfirm() {
   };
 
   return (
-    <Layout>
+    <>
       <AppPage narrow>
         <div className="app-card">
           <AppPageHeader title="Did you check with who's on bye?" />
@@ -34,6 +33,6 @@ export default function RequestSpareConfirm() {
           </div>
         </div>
       </AppPage>
-    </Layout>
+    </>
   );
 }

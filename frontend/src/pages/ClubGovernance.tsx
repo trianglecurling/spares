@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppStateCard from '../components/AppStateCard';
 import DataTable from '../components/table/DataTable';
@@ -157,7 +156,7 @@ export default function ClubGovernance() {
   );
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Club governance"
@@ -238,6 +237,6 @@ export default function ClubGovernance() {
           </>
         )}
       </AppPage>
-    </Layout>
+    </>
   );
 }

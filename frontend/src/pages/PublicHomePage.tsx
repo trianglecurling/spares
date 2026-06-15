@@ -9,13 +9,16 @@ import {
   HiOutlineIdentification,
   HiOutlineMapPin,
   HiOutlineMegaphone,
-  HiOutlinePhone,
   HiOutlineSparkles,
   HiOutlineTrophy,
   HiOutlineUserGroup,
 } from 'react-icons/hi2';
 import api from '../utils/api';
 import { setCachedDefaultPaymentProvider } from '../utils/paymentProcessorCopy';
+import {
+  PUBLIC_BOOTSTRAP_INVALIDATED_EVENT,
+  publicBootstrapFetchConfig,
+} from '../utils/publicBootstrapClient';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
@@ -28,6 +31,10 @@ interface HomeData {
     logoUrl: string | null;
     contactEmail: string | null;
     contactPhone: string | null;
+    physicalAddressLine1: string | null;
+    physicalAddressLine2: string | null;
+    mailingAddressLine1: string | null;
+    mailingAddressLine2: string | null;
     footerMarkdown: string | null;
     heroBadge?: string | null;
     heroTitle?: string | null;
@@ -93,9 +100,6 @@ const HOMEPAGE_COPY = {
   subtitle:
     'Triangle Curling Club is a dedicated, four-sheet curling facility offering leagues, bonspiels, public curling events, and daytime group events.',
 };
-
-const CLUB_ADDRESS = 'Triangle Curling Center, 2310 So Hi Drive, Durham, NC 27703';
-const DIRECTIONS_URL = 'https://www.google.com/maps/search/?api=1&query=Triangle+Curling+Center%2C+2310+So+Hi+Drive%2C+Durham%2C+NC+27703';
 
 function snippetPreview(text: string): string {
   const normalized = text.replace(/[#>*_`[\]()!-]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -291,7 +295,7 @@ function SectionHeading({
 }
 
 export default function PublicHomePage() {
-  const { member, token, isLoading } = useAuth();
+  const { isLoading, isLikelyAuthenticated } = useAuth();
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDelayedLoading, setShowDelayedLoading] = useState(false);
@@ -329,22 +333,35 @@ export default function PublicHomePage() {
   }, [data?.currentSponsorships]);
 
   useEffect(() => {
-    api
-      .get<PublicHomeBootstrapResponse>('/public/bootstrap', { params: { includeHome: 'true' } })
-      .then((res) => {
-        setCachedDefaultPaymentProvider(res.data?.defaultPaymentProvider);
-        setLayoutSiteConfig(res.data?.siteConfig ?? null);
-        setLayoutMenuItems(Array.isArray(res.data?.navbarMenu) ? res.data.navbarMenu : []);
-        if (res.data?.home) {
-          setData(res.data.home);
-          return;
-        }
-        setError('Failed to load');
-      })
-      .catch((err) => {
-        setDeferLayoutBootstrapLoad(false);
-        setError(err?.response?.data?.error || 'Failed to load');
-      });
+    const loadHomeBootstrap = () => {
+      api
+        .get<PublicHomeBootstrapResponse>('/public/bootstrap', {
+          params: { includeHome: 'true' },
+          ...publicBootstrapFetchConfig,
+        })
+        .then((res) => {
+          setCachedDefaultPaymentProvider(res.data?.defaultPaymentProvider);
+          setLayoutSiteConfig(res.data?.siteConfig ?? null);
+          setLayoutMenuItems(Array.isArray(res.data?.navbarMenu) ? res.data.navbarMenu : []);
+          if (res.data?.home) {
+            setData(res.data.home);
+            return;
+          }
+          setError('Failed to load');
+        })
+        .catch((err) => {
+          setDeferLayoutBootstrapLoad(false);
+          setError(err?.response?.data?.error || 'Failed to load');
+        });
+    };
+
+    loadHomeBootstrap();
+
+    const onInvalidated = () => {
+      loadHomeBootstrap();
+    };
+    window.addEventListener(PUBLIC_BOOTSTRAP_INVALIDATED_EVENT, onInvalidated);
+    return () => window.removeEventListener(PUBLIC_BOOTSTRAP_INVALIDATED_EVENT, onInvalidated);
   }, []);
 
   useEffect(() => {
@@ -358,7 +375,7 @@ export default function PublicHomePage() {
     return () => window.clearTimeout(timerId);
   }, [data, error]);
 
-  const isMemberSignedIn = !isLoading && Boolean(token && member);
+  const isMemberSignedIn = !isLoading && isLikelyAuthenticated;
 
   const pathways = [
     {
@@ -425,9 +442,6 @@ export default function PublicHomePage() {
   const heroTitle = data?.siteConfig?.heroTitle?.trim() || HOMEPAGE_COPY.title;
   const heroSubtitle = data?.siteConfig?.heroSubtitle?.trim() || HOMEPAGE_COPY.subtitle;
   const announcementMarkdown = data?.siteConfig?.announcementMarkdown?.trim() || null;
-  const contactEmail = data?.siteConfig?.contactEmail || 'info@trianglecurling.com';
-  const contactPhone = data?.siteConfig?.contactPhone || null;
-
   return (
     <PublicLayout
       initialSiteConfig={layoutSiteConfig}
@@ -608,7 +622,7 @@ export default function PublicHomePage() {
           <section id="upcoming-bonspiels" className="scroll-mt-24" aria-labelledby="home-bonspiels-heading">
             <div className="public-container py-12 sm:py-16">
               <SectionHeading
-                eyebrow="Competitive curling"
+                eyebrow="Come to our house"
                 title="Upcoming bonspiels"
                 id="home-bonspiels-heading"
                 action={
@@ -701,45 +715,28 @@ export default function PublicHomePage() {
                       growing curling in the Triangle.
                     </p>
                     <Link
-                      to="/donate"
+                      to="/articles/sponsorship"
                       className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-teal-200 hover:text-white hover:underline"
                     >
-                      Support the club
+                      Become a sponsor
                       <HiArrowRight className="h-4 w-4" aria-hidden />
                     </Link>
                   </div>
                   <div className="md:border-l md:border-white/15 md:pl-10">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">Visit us</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">Stay connected</p>
                     <ul className="mt-4 space-y-4 text-sm leading-relaxed">
                       <li className="flex items-start gap-3">
                         <HiOutlineMapPin className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
-                        <span>
-                          {CLUB_ADDRESS}
-                          <br />
-                          <a
-                            href={DIRECTIONS_URL}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-semibold text-teal-200 hover:text-white hover:underline"
-                          >
-                            Get directions
-                          </a>
-                        </span>
+                        <Link to="/articles/visit-us" className="font-semibold hover:underline">
+                          Visit Triangle Curling
+                        </Link>
                       </li>
                       <li className="flex items-start gap-3">
                         <HiOutlineEnvelope className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
-                        <a href={`mailto:${contactEmail}`} className="hover:underline">
-                          {contactEmail}
-                        </a>
+                        <Link to="/mailing-list/membership" className="font-semibold hover:underline">
+                          Join our mailing list
+                        </Link>
                       </li>
-                      {contactPhone && (
-                        <li className="flex items-start gap-3">
-                          <HiOutlinePhone className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
-                          <a href={`tel:${contactPhone}`} className="hover:underline">
-                            {contactPhone}
-                          </a>
-                        </li>
-                      )}
                     </ul>
                     <Link
                       to="/contact"
@@ -763,7 +760,7 @@ export default function PublicHomePage() {
                   id="home-sponsors-heading"
                   action={
                     <Link
-                      to="/contact"
+                      to="/articles/sponsorship"
                       className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-primary-teal-link hover:underline"
                     >
                       Become a sponsor

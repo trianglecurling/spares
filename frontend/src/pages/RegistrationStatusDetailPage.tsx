@@ -1,6 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppStateCard from '../components/AppStateCard';
 import Button from '../components/Button';
@@ -230,7 +229,7 @@ export default function RegistrationStatusDetailPage() {
     : 'You do not need to pay yet. Some choices require placement or staff review first.';
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title={detail ? `Registration for ${detail.registration.curlerName}` : 'Registration details'}
@@ -416,6 +415,6 @@ export default function RegistrationStatusDetailPage() {
           </div>
         ) : null}
       </AppPage>
-    </Layout>
+    </>
   );
 }

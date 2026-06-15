@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, lte, sql, lt } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 
@@ -62,4 +62,52 @@ export async function resolveRelevantSessionIdForLeagues(today: string): Promise
     .limit(1);
 
   return recentSession?.id ?? null;
+}
+
+export type PublicSessionNavItem = {
+  id: number;
+  name: string;
+};
+
+export async function resolveAdjacentSessionsForLeagues(
+  sessionId: number
+): Promise<{ previous: PublicSessionNavItem | null; next: PublicSessionNavItem | null }> {
+  const { db, schema } = getDrizzleDb();
+  const [current] = await db
+    .select({
+      id: schema.curlingSessions.id,
+      startDate: schema.curlingSessions.start_date,
+    })
+    .from(schema.curlingSessions)
+    .where(eq(schema.curlingSessions.id, sessionId))
+    .limit(1);
+
+  if (!current) {
+    return { previous: null, next: null };
+  }
+
+  const [previous] = await db
+    .select({
+      id: schema.curlingSessions.id,
+      name: schema.curlingSessions.name,
+    })
+    .from(schema.curlingSessions)
+    .where(lt(schema.curlingSessions.start_date, current.startDate as never))
+    .orderBy(desc(schema.curlingSessions.start_date))
+    .limit(1);
+
+  const [next] = await db
+    .select({
+      id: schema.curlingSessions.id,
+      name: schema.curlingSessions.name,
+    })
+    .from(schema.curlingSessions)
+    .where(gt(schema.curlingSessions.start_date, current.startDate as never))
+    .orderBy(asc(schema.curlingSessions.start_date))
+    .limit(1);
+
+  return {
+    previous: previous ? { id: previous.id, name: previous.name } : null,
+    next: next ? { id: next.id, name: next.name } : null,
+  };
 }

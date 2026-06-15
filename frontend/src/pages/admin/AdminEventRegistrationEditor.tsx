@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
@@ -351,21 +350,21 @@ export default function AdminEventRegistrationEditor() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading registration...</div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   if (!event) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Event not found.</div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
@@ -387,7 +386,7 @@ export default function AdminEventRegistrationEditor() {
     : null;
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title={pageTitle}
@@ -694,7 +693,7 @@ export default function AdminEventRegistrationEditor() {
           </Link>
         </div>
       </AppPage>
-    </Layout>
+    </>
   );
 }
 

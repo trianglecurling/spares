@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import api, { formatApiError } from '../../utils/api';
-import Layout from '../../components/Layout';
 import Button from '../../components/Button';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
@@ -313,7 +312,7 @@ export default function AdminPayments() {
   };
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Payment activity"
@@ -554,6 +553,6 @@ export default function AdminPayments() {
           </div>
         )}
       </AppPage>
-    </Layout>
+    </>
   );
 }

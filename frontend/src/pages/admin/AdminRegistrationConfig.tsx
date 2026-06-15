@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import PageTabs from '../../components/PageTabs';
@@ -440,7 +439,7 @@ export default function AdminRegistrationConfig() {
   ];
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Registration management"
@@ -838,7 +837,7 @@ export default function AdminRegistrationConfig() {
           </>
         ) : null}
       </AppPage>
-    </Layout>
+    </>
   );
 }
 

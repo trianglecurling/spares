@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { get } from '../../api/client';
 import AppStateCard from '../../components/AppStateCard';
@@ -98,7 +97,7 @@ export default function AdminFeedback() {
   );
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader title="Feedback" />
         <DataTable
@@ -110,6 +109,6 @@ export default function AdminFeedback() {
           emptyState={<AppStateCard compact title="No feedback yet." />}
         />
       </AppPage>
-    </Layout>
+    </>
   );
 }

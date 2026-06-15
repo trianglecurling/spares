@@ -69,6 +69,10 @@ const siteConfigBodySchema = z.object({
   logoUrl: optionalAbsoluteOrRootRelativeUrlSchema,
   contactEmail: z.string().nullable().optional(),
   contactPhone: z.string().nullable().optional(),
+  physicalAddressLine1: z.string().nullable().optional(),
+  physicalAddressLine2: z.string().nullable().optional(),
+  mailingAddressLine1: z.string().nullable().optional(),
+  mailingAddressLine2: z.string().nullable().optional(),
   footerMarkdown: z.string().nullable().optional(),
   heroBadge: z.string().nullable().optional(),
   heroTitle: z.string().nullable().optional(),
@@ -923,6 +927,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
         logoUrl: null,
         contactEmail: null,
         contactPhone: null,
+        physicalAddressLine1: null,
+        physicalAddressLine2: null,
+        mailingAddressLine1: null,
+        mailingAddressLine2: null,
         footerMarkdown: null,
         heroBadge: null,
         heroTitle: null,
@@ -936,6 +944,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
       logoUrl: row.logo_url ?? null,
       contactEmail: row.contact_email ?? null,
       contactPhone: row.contact_phone ?? null,
+      physicalAddressLine1: row.physical_address_line1 ?? null,
+      physicalAddressLine2: row.physical_address_line2 ?? null,
+      mailingAddressLine1: row.mailing_address_line1 ?? null,
+      mailingAddressLine2: row.mailing_address_line2 ?? null,
       footerMarkdown: row.footer_markdown ?? null,
       heroBadge: row.hero_badge ?? null,
       heroTitle: row.hero_title ?? null,
@@ -957,6 +969,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
     if (parsed.data.logoUrl !== undefined) updates.logo_url = parsed.data.logoUrl;
     if (parsed.data.contactEmail !== undefined) updates.contact_email = parsed.data.contactEmail;
     if (parsed.data.contactPhone !== undefined) updates.contact_phone = parsed.data.contactPhone;
+    if (parsed.data.physicalAddressLine1 !== undefined) updates.physical_address_line1 = parsed.data.physicalAddressLine1;
+    if (parsed.data.physicalAddressLine2 !== undefined) updates.physical_address_line2 = parsed.data.physicalAddressLine2;
+    if (parsed.data.mailingAddressLine1 !== undefined) updates.mailing_address_line1 = parsed.data.mailingAddressLine1;
+    if (parsed.data.mailingAddressLine2 !== undefined) updates.mailing_address_line2 = parsed.data.mailingAddressLine2;
     if (parsed.data.footerMarkdown !== undefined) updates.footer_markdown = parsed.data.footerMarkdown;
     if (parsed.data.heroBadge !== undefined) updates.hero_badge = parsed.data.heroBadge;
     if (parsed.data.heroTitle !== undefined) updates.hero_title = parsed.data.heroTitle;
@@ -986,6 +1002,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
       logoUrl: r.logo_url ?? null,
       contactEmail: r.contact_email ?? null,
       contactPhone: r.contact_phone ?? null,
+      physicalAddressLine1: r.physical_address_line1 ?? null,
+      physicalAddressLine2: r.physical_address_line2 ?? null,
+      mailingAddressLine1: r.mailing_address_line1 ?? null,
+      mailingAddressLine2: r.mailing_address_line2 ?? null,
       footerMarkdown: r.footer_markdown ?? null,
       heroBadge: r.hero_badge ?? null,
       heroTitle: r.hero_title ?? null,

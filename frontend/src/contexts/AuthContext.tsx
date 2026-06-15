@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { get, post } from '../api/client';
 import api, { clearAuthTokens, getAccessToken, getRefreshToken, storeAuthTokens } from '../utils/api';
+import { getCachedMemberDisplayName, storeCachedMemberDisplayName } from '../utils/memberDisplayCache';
 import { isPublicLightPath } from '../utils/publicLightPaths';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
@@ -28,6 +29,12 @@ interface AuthContextType {
   logout: () => void;
   updateMember: (member: AuthenticatedMember) => void;
   isLoading: boolean;
+  /** True once the initial session verify attempt has finished (or was skipped). */
+  sessionSettled: boolean;
+  /** True when verified member exists, or a stored token is awaiting verify. */
+  isLikelyAuthenticated: boolean;
+  /** Verified or cached member name for optimistic profile display. */
+  memberDisplayName: string | null;
   actorMemberId: number | null;
   isImpersonating: boolean;
   accountSwitchOptions: AccountSwitchOption[];
@@ -37,10 +44,23 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function getInitialIsLoading(): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+  const currentPath = window.location.pathname;
+  if (currentPath.startsWith('/install')) {
+    return false;
+  }
+  return !isPublicLightPath(currentPath);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const initialToken = getAccessToken();
   const [member, setMember] = useState<AuthenticatedMember | null>(null);
-  const [token, setToken] = useState<string | null>(getAccessToken());
-  const [isLoading, setIsLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(initialToken);
+  const [isLoading, setIsLoading] = useState(getInitialIsLoading);
+  const [sessionSettled, setSessionSettled] = useState(() => !initialToken);
   const [actorMemberId, setActorMemberId] = useState<number | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [accountSwitchOptions, setAccountSwitchOptions] = useState<AccountSwitchOption[]>([]);
@@ -64,12 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const applySessionPayload = useCallback((data: SessionPayload) => {
-    setMember(
-      normalizeMember({
-        ...data.member,
-        themePreference: normalizeThemePreference(data.member.themePreference),
-      } as AuthenticatedMember)
-    );
+    const normalizedMember = normalizeMember({
+      ...data.member,
+      themePreference: normalizeThemePreference(data.member.themePreference),
+    } as AuthenticatedMember);
+    setMember(normalizedMember);
+    storeCachedMemberDisplayName(normalizedMember.name);
     setActorMemberId(data.actorMemberId);
     setIsImpersonating(data.isImpersonating);
     setAccountSwitchOptions(data.accountSwitchOptions);
@@ -88,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (currentPath.startsWith('/install')) {
         setIsLoading(false);
+        setSessionSettled(true);
         return;
       }
 
@@ -122,6 +143,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      setSessionSettled(true);
+
       if (!allowImmediateRender) {
         setIsLoading(false);
       }
@@ -139,7 +162,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ) => {
     storeAuthTokens(accessToken, refreshToken);
     setToken(accessToken);
-    setMember(normalizeMember(newMember));
+    const normalizedMember = normalizeMember(newMember);
+    setMember(normalizedMember);
+    storeCachedMemberDisplayName(normalizedMember.name);
 
     try {
       const session = await get('/auth/verify');
@@ -166,12 +191,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearAuthTokens();
     setToken(null);
     setMember(null);
+    setSessionSettled(true);
     clearAccountSwitchState();
     navigate('/login');
   };
 
   const updateMember = (updatedMember: AuthenticatedMember) => {
-    setMember(normalizeMember(updatedMember));
+    const normalizedMember = normalizeMember(updatedMember);
+    setMember(normalizedMember);
+    storeCachedMemberDisplayName(normalizedMember.name);
   };
 
   const switchToMemberAccount = async (targetMemberId: number) => {
@@ -198,6 +226,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const isLikelyAuthenticated = Boolean(member || (token && !sessionSettled));
+  const memberDisplayName =
+    member?.name ?? (isLikelyAuthenticated ? getCachedMemberDisplayName() : null);
+
   return (
     <AuthContext.Provider
       value={{
@@ -207,6 +239,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         updateMember,
         isLoading,
+        sessionSettled,
+        isLikelyAuthenticated,
+        memberDisplayName,
         actorMemberId,
         isImpersonating,
         accountSwitchOptions,

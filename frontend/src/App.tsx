@@ -5,10 +5,9 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
 import { MemberOptionsProvider } from './contexts/MemberOptionsContext';
-import { LeagueOptionsProvider } from './contexts/LeagueOptionsContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
-import RouteLoadingFallback from './components/RouteLoadingFallback';
+import AuthenticatedAppShell from './components/AuthenticatedAppShell';
 import Login from './pages/Login';
 import PublicHomePage from './pages/PublicHomePage';
 
@@ -71,6 +70,7 @@ const AdminEventEditor = lazy(() => import('./pages/admin/AdminEventEditor'));
 const AdminEventRegistrationEditor = lazy(() => import('./pages/admin/AdminEventRegistrationEditor'));
 const AdminRegistrationRoute = lazy(() => import('./pages/admin/AdminRegistrationRoute'));
 const AdminWaitlists = lazy(() => import('./pages/admin/AdminWaitlists'));
+const PublicLeaguesPage = lazy(() => import('./pages/PublicLeaguesPage'));
 const PublicEventsPage = lazy(() => import('./pages/PublicEventsPage'));
 const PublicEventDetailPage = lazy(() => import('./pages/PublicEventDetailPage'));
 const PublicEventTeamPage = lazy(() => import('./pages/PublicEventTeamPage'));
@@ -114,14 +114,6 @@ function RegistrationShellStepRoute() {
   return <RegistrationShellPage />;
 }
 
-function AuthenticatedLeagueOptionsOutlet() {
-  return (
-    <LeagueOptionsProvider>
-      <Outlet />
-    </LeagueOptionsProvider>
-  );
-}
-
 function App() {
   return (
     <BrowserRouter>
@@ -130,10 +122,16 @@ function App() {
           <AlertProvider>
             <ConfirmProvider>
               <MemberOptionsProvider>
-                <Suspense fallback={<RouteLoadingFallback />}>
-                  <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/install" element={<Install />} />
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route
+                    path="/install"
+                    element={
+                      <Suspense fallback={null}>
+                        <Install />
+                      </Suspense>
+                    }
+                  />
 
                     {/* Help pages - accessible without authentication */}
                     {/* Public marketing pages (always light); native UI matches via color-scheme */}
@@ -163,6 +161,7 @@ function App() {
                       <Route path="/article/:slug" element={<PublicArticle />} />
 
                       <Route path="/events" element={<PublicEventsPage />} />
+                      <Route path="/public/leagues" element={<PublicLeaguesPage />} />
                       <Route path="/events/:slug/teams/:teamId" element={<PublicEventTeamPage />} />
                       <Route path="/events/:slug" element={<PublicEventDetailPage />} />
                       <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
@@ -177,16 +176,16 @@ function App() {
                       <Route path="/calendar/public" element={<Calendar publicMode />} />
                     </Route>
 
-                    <Route
-                      path="/unsubscribe"
-                      element={
-                        <ProtectedRoute>
-                          <Unsubscribe />
-                        </ProtectedRoute>
-                      }
-                    />
+                    <Route element={<AuthenticatedAppShell />}>
+                      <Route
+                        path="/unsubscribe"
+                        element={
+                          <ProtectedRoute>
+                            <Unsubscribe />
+                          </ProtectedRoute>
+                        }
+                      />
 
-                    <Route element={<AuthenticatedLeagueOptionsOutlet />}>
                       <Route
                         path="/dashboard"
                         element={
@@ -573,7 +572,6 @@ function App() {
 
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
-                </Suspense>
               </MemberOptionsProvider>
             </ConfirmProvider>
           </AlertProvider>

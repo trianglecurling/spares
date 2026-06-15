@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiChevronDown } from 'react-icons/hi2';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
@@ -1012,11 +1011,11 @@ export default function AdminEventEditor() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">Loading…</div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
@@ -1038,7 +1037,7 @@ export default function AdminEventEditor() {
   ];
 
   return (
-    <Layout>
+    <>
       <AppPage
         narrow={activeTab !== 'registrations' && activeTab !== 'details' && activeTab !== 'tournament'}
         className={
@@ -2128,7 +2127,7 @@ export default function AdminEventEditor() {
           )}
         </Modal>
       </AppPage>
-    </Layout>
+    </>
   );
 }
 

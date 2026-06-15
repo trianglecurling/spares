@@ -1,6 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppStateCard from '../components/AppStateCard';
 import Button from '../components/Button';
@@ -37,7 +36,7 @@ export default function WaitlistOfferAcceptPage() {
   }, [offerId]);
 
   return (
-    <Layout>
+    <>
       <AppPage narrow>
         <AppPageHeader title="Waitlist offer" description="League placement offers are tied to your account for safety." />
         <AppStateCard
@@ -54,6 +53,6 @@ export default function WaitlistOfferAcceptPage() {
           }
         />
       </AppPage>
-    </Layout>
+    </>
   );
 }

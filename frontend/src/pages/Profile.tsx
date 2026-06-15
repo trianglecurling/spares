@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, FormEvent, useId } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -394,7 +393,7 @@ export default function Profile() {
   ];
 
   return (
-    <Layout>
+    <>
       <AppPage narrow>
         <AppPageHeader title="My profile" />
 
@@ -661,6 +660,6 @@ export default function Profile() {
           )}
         </div>
       </AppPage>
-    </Layout>
+    </>
   );
 }

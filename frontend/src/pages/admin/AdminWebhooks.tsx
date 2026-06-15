@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import api, { formatApiError } from '../../utils/api';
-import Layout from '../../components/Layout';
 import Button from '../../components/Button';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
@@ -369,7 +368,7 @@ export default function AdminWebhooks() {
     eventRegistry.find((entry) => entry.eventType === eventType)?.description ?? null;
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Outbound webhooks"
@@ -584,6 +583,6 @@ export default function AdminWebhooks() {
           </div>
         ) : null}
       </Modal>
-    </Layout>
+    </>
   );
 }

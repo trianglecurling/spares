@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import Layout from '../../components/Layout';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
@@ -318,16 +317,16 @@ export default function AdminRoles() {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <div className="app-card text-center py-10 text-gray-500 dark:text-gray-400">Loading roles...</div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Role management"
@@ -576,6 +575,6 @@ export default function AdminRoles() {
           </div>
         )}
       </Modal>
-    </Layout>
+    </>
   );
 }

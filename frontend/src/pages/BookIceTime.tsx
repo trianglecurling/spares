@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import Layout from '../components/Layout';
 import Button from '../components/Button';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { useAuth } from '../contexts/AuthContext';
@@ -159,7 +158,7 @@ export default function BookIceTime() {
 
   if (member?.socialMember) {
     return (
-      <Layout>
+      <>
         <AppPage narrow>
           <AppPageHeader title="Book ice time" />
           <div className="app-card">
@@ -171,7 +170,7 @@ export default function BookIceTime() {
             </Link>
           </div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
@@ -179,7 +178,7 @@ export default function BookIceTime() {
     const purposeLabel =
       PURPOSE_OPTIONS.find((p) => p.value === confirmedSummary.purpose)?.label ?? confirmedSummary.purpose;
     return (
-      <Layout>
+      <>
         <AppPage narrow>
           <div className="app-card">
             <AppPageHeader
@@ -241,12 +240,12 @@ export default function BookIceTime() {
             </div>
           </div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage narrow>
         <AppPageHeader
           title="Book ice time"
@@ -450,6 +449,6 @@ export default function BookIceTime() {
           </div>
         </form>
       </AppPage>
-    </Layout>
+    </>
   );
 }

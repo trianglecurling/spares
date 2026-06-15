@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import Layout from '../../components/Layout';
 import { get } from '../../api/client';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
@@ -71,7 +70,7 @@ export default function AdminObservability() {
   }, []);
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Observability"
@@ -217,6 +216,6 @@ export default function AdminObservability() {
           )}
         </div>
       </AppPage>
-    </Layout>
+    </>
   );
 }

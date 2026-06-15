@@ -15,7 +15,6 @@ import {
   HiOutlineXCircle,
 } from 'react-icons/hi2';
 import axios from 'axios';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import api from '../utils/api';
@@ -691,7 +690,7 @@ export default function Dashboard() {
   };
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Dashboard"
@@ -1380,6 +1379,6 @@ export default function Dashboard() {
         )}
       </Modal>
 
-    </Layout>
+    </>
   );
 }

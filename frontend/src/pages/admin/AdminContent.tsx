@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { HiChevronDown, HiChevronRight, HiClipboardDocument, HiPencilSquare, HiTrash } from 'react-icons/hi2';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
-import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -24,6 +23,7 @@ import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import AdminContentPermalinksPanel, { type PermalinkAdminRow } from './AdminContentPermalinksPanel';
+import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 
 type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks';
 type MenuItem = {
@@ -202,6 +202,10 @@ export default function AdminContent() {
     logoUrl: string | null;
     contactEmail: string | null;
     contactPhone: string | null;
+    physicalAddressLine1: string | null;
+    physicalAddressLine2: string | null;
+    mailingAddressLine1: string | null;
+    mailingAddressLine2: string | null;
     footerMarkdown: string | null;
     heroBadge: string | null;
     heroTitle: string | null;
@@ -784,6 +788,7 @@ export default function AdminContent() {
         }
       }
       closeMenuModal();
+      notifyPublicBootstrapChanged();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to save menu item', 'error');
@@ -804,6 +809,7 @@ export default function AdminContent() {
     try {
       await api.delete(`/content/menu-items/${item.id}`);
       showAlert('Menu item deleted', 'success');
+      notifyPublicBootstrapChanged();
       loadContentData();
     } catch {
       showAlert('Failed to delete menu item', 'error');
@@ -843,6 +849,7 @@ export default function AdminContent() {
       await api.patch('/content/menu-items/reorder', {
         updates: reordered.map((item, i) => ({ id: item.id, sortOrder: i })),
       });
+      notifyPublicBootstrapChanged();
     } catch {
       showAlert('Failed to update order', 'error');
       loadContentData();
@@ -870,6 +877,7 @@ export default function AdminContent() {
       await api.patch('/content/menu-items/reorder', {
         updates: reordered.map((item, index) => ({ id: item.id, sortOrder: index })),
       });
+      notifyPublicBootstrapChanged();
     } catch {
       showAlert('Failed to update order', 'error');
       loadContentData();
@@ -1204,7 +1212,7 @@ export default function AdminContent() {
   );
 
   return (
-    <Layout>
+    <>
       <div className="max-w-6xl mx-auto">
         <h1 className="app-page-title mb-6">Manage content</h1>
 
@@ -1260,6 +1268,68 @@ export default function AdminContent() {
                     className="app-input"
                   />
                 </FormField>
+                <FormSection
+                  title="Facility address"
+                  description="Shown in the site footer with a map pin icon. Line 1 is typically the street address; line 2 is city, state, and ZIP."
+                >
+                  <div className="space-y-4">
+                    <FormField label="Line 1" htmlFor={`${formFieldId}-site-physical-line1`}>
+                      <input
+                        id={`${formFieldId}-site-physical-line1`}
+                        type="text"
+                        value={siteConfig.physicalAddressLine1 ?? ''}
+                        onChange={(e) =>
+                          setSiteConfig({ ...siteConfig, physicalAddressLine1: e.target.value || null })
+                        }
+                        placeholder="2310 So Hi Drive"
+                        className="app-input"
+                      />
+                    </FormField>
+                    <FormField label="Line 2" htmlFor={`${formFieldId}-site-physical-line2`}>
+                      <input
+                        id={`${formFieldId}-site-physical-line2`}
+                        type="text"
+                        value={siteConfig.physicalAddressLine2 ?? ''}
+                        onChange={(e) =>
+                          setSiteConfig({ ...siteConfig, physicalAddressLine2: e.target.value || null })
+                        }
+                        placeholder="Durham, NC 27703"
+                        className="app-input"
+                      />
+                    </FormField>
+                  </div>
+                </FormSection>
+                <FormSection
+                  title="Mailing address"
+                  description="Shown in the site footer with an envelope icon. Use line 1 for a P.O. box or attention line; line 2 for city, state, and ZIP."
+                >
+                  <div className="space-y-4">
+                    <FormField label="Line 1" htmlFor={`${formFieldId}-site-mailing-line1`}>
+                      <input
+                        id={`${formFieldId}-site-mailing-line1`}
+                        type="text"
+                        value={siteConfig.mailingAddressLine1 ?? ''}
+                        onChange={(e) =>
+                          setSiteConfig({ ...siteConfig, mailingAddressLine1: e.target.value || null })
+                        }
+                        placeholder="P.O. Box 14628"
+                        className="app-input"
+                      />
+                    </FormField>
+                    <FormField label="Line 2" htmlFor={`${formFieldId}-site-mailing-line2`}>
+                      <input
+                        id={`${formFieldId}-site-mailing-line2`}
+                        type="text"
+                        value={siteConfig.mailingAddressLine2 ?? ''}
+                        onChange={(e) =>
+                          setSiteConfig({ ...siteConfig, mailingAddressLine2: e.target.value || null })
+                        }
+                        placeholder="Durham, NC 27709"
+                        className="app-input"
+                      />
+                    </FormField>
+                  </div>
+                </FormSection>
                 <FormField label="Footer (Markdown)" htmlFor={`${formFieldId}-site-footer-markdown`}>
                   <textarea
                     id={`${formFieldId}-site-footer-markdown`}
@@ -2238,6 +2308,6 @@ export default function AdminContent() {
           </>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

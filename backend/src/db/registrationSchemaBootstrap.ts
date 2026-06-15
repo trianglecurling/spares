@@ -589,6 +589,11 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'drop_in_fee_minor', ddl: 'drop_in_fee_minor INTEGER CHECK(drop_in_fee_minor IS NULL OR drop_in_fee_minor >= 0)' },
   { name: 'predecessor_league_id', ddl: 'predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
   { name: 'successor_league_id', ddl: 'successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL' },
+  { name: 'public_notes', ddl: 'public_notes TEXT' },
+  {
+    name: 'team_formation',
+    ddl: "team_formation TEXT NOT NULL DEFAULT 'coordinator' CHECK(team_formation IN ('coordinator','skips_draft'))",
+  },
 ];
 
 const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[] = [
@@ -748,6 +753,8 @@ const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS drop_in_fee_minor INTEGER',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS predecessor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS public_notes TEXT',
+  "ALTER TABLE leagues ADD COLUMN IF NOT EXISTS team_formation TEXT NOT NULL DEFAULT 'coordinator'",
 ];
 
 const registrationMembershipPaymentColumnsPg: string[] = [

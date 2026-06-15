@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
@@ -358,7 +357,7 @@ function WaitlistListPage() {
     };
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title="Waitlists"
@@ -422,7 +421,7 @@ function WaitlistListPage() {
         )}
         <ReasonDialog state={dialog} onClose={() => setDialog(null)} />
       </AppPage>
-    </Layout>
+    </>
   );
 }
 
@@ -916,17 +915,17 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
 
   if (loading) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <AppStateCard title="Loading waitlist" description="Gathering queue entries, placements, and audit history." />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   if (error || !data) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <AppStateCard
             title="Unable to load waitlist"
@@ -934,12 +933,12 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
             action={<Button onClick={() => void load()}>Try again</Button>}
           />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <AppPageHeader
           title={data.waitlist.name}
@@ -1434,7 +1433,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
           </div>
         </Modal>
       </AppPage>
-    </Layout>
+    </>
   );
 }
 

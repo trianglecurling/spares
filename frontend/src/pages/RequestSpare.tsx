@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import Layout from '../components/Layout';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import MemberAutocomplete from '../components/MemberAutocomplete';
 import MemberMultiSelect from '../components/MemberMultiSelect';
@@ -648,7 +647,7 @@ export default function RequestSpare() {
   };
 
   return (
-    <Layout>
+    <>
       <AppPage narrow>
         <AppPageHeader title="Request a spare" description="Fill out the details below to request a spare for your game." />
 
@@ -1152,6 +1151,6 @@ export default function RequestSpare() {
           </div>
         </form>
       </AppPage>
-    </Layout>
+    </>
   );
 }

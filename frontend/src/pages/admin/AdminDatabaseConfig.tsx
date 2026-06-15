@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import axios from 'axios';
 import { get, post } from '../../api/client';
@@ -120,16 +119,16 @@ export default function AdminDatabaseConfig() {
 
   if (loadingConfig) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <div className="app-card text-center py-12 text-gray-500 dark:text-gray-400">Loading...</div>
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage narrow>
         <BackButton label="Server config" onClick={() => navigate('/admin/config')} className="mb-4" />
         <AppPageHeader
@@ -303,6 +302,6 @@ export default function AdminDatabaseConfig() {
           </form>
         </div>
       </AppPage>
-    </Layout>
+    </>
   );
 }

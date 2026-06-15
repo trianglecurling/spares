@@ -1,6 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Layout from '../../components/Layout';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import BackButton from '../../components/BackButton';
 import AppStateCard from '../../components/AppStateCard';
@@ -312,28 +311,28 @@ export default function CopyLeaguesToSession() {
 
   if (!canManage) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <BackButton label="Back to leagues" to="/leagues" className="mb-4" />
           <AppStateCard title="You do not have permission to copy leagues." />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   if (loadingMeta) {
     return (
-      <Layout>
+      <>
         <AppPage>
           <BackButton label="Back to leagues" to="/leagues" className="mb-4" />
           <AppStateCard title="Loading…" />
         </AppPage>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout>
+    <>
       <AppPage>
         <div className="mb-4">
           <BackButton label="Back to leagues" to="/leagues" />
@@ -528,6 +527,6 @@ export default function CopyLeaguesToSession() {
           </form>
         </div>
       </AppPage>
-    </Layout>
+    </>
   );
 }
