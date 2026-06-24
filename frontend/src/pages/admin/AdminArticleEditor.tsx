@@ -610,10 +610,10 @@ th { font-weight: 600; background: #f3f4f6; }
                 onChange={(e) => handleTitleChange(e.target.value)}
                 placeholder={isNew ? 'New article' : 'Article title'}
                 required
-                className="w-full min-w-0 rounded-md border border-transparent bg-transparent px-1 py-1 -mx-1 text-xl font-semibold text-gray-900 placeholder:text-gray-400 outline-none hover:border-gray-200 dark:text-gray-100 dark:placeholder:text-gray-500 dark:hover:border-gray-600 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-primary-teal/40"
+                className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-transparent px-4 text-xl font-semibold leading-10 text-gray-900 placeholder:text-gray-400 outline-none focus-visible:border-primary-teal focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:border-gray-600 dark:text-gray-100 dark:placeholder:text-gray-500"
               />
             </div>
-            <BackButton label="Content" onClick={handleBackToContent} className="shrink-0" />
+            <BackButton label="Content" onClick={handleBackToContent} className="h-10 shrink-0" />
           </div>
         </div>
 
@@ -633,70 +633,73 @@ th { font-weight: 600; background: #f3f4f6; }
           className="flex-1 min-h-0 flex flex-col overflow-hidden"
         >
           <div className="flex-1 min-h-0 max-w-[1600px] mx-auto w-full px-4 py-4">
-            <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4">
-              <div className="min-h-0 flex flex-col">
-                <div
-                  role="group"
-                  aria-labelledby={`${articleFieldId}-content-label`}
-                  className="flex min-h-0 min-w-0 flex-1 flex-col"
+            <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-x-4 gap-y-2 lg:grid-rows-[auto_minmax(0,1fr)]">
+              <div
+                role="group"
+                aria-label="Content format"
+                className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      contentType: 'markdown',
+                      htmlContent:
+                        form.contentType === 'html' && htmlEditorRef.current
+                          ? JSON.stringify(htmlEditorRef.current.getValue())
+                          : f.htmlContent,
+                    }))
+                  }
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
+                    form.contentType === 'markdown'
+                      ? 'bg-primary-teal text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
+                  }`}
                 >
-                  <div className="mb-2 flex flex-shrink-0 items-center justify-between">
-                    <span id={`${articleFieldId}-content-label`} className="app-label mb-0">
-                      Content
-                    </span>
-                    <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm((f) => ({
-                          ...f,
-                          contentType: 'markdown',
-                          htmlContent:
-                            form.contentType === 'html' && htmlEditorRef.current
-                              ? JSON.stringify(htmlEditorRef.current.getValue())
-                              : f.htmlContent,
-                        }))
-                      }
-                      className={`px-3 py-1 text-sm rounded ${
+                  Markdown
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      contentType: 'html',
+                      content:
                         form.contentType === 'markdown'
-                          ? 'bg-primary-teal text-white'
-                          : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
-                      }`}
-                    >
-                      Markdown
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm((f) => ({
-                          ...f,
-                          contentType: 'html',
-                          content:
-                            form.contentType === 'markdown'
-                              ? (editorRef.current?.getMarkdown?.() ?? f.content)
-                              : f.content,
-                        }))
-                      }
-                      className={`px-3 py-1 text-sm rounded ${
-                        form.contentType === 'html'
-                          ? 'bg-primary-teal text-white'
-                          : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
-                      }`}
-                    >
-                      HTML/CSS/JS
-                    </button>
-                    {form.contentType === 'markdown' && (
-                      <button
-                        type="button"
-                        onClick={handleConvertToHtml}
-                        className="px-3 py-1 text-sm rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/50"
-                      >
-                        Convert to HTML
-                      </button>
-                    )}
-                  </div>
-                  </div>
+                          ? (editorRef.current?.getMarkdown?.() ?? f.content)
+                          : f.content,
+                    }))
+                  }
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
+                    form.contentType === 'html'
+                      ? 'bg-primary-teal text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
+                  }`}
+                >
+                  HTML/CSS/JS
+                </button>
+                {form.contentType === 'markdown' && (
+                  <button
+                    type="button"
+                    onClick={handleConvertToHtml}
+                    className="rounded-lg bg-amber-100 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-primary-teal/40 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                  >
+                    Convert to HTML
+                  </button>
+                )}
+              </div>
 
+              <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={handleDraftPreview}>
+                  Preview
+                </Button>
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save article'}
+                </Button>
+              </div>
+
+              <div className="min-h-0 flex min-w-0 flex-col lg:row-start-2">
                 <div className="flex min-h-[460px] flex-1 flex-col overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600">
                   {form.contentType === 'markdown' ? (
                     <MarkdownDescriptionEditor
@@ -720,19 +723,9 @@ th { font-weight: 600; background: #f3f4f6; }
                     />
                   )}
                 </div>
-
-                <div className="mt-3 flex flex-shrink-0 justify-end gap-2">
-                  <Button type="button" variant="secondary" onClick={handleDraftPreview}>
-                    Preview
-                  </Button>
-                  <Button type="submit" disabled={saving}>
-                    {saving ? 'Saving...' : 'Save article'}
-                  </Button>
-                </div>
-                </div>
               </div>
 
-              <aside className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-900 h-fit lg:max-h-full lg:overflow-auto">
+              <aside className="h-fit min-h-0 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900 lg:row-start-2 lg:max-h-full lg:overflow-auto">
                 <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">
                   Settings
                 </h2>

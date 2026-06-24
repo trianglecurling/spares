@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "bun run ../scripts/wait-for-backend.ts && vite",
     "build": "tsgo && vite build",
     "typecheck": "tsgo",
     "typecheck-legacy": "tsc --noEmit",
@@ -40,6 +40,7 @@
     "monaco-editor": "^0.52.0",
     "prosemirror-commands": "^1.7.1",
     "prosemirror-model": "^1.25.0",
+    "prosemirror-schema-list": "^1.5.1",
     "prosemirror-state": "^1.4.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",

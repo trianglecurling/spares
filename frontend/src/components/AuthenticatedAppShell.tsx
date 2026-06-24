@@ -2,7 +2,6 @@ import { Suspense } from 'react';
 import { matchPath, Outlet, useLocation } from 'react-router-dom';
 import Layout from './Layout';
 import AppStateCard from './AppStateCard';
-import { LeagueOptionsProvider } from '../contexts/LeagueOptionsContext';
 
 /** Paths that render without the shared nav shell (legacy full-page flows). */
 const BARE_ROUTE_PATTERNS = [
@@ -38,9 +37,5 @@ export default function AuthenticatedAppShell() {
     </Suspense>
   );
 
-  return (
-    <LeagueOptionsProvider>
-      {bare ? outlet : <Layout fullWidth={fullWidth}>{outlet}</Layout>}
-    </LeagueOptionsProvider>
-  );
+  return bare ? outlet : <Layout fullWidth={fullWidth}>{outlet}</Layout>;
 }

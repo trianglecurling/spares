@@ -81,13 +81,8 @@ async function loadLatestRegistrationPaymentSnapshot(registrationId: number, reg
 }
 
 async function actorManagedMemberIds(actor: Member): Promise<number[]> {
-  if (isAdmin(actor) || isServerAdmin(actor)) {
-    const { db, schema } = getDrizzleDb();
-    const rows = await db.select({ id: schema.members.id }).from(schema.members);
-    return rows.map((row) => row.id);
-  }
   const options = await listAccountSwitchOptions(actor.id);
-  return [...new Set([actor.id, ...options.map((option) => option.id)])];
+  return options.map((option) => option.id);
 }
 
 async function waitlistPosition(waitlistId: number, entryId: number): Promise<number | null> {

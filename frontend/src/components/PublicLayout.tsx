@@ -4,13 +4,22 @@ import { HiOutlineMapPin } from 'react-icons/hi2';
 import { PiMailbox } from 'react-icons/pi';
 import api from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
-import { memberDisplayInitials } from '../utils/memberDisplayCache';
 import { setCachedDefaultPaymentProvider, type PaymentProvider } from '../utils/paymentProcessorCopy';
 import {
   PUBLIC_BOOTSTRAP_INVALIDATED_EVENT,
   publicBootstrapFetchConfig,
 } from '../utils/publicBootstrapClient';
+import { syncSiteBrandingFromConfig } from '../hooks/useSiteBranding';
 import ObfuscatedEmailLink, { splitEmailAddress } from './ObfuscatedEmailLink';
+import MemberNavigationPanel from './MemberNavigationPanel';
+import SiteNavAccountControl, { SiteNavLoginLink } from './SiteNavAccountControl';
+import SiteNavBar from './SiteNavBar';
+import {
+  DesktopMenuBar,
+  MobileMenuItem,
+  publicFlyoutNavClasses,
+  type NavMenuItemNode,
+} from './DesktopFlyoutNav';
 
 const DEFAULT_CONTACT_EMAIL_LOCAL = 'info';
 const DEFAULT_CONTACT_EMAIL_DOMAIN = 'trianglecurling.com';
@@ -36,18 +45,9 @@ function mapsSearchUrl(...parts: Array<string | null | undefined>): string | nul
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
-interface MenuItemNode {
-  id: number;
-  label: string;
-  linkType: 'internal' | 'external' | null;
-  url: string | null;
-  openInNewTab: boolean;
-  children: MenuItemNode[];
-}
-
 interface PublicBootstrapResponse {
   siteConfig: SiteConfig | null;
-  navbarMenu: MenuItemNode[];
+  navbarMenu: NavMenuItemNode[];
   defaultPaymentProvider?: PaymentProvider;
 }
 
@@ -56,204 +56,21 @@ interface PublicLayoutProps {
   /** Optional: show "Back to home" instead of logo+club name in header */
   backToHome?: boolean;
   initialSiteConfig?: SiteConfig | null;
-  initialMenuItems?: MenuItemNode[];
+  initialMenuItems?: NavMenuItemNode[];
   deferPublicBootstrapLoad?: boolean;
 }
 
-const navLinkClass =
-  'inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40';
-const dropdownItemClass =
-  'block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40';
-const memberMenuItemClass =
-  'block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100';
+let cachedMenuItems: NavMenuItemNode[] = [];
 
 let cachedSiteConfig: SiteConfig | null = null;
-let cachedMenuItems: MenuItemNode[] = [];
 
 function clearPublicLayoutModuleCache(): void {
   cachedSiteConfig = null;
   cachedMenuItems = [];
 }
 
-function linkForItem(item: MenuItemNode): { kind: 'internal' | 'external' | 'none'; href: string | null } {
-  if (item.linkType === 'internal' && item.url) return { kind: 'internal', href: item.url };
-  if (item.linkType === 'external' && item.url) return { kind: 'external', href: item.url };
-  return { kind: 'none', href: null };
-}
 
-function externalTargetProps(item: MenuItemNode): { target?: '_blank'; rel?: 'noopener noreferrer' } {
-  return item.openInNewTab ? { target: '_blank', rel: 'noopener noreferrer' } : {};
-}
-
-function DesktopDropdownItem({ item }: { item: MenuItemNode }) {
-  const hasChildren = item.children.length > 0;
-  const link = linkForItem(item);
-
-  if (!hasChildren) {
-    if (link.kind === 'external' && link.href) {
-      return (
-        <li className="list-none">
-          <a href={link.href} className={dropdownItemClass} {...externalTargetProps(item)}>
-            {item.label}
-          </a>
-        </li>
-      );
-    }
-    if (link.kind === 'internal' && link.href) {
-      return (
-        <li className="list-none">
-          <Link to={link.href} className={dropdownItemClass}>
-            {item.label}
-          </Link>
-        </li>
-      );
-    }
-    return (
-      <li className="list-none">
-        <span className="block rounded-md px-3 py-2 text-sm text-gray-500">{item.label}</span>
-      </li>
-    );
-  }
-
-  return (
-    <li className="group/child relative">
-      {link.kind === 'external' && link.href ? (
-        <a
-          href={link.href}
-          className={`${dropdownItemClass} flex items-center justify-between gap-2`}
-          {...externalTargetProps(item)}
-        >
-          {item.label}
-          <span aria-hidden>›</span>
-        </a>
-      ) : link.kind === 'internal' && link.href ? (
-        <Link to={link.href} className={`${dropdownItemClass} flex items-center justify-between gap-2`}>
-          {item.label}
-          <span aria-hidden>›</span>
-        </Link>
-      ) : (
-        <span className="block rounded-md px-3 py-2 text-sm text-gray-700">{item.label}</span>
-      )}
-      <ul className="invisible absolute left-full top-0 z-50 min-w-[12rem] rounded-xl border border-gray-200 bg-white p-2 opacity-0 shadow-lg transition-opacity duration-150 group-hover/child:visible group-hover/child:opacity-100 group-focus-within/child:visible group-focus-within/child:opacity-100 motion-reduce:transition-none">
-        {item.children.map((child) => (
-          <DesktopDropdownItem key={child.id} item={child} />
-        ))}
-      </ul>
-    </li>
-  );
-}
-
-function DesktopNavItem({ item }: { item: MenuItemNode }) {
-  const hasChildren = item.children.length > 0;
-  const link = linkForItem(item);
-  if (!hasChildren) {
-    if (link.kind === 'external' && link.href) {
-      return (
-        <a href={link.href} className={navLinkClass} {...externalTargetProps(item)}>
-          {item.label}
-        </a>
-      );
-    }
-    if (link.kind === 'internal' && link.href) {
-      return (
-        <Link to={link.href} className={navLinkClass}>
-          {item.label}
-        </Link>
-      );
-    }
-    return <span className={`${navLinkClass} cursor-default`}>{item.label}</span>;
-  }
-
-  return (
-    <li className="group relative list-none">
-      {link.kind === 'external' && link.href ? (
-        <a href={link.href} className={navLinkClass} {...externalTargetProps(item)}>
-          {item.label}
-        </a>
-      ) : link.kind === 'internal' && link.href ? (
-        <Link to={link.href} className={navLinkClass}>
-          {item.label}
-        </Link>
-      ) : (
-        <button
-          type="button"
-          className={navLinkClass}
-          aria-haspopup="true"
-        >
-          {item.label}
-        </button>
-      )}
-      <ul className="invisible absolute left-0 top-full z-50 min-w-[13rem] rounded-xl border border-gray-200 bg-white p-2 opacity-0 shadow-lg transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 motion-reduce:transition-none">
-        {item.children.map((child) => (
-          <DesktopDropdownItem key={child.id} item={child} />
-        ))}
-      </ul>
-    </li>
-  );
-}
-
-function MobileMenuItem({
-  item,
-  level = 0,
-  onNavigate,
-}: {
-  item: MenuItemNode;
-  level?: number;
-  onNavigate: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const link = linkForItem(item);
-  const hasChildren = item.children.length > 0;
-
-  return (
-    <li className="list-none">
-      <div className="flex items-center gap-2">
-        {link.kind === 'external' && link.href ? (
-          <a
-            href={link.href}
-            className="flex-1 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            style={{ paddingLeft: `${0.75 + level * 0.8}rem` }}
-            onClick={onNavigate}
-            {...externalTargetProps(item)}
-          >
-            {item.label}
-          </a>
-        ) : link.kind === 'internal' && link.href ? (
-          <Link
-            to={link.href}
-            className="flex-1 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            style={{ paddingLeft: `${0.75 + level * 0.8}rem` }}
-            onClick={onNavigate}
-          >
-            {item.label}
-          </Link>
-        ) : (
-          <span className="flex-1 rounded-md px-3 py-2 text-sm text-gray-700" style={{ paddingLeft: `${0.75 + level * 0.8}rem` }}>
-            {item.label}
-          </span>
-        )}
-        {hasChildren && (
-          <button
-            type="button"
-            className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-            aria-expanded={expanded}
-            aria-label={`Toggle ${item.label}`}
-            onClick={() => setExpanded((v) => !v)}
-          >
-            <span aria-hidden>{expanded ? '−' : '+'}</span>
-          </button>
-        )}
-      </div>
-      {hasChildren && expanded && (
-        <ul className="mt-1 space-y-1">
-          {item.children.map((child) => (
-            <MobileMenuItem key={child.id} item={child} level={level + 1} onNavigate={onNavigate} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
+const MOBILE_MENU_ID = 'public-mobile-menu';
 
 export default function PublicLayout({
   children,
@@ -262,9 +79,9 @@ export default function PublicLayout({
   initialMenuItems,
   deferPublicBootstrapLoad = false,
 }: PublicLayoutProps) {
-  const { memberDisplayName, isLoading, isLikelyAuthenticated, logout } = useAuth();
+  const { isLoading, isLikelyAuthenticated } = useAuth();
   const [siteConfig, setSiteConfig] = useState<SiteConfig | null>(initialSiteConfig ?? cachedSiteConfig);
-  const [menuItems, setMenuItems] = useState<MenuItemNode[]>(initialMenuItems ?? cachedMenuItems);
+  const [menuItems, setMenuItems] = useState<NavMenuItemNode[]>(initialMenuItems ?? cachedMenuItems);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -287,6 +104,7 @@ export default function PublicLayout({
   useEffect(() => {
     if (initialSiteConfig !== undefined) {
       cachedSiteConfig = initialSiteConfig;
+      syncSiteBrandingFromConfig(initialSiteConfig);
       setSiteConfig(initialSiteConfig);
     }
     if (initialMenuItems !== undefined) {
@@ -306,6 +124,7 @@ export default function PublicLayout({
         const menu = Array.isArray(r.data?.navbarMenu) ? r.data.navbarMenu : [];
         cachedSiteConfig = config;
         cachedMenuItems = menu;
+        syncSiteBrandingFromConfig(config);
         setCachedDefaultPaymentProvider(r.data?.defaultPaymentProvider);
         setSiteConfig(config);
         setMenuItems(menu);
@@ -347,7 +166,6 @@ export default function PublicLayout({
   }, [loadPublicBootstrap]);
 
   const clubName = siteConfig?.clubName ?? '';
-  const initials = memberDisplayName ? memberDisplayInitials(memberDisplayName) : '';
   const physicalAddressLine1 = siteConfig?.physicalAddressLine1?.trim() || null;
   const physicalAddressLine2 = siteConfig?.physicalAddressLine2?.trim() || null;
   const mailingAddressLine1 = siteConfig?.mailingAddressLine1?.trim() || null;
@@ -361,141 +179,73 @@ export default function PublicLayout({
 
   return (
     <div className="public-shell min-h-screen flex flex-col">
-      <header className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur">
-        <div className="public-container py-4 flex items-center justify-between gap-4">
-          {backToHome ? (
-            <Link to="/" className="text-sm font-medium text-primary-teal-link hover:underline">
-              ← Back to home
-            </Link>
-          ) : (
-            <Link to="/" className="flex items-center gap-3 min-w-0">
-              {siteConfig?.logoUrl ? (
-                <img src={siteConfig.logoUrl} alt="" className="h-14 w-14 rounded-md object-contain" />
-              ) : null}
-              {clubName ? (
-                <span className="truncate text-lg sm:text-xl font-semibold tracking-tight text-gray-900">{clubName}</span>
-              ) : (
-                <span className="h-5 w-40 rounded bg-gray-100" aria-hidden />
-              )}
-            </Link>
-          )}
-
-          <button
-            type="button"
-            className="md:hidden rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-expanded={mobileOpen}
-            aria-controls="public-mobile-menu"
-          >
-            {mobileOpen ? 'Close' : 'Menu'}
-          </button>
-
-          <nav className="hidden md:flex items-center gap-2 lg:gap-3">
-            {!backToHome && publicDataReady &&
-              (menuItems.length > 0 ? (
-                menuItems.map((item) => <DesktopNavItem key={item.id} item={item} />)
-              ) : (
-                <>
-                  <Link to="/" className={navLinkClass}>
-                    Home
-                  </Link>
-                </>
-              ))}
-            {!isLoading && (
-              isLikelyAuthenticated ? (
-                <div className="relative ml-2" ref={profileMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setProfileMenuOpen((v) => !v)}
-                    className="rounded-full border border-gray-200 bg-white p-0.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40"
-                    aria-expanded={profileMenuOpen}
-                    aria-haspopup="true"
-                  >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-teal text-sm font-semibold text-white">
-                      {initials}
-                    </span>
-                  </button>
-                  {profileMenuOpen && (
-                    <div className="absolute right-0 top-full z-50 mt-2 w-44 rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                      <Link to="/leagues" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Leagues</Link>
-                      <Link to="/my-requests" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Spares</Link>
-                      <Link to="/members" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Club membership</Link>
-                      <Link to="/governance" className={memberMenuItemClass} onClick={() => setProfileMenuOpen(false)}>Club governance</Link>
-                      <button type="button" onClick={() => { setProfileMenuOpen(false); logout(); }} className={memberMenuItemClass}>
-                        Log out
-                      </button>
-                    </div>
-                  )}
+      <SiteNavBar
+        clubName={clubName}
+        logoUrl={siteConfig?.logoUrl ?? null}
+        brandingLoading={!publicDataReady}
+        backToHome={backToHome}
+        mobileOpen={mobileOpen}
+        onMobileOpenChange={setMobileOpen}
+        mobileMenuId={MOBILE_MENU_ID}
+        desktopNav={
+          !backToHome && publicDataReady ? (
+            menuItems.length > 0 ? (
+              <DesktopMenuBar
+                items={menuItems}
+                onHoverMenuDisplayed={() => setProfileMenuOpen(false)}
+              />
+            ) : (
+              <Link to="/" className={publicFlyoutNavClasses.navLink}>
+                Home
+              </Link>
+            )
+          ) : null
+        }
+        trailingAuth={
+          <SiteNavAccountControl
+            profileMenuOpen={profileMenuOpen}
+            onProfileMenuOpenChange={setProfileMenuOpen}
+            profileMenuRef={profileMenuRef}
+          />
+        }
+        mobileNav={
+          <>
+            {!backToHome && publicDataReady ? (
+              <ul className="space-y-1">
+                {menuItems.length > 0 ? (
+                  menuItems.map((item) => (
+                    <MobileMenuItem key={item.id} item={item} onNavigate={() => setMobileOpen(false)} />
+                  ))
+                ) : (
+                  <li>
+                    <Link
+                      to="/"
+                      className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={() => setMobileOpen(false)}
+                    >
+                      Home
+                    </Link>
+                  </li>
+                )}
+              </ul>
+            ) : null}
+            {!isLoading &&
+              (isLikelyAuthenticated ? (
+                <div className="mt-3 rounded-lg border border-gray-200 p-2">
+                  <MemberNavigationPanel
+                    variant="accordion"
+                    onNavigate={() => setMobileOpen(false)}
+                  />
                 </div>
               ) : (
-                <Link
-                  to="/login"
-                  className="ml-1 rounded-md bg-primary-teal px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40"
-                >
-                  Member login
-                </Link>
-              )
-            )}
-          </nav>
-        </div>
-
-        {mobileOpen && (
-          <div id="public-mobile-menu" className="border-t border-gray-200 bg-white md:hidden">
-            <div className="public-container py-3">
-              {!backToHome && publicDataReady && (
-                <ul className="space-y-1">
-                  {menuItems.length > 0 ? (
-                    menuItems.map((item) => (
-                      <MobileMenuItem key={item.id} item={item} onNavigate={() => setMobileOpen(false)} />
-                    ))
-                  ) : (
-                    <>
-                      <li>
-                        <Link
-                          to="/"
-                          className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          onClick={() => setMobileOpen(false)}
-                        >
-                          Home
-                        </Link>
-                      </li>
-                    </>
-                  )}
-                </ul>
-              )}
-              {!isLoading && (
-                isLikelyAuthenticated ? (
-                  <div className="mt-3 rounded-lg border border-gray-200 p-2">
-                    <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Member</p>
-                    <Link to="/leagues" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Leagues</Link>
-                    <Link to="/my-requests" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Spares</Link>
-                    <Link to="/members" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Club membership</Link>
-                    <Link to="/governance" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMobileOpen(false)}>Club governance</Link>
-                    <button
-                      type="button"
-                      className="mt-1 block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                      onClick={() => {
-                        setMobileOpen(false);
-                        logout();
-                      }}
-                    >
-                      Log out
-                    </button>
-                  </div>
-                ) : (
-                  <Link
-                    to="/login"
-                    className="mt-3 block rounded-md bg-primary-teal px-3 py-2 text-center text-sm font-medium text-white hover:bg-primary-teal/90"
-                    onClick={() => setMobileOpen(false)}
-                  >
-                  Member login
-                  </Link>
-                )
-              )}
-            </div>
-          </div>
-        )}
-      </header>
+                <SiteNavLoginLink
+                  className="mt-3 block text-center"
+                  onClick={() => setMobileOpen(false)}
+                />
+              ))}
+          </>
+        }
+      />
 
       <main className="flex-1 min-h-0 flex flex-col">{children}</main>
 

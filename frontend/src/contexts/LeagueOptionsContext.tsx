@@ -39,6 +39,8 @@ type LeagueOptionsContextValue = {
 
 const LeagueOptionsContext = createContext<LeagueOptionsContextValue | undefined>(undefined);
 
+const EMPTY_LEAGUES: SessionLeagueOption[] = [];
+
 function mapLeagues(response: unknown): SessionLeagueOption[] {
   if (!Array.isArray(response)) return [];
   return response.map((league) => ({
@@ -56,25 +58,20 @@ function mapLeagues(response: unknown): SessionLeagueOption[] {
 
 export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
   const { member } = useAuth();
-  const [leagues, setLeagues] = useState<SessionLeagueOption[]>([]);
+  const memberId = member?.id ?? null;
+  const [leagues, setLeagues] = useState<SessionLeagueOption[]>(EMPTY_LEAGUES);
   const [registrationWindowSessionId, setRegistrationWindowSessionId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const leaguesRef = useRef<SessionLeagueOption[]>([]);
+  const leaguesRef = useRef<SessionLeagueOption[]>(EMPTY_LEAGUES);
   const loadedRef = useRef(false);
   const inFlightRef = useRef<Promise<SessionLeagueOption[]> | null>(null);
 
   const loadLeagues = useCallback(
     (force = false) => {
-      if (!member) {
-        leaguesRef.current = [];
-        loadedRef.current = false;
-        setLeagues([]);
-        setRegistrationWindowSessionId(null);
-        setLoaded(false);
-        setError(null);
-        return Promise.resolve([]);
+      if (memberId == null) {
+        return Promise.resolve(EMPTY_LEAGUES);
       }
 
       if (!force && loadedRef.current) {
@@ -129,19 +126,29 @@ export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
       inFlightRef.current = request;
       return request;
     },
-    [member],
+    [memberId],
   );
 
   useEffect(() => {
-    if (member) return;
-    leaguesRef.current = [];
-    loadedRef.current = false;
-    setLeagues([]);
-    setRegistrationWindowSessionId(null);
-    setLoaded(false);
-    setError(null);
+    leaguesRef.current = EMPTY_LEAGUES;
     inFlightRef.current = null;
-  }, [member]);
+    setLeagues((prev) => (prev.length === 0 ? prev : EMPTY_LEAGUES));
+    setRegistrationWindowSessionId(null);
+    setError(null);
+    setLoading(false);
+
+    if (memberId == null) {
+      loadedRef.current = true;
+      setLoaded(true);
+      return;
+    }
+
+    loadedRef.current = false;
+    setLoaded(false);
+  }, [memberId]);
+
+  const ensureLoaded = useCallback(() => loadLeagues(false), [loadLeagues]);
+  const refresh = useCallback(() => loadLeagues(true), [loadLeagues]);
 
   const value = useMemo<LeagueOptionsContextValue>(
     () => ({
@@ -150,10 +157,10 @@ export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
       loading,
       loaded,
       error,
-      ensureLoaded: () => loadLeagues(false),
-      refresh: () => loadLeagues(true),
+      ensureLoaded,
+      refresh,
     }),
-    [error, leagues, loadLeagues, loaded, loading, registrationWindowSessionId],
+    [ensureLoaded, error, leagues, loaded, loading, refresh, registrationWindowSessionId],
   );
 
   return <LeagueOptionsContext.Provider value={value}>{children}</LeagueOptionsContext.Provider>;

@@ -3,7 +3,7 @@
   "serviceName": "spares-frontend",
   "exporterOtlpEndpoint": "https://observability.tccnc.club:4431/v1/traces",
   "exporterOtlpLogsEndpoint": "https://observability.tccnc.club:4431/v1/logs",
-  "backendOrigin": "http://localhost:3016",
+  "backendOrigin": "http://localhost:3001",
   "captureConsoleLogs": true,
   "appVersion": ""
 }

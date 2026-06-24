@@ -4,19 +4,32 @@
  * Respects light/dark theme.
  */
 
-import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
-import { TextSelection, type Command, type Plugin } from 'prosemirror-state';
-import { splitBlockAs } from 'prosemirror-commands';
+import { EditorState, TextSelection, type Command, type Plugin } from 'prosemirror-state';
+import type { EditorView } from 'prosemirror-view';
 import type { ResolvedPos } from 'prosemirror-model';
+import { LuIndentDecrease, LuIndentIncrease } from 'react-icons/lu';
 import {
   HiOutlineLink,
   HiOutlineLinkSlash,
   HiOutlinePaintBrush,
+  HiOutlinePhoto,
   HiOutlinePlayCircle,
   HiPencilSquare,
 } from 'react-icons/hi2';
+import {
+  canTccOutdent,
+  createTccIndentPlugin,
+  createTccPreservingBlockSplit,
+  getTccIndent,
+  getTccIndentCssRules,
+  normalizeIndentedHtmlBlocks,
+  runTccListBackspace,
+  TCC_INDENT_ATTR,
+  writeIndentedBlockMarkdown,
+} from '../utils/markdownEditorIndent';
 import '@toast-ui/editor/dist/toastui-editor.css';
 import '@toast-ui/editor/dist/theme/toastui-editor-dark.css';
 import { Editor } from '@toast-ui/react-editor';
@@ -129,6 +142,38 @@ const CANNED_STYLE_OPTIONS: CannedStyleOptionDef[] = CANNED_STYLE_MENU.filter(
   (row): row is CannedStyleOptionDef => !('divider' in row)
 );
 
+function groupCannedStyleMenuRows(menu: CannedStyleMenuRow[]): CannedStyleOptionDef[][] {
+  const groups: CannedStyleOptionDef[][] = [];
+  let current: CannedStyleOptionDef[] = [];
+  for (const row of menu) {
+    if ('divider' in row) {
+      if (current.length > 0) groups.push(current);
+      current = [];
+      continue;
+    }
+    current.push(row);
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+const CANNED_STYLE_MENU_GROUPS = groupCannedStyleMenuRows(CANNED_STYLE_MENU);
+
+function clampStyleMenuPosition(buttonRect: DOMRect, menu: HTMLElement): { top: number; left: number } {
+  const margin = 8;
+  const gap = 4;
+  const menuWidth = menu.offsetWidth;
+  const menuHeight = menu.offsetHeight;
+  let left = buttonRect.left;
+  let top = buttonRect.bottom + gap;
+  left = Math.min(Math.max(margin, left), window.innerWidth - menuWidth - margin);
+  if (top + menuHeight > window.innerHeight - margin) {
+    const above = buttonRect.top - menuHeight - gap;
+    top = above >= margin ? above : Math.max(margin, window.innerHeight - menuHeight - margin);
+  }
+  return { top, left };
+}
+
 type LinkMark = {
   type: unknown;
   attrs?: {
@@ -182,11 +227,15 @@ type WysiwygView = {
       replaceRangeWith: (from: number, to: number, node: unknown) => WysiwygView['state']['tr'];
       setNodeMarkup: (pos: number, type?: unknown, attrs?: Record<string, unknown>) => WysiwygView['state']['tr'];
       setSelection?: (selection: unknown) => WysiwygView['state']['tr'];
+      setMeta?: (key: string, value: unknown) => WysiwygView['state']['tr'];
+      addStoredMark?: (mark: unknown) => WysiwygView['state']['tr'];
+      removeStoredMark?: (mark: unknown) => WysiwygView['state']['tr'];
       scrollIntoView: () => WysiwygView['state']['tr'];
     };
   };
   dispatch: (tr: WysiwygView['state']['tr']) => void;
   focus: () => void;
+  updateState?: (state: EditorState) => void;
 };
 
 type WysiwygNode = {
@@ -204,6 +253,7 @@ type WysiwygNode = {
     htmlAttrs?: Record<string, string>;
     childrenHTML?: string;
     classNames?: string[] | null;
+    level?: number;
   };
 };
 
@@ -324,11 +374,101 @@ function getBlockStyleRange(view: WysiwygView): BlockStyleRange | null {
   return match;
 }
 
-function getSelectedTextBlocks(view: WysiwygView) {
+function getActiveHeadingLevel(view: WysiwygView): number | null {
+  const $from = view.state.selection.$from as unknown as ResolvedPos;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth) as unknown as WysiwygNode;
+    if (node.type?.name === 'heading') {
+      const level = node.attrs?.level;
+      return typeof level === 'number' ? level : null;
+    }
+  }
+  return null;
+}
+
+function getActiveBlockStyle(view: WysiwygView): CannedStyle | null {
+  const styledBlock = getBlockStyleRange(view);
+  if (styledBlock) {
+    const blockClass = getTccBlockClassFromWysiwygNode(styledBlock.node);
+    if (blockClass) return blockClass as CannedStyle;
+  }
+
+  const $from = view.state.selection.$from as unknown as ResolvedPos;
+  const depth = findEnclosingStyleableBlockDepth($from);
+  if (depth == null) return null;
+  const block = $from.node(depth) as unknown as WysiwygNode;
+  const blockClass = getTccBlockClassFromParagraphClassNames(block.attrs?.classNames);
+  return blockClass ? (blockClass as CannedStyle) : null;
+}
+
+function getActiveInlineStylesInScope(view: WysiwygView): CannedStyle[] {
+  const { selection, doc } = view.state;
+  const found = new Set<CannedStyle>();
+
+  const collectFromMarks = (marks: ReadonlyArray<{ attrs?: { htmlAttrs?: { class?: string } } }> | undefined) => {
+    for (const mark of marks ?? []) {
+      const className = mark.attrs?.htmlAttrs?.class;
+      if (className && CANNED_STYLE_OPTIONS.some((option) => option.value === className && option.kind === 'inline')) {
+        found.add(className as CannedStyle);
+      }
+    }
+  };
+
+  if (!selection.empty) {
+    doc.nodesBetween(selection.from, selection.to, (node) => {
+      if (!node.isText) return;
+      collectFromMarks(node.marks as ReadonlyArray<{ attrs?: { htmlAttrs?: { class?: string } } }>);
+    });
+  } else {
+    const $from = selection.$from as unknown as ResolvedPos;
+    collectFromMarks($from.marks());
+  }
+
+  return [...found];
+}
+
+function getActiveCannedStyles(view: WysiwygView): CannedStyle[] {
+  const styles: CannedStyle[] = [];
+  const blockStyle = getActiveBlockStyle(view);
+  if (blockStyle) styles.push(blockStyle);
+  for (const inlineStyle of getActiveInlineStylesInScope(view)) {
+    if (!styles.includes(inlineStyle)) styles.push(inlineStyle);
+  }
+  return styles;
+}
+
+function cannedStylesEqual(left: CannedStyle[], right: CannedStyle[]): boolean {
+  if (left.length !== right.length) return false;
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.every((value, index) => value === b[index]);
+}
+
+function getCannedStyleLabel(style: CannedStyle): string | null {
+  if (style === 'default') return null;
+  return CANNED_STYLE_OPTIONS.find((option) => option.value === style)?.label ?? null;
+}
+
+function updateHeadingPopupActiveState(popup: Element, level: number | null) {
+  popup.querySelectorAll('li[data-level], li[data-type="Paragraph"]').forEach((item) => {
+    item.classList.remove('tcc-editor-heading-menu-item--active');
+    item.removeAttribute('aria-current');
+  });
+  const activeItem =
+    level == null
+      ? popup.querySelector('li[data-type="Paragraph"]')
+      : popup.querySelector(`li[data-level="${level}"]`);
+  if (!activeItem) return;
+  activeItem.classList.add('tcc-editor-heading-menu-item--active');
+  activeItem.setAttribute('aria-current', 'true');
+}
+
+function getSelectedStyleableBlocks(view: WysiwygView) {
   const { doc, selection } = view.state;
   const blocks: Array<{ from: number; node: WysiwygNode }> = [];
   doc.nodesBetween(selection.from, selection.to, (node, pos) => {
-    if (node.isBlock && node.type?.name === 'paragraph') {
+    const blockType = node.type?.name;
+    if (node.isBlock && (blockType === 'paragraph' || blockType === 'heading')) {
       blocks.push({ from: pos, node });
       return false;
     }
@@ -400,8 +540,22 @@ function normalizeStyledHtmlBlocks(view: WysiwygView) {
   }
 
   if (replacements.length) {
-    view.dispatch(tr.scrollIntoView());
+    view.dispatch(tr.setMeta?.('addToHistory', false).scrollIntoView() ?? tr.scrollIntoView());
   }
+}
+
+/** Clear undo/redo stacks so Ctrl+Z cannot roll back past the current document (e.g. after load/normalization). */
+function resetWysiwygUndoHistory(view: WysiwygView) {
+  if (!view.updateState) return;
+  const state = view.state as unknown as EditorState;
+  view.updateState(
+    EditorState.create({
+      doc: state.doc,
+      selection: state.selection,
+      storedMarks: state.storedMarks,
+      plugins: state.plugins,
+    })
+  );
 }
 
 function renderHTMLTagToken(
@@ -458,26 +612,79 @@ function createToolbarIconButton(label: string, icon: ReactNode) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'tcc-editor-icon-button';
-  button.title = label;
+  // Tooltip is provided by Toast UI via insertToolbarItem; avoid duplicate native title tooltips.
   button.setAttribute('aria-label', label);
   createRoot(button).render(icon);
   return button;
 }
 
-function ToolbarStylesDropdown({ onApplyStyle }: { onApplyStyle: (style: CannedStyle) => void }) {
+function ToolbarStylesDropdown({
+  onApplyStyle,
+  activeStyles,
+  dark = false,
+}: {
+  onApplyStyle: (style: CannedStyle) => void;
+  activeStyles: CannedStyle[];
+  dark?: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const hasActiveStyle = activeStyles.length > 0;
+  const activeLabels = activeStyles
+    .map((style) => getCannedStyleLabel(style))
+    .filter((label): label is string => label != null);
+
+  const isStyleMenuItemActive = (style: CannedStyle) =>
+    style === 'default' ? activeStyles.length === 0 : activeStyles.includes(style);
+
+  const renderStyleMenuItem = (row: CannedStyleOptionDef) => (
+    <button
+      key={row.value}
+      type="button"
+      role="menuitem"
+      className={isStyleMenuItemActive(row.value) ? 'tcc-editor-style-menu-item--active' : undefined}
+      aria-current={isStyleMenuItemActive(row.value) ? 'true' : undefined}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => {
+        onApplyStyle(row.value);
+        setOpen(false);
+      }}
+    >
+      <span>{row.label}</span>
+      <span className="tcc-editor-style-menu-description">{row.description}</span>
+    </button>
+  );
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuPosition(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      const menu = menuRef.current;
+      if (!button || !menu) return;
+      setMenuPosition(clampStyleMenuPosition(button.getBoundingClientRect(), menu));
+    };
+
+    updatePosition();
+    const raf = requestAnimationFrame(updatePosition);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, activeStyles.join('|')]);
 
   useEffect(() => {
     if (!open) return;
 
-    const updatePosition = () => {
-      const rect = buttonRef.current?.getBoundingClientRect();
-      if (rect) setMenuRect(rect);
-    };
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target instanceof Node ? event.target : null;
       if (target && wrapperRef.current?.contains(target)) return;
@@ -485,15 +692,8 @@ function ToolbarStylesDropdown({ onApplyStyle }: { onApplyStyle: (style: CannedS
       setOpen(false);
     };
 
-    updatePosition();
     document.addEventListener('pointerdown', handlePointerDown);
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [open]);
 
   return (
@@ -501,8 +701,10 @@ function ToolbarStylesDropdown({ onApplyStyle }: { onApplyStyle: (style: CannedS
       <button
         ref={buttonRef}
         type="button"
-        className="tcc-editor-style-button"
-        aria-label="Styles"
+        className={`tcc-editor-style-button${hasActiveStyle ? ' tcc-editor-style-button--active' : ''}`}
+        aria-label={
+          activeLabels.length > 0 ? `Styles, current: ${activeLabels.join(', ')}` : 'Styles'
+        }
         aria-haspopup="menu"
         aria-expanded={open}
         onMouseDown={(event) => event.preventDefault()}
@@ -510,34 +712,51 @@ function ToolbarStylesDropdown({ onApplyStyle }: { onApplyStyle: (style: CannedS
       >
         <HiOutlinePaintBrush aria-hidden="true" />
       </button>
-      {open && menuRect
+      {open
         ? createPortal(
             <div
               ref={menuRef}
-              className="tcc-editor-style-menu"
+              className={`tcc-editor-style-menu${dark ? ' tcc-editor-style-menu--dark' : ''}`}
               role="menu"
               aria-label="Text styles"
-              style={{ position: 'fixed', top: menuRect.bottom + 4, left: menuRect.left }}
+              style={{
+                position: 'fixed',
+                top: menuPosition?.top ?? -9999,
+                left: menuPosition?.left ?? -9999,
+                visibility: menuPosition ? 'visible' : 'hidden',
+              }}
             >
-              {CANNED_STYLE_MENU.map((row, index) =>
-                'divider' in row ? (
-                  <hr key={`style-menu-divider-${index}`} className="tcc-editor-style-menu-divider" role="separator" />
-                ) : (
-                  <button
-                    key={row.value}
-                    type="button"
-                    role="menuitem"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      onApplyStyle(row.value);
-                      setOpen(false);
-                    }}
-                  >
-                    <span>{row.label}</span>
-                    <span className="tcc-editor-style-menu-description">{row.description}</span>
-                  </button>
-                )
-              )}
+              {CANNED_STYLE_MENU_GROUPS.map((group, groupIndex) => {
+                const isDefaultGroup = group.length === 1 && group[0]?.value === 'default';
+                const isInlineGroup = group[0]?.kind === 'inline';
+                const sectionLabel =
+                  group[0]?.kind === 'block'
+                    ? 'Block styles'
+                    : group[0]?.kind === 'inline'
+                      ? 'Inline styles'
+                      : null;
+                return (
+                  <div key={group.map((row) => row.value).join('-')} className="tcc-editor-style-menu-group">
+                    {isDefaultGroup ? (
+                      renderStyleMenuItem(group[0])
+                    ) : (
+                      <div role="group" aria-label={sectionLabel ?? undefined}>
+                        {sectionLabel ? (
+                          <p className="tcc-editor-style-menu-section-title">{sectionLabel}</p>
+                        ) : null}
+                        <div
+                          className={`tcc-editor-style-menu-grid${isInlineGroup ? ' tcc-editor-style-menu-grid--inline' : ''}`}
+                        >
+                          {group.map((row) => renderStyleMenuItem(row))}
+                        </div>
+                      </div>
+                    )}
+                    {groupIndex < CANNED_STYLE_MENU_GROUPS.length - 1 ? (
+                      <hr className="tcc-editor-style-menu-divider" role="separator" />
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>,
             document.body
           )
@@ -608,13 +827,150 @@ function findEnclosingParagraphDepth($from: ResolvedPos): number | null {
   return null;
 }
 
-/** Split so both sides keep the same TCC block class (middle & start of paragraph). */
-const tccBlockStyleSplitBlock = splitBlockAs((node) => {
-  if (node.type.name !== 'paragraph') return null;
-  const cn = node.attrs?.classNames as string[] | null | undefined;
-  if (!getTccBlockClassFromParagraphClassNames(cn)) return null;
-  return { type: node.type, attrs: cloneParagraphAttrs(node.attrs as Record<string, unknown>) };
-});
+function findEnclosingStyleableBlockDepth($from: ResolvedPos): number | null {
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const name = $from.node(depth).type.name;
+    if (name === 'paragraph' || name === 'heading') return depth;
+  }
+  return null;
+}
+
+function getCursorStyleableBlock(view: WysiwygView): { from: number; node: WysiwygNode } | null {
+  const $from = view.state.selection.$from as unknown as ResolvedPos;
+  const depth = findEnclosingStyleableBlockDepth($from);
+  if (depth == null) return null;
+  return {
+    from: $from.before(depth),
+    node: $from.node(depth) as unknown as WysiwygNode,
+  };
+}
+
+function getStyleApplicationBlocks(view: WysiwygView): Array<{ from: number; node: WysiwygNode }> {
+  const styledBlock = getBlockStyleRange(view);
+  if (styledBlock) return [{ from: styledBlock.from, node: styledBlock.node }];
+
+  const { selection } = view.state;
+  if (!selection.empty) {
+    const blocks = getSelectedStyleableBlocks(view);
+    if (blocks.length) return blocks;
+  }
+
+  const cursorBlock = getCursorStyleableBlock(view);
+  return cursorBlock ? [cursorBlock] : [];
+}
+
+function getInlineMarkClass(mark: LinkMark & { attrs?: { htmlAttrs?: { class?: string } } }): string | undefined {
+  return mark.attrs?.htmlAttrs?.class;
+}
+
+function isCannedInlineMark(mark: LinkMark & { attrs?: { htmlAttrs?: { class?: string } } }): boolean {
+  const className = getInlineMarkClass(mark);
+  if (!className) return false;
+  return CANNED_STYLE_OPTIONS.some((option) => option.value === className && option.kind === 'inline');
+}
+
+function rangeHasCannedInlineStyle(view: WysiwygView, from: number, to: number): boolean {
+  const { doc } = view.state;
+  let found = false;
+  doc.nodesBetween(from, to, (node) => {
+    if (!node.isText) return;
+    for (const mark of node.marks ?? []) {
+      if (isCannedInlineMark(mark as LinkMark & { attrs?: { htmlAttrs?: { class?: string } } })) {
+        found = true;
+        return false;
+      }
+    }
+  });
+  return found;
+}
+
+function hasCannedInlineStyleInScope(view: WysiwygView): boolean {
+  const { selection } = view.state;
+  if (!selection.empty) {
+    return rangeHasCannedInlineStyle(view, selection.from, selection.to);
+  }
+  const $from = selection.$from as unknown as ResolvedPos;
+  return $from.marks().some((mark) => isCannedInlineMark(mark as LinkMark & { attrs?: { htmlAttrs?: { class?: string } } }));
+}
+
+function getHeadingBlocksToRevert(view: WysiwygView): Array<{ from: number; node: WysiwygNode }> {
+  const { selection } = view.state;
+  if (!selection.empty) {
+    return getSelectedStyleableBlocks(view).filter((block) => block.node.type?.name === 'heading');
+  }
+  const block = getCursorStyleableBlock(view);
+  return block?.node.type?.name === 'heading' ? [block] : [];
+}
+
+function getContiguousCannedMarkRange(
+  $from: ResolvedPos,
+  targetMark: LinkMark & { attrs?: { htmlAttrs?: { class?: string } } }
+): { from: number; to: number } | null {
+  if (!isCannedInlineMark(targetMark)) return null;
+
+  let from = $from.pos;
+  let to = $from.pos;
+  const doc = $from.doc;
+
+  while (from > $from.start()) {
+    const $before = doc.resolve(from - 1);
+    const prevMark = $before.marks().find(
+      (mark) =>
+        mark.type === targetMark.type && getInlineMarkClass(mark as typeof targetMark) === getInlineMarkClass(targetMark)
+    );
+    if (!prevMark) break;
+    from -= 1;
+  }
+
+  while (to < $from.end()) {
+    const $after = doc.resolve(to);
+    const nextMark = $after.marks().find(
+      (mark) =>
+        mark.type === targetMark.type && getInlineMarkClass(mark as typeof targetMark) === getInlineMarkClass(targetMark)
+    );
+    if (!nextMark) break;
+    to += 1;
+  }
+
+  return { from, to };
+}
+
+function clearCannedInlineStyles(nextTr: WysiwygView['state']['tr'], view: WysiwygView): WysiwygView['state']['tr'] {
+  const { schema, selection } = view.state;
+  const $from = selection.$from as unknown as ResolvedPos;
+
+  if (!selection.empty) {
+    if (schema.marks.small) nextTr = nextTr.removeMark(selection.from, selection.to, schema.marks.small);
+    if (schema.marks.span) nextTr = nextTr.removeMark(selection.from, selection.to, schema.marks.span);
+    return nextTr;
+  }
+
+  if (schema.marks.small) nextTr = nextTr.removeStoredMark?.(schema.marks.small) ?? nextTr;
+  if (schema.marks.span) nextTr = nextTr.removeStoredMark?.(schema.marks.span) ?? nextTr;
+
+  for (const mark of $from.marks()) {
+    const typedMark = mark as LinkMark & { attrs?: { htmlAttrs?: { class?: string } } };
+    if (!isCannedInlineMark(typedMark)) continue;
+    const range = getContiguousCannedMarkRange($from, typedMark);
+    if (range) {
+      nextTr = nextTr.removeMark(range.from, range.to, mark.type);
+    }
+  }
+
+  return nextTr;
+}
+
+/** Split so both sides keep block style and/or text-indent attrs. */
+const tccPreservingBlockSplit = createTccPreservingBlockSplit((classNames) =>
+  Boolean(getTccBlockClassFromParagraphClassNames(classNames))
+);
+
+function tccIndentEditorPlugin(context: { pmKeymap: { keymap: (bindings: Record<string, Command>) => Plugin } }) {
+  return createTccIndentPlugin(context, {
+    preservingBlockSplit: tccPreservingBlockSplit,
+    hasBlockStyle: (classNames) => Boolean(getTccBlockClassFromParagraphClassNames(classNames)),
+  });
+}
 
 /**
  * Enter / list-like exit for canned block styles (info box, callout, etc.):
@@ -671,7 +1027,7 @@ function tccBlockStyleEnterPlugin(context: { pmKeymap: { keymap: (bindings: Reco
       return true;
     }
 
-    return tccBlockStyleSplitBlock(state, dispatch);
+    return tccPreservingBlockSplit(state, dispatch);
   };
 
   return {
@@ -708,10 +1064,18 @@ const MarkdownDescriptionEditor = forwardRef<
     const linkTextInputRef = useRef<HTMLInputElement>(null);
     const linkUrlInputRef = useRef<HTMLInputElement>(null);
     const youtubeVideoInputRef = useRef<HTMLInputElement>(null);
+    const imageFileInputRef = useRef<HTMLInputElement>(null);
     const youtubeDialogRef = useRef<HTMLDivElement>(null);
     const youtubeDialogWasOpenRef = useRef(false);
     const unlinkButtonRef = useRef<HTMLButtonElement | null>(null);
+    const indentButtonRef = useRef<HTMLButtonElement | null>(null);
+    const outdentButtonRef = useRef<HTMLButtonElement | null>(null);
+    const headingBtnRef = useRef<HTMLButtonElement | null>(null);
+    const stylesToolbarContainerRef = useRef<HTMLDivElement | null>(null);
+    const lastToolbarActiveStylesRef = useRef<CannedStyle[]>([]);
     const toolbarCleanupRef = useRef<Array<() => void>>([]);
+    const [stylesToolbarReady, setStylesToolbarReady] = useState(false);
+    const [toolbarActiveStyles, setToolbarActiveStyles] = useState<CannedStyle[]>([]);
     const [fillHeight, setFillHeight] = useState<number>(300);
     const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null);
     const [youtubeDraft, setYoutubeDraft] = useState<YoutubeDraft | null>(null);
@@ -782,6 +1146,8 @@ const MarkdownDescriptionEditor = forwardRef<
     enableManagedFileImageEditRef.current = enableManagedFileImageEdit;
     const openManagedImageEditorRef = useRef(openManagedImageEditor);
     openManagedImageEditorRef.current = openManagedImageEditor;
+    const onUploadImageRef = useRef(onUploadImage);
+    onUploadImageRef.current = onUploadImage;
 
     const updateUnlinkButtonState = () => {
       const button = unlinkButtonRef.current;
@@ -791,6 +1157,46 @@ const MarkdownDescriptionEditor = forwardRef<
       const canUnlink = Boolean(instance?.isWysiwygMode?.() && view?.state?.schema?.marks?.link && getTouchedLinkRanges(view).length);
       button.disabled = !canUnlink;
       button.setAttribute('aria-disabled', String(!canUnlink));
+    };
+
+    const updateIndentButtonState = () => {
+      const outdentButton = outdentButtonRef.current;
+      if (!outdentButton) return;
+      const instance = getEditorInstance();
+      const view = instance?.wwEditor?.view;
+      const canOutdent = Boolean(
+        instance?.isWysiwygMode?.() && view && canTccOutdent(view.state as unknown as EditorState)
+      );
+      outdentButton.disabled = !canOutdent;
+      outdentButton.setAttribute('aria-disabled', String(!canOutdent));
+    };
+
+    const syncToolbarActiveStyles = (activeStyles: CannedStyle[]) => {
+      if (cannedStylesEqual(lastToolbarActiveStylesRef.current, activeStyles)) return;
+      lastToolbarActiveStylesRef.current = activeStyles;
+      setToolbarActiveStyles(activeStyles);
+    };
+
+    const updateToolbarFormatState = () => {
+      updateUnlinkButtonState();
+      updateIndentButtonState();
+      const instance = getEditorInstance();
+      const view = instance?.wwEditor?.view;
+      if (!instance?.isWysiwygMode?.() || !view) return;
+
+      const headingLevel = getActiveHeadingLevel(view);
+      const headingBtn = headingBtnRef.current;
+      if (headingBtn) {
+        headingBtn.setAttribute(
+          'aria-label',
+          headingLevel != null ? `Heading, current: Heading ${headingLevel}` : 'Heading, current: Paragraph'
+        );
+      }
+
+      const headingPopup = wrapperRef.current?.querySelector('.toastui-editor-popup-add-heading');
+      if (headingPopup) updateHeadingPopupActiveState(headingPopup, headingLevel);
+
+      syncToolbarActiveStyles(getActiveCannedStyles(view));
     };
 
     const openLinkDialog = () => {
@@ -859,6 +1265,39 @@ const MarkdownDescriptionEditor = forwardRef<
       setYoutubeDraft({ title: '', videoIdOrUrl: '' });
     };
 
+    const openImageFilePicker = () => {
+      const instance = getEditorInstance();
+      if (!instance?.isWysiwygMode?.()) return;
+      if (!onUploadImageRef.current) return;
+      setLinkDraft(null);
+      setYoutubeDraft(null);
+      imageFileInputRef.current?.click();
+    };
+
+    const handleImageFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      const upload = onUploadImageRef.current;
+      if (!file || !upload) return;
+
+      const mimeType = file.type || 'image/png';
+      if (!mimeType.startsWith('image/')) {
+        showAlert('Only image files are supported', 'error');
+        return;
+      }
+
+      try {
+        const uploaded = await upload(file);
+        if (uploaded?.url) {
+          const instance = getEditorInstance();
+          instance?.exec?.('addImage', { imageUrl: uploaded.url, altText: uploaded.altText ?? '' });
+          instance?.focus?.();
+        }
+      } catch {
+        // Upload errors are handled by caller.
+      }
+    };
+
     const applyYoutubeDraft = () => {
       if (!youtubeDraft) return;
       const id = extractYoutubeVideoIdFromUserInput(youtubeDraft.videoIdOrUrl);
@@ -898,19 +1337,36 @@ const MarkdownDescriptionEditor = forwardRef<
       if (!view) return;
 
       const { schema, selection, tr } = view.state;
-      if (selection.empty) return;
-
+      const $from = selection.$from as unknown as ResolvedPos;
       let nextTr = tr;
-      if (schema.marks.small) nextTr = nextTr.removeMark(selection.from, selection.to, schema.marks.small);
-      if (schema.marks.span) nextTr = nextTr.removeMark(selection.from, selection.to, schema.marks.span);
+
+      if (!selection.empty && style !== 'default') {
+        if (schema.marks.small) nextTr = nextTr.removeMark(selection.from, selection.to, schema.marks.small);
+        if (schema.marks.span) nextTr = nextTr.removeMark(selection.from, selection.to, schema.marks.span);
+      }
+
       const styledBlock = getBlockStyleRange(view);
       if (style === 'default') {
-        if (styledBlock) {
-          const attrs = { ...(styledBlock.node.attrs ?? {}), classNames: null };
-          nextTr = nextTr.setNodeMarkup(styledBlock.from, undefined, attrs);
+        const hasInline = hasCannedInlineStyleInScope(view);
+        const blockToClear = styledBlock ?? (selection.empty ? getCursorStyleableBlock(view) : null);
+        if (blockToClear && getTccBlockClassFromWysiwygNode(blockToClear.node)) {
+          nextTr = nextTr.setNodeMarkup(blockToClear.from, undefined, {
+            ...(blockToClear.node.attrs ?? {}),
+            classNames: null,
+          });
+        }
+        nextTr = clearCannedInlineStyles(nextTr, view);
+        if (!hasInline) {
+          const paragraphType = schema.nodes.paragraph;
+          for (const block of getHeadingBlocksToRevert(view)) {
+            if (paragraphType) {
+              nextTr = nextTr.setNodeMarkup(block.from, paragraphType, {});
+            }
+          }
         }
         view.dispatch(nextTr.scrollIntoView());
         view.focus();
+        updateToolbarFormatState();
         return;
       }
 
@@ -918,16 +1374,25 @@ const MarkdownDescriptionEditor = forwardRef<
       if (!option) return;
 
       if (option.kind === 'block') {
-        const blocks = styledBlock ? [{ from: styledBlock.from, node: styledBlock.node }] : getSelectedTextBlocks(view);
+        const blocks = getStyleApplicationBlocks(view);
         if (!blocks.length) return;
+        const paragraphType = schema.nodes.paragraph;
         for (const block of blocks) {
-          nextTr = nextTr.setNodeMarkup(block.from, undefined, {
-            ...(block.node.attrs ?? {}),
-            classNames: [style],
-          });
+          const isHeading = block.node.type?.name === 'heading';
+          if (isHeading && paragraphType) {
+            nextTr = nextTr.setNodeMarkup(block.from, paragraphType, {
+              classNames: [style],
+            });
+          } else {
+            nextTr = nextTr.setNodeMarkup(block.from, undefined, {
+              ...(block.node.attrs ?? {}),
+              classNames: [style],
+            });
+          }
         }
         view.dispatch(nextTr.scrollIntoView());
         view.focus();
+        updateToolbarFormatState();
         return;
       }
 
@@ -940,8 +1405,24 @@ const MarkdownDescriptionEditor = forwardRef<
         },
       });
 
-      view.dispatch(nextTr.addMark(selection.from, selection.to, mark).scrollIntoView());
+      if (selection.empty) {
+        const activeInlineMark = $from
+          .marks()
+          .find((existing) => existing.type === markType && getInlineMarkClass(existing) === style);
+        if (activeInlineMark) {
+          nextTr = nextTr.removeStoredMark?.(markType) ?? nextTr;
+        } else {
+          if (schema.marks.small) nextTr = nextTr.removeStoredMark?.(schema.marks.small) ?? nextTr;
+          if (schema.marks.span) nextTr = nextTr.removeStoredMark?.(schema.marks.span) ?? nextTr;
+          nextTr = nextTr.addStoredMark?.(mark) ?? nextTr;
+        }
+      } else {
+        nextTr = nextTr.addMark(selection.from, selection.to, mark);
+      }
+
+      view.dispatch(nextTr.scrollIntoView());
       view.focus();
+      updateToolbarFormatState();
     };
 
     const handleEditorLoad = () => {
@@ -1039,6 +1520,8 @@ const MarkdownDescriptionEditor = forwardRef<
           if (nodeTypeConvertors && originalParagraph) {
             nodeTypeConvertors.paragraph = function patchedParagraph(state, nodeInfo) {
               const className = getTccBlockClassFromWysiwygNode(nodeInfo.node);
+              const indent = getTccIndent(nodeInfo.node);
+              const indentAttr = indent > 0 ? ` ${TCC_INDENT_ATTR}="${indent}"` : '';
               if (className) {
                 const previous =
                   typeof nodeInfo.index === 'number' && nodeInfo.index > 0
@@ -1054,7 +1537,7 @@ const MarkdownDescriptionEditor = forwardRef<
                 if (isFirstInRun) {
                   state.write(`<div class="${className}">`);
                 }
-                state.write('<p>');
+                state.write(`<p${indentAttr}>`);
                 state.convertInline(nodeInfo.node);
                 state.write('</p>');
                 if (isLastInRun) {
@@ -1065,7 +1548,16 @@ const MarkdownDescriptionEditor = forwardRef<
                 }
                 return;
               }
+              if (writeIndentedBlockMarkdown(state, nodeInfo, 'p')) return;
               return originalParagraph(state, nodeInfo);
+            };
+          }
+          const originalHeading = nodeTypeConvertors?.heading;
+          if (nodeTypeConvertors && originalHeading) {
+            nodeTypeConvertors.heading = function patchedHeading(state, nodeInfo) {
+              const level = nodeInfo.node.attrs?.level ?? 1;
+              if (writeIndentedBlockMarkdown(state, nodeInfo, `h${level}` as `h${number}`)) return;
+              return originalHeading(state, nodeInfo);
             };
           }
         } catch {
@@ -1073,7 +1565,13 @@ const MarkdownDescriptionEditor = forwardRef<
         }
         const normalizeCurrentWysiwyg = () => {
           const view = instance.wwEditor?.view;
-          if (view) normalizeStyledHtmlBlocks(view);
+          if (view) {
+            normalizeStyledHtmlBlocks(view);
+            normalizeIndentedHtmlBlocks(
+              view as unknown as Parameters<typeof normalizeIndentedHtmlBlocks>[0],
+              buildInlineNodesFromHTML
+            );
+          }
         };
         normalizeCurrentWysiwyg();
         instance.on?.('changeMode', (mode) => {
@@ -1102,7 +1600,6 @@ const MarkdownDescriptionEditor = forwardRef<
           btn.type = 'button';
           btn.className = 'toastui-editor-toolbar-icons';
           btn.style.cssText = 'width:28px;height:28px;font-size:14px;line-height:1;color:#01B9BC;';
-          btn.title = 'Insert read more';
           btn.textContent = READ_MORE_MARKER;
           btn.addEventListener('click', () => {
             instance.insertText?.('\n\n' + READ_MORE_MARKER + '\n\n');
@@ -1120,12 +1617,70 @@ const MarkdownDescriptionEditor = forwardRef<
 
         const stylesContainer = document.createElement('div');
         stylesContainer.className = 'tcc-editor-styles-toolbar-item';
-        createRoot(stylesContainer).render(<ToolbarStylesDropdown onApplyStyle={applyCannedStyle} />);
+        stylesToolbarContainerRef.current = stylesContainer;
+        lastToolbarActiveStylesRef.current = [];
+        setToolbarActiveStyles([]);
         try {
           instance.insertToolbarItem({ groupIndex: 0, itemIndex: 1 }, {
             name: 'tccStyles',
             tooltip: 'Styles',
             el: stylesContainer,
+          });
+          setStylesToolbarReady(true);
+        } catch {
+          /* ignore */
+        }
+
+        const headingBtn = wrapperRef.current?.querySelector(
+          '.toastui-editor-toolbar-icons.heading'
+        ) as HTMLButtonElement | null;
+        if (headingBtn && headingBtn.dataset.tccHeadingBound !== 'true') {
+          headingBtn.dataset.tccHeadingBound = 'true';
+          headingBtnRef.current = headingBtn;
+          const onHeadingToolbarClick = () => {
+            requestAnimationFrame(() => {
+              const view = getEditorInstance()?.wwEditor?.view;
+              const headingPopup = wrapperRef.current?.querySelector('.toastui-editor-popup-add-heading');
+              if (view && headingPopup) {
+                updateHeadingPopupActiveState(headingPopup, getActiveHeadingLevel(view));
+              }
+            });
+          };
+          headingBtn.addEventListener('click', onHeadingToolbarClick);
+          toolbarCleanupRef.current.push(() => headingBtn.removeEventListener('click', onHeadingToolbarClick));
+        } else if (headingBtn) {
+          headingBtnRef.current = headingBtn;
+        }
+
+        const runTccIndentCommand = (command: 'tccIncreaseIndent' | 'tccDecreaseIndent') => {
+          instance.exec?.(command);
+          instance.focus?.();
+          updateToolbarFormatState();
+        };
+
+        const outdentBtn = createToolbarIconButton('Decrease indent', <LuIndentDecrease aria-hidden="true" />);
+        outdentBtn.disabled = true;
+        outdentBtn.setAttribute('aria-disabled', 'true');
+        outdentButtonRef.current = outdentBtn;
+        outdentBtn.addEventListener('click', () => runTccIndentCommand('tccDecreaseIndent'));
+        try {
+          instance.insertToolbarItem({ groupIndex: 2, itemIndex: 2 }, {
+            name: 'tccOutdent',
+            tooltip: 'Decrease indent',
+            el: outdentBtn,
+          });
+        } catch {
+          /* ignore */
+        }
+
+        const indentBtn = createToolbarIconButton('Increase indent', <LuIndentIncrease aria-hidden="true" />);
+        indentButtonRef.current = indentBtn;
+        indentBtn.addEventListener('click', () => runTccIndentCommand('tccIncreaseIndent'));
+        try {
+          instance.insertToolbarItem({ groupIndex: 2, itemIndex: 3 }, {
+            name: 'tccIndent',
+            tooltip: 'Increase indent',
+            el: indentBtn,
           });
         } catch {
           /* ignore */
@@ -1158,10 +1713,28 @@ const MarkdownDescriptionEditor = forwardRef<
           /* ignore */
         }
 
+        const youtubeToolbarIndex = onUploadImage ? 3 : 2;
+
+        if (onUploadImage) {
+          const imageBtn = createToolbarIconButton('Insert image', <HiOutlinePhoto aria-hidden="true" />);
+          const onImageToolbarClick = () => openImageFilePicker();
+          imageBtn.addEventListener('click', onImageToolbarClick);
+          try {
+            instance.insertToolbarItem({ groupIndex: 3, itemIndex: 2 }, {
+              name: 'tccImage',
+              tooltip: 'Insert image',
+              el: imageBtn,
+            });
+          } catch {
+            /* ignore */
+          }
+          toolbarCleanupRef.current.push(() => imageBtn.removeEventListener('click', onImageToolbarClick));
+        }
+
         const youtubeBtn = createToolbarIconButton('Insert YouTube video', <HiOutlinePlayCircle aria-hidden="true" />);
         youtubeBtn.addEventListener('click', openYoutubeEmbedDialog);
         try {
-          instance.insertToolbarItem({ groupIndex: 3, itemIndex: 2 }, {
+          instance.insertToolbarItem({ groupIndex: 3, itemIndex: youtubeToolbarIndex }, {
             name: 'tccYoutube',
             tooltip: 'Insert YouTube video',
             el: youtubeBtn,
@@ -1171,24 +1744,50 @@ const MarkdownDescriptionEditor = forwardRef<
         }
 
         const viewDom = instance.wwEditor?.view as unknown as { dom?: HTMLElement };
-        const queueUnlinkStateUpdate = () => requestAnimationFrame(updateUnlinkButtonState);
-        viewDom.dom?.addEventListener('keyup', queueUnlinkStateUpdate);
-        viewDom.dom?.addEventListener('mouseup', queueUnlinkStateUpdate);
-        viewDom.dom?.addEventListener('focusin', queueUnlinkStateUpdate);
-        document.addEventListener('selectionchange', queueUnlinkStateUpdate);
+        const queueToolbarStateUpdate = () => requestAnimationFrame(updateToolbarFormatState);
+        viewDom.dom?.addEventListener('keyup', queueToolbarStateUpdate);
+        viewDom.dom?.addEventListener('mouseup', queueToolbarStateUpdate);
+        viewDom.dom?.addEventListener('focusin', queueToolbarStateUpdate);
+        document.addEventListener('selectionchange', queueToolbarStateUpdate);
         toolbarCleanupRef.current.push(() => {
-          viewDom.dom?.removeEventListener('keyup', queueUnlinkStateUpdate);
-          viewDom.dom?.removeEventListener('mouseup', queueUnlinkStateUpdate);
-          viewDom.dom?.removeEventListener('focusin', queueUnlinkStateUpdate);
-          document.removeEventListener('selectionchange', queueUnlinkStateUpdate);
+          viewDom.dom?.removeEventListener('keyup', queueToolbarStateUpdate);
+          viewDom.dom?.removeEventListener('mouseup', queueToolbarStateUpdate);
+          viewDom.dom?.removeEventListener('focusin', queueToolbarStateUpdate);
+          document.removeEventListener('selectionchange', queueToolbarStateUpdate);
         });
-        updateUnlinkButtonState();
+        updateToolbarFormatState();
+        const onListBackspaceKeydown = (event: KeyboardEvent) => {
+          if (event.key !== 'Backspace' || event.isComposing) return;
+          const view = instance?.wwEditor?.view;
+          if (!view) return;
+          if (
+            runTccListBackspace(
+              view.state as unknown as EditorState,
+              view.dispatch as EditorView['dispatch'],
+              view as unknown as EditorView
+            )
+          ) {
+            event.preventDefault();
+            // Prevent Toast UI / ProseMirror baseKeymap joinBackward from re-wrapping the
+            // blank line into a new list item.
+            event.stopPropagation();
+          }
+        };
+        viewDom.dom?.addEventListener('keydown', onListBackspaceKeydown, true);
+        toolbarCleanupRef.current.push(() => {
+          viewDom.dom?.removeEventListener('keydown', onListBackspaceKeydown, true);
+        });
         viewDom.dom?.addEventListener('keydown', (event: KeyboardEvent) => {
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
             event.preventDefault();
             openLinkDialog();
           }
         });
+
+        const view = instance?.wwEditor?.view;
+        if (view) {
+          resetWysiwygUndoHistory(view);
+        }
 
         if (instance?.getMarkdown) {
           onWysiwygReady?.();
@@ -1200,6 +1799,7 @@ const MarkdownDescriptionEditor = forwardRef<
       return () => {
         for (const cleanup of toolbarCleanupRef.current) cleanup();
         toolbarCleanupRef.current = [];
+        stylesToolbarContainerRef.current = null;
       };
     }, []);
 
@@ -1258,6 +1858,11 @@ const MarkdownDescriptionEditor = forwardRef<
     }, [dark]);
 
     useEffect(() => {
+      const view = getEditorInstance()?.wwEditor?.view;
+      if (view) syncToolbarActiveStyles(getActiveCannedStyles(view));
+    }, [dark]);
+
+    useEffect(() => {
       if (!fill || !wrapperRef.current) return;
       const el = wrapperRef.current;
       const updateHeight = () => {
@@ -1310,6 +1915,7 @@ const MarkdownDescriptionEditor = forwardRef<
           .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container .ProseMirror {
             color: #d1d5db;
           }
+          ${getTccIndentCssRules('.markdown-description-editor .toastui-editor-ww-container .ProseMirror')}
           .markdown-description-editor .toastui-editor-ww-container a {
             pointer-events: none;
             cursor: text;
@@ -1389,6 +1995,23 @@ const MarkdownDescriptionEditor = forwardRef<
             display: inline-flex;
             align-items: center;
           }
+          .markdown-description-editor .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active {
+            background-color: #dff4ff;
+            font-weight: 600;
+          }
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active {
+            background-color: #1e3a4a;
+            color: #e5e7eb;
+          }
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active h1,
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active h2,
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active h3,
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active h4,
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active h5,
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active h6,
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-popup-add-heading ul li.tcc-editor-heading-menu-item--active div {
+            color: inherit;
+          }
           .markdown-description-editor .tcc-editor-styles-dropdown {
             position: relative;
           }
@@ -1423,14 +2046,45 @@ const MarkdownDescriptionEditor = forwardRef<
             height: 21px;
             stroke-width: 1.8;
           }
+          .markdown-description-editor .tcc-editor-style-button--active {
+            color: #01B9BC;
+          }
           .tcc-editor-style-menu {
             z-index: 30;
-            min-width: 180px;
+            width: min(36rem, calc(100vw - 16px));
+            max-height: min(70vh, calc(100vh - 16px));
+            overflow-y: auto;
             border: 1px solid #e5e7eb;
             border-radius: 8px;
             background: white;
             padding: 4px;
             box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+          }
+          .tcc-editor-style-menu-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+          }
+          .tcc-editor-style-menu-section-title {
+            margin: 0;
+            padding: 4px 10px 0;
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.3;
+            color: #6b7280;
+          }
+          .tcc-editor-style-menu-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 4px;
+          }
+          .tcc-editor-style-menu-grid--inline {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+          @media (max-width: 640px) {
+            .tcc-editor-style-menu-grid--inline {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
           }
           .tcc-editor-style-menu button {
             width: 100%;
@@ -1451,14 +2105,44 @@ const MarkdownDescriptionEditor = forwardRef<
             background: #f3f4f6;
             outline: none;
           }
+          .tcc-editor-style-menu button.tcc-editor-style-menu-item--active {
+            background: #dff4ff;
+            font-weight: 600;
+          }
           .tcc-editor-style-menu-description {
             color: #6b7280;
             font-size: 11px;
+            line-height: 1.35;
           }
           .tcc-editor-style-menu-divider {
-            margin: 6px 0;
+            margin: 4px 0;
             border: 0;
             border-top: 1px solid #e5e7eb;
+          }
+          .tcc-editor-style-menu--dark {
+            border-color: #494c56;
+            background: #232428;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+          }
+          .tcc-editor-style-menu--dark button {
+            color: #e5e7eb;
+          }
+          .tcc-editor-style-menu--dark button:hover,
+          .tcc-editor-style-menu--dark button:focus {
+            background: #36383f;
+          }
+          .tcc-editor-style-menu--dark button.tcc-editor-style-menu-item--active {
+            background: #1e3a4a;
+            color: #e5e7eb;
+          }
+          .tcc-editor-style-menu--dark .tcc-editor-style-menu-description {
+            color: #9ca3af;
+          }
+          .tcc-editor-style-menu--dark .tcc-editor-style-menu-section-title {
+            color: #9ca3af;
+          }
+          .tcc-editor-style-menu--dark .tcc-editor-style-menu-divider {
+            border-top-color: #393b42;
           }
           .markdown-description-editor .toastui-editor-contents .tcc-style-informational,
           .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-style-informational {
@@ -1598,6 +2282,9 @@ const MarkdownDescriptionEditor = forwardRef<
           .markdown-description-editor .toastui-editor-dark .tcc-editor-style-button {
             color: #e5e7eb;
           }
+          .markdown-description-editor .toastui-editor-dark .tcc-editor-style-button--active {
+            color: #67ccff;
+          }
           .markdown-description-editor .toastui-editor-dark .tcc-editor-style-button:hover {
             background-color: rgba(229, 231, 235, 0.12) !important;
           }
@@ -1673,6 +2360,17 @@ const MarkdownDescriptionEditor = forwardRef<
             border-color: #4b5563;
           }
         `}</style>
+        {onUploadImage ? (
+          <input
+            ref={imageFileInputRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={handleImageFileSelected}
+          />
+        ) : null}
         <Editor
           ref={editorRef}
           initialValue={
@@ -1684,7 +2382,7 @@ const MarkdownDescriptionEditor = forwardRef<
           useCommandShortcut
           usageStatistics={false}
           onLoad={handleEditorLoad}
-          plugins={[linkEditPlugin, tccBlockStyleEnterPlugin]}
+          plugins={[linkEditPlugin, tccIndentEditorPlugin, tccBlockStyleEnterPlugin]}
           customMarkdownRenderer={{
             html: markdownHtmlRenderer,
           }}
@@ -1917,6 +2615,16 @@ const MarkdownDescriptionEditor = forwardRef<
                 </button>
               </div>,
               document.body
+            )
+          : null}
+        {stylesToolbarReady && stylesToolbarContainerRef.current
+          ? createPortal(
+              <ToolbarStylesDropdown
+                onApplyStyle={applyCannedStyle}
+                activeStyles={toolbarActiveStyles}
+                dark={dark}
+              />,
+              stylesToolbarContainerRef.current
             )
           : null}
       </div>

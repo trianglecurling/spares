@@ -5,6 +5,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
 import { MemberOptionsProvider } from './contexts/MemberOptionsContext';
+import { LeagueOptionsProvider } from './contexts/LeagueOptionsContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
 import AuthenticatedAppShell from './components/AuthenticatedAppShell';
@@ -122,6 +123,7 @@ function App() {
           <AlertProvider>
             <ConfirmProvider>
               <MemberOptionsProvider>
+                <LeagueOptionsProvider>
                 <Routes>
                   <Route path="/login" element={<Login />} />
                   <Route
@@ -572,6 +574,7 @@ function App() {
 
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
+                </LeagueOptionsProvider>
               </MemberOptionsProvider>
             </ConfirmProvider>
           </AlertProvider>
