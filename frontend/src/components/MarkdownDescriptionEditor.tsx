@@ -11,12 +11,14 @@ import { EditorState, TextSelection, type Command, type Plugin } from 'prosemirr
 import type { EditorView } from 'prosemirror-view';
 import type { ResolvedPos } from 'prosemirror-model';
 import { LuIndentDecrease, LuIndentIncrease } from 'react-icons/lu';
+import { TfiLayoutAccordionMerged } from 'react-icons/tfi';
 import {
   HiOutlineLink,
   HiOutlineLinkSlash,
   HiOutlinePaintBrush,
   HiOutlinePhoto,
   HiOutlinePlayCircle,
+  HiOutlineTrash,
   HiPencilSquare,
 } from 'react-icons/hi2';
 import {
@@ -30,6 +32,31 @@ import {
   TCC_INDENT_ATTR,
   writeIndentedBlockMarkdown,
 } from '../utils/markdownEditorIndent';
+import {
+  applyAccordionBlockStyleToSelection,
+  applyAccordionHeadingToSelection,
+  applyAccordionInlineStyleToSelection,
+  captureAccordionSelectionSnapshot,
+  clampAccordionEntryCount,
+  clearAccordionStylesInSelection,
+  countAccordionEntries,
+  createTccAccordionEditorPlugin,
+  deleteTccAccordion,
+  ensureTrailingParagraphAfterAccordion,
+  findTccAccordionNodePos,
+  getAccordionActiveFormat,
+  getAccordionSelectionContext,
+  insertTccAccordion,
+  resolveTccAccordionElement,
+  restoreAccordionSelectionSnapshot,
+  setTccAccordionEntryCount,
+  injectLiveAccordionHtmlIntoMarkdown,
+  stripAccordionOpenStateFromMarkdown,
+  syncTccAccordionHtmlFromDom,
+  TCC_ACCORDION_EDITABLE_CLASS,
+  TCC_ACCORDION_MIN_ENTRIES,
+  type AccordionSelectionSnapshot,
+} from '../utils/markdownEditorAccordion';
 import '@toast-ui/editor/dist/toastui-editor.css';
 import '@toast-ui/editor/dist/theme/toastui-editor-dark.css';
 import { Editor } from '@toast-ui/react-editor';
@@ -38,6 +65,7 @@ import ContentFileEditModal, { type ManagedFile } from './ContentFileEditModal';
 import FormCheckbox from './FormCheckbox';
 import FormField from './FormField';
 import { useAlert } from '../contexts/AlertContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import api from '../utils/api';
 import { OPEN_IN_NEW_WINDOW_TITLE } from '../constants/markdownLink';
 import {
@@ -270,9 +298,11 @@ type EditorInstance = {
   insertToolbarItem?: (position: { groupIndex: number; itemIndex: number }, item: { name: string; tooltip: string; el: HTMLElement }) => void;
   addHook?: (type: string, handler: (blob: Blob, callback: (url: string, text?: string) => void) => Promise<boolean>) => void;
   on?: (type: string, handler: (value?: unknown) => void) => void;
+  off?: (type: string, handler?: (value?: unknown) => void) => void;
   isWysiwygMode?: () => boolean;
   getSelectedText?: () => string;
   wwEditor?: { view?: WysiwygView };
+  eventEmitter?: { emit?: (type: string, ...args: unknown[]) => void };
 };
 
 type LinkRange = {
@@ -293,6 +323,15 @@ type LinkDraft = {
 type YoutubeDraft = {
   title: string;
   videoIdOrUrl: string;
+};
+
+type AccordionInsertDraft = {
+  entryCount: number;
+};
+
+type AccordionEditDraft = {
+  pos: number;
+  entryCount: number;
 };
 
 function getLinkMark(marks: LinkMark[] | undefined, linkMark: unknown): LinkMark | null {
@@ -384,6 +423,13 @@ function getActiveHeadingLevel(view: WysiwygView): number | null {
     }
   }
   return null;
+}
+
+function resolveActiveHeadingLevel(view: WysiwygView | undefined): number | null {
+  const accordionFormat = getAccordionActiveFormat();
+  if (accordionFormat) return accordionFormat.headingLevel;
+  if (!view) return null;
+  return getActiveHeadingLevel(view);
 }
 
 function getActiveBlockStyle(view: WysiwygView): CannedStyle | null {
@@ -597,13 +643,23 @@ function markdownInlineHtmlRenderer(
   };
 }
 
+type MarkdownHtmlRendererContext = {
+  entering?: boolean;
+  origin?: () => { text?: string; rawHTML?: string };
+};
+
 function markdownHtmlRenderer(
   nodeInfo?: { node?: HtmlMarkdownNode } | HtmlMarkdownNode,
-  context?: boolean | { entering?: boolean }
+  context?: boolean | MarkdownHtmlRendererContext
 ) {
   const node = (nodeInfo && 'node' in nodeInfo ? nodeInfo.node : nodeInfo) as HtmlMarkdownNode | undefined;
   if (node?.attrs?.htmlInline) {
     return markdownInlineHtmlRenderer(nodeInfo, context);
+  }
+
+  const rendererContext = typeof context === 'object' && context ? context : undefined;
+  if (rendererContext?.origin) {
+    return rendererContext.origin() ?? {};
   }
   return {};
 }
@@ -972,6 +1028,10 @@ function tccIndentEditorPlugin(context: { pmKeymap: { keymap: (bindings: Record<
   });
 }
 
+function tccAccordionEditorPlugin() {
+  return createTccAccordionEditorPlugin();
+}
+
 /**
  * Enter / list-like exit for canned block styles (info box, callout, etc.):
  * - Empty styled paragraph + Enter -> plain paragraph (exit the box).
@@ -1059,14 +1119,22 @@ const MarkdownDescriptionEditor = forwardRef<
     const articlePickerId = useId();
     const youtubeTitleId = useId();
     const youtubeUrlId = useId();
+    const accordionInsertCountId = useId();
+    const accordionEditCountId = useId();
     const editorRef = useRef<Editor>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const linkTextInputRef = useRef<HTMLInputElement>(null);
     const linkUrlInputRef = useRef<HTMLInputElement>(null);
     const youtubeVideoInputRef = useRef<HTMLInputElement>(null);
+    const accordionInsertCountInputRef = useRef<HTMLInputElement>(null);
+    const accordionEditCountInputRef = useRef<HTMLInputElement>(null);
     const imageFileInputRef = useRef<HTMLInputElement>(null);
     const youtubeDialogRef = useRef<HTMLDivElement>(null);
+    const accordionInsertDialogRef = useRef<HTMLDivElement>(null);
+    const accordionEditDialogRef = useRef<HTMLDivElement>(null);
     const youtubeDialogWasOpenRef = useRef(false);
+    const accordionInsertDialogWasOpenRef = useRef(false);
+    const accordionEditDialogWasOpenRef = useRef(false);
     const unlinkButtonRef = useRef<HTMLButtonElement | null>(null);
     const indentButtonRef = useRef<HTMLButtonElement | null>(null);
     const outdentButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1079,8 +1147,11 @@ const MarkdownDescriptionEditor = forwardRef<
     const [fillHeight, setFillHeight] = useState<number>(300);
     const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null);
     const [youtubeDraft, setYoutubeDraft] = useState<YoutubeDraft | null>(null);
+    const [accordionInsertDraft, setAccordionInsertDraft] = useState<AccordionInsertDraft | null>(null);
+    const [accordionEditDraft, setAccordionEditDraft] = useState<AccordionEditDraft | null>(null);
     const [selectedArticle, setSelectedArticle] = useState<ArticleOption | null>(null);
     const { showAlert } = useAlert();
+    const { confirm } = useConfirm();
     const [managedImageModal, setManagedImageModal] = useState<{ open: boolean; file: ManagedFile | null }>({
       open: false,
       file: null,
@@ -1090,14 +1161,26 @@ const MarkdownDescriptionEditor = forwardRef<
       top: number;
       right: number;
     } | null>(null);
+    const [hoverAccordionEdit, setHoverAccordionEdit] = useState<{
+      pos: number;
+      entryCount: number;
+      top: number;
+      right: number;
+    } | null>(null);
     const hoverManagedImageChipRef = useRef<HTMLDivElement | null>(null);
+    const hoverAccordionChipRef = useRef<HTMLDivElement | null>(null);
+    const accordionHeadingSnapshotRef = useRef<AccordionSelectionSnapshot | null>(null);
 
     useImperativeHandle(ref, () => ({
       getMarkdown: () => {
         const instance = editorRef.current?.getInstance?.() as EditorInstance | undefined;
         if (!instance?.getMarkdown) return undefined;
-        const md = instance.getMarkdown() ?? '';
-        return markdownStorageFromWysiwygYoutubeThumbnails(md).trim();
+        const view = instance.wwEditor?.view as unknown as EditorView | undefined;
+        let md = instance.getMarkdown() ?? '';
+        if (view) {
+          md = injectLiveAccordionHtmlIntoMarkdown(view, md);
+        }
+        return stripAccordionOpenStateFromMarkdown(markdownStorageFromWysiwygYoutubeThumbnails(md)).trim();
       },
       insertText: (text: string) => {
         const instance = editorRef.current?.getInstance?.() as EditorInstance | undefined;
@@ -1177,6 +1260,19 @@ const MarkdownDescriptionEditor = forwardRef<
       setToolbarActiveStyles(activeStyles);
     };
 
+    const setHeadingToolbarState = (headingLevel: number | null) => {
+      const headingBtn = headingBtnRef.current;
+      if (headingBtn) {
+        headingBtn.setAttribute(
+          'aria-label',
+          headingLevel != null ? `Heading, current: Heading ${headingLevel}` : 'Heading, current: Paragraph'
+        );
+        headingBtn.classList.toggle('active', headingLevel != null);
+      }
+      const headingPopup = wrapperRef.current?.querySelector('.toastui-editor-popup-add-heading');
+      if (headingPopup) updateHeadingPopupActiveState(headingPopup, headingLevel);
+    };
+
     const updateToolbarFormatState = () => {
       updateUnlinkButtonState();
       updateIndentButtonState();
@@ -1184,18 +1280,14 @@ const MarkdownDescriptionEditor = forwardRef<
       const view = instance?.wwEditor?.view;
       if (!instance?.isWysiwygMode?.() || !view) return;
 
-      const headingLevel = getActiveHeadingLevel(view);
-      const headingBtn = headingBtnRef.current;
-      if (headingBtn) {
-        headingBtn.setAttribute(
-          'aria-label',
-          headingLevel != null ? `Heading, current: Heading ${headingLevel}` : 'Heading, current: Paragraph'
-        );
+      const accordionFormat = getAccordionActiveFormat();
+      if (accordionFormat) {
+        setHeadingToolbarState(accordionFormat.headingLevel);
+        syncToolbarActiveStyles(accordionFormat.styles as CannedStyle[]);
+        return;
       }
 
-      const headingPopup = wrapperRef.current?.querySelector('.toastui-editor-popup-add-heading');
-      if (headingPopup) updateHeadingPopupActiveState(headingPopup, headingLevel);
-
+      setHeadingToolbarState(resolveActiveHeadingLevel(view));
       syncToolbarActiveStyles(getActiveCannedStyles(view));
     };
 
@@ -1216,6 +1308,8 @@ const MarkdownDescriptionEditor = forwardRef<
 
       setSelectedArticle(null);
       setYoutubeDraft(null);
+      setAccordionInsertDraft(null);
+      setAccordionEditDraft(null);
       setLinkDraft({
         text: trimmed.text,
         url: activeLink?.attrs?.linkUrl ?? '',
@@ -1262,7 +1356,81 @@ const MarkdownDescriptionEditor = forwardRef<
       const instance = getEditorInstance();
       if (!instance?.isWysiwygMode?.()) return;
       setLinkDraft(null);
+      setAccordionInsertDraft(null);
+      setAccordionEditDraft(null);
       setYoutubeDraft({ title: '', videoIdOrUrl: '' });
+    };
+
+    const openAccordionInsertDialog = () => {
+      const instance = getEditorInstance();
+      if (!instance?.isWysiwygMode?.()) return;
+      setLinkDraft(null);
+      setYoutubeDraft(null);
+      setAccordionEditDraft(null);
+      setAccordionInsertDraft({ entryCount: 3 });
+    };
+
+    const openAccordionEditDialog = (pos: number, entryCount: number) => {
+      const instance = getEditorInstance();
+      if (!instance?.isWysiwygMode?.()) return;
+      setLinkDraft(null);
+      setYoutubeDraft(null);
+      setAccordionInsertDraft(null);
+      setHoverAccordionEdit(null);
+      setAccordionEditDraft({ pos, entryCount });
+    };
+
+    const removeAccordion = async (pos: number) => {
+      const instance = getEditorInstance();
+      if (!instance?.isWysiwygMode?.()) return;
+      const view = instance.wwEditor?.view as unknown as EditorView | undefined;
+      if (!view) return;
+
+      const confirmed = await confirm({
+        title: 'Delete accordion',
+        message: 'Remove this accordion and all of its sections from the article?',
+        confirmText: 'Delete',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+
+      if (!deleteTccAccordion(view, pos)) {
+        showAlert('Could not delete accordion.', 'error');
+        return;
+      }
+
+      setHoverAccordionEdit(null);
+      instance.focus?.();
+      updateToolbarFormatState();
+    };
+
+    const applyAccordionInsertDraft = () => {
+      if (!accordionInsertDraft) return;
+      const entryCount = clampAccordionEntryCount(accordionInsertDraft.entryCount);
+      const instance = getEditorInstance();
+      const view = instance?.wwEditor?.view as unknown as EditorView | undefined;
+      if (!view) return;
+      if (!insertTccAccordion(view, entryCount)) {
+        showAlert('Could not insert accordion.', 'error');
+        return;
+      }
+      setAccordionInsertDraft(null);
+      instance?.focus?.();
+    };
+
+    const applyAccordionEditDraft = () => {
+      if (!accordionEditDraft) return;
+      const entryCount = clampAccordionEntryCount(accordionEditDraft.entryCount);
+      const instance = getEditorInstance();
+      const view = instance?.wwEditor?.view as unknown as EditorView | undefined;
+      if (!view) return;
+      syncTccAccordionHtmlFromDom(view);
+      if (!setTccAccordionEntryCount(view, accordionEditDraft.pos, entryCount)) {
+        showAlert('Could not update accordion sections.', 'error');
+        return;
+      }
+      setAccordionEditDraft(null);
+      instance?.focus?.();
     };
 
     const openImageFilePicker = () => {
@@ -1271,6 +1439,8 @@ const MarkdownDescriptionEditor = forwardRef<
       if (!onUploadImageRef.current) return;
       setLinkDraft(null);
       setYoutubeDraft(null);
+      setAccordionInsertDraft(null);
+      setAccordionEditDraft(null);
       imageFileInputRef.current?.click();
     };
 
@@ -1330,11 +1500,37 @@ const MarkdownDescriptionEditor = forwardRef<
       updateUnlinkButtonState();
     };
 
+    const applyCannedStyleToAccordion = (style: CannedStyle): boolean => {
+      const accordionCtx = getAccordionSelectionContext();
+      if (!accordionCtx) return false;
+
+      if (accordionCtx.inSummary) {
+        showAlert('Headings and styles can’t be applied to an accordion title.', 'warning');
+        return true;
+      }
+
+      if (style === 'default') {
+        clearAccordionStylesInSelection();
+      } else {
+        const option = CANNED_STYLE_OPTIONS.find((item) => item.value === style);
+        if (option?.kind === 'block') {
+          applyAccordionBlockStyleToSelection(style);
+        } else if (option?.kind === 'inline' && option.tag) {
+          applyAccordionInlineStyleToSelection(option.tag, style);
+        }
+      }
+
+      updateToolbarFormatState();
+      return true;
+    };
+
     const applyCannedStyle = (style: CannedStyle) => {
       const instance = getEditorInstance();
       if (!instance?.isWysiwygMode?.()) return;
       const view = instance.wwEditor?.view;
       if (!view) return;
+
+      if (applyCannedStyleToAccordion(style)) return;
 
       const { schema, selection, tr } = view.state;
       const $from = selection.$from as unknown as ResolvedPos;
@@ -1495,6 +1691,50 @@ const MarkdownDescriptionEditor = forwardRef<
           });
         }
 
+        if (pmRoot) {
+          const view = instance?.wwEditor?.view as unknown as EditorView | undefined;
+
+          const onAccordionMouseMove = (event: MouseEvent) => {
+            const accordionEl = resolveTccAccordionElement(event.target);
+            if (accordionEl && view) {
+              const pos = findTccAccordionNodePos(view, accordionEl);
+              if (pos != null) {
+                const node = view.state.doc.nodeAt(pos);
+                const entryCount = countAccordionEntries(node?.attrs?.childrenHTML ?? accordionEl.innerHTML);
+                const r = accordionEl.getBoundingClientRect();
+                setHoverAccordionEdit((prev) => {
+                  if (
+                    prev &&
+                    prev.pos === pos &&
+                    Math.abs(prev.top - r.top) < 0.5 &&
+                    Math.abs(prev.right - r.right) < 0.5
+                  ) {
+                    return prev;
+                  }
+                  return { pos, entryCount, top: r.top, right: r.right };
+                });
+                return;
+              }
+            }
+            setHoverAccordionEdit(null);
+          };
+
+          const onAccordionMouseLeave = (event: MouseEvent) => {
+            const related = event.relatedTarget;
+            if (related instanceof Node && hoverAccordionChipRef.current?.contains(related)) {
+              return;
+            }
+            setHoverAccordionEdit(null);
+          };
+
+          pmRoot.addEventListener('mousemove', onAccordionMouseMove);
+          pmRoot.addEventListener('mouseleave', onAccordionMouseLeave);
+          toolbarCleanupRef.current.push(() => {
+            pmRoot.removeEventListener('mousemove', onAccordionMouseMove);
+            pmRoot.removeEventListener('mouseleave', onAccordionMouseLeave);
+          });
+        }
+
         if (!instance?.insertToolbarItem) return;
 
         try {
@@ -1574,6 +1814,12 @@ const MarkdownDescriptionEditor = forwardRef<
           }
         };
         normalizeCurrentWysiwyg();
+        instance.on?.('beforeConvertWysiwygToMarkdown', (markdownText: unknown) => {
+          const view = instance.wwEditor?.view as unknown as EditorView | undefined;
+          if (!view || typeof markdownText !== 'string') return markdownText;
+          syncTccAccordionHtmlFromDom(view, { force: true });
+          return injectLiveAccordionHtmlIntoMarkdown(view, markdownText);
+        });
         instance.on?.('changeMode', (mode) => {
           if (mode === 'wysiwyg') {
             requestAnimationFrame(normalizeCurrentWysiwyg);
@@ -1631,6 +1877,15 @@ const MarkdownDescriptionEditor = forwardRef<
           /* ignore */
         }
 
+        const closeHeadingPopup = () => {
+          // Toast keeps its own popup open/close state, so close via its event bus to stay in sync.
+          getEditorInstance()?.eventEmitter?.emit?.('closePopup');
+          const popup = wrapperRef.current?.querySelector(
+            '.toastui-editor-popup-add-heading'
+          ) as HTMLElement | null;
+          if (popup) popup.style.display = 'none';
+        };
+
         const headingBtn = wrapperRef.current?.querySelector(
           '.toastui-editor-toolbar-icons.heading'
         ) as HTMLButtonElement | null;
@@ -1641,13 +1896,61 @@ const MarkdownDescriptionEditor = forwardRef<
             requestAnimationFrame(() => {
               const view = getEditorInstance()?.wwEditor?.view;
               const headingPopup = wrapperRef.current?.querySelector('.toastui-editor-popup-add-heading');
-              if (view && headingPopup) {
-                updateHeadingPopupActiveState(headingPopup, getActiveHeadingLevel(view));
+              if (headingPopup) {
+                updateHeadingPopupActiveState(headingPopup, resolveActiveHeadingLevel(view));
               }
             });
           };
+          // Preserve the accordion's native selection when opening the heading popup (the
+          // toolbar button would otherwise blur the contenteditable panel).
+          const onHeadingBtnMouseDown = (event: MouseEvent) => {
+            const snapshot = captureAccordionSelectionSnapshot();
+            accordionHeadingSnapshotRef.current = snapshot;
+            if (snapshot) event.preventDefault();
+          };
+          // When the caret is inside an accordion panel, headings must be applied to the panel
+          // DOM (the accordion is an opaque html-block in ProseMirror), so intercept the popup.
+          const onHeadingPopupPointer = (event: MouseEvent) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const item = target.closest(
+              '.toastui-editor-popup-add-heading li[data-level], .toastui-editor-popup-add-heading li[data-type]'
+            );
+            if (!item) return;
+
+            const snapshot = accordionHeadingSnapshotRef.current;
+            const inAccordion = Boolean(snapshot) || Boolean(getAccordionSelectionContext());
+            if (!inAccordion) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (event.type !== 'click') return;
+
+            if (!getAccordionSelectionContext()) restoreAccordionSelectionSnapshot(snapshot);
+            accordionHeadingSnapshotRef.current = null;
+            closeHeadingPopup();
+
+            const ctx = getAccordionSelectionContext();
+            if (!ctx) return;
+            if (ctx.inSummary) {
+              showAlert('Headings can’t be applied to an accordion title.', 'warning');
+              return;
+            }
+            const levelAttr = item.getAttribute('data-level');
+            applyAccordionHeadingToSelection(levelAttr ? Number(levelAttr) : 0);
+            updateToolbarFormatState();
+          };
+
+          headingBtn.addEventListener('mousedown', onHeadingBtnMouseDown, true);
           headingBtn.addEventListener('click', onHeadingToolbarClick);
-          toolbarCleanupRef.current.push(() => headingBtn.removeEventListener('click', onHeadingToolbarClick));
+          wrapperRef.current?.addEventListener('mousedown', onHeadingPopupPointer, true);
+          wrapperRef.current?.addEventListener('click', onHeadingPopupPointer, true);
+          toolbarCleanupRef.current.push(() => {
+            headingBtn.removeEventListener('mousedown', onHeadingBtnMouseDown, true);
+            headingBtn.removeEventListener('click', onHeadingToolbarClick);
+            wrapperRef.current?.removeEventListener('mousedown', onHeadingPopupPointer, true);
+            wrapperRef.current?.removeEventListener('click', onHeadingPopupPointer, true);
+          });
         } else if (headingBtn) {
           headingBtnRef.current = headingBtn;
         }
@@ -1743,13 +2046,42 @@ const MarkdownDescriptionEditor = forwardRef<
           /* ignore */
         }
 
+        const accordionBtn = createToolbarIconButton('Insert accordion', <TfiLayoutAccordionMerged aria-hidden="true" />);
+        accordionBtn.addEventListener('click', openAccordionInsertDialog);
+        try {
+          instance.insertToolbarItem({ groupIndex: 3, itemIndex: youtubeToolbarIndex + 1 }, {
+            name: 'tccAccordion',
+            tooltip: 'Insert accordion',
+            el: accordionBtn,
+          });
+        } catch {
+          /* ignore */
+        }
+
         const viewDom = instance.wwEditor?.view as unknown as { dom?: HTMLElement };
         const queueToolbarStateUpdate = () => requestAnimationFrame(updateToolbarFormatState);
+        const queueToolbarStateAfterAccordionInteraction = () => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(updateToolbarFormatState);
+          });
+        };
+        instance.on?.('changeToolbarState', queueToolbarStateUpdate);
+        toolbarCleanupRef.current.push(() => {
+          instance.off?.('changeToolbarState', queueToolbarStateUpdate);
+        });
+        const onAccordionEditableMouseDown = (event: MouseEvent) => {
+          const target = event.target;
+          if (target instanceof Element && target.closest(`.${TCC_ACCORDION_EDITABLE_CLASS}`)) {
+            queueToolbarStateAfterAccordionInteraction();
+          }
+        };
+        viewDom.dom?.addEventListener('mousedown', onAccordionEditableMouseDown, true);
         viewDom.dom?.addEventListener('keyup', queueToolbarStateUpdate);
         viewDom.dom?.addEventListener('mouseup', queueToolbarStateUpdate);
         viewDom.dom?.addEventListener('focusin', queueToolbarStateUpdate);
         document.addEventListener('selectionchange', queueToolbarStateUpdate);
         toolbarCleanupRef.current.push(() => {
+          viewDom.dom?.removeEventListener('mousedown', onAccordionEditableMouseDown, true);
           viewDom.dom?.removeEventListener('keyup', queueToolbarStateUpdate);
           viewDom.dom?.removeEventListener('mouseup', queueToolbarStateUpdate);
           viewDom.dom?.removeEventListener('focusin', queueToolbarStateUpdate);
@@ -1787,6 +2119,7 @@ const MarkdownDescriptionEditor = forwardRef<
         const view = instance?.wwEditor?.view;
         if (view) {
           resetWysiwygUndoHistory(view);
+          ensureTrailingParagraphAfterAccordion(view as unknown as EditorView);
         }
 
         if (instance?.getMarkdown) {
@@ -1828,6 +2161,46 @@ const MarkdownDescriptionEditor = forwardRef<
       document.addEventListener('pointerdown', onPointerDown, true);
       return () => document.removeEventListener('pointerdown', onPointerDown, true);
     }, [youtubeDraft != null]);
+
+    useEffect(() => {
+      const open = accordionInsertDraft != null;
+      if (open && !accordionInsertDialogWasOpenRef.current) {
+        requestAnimationFrame(() => accordionInsertCountInputRef.current?.focus());
+      }
+      accordionInsertDialogWasOpenRef.current = open;
+    }, [accordionInsertDraft != null]);
+
+    useEffect(() => {
+      if (!accordionInsertDraft) return;
+      const onPointerDown = (event: PointerEvent) => {
+        const panel = accordionInsertDialogRef.current;
+        const target = event.target;
+        if (!(target instanceof Node) || !panel || panel.contains(target)) return;
+        setAccordionInsertDraft(null);
+      };
+      document.addEventListener('pointerdown', onPointerDown, true);
+      return () => document.removeEventListener('pointerdown', onPointerDown, true);
+    }, [accordionInsertDraft != null]);
+
+    useEffect(() => {
+      const open = accordionEditDraft != null;
+      if (open && !accordionEditDialogWasOpenRef.current) {
+        requestAnimationFrame(() => accordionEditCountInputRef.current?.focus());
+      }
+      accordionEditDialogWasOpenRef.current = open;
+    }, [accordionEditDraft != null]);
+
+    useEffect(() => {
+      if (!accordionEditDraft) return;
+      const onPointerDown = (event: PointerEvent) => {
+        const panel = accordionEditDialogRef.current;
+        const target = event.target;
+        if (!(target instanceof Node) || !panel || panel.contains(target)) return;
+        setAccordionEditDraft(null);
+      };
+      document.addEventListener('pointerdown', onPointerDown, true);
+      return () => document.removeEventListener('pointerdown', onPointerDown, true);
+    }, [accordionEditDraft != null]);
 
     useEffect(() => {
       const applyTheme = (root: Element) => {
@@ -1907,6 +2280,9 @@ const MarkdownDescriptionEditor = forwardRef<
           .markdown-description-editor .toastui-editor-ww-container .ProseMirror {
             color: #374151;
             line-height: 1.65;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror > p:last-child {
+            min-height: 1.25em;
           }
           .markdown-description-editor .toastui-editor-dark .ProseMirror,
           .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container {
@@ -2359,6 +2735,91 @@ const MarkdownDescriptionEditor = forwardRef<
           .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container .ProseMirror img[src^="youtube://"] {
             border-color: #4b5563;
           }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion {
+            position: relative;
+            margin: 0.85rem 0;
+            padding: 0;
+            border: 1px dashed #d1d5db;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            background: rgba(249, 250, 251, 0.5);
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion-editable {
+            outline: none;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion-editable > :not(details) {
+            display: none !important;
+          }
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container .ProseMirror .tcc-accordion {
+            border-color: #4b5563;
+            background: rgba(17, 24, 39, 0.35);
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion details {
+            margin: 0;
+            border: none;
+            border-radius: 0;
+            overflow: visible;
+            background: transparent;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion details:not([open]) > .tcc-accordion-panel {
+            display: block !important;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion details + details {
+            border-top: 1px solid #e5e7eb;
+          }
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container .ProseMirror .tcc-accordion details + details {
+            border-top-color: #374151;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion summary {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 0.75rem;
+            font-weight: 600;
+            list-style: none;
+            cursor: text;
+            background: rgba(13, 185, 188, 0.07);
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion summary::after {
+            content: '';
+            flex: 1 1 auto;
+            align-self: stretch;
+            min-width: 0;
+          }
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container .ProseMirror .tcc-accordion summary {
+            background: rgba(13, 185, 188, 0.12);
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion summary::-webkit-details-marker {
+            display: none;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion summary::before {
+            content: '';
+            flex-shrink: 0;
+            width: 0.4rem;
+            height: 0.4rem;
+            border-right: 2px solid currentColor;
+            border-bottom: 2px solid currentColor;
+            transform: rotate(45deg);
+            opacity: 0.55;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion .tcc-accordion-panel,
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion details > :not(summary):not(.tcc-accordion-panel) {
+            display: block !important;
+            padding-inline: 0.75rem;
+            padding-bottom: 0.75rem;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion .tcc-accordion-panel-inner,
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion details > :not(summary):not(.tcc-accordion-panel) {
+            padding-top: 0.5rem;
+            border-top: 1px solid #e5e7eb;
+          }
+          .markdown-description-editor .toastui-editor-ww-container .ProseMirror .tcc-accordion .tcc-accordion-panel-inner p:last-child {
+            margin-bottom: 0;
+          }
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container .ProseMirror .tcc-accordion .tcc-accordion-panel-inner,
+          .markdown-description-editor .toastui-editor-dark .toastui-editor-ww-container .ProseMirror .tcc-accordion details > :not(summary):not(.tcc-accordion-panel) {
+            border-top-color: #374151;
+          }
         `}</style>
         {onUploadImage ? (
           <input
@@ -2382,7 +2843,7 @@ const MarkdownDescriptionEditor = forwardRef<
           useCommandShortcut
           usageStatistics={false}
           onLoad={handleEditorLoad}
-          plugins={[linkEditPlugin, tccIndentEditorPlugin, tccBlockStyleEnterPlugin]}
+          plugins={[linkEditPlugin, tccIndentEditorPlugin, tccAccordionEditorPlugin, tccBlockStyleEnterPlugin]}
           customMarkdownRenderer={{
             html: markdownHtmlRenderer,
           }}
@@ -2585,6 +3046,164 @@ const MarkdownDescriptionEditor = forwardRef<
             </div>
           </div>
         ) : null}
+        {accordionInsertDraft ? (
+          <div
+            ref={accordionInsertDialogRef}
+            className="absolute inset-x-4 top-12 z-20 max-w-xl rounded-xl border border-gray-200 bg-white p-4 shadow-2xl shadow-gray-900/20 dark:border-gray-700 dark:bg-gray-900"
+            role="dialog"
+            aria-label="Insert accordion"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setAccordionInsertDraft(null);
+              } else if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                applyAccordionInsertDraft();
+              }
+            }}
+          >
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Insert accordion</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Creates expandable sections. In the editor, all sections stay open for editing.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-teal dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                onClick={() => setAccordionInsertDraft(null)}
+              >
+                Close
+              </button>
+            </div>
+            <FormField
+              label="Number of sections"
+              htmlFor={accordionInsertCountId}
+              required
+              helperText={`At least ${TCC_ACCORDION_MIN_ENTRIES} section.`}
+            >
+              <input
+                id={accordionInsertCountId}
+                ref={accordionInsertCountInputRef}
+                type="number"
+                min={TCC_ACCORDION_MIN_ENTRIES}
+                className="app-input"
+                value={accordionInsertDraft.entryCount}
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value, 10);
+                  setAccordionInsertDraft((draft) =>
+                    draft
+                      ? {
+                          ...draft,
+                          entryCount: Number.isFinite(parsed) ? parsed : draft.entryCount,
+                        }
+                      : draft
+                  );
+                }}
+              />
+            </FormField>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-teal dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                onClick={() => setAccordionInsertDraft(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-primary-teal px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={
+                  !Number.isFinite(accordionInsertDraft.entryCount) ||
+                  accordionInsertDraft.entryCount < TCC_ACCORDION_MIN_ENTRIES
+                }
+                onClick={applyAccordionInsertDraft}
+              >
+                Insert accordion
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {accordionEditDraft ? (
+          <div
+            ref={accordionEditDialogRef}
+            className="absolute inset-x-4 top-12 z-20 max-w-xl rounded-xl border border-gray-200 bg-white p-4 shadow-2xl shadow-gray-900/20 dark:border-gray-700 dark:bg-gray-900"
+            role="dialog"
+            aria-label="Edit accordion sections"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setAccordionEditDraft(null);
+              } else if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                applyAccordionEditDraft();
+              }
+            }}
+          >
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Edit accordion sections</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Adding or removing sections updates the end of the list. Removing a section deletes its content.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-teal dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                onClick={() => setAccordionEditDraft(null)}
+              >
+                Close
+              </button>
+            </div>
+            <FormField
+              label="Number of sections"
+              htmlFor={accordionEditCountId}
+              required
+              helperText={`At least ${TCC_ACCORDION_MIN_ENTRIES} section.`}
+            >
+              <input
+                id={accordionEditCountId}
+                ref={accordionEditCountInputRef}
+                type="number"
+                min={TCC_ACCORDION_MIN_ENTRIES}
+                className="app-input"
+                value={accordionEditDraft.entryCount}
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value, 10);
+                  setAccordionEditDraft((draft) =>
+                    draft
+                      ? {
+                          ...draft,
+                          entryCount: Number.isFinite(parsed) ? parsed : draft.entryCount,
+                        }
+                      : draft
+                  );
+                }}
+              />
+            </FormField>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-teal dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                onClick={() => setAccordionEditDraft(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-primary-teal px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={
+                  !Number.isFinite(accordionEditDraft.entryCount) ||
+                  accordionEditDraft.entryCount < TCC_ACCORDION_MIN_ENTRIES
+                }
+                onClick={applyAccordionEditDraft}
+              >
+                Update sections
+              </button>
+            </div>
+          </div>
+        ) : null}
         {enableManagedFileImageEdit ? (
           <ContentFileEditModal
             isOpen={managedImageModal.open}
@@ -2612,6 +3231,40 @@ const MarkdownDescriptionEditor = forwardRef<
                   onClick={() => void openManagedImageEditor(hoverManagedImageEdit.fileId)}
                 >
                   <HiPencilSquare className="h-4 w-4" aria-hidden />
+                </button>
+              </div>,
+              document.body
+            )
+          : null}
+        {hoverAccordionEdit
+          ? createPortal(
+              <div
+                ref={hoverAccordionChipRef}
+                className="pointer-events-auto fixed z-[45] flex gap-1"
+                style={{
+                  top: hoverAccordionEdit.top + 6,
+                  left: hoverAccordionEdit.right - 76,
+                }}
+              >
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white/95 text-gray-600 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:text-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:border-gray-600 dark:bg-gray-900/95 dark:text-gray-300 dark:hover:text-primary-teal"
+                  aria-label="Edit accordion sections"
+                  title="Edit accordion sections"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => openAccordionEditDialog(hoverAccordionEdit.pos, hoverAccordionEdit.entryCount)}
+                >
+                  <HiPencilSquare className="h-4 w-4" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white/95 text-gray-600 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 dark:border-gray-600 dark:bg-gray-900/95 dark:text-gray-300 dark:hover:text-red-400"
+                  aria-label="Delete accordion"
+                  title="Delete accordion"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => void removeAccordion(hoverAccordionEdit.pos)}
+                >
+                  <HiOutlineTrash className="h-4 w-4" aria-hidden />
                 </button>
               </div>,
               document.body

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import PublicLayout from '../../components/PublicLayout';
+import PublicStateCard from '../../components/PublicStateCard';
 import SeoMeta from '../../components/SeoMeta';
 import api from '../../utils/api';
 import { ArticleHtmlBundlePreview, ArticleMarkdownPreview } from './ArticlePreviewDisplay';
@@ -39,11 +40,11 @@ export default function AdminArticleVersionPreview() {
 
   if (error) {
     return (
-      <PublicLayout backToHome>
+      <PublicLayout>
         <section className="public-section">
           <div className="public-container">
             <div className="public-content">
-              <div className="public-card p-6 text-red-700">{error}</div>
+              <PublicStateCard title="Unable to load preview" description={error} tone="error" />
             </div>
           </div>
         </section>
@@ -52,10 +53,14 @@ export default function AdminArticleVersionPreview() {
   }
 
   return (
-    <PublicLayout backToHome>
+    <PublicLayout>
       <SeoMeta
         title={data ? `${data.title} | Triangle Curling Club` : 'Resource | Triangle Curling Club'}
-        description="Article preview"
+        description={
+          data?.revisionNote?.trim()
+            ? data.revisionNote.trim().slice(0, 160)
+            : 'Article preview'
+        }
         canonicalPath={data ? `/articles/${data.slug}` : undefined}
         ogType="article"
       />
@@ -63,10 +68,23 @@ export default function AdminArticleVersionPreview() {
         <div className="public-container">
           <div className="public-content">
             {!data ? (
-              <div className="public-card p-6 text-gray-600">Loading preview...</div>
+              <div
+                className="flex min-h-[12rem] items-center justify-center py-12"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <span className="sr-only">Loading</span>
+                <div
+                  className="h-9 w-9 shrink-0 rounded-full border-2 border-gray-200 border-t-primary-teal motion-reduce:animate-none motion-reduce:border-primary-teal/50 motion-reduce:opacity-80 animate-spin"
+                  aria-hidden
+                />
+              </div>
             ) : (
               <article>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2 text-balance">{data.title}</h1>
+                <div className="public-page-title-rule">
+                  <h1 className="public-heading text-balance">{data.title}</h1>
+                </div>
                 {data.contentType === 'html' ? (
                   <ArticleHtmlBundlePreview content={data.content} />
                 ) : (

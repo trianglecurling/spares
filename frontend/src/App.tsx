@@ -176,6 +176,23 @@ function App() {
                       <Route path="/go/:slug/info" element={<PublicPermalinkInfo />} />
 
                       <Route path="/calendar/public" element={<Calendar publicMode />} />
+
+                      <Route
+                        path="/admin/content/articles/:id/versions/:versionId/preview"
+                        element={
+                          <ProtectedRoute contentAdminOnly>
+                            <AdminArticleVersionPreview />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/content/articles/draft-preview"
+                        element={
+                          <ProtectedRoute contentAdminOnly>
+                            <AdminArticleDraftPreview />
+                          </ProtectedRoute>
+                        }
+                      />
                     </Route>
 
                     <Route element={<AuthenticatedAppShell />}>
@@ -538,22 +555,6 @@ function App() {
                         }
                       />
                       <Route path="/admin/content" element={<Navigate to="/admin/content/site" replace />} />
-                      <Route
-                        path="/admin/content/articles/:id/versions/:versionId/preview"
-                        element={
-                          <ProtectedRoute contentAdminOnly>
-                            <AdminArticleVersionPreview />
-                          </ProtectedRoute>
-                        }
-                      />
-                      <Route
-                        path="/admin/content/articles/draft-preview"
-                        element={
-                          <ProtectedRoute contentAdminOnly>
-                            <AdminArticleDraftPreview />
-                          </ProtectedRoute>
-                        }
-                      />
                       <Route
                         path="/admin/content/articles/:id"
                         element={

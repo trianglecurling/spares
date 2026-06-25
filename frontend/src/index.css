@@ -626,6 +626,181 @@ html.dark body {
   .markdown-content .task-list-item {
     list-style: none;
   }
+
+  .markdown-content .tcc-accordion {
+    margin: 1.25rem 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .dark .markdown-content .tcc-accordion {
+    border-color: #374151;
+    background: rgba(17, 24, 39, 0.55);
+    box-shadow: none;
+  }
+
+  .markdown-content .tcc-accordion details {
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .markdown-content .tcc-accordion details + details {
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .dark .markdown-content .tcc-accordion details + details {
+    border-top-color: #374151;
+  }
+
+  .markdown-content .tcc-accordion summary {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.85rem 1rem;
+    font-weight: 600;
+    color: #111827;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    background: rgba(13, 185, 188, 0.07);
+    transition: background-color 0.18s ease, color 0.18s ease;
+  }
+
+  .dark .markdown-content .tcc-accordion summary {
+    color: #f3f4f6;
+    background: rgba(13, 185, 188, 0.12);
+  }
+
+  .markdown-content .tcc-accordion summary:hover {
+    background: rgba(13, 185, 188, 0.11);
+  }
+
+  .dark .markdown-content .tcc-accordion summary:hover {
+    background: rgba(13, 185, 188, 0.18);
+  }
+
+  .markdown-content .tcc-accordion summary:focus-visible {
+    outline: 2px solid rgba(13, 185, 188, 0.45);
+    outline-offset: -2px;
+  }
+
+  .markdown-content .tcc-accordion summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .markdown-content .tcc-accordion summary::before {
+    content: '';
+    flex-shrink: 0;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    margin-top: -0.12rem;
+    opacity: 0.72;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  .markdown-content .tcc-accordion details[open] > summary {
+    background: rgba(13, 185, 188, 0.13);
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .dark .markdown-content .tcc-accordion details[open] > summary {
+    background: rgba(13, 185, 188, 0.2);
+    border-bottom-color: #374151;
+  }
+
+  .markdown-content .tcc-accordion details[open] > summary::before {
+    transform: rotate(45deg);
+    margin-top: 0.1rem;
+    opacity: 1;
+  }
+
+  .markdown-content .tcc-accordion details > .tcc-accordion-panel {
+    display: grid !important;
+    grid-template-rows: 0fr;
+    padding-inline: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .markdown-content .tcc-accordion details[open] > .tcc-accordion-panel {
+    grid-template-rows: 1fr;
+  }
+
+  .markdown-content .tcc-accordion.tcc-accordion--react details > .tcc-accordion-panel {
+    display: block !important;
+    grid-template-rows: unset !important;
+    height: var(--tcc-accordion-panel-height, 0);
+    overflow: hidden;
+    transition: var(--tcc-accordion-panel-transition, none);
+    padding-inline: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner {
+    overflow: hidden;
+    min-height: 0;
+    padding-top: 0.85rem;
+    color: inherit;
+  }
+
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > :first-child {
+    margin-top: 0;
+  }
+
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Legacy accordion panels stored block styles on <p> instead of a wrapper <div>. */
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-info-box,
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-critical-box,
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-callout,
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-aside {
+    display: block;
+    margin: 0.75rem 0;
+    padding: 0.85rem 1rem;
+    border-radius: 0.75rem;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-info-box {
+    @apply border border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100;
+  }
+
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-critical-box {
+    @apply border border-red-200 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100;
+  }
+
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-callout {
+    @apply border border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200;
+  }
+
+  .markdown-content .tcc-accordion .tcc-accordion-panel-inner > p.tcc-style-aside {
+    @apply border border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200;
+    float: none;
+    width: auto;
+    margin: 0.75rem 0;
+  }
+
+  /* Older accordions saved before the panel wrapper */
+  .markdown-content .tcc-accordion details > :not(summary):not(.tcc-accordion-panel) {
+    padding: 0 1rem 1rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .markdown-content .tcc-accordion summary,
+    .markdown-content .tcc-accordion summary::before {
+      transition: none;
+    }
+  }
 }
 
 @layer utilities {

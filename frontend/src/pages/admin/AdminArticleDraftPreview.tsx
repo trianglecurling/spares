@@ -1,8 +1,7 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PublicLayout from '../../components/PublicLayout';
 import SeoMeta from '../../components/SeoMeta';
-import { useTheme } from '../../contexts/ThemeContext';
 import { readArticleDraftPreviewOnce, type ArticleDraftPreviewPayloadV1 } from '../../utils/articleDraftPreviewSession';
 import { ArticleHtmlBundlePreview, ArticleMarkdownPreview } from './ArticlePreviewDisplay';
 
@@ -26,14 +25,7 @@ function useDraftPreviewData(): { data: ArticleDraftPreviewPayloadV1 | null; err
 }
 
 export default function AdminArticleDraftPreview() {
-  const { setForcedResolvedTheme } = useTheme();
   const { data, error } = useDraftPreviewData();
-
-  /** Public article pages are light; match that even when the editor tab uses dark mode. */
-  useEffect(() => {
-    setForcedResolvedTheme('light');
-    return () => setForcedResolvedTheme(null);
-  }, [setForcedResolvedTheme]);
 
   if (error) {
     return (
