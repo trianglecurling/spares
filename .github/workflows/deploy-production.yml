@@ -32,6 +32,14 @@ jobs:
       - name: Build backend
         run: bun run build:backend
 
+      - name: Install production backend dependencies
+        run: |
+          rm -rf /tmp/tccnc-backend-prod
+          mkdir -p /tmp/tccnc-backend-prod
+          cp backend/package.json /tmp/tccnc-backend-prod/
+          cd /tmp/tccnc-backend-prod
+          bun install --production --no-save
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -54,32 +62,45 @@ jobs:
             --exclude='.git' \
             frontend/dist/ ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/tccnc-web-prod/dist/
 
+      - name: Prepare backend for deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << 'EOF'
+            set -euo pipefail
+            DEPLOY_USER="$(whoami)"
+            UNIT="${{ vars.PROD_SYSTEMD_UNIT || 'tccnc-web-prod' }}"
+            BACKEND="/srv/tccnc-web-prod/backend"
+
+            sudo systemctl stop "$UNIT" || true
+            sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$BACKEND"
+            sudo rm -rf "$BACKEND/node_modules" /srv/tccnc-web-prod/node_modules
+            sudo rm -f "$BACKEND/bun.lock" /srv/tccnc-web-prod/bun.lock /srv/tccnc-web-prod/package.json
+          EOF
+
       - name: Deploy backend
         run: |
           rsync -avz \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-            --exclude='node_modules' \
             --exclude='.git' \
             backend/dist/ backend/package.json \
             ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/tccnc-web-prod/backend/
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            /tmp/tccnc-backend-prod/node_modules/ \
+            ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/tccnc-web-prod/backend/node_modules/
 
-      - name: Install production dependencies and restart
+      - name: Restart production service
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << EOF
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << 'EOF'
             set -euo pipefail
-            cd /srv/tccnc-web-prod/backend
-            sudo chown -R "${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }}" /srv/tccnc-web-prod/backend
-            sudo rm -rf node_modules
-            sudo rm -f bun.lock ../bun.lock ../package.json
-            if [ -f bun.lock ] || [ -f ../bun.lock ]; then
-              echo "Stale bun.lock could not be removed; aborting."
-              ls -la bun.lock ../bun.lock 2>/dev/null || true
-              exit 1
+            UNIT="${{ vars.PROD_SYSTEMD_UNIT || 'tccnc-web-prod' }}"
+            BACKEND="/srv/tccnc-web-prod/backend"
+
+            sudo mkdir -p "$BACKEND/data"
+            sudo chown -R www-data:www-data "$BACKEND/data"
+            sudo chmod 755 "$BACKEND/data"
+            if [ -f "$BACKEND/.env" ]; then
+              sudo chown www-data:www-data "$BACKEND/.env"
+              sudo chmod 600 "$BACKEND/.env"
             fi
-            unset CI GITHUB_ACTIONS
-            bun install --production --no-save
-            sudo mkdir -p /srv/tccnc-web-prod/backend/data
-            sudo chown -R www-data:www-data /srv/tccnc-web-prod/backend
-            sudo chmod 755 /srv/tccnc-web-prod/backend/data
-            sudo systemctl restart ${{ vars.PROD_SYSTEMD_UNIT || 'tccnc-web-prod' }}
+            sudo systemctl restart "$UNIT"
           EOF
