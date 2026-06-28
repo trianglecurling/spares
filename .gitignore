@@ -10,3 +10,4 @@ coverage
 .vscode
 .idea
 db-config.json
+backend/data/uploads/
