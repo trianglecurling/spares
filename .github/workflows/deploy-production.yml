@@ -42,8 +42,8 @@ jobs:
       - name: Prepare server directories
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << 'EOF'
-            sudo mkdir -p /srv/tccnc-web/dist /srv/tccnc-web/backend
-            sudo chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} /srv/tccnc-web || true
+            sudo mkdir -p /srv/tccnc-web-prod/dist /srv/tccnc-web-prod/backend
+            sudo chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} /srv/tccnc-web-prod || true
           EOF
 
       - name: Deploy frontend
@@ -52,7 +52,7 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             --exclude='node_modules' \
             --exclude='.git' \
-            frontend/dist/ ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/tccnc-web/dist/
+            frontend/dist/ ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/tccnc-web-prod/dist/
 
       - name: Deploy backend
         run: |
@@ -61,14 +61,14 @@ jobs:
             --exclude='node_modules' \
             --exclude='.git' \
             backend/dist/ backend/package.json \
-            ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/tccnc-web/backend/
+            ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }}:/srv/tccnc-web-prod/backend/
 
       - name: Install production dependencies and restart
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.PROD_HOST }} << EOF
             set -euo pipefail
-            cd /srv/tccnc-web/backend
-            sudo chown -R "${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }}" /srv/tccnc-web/backend
+            cd /srv/tccnc-web-prod/backend
+            sudo chown -R "${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }}" /srv/tccnc-web-prod/backend
             sudo rm -rf node_modules
             sudo rm -f bun.lock ../bun.lock ../package.json
             if [ -f bun.lock ] || [ -f ../bun.lock ]; then
@@ -78,8 +78,8 @@ jobs:
             fi
             unset CI GITHUB_ACTIONS
             bun install --production --no-save
-            sudo mkdir -p /srv/tccnc-web/backend/data
-            sudo chown -R www-data:www-data /srv/tccnc-web/backend
-            sudo chmod 755 /srv/tccnc-web/backend/data
-            sudo systemctl restart ${{ vars.PROD_SYSTEMD_UNIT || 'tccnc-web-production' }}
+            sudo mkdir -p /srv/tccnc-web-prod/backend/data
+            sudo chown -R www-data:www-data /srv/tccnc-web-prod/backend
+            sudo chmod 755 /srv/tccnc-web-prod/backend/data
+            sudo systemctl restart ${{ vars.PROD_SYSTEMD_UNIT || 'tccnc-web-prod' }}
           EOF
