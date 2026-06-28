@@ -142,8 +142,8 @@ function mapContactRecipientRow(row: {
   email: string;
   sort_order: number;
   is_active: number;
-  created_at: string;
-  updated_at: string;
+  created_at: string | Date;
+  updated_at: string | Date;
 }) {
   return {
     id: row.id,
@@ -152,8 +152,8 @@ function mapContactRecipientRow(row: {
     email: row.email,
     sortOrder: row.sort_order,
     isActive: row.is_active === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
   };
 }
 

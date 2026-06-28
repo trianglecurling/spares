@@ -278,13 +278,14 @@ function formatSpecialLinkRow(
     ignore_registration_dates: number;
     used: number;
     invalidated: number;
-    created_at: string;
+    created_at: string | Date;
   },
   eventSlug: string | null | undefined,
   eventId: number,
 ) {
   return {
     ...link,
+    created_at: link.created_at instanceof Date ? link.created_at.toISOString() : link.created_at,
     registrationUrl: buildSpecialLinkRegistrationUrl(eventSlug, eventId, link.token),
   };
 }

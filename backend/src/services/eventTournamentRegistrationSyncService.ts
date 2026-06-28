@@ -93,7 +93,7 @@ function buildRosterFromRegistration(
 }
 
 function resolveTeamName(
-  fieldValues: Array<{ field_id: number; value: string }>,
+  fieldValues: Array<{ field_id: number; value: string | null }>,
   fields: Array<{ id: number; field_type: string }>,
   contactName: string,
 ): string {

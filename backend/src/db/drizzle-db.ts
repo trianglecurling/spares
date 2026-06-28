@@ -76,6 +76,7 @@ type PgSchema = {
   permalinks: typeof pgSchema.permalinksPg;
   permalinkHits: typeof pgSchema.permalinkHitsPg;
   siteConfig: typeof pgSchema.siteConfigPg;
+  publicContactRecipients: typeof pgSchema.publicContactRecipientsPg;
   showcaseImages: typeof pgSchema.showcaseImagesPg;
   menuItems: typeof pgSchema.menuItemsPg;
   files: typeof pgSchema.filesPg;
