@@ -24,6 +24,9 @@ export function isPublicLightPath(pathname: string): boolean {
   if (pathname === '/events' || pathname.startsWith('/events/')) {
     return true;
   }
+  if (pathname === '/leagues/public' || pathname.startsWith('/leagues/public/')) {
+    return true;
+  }
   if (pathname === '/public/leagues' || pathname.startsWith('/public/leagues/')) {
     return true;
   }

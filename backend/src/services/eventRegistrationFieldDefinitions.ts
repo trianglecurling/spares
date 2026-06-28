@@ -3,6 +3,7 @@ import { EventServiceError } from './eventServiceError.js';
 export const PRESET_FIELD_TYPES = [
   'preset_phone',
   'preset_address',
+  'preset_team_name',
   'preset_team_four',
   'preset_team_doubles',
   'preset_dob',
@@ -14,6 +15,7 @@ export const PRESET_LABELS: Record<PresetFieldType | 'subheading', string> = {
   subheading: 'Section heading',
   preset_phone: 'Phone number',
   preset_address: 'Address',
+  preset_team_name: 'Team name',
   preset_team_four: 'Team information (4 players)',
   preset_team_doubles: 'Doubles team information (2 players)',
   preset_dob: 'Date of birth',
@@ -211,6 +213,7 @@ function validateValueForFieldType(field: RegistrationFieldRow, value: string): 
 
   switch (ft) {
     case 'preset_phone':
+    case 'preset_team_name':
     case 'text':
     case 'number':
     case 'checkbox':

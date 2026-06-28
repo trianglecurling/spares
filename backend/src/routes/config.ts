@@ -48,6 +48,8 @@ const updateConfigSchema = z.object({
   testMode: z.boolean().optional(),
   disableEmail: z.boolean().optional(),
   disableSms: z.boolean().optional(),
+  disableUserLogin: z.boolean().optional(),
+  bypassLoginVerification: z.boolean().optional(),
   frontendOtelEnabled: z.boolean().optional(),
   captureFrontendLogs: z.boolean().optional(),
   captureBackendLogs: z.boolean().optional(),
@@ -87,6 +89,8 @@ const updateConfigBodySchema = {
     testMode: { type: 'boolean' },
     disableEmail: { type: 'boolean' },
     disableSms: { type: 'boolean' },
+    disableUserLogin: { type: 'boolean' },
+    bypassLoginVerification: { type: 'boolean' },
     frontendOtelEnabled: { type: 'boolean' },
     captureFrontendLogs: { type: 'boolean' },
     captureBackendLogs: { type: 'boolean' },
@@ -177,6 +181,8 @@ export async function configRoutes(fastify: FastifyInstance) {
         testMode: false,
         disableEmail: false,
         disableSms: false,
+        disableUserLogin: false,
+        bypassLoginVerification: false,
         testCurrentTime: null,
         notificationDelaySeconds: 180,
         sessionTokenTtlMinutes: 30,
@@ -203,6 +209,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       testMode: config.test_mode === 1,
       disableEmail: config.disable_email === 1,
       disableSms: config.disable_sms === 1,
+      disableUserLogin: config.disable_user_login === 1,
+      bypassLoginVerification: config.bypass_login_verification === 1,
       frontendOtelEnabled: config.frontend_otel_enabled !== 0,
       captureFrontendLogs: config.capture_frontend_logs !== 0,
       captureBackendLogs: config.capture_backend_logs !== 0,
@@ -423,6 +431,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       test_mode: number;
       disable_email: number;
       disable_sms: number;
+      disable_user_login: number;
+      bypass_login_verification: number;
       frontend_otel_enabled: number;
       capture_frontend_logs: number;
       capture_backend_logs: number;
@@ -479,6 +489,12 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
     if (body.disableSms !== undefined) {
       updateData.disable_sms = body.disableSms ? 1 : 0;
+    }
+    if (body.disableUserLogin !== undefined) {
+      updateData.disable_user_login = body.disableUserLogin ? 1 : 0;
+    }
+    if (body.bypassLoginVerification !== undefined) {
+      updateData.bypass_login_verification = body.bypassLoginVerification ? 1 : 0;
     }
     if (body.frontendOtelEnabled !== undefined) {
       updateData.frontend_otel_enabled = body.frontendOtelEnabled ? 1 : 0;
@@ -561,6 +577,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       testMode: updatedConfig.test_mode === 1,
       disableEmail: updatedConfig.disable_email === 1,
       disableSms: updatedConfig.disable_sms === 1,
+      disableUserLogin: updatedConfig.disable_user_login === 1,
+      bypassLoginVerification: updatedConfig.bypass_login_verification === 1,
       frontendOtelEnabled: updatedConfig.frontend_otel_enabled !== 0,
       captureFrontendLogs: updatedConfig.capture_frontend_logs !== 0,
       captureBackendLogs: updatedConfig.capture_backend_logs !== 0,

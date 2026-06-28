@@ -42,6 +42,8 @@ interface ServerConfig {
   testMode: boolean;
   disableEmail: boolean;
   disableSms: boolean;
+  disableUserLogin: boolean;
+  bypassLoginVerification: boolean;
   frontendOtelEnabled: boolean;
   captureFrontendLogs: boolean;
   captureBackendLogs: boolean;
@@ -67,6 +69,8 @@ interface UpdateConfigPayload {
   testMode?: boolean;
   disableEmail?: boolean;
   disableSms?: boolean;
+  disableUserLogin?: boolean;
+  bypassLoginVerification?: boolean;
   frontendOtelEnabled?: boolean;
   captureFrontendLogs?: boolean;
   captureBackendLogs?: boolean;
@@ -197,6 +201,8 @@ export default function AdminConfig() {
     testMode: false,
     disableEmail: false,
     disableSms: false,
+    disableUserLogin: false,
+    bypassLoginVerification: false,
     frontendOtelEnabled: true,
     captureFrontendLogs: true,
     captureBackendLogs: true,
@@ -229,6 +235,8 @@ export default function AdminConfig() {
         testMode: response.testMode || false,
         disableEmail: response.disableEmail || false,
         disableSms: response.disableSms || false,
+        disableUserLogin: response.disableUserLogin || false,
+        bypassLoginVerification: response.bypassLoginVerification || false,
         frontendOtelEnabled: response.frontendOtelEnabled ?? true,
         captureFrontendLogs: response.captureFrontendLogs ?? true,
         captureBackendLogs: response.captureBackendLogs ?? true,
@@ -312,6 +320,12 @@ export default function AdminConfig() {
       }
       if (formData.disableSms !== config?.disableSms) {
         payload.disableSms = formData.disableSms;
+      }
+      if (formData.disableUserLogin !== config?.disableUserLogin) {
+        payload.disableUserLogin = formData.disableUserLogin;
+      }
+      if (formData.bypassLoginVerification !== config?.bypassLoginVerification) {
+        payload.bypassLoginVerification = formData.bypassLoginVerification;
       }
       if (formData.frontendOtelEnabled !== config?.frontendOtelEnabled) {
         payload.frontendOtelEnabled = formData.frontendOtelEnabled;
@@ -500,6 +514,28 @@ export default function AdminConfig() {
                   When enabled, SMS messages will be printed to the console instead of being sent,
                   regardless of test mode.
                 </p>
+
+                <div className="flex items-center mt-4">
+                  <input
+                    type="checkbox"
+                    id="disableUserLogin"
+                    checked={formData.disableUserLogin}
+                    onChange={(e) =>
+                      setFormData({ ...formData, disableUserLogin: e.target.checked })
+                    }
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <label
+                    htmlFor="disableUserLogin"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Disable user login
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                  When enabled, only server admins can log in. Other members will see an error when
+                  they try to send a login code.
+                </p>
               </div>
             </div>
 
@@ -553,6 +589,29 @@ export default function AdminConfig() {
                     Refresh tokens transparently renew expired sessions. The default is 60 days.
                   </p>
                 </div>
+              </div>
+              <div className="mt-4">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="bypassLoginVerification"
+                    checked={formData.bypassLoginVerification}
+                    onChange={(e) =>
+                      setFormData({ ...formData, bypassLoginVerification: e.target.checked })
+                    }
+                    className="h-4 w-4 text-primary-teal focus:ring-primary-teal border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <label
+                    htmlFor="bypassLoginVerification"
+                    className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Bypass login verification
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7 mt-2">
+                  When enabled, members can log in with email or phone alone — no verification code
+                  is sent or required. Independent of test mode.
+                </p>
               </div>
             </div>
 

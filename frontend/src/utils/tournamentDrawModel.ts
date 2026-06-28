@@ -178,3 +178,16 @@ export function outputRoutingLabel(place: number, competitorCount: number): stri
   }
   return `${ordinalPlaceLabel(place)} place goes to`;
 }
+
+/** Team ids placed directly on a draw game slot (seed positions for bracket path). */
+export function teamIdsAssignedOnDraw(draw: TournamentDrawState): Set<number> {
+  const ids = new Set<number>();
+  for (const g of Object.values(draw.games)) {
+    for (const slot of g.slots) {
+      if (slot.sourceType === 'team' && slot.teamId != null) {
+        ids.add(slot.teamId);
+      }
+    }
+  }
+  return ids;
+}

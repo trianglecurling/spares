@@ -60,22 +60,14 @@ function getEffectiveSnippet(
   customSnippet: string | null,
   contentType: 'markdown' | 'html' = 'markdown'
 ): { snippet: string; hasMore: boolean } {
-  const snippetLimit = 420;
-  const clamp = (value: string): { snippet: string; truncated: boolean } => {
-    const normalized = value.trim();
-    if (normalized.length <= snippetLimit) return { snippet: normalized, truncated: false };
-    return { snippet: `${normalized.slice(0, snippetLimit).trimEnd()}...`, truncated: true };
-  };
-
   if (customSnippet != null && customSnippet.trim() !== '') {
-    const clamped = clamp(customSnippet);
-    return { snippet: clamped.snippet, hasMore: true };
+    return { snippet: customSnippet.trim(), hasMore: true };
   }
   if (contentType === 'html') {
     try {
       const parsed = JSON.parse(content) as { html?: string };
       const html = parsed?.html ?? '';
-      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       return { snippet: text || '(Custom content)', hasMore: true };
     } catch {
       return { snippet: '(Custom content)', hasMore: true };
@@ -84,12 +76,11 @@ function getEffectiveSnippet(
 
   const idx = findMarkerIndex(content);
   if (idx >= 0) {
-    const clamped = clamp(content.slice(0, idx).trim().replace(/\$\$widget\d+\s*$/, '').trim());
-    return { snippet: clamped.snippet, hasMore: true };
+    const snippet = content.slice(0, idx).trim().replace(/\$\$widget\d+\s*$/, '').trim();
+    return { snippet, hasMore: true };
   }
 
-  const clamped = clamp(content);
-  return { snippet: clamped.snippet, hasMore: clamped.truncated };
+  return { snippet: content.trim(), hasMore: false };
 }
 
 function stripMarker(content: string): string {

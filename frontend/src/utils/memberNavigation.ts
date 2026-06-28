@@ -32,7 +32,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
       ? [{ to: '/admin/registrations', label: 'Manage registration' }]
       : []),
     ...(canManageSponsorship ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
-    ...(canReadPayments ? [{ to: '/admin/payments', label: 'Payment activity' }] : []),
+    ...(canReadPayments ? [{ to: '/admin/payments', label: 'Manage payments' }] : []),
     ...(canManageWebhooks ? [{ to: '/admin/webhooks', label: 'Outbound webhooks' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/roles', label: 'Manage roles' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/config', label: 'Server config' }] : []),

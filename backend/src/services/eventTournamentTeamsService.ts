@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { formatTeamHomeClubFromRoster } from '../utils/tournamentTeamHomeClub.js';
 import { EventServiceError } from './eventServiceError.js';
 
 export type TournamentFormat = 'fours' | 'doubles';
@@ -91,6 +92,7 @@ export type RosterSlotPayload = {
   playerName?: string | null;
   email?: string | null;
   notes?: string | null;
+  homeClub?: string | null;
 };
 
 export type TournamentTeamRow = {
@@ -106,16 +108,25 @@ export type TournamentTeamRow = {
     playerName: string | null;
     email: string | null;
     notes: string | null;
+    homeClub: string | null;
   }>;
 };
 
+type NormalizedRosterSlot = {
+  playerName: string | null;
+  email: string | null;
+  notes: string | null;
+  homeClub: string | null;
+};
+
 function mapTeamRow(team: Record<string, unknown>, roster: TournamentTeamRow['roster']): TournamentTeamRow {
+  const legacyHomeClub = (team.home_club as string | null) ?? null;
   return {
     id: team.id as number,
     eventId: team.event_id as number,
     sortOrder: team.sort_order as number,
     teamName: (team.team_name as string | null) ?? null,
-    homeClub: (team.home_club as string | null) ?? null,
+    homeClub: formatTeamHomeClubFromRoster(roster, legacyHomeClub),
     viceSlotCode: team.vice_slot_code as string,
     skipSlotCode: team.skip_slot_code as string,
     roster,
@@ -157,6 +168,7 @@ export async function listTournamentTeamsForEvent(eventId: number): Promise<Tour
         playerName: s.player_name ?? null,
         email: s.email ?? null,
         notes: s.notes ?? null,
+        homeClub: s.home_club ?? null,
       });
     }
   }
@@ -184,10 +196,12 @@ function normalizeRosterPayload(
   format: TournamentFormat,
   roster: RosterSlotPayload[] | undefined,
   defaultsForSlots: readonly string[],
-): Map<string, { playerName: string | null; email: string | null; notes: string | null }> {
-  const map = new Map<string, { playerName: string | null; email: string | null; notes: string | null }>();
+  teamHomeClubFallback?: string | null,
+): Map<string, NormalizedRosterSlot> {
+  const map = new Map<string, NormalizedRosterSlot>();
+  const fallback = teamHomeClubFallback?.trim() || null;
   for (const code of defaultsForSlots) {
-    map.set(code, { playerName: null, email: null, notes: null });
+    map.set(code, { playerName: null, email: null, notes: null, homeClub: fallback });
   }
   if (roster) {
     for (const row of roster) {
@@ -197,17 +211,25 @@ function normalizeRosterPayload(
       const name = row.playerName?.trim() || null;
       const emailRaw = row.email?.trim() || null;
       const notes = row.notes?.trim() || null;
+      const homeClub = row.homeClub?.trim() || fallback;
       if (name != null && name.length > TEXT_MAX) {
         throw new EventServiceError(`Player name must be at most ${TEXT_MAX} characters`, 400);
       }
       if (notes != null && notes.length > NOTES_MAX) {
         throw new EventServiceError(`Notes must be at most ${NOTES_MAX} characters`, 400);
       }
+      if (homeClub != null && homeClub.length > TEXT_MAX) {
+        throw new EventServiceError(`Home club must be at most ${TEXT_MAX} characters`, 400);
+      }
       validateOptionalEmail(emailRaw);
-      map.set(row.slotCode, { playerName: name, email: emailRaw, notes });
+      map.set(row.slotCode, { playerName: name, email: emailRaw, notes, homeClub });
     }
   }
   return map;
+}
+
+function computedTeamHomeClub(rosterMap: Map<string, NormalizedRosterSlot>): string | null {
+  return formatTeamHomeClubFromRoster([...rosterMap.values()]);
 }
 
 export type CreateTournamentTeamInput = {
@@ -216,6 +238,9 @@ export type CreateTournamentTeamInput = {
   viceSlotCode?: string;
   skipSlotCode?: string;
   roster?: RosterSlotPayload[];
+  registrationId?: number | null;
+  /** Used when auto-creating from registration before the event format is set. */
+  formatOverride?: TournamentFormat;
 };
 
 export async function createTournamentTeam(eventId: number, input: CreateTournamentTeamInput): Promise<TournamentTeamRow> {
@@ -224,7 +249,7 @@ export async function createTournamentTeam(eventId: number, input: CreateTournam
   if (!event) throw new EventServiceError('Event not found', 404);
   assertBonspiel(event);
 
-   const format = normalizeTournamentFormat(event.tournament_format);
+   const format = input.formatOverride ?? normalizeTournamentFormat(event.tournament_format);
   if (!format) {
     throw new EventServiceError('Choose fours or doubles for this tournament before adding teams', 400);
   }
@@ -235,15 +260,13 @@ export async function createTournamentTeam(eventId: number, input: CreateTournam
   validateViceSkip(format, vice, skip);
 
   const slotCodes = rosterSlotsForFormat(format);
-  const rosterMap = normalizeRosterPayload(format, input.roster, slotCodes);
+  const teamHomeClubFallback = input.homeClub?.trim() || null;
+  const rosterMap = normalizeRosterPayload(format, input.roster, slotCodes, teamHomeClubFallback);
 
   const teamName = input.teamName?.trim() || null;
-  const homeClub = input.homeClub?.trim() || null;
+  const homeClub = computedTeamHomeClub(rosterMap);
   if (teamName != null && teamName.length > TEXT_MAX) {
     throw new EventServiceError(`Team name must be at most ${TEXT_MAX} characters`, 400);
-  }
-  if (homeClub != null && homeClub.length > TEXT_MAX) {
-    throw new EventServiceError(`Home club must be at most ${TEXT_MAX} characters`, 400);
   }
 
   const existingOrders = await db
@@ -262,6 +285,7 @@ export async function createTournamentTeam(eventId: number, input: CreateTournam
       home_club: homeClub,
       vice_slot_code: vice,
       skip_slot_code: skip,
+      registration_id: input.registrationId ?? null,
     } as any)
     .returning();
 
@@ -275,6 +299,7 @@ export async function createTournamentTeam(eventId: number, input: CreateTournam
       player_name: r.playerName,
       email: r.email,
       notes: r.notes,
+      home_club: r.homeClub,
     };
   });
 
@@ -291,6 +316,7 @@ export type UpdateTournamentTeamInput = {
   viceSlotCode?: string;
   skipSlotCode?: string;
   roster?: RosterSlotPayload[];
+  formatOverride?: TournamentFormat;
 };
 
 export async function updateTournamentTeam(
@@ -303,7 +329,7 @@ export async function updateTournamentTeam(
   if (!event) throw new EventServiceError('Event not found', 404);
   assertBonspiel(event);
 
-  const format = normalizeTournamentFormat(event.tournament_format);
+  const format = input.formatOverride ?? normalizeTournamentFormat(event.tournament_format);
   if (!format) {
     throw new EventServiceError('Choose fours or doubles for this tournament before editing teams', 400);
   }
@@ -324,15 +350,36 @@ export async function updateTournamentTeam(
 
   const teamName =
     input.teamName !== undefined ? (input.teamName?.trim() || null) : existing.team_name;
-  const homeClub =
-    input.homeClub !== undefined ? (input.homeClub?.trim() || null) : existing.home_club;
 
   if (teamName != null && teamName.length > TEXT_MAX) {
     throw new EventServiceError(`Team name must be at most ${TEXT_MAX} characters`, 400);
   }
-  if (homeClub != null && homeClub.length > TEXT_MAX) {
-    throw new EventServiceError(`Home club must be at most ${TEXT_MAX} characters`, 400);
+
+  let rosterMap: Map<string, NormalizedRosterSlot> | null = null;
+  if (input.roster !== undefined) {
+    const teamHomeClubFallback =
+      input.homeClub !== undefined ? (input.homeClub?.trim() || null) : (existing.home_club ?? null);
+    rosterMap = normalizeRosterPayload(format, input.roster, slotCodes, teamHomeClubFallback);
+  } else if (input.homeClub !== undefined) {
+    const slots = await db
+      .select()
+      .from(schema.eventTournamentRosterSlots)
+      .where(eq(schema.eventTournamentRosterSlots.team_id, teamId));
+    rosterMap = new Map<string, NormalizedRosterSlot>();
+    const fallback = input.homeClub?.trim() || null;
+    for (const code of slotCodes) {
+      const slot = slots.find((s) => s.slot_code === code);
+      rosterMap.set(code, {
+        playerName: slot?.player_name ?? null,
+        email: slot?.email ?? null,
+        notes: slot?.notes ?? null,
+        homeClub: fallback,
+      });
+    }
   }
+
+  const homeClub =
+    rosterMap != null ? computedTeamHomeClub(rosterMap) : existing.home_club;
 
   await db
     .update(schema.eventTournamentTeams)
@@ -344,17 +391,17 @@ export async function updateTournamentTeam(
     } as any)
     .where(eq(schema.eventTournamentTeams.id, teamId));
 
-  if (input.roster !== undefined) {
-    const rosterMap = normalizeRosterPayload(format, input.roster, slotCodes);
+  if (rosterMap != null) {
     await db.delete(schema.eventTournamentRosterSlots).where(eq(schema.eventTournamentRosterSlots.team_id, teamId));
     const rosterInsert = slotCodes.map((code) => {
-      const r = rosterMap.get(code)!;
+      const r = rosterMap!.get(code)!;
       return {
         team_id: teamId,
         slot_code: code,
         player_name: r.playerName,
         email: r.email,
         notes: r.notes,
+        home_club: r.homeClub,
       };
     });
     await db.insert(schema.eventTournamentRosterSlots).values(rosterInsert as any);
@@ -393,6 +440,7 @@ export async function copyTournamentTeamsBetweenEvents(sourceEventId: number, ta
         playerName: r.playerName,
         email: r.email,
         notes: r.notes,
+        homeClub: r.homeClub,
       })),
     });
   }

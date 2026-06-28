@@ -5,6 +5,7 @@ import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import Button from '../components/Button';
+import PublicNotFoundPage from './PublicNotFoundPage';
 
 type PublicPermalinkMeta = {
   slug: string;
@@ -20,25 +21,27 @@ export default function PublicPermalinkInfo() {
   const slug = slugParam?.trim().toLowerCase() ?? '';
   const [data, setData] = useState<PublicPermalinkMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!slug) {
       setLoading(false);
-      setError('Invalid link');
+      setNotFound(true);
       return;
     }
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
+      setNotFound(false);
       try {
         const res = await api.get<PublicPermalinkMeta>(`/public/permalinks/${encodeURIComponent(slug)}`);
         if (!cancelled) setData(res.data);
       } catch (err: unknown) {
         const status = (err as { response?: { status?: number } })?.response?.status;
         if (!cancelled) {
-          if (status === 404) setError('This short link was not found.');
+          if (status === 404) setNotFound(true);
           else setError('Could not load link information.');
         }
       } finally {
@@ -49,6 +52,17 @@ export default function PublicPermalinkInfo() {
       cancelled = true;
     };
   }, [slug]);
+
+  if (notFound) {
+    return (
+      <PublicNotFoundPage
+        title="Short link not found"
+        description="This short link was not found. It may have expired or the URL may be incorrect."
+        seoTitle="Short link not found | Triangle Curling Club"
+        showCode={false}
+      />
+    );
+  }
 
   const pageTitle = data?.label ? `${data.label} · Short link` : 'Short link';
 

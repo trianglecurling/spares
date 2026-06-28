@@ -2,67 +2,14 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { sendEmail } from '../services/email.js';
+import { getPublicContactRecipientBySlug } from '../domains/content/publicContactRecipients.js';
 
 const pendingContactTtlMs = 30 * 60 * 1000;
 
-const contactRecipients = {
-  general: {
-    label: 'General info and questions',
-    email: 'info@trianglecurling.com',
-  },
-  membership: {
-    label: 'Leagues and membership inquiries',
-    email: 'membership@trianglecurling.com',
-  },
-  marketing: {
-    label: 'Media inquiries, advertising, merchandise',
-    email: 'marketing@trianglecurling.com',
-  },
-  rentals: {
-    label: 'Private events, team building, corporate outings',
-    email: 'rentals@trianglecurling.com',
-  },
-  juniors: {
-    label: 'Youth & junior programs',
-    email: 'juniors@trianglecurling.com',
-  },
-  operations: {
-    label: 'Facilities & contractors',
-    email: 'operations@trianglecurling.com',
-  },
-  learntocurl: {
-    label: 'Learn-to-curl events',
-    email: 'learntocurl@trianglecurling.com',
-  },
-  pickupandpizza: {
-    label: 'Pick-Up and Pizza/Pick-Up and Play',
-    email: 'pickupandpizza@trianglecurling.com',
-  },
-  web: {
-    label: 'Website issues',
-    email: 'web@trianglecurling.com',
-  },
-  president: {
-    label: 'Contact the president',
-    email: 'president@trianglecurling.com',
-  },
-} as const;
-
-type ContactRecipientKey = keyof typeof contactRecipients;
+const contactRecipientSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
 
 const requestSchema = z.object({
-  recipient: z.enum([
-    'general',
-    'membership',
-    'marketing',
-    'rentals',
-    'juniors',
-    'operations',
-    'learntocurl',
-    'pickupandpizza',
-    'web',
-    'president',
-  ]),
+  recipient: contactRecipientSlugSchema,
   email: z.string().email().max(320),
   subject: z.string().trim().min(2).max(160),
   body: z.string().trim().min(10).max(8000),
@@ -75,7 +22,7 @@ const confirmSchema = z.object({
 });
 
 type PendingContactMessage = {
-  recipient: ContactRecipientKey;
+  recipientSlug: string;
   senderEmail: string;
   subject: string;
   body: string;
@@ -127,6 +74,11 @@ export async function contactRoutes(fastify: FastifyInstance) {
       return { ok: true };
     }
 
+    const recipientInfo = await getPublicContactRecipientBySlug(payload.recipient, { activeOnly: true });
+    if (!recipientInfo) {
+      return reply.code(400).send({ error: 'Invalid recipient' });
+    }
+
     cleanupExpiredPendingMessages();
 
     const code = createCode();
@@ -134,7 +86,7 @@ export async function contactRoutes(fastify: FastifyInstance) {
     const expiresAt = now + pendingContactTtlMs;
 
     pendingMessages.set(pendingMessageKey(payload.email, code), {
-      recipient: payload.recipient,
+      recipientSlug: payload.recipient,
       senderEmail: payload.email,
       subject: payload.subject,
       body: payload.body,
@@ -142,7 +94,6 @@ export async function contactRoutes(fastify: FastifyInstance) {
       expiresAt,
     });
 
-    const recipientInfo = contactRecipients[payload.recipient];
     const confirmUrl = publicContactConfirmUrl();
     const safeSubject = escapeHtml(payload.subject);
     const safeBody = escapeHtml(payload.body);
@@ -196,7 +147,11 @@ export async function contactRoutes(fastify: FastifyInstance) {
 
     pendingMessages.delete(key);
 
-    const recipientInfo = contactRecipients[pending.recipient];
+    const recipientInfo = await getPublicContactRecipientBySlug(pending.recipientSlug, { activeOnly: true });
+    if (!recipientInfo) {
+      return reply.code(400).send({ error: 'This contact category is no longer available.' });
+    }
+
     const safeSubject = escapeHtml(pending.subject);
     const safeBody = escapeHtml(pending.body);
     const safeSenderEmail = escapeHtml(pending.senderEmail);

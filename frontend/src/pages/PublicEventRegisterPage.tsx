@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
@@ -6,9 +6,16 @@ import PhysicalAddressCollect from '../components/PhysicalAddressCollect';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import PublicNotFoundPage from './PublicNotFoundPage';
 import api, { formatApiError } from '../utils/api';
 import { TeamPlayersField, defaultTeamPlayersJson } from '../components/eventRegistration/TeamPlayersField';
-import { isSubheadingFieldType, TEAM_POSITIONS_DOUBLES, TEAM_POSITIONS_FOUR } from '../utils/eventRegistrationFieldPresets';
+import {
+  defaultTeamNameFromLastName,
+  isSubheadingFieldType,
+  lastNameFromDisplayName,
+  TEAM_POSITIONS_DOUBLES,
+  TEAM_POSITIONS_FOUR,
+} from '../utils/eventRegistrationFieldPresets';
 import { structuredPostalFromEventJson, structuredPostalToEventJson } from '../utils/structuredPostalAddress';
 
 const publicInput =
@@ -133,13 +140,18 @@ export default function PublicEventRegisterPage() {
   const [success, setSuccess] = useState(false);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
 
-  const [contactName, setContactName] = useState('');
+  const [contactFirstName, setContactFirstName] = useState('');
+  const [contactLastName, setContactLastName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const teamNameTouchedRef = useRef<Set<string>>(new Set());
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [tick, setTick] = useState(0);
+  const contactFirstNameFieldId = useId();
+  const contactLastNameFieldId = useId();
+  const contactEmailFieldId = useId();
 
   useEffect(() => {
     if (!slug) return;
@@ -176,8 +188,22 @@ export default function PublicEventRegisterPage() {
     api
       .get('/members/me')
       .then((res) => {
-        const m = res.data as { name?: string | null; email?: string | null; phone?: string | null };
-        if (m?.name) setContactName((prev) => prev || m.name || '');
+        const m = res.data as {
+          name?: string | null;
+          firstName?: string | null;
+          lastName?: string | null;
+          email?: string | null;
+          phone?: string | null;
+        };
+        if (m?.firstName) setContactFirstName((prev) => prev || m.firstName || '');
+        if (m?.lastName) setContactLastName((prev) => prev || m.lastName || '');
+        if (!m?.firstName && !m?.lastName && m?.name) {
+          const parts = m.name.trim().split(/\s+/);
+          if (parts.length > 0) {
+            setContactFirstName((prev) => prev || parts[0] || '');
+            setContactLastName((prev) => prev || parts.slice(1).join(' ') || '');
+          }
+        }
         if (m?.email) setContactEmail((prev) => prev || m.email || '');
         const phone = m?.phone?.trim();
         if (!phone) return;
@@ -205,6 +231,53 @@ export default function PublicEventRegisterPage() {
   const setVal = useCallback((key: string, v: string) => {
     setFieldValues((prev) => ({ ...prev, [key]: v }));
   }, []);
+
+  const setFieldVal = useCallback(
+    (field: EventField, personIndex: number, v: string, userEdited = true) => {
+      const key = fieldValueKey(field.id, field.scope, personIndex);
+      if (field.field_type === 'preset_team_name' && userEdited) {
+        teamNameTouchedRef.current.add(key);
+      }
+      setVal(key, v);
+    },
+    [setVal],
+  );
+
+  useEffect(() => {
+    if (!event) return;
+    const total = 1 + groupMembers.length;
+    setFieldValues((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const field of event.registrationFields) {
+        if (field.field_type !== 'preset_team_name') continue;
+        if (field.scope === 'individual') {
+          for (let personIndex = 0; personIndex < total; personIndex += 1) {
+            const key = fieldValueKey(field.id, field.scope, personIndex);
+            if (teamNameTouchedRef.current.has(key)) continue;
+            const personLastName =
+              personIndex === 0
+                ? contactLastName
+                : lastNameFromDisplayName(groupMembers[personIndex - 1]?.name ?? '');
+            const defaultValue = defaultTeamNameFromLastName(personLastName);
+            if (next[key] !== defaultValue) {
+              next[key] = defaultValue;
+              changed = true;
+            }
+          }
+        } else {
+          const key = fieldValueKey(field.id, field.scope, 0);
+          if (teamNameTouchedRef.current.has(key)) continue;
+          const defaultValue = defaultTeamNameFromLastName(contactLastName);
+          if (next[key] !== defaultValue) {
+            next[key] = defaultValue;
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [event, contactLastName, groupMembers]);
 
   const sortedFields = useMemo(() => {
     if (!event?.registrationFields) return [];
@@ -296,21 +369,12 @@ export default function PublicEventRegisterPage() {
 
   if (loadError || !event) {
     return (
-      <PublicLayout>
-        <SeoMeta title="Event Not Found" />
-        <div className="max-w-2xl mx-auto px-4 py-16">
-          <PublicStateCard
-            title="Event not found"
-            description="The registration page could not be loaded because this event is unavailable."
-            action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
-                Back to events
-              </Link>
-            }
-            tone="error"
-          />
-        </div>
-      </PublicLayout>
+      <PublicNotFoundPage
+        title="Event not found"
+        description="The registration page could not be loaded because this event is unavailable."
+        seoTitle="Event not found | Triangle Curling Club"
+        showCode={false}
+      />
     );
   }
 
@@ -416,7 +480,8 @@ export default function PublicEventRegisterPage() {
 
     try {
       const res = await api.post(`/public/events/${slug}/register`, {
-        contactName: contactName.trim(),
+        contactFirstName: contactFirstName.trim(),
+        contactLastName: contactLastName.trim(),
         contactEmail: contactEmail.trim(),
         groupMembers: groupMembers.length > 0
           ? groupMembers.map((m) => ({ name: m.name.trim(), email: m.email.trim() || undefined }))
@@ -528,27 +593,42 @@ export default function PublicEventRegisterPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Your Name *</label>
-            <input
-              type="text"
-              required
-              value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
-              className={publicInput}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField tone="public" label="First name" htmlFor={contactFirstNameFieldId} required>
+              <input
+                id={contactFirstNameFieldId}
+                type="text"
+                autoComplete="given-name"
+                required
+                value={contactFirstName}
+                onChange={(e) => setContactFirstName(e.target.value)}
+                className={publicInput}
+              />
+            </FormField>
+
+            <FormField tone="public" label="Last name" htmlFor={contactLastNameFieldId} required>
+              <input
+                id={contactLastNameFieldId}
+                type="text"
+                autoComplete="family-name"
+                required
+                value={contactLastName}
+                onChange={(e) => setContactLastName(e.target.value)}
+                className={publicInput}
+              />
+            </FormField>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
+          <FormField tone="public" label="Email address" htmlFor={contactEmailFieldId} required>
             <input
+              id={contactEmailFieldId}
               type="email"
               required
               value={contactEmail}
               onChange={(e) => setContactEmail(e.target.value)}
               className={publicInput}
             />
-          </div>
+          </FormField>
 
           {event.allowGroupRegistration === 1 && (
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
@@ -617,7 +697,7 @@ export default function PublicEventRegisterPage() {
                         field={field}
                         fieldGroupKey={fieldValueKey(field.id, field.scope, personIndex)}
                         value={fieldValues[fieldValueKey(field.id, field.scope, personIndex)] || ''}
-                        onChange={(v) => setVal(fieldValueKey(field.id, field.scope, personIndex), v)}
+                        onChange={(v) => setFieldVal(field, personIndex, v)}
                       />
                     </div>
                   ))}
@@ -631,7 +711,7 @@ export default function PublicEventRegisterPage() {
                 field={field}
                 fieldGroupKey={fieldValueKey(field.id, field.scope, 0)}
                 value={fieldValues[fieldValueKey(field.id, field.scope, 0)] || ''}
-                onChange={(v) => setVal(fieldValueKey(field.id, field.scope, 0), v)}
+                onChange={(v) => setFieldVal(field, 0, v)}
               />
             );
           })}
@@ -723,6 +803,26 @@ function RegistrationFieldInput({
             onChange={(e) => onChange(e.target.value)}
             className={publicInput}
             placeholder="Phone number"
+          />
+        </FormField>
+      );
+    case 'preset_team_name':
+      return (
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${gk}`}
+          required={field.required === 1}
+        >
+          <input
+            id={`field-${gk}`}
+            type="text"
+            autoComplete="organization"
+            required={field.required === 1}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className={publicInput}
+            placeholder="Team name"
           />
         </FormField>
       );

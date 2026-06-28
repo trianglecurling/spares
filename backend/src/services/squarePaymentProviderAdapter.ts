@@ -110,7 +110,7 @@ async function resolveSquareOrderPaymentStatus(
 
   for (const tender of order.tenders) {
     if (!isRecord(tender)) continue;
-    const paymentId = asString(tender.paymentId ?? tender.payment_id);
+    const paymentId = asString(tender.paymentId ?? tender.payment_id ?? tender.id);
     if (!paymentId) continue;
     try {
       const paymentResponse = await client.payments.get({ paymentId });
@@ -266,26 +266,10 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     const client = this.requireClient();
     const locationId = this.requireLocationId();
 
-    const metadataEntries: Record<string, string> = {
-      orderId: String(input.orderId),
-      orderToken: input.orderToken,
-      subjectType: input.subjectType,
-    };
-    if (input.subjectId !== null) {
-      metadataEntries.subjectId = String(input.subjectId);
-    }
-    if (input.metadata) {
-      for (const [key, value] of Object.entries(input.metadata)) {
-        if (value === undefined || value === null) continue;
-        metadataEntries[key] = String(value);
-      }
-    }
-
     const squareOrderDetails = buildSquareOrderDetails(input);
     const response = await client.checkout.paymentLinks.create({
       idempotencyKey: crypto.randomUUID(),
       description: `Payment order ${input.orderId}`,
-      paymentNote: JSON.stringify(metadataEntries).slice(0, 500),
       order: {
         locationId,
         referenceId: input.orderToken,
@@ -450,7 +434,9 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
 
   async createRefund(input: CreateRefundInput): Promise<ProviderRefundResult> {
     const client = this.requireClient();
-    const paymentId = await this.resolvePaymentIdForRefund(client, input);
+    const paymentId =
+      input.providerPaymentId?.trim()
+      || await this.resolvePaymentIdForRefund(client, input);
     const response = await client.refunds.refundPayment({
       idempotencyKey: crypto.randomUUID(),
       paymentId,
@@ -476,25 +462,63 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     };
   }
 
+  async fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null> {
+    const client = this.requireClient();
+    const response = await client.refunds.get({ refundId: providerRefundId });
+    return mapSquareRefundStatus(asString(response.refund?.status));
+  }
+
+  private paymentIdFromTenders(tenders: unknown[]): string | null {
+    for (const tender of tenders) {
+      if (!isRecord(tender)) continue;
+      const paymentId =
+        asString(tender.paymentId)
+        ?? asString(tender.payment_id)
+        ?? asString(tender.id);
+      if (paymentId) return paymentId;
+    }
+    return null;
+  }
+
   private async resolvePaymentIdForRefund(client: SquareClient, input: CreateRefundInput): Promise<string> {
     if (!input.providerOrderId) {
       throw new PaymentServiceError('Unable to create refund: payment order has no provider checkout id', 400);
     }
 
-    const linkResponse = await client.checkout.paymentLinks.get({ id: input.providerOrderId });
-    const squareOrderId = linkResponse.paymentLink?.orderId;
-    if (!squareOrderId) {
-      throw new PaymentServiceError('Unable to create refund: Square payment link has no order id', 400);
-    }
+    const paymentIdFromLink = await this.tryResolvePaymentIdFromPaymentLink(client, input.providerOrderId);
+    if (paymentIdFromLink) return paymentIdFromLink;
 
-    const orderResponse = await client.orders.get({ orderId: squareOrderId });
-    const tenders = orderResponse.order?.tenders ?? [];
-    for (const tender of tenders) {
-      const paymentId = asString(tender.paymentId);
-      if (paymentId) return paymentId;
-    }
+    const paymentIdFromOrder = await this.tryResolvePaymentIdFromSquareOrder(client, input.providerOrderId);
+    if (paymentIdFromOrder) return paymentIdFromOrder;
 
     throw new PaymentServiceError('Unable to create refund: no Square payment found for checkout order', 400);
+  }
+
+  private async tryResolvePaymentIdFromPaymentLink(
+    client: SquareClient,
+    paymentLinkId: string
+  ): Promise<string | null> {
+    try {
+      const linkResponse = await client.checkout.paymentLinks.get({ id: paymentLinkId });
+      const squareOrderId = linkResponse.paymentLink?.orderId;
+      if (!squareOrderId) return null;
+      const orderResponse = await client.orders.get({ orderId: squareOrderId });
+      return this.paymentIdFromTenders(orderResponse.order?.tenders ?? []);
+    } catch {
+      return null;
+    }
+  }
+
+  private async tryResolvePaymentIdFromSquareOrder(
+    client: SquareClient,
+    squareOrderId: string
+  ): Promise<string | null> {
+    try {
+      const orderResponse = await client.orders.get({ orderId: squareOrderId });
+      return this.paymentIdFromTenders(orderResponse.order?.tenders ?? []);
+    } catch {
+      return null;
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { stripAccordionOpenStateFromMarkdown } from '../utils/markdownEditorAccordion';
+import { repairMarkdownLinksInRawHtmlBlocks } from '../utils/markdownEditorInlineHtml';
 import { TccAccordionMarkdownDetails, TccAccordionMarkdownDiv } from './markdown/TccAccordionMarkdown';
 import { OPEN_IN_NEW_WINDOW_TITLE } from '../constants/markdownLink';
 import { parseYoutubeVideoIdFromMarkdownImageSrc } from '../utils/youtubeMarkdown';
@@ -73,7 +74,7 @@ export function ArticleMarkdown({ markdown, className }: ArticleMarkdownProps) {
         urlTransform={articleMarkdownUrlTransform}
         components={articleMarkdownComponents}
       >
-        {stripAccordionOpenStateFromMarkdown(markdown)}
+        {stripAccordionOpenStateFromMarkdown(repairMarkdownLinksInRawHtmlBlocks(markdown))}
       </ReactMarkdown>
     </div>
   );

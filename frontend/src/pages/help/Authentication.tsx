@@ -54,7 +54,7 @@ export default function Authentication() {
                         <strong>Enter your email or phone number</strong> on the login page
                       </li>
                       <li>
-                        <strong>Click "Send Login Code"</strong> - you'll receive a 6-digit code via
+                        <strong>Click "Send login code"</strong> - you'll receive a 6-digit code via
                         email or SMS
                       </li>
                       <li>

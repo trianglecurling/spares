@@ -10,6 +10,9 @@ import {
   isCalendarAdmin,
   isContentAdmin,
   isSponsorAdmin,
+  LOGIN_DISABLED_MESSAGE,
+  membersAllowedToLogin,
+  isLoginDisabledForMembers,
 } from '../utils/auth.js';
 import { buildAuthzClaimsForMember, buildAuthzClaimsForImpersonatedMember, hasScope } from '../utils/rbac.js';
 import { sendAuthCodeEmail } from '../services/email.js';
@@ -443,13 +446,17 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       const body = requestCodeSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
-    // Check if test mode is enabled (auto-login without verification)
+    // Check server config for test mode and login restrictions
     const configRows = await db
-      .select({ test_mode: schema.serverConfig.test_mode })
+      .select({
+        bypass_login_verification: schema.serverConfig.bypass_login_verification,
+        disable_user_login: schema.serverConfig.disable_user_login,
+      })
       .from(schema.serverConfig)
       .where(eq(schema.serverConfig.id, 1))
       .limit(1);
-    const testMode = configRows[0]?.test_mode === 1;
+    const bypassLoginVerification = configRows[0]?.bypass_login_verification === 1;
+    const disableUserLogin = configRows[0]?.disable_user_login === 1;
 
     // Determine if it's email or phone
     const isEmail = body.contact.includes('@');
@@ -484,6 +491,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'No member found with this contact information' });
     }
 
+    if (isLoginDisabledForMembers(members, disableUserLogin)) {
+      return reply.code(403).send({ error: LOGIN_DISABLED_MESSAGE });
+    }
+
+    members = membersAllowedToLogin(members, disableUserLogin);
+
     // Phone login requires SMS enabled for at least one matching member
     if (!isEmail) {
       const anySmsEnabled = members.some((m) => m.opted_in_sms === 1);
@@ -495,8 +508,8 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // Test mode: auto-login without sending verification code
-    if (testMode) {
+    // Dev bypass: auto-login without sending verification code
+    if (bypassLoginVerification) {
       if (members.length === 1) {
         const member = members[0];
         const session = await issueAuthSession(member as Member);
@@ -574,6 +587,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       const body = verifyCodeSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
+    const configRows = await db
+      .select({ disable_user_login: schema.serverConfig.disable_user_login })
+      .from(schema.serverConfig)
+      .where(eq(schema.serverConfig.id, 1))
+      .limit(1);
+    const disableUserLogin = configRows[0]?.disable_user_login === 1;
+
     const isEmail = body.contact.includes('@');
     const normalizedContact = isEmail ? normalizeEmail(body.contact) : body.contact;
     const authContactToMatch = isEmail
@@ -634,6 +654,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'No member found' });
     }
 
+    if (isLoginDisabledForMembers(members, disableUserLogin)) {
+      return reply.code(403).send({ error: LOGIN_DISABLED_MESSAGE });
+    }
+
+    members = membersAllowedToLogin(members, disableUserLogin);
+
     // If only one member, generate token and return
     if (members.length === 1) {
       const member = members[0];
@@ -684,6 +710,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       const body = selectMemberSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
 
+    const configRows = await db
+      .select({ disable_user_login: schema.serverConfig.disable_user_login })
+      .from(schema.serverConfig)
+      .where(eq(schema.serverConfig.id, 1))
+      .limit(1);
+    const disableUserLogin = configRows[0]?.disable_user_login === 1;
+
     // Verify temp token
     const now = new Date().toISOString();
     const tempAuths = await db
@@ -723,6 +756,10 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
 
     if (!member) {
       return reply.code(404).send({ error: 'Member not found' });
+    }
+
+    if (disableUserLogin && !isServerAdmin(member)) {
+      return reply.code(403).send({ error: LOGIN_DISABLED_MESSAGE });
     }
 
     const session = await issueAuthSession(member as Member);

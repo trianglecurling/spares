@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useParams, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
@@ -64,7 +64,7 @@ const PublicMailingListPage = lazy(() => import('./pages/PublicMailingListPage')
 const ClubGovernance = lazy(() => import('./pages/ClubGovernance'));
 const AdminGovernance = lazy(() => import('./pages/admin/AdminGovernance'));
 const AdminRoles = lazy(() => import('./pages/admin/AdminRoles'));
-const AdminPayments = lazy(() => import('./pages/admin/AdminPayments'));
+const AdminPaymentsRoute = lazy(() => import('./pages/admin/AdminPaymentsRoute'));
 const AdminWebhooks = lazy(() => import('./pages/admin/AdminWebhooks'));
 const AdminEvents = lazy(() => import('./pages/admin/AdminEvents'));
 const AdminEventEditor = lazy(() => import('./pages/admin/AdminEventEditor'));
@@ -77,6 +77,7 @@ const PublicEventDetailPage = lazy(() => import('./pages/PublicEventDetailPage')
 const PublicEventTeamPage = lazy(() => import('./pages/PublicEventTeamPage'));
 const PublicEventRegisterPage = lazy(() => import('./pages/PublicEventRegisterPage'));
 const PublicEventRegisterSuccessPage = lazy(() => import('./pages/PublicEventRegisterSuccessPage'));
+const PublicNotFoundPage = lazy(() => import('./pages/PublicNotFoundPage'));
 const PublicPermalinkInfo = lazy(() => import('./pages/PublicPermalinkInfo'));
 const RegistrationShellPage = lazy(() => import('./pages/RegistrationShellPage'));
 const PublicWaitlistOfferDeclinePage = lazy(() => import('./pages/PublicWaitlistOfferDeclinePage'));
@@ -113,6 +114,11 @@ function RegistrationShellStepRoute() {
     return <Navigate to="/registration/view/1" replace />;
   }
   return <RegistrationShellPage />;
+}
+
+function LegacyPublicLeaguesRedirect() {
+  const location = useLocation();
+  return <Navigate to={`/leagues/public${location.search}${location.hash}`} replace />;
 }
 
 function App() {
@@ -163,7 +169,8 @@ function App() {
                       <Route path="/article/:slug" element={<PublicArticle />} />
 
                       <Route path="/events" element={<PublicEventsPage />} />
-                      <Route path="/public/leagues" element={<PublicLeaguesPage />} />
+                      <Route path="/public/leagues" element={<LegacyPublicLeaguesRedirect />} />
+                      <Route path="/leagues/public" element={<PublicLeaguesPage />} />
                       <Route path="/events/:slug/teams/:teamId" element={<PublicEventTeamPage />} />
                       <Route path="/events/:slug" element={<PublicEventDetailPage />} />
                       <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
@@ -193,6 +200,8 @@ function App() {
                           </ProtectedRoute>
                         }
                       />
+
+                      <Route path="*" element={<PublicNotFoundPage />} />
                     </Route>
 
                     <Route element={<AuthenticatedAppShell />}>
@@ -522,14 +531,8 @@ function App() {
                       />
                       <Route path="/admin/registrations" element={<AdminRegistrationRoute />} />
                       <Route path="/admin/registrations/:segment" element={<AdminRegistrationRoute />} />
-                      <Route
-                        path="/admin/payments"
-                        element={
-                          <ProtectedRoute requiredScope="payments.read">
-                            <AdminPayments />
-                          </ProtectedRoute>
-                        }
-                      />
+                      <Route path="/admin/payments" element={<AdminPaymentsRoute />} />
+                      <Route path="/admin/payments/:segment" element={<AdminPaymentsRoute />} />
                       <Route
                         path="/admin/webhooks"
                         element={

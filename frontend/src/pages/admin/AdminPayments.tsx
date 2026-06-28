@@ -9,16 +9,22 @@ import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { memberHasScope } from '../../utils/permissions';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+import PageTabs from '../../components/PageTabs';
+import AdminPaymentItemNames from './AdminPaymentItemNames';
+import {
+  formatPaymentOrderStatusLabel,
+  paymentOrderStatusClassName,
+  type PaymentOrderStatus,
+} from '../../utils/paymentOrderDisplay';
+
+type AdminPaymentsTab = 'activity' | 'item-names';
+
+type AdminPaymentsProps = {
+  activeTab?: AdminPaymentsTab;
+};
 
 type PaymentProvider = 'stripe' | 'paypal' | 'square';
 type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
-type PaymentOrderStatus =
-  | 'created'
-  | 'pending'
-  | 'succeeded'
-  | 'failed'
-  | 'refunded'
-  | 'partially_refunded';
 type PaymentEventStatus = 'received' | 'processed' | 'ignored' | 'failed';
 
 type PaymentOrderSummary = {
@@ -133,6 +139,7 @@ const PAYMENT_ORDER_STATUS_OPTIONS: ChoiceOption<PaymentOrderStatus>[] = [
   { value: 'succeeded', label: 'Succeeded' },
   { value: 'failed', label: 'Failed' },
   { value: 'partially_refunded', label: 'Partially refunded' },
+  { value: 'pending_refund', label: 'Pending refund' },
   { value: 'refunded', label: 'Refunded' },
 ];
 
@@ -143,7 +150,7 @@ const PAYMENT_EVENT_STATUS_OPTIONS: ChoiceOption<PaymentEventStatus>[] = [
   { value: 'failed', label: 'Failed' },
 ];
 
-export default function AdminPayments() {
+export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsProps) {
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const [loadingOrders, setLoadingOrders] = useState(true);
@@ -220,26 +227,43 @@ export default function AdminPayments() {
   };
 
   useEffect(() => {
+    if (activeTab !== 'activity') return;
     void loadOrders();
-  }, [providerFilter, subjectTypeFilter, statusFilter]);
+  }, [activeTab, providerFilter, subjectTypeFilter, statusFilter]);
 
   useEffect(() => {
-    if (!selectedOrderId) {
+    if (activeTab !== 'activity' || !selectedOrderId) {
       setOrderDetail(null);
       return;
     }
     void loadOrderDetail(selectedOrderId);
-  }, [selectedOrderId]);
+  }, [activeTab, selectedOrderId]);
 
   useEffect(() => {
+    if (activeTab !== 'activity') return;
     void loadEvents();
-  }, [eventProviderFilter, eventStatusFilter]);
+  }, [activeTab, eventProviderFilter, eventStatusFilter]);
 
   const selectedOrderSummary = useMemo(
     () => ordersData?.orders.find((order) => order.id === selectedOrderId) ?? null,
     [ordersData, selectedOrderId]
   );
   const canManagePayments = memberHasScope(member, 'payments.manage');
+
+  const tabs = [
+    {
+      key: 'activity',
+      label: 'Payment activity',
+      to: '/admin/payments',
+      isActive: activeTab === 'activity',
+    },
+    {
+      key: 'item-names',
+      label: 'Item names',
+      to: '/admin/payments/item-names',
+      isActive: activeTab === 'item-names',
+    },
+  ];
 
   const orderColumns: Array<DataTableColumn<PaymentOrderSummary>> = useMemo(
     () => [
@@ -275,7 +299,9 @@ export default function AdminPayments() {
       {
         id: 'status',
         header: 'Status',
-        renderCell: (order) => order.status,
+        renderCell: (order) => (
+          <span className={paymentOrderStatusClassName(order.status)}>{formatPaymentOrderStatusLabel(order.status)}</span>
+        ),
       },
       {
         id: 'created',
@@ -294,12 +320,12 @@ export default function AdminPayments() {
       const reconciliation = data.reconciliation;
       if (reconciliation.changed) {
         showAlert(
-          `Payment order #${selectedOrderId} updated from ${reconciliation.previousStatus} to ${reconciliation.currentStatus}.`,
+          `Payment order #${selectedOrderId} updated from ${formatPaymentOrderStatusLabel(reconciliation.previousStatus)} to ${formatPaymentOrderStatusLabel(reconciliation.currentStatus)}.`,
           'success'
         );
       } else {
         showAlert(
-          `Payment order #${selectedOrderId} remains ${reconciliation.currentStatus} (provider status: ${reconciliation.providerStatus ?? 'n/a'}).`,
+          `Payment order #${selectedOrderId} remains ${formatPaymentOrderStatusLabel(reconciliation.currentStatus)} (provider status: ${reconciliation.providerStatus ?? 'n/a'}).`,
           'info'
         );
       }
@@ -315,23 +341,35 @@ export default function AdminPayments() {
     <>
       <AppPage>
         <AppPageHeader
-          title="Payment activity"
-          description="Inspect payment orders, provider reconciliation details, and recent webhook processing events."
+          title="Manage payments"
+          description={
+            activeTab === 'item-names'
+              ? 'Configure Square line item names for upcoming event registrations.'
+              : 'Inspect payment orders, provider reconciliation details, and recent webhook processing events.'
+          }
           actions={
-            <Button
-              variant="secondary"
-              onClick={() => {
-                void loadOrders();
-                void loadEvents();
-                if (selectedOrderId) void loadOrderDetail(selectedOrderId);
-              }}
-              disabled={loadingOrders || loadingEvents || loadingOrderDetail}
-            >
-              Refresh
-            </Button>
+            activeTab === 'activity' ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  void loadOrders();
+                  void loadEvents();
+                  if (selectedOrderId) void loadOrderDetail(selectedOrderId);
+                }}
+                disabled={loadingOrders || loadingEvents || loadingOrderDetail}
+              >
+                Refresh
+              </Button>
+            ) : undefined
           }
         />
 
+        <PageTabs items={tabs} />
+
+        {activeTab === 'item-names' ? <AdminPaymentItemNames /> : null}
+
+        {activeTab === 'activity' ? (
+          <>
         <div className="app-card">
           <h2 className="app-section-title">Payment orders</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
@@ -552,6 +590,8 @@ export default function AdminPayments() {
             </div>
           </div>
         )}
+          </>
+        ) : null}
       </AppPage>
     </>
   );

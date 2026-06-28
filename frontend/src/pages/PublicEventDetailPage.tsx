@@ -13,9 +13,10 @@ import PublicTournamentDrawBracket from '../components/PublicTournamentDrawBrack
 import PageTabs from '../components/PageTabs';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import SeoMeta from '../components/SeoMeta';
+import PublicNotFoundPage from './PublicNotFoundPage';
 import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
-import type { TournamentDrawState } from '../utils/tournamentDrawModel';
+import { teamIdsAssignedOnDraw, type TournamentDrawState } from '../utils/tournamentDrawModel';
 import {
   formatPositionCell,
   formatTeamDisplayName,
@@ -457,6 +458,11 @@ export default function PublicEventDetailPage() {
     return foursTableLegendText(publicTeams);
   }, [publicTeamsFormat, publicTeams]);
 
+  const teamIdsOnDraw = useMemo(() => {
+    if (!publicDraw) return null;
+    return teamIdsAssignedOnDraw(publicDraw);
+  }, [publicDraw]);
+
   const loadingDelayMs = 2000;
   const drawLoadPending =
     !!event &&
@@ -494,21 +500,12 @@ export default function PublicEventDetailPage() {
 
   if (error || !event) {
     return (
-      <PublicLayout>
-        <SeoMeta title="Event Not Found" />
-        <div className="max-w-4xl mx-auto px-4 py-16">
-          <PublicStateCard
-            title="Event not found"
-            description="This event may have been removed, unpublished, or is no longer available."
-            action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
-                Back to events
-              </Link>
-            }
-            tone="error"
-          />
-        </div>
-      </PublicLayout>
+      <PublicNotFoundPage
+        title="Event not found"
+        description="This event may have been removed, unpublished, or is no longer available."
+        seoTitle="Event not found | Triangle Curling Club"
+        showCode={false}
+      />
     );
   }
 
@@ -539,18 +536,24 @@ export default function PublicEventDetailPage() {
 
   /** Sidebar competes with wide tournament tables; full-width main on Teams and Draw. */
   const showEventInfoSidebar = publicView === 'details';
+  /** Public page heading uses the Details tab article title when present. */
+  const displayTitle = article?.title?.trim() || event.title;
 
   return (
     <PublicLayout>
       <div className="flex flex-1 min-h-0 flex-col w-full min-w-0">
-        <SeoMeta title={event.title} />
+        <SeoMeta title={displayTitle} />
         <div
           ref={publicBracketAlignColumnRef}
           className="shrink-0 w-full max-w-6xl min-w-0 mx-auto px-4 sm:px-6 pt-10 pb-4"
         >
-          <Link to="/events" className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
-            &larr; All Events
+          <Link to="/events" className="text-sm text-primary-teal-link hover:underline mb-3 inline-block">
+            &larr; All events
           </Link>
+
+          <div className="public-page-title-rule">
+            <h1 className="public-heading text-balance min-w-0">{displayTitle}</h1>
+          </div>
 
           {showEventTabs ? (
             <PageTabs
@@ -629,7 +632,7 @@ export default function PublicEventDetailPage() {
                   <div className="rounded-lg overflow-hidden max-h-96">
                     <img
                       src={`/api/public/files/${event.imageFileId}`}
-                      alt={event.title}
+                      alt={displayTitle}
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -688,16 +691,20 @@ export default function PublicEventDetailPage() {
                               className="border-b border-gray-100 dark:border-gray-700/80 align-top"
                             >
                               <td className="py-3 pr-4 font-medium text-gray-900 dark:text-gray-100">
-                                <Link
-                                  to={
-                                    specialLinkQuery
-                                      ? `/events/${event.slug}/teams/${t.id}?${new URLSearchParams({ slk: specialLinkQuery }).toString()}`
-                                      : `/events/${event.slug}/teams/${t.id}`
-                                  }
-                                  className="text-left text-primary-teal-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
-                                >
-                                  {formatTeamDisplayName(t.teamName, t.sortOrder)}
-                                </Link>
+                                {showPublicDraw && teamIdsOnDraw?.has(t.id) ? (
+                                  <Link
+                                    to={
+                                      specialLinkQuery
+                                        ? `/events/${event.slug}/teams/${t.id}?${new URLSearchParams({ slk: specialLinkQuery }).toString()}`
+                                        : `/events/${event.slug}/teams/${t.id}`
+                                    }
+                                    className="text-left text-primary-teal-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
+                                  >
+                                    {formatTeamDisplayName(t.teamName, t.sortOrder)}
+                                  </Link>
+                                ) : (
+                                  formatTeamDisplayName(t.teamName, t.sortOrder)
+                                )}
                               </td>
                               <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
                                 {t.homeClub?.trim() || '—'}

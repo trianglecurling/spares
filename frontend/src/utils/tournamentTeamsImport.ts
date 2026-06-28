@@ -15,12 +15,12 @@ export type TournamentTeamsImportColumnMapping =
 
 export type TournamentTeamImportPayload = {
   teamName: string | null;
-  homeClub: string | null;
   roster: Array<{
     slotCode: string;
     playerName: string | null;
     email: string | null;
     notes: string | null;
+    homeClub: string | null;
   }>;
 };
 
@@ -259,10 +259,10 @@ function firstNonEmptyTeamNameInRows(rows: string[][], colTeam: number): string 
   return '';
 }
 
-function emptyRoster(format: TournamentFormat): Map<string, { player: string; email: string; notes: string }> {
-  const m = new Map<string, { player: string; email: string; notes: string }>();
+function emptyRoster(format: TournamentFormat): Map<string, { player: string; email: string; notes: string; homeClub: string }> {
+  const m = new Map<string, { player: string; email: string; notes: string; homeClub: string }>();
   for (const code of rosterSlotsForFormat(format)) {
-    m.set(code, { player: '', email: '', notes: '' });
+    m.set(code, { player: '', email: '', notes: '', homeClub: '' });
   }
   return m;
 }
@@ -302,12 +302,12 @@ export function buildImportTeamPayloads(
     for (const groupKey of teamOrderWide) {
       const rows = wideGroups.get(groupKey)!;
       const slotMap = emptyRoster(format);
-      let homeClubLast = '';
+      let sharedClub = '';
 
       for (const row of rows) {
         if (colClub >= 0) {
           const club = cellAt(row, colClub);
-          if (club) homeClubLast = club;
+          if (club) sharedClub = club;
         }
         for (let c = 0; c < mappings.length; c++) {
           const m = mappings[c];
@@ -315,7 +315,10 @@ export function buildImportTeamPayloads(
           if (m === 'ignore' || m === 'team_name' || m === 'home_club') continue;
           if (m.startsWith('slot_player:')) {
             const code = m.slice('slot_player:'.length);
-            if (slotMap.has(code) && v) slotMap.get(code)!.player = v;
+            if (slotMap.has(code) && v) {
+              slotMap.get(code)!.player = v;
+              if (sharedClub) slotMap.get(code)!.homeClub = sharedClub;
+            }
           } else if (m.startsWith('slot_email:')) {
             const code = m.slice('slot_email:'.length);
             if (slotMap.has(code) && v) slotMap.get(code)!.email = v;
@@ -330,11 +333,13 @@ export function buildImportTeamPayloads(
       const roster = slots.map((slotCode) => {
         const d = slotMap.get(slotCode)!;
         const email = d.email.trim();
+        const homeClub = d.homeClub.trim() || sharedClub.trim() || null;
         return {
           slotCode,
           playerName: d.player.trim() || null,
           email: email && EMAIL_RE.test(email) ? email : null,
           notes: d.notes.trim() || null,
+          homeClub,
         };
       });
       const resolvedTeamName = resolveImportTeamDisplayName(format, explicitTeam, roster, numberFallback);
@@ -349,7 +354,6 @@ export function buildImportTeamPayloads(
 
       payloads.push({
         teamName: resolvedTeamName,
-        homeClub: colClub >= 0 ? homeClubLast.trim() || null : null,
         roster,
       });
     }
@@ -390,15 +394,10 @@ export function buildImportTeamPayloads(
   for (const groupKey of teamOrder) {
     const rows = byTeam.get(groupKey)!;
     const slotMap = emptyRoster(format);
-    let homeClubLast = '';
 
     const explicitTeam = firstNonEmptyTeamNameInRows(rows, colTeam);
 
     for (const row of rows) {
-      if (colClub >= 0) {
-        const club = cellAt(row, colClub);
-        if (club) homeClubLast = club;
-      }
       const posCell = colPos >= 0 ? cellAt(row, colPos) : '';
       const code = parseSlotCodeFromCell(format, posCell);
       if (!code || !slotMap.has(code)) {
@@ -412,10 +411,12 @@ export function buildImportTeamPayloads(
       const player = colPlayer >= 0 ? cellAt(row, colPlayer) : '';
       const email = colEmail >= 0 ? cellAt(row, colEmail) : '';
       const notes = colNotes >= 0 ? cellAt(row, colNotes) : '';
+      const club = colClub >= 0 ? cellAt(row, colClub) : '';
       const cur = slotMap.get(code)!;
       if (player) cur.player = player;
       if (email) cur.email = email;
       if (notes) cur.notes = notes;
+      if (club) cur.homeClub = club;
     }
 
     const roster = slots.map((slotCode) => {
@@ -426,6 +427,7 @@ export function buildImportTeamPayloads(
         playerName: d.player.trim() || null,
         email: email && EMAIL_RE.test(email) ? email : null,
         notes: d.notes.trim() || null,
+        homeClub: d.homeClub.trim() || null,
       };
     });
 
@@ -441,7 +443,6 @@ export function buildImportTeamPayloads(
 
     payloads.push({
       teamName: resolvedTeamName,
-      homeClub: colClub >= 0 ? homeClubLast.trim() || null : null,
       roster,
     });
   }
@@ -455,7 +456,7 @@ export function importMappingOptionsForFormat(format: TournamentFormat): ImportM
   const opts: ImportMappingOption[] = [
     { value: 'ignore', label: 'Ignore', group: 'General' },
     { value: 'team_name', label: 'Team name (optional)', group: 'General' },
-    { value: 'home_club', label: 'Home club', group: 'General' },
+    { value: 'home_club', label: 'Home club (long rows)', group: 'Long rows (one row per player)' },
     { value: 'position', label: 'Position (long rows)', group: 'Long rows (one row per player)' },
     { value: 'player_name', label: 'Player name (long rows)', group: 'Long rows (one row per player)' },
     { value: 'email', label: 'Email (long rows)', group: 'Long rows (one row per player)' },

@@ -1258,6 +1258,15 @@
         }
       }
     },
+    "/public/document-status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/files/{id}/{slug}?": {
       "get": {
         "parameters": [
@@ -1517,6 +1526,24 @@
             "required": true
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/leagues": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/contact-recipients": {
+      "get": {
         "responses": {
           "200": {
             "description": "Default Response"
@@ -5621,6 +5648,19 @@
                           "number"
                         ]
                       },
+                      "publicNotes": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "teamFormation": {
+                        "type": "string",
+                        "enum": [
+                          "coordinator",
+                          "skips_draft"
+                        ]
+                      },
                       "drawTimes": {
                         "type": "array",
                         "items": {
@@ -5662,6 +5702,8 @@
                       "dropInFeeMinor",
                       "predecessorLeagueId",
                       "successorLeagueId",
+                      "publicNotes",
+                      "teamFormation",
                       "drawTimes",
                       "exceptions"
                     ]
@@ -5961,6 +6003,19 @@
                         "number"
                       ]
                     },
+                    "publicNotes": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "teamFormation": {
+                      "type": "string",
+                      "enum": [
+                        "coordinator",
+                        "skips_draft"
+                      ]
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -6002,6 +6057,8 @@
                     "dropInFeeMinor",
                     "predecessorLeagueId",
                     "successorLeagueId",
+                    "publicNotes",
+                    "teamFormation",
                     "drawTimes",
                     "exceptions"
                   ]
@@ -6246,6 +6303,19 @@
                               "number"
                             ]
                           },
+                          "publicNotes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "teamFormation": {
+                            "type": "string",
+                            "enum": [
+                              "coordinator",
+                              "skips_draft"
+                            ]
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -6287,6 +6357,8 @@
                           "dropInFeeMinor",
                           "predecessorLeagueId",
                           "successorLeagueId",
+                          "publicNotes",
+                          "teamFormation",
                           "drawTimes",
                           "exceptions"
                         ]
@@ -6436,6 +6508,19 @@
                     "type": [
                       "number",
                       "null"
+                    ]
+                  },
+                  "publicNotes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "teamFormation": {
+                    "type": "string",
+                    "enum": [
+                      "coordinator",
+                      "skips_draft"
                     ]
                   },
                   "drawTimes": {
@@ -6604,6 +6689,19 @@
                         "number"
                       ]
                     },
+                    "publicNotes": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "teamFormation": {
+                      "type": "string",
+                      "enum": [
+                        "coordinator",
+                        "skips_draft"
+                      ]
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -6645,6 +6743,8 @@
                     "dropInFeeMinor",
                     "predecessorLeagueId",
                     "successorLeagueId",
+                    "publicNotes",
+                    "teamFormation",
                     "drawTimes",
                     "exceptions"
                   ]
@@ -7008,6 +7108,19 @@
                               "number"
                             ]
                           },
+                          "publicNotes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "teamFormation": {
+                            "type": "string",
+                            "enum": [
+                              "coordinator",
+                              "skips_draft"
+                            ]
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -7049,6 +7162,8 @@
                           "dropInFeeMinor",
                           "predecessorLeagueId",
                           "successorLeagueId",
+                          "publicNotes",
+                          "teamFormation",
                           "drawTimes",
                           "exceptions"
                         ]
@@ -13889,6 +14004,12 @@
                     "disableSms": {
                       "type": "boolean"
                     },
+                    "disableUserLogin": {
+                      "type": "boolean"
+                    },
+                    "bypassLoginVerification": {
+                      "type": "boolean"
+                    },
                     "frontendOtelEnabled": {
                       "type": "boolean"
                     },
@@ -13935,6 +14056,8 @@
                     "testMode",
                     "disableEmail",
                     "disableSms",
+                    "disableUserLogin",
+                    "bypassLoginVerification",
                     "frontendOtelEnabled",
                     "captureFrontendLogs",
                     "captureBackendLogs",
@@ -14037,6 +14160,12 @@
                     "type": "boolean"
                   },
                   "disableSms": {
+                    "type": "boolean"
+                  },
+                  "disableUserLogin": {
+                    "type": "boolean"
+                  },
+                  "bypassLoginVerification": {
                     "type": "boolean"
                   },
                   "frontendOtelEnabled": {
@@ -14152,6 +14281,12 @@
                     "disableSms": {
                       "type": "boolean"
                     },
+                    "disableUserLogin": {
+                      "type": "boolean"
+                    },
+                    "bypassLoginVerification": {
+                      "type": "boolean"
+                    },
                     "frontendOtelEnabled": {
                       "type": "boolean"
                     },
@@ -14198,6 +14333,8 @@
                     "testMode",
                     "disableEmail",
                     "disableSms",
+                    "disableUserLogin",
+                    "bypassLoginVerification",
                     "frontendOtelEnabled",
                     "captureFrontendLogs",
                     "captureBackendLogs",
@@ -15062,6 +15199,67 @@
       }
     },
     "/content/menu-items/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/contact-recipients": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/contact-recipients/reorder": {
+      "patch": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/contact-recipients/{id}": {
       "patch": {
         "parameters": [
           {
@@ -18964,6 +19162,63 @@
             "in": "query",
             "name": "status",
             "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/payments/event-item-names": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/payments/event-item-names/{eventId}": {
+      "patch": {
+        "tags": [
+          "payments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "paymentItemName"
+                ],
+                "properties": {
+                  "paymentItemName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 512
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "path",
+            "name": "eventId",
+            "required": true
           }
         ],
         "responses": {

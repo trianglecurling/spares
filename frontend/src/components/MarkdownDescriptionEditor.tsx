@@ -4,7 +4,7 @@
  * Respects light/dark theme.
  */
 
-import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { EditorState, TextSelection, type Command, type Plugin } from 'prosemirror-state';
@@ -32,6 +32,12 @@ import {
   TCC_INDENT_ATTR,
   writeIndentedBlockMarkdown,
 } from '../utils/markdownEditorIndent';
+import {
+  buildInlineNodesFromHTML,
+  repairMarkdownLinksInHtmlContent,
+  repairMarkdownLinksInRawHtmlBlocks,
+  writeWysiwygInlineAsHtml,
+} from '../utils/markdownEditorInlineHtml';
 import {
   applyAccordionBlockStyleToSelection,
   applyAccordionHeadingToSelection,
@@ -61,13 +67,24 @@ import '@toast-ui/editor/dist/toastui-editor.css';
 import '@toast-ui/editor/dist/theme/toastui-editor-dark.css';
 import { Editor } from '@toast-ui/react-editor';
 import ArticleAutocomplete, { type ArticleOption } from './ArticleAutocomplete';
+import ChoiceInput from './ChoiceInput';
 import ContentFileEditModal, { type ManagedFile } from './ContentFileEditModal';
 import FormCheckbox from './FormCheckbox';
 import FormField from './FormField';
+import { toContactRecipientChoiceOptions } from '../constants/contactRecipients';
+import { PUBLIC_SYSTEM_PAGE_OPTIONS, type PublicSystemPagePath } from '../constants/publicSystemPages';
+import { usePublicContactRecipients } from '../hooks/usePublicContactRecipients';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import api from '../utils/api';
 import { OPEN_IN_NEW_WINDOW_TITLE } from '../constants/markdownLink';
+import {
+  buildMarkdownEditorLinkUrl,
+  inferMarkdownEditorLinkTarget,
+  isMarkdownEditorLinkDraftReady,
+  MARKDOWN_EDITOR_LINK_TYPE_CHOICES,
+  type MarkdownEditorLinkType,
+} from '../utils/markdownEditorLink';
 import {
   bustManagedFileUrlsCacheInMarkdown,
   parseManagedFileIdFromImageSrc,
@@ -251,6 +268,7 @@ type WysiwygView = {
     tr: {
       addMark: (from: number, to: number, mark: unknown) => WysiwygView['state']['tr'];
       removeMark: (from: number, to: number, mark: unknown) => WysiwygView['state']['tr'];
+      insertText: (text: string, from: number, to?: number) => WysiwygView['state']['tr'];
       replaceRange: (from: number, to: number, slice: unknown) => WysiwygView['state']['tr'];
       replaceRangeWith: (from: number, to: number, node: unknown) => WysiwygView['state']['tr'];
       setNodeMarkup: (pos: number, type?: unknown, attrs?: Record<string, unknown>) => WysiwygView['state']['tr'];
@@ -314,6 +332,10 @@ type LinkRange = {
 type LinkDraft = {
   text: string;
   url: string;
+  linkType: MarkdownEditorLinkType;
+  articleSlug: string | null;
+  contactRecipient: string | null;
+  systemPagePath: PublicSystemPagePath | null;
   openInNewWindow: boolean;
   from: number;
   to: number;
@@ -381,11 +403,6 @@ function trimSelectionEdges(text: string, from: number, to: number) {
     to: Math.max(from, to - trailing),
     text: text.slice(leading, text.length - trailing),
   };
-}
-
-function createTextNode(schema: WysiwygView['state']['schema'], text: string, mark: unknown) {
-  const textNode = (schema as unknown as { text?: (value: string, marks?: unknown[]) => unknown }).text;
-  return textNode?.(text, [mark]);
 }
 
 function classListContainsAny(className: string | undefined, values: Set<CannedStyleClass>) {
@@ -523,41 +540,6 @@ function getSelectedStyleableBlocks(view: WysiwygView) {
   return blocks;
 }
 
-function buildInlineNodesFromHTML(
-  schema: WysiwygView['state']['schema'],
-  html: string
-): unknown[] {
-  const container = document.createElement('div');
-  container.innerHTML = html;
-  const result: unknown[] = [];
-
-  const walk = (parent: Node, marks: unknown[]) => {
-    parent.childNodes.forEach((child) => {
-      if (child.nodeType === Node.TEXT_NODE) {
-        const text = child.textContent ?? '';
-        if (!text) return;
-        const node = (schema as unknown as { text?: (value: string, marks?: unknown[]) => unknown }).text?.(text, marks);
-        if (node) result.push(node);
-        return;
-      }
-      if (child.nodeType !== Node.ELEMENT_NODE) return;
-      const el = child as HTMLElement;
-      const tag = el.tagName.toLowerCase();
-      let nextMarks = marks;
-      if ((tag === 'span' || tag === 'small') && schema.marks[tag]) {
-        const attrs: Record<string, string> = {};
-        for (const { name, value } of Array.from(el.attributes)) attrs[name] = value;
-        const markType = schema.marks[tag] as { create: (attrs: Record<string, unknown>) => unknown };
-        nextMarks = [...marks, markType.create({ htmlAttrs: attrs })];
-      }
-      walk(el, nextMarks);
-    });
-  };
-
-  walk(container, []);
-  return result;
-}
-
 function normalizeStyledHtmlBlocks(view: WysiwygView) {
   const { doc, schema } = view.state;
   let tr = view.state.tr;
@@ -570,7 +552,10 @@ function normalizeStyledHtmlBlocks(view: WysiwygView) {
     const blockClass = className?.split(/\s+/).find((part) => BLOCK_STYLE_CLASSES.has(part as CannedStyleClass));
     if (!blockClass) return false;
 
-    const inlineNodes = buildInlineNodesFromHTML(schema, node.attrs.childrenHTML ?? '');
+    const inlineNodes = buildInlineNodesFromHTML(
+      schema,
+      repairMarkdownLinksInHtmlContent(node.attrs.childrenHTML ?? '')
+    );
     const styledParagraph = schema.nodes.paragraph?.create?.(
       { classNames: [blockClass] },
       inlineNodes.length ? inlineNodes : undefined
@@ -1115,8 +1100,11 @@ const MarkdownDescriptionEditor = forwardRef<
     ref
   ) => {
     const linkTextId = useId();
+    const linkTypeId = useId();
     const linkUrlId = useId();
     const articlePickerId = useId();
+    const contactRecipientId = useId();
+    const systemPageId = useId();
     const youtubeTitleId = useId();
     const youtubeUrlId = useId();
     const accordionInsertCountId = useId();
@@ -1133,6 +1121,7 @@ const MarkdownDescriptionEditor = forwardRef<
     const accordionInsertDialogRef = useRef<HTMLDivElement>(null);
     const accordionEditDialogRef = useRef<HTMLDivElement>(null);
     const youtubeDialogWasOpenRef = useRef(false);
+    const linkDialogWasOpenRef = useRef(false);
     const accordionInsertDialogWasOpenRef = useRef(false);
     const accordionEditDialogWasOpenRef = useRef(false);
     const unlinkButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1150,6 +1139,11 @@ const MarkdownDescriptionEditor = forwardRef<
     const [accordionInsertDraft, setAccordionInsertDraft] = useState<AccordionInsertDraft | null>(null);
     const [accordionEditDraft, setAccordionEditDraft] = useState<AccordionEditDraft | null>(null);
     const [selectedArticle, setSelectedArticle] = useState<ArticleOption | null>(null);
+    const { recipients: contactRecipients, loading: contactRecipientsLoading } = usePublicContactRecipients();
+    const contactRecipientOptions = useMemo(
+      () => toContactRecipientChoiceOptions(contactRecipients),
+      [contactRecipients],
+    );
     const { showAlert } = useAlert();
     const { confirm } = useConfirm();
     const [managedImageModal, setManagedImageModal] = useState<{ open: boolean; file: ManagedFile | null }>({
@@ -1180,6 +1174,7 @@ const MarkdownDescriptionEditor = forwardRef<
         if (view) {
           md = injectLiveAccordionHtmlIntoMarkdown(view, md);
         }
+        md = repairMarkdownLinksInRawHtmlBlocks(md);
         return stripAccordionOpenStateFromMarkdown(markdownStorageFromWysiwygYoutubeThumbnails(md)).trim();
       },
       insertText: (text: string) => {
@@ -1310,9 +1305,24 @@ const MarkdownDescriptionEditor = forwardRef<
       setYoutubeDraft(null);
       setAccordionInsertDraft(null);
       setAccordionEditDraft(null);
+
+      const existingUrl = activeLink?.attrs?.linkUrl ?? '';
+      const inferred = inferMarkdownEditorLinkTarget(existingUrl);
+      const url = buildMarkdownEditorLinkUrl({
+        linkType: inferred.linkType,
+        articleSlug: inferred.articleSlug,
+        contactRecipient: inferred.contactRecipient,
+        systemPagePath: inferred.systemPagePath,
+        customUrl: inferred.customUrl,
+      });
+
       setLinkDraft({
         text: trimmed.text,
-        url: activeLink?.attrs?.linkUrl ?? '',
+        url: inferred.linkType === 'custom-url' ? inferred.customUrl : url,
+        linkType: inferred.linkType,
+        articleSlug: inferred.articleSlug,
+        contactRecipient: inferred.contactRecipient,
+        systemPagePath: inferred.systemPagePath,
         openInNewWindow: activeLink?.attrs?.title === OPEN_IN_NEW_WINDOW_TITLE,
         from: trimmed.from,
         to: trimmed.to,
@@ -1323,8 +1333,14 @@ const MarkdownDescriptionEditor = forwardRef<
     const applyLinkDraft = () => {
       if (!linkDraft) return;
       const text = linkDraft.text.trim();
-      const url = linkDraft.url.trim();
-      if (!text || !url) return;
+      const url = buildMarkdownEditorLinkUrl({
+        linkType: linkDraft.linkType,
+        articleSlug: linkDraft.articleSlug,
+        contactRecipient: linkDraft.contactRecipient,
+        systemPagePath: linkDraft.systemPagePath,
+        customUrl: linkDraft.url,
+      }).trim();
+      if (!isMarkdownEditorLinkDraftReady({ ...linkDraft, text, url })) return;
 
       const instance = getEditorInstance();
       const view = instance?.wwEditor?.view;
@@ -1335,14 +1351,15 @@ const MarkdownDescriptionEditor = forwardRef<
         linkUrl: url,
         title: linkDraft.openInNewWindow ? OPEN_IN_NEW_WINDOW_TITLE : null,
       });
-      const tr = view.state.tr.removeMark(linkDraft.from, linkDraft.to, schema.marks.link);
+      let tr = view.state.tr.removeMark(linkDraft.from, linkDraft.to, schema.marks.link);
+      const currentText = linkDraft.empty ? '' : view.state.doc.textBetween(linkDraft.from, linkDraft.to, '\n', '\n');
+      const textChanged = linkDraft.empty || text !== currentText.trim();
 
-      if (linkDraft.empty) {
-        const node = createTextNode(schema, text, mark);
-        if (!node) return;
-        tr.replaceRangeWith(linkDraft.from, linkDraft.to, node);
+      if (textChanged) {
+        tr = tr.insertText(text, linkDraft.from, linkDraft.to);
+        tr = tr.addMark(linkDraft.from, linkDraft.from + text.length, mark);
       } else {
-        tr.addMark(linkDraft.from, linkDraft.to, mark);
+        tr = tr.addMark(linkDraft.from, linkDraft.to, mark);
       }
 
       view.dispatch(tr.scrollIntoView());
@@ -1778,7 +1795,7 @@ const MarkdownDescriptionEditor = forwardRef<
                   state.write(`<div class="${className}">`);
                 }
                 state.write(`<p${indentAttr}>`);
-                state.convertInline(nodeInfo.node);
+                writeWysiwygInlineAsHtml(state, nodeInfo.node);
                 state.write('</p>');
                 if (isLastInRun) {
                   state.write('</div>');
@@ -1818,7 +1835,8 @@ const MarkdownDescriptionEditor = forwardRef<
           const view = instance.wwEditor?.view as unknown as EditorView | undefined;
           if (!view || typeof markdownText !== 'string') return markdownText;
           syncTccAccordionHtmlFromDom(view, { force: true });
-          return injectLiveAccordionHtmlIntoMarkdown(view, markdownText);
+          const withAccordions = injectLiveAccordionHtmlIntoMarkdown(view, markdownText);
+          return repairMarkdownLinksInRawHtmlBlocks(withAccordions);
         });
         instance.on?.('changeMode', (mode) => {
           if (mode === 'wysiwyg') {
@@ -2137,10 +2155,43 @@ const MarkdownDescriptionEditor = forwardRef<
     }, []);
 
     useEffect(() => {
-      if (!linkDraft) return;
-      const target = linkDraft.text.trim() ? linkUrlInputRef.current : linkTextInputRef.current;
-      requestAnimationFrame(() => target?.focus());
-    }, [linkDraft]);
+      const open = linkDraft != null;
+      if (open && !linkDialogWasOpenRef.current) {
+        const target =
+          linkDraft?.linkType === 'custom-url' && linkDraft.text.trim()
+            ? linkUrlInputRef.current
+            : linkTextInputRef.current;
+        requestAnimationFrame(() => target?.focus());
+      }
+      linkDialogWasOpenRef.current = open;
+    }, [linkDraft != null]);
+
+    useEffect(() => {
+      if (!linkDraft || linkDraft.linkType !== 'published-article' || !linkDraft.articleSlug) {
+        return;
+      }
+
+      let cancelled = false;
+      const slug = linkDraft.articleSlug;
+
+      void (async () => {
+        try {
+          const res = await api.get<ArticleOption[]>('/content/articles/lookup', {
+            params: { q: slug, limit: 20 },
+          });
+          const match = res.data.find((article) => article.slug === slug);
+          if (!cancelled && match) {
+            setSelectedArticle(match);
+          }
+        } catch {
+          // Leave article picker empty when lookup fails.
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [linkDraft?.articleSlug, linkDraft?.linkType]);
 
     useEffect(() => {
       const open = youtubeDraft != null;
@@ -2888,7 +2939,7 @@ const MarkdownDescriptionEditor = forwardRef<
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Create or edit link</h3>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Select an article or paste a URL. Edge spaces are kept outside the link.
+                  Choose a link target type, then pick an article, contact, system page, or custom URL.
                 </p>
               </div>
               <button
@@ -2909,32 +2960,140 @@ const MarkdownDescriptionEditor = forwardRef<
                   onChange={(event) => setLinkDraft((draft) => (draft ? { ...draft, text: event.target.value } : draft))}
                 />
               </FormField>
-              <FormField label="Published article" htmlFor={articlePickerId} helperText="Choosing an article fills in the URL below.">
-                <ArticleAutocomplete
-                  inputId={articlePickerId}
-                  value={selectedArticle}
-                  onChange={(article) => {
-                    setSelectedArticle(article);
-                    if (article) {
-                      setLinkDraft((draft) => (draft ? { ...draft, url: `/articles/${article.slug}` } : draft));
-                    }
-                  }}
-                  placeholder="Search published articles..."
-                />
-              </FormField>
-              <FormField label="URL" htmlFor={linkUrlId} required>
-                <input
-                  id={linkUrlId}
-                  ref={linkUrlInputRef}
-                  className="app-input font-mono text-sm"
-                  value={linkDraft.url}
-                  onChange={(event) => {
+              <FormField label="Link type" htmlFor={linkTypeId}>
+                <ChoiceInput
+                  inputId={linkTypeId}
+                  layout="inline"
+                  options={MARKDOWN_EDITOR_LINK_TYPE_CHOICES}
+                  value={linkDraft.linkType}
+                  onChange={(next) => {
+                    if (next == null || Array.isArray(next)) return;
+                    const linkType = next;
                     setSelectedArticle(null);
-                    setLinkDraft((draft) => (draft ? { ...draft, url: event.target.value } : draft));
+                    setLinkDraft((draft) => {
+                      if (!draft) return draft;
+                      const nextDraft: LinkDraft = {
+                        ...draft,
+                        linkType,
+                        articleSlug: null,
+                        contactRecipient: null,
+                        systemPagePath: null,
+                        url: linkType === 'custom-url' ? draft.url : '',
+                      };
+                      return {
+                        ...nextDraft,
+                        url: buildMarkdownEditorLinkUrl({
+                          linkType: nextDraft.linkType,
+                          articleSlug: nextDraft.articleSlug,
+                          contactRecipient: nextDraft.contactRecipient,
+                          systemPagePath: nextDraft.systemPagePath,
+                          customUrl: nextDraft.url,
+                        }),
+                      };
+                    });
                   }}
-                  placeholder="https://example.com or /articles/example"
+                  listboxLabel="Link type"
                 />
               </FormField>
+              {linkDraft.linkType === 'published-article' && (
+                <FormField label="Published article" htmlFor={articlePickerId}>
+                  <ArticleAutocomplete
+                    inputId={articlePickerId}
+                    value={selectedArticle}
+                    onChange={(article) => {
+                      setSelectedArticle(article);
+                      setLinkDraft((draft) => {
+                        if (!draft) return draft;
+                        const articleSlug = article?.slug ?? null;
+                        return {
+                          ...draft,
+                          articleSlug,
+                          url: buildMarkdownEditorLinkUrl({
+                            linkType: draft.linkType,
+                            articleSlug,
+                            contactRecipient: draft.contactRecipient,
+                            systemPagePath: draft.systemPagePath,
+                            customUrl: draft.url,
+                          }),
+                        };
+                      });
+                    }}
+                    placeholder="Search published articles..."
+                  />
+                </FormField>
+              )}
+              {linkDraft.linkType === 'email-contact' && (
+                <FormField label="Email contact" htmlFor={contactRecipientId}>
+                  <ChoiceInput<string>
+                    inputId={contactRecipientId}
+                    options={contactRecipientOptions}
+                    value={linkDraft.contactRecipient}
+                    onChange={(next) => {
+                      if (next == null || Array.isArray(next)) return;
+                      setLinkDraft((draft) => {
+                        if (!draft) return draft;
+                        return {
+                          ...draft,
+                          contactRecipient: next,
+                          url: buildMarkdownEditorLinkUrl({
+                            linkType: draft.linkType,
+                            articleSlug: draft.articleSlug,
+                            contactRecipient: next,
+                            systemPagePath: draft.systemPagePath,
+                            customUrl: draft.url,
+                          }),
+                        };
+                      });
+                    }}
+                    placeholder={contactRecipientsLoading ? 'Loading contacts...' : 'Choose a contact...'}
+                    listboxLabel="Email contact"
+                    disabled={contactRecipientsLoading || contactRecipientOptions.length === 0}
+                  />
+                </FormField>
+              )}
+              {linkDraft.linkType === 'system-page' && (
+                <FormField label="System page" htmlFor={systemPageId}>
+                  <ChoiceInput<PublicSystemPagePath>
+                    inputId={systemPageId}
+                    options={PUBLIC_SYSTEM_PAGE_OPTIONS}
+                    value={linkDraft.systemPagePath}
+                    onChange={(next) => {
+                      if (next == null || Array.isArray(next)) return;
+                      setLinkDraft((draft) => {
+                        if (!draft) return draft;
+                        return {
+                          ...draft,
+                          systemPagePath: next,
+                          url: buildMarkdownEditorLinkUrl({
+                            linkType: draft.linkType,
+                            articleSlug: draft.articleSlug,
+                            contactRecipient: draft.contactRecipient,
+                            systemPagePath: next,
+                            customUrl: draft.url,
+                          }),
+                        };
+                      });
+                    }}
+                    placeholder="Choose a page..."
+                    listboxLabel="System page"
+                  />
+                </FormField>
+              )}
+              {linkDraft.linkType === 'custom-url' && (
+                <FormField label="URL" htmlFor={linkUrlId} required>
+                  <input
+                    id={linkUrlId}
+                    ref={linkUrlInputRef}
+                    className="app-input font-mono text-sm"
+                    value={linkDraft.url}
+                    onChange={(event) => {
+                      setSelectedArticle(null);
+                      setLinkDraft((draft) => (draft ? { ...draft, url: event.target.value } : draft));
+                    }}
+                    placeholder="https://example.com or /articles/example"
+                  />
+                </FormField>
+              )}
               <FormCheckbox
                 label="Open in new window"
                 checked={linkDraft.openInNewWindow}
@@ -2954,7 +3113,16 @@ const MarkdownDescriptionEditor = forwardRef<
               <button
                 type="button"
                 className="rounded-md bg-primary-teal px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!linkDraft.text.trim() || !linkDraft.url.trim()}
+                disabled={
+                  !isMarkdownEditorLinkDraftReady({
+                    linkType: linkDraft.linkType,
+                    text: linkDraft.text,
+                    url: linkDraft.url,
+                    articleSlug: linkDraft.articleSlug,
+                    contactRecipient: linkDraft.contactRecipient,
+                    systemPagePath: linkDraft.systemPagePath,
+                  })
+                }
                 onClick={applyLinkDraft}
               >
                 Apply link

@@ -3,6 +3,11 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { createPaymentService, PaymentServiceError } from '../services/paymentService.js';
+import {
+  listUpcomingEventsForPaymentItemNames,
+  updateEventPaymentItemName,
+  EventServiceError,
+} from '../services/eventService.js';
 import { hasScope } from '../utils/rbac.js';
 
 const listOrdersQuerySchema = z.object({
@@ -10,7 +15,7 @@ const listOrdersQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   provider: z.enum(['stripe', 'paypal', 'square']).optional(),
   subjectType: z.enum(['donation', 'membership', 'event_registration', 'curling_registration']).optional(),
-  status: z.enum(['created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded']).optional(),
+  status: z.enum(['created', 'pending', 'succeeded', 'failed', 'pending_refund', 'refunded', 'partially_refunded']).optional(),
 });
 
 const listEventsQuerySchema = z.object({
@@ -22,6 +27,14 @@ const listEventsQuerySchema = z.object({
 
 const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
+});
+
+const updateEventItemNameBodySchema = z.object({
+  paymentItemName: z.string().max(512).nullable(),
+});
+
+const eventIdParamSchema = z.object({
+  eventId: z.coerce.number().int().positive(),
 });
 
 function tryParseJson(value: string | null): unknown {
@@ -65,7 +78,7 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
             offset: { type: 'number' },
             provider: { type: 'string', enum: ['stripe', 'paypal', 'square'] },
             subjectType: { type: 'string', enum: ['donation', 'membership', 'event_registration', 'curling_registration'] },
-            status: { type: 'string', enum: ['created', 'pending', 'succeeded', 'failed', 'refunded', 'partially_refunded'] },
+            status: { type: 'string', enum: ['created', 'pending', 'succeeded', 'failed', 'pending_refund', 'refunded', 'partially_refunded'] },
           },
         },
       },
@@ -232,8 +245,9 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
         if (error instanceof PaymentServiceError) {
           return reply.code(error.statusCode).send({ error: error.message });
         }
+        const message = error instanceof Error ? error.message : 'Failed to resync payment order';
         request.log.error({ err: error }, 'Failed to resync payment order');
-        return reply.code(500).send({ error: 'Failed to resync payment order' });
+        return reply.code(500).send({ error: message });
       }
     }
   );
@@ -301,6 +315,60 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
           rawPayload: tryParseJson(row.rawPayload),
         })),
       };
+    }
+  );
+
+  fastify.get(
+    '/payments/event-item-names',
+    {
+      schema: {
+        tags: ['payments'],
+      },
+    },
+    async (request, reply) => {
+      if (!requirePaymentsRead(request, reply)) return;
+      const events = await listUpcomingEventsForPaymentItemNames();
+      return { events };
+    }
+  );
+
+  fastify.patch<{ Params: { eventId: string }; Body: { paymentItemName: string | null } }>(
+    '/payments/event-item-names/:eventId',
+    {
+      schema: {
+        tags: ['payments'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['eventId'],
+          properties: {
+            eventId: { type: 'number' },
+          },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['paymentItemName'],
+          properties: {
+            paymentItemName: { type: ['string', 'null'], maxLength: 512 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requirePaymentsManage(request, reply)) return;
+      const params = eventIdParamSchema.parse(request.params);
+      const body = updateEventItemNameBodySchema.parse(request.body ?? {});
+      try {
+        await updateEventPaymentItemName(params.eventId, body.paymentItemName);
+      } catch (error) {
+        if (error instanceof EventServiceError) {
+          reply.code(error.statusCode).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+      return { ok: true };
     }
   );
 }

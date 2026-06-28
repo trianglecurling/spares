@@ -2,12 +2,24 @@ import { chainCommands, splitBlockAs } from 'prosemirror-commands';
 import { keydownHandler } from 'prosemirror-keymap';
 import type { Node as ProseMirrorNode, ResolvedPos } from 'prosemirror-model';
 import { Plugin, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
-import type { EditorView } from 'prosemirror-view';
 import { sinkListItem, liftListItem } from 'prosemirror-schema-list';
+import { writeWysiwygInlineAsHtml, repairMarkdownLinksInHtmlContent } from './markdownEditorInlineHtml';
 
 export const TCC_INDENT_ATTR = 'data-tcc-indent';
 export const MAX_TCC_INDENT = 8;
 export const TCC_INDENT_EM = 1.5;
+
+/** Structural view type — avoids duplicate `prosemirror-view` installs across PM packages. */
+type TccEditorView = {
+  composing?: boolean;
+  endOfTextblock?: (
+    side: 'backward' | 'forward' | 'up' | 'down' | 'left' | 'right',
+    state?: EditorState
+  ) => boolean;
+  dispatch: (transaction: Transaction) => void;
+};
+
+type TccEditorViewDispatch = TccEditorView['dispatch'];
 
 type BlockAttrs = Record<string, unknown> & {
   htmlAttrs?: Record<string, string> | null;
@@ -48,11 +60,11 @@ export function isAtBlockTextStart($from: ResolvedPos): boolean {
   return $from.parentOffset === 0;
 }
 
-function isAtBlockTextStartForBackspace(state: EditorState, view?: EditorView): boolean {
+function isAtBlockTextStartForBackspace(state: EditorState, view?: TccEditorView): boolean {
   const { selection } = state;
   if (!(selection instanceof TextSelection) || !selection.empty) return false;
   const $from = selection.$from;
-  if (view ? !view.endOfTextblock('backward', state) : $from.parentOffset > 0) return false;
+  if (view?.endOfTextblock ? !view.endOfTextblock('backward', state) : $from.parentOffset > 0) return false;
   return true;
 }
 
@@ -321,11 +333,14 @@ const tccListBackspace = chainCommands(
 );
 
 function createTccListBackspacePlugin(): Plugin {
+  const handleBackspace = keydownHandler({
+    Backspace: tccListBackspace,
+  });
   return new Plugin({
     props: {
-      handleKeyDown: keydownHandler({
-        Backspace: tccListBackspace,
-      }),
+      handleKeyDown(view, event) {
+        return handleBackspace(view as unknown as Parameters<typeof handleBackspace>[0], event);
+      },
     },
   });
 }
@@ -333,10 +348,10 @@ function createTccListBackspacePlugin(): Plugin {
 /** Run list-aware Backspace handling (used by editor capture-phase keydown as well). */
 export function runTccListBackspace(
   state: EditorState,
-  dispatch: EditorView['dispatch'],
-  view: EditorView
+  dispatch: TccEditorViewDispatch,
+  view: TccEditorView
 ): boolean {
-  return tccListBackspace(state, dispatch, view);
+  return tccListBackspace(state, dispatch, view as unknown as NonNullable<Parameters<Command>[2]>);
 }
 
 function indentedBlockContinueEnter(
@@ -407,15 +422,15 @@ export function createTccIndentPlugin(
       tccIncreaseIndent: (
         _payload: unknown,
         state: EditorState,
-        dispatch: EditorView['dispatch'],
-        view: EditorView
-      ) => increaseIndent(true)(state, dispatch, view),
+        dispatch: TccEditorViewDispatch,
+        view: TccEditorView
+      ) => increaseIndent(true)(state, dispatch, view as unknown as NonNullable<Parameters<Command>[2]>),
       tccDecreaseIndent: (
         _payload: unknown,
         state: EditorState,
-        dispatch: EditorView['dispatch'],
-        view: EditorView
-      ) => decreaseIndent(true)(state, dispatch, view),
+        dispatch: TccEditorViewDispatch,
+        view: TccEditorView
+      ) => decreaseIndent(true)(state, dispatch, view as unknown as NonNullable<Parameters<Command>[2]>),
     },
   };
 }
@@ -456,7 +471,10 @@ export function normalizeIndentedHtmlBlocks(
     const parsed = parseIndentedBlockFromHtml(node.attrs.childrenHTML ?? '');
     if (!parsed) return false;
 
-    const inlineNodes = buildInlineNodesFromHTML(schema, parsed.innerHtml);
+    const inlineNodes = buildInlineNodesFromHTML(
+      schema,
+      repairMarkdownLinksInHtmlContent(parsed.innerHtml)
+    );
     const attrs = setTccIndentInAttrs(
       { htmlAttrs: null, classNames: null },
       parsed.indent
@@ -493,7 +511,6 @@ export function normalizeIndentedHtmlBlocks(
 
 type MdConvertorState = {
   write: (text: string) => void;
-  convertInline: (node: unknown) => void;
   closeBlock: (node: unknown) => void;
 };
 
@@ -512,7 +529,7 @@ export function writeIndentedBlockMarkdown(
   const indent = getTccIndent(nodeInfo.node);
   if (indent <= 0) return false;
   state.write(`<${tagName} ${TCC_INDENT_ATTR}="${indent}">`);
-  state.convertInline(nodeInfo.node);
+  writeWysiwygInlineAsHtml(state, nodeInfo.node);
   state.write(`</${tagName}>`);
   state.closeBlock(nodeInfo.node);
   return true;

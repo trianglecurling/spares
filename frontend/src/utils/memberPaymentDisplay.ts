@@ -49,6 +49,8 @@ export function memberPaymentStatusLabel(status: MemberPaymentHistoryStatus): st
       return 'Failed';
     case 'refunded':
       return 'Refunded';
+    case 'pending_refund':
+      return 'Pending refund';
     case 'partially_refunded':
       return 'Partially refunded';
     case 'created':

@@ -32,7 +32,7 @@ type PublicLeaguesResponse = {
 const HEADER_COLORS = ['bg-primary-orange', 'bg-primary-teal'] as const;
 
 function sessionLeaguesHref(sessionId: number): string {
-  return `/public/leagues?sessionId=${sessionId}`;
+  return `/leagues/public?sessionId=${sessionId}`;
 }
 
 export default function PublicLeaguesPage() {
@@ -80,7 +80,7 @@ export default function PublicLeaguesPage() {
   if (loading) {
     return (
       <PublicLayout>
-        <SeoMeta title="Leagues | Triangle Curling Club" description="League schedules and information." canonicalPath="/public/leagues" />
+        <SeoMeta title="Leagues | Triangle Curling Club" description="League schedules and information." canonicalPath="/leagues/public" />
         <section className="public-section">
           <div className="public-container">
             <PublicStateCard title="Loading leagues" description="Gathering league information for this session." />
@@ -93,7 +93,7 @@ export default function PublicLeaguesPage() {
   if (error || !data) {
     return (
       <PublicLayout>
-        <SeoMeta title="Leagues | Triangle Curling Club" description="League schedules and information." canonicalPath="/public/leagues" />
+        <SeoMeta title="Leagues | Triangle Curling Club" description="League schedules and information." canonicalPath="/leagues/public" />
         <section className="public-section">
           <div className="public-container">
             <PublicStateCard title="Unable to load leagues" description={error || 'No league information is available.'} tone="warning" />
@@ -108,7 +108,7 @@ export default function PublicLeaguesPage() {
       <SeoMeta
         title={`${pageTitle} | Triangle Curling Club`}
         description={`League formats, dates, draw times, and registration information for ${data.session.name}.`}
-        canonicalPath="/public/leagues"
+        canonicalPath="/leagues/public"
       />
       <section className="public-section">
         <div className="public-container">

@@ -101,20 +101,33 @@ const HOMEPAGE_COPY = {
     'Triangle Curling Club is a dedicated, four-sheet curling facility offering leagues, bonspiels, public curling events, and daytime group events.',
 };
 
-function snippetPreview(text: string): string {
-  const normalized = text.replace(/[#>*_`[\]()!-]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (normalized.length <= 220) return normalized;
-  return `${normalized.slice(0, 217)}...`;
-}
-
 /** Curling house (target rings) ornament; colored via currentColor. */
 function HouseRings({ className }: { className?: string }) {
+  const ringStroke = {
+    fill: 'none' as const,
+    stroke: 'currentColor',
+    strokeWidth: 1.5,
+    strokeOpacity: 0.5,
+  };
+  const lightBand = {
+    fill: 'currentColor',
+    fillOpacity: 0.07,
+  };
+
+  /** Filled band between two circle radii (even-odd donut). */
+  const annulus = (outerR: number, innerR: number) =>
+    `M 100 ${100 - outerR} a ${outerR} ${outerR} 0 1 0 0 ${outerR * 2} a ${outerR} ${outerR} 0 1 0 0 ${-outerR * 2} ` +
+    `M 100 ${100 - innerR} a ${innerR} ${innerR} 0 1 1 0 ${innerR * 2} a ${innerR} ${innerR} 0 1 1 0 ${-innerR * 2} Z`;
+
   return (
     <svg viewBox="0 0 200 200" className={className} aria-hidden="true" focusable="false">
-      <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.4" />
-      <circle cx="100" cy="100" r="66" fill="currentColor" opacity="0.07" />
-      <circle cx="100" cy="100" r="40" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
-      <circle cx="100" cy="100" r="13" fill="currentColor" opacity="0.55" />
+      {/* Inner → outer fills: transparent, light, transparent, light */}
+      <path fillRule="evenodd" d={annulus(97, 66)} {...lightBand} />
+      <path fillRule="evenodd" d={annulus(40, 13)} {...lightBand} />
+      <circle cx="100" cy="100" r="97" {...ringStroke} />
+      <circle cx="100" cy="100" r="66" {...ringStroke} />
+      <circle cx="100" cy="100" r="40" {...ringStroke} />
+      <circle cx="100" cy="100" r="13" {...ringStroke} />
     </svg>
   );
 }
@@ -492,7 +505,7 @@ export default function PublicHomePage() {
           )}
 
           <section className="public-home-hero-bg relative overflow-hidden">
-            <HouseRings className="pointer-events-none absolute -right-32 -top-36 h-[30rem] w-[30rem] text-primary-teal opacity-70 max-lg:hidden" />
+            <HouseRings className="pointer-events-none absolute -right-32 -top-36 h-[30rem] w-[30rem] text-primary-teal opacity-30 max-lg:hidden" />
             <HouseRings className="pointer-events-none absolute -bottom-44 -left-36 h-[26rem] w-[26rem] text-primary-teal opacity-30" />
             <div className="public-container relative py-10 sm:py-14 lg:py-20">
               <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_1fr]">
@@ -581,40 +594,41 @@ export default function PublicHomePage() {
                   />
                 </div>
               ) : (
-                <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <ul className="mt-6 space-y-3">
                   {data.featuredArticles.map((article) => {
                     const featuredHref = article.eventSlug
                       ? `/events/${article.eventSlug}`
                       : `/articles/${article.slug}`;
                     return (
-                      <article
-                        key={article.id}
-                        className="group relative flex flex-col rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-teal/40 hover:shadow-md focus-within:ring-2 focus-within:ring-primary-teal/50 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
-                      >
-                        <h3 className="public-display text-lg font-semibold leading-snug text-gray-900 line-clamp-2">
-                          <Link
-                            to={featuredHref}
-                            className="after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none"
-                          >
-                            {article.title}
-                          </Link>
-                        </h3>
-                        {article.snippet && (
-                          <p className="mt-3 flex-1 text-sm leading-relaxed text-gray-600 line-clamp-4">
-                            {snippetPreview(article.snippet)}
-                          </p>
-                        )}
-                        <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-teal-link">
-                          Read more
-                          <HiArrowRight
-                            className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
-                            aria-hidden
-                          />
-                        </span>
-                      </article>
+                      <li key={article.id}>
+                        <article className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                          <h3 className="public-display text-lg font-semibold text-gray-900">
+                            <Link
+                              to={featuredHref}
+                              className="hover:text-primary-teal-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 rounded-sm"
+                            >
+                              {article.title}
+                            </Link>
+                          </h3>
+                          {article.snippet ? (
+                            <div className="mt-3">
+                              <ArticleMarkdown markdown={article.snippet} />
+                            </div>
+                          ) : null}
+                          {article.hasMore ? (
+                            <Link
+                              to={featuredHref}
+                              className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-teal-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 rounded-sm"
+                            >
+                              Read more
+                              <HiArrowRight className="h-4 w-4" aria-hidden />
+                            </Link>
+                          ) : null}
+                        </article>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               )}
             </div>
           </section>

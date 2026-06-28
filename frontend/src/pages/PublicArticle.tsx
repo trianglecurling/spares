@@ -5,6 +5,7 @@ import api from '../utils/api';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import PublicNotFoundPage from './PublicNotFoundPage';
 import { useAuth } from '../contexts/AuthContext';
 import { memberHasScope } from '../utils/permissions';
 
@@ -72,6 +73,7 @@ export default function PublicArticle() {
   const { member } = useAuth();
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [redirectEventSlug, setRedirectEventSlug] = useState<string | null>(null);
   const [showSlowLoadIndicator, setShowSlowLoadIndicator] = useState(false);
 
@@ -79,6 +81,7 @@ export default function PublicArticle() {
     if (!slug) return;
     setRedirectEventSlug(null);
     setError(null);
+    setNotFound(false);
     setArticle(null);
     setShowSlowLoadIndicator(false);
     const slowLoadTimer = window.setTimeout(() => setShowSlowLoadIndicator(true), SLOW_LOAD_INDICATOR_MS);
@@ -100,7 +103,7 @@ export default function PublicArticle() {
         }
         if (!cancelled) {
           if (err?.response?.status === 404) {
-            setError('Resource not found');
+            setNotFound(true);
           } else {
             setError(err?.response?.data?.error || 'Failed to load');
           }
@@ -122,6 +125,17 @@ export default function PublicArticle() {
     return <Navigate to={`/events/${redirectEventSlug}`} replace />;
   }
 
+  if (notFound) {
+    return (
+      <PublicNotFoundPage
+        title="Article not found"
+        description="This article may have been removed, unpublished, or the link may be outdated."
+        seoTitle="Article not found | Triangle Curling Club"
+        showCode={false}
+      />
+    );
+  }
+
   if (error) {
     return (
       <PublicLayout>
@@ -129,7 +143,7 @@ export default function PublicArticle() {
           <div className="public-container">
             <div className="public-content">
               <PublicStateCard
-                title="Unable to load resource"
+                title="Unable to load article"
                 description={error}
                 tone="error"
               />

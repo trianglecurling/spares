@@ -1,44 +1,20 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { FaFacebookF, FaInstagram, FaYoutube } from 'react-icons/fa';
 import { FaXTwitter } from 'react-icons/fa6';
 import FormField from '../components/FormField';
-import ChoiceInput, { type ChoiceRenderableOption } from '../components/ChoiceInput';
+import ChoiceInput from '../components/ChoiceInput';
+import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
 import PublicLayout from '../components/PublicLayout';
 import SeoMeta from '../components/SeoMeta';
+import {
+  isKnownContactRecipientSlug,
+  resolveContactRecipientSlug,
+  toContactRecipientChoiceOptions,
+} from '../constants/contactRecipients';
+import { usePublicContactRecipients } from '../hooks/usePublicContactRecipients';
 import api, { formatApiError } from '../utils/api';
-
-type RecipientKey =
-  | 'general'
-  | 'membership'
-  | 'marketing'
-  | 'rentals'
-  | 'juniors'
-  | 'operations'
-  | 'learntocurl'
-  | 'pickupandpizza'
-  | 'web'
-  | 'president';
-
-const recipientChoiceOptions: ChoiceRenderableOption<RecipientKey>[] = [
-  { value: 'general', label: 'General info and questions' },
-  { value: 'membership', label: 'Leagues and membership inquiries' },
-  { value: 'marketing', label: 'Media inquiries, advertising, merchandise' },
-  { value: 'rentals', label: 'Private events, team building, corporate outings' },
-  { value: 'juniors', label: 'Youth & junior programs' },
-  { value: 'operations', label: 'Facilities & contractors' },
-  { value: 'learntocurl', label: 'Learn-to-curl events' },
-  { value: 'pickupandpizza', label: 'Pick-Up and Pizza/Pick-Up and Play' },
-  { value: 'web', label: 'Website issues' },
-  { value: 'president', label: 'Contact the president' },
-];
-
-const recipientKeys = new Set(recipientChoiceOptions.map((option) => option.value));
-
-function isRecipientKey(value: string | null): value is RecipientKey {
-  return value != null && recipientKeys.has(value as RecipientKey);
-}
 
 const facilityDetails: Array<{ title: string; body: string }> = [
   { title: 'Bar', body: 'Beer, wine, cider, soda, juice, sports beverages, water, seltzers (NA & alcoholic). Four-tap draft unit.' },
@@ -59,10 +35,9 @@ const facilityDetails: Array<{ title: string; body: string }> = [
 export default function PublicContactPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const [recipient, setRecipient] = useState<RecipientKey>(() => {
-    const param = searchParams.get('recipient');
-    return isRecipientKey(param) ? param : 'general';
-  });
+  const { recipients, loading: recipientsLoading, error: recipientsError } = usePublicContactRecipients();
+  const recipientOptions = useMemo(() => toContactRecipientChoiceOptions(recipients), [recipients]);
+  const [recipient, setRecipient] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -72,7 +47,12 @@ export default function PublicContactPage() {
   const [emailNextStepModalOpen, setEmailNextStepModalOpen] = useState(false);
 
   const canSubmit =
-    email.trim().length > 0 && subject.trim().length >= 2 && body.trim().length >= 10 && !submitting;
+    recipient.trim().length > 0 &&
+    email.trim().length > 0 &&
+    subject.trim().length >= 2 &&
+    body.trim().length >= 10 &&
+    !submitting &&
+    !recipientsLoading;
 
   const scrollToMessageForm = () => {
     const target = document.getElementById('send-message');
@@ -81,16 +61,15 @@ export default function PublicContactPage() {
   };
 
   useEffect(() => {
+    if (recipients.length === 0) return;
     const param = searchParams.get('recipient');
-    if (isRecipientKey(param)) {
-      setRecipient(param);
-    }
-  }, [searchParams]);
+    setRecipient(resolveContactRecipientSlug(param, recipients));
+  }, [recipients, searchParams]);
 
   useEffect(() => {
     if (location.hash !== '#send-message') return;
     scrollToMessageForm();
-  }, [location.hash]);
+  }, [location.hash, searchParams]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -274,17 +253,25 @@ export default function PublicContactPage() {
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               <FormField tone="public" label="Recipient" htmlFor="recipient" labelClassName="font-semibold">
-                <ChoiceInput<RecipientKey>
-                  inputId="recipient"
-                  options={recipientChoiceOptions}
-                  value={recipient}
-                  onChange={(next) => {
-                    if (next != null && !Array.isArray(next)) setRecipient(next);
-                  }}
-                  placeholder="Choose a recipient"
-                  listboxLabel="Recipient"
-                  inputClassName="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
-                />
+                {recipientsLoading ? (
+                  <InlineStateMessage title="Loading contact options..." />
+                ) : recipientsError ? (
+                  <InlineStateMessage title={recipientsError} tone="error" />
+                ) : recipientOptions.length === 0 ? (
+                  <InlineStateMessage title="No contact options are available right now." />
+                ) : (
+                  <ChoiceInput<string>
+                    inputId="recipient"
+                    options={recipientOptions}
+                    value={isKnownContactRecipientSlug(recipient, recipients) ? recipient : null}
+                    onChange={(next) => {
+                      if (next != null && !Array.isArray(next)) setRecipient(next);
+                    }}
+                    placeholder="Choose a recipient"
+                    listboxLabel="Recipient"
+                    inputClassName="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                  />
+                )}
               </FormField>
 
               <FormField tone="public" label="Your email" htmlFor="email" required labelClassName="font-semibold">

@@ -606,6 +606,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/document-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/files/{id}/{slug}?": {
         parameters: {
             query?: never;
@@ -1081,6 +1114,72 @@ export interface paths {
                 path: {
                     slug: string;
                 };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/leagues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/contact-recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
                 cookie?: never;
             };
             requestBody?: never;
@@ -3567,6 +3666,9 @@ export interface paths {
                             dropInFeeMinor: null | number;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
+                            publicNotes: null | string;
+                            /** @enum {string} */
+                            teamFormation: "coordinator" | "skips_draft";
                             drawTimes: string[];
                             exceptions: string[];
                         }[];
@@ -3654,6 +3756,9 @@ export interface paths {
                             dropInFeeMinor: null | number;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
+                            publicNotes: null | string;
+                            /** @enum {string} */
+                            teamFormation: "coordinator" | "skips_draft";
                             drawTimes: string[];
                             exceptions: string[];
                         };
@@ -3773,6 +3878,9 @@ export interface paths {
                                 dropInFeeMinor: null | number;
                                 predecessorLeagueId: null | number;
                                 successorLeagueId: null | number;
+                                publicNotes: null | string;
+                                /** @enum {string} */
+                                teamFormation: "coordinator" | "skips_draft";
                                 drawTimes: string[];
                                 exceptions: string[];
                             }[];
@@ -3869,6 +3977,9 @@ export interface paths {
                         dropInFeeMinor?: number | null;
                         predecessorLeagueId?: number | null;
                         successorLeagueId?: number | null;
+                        publicNotes?: string | null;
+                        /** @enum {string} */
+                        teamFormation?: "coordinator" | "skips_draft";
                         drawTimes?: string[];
                         exceptions?: string[];
                     };
@@ -3912,6 +4023,9 @@ export interface paths {
                             dropInFeeMinor: null | number;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
+                            publicNotes: null | string;
+                            /** @enum {string} */
+                            teamFormation: "coordinator" | "skips_draft";
                             drawTimes: string[];
                             exceptions: string[];
                         };
@@ -4040,6 +4154,9 @@ export interface paths {
                                 dropInFeeMinor: null | number;
                                 predecessorLeagueId: null | number;
                                 successorLeagueId: null | number;
+                                publicNotes: null | string;
+                                /** @enum {string} */
+                                teamFormation: "coordinator" | "skips_draft";
                                 drawTimes: string[];
                                 exceptions: string[];
                             }[];
@@ -7957,6 +8074,8 @@ export interface paths {
                             testMode: boolean;
                             disableEmail: boolean;
                             disableSms: boolean;
+                            disableUserLogin: boolean;
+                            bypassLoginVerification: boolean;
                             frontendOtelEnabled: boolean;
                             captureFrontendLogs: boolean;
                             captureBackendLogs: boolean;
@@ -8002,6 +8121,8 @@ export interface paths {
                         testMode?: boolean;
                         disableEmail?: boolean;
                         disableSms?: boolean;
+                        disableUserLogin?: boolean;
+                        bypassLoginVerification?: boolean;
                         frontendOtelEnabled?: boolean;
                         captureFrontendLogs?: boolean;
                         captureBackendLogs?: boolean;
@@ -8034,6 +8155,8 @@ export interface paths {
                             testMode: boolean;
                             disableEmail: boolean;
                             disableSms: boolean;
+                            disableUserLogin: boolean;
+                            bypassLoginVerification: boolean;
                             frontendOtelEnabled: boolean;
                             captureFrontendLogs: boolean;
                             captureBackendLogs: boolean;
@@ -9095,6 +9218,143 @@ export interface paths {
         trace?: never;
     };
     "/content/menu-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/content/contact-recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/content/contact-recipients/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/content/contact-recipients/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -11243,6 +11503,80 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/payments/event-item-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/event-item-names/{eventId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    eventId: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        paymentItemName: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         trace?: never;
     };
     "/rbac/roles": {

@@ -114,6 +114,49 @@ const menuItemBodySchema = z.object({
   useArticleTitleForLabel: z.boolean().optional(),
 });
 
+const contactRecipientSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
+
+const contactRecipientCreateSchema = z.object({
+  slug: contactRecipientSlugSchema,
+  label: z.string().trim().min(1).max(200),
+  email: z.string().trim().email().max(320),
+  sortOrder: z.number().int().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const contactRecipientUpdateSchema = z.object({
+  label: z.string().trim().min(1).max(200).optional(),
+  email: z.string().trim().email().max(320).optional(),
+  sortOrder: z.number().int().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const contactRecipientsReorderSchema = z.object({
+  updates: z.array(z.object({ id: z.number(), sortOrder: z.number() })).min(1),
+});
+
+function mapContactRecipientRow(row: {
+  id: number;
+  slug: string;
+  label: string;
+  email: string;
+  sort_order: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    label: row.label,
+    email: row.email,
+    sortOrder: row.sort_order,
+    isActive: row.is_active === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function requireContentAdmin(
   request: { member?: Member },
   reply: { code: (n: number) => { send: (o: object) => unknown } }
@@ -1230,6 +1273,103 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .where(eq(schema.menuItems.id, id))
       .returning({ id: schema.menuItems.id });
     if (deleted.length === 0) return reply.code(404).send({ error: 'Menu item not found' });
+    return { success: true };
+  });
+
+  // Public contact recipients (contact page + article link targets)
+  fastify.get('/content/contact-recipients', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const { db, schema } = getDrizzleDb();
+    const rows = await db
+      .select()
+      .from(schema.publicContactRecipients)
+      .orderBy(asc(schema.publicContactRecipients.sort_order), asc(schema.publicContactRecipients.id));
+    return rows.map(mapContactRecipientRow);
+  });
+
+  fastify.post('/content/contact-recipients', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const parsed = contactRecipientCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+    const { db, schema } = getDrizzleDb();
+    try {
+      const [row] = await db
+        .insert(schema.publicContactRecipients)
+        .values({
+          slug: body.slug,
+          label: body.label,
+          email: body.email,
+          sort_order: body.sortOrder ?? 0,
+          is_active: body.isActive === false ? 0 : 1,
+        })
+        .returning();
+      return mapContactRecipientRow(row!);
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        return reply.code(409).send({ error: 'A contact with this slug already exists' });
+      }
+      throw error;
+    }
+  });
+
+  fastify.patch('/content/contact-recipients/reorder', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const parsed = contactRecipientsReorderSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const { db, schema } = getDrizzleDb();
+    await db.transaction(async (tx) => {
+      for (const { id, sortOrder } of parsed.data.updates) {
+        await tx
+          .update(schema.publicContactRecipients)
+          .set({ sort_order: sortOrder, updated_at: new Date() })
+          .where(eq(schema.publicContactRecipients.id, id));
+      }
+    });
+    return { success: true };
+  });
+
+  fastify.patch<{ Params: { id: string } }>('/content/contact-recipients/:id', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const id = parseInt(request.params.id, 10);
+    if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    const parsed = contactRecipientUpdateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+    const { db, schema } = getDrizzleDb();
+    const updates: Record<string, unknown> = { updated_at: new Date() };
+    if (body.label !== undefined) updates.label = body.label;
+    if (body.email !== undefined) updates.email = body.email;
+    if (body.sortOrder !== undefined) updates.sort_order = body.sortOrder;
+    if (body.isActive !== undefined) updates.is_active = body.isActive ? 1 : 0;
+    if (Object.keys(updates).length === 1) {
+      return reply.code(400).send({ error: 'No fields to update' });
+    }
+    const [row] = await db
+      .update(schema.publicContactRecipients)
+      .set(updates as Record<string, unknown>)
+      .where(eq(schema.publicContactRecipients.id, id))
+      .returning();
+    if (!row) return reply.code(404).send({ error: 'Contact not found' });
+    return mapContactRecipientRow(row);
+  });
+
+  fastify.delete<{ Params: { id: string } }>('/content/contact-recipients/:id', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const id = parseInt(request.params.id, 10);
+    if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    const { db, schema } = getDrizzleDb();
+    const deleted = await db
+      .delete(schema.publicContactRecipients)
+      .where(eq(schema.publicContactRecipients.id, id))
+      .returning({ id: schema.publicContactRecipients.id });
+    if (deleted.length === 0) return reply.code(404).send({ error: 'Contact not found' });
     return { success: true };
   });
 }

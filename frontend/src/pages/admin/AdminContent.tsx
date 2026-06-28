@@ -23,9 +23,10 @@ import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import AdminContentPermalinksPanel, { type PermalinkAdminRow } from './AdminContentPermalinksPanel';
+import AdminContentContactsPanel, { type PublicContactRecipientAdminRow } from './AdminContentContactsPanel';
 import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 
-type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks';
+type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks' | 'contacts';
 type MenuItem = {
   id: number;
   menuType: string;
@@ -173,7 +174,7 @@ function extractReferencedFileIds(content: string): number[] {
   return Array.from(ids.values());
 }
 
-const VALID_TABS: Tab[] = ['site', 'home', 'menus', 'articles', 'showcase', 'files', 'permalinks'];
+const VALID_TABS: Tab[] = ['site', 'home', 'menus', 'articles', 'showcase', 'files', 'permalinks', 'contacts'];
 
 /** ISO timestamp -> value for a `datetime-local` input in the admin's local time zone. */
 function isoToLocalDateTimeInput(value: string | null): string {
@@ -227,6 +228,9 @@ export default function AdminContent() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [files, setFiles] = useState<ManagedFile[]>([]);
   const [permalinks, setPermalinks] = useState<PermalinkAdminRow[]>([]);
+  const [contactRecipients, setContactRecipients] = useState<PublicContactRecipientAdminRow[]>([]);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [contactsLoading, setContactsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -349,6 +353,26 @@ export default function AdminContent() {
     orderParam: 'articleOrder',
     filterConfig: articleFilterConfig,
   });
+
+  const loadContactRecipients = useCallback(async () => {
+    setContactsLoading(true);
+    try {
+      const res = await api.get<PublicContactRecipientAdminRow[]>('/content/contact-recipients');
+      setContactRecipients(res.data);
+      setContactsLoaded(true);
+    } catch {
+      showAlert('Failed to load contacts', 'error');
+      setContactsLoaded(true);
+    } finally {
+      setContactsLoading(false);
+    }
+  }, [showAlert]);
+
+  useEffect(() => {
+    if (activeTab !== 'contacts') return;
+    if (contactsLoaded) return;
+    void loadContactRecipients();
+  }, [activeTab, contactsLoaded, loadContactRecipients]);
 
   const loadContentData = useCallback(async () => {
     const requestId = loadDataRequestIdRef.current + 1;
@@ -1029,6 +1053,7 @@ export default function AdminContent() {
     { id: 'showcase', label: 'Showcase images' },
     { id: 'files', label: 'Files' },
     { id: 'permalinks', label: 'Permalinks' },
+    { id: 'contacts', label: 'Contacts' },
   ];
 
   const handleBulkDeleteFiles = async () => {
@@ -1225,7 +1250,7 @@ export default function AdminContent() {
           }))}
         />
 
-        {activeTab !== 'files' && loading ? (
+        {activeTab !== 'files' && activeTab !== 'contacts' && loading ? (
           <p className="text-gray-500">Loading...</p>
         ) : (
           <>
@@ -2304,6 +2329,16 @@ export default function AdminContent() {
 
             {activeTab === 'permalinks' && (
               <AdminContentPermalinksPanel rows={permalinks} loading={false} onRefresh={loadContentData} />
+            )}
+
+            {activeTab === 'contacts' && (
+              <AdminContentContactsPanel
+                rows={contactRecipients}
+                loading={contactsLoading && !contactsLoaded}
+                saving={saving}
+                onSavingChange={setSaving}
+                onRefresh={loadContactRecipients}
+              />
             )}
           </>
         )}

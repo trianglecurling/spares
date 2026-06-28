@@ -212,7 +212,7 @@ export default function Login() {
                 )}
 
                 <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? 'Sending...' : 'Send Login Code'}
+                  {loading ? 'Sending...' : 'Send login code'}
                 </Button>
               </form>
             )}

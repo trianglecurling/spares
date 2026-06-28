@@ -97,7 +97,7 @@ export default function PublicTournamentDrawBracket({
       </div>
       <div
         ref={bracketView.canvasShellRef}
-        className="relative flex-1 min-h-[650px] w-full select-none [&_*]:select-none overflow-hidden bg-white"
+        className="relative flex-1 min-h-[800px] w-full select-none [&_*]:select-none overflow-hidden bg-white"
       >
         <div
           role="application"

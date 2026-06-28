@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -11,17 +11,18 @@ import { SquarePaymentProviderAdapter } from './squarePaymentProviderAdapter.js'
 
 export type PaymentProvider = 'stripe' | 'paypal' | 'square';
 export type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
-export type PaymentOrderStatus = 'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded';
+export type PaymentOrderStatus = 'created' | 'pending' | 'succeeded' | 'failed' | 'pending_refund' | 'refunded' | 'partially_refunded';
 export type PaymentTransactionType = 'charge' | 'capture' | 'refund' | 'adjustment';
 export type RefundStatus = 'requested' | 'approved' | 'rejected' | 'processing' | 'succeeded' | 'failed';
 
 const ORDER_STATUS_TRANSITIONS: Record<PaymentOrderStatus, ReadonlySet<PaymentOrderStatus>> = {
   created: new Set(['pending', 'succeeded', 'failed']),
-  pending: new Set(['succeeded', 'failed', 'partially_refunded', 'refunded']),
-  succeeded: new Set(['partially_refunded', 'refunded']),
+  pending: new Set(['succeeded', 'failed', 'partially_refunded', 'pending_refund', 'refunded']),
+  succeeded: new Set(['partially_refunded', 'pending_refund', 'refunded']),
   failed: new Set(),
+  pending_refund: new Set(['succeeded', 'partially_refunded', 'refunded']),
   refunded: new Set(),
-  partially_refunded: new Set(['partially_refunded', 'refunded']),
+  partially_refunded: new Set(['partially_refunded', 'pending_refund', 'refunded', 'succeeded']),
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -70,7 +71,9 @@ function safeJsonParseObject(value: string | null): Record<string, unknown> {
 
 function safeJsonStringify(value: unknown): string {
   try {
-    const json = JSON.stringify(value);
+    const json = JSON.stringify(value, (_key, nested) =>
+      typeof nested === 'bigint' ? nested.toString() : nested
+    );
     return json.length > 100_000 ? json.slice(0, 100_000) : json;
   } catch {
     return '{}';
@@ -114,7 +117,8 @@ function normalizeOrderStatus(value: string | null, eventType: string): PaymentO
     normalized === 'succeeded' ||
     normalized === 'failed' ||
     normalized === 'refunded' ||
-    normalized === 'partially_refunded'
+    normalized === 'partially_refunded' ||
+    normalized === 'pending_refund'
   ) {
     return normalized;
   }
@@ -223,6 +227,15 @@ export function truncateCheckoutText(value: string, maxLength: number): string {
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
+export function eventRegistrationCheckoutItemDescription(metadata: Record<string, unknown>): string {
+  const customName = asString(metadata.paymentItemName ?? metadata.payment_item_name)?.trim();
+  if (customName) return truncateCheckoutText(customName, 512);
+  const eventTitle = asString(metadata.eventTitle ?? metadata.event_title);
+  return eventTitle
+    ? truncateCheckoutText(`Event registration — ${eventTitle}`, 512)
+    : 'Event registration';
+}
+
 function defaultCheckoutDescription(subjectType: PaymentSubjectType, metadata: Record<string, unknown>): string {
   if (subjectType === 'donation') return 'Donation to Triangle Curling Club';
   if (subjectType === 'curling_registration') {
@@ -232,8 +245,7 @@ function defaultCheckoutDescription(subjectType: PaymentSubjectType, metadata: R
     return 'League registration';
   }
   if (subjectType === 'event_registration') {
-    const eventTitle = asString(metadata.eventTitle ?? metadata.event_title);
-    return eventTitle ? `Event registration — ${eventTitle}` : 'Event registration';
+    return eventRegistrationCheckoutItemDescription(metadata);
   }
   return 'Triangle Curling Club payment';
 }
@@ -271,6 +283,8 @@ export interface VerifiedWebhookEvent {
 export interface CreateRefundInput {
   orderId: number;
   providerOrderId: string | null;
+  /** Square/Stripe payment id when already known (e.g. from payment_transactions). */
+  providerPaymentId?: string | null;
   amountMinor: number;
   currency: string;
   reason: string | null;
@@ -287,6 +301,7 @@ export interface PaymentProviderAdapter {
   createHostedCheckoutSession(input: CreateCheckoutInput): Promise<HostedCheckoutSession>;
   verifyWebhookEvent(input: VerifyWebhookInput): Promise<VerifiedWebhookEvent>;
   fetchPaymentStatus(providerOrderId: string): Promise<PaymentOrderStatus>;
+  fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null>;
   createRefund(input: CreateRefundInput): Promise<ProviderRefundResult>;
 }
 
@@ -517,6 +532,15 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
       rawResponse: refund,
     };
   }
+
+  async fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null> {
+    const stripe = this.requireClient();
+    const refund = await stripe.refunds.retrieve(providerRefundId);
+    if (refund.status === 'succeeded') return 'succeeded';
+    if (refund.status === 'failed') return 'failed';
+    if (refund.status === 'canceled') return 'rejected';
+    return 'processing';
+  }
 }
 
 class HmacPaymentProviderAdapter implements PaymentProviderAdapter {
@@ -633,12 +657,15 @@ class HmacPaymentProviderAdapter implements PaymentProviderAdapter {
     return 'pending';
   }
 
+  async fetchRefundStatus(_providerRefundId: string): Promise<RefundStatus | null> {
+    return null;
+  }
+
   async createRefund(_input: CreateRefundInput): Promise<ProviderRefundResult> {
-    return {
-      providerRefundId: `${this.provider}_refund_${crypto.randomUUID()}`,
-      status: 'processing',
-      rawResponse: { provider: this.provider },
-    };
+    throw new PaymentServiceError(
+      `${this.provider} refunds require the live payment provider adapter. Configure ${this.provider} credentials in PAYMENT_ENABLED_PROVIDERS.`,
+      501
+    );
   }
 }
 
@@ -842,10 +869,9 @@ export class PaymentService {
     }
 
     if (input.subjectType === 'event_registration') {
-      const eventTitle = asString(input.metadata.eventTitle ?? input.metadata.event_title);
       return [
         {
-          description: eventTitle ? `Event registration — ${eventTitle}` : 'Event registration',
+          description: eventRegistrationCheckoutItemDescription(input.metadata),
           amountMinor: input.amountMinor,
         },
       ];
@@ -910,6 +936,7 @@ export class PaymentService {
         provider_order_id: checkoutSession.providerOrderId,
         metadata: safeJsonStringify({
           ...parsedMetadata,
+          ...(checkoutSession.metadata ?? {}),
           hostedCheckoutUrl: checkoutSession.checkoutUrl,
           hostedCheckoutExpiresAt: checkoutSession.expiresAt,
         }),
@@ -1054,9 +1081,27 @@ export class PaymentService {
       throw new PaymentServiceError(`Unsupported payment provider: ${provider}`, 400);
     }
 
+    const [chargeTransaction] = await this.db
+      .select({
+        provider_transaction_id: this.schema.paymentTransactions.provider_transaction_id,
+      })
+      .from(this.schema.paymentTransactions)
+      .where(
+        and(
+          eq(this.schema.paymentTransactions.payment_order_id, order.id),
+          eq(this.schema.paymentTransactions.transaction_type, 'charge'),
+        )
+      )
+      .orderBy(
+        desc(this.schema.paymentTransactions.occurred_at),
+        desc(this.schema.paymentTransactions.id)
+      )
+      .limit(1);
+
     const providerRefund = await adapter.createRefund({
       orderId: order.id,
       providerOrderId: order.provider_order_id ?? null,
+      providerPaymentId: chargeTransaction?.provider_transaction_id ?? null,
       amountMinor,
       currency: order.currency,
       reason: input.reason?.trim() || null,
@@ -1082,11 +1127,8 @@ export class PaymentService {
         id: this.schema.refunds.id,
       });
 
-    if (providerRefund.status === 'succeeded') {
-      const targetStatus: PaymentOrderStatus = amountMinor >= order.amount_minor ? 'refunded' : 'partially_refunded';
-      if (targetStatus !== currentStatus) {
-        await this.transitionOrderStatus(order.id, targetStatus, 'refund-created');
-      }
+    if (providerRefund.status === 'succeeded' || providerRefund.status === 'processing') {
+      await this.syncOrderRefundStatus(order.id);
     }
 
     await logEvent({
@@ -1110,6 +1152,115 @@ export class PaymentService {
       amountMinor,
       currency: order.currency,
     };
+  }
+
+  private async syncOrderRefundStatus(orderId: number): Promise<boolean> {
+    const [order] = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+        status: this.schema.paymentOrders.status,
+        amount_minor: this.schema.paymentOrders.amount_minor,
+      })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, orderId))
+      .limit(1);
+    if (!order) return false;
+
+    const currentStatus = order.status as PaymentOrderStatus;
+    if (currentStatus === 'created' || currentStatus === 'failed' || currentStatus === 'pending') {
+      return false;
+    }
+
+    const refundRows = await this.db
+      .select({
+        amount_minor: this.schema.refunds.amount_minor,
+        status: this.schema.refunds.status,
+      })
+      .from(this.schema.refunds)
+      .where(eq(this.schema.refunds.payment_order_id, orderId));
+
+    const inFlightRefundStatuses = new Set<RefundStatus>(['processing', 'requested', 'approved']);
+    const inFlightMinor = refundRows
+      .filter((row) => inFlightRefundStatuses.has(row.status as RefundStatus))
+      .reduce((sum, row) => sum + row.amount_minor, 0);
+    const succeededMinor = refundRows
+      .filter((row) => row.status === 'succeeded')
+      .reduce((sum, row) => sum + row.amount_minor, 0);
+
+    let targetStatus: PaymentOrderStatus | null = null;
+    if (inFlightMinor > 0) {
+      targetStatus = 'pending_refund';
+    } else if (succeededMinor >= order.amount_minor) {
+      targetStatus = 'refunded';
+    } else if (succeededMinor > 0) {
+      targetStatus = 'partially_refunded';
+    } else if (
+      currentStatus === 'pending_refund'
+      || currentStatus === 'partially_refunded'
+      || currentStatus === 'refunded'
+    ) {
+      targetStatus = 'succeeded';
+    }
+
+    if (!targetStatus || targetStatus === currentStatus) return false;
+
+    return this.transitionOrderStatus(orderId, targetStatus, 'refund-status-sync');
+  }
+
+  async reconcileRefundsForOrder(orderId: number): Promise<void> {
+    const pendingRefunds = await this.db
+      .select({
+        id: this.schema.refunds.id,
+        provider: this.schema.refunds.provider,
+        provider_refund_id: this.schema.refunds.provider_refund_id,
+        status: this.schema.refunds.status,
+        provider_response: this.schema.refunds.provider_response,
+      })
+      .from(this.schema.refunds)
+      .where(
+        and(
+          eq(this.schema.refunds.payment_order_id, orderId),
+          inArray(this.schema.refunds.status, ['processing', 'requested', 'approved'])
+        )
+      );
+
+    for (const row of pendingRefunds) {
+      if (!row.provider_refund_id) continue;
+      const provider = row.provider as PaymentProvider;
+      const adapter = this.adapters[provider];
+      if (!adapter) continue;
+
+      try {
+        const providerStatus = await adapter.fetchRefundStatus(row.provider_refund_id);
+        if (!providerStatus || providerStatus === row.status) continue;
+
+        const isTerminal =
+          providerStatus === 'succeeded'
+          || providerStatus === 'failed'
+          || providerStatus === 'rejected';
+        await this.db
+          .update(this.schema.refunds)
+          .set({
+            status: providerStatus,
+            processed_at: isTerminal ? sql`CURRENT_TIMESTAMP` : null,
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(this.schema.refunds.id, row.id));
+      } catch (error) {
+        await logEvent({
+          eventType: 'payment.refund.reconcile_failed',
+          relatedId: row.id,
+          meta: {
+            paymentOrderId: orderId,
+            provider,
+            providerRefundId: row.provider_refund_id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          },
+        });
+      }
+    }
+
+    await this.syncOrderRefundStatus(orderId);
   }
 
   async reconcilePaymentOrder(orderId: number, reason = 'manual-reconcile'): Promise<ReconcilePaymentOrderResult> {
@@ -1190,6 +1341,19 @@ export class PaymentService {
 
     if ((providerStatus === 'succeeded' || currentStatus === 'succeeded') && !changed) {
       await this.confirmCurlingRegistrationForSucceededOrder(orderId);
+      await this.confirmEventRegistrationForSucceededOrder(orderId);
+    }
+
+    await this.reconcileRefundsForOrder(orderId);
+
+    const [refreshedOrder] = await this.db
+      .select({ status: this.schema.paymentOrders.status })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, orderId))
+      .limit(1);
+    if (refreshedOrder) {
+      currentStatus = refreshedOrder.status as PaymentOrderStatus;
+      changed = currentStatus !== previousStatus;
     }
 
     return {
@@ -1228,7 +1392,17 @@ export class PaymentService {
     }
 
     if (expectedProviderOrderId && order.provider_order_id && order.provider_order_id !== expectedProviderOrderId) {
-      throw new PaymentServiceError('Checkout session does not match this donation order', 409);
+      throw new PaymentServiceError('Checkout session does not match this payment order', 409);
+    }
+
+    if (expectedProviderOrderId && !order.provider_order_id) {
+      await this.db
+        .update(this.schema.paymentOrders)
+        .set({
+          provider_order_id: expectedProviderOrderId,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(this.schema.paymentOrders.id, order.id));
     }
 
     const result = await this.reconcilePaymentOrder(order.id, reason);
@@ -1543,7 +1717,7 @@ export class PaymentService {
       if (transitionedToSucceeded) {
         await this.runSucceededOrderSideEffects(order.id);
       } else if (verified.nextStatus === 'succeeded') {
-        await this.confirmCurlingRegistrationForSucceededOrder(order.id);
+        await this.runSucceededOrderSideEffects(order.id);
       }
 
       if (transitionedToFailed) {
@@ -1694,6 +1868,10 @@ export class PaymentService {
         },
       });
     }
+  }
+
+  async finalizeEventRegistrationPaymentForOrder(orderId: number): Promise<void> {
+    await this.confirmEventRegistrationForSucceededOrder(orderId);
   }
 
   private async confirmEventRegistrationForSucceededOrder(orderId: number): Promise<void> {

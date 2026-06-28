@@ -11,7 +11,12 @@ const BARE_ROUTE_PATTERNS = [
 ] as const;
 
 /** Paths that need full-width main content below the nav. */
-const FULL_WIDTH_ROUTE_PATTERNS = ['/calendar', '/calendar/*'] as const;
+const FULL_WIDTH_ROUTE_PATTERNS = [
+  '/calendar',
+  '/calendar/*',
+  '/admin/content/articles/:id',
+  '/admin/events/:id/details',
+] as const;
 
 function useAppShellLayoutOptions() {
   const { pathname } = useLocation();
@@ -20,10 +25,9 @@ function useAppShellLayoutOptions() {
     matchPath({ path: pattern, end: true }, pathname),
   );
 
-  const fullWidth =
-    FULL_WIDTH_ROUTE_PATTERNS.some((pattern) =>
-      matchPath({ path: pattern, end: pattern !== '/calendar/*' }, pathname),
-    ) || /^\/admin\/content\/articles\/\d+$/.test(pathname);
+  const fullWidth = FULL_WIDTH_ROUTE_PATTERNS.some((pattern) =>
+    matchPath({ path: pattern, end: pattern !== '/calendar/*' }, pathname),
+  );
 
   return { bare, fullWidth };
 }

@@ -19,10 +19,21 @@ import {
   getPublicBootstrapCacheEtag,
 } from '../services/publicBootstrapCache.js';
 import { getPublicLeaguesPage } from '../services/publicLeaguesService.js';
+import { listPublicContactRecipients } from '../domains/content/publicContactRecipients.js';
+import { resolveSpaDocumentHttpStatus } from '../services/spaDocumentStatus.js';
 
 export async function publicRoutes(fastify: FastifyInstance) {
   const { db, schema } = getDrizzleDb();
   const frontendBaseUrl = config.frontendUrl.replace(/\/+$/, '');
+
+  fastify.get<{ Querystring: { path?: string } }>('/public/document-status', async (request, reply) => {
+    const rawPath = request.query.path;
+    if (!rawPath || typeof rawPath !== 'string' || !rawPath.startsWith('/')) {
+      return reply.code(400).send({ error: 'path query parameter is required' });
+    }
+    const status = await resolveSpaDocumentHttpStatus(rawPath);
+    return reply.code(status).send({ status });
+  });
 
   fastify.get<{ Params: { id: string }; Querystring: { v?: string } }>('/public/files/:id/:slug?', async (request, reply) => {
     const id = Number.parseInt(request.params.id, 10);
@@ -317,5 +328,15 @@ Sitemap: ${frontendBaseUrl}/api/sitemap.xml
       return reply.code(404).send({ error: 'No leagues found for the requested session' });
     }
     return payload;
+  });
+
+  fastify.get('/public/contact-recipients', async () => {
+    const rows = await listPublicContactRecipients({ activeOnly: true });
+    return rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      label: row.label,
+      sortOrder: row.sortOrder,
+    }));
   });
 }

@@ -143,7 +143,6 @@ export default function AdminEventTournamentTeamsImportModal({
       for (const p of built.payloads) {
         await api.post(`/events/${eventId}/tournament-teams`, {
           teamName: p.teamName,
-          homeClub: p.homeClub,
           roster: p.roster,
         });
       }

@@ -11,7 +11,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0"
+    "@types/react-dom": "^19.2.0",
+    "prosemirror-view": "1.41.8"
   },
   "scripts": {
     "dev": "bunx concurrently -n mailpit,apps -c magenta,auto \"bun run dev:mailpit\" \"bun run --elide-lines=0 --filter '*' dev\"",

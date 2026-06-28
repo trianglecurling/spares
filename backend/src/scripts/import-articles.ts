@@ -25,16 +25,14 @@ type ScrapedArticle = {
   content: string;
 };
 
-function makeSnippet(content: string, maxLen = 160): string {
-  const plain = content
+function makeSnippet(content: string): string {
+  return content
     .replace(/#{1,6}\s+/g, '')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\n+/g, ' ')
     .trim();
-  if (plain.length <= maxLen) return plain;
-  return plain.slice(0, maxLen - 3).trim() + '...';
 }
 
 async function main() {

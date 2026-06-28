@@ -12,6 +12,7 @@ export type MemberPaymentHistoryStatus =
   | 'pending'
   | 'succeeded'
   | 'failed'
+  | 'pending_refund'
   | 'refunded'
   | 'partially_refunded';
 

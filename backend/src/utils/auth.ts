@@ -94,6 +94,18 @@ export function isServerAdmin(member: Member): boolean {
   return member.is_server_admin === 1;
 }
 
+export const LOGIN_DISABLED_MESSAGE = 'Login is currently disabled. Please try again later.';
+
+export function membersAllowedToLogin(members: Member[], disableUserLogin: boolean): Member[] {
+  if (!disableUserLogin) return members;
+  return members.filter((member) => isServerAdmin(member));
+}
+
+export function isLoginDisabledForMembers(members: Member[], disableUserLogin: boolean): boolean {
+  if (!disableUserLogin) return false;
+  return membersAllowedToLogin(members, disableUserLogin).length === 0;
+}
+
 export function normalizePhone(phone: string): string {
   // Remove all non-numeric characters
   const digits = phone.replace(/\D/g, '');

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import api from '../utils/api';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
@@ -12,12 +13,6 @@ interface ArticleSummary {
   snippet: string;
   hasMore: boolean;
   publishedAt: string | null;
-}
-
-function snippetPreview(text: string): string {
-  const normalized = text.replace(/[#>*_`[\]()!-]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (normalized.length <= 240) return normalized;
-  return `${normalized.slice(0, 237)}...`;
 }
 
 export default function PublicArticles() {
@@ -83,7 +78,11 @@ export default function PublicArticles() {
                         {a.title}
                       </Link>
                     </h2>
-                    {a.snippet && <p className="mt-2 text-sm text-gray-600 line-clamp-4">{snippetPreview(a.snippet)}</p>}
+                    {a.snippet ? (
+                      <div className="mt-2">
+                        <ArticleMarkdown markdown={a.snippet} />
+                      </div>
+                    ) : null}
                     {a.hasMore && (
                       <Link
                         to={`/articles/${a.slug}`}

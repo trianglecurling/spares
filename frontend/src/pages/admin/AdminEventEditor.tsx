@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiChevronDown } from 'react-icons/hi2';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
@@ -43,6 +43,7 @@ interface Timespan {
 
 interface RegistrationField {
   id?: number;
+  clientKey: string;
   label: string;
   fieldType: string;
   scope: string;
@@ -81,6 +82,7 @@ interface SpecialLink {
   used: number;
   invalidated: number;
   created_at: string;
+  registrationUrl?: string;
 }
 
 /** Rows returned from GET /events/:id for timespans and registration fields */
@@ -187,6 +189,8 @@ export default function AdminEventEditor() {
 
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
+  /** Slug persisted in the database — used for special link URLs, not the editable slug field. */
+  const [savedEventSlug, setSavedEventSlug] = useState('');
   const [visibility, setVisibility] = useState('public');
   const [calendarTypeId, setCalendarTypeId] = useState('other');
   const [tournamentTeamsPublished, setTournamentTeamsPublished] = useState(false);
@@ -267,6 +271,7 @@ export default function AdminEventEditor() {
     'preset_address',
     'preset_phone',
     'preset_dob',
+    'preset_team_name',
     'preset_team_four',
     'preset_team_doubles',
   ];
@@ -300,7 +305,9 @@ export default function AdminEventEditor() {
       .then((res) => {
         const e = res.data;
         setTitle(e.title || '');
-        setSlug(e.slug || '');
+        const loadedSlug = e.slug || '';
+        setSlug(loadedSlug);
+        setSavedEventSlug(loadedSlug);
         setVisibility(e.visibility || 'public');
         setCalendarTypeId(
           typeof e.calendarTypeId === 'string' && EVENT_CALENDAR_TYPE_OPTIONS.some((o) => o.id === e.calendarTypeId)
@@ -348,6 +355,7 @@ export default function AdminEventEditor() {
           (e.registrationFields || [])
             .map((f: ApiRegistrationFieldRow) => ({
               id: f.id,
+              clientKey: f.id != null ? `field-${f.id}` : crypto.randomUUID(),
               label: f.label,
               fieldType: f.field_type,
               scope: f.scope || 'group',
@@ -456,7 +464,10 @@ export default function AdminEventEditor() {
         showAlert('Event created', 'success');
         navigate(`/admin/events/${res.data.id}`, { replace: true });
       } else {
-        await api.patch(`/events/${eventId}`, payload);
+        const res = await api.patch(`/events/${eventId}`, payload);
+        const nextSlug = (res.data as { slug?: string })?.slug || savedEventSlug;
+        setSavedEventSlug(nextSlug);
+        if (nextSlug) setSlug(nextSlug);
         showAlert('Event saved', 'success');
       }
     } catch (err) {
@@ -498,12 +509,21 @@ export default function AdminEventEditor() {
   const addField = () =>
     setRegistrationFields([
       ...registrationFields,
-      { label: '', fieldType: 'text', scope: 'group', required: false, options: '', sortOrder: registrationFields.length },
+      {
+        clientKey: crypto.randomUUID(),
+        label: '',
+        fieldType: 'text',
+        scope: 'group',
+        required: false,
+        options: '',
+        sortOrder: registrationFields.length,
+      },
     ]);
   const addSubheading = () =>
     setRegistrationFields([
       ...registrationFields,
       {
+        clientKey: crypto.randomUUID(),
         label: '',
         fieldType: 'subheading',
         scope: 'group',
@@ -517,6 +537,7 @@ export default function AdminEventEditor() {
     setRegistrationFields([
       ...registrationFields,
       {
+        clientKey: crypto.randomUUID(),
         label: PRESET_LABELS[preset],
         fieldType: preset,
         scope: 'group',
@@ -568,8 +589,21 @@ export default function AdminEventEditor() {
     }
   };
 
-  const getLinkUrl = (link: SpecialLink) =>
-    `${window.location.origin}/events/${encodeURIComponent(slug)}/register?slk=${link.token}`;
+  const getLinkUrl = useCallback(
+    (link: SpecialLink) => {
+      if (link.registrationUrl) {
+        try {
+          const parsed = new URL(link.registrationUrl);
+          return `${window.location.origin}${parsed.pathname}${parsed.search}`;
+        } catch {
+          // Fall through to client-built URL.
+        }
+      }
+      const eventSlug = savedEventSlug.trim() || slug.trim() || (eventId != null ? String(eventId) : '');
+      return `${window.location.origin}/events/${encodeURIComponent(eventSlug)}/register?slk=${encodeURIComponent(link.token)}`;
+    },
+    [eventId, savedEventSlug, slug],
+  );
 
   const toggleRevealLink = (linkId: number) => {
     setRevealedLinks((prev) => {
@@ -886,7 +920,7 @@ export default function AdminEventEditor() {
           ),
       },
     ],
-    [copiedLinkId, revealedLinks]
+    [copiedLinkId, getLinkUrl, revealedLinks]
   );
 
   const copyRegistrantEmails = async () => {
@@ -1043,7 +1077,9 @@ export default function AdminEventEditor() {
         className={
           activeTab === 'tournament'
             ? 'flex min-h-0 flex-1 flex-col !space-y-6'
-            : undefined
+            : activeTab === 'details'
+              ? 'max-w-[1600px]'
+              : undefined
         }
       >
         <AppPageHeader
@@ -1534,7 +1570,7 @@ export default function AdminEventEditor() {
                 )}
                 <SortableList
                   items={registrationFields}
-                  getId={(field) => field.id ?? `row-${field.sortOrder}-${field.label}-${field.fieldType}`}
+                  getId={(field) => field.clientKey}
                   getItemLabel={(field) =>
                     isSubheadingFieldType(field.fieldType)
                       ? 'subheading'

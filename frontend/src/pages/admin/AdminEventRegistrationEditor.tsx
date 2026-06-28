@@ -12,7 +12,9 @@ import {
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
 } from '../../utils/eventRegistrationFieldPresets';
+import { formatDisplayName, splitDisplayName } from '../../utils/personName';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+import FormField from '../../components/FormField';
 
 type EventRegistrationField = {
   id: number;
@@ -144,7 +146,8 @@ export default function AdminEventRegistrationEditor() {
 
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [registration, setRegistration] = useState<RegistrationDetail | null>(null);
-  const [contactName, setContactName] = useState('');
+  const [contactFirstName, setContactFirstName] = useState('');
+  const [contactLastName, setContactLastName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [groupMembers, setGroupMembers] = useState<GroupMemberInput[]>([]);
   const [fieldValueByKey, setFieldValueByKey] = useState<Record<string, string>>({});
@@ -164,13 +167,13 @@ export default function AdminEventRegistrationEditor() {
 
   const participants = useMemo(
     () => [
-      { index: 0, label: contactName.trim() || 'Primary registrant' },
+      { index: 0, label: formatDisplayName(contactFirstName, contactLastName) || 'Primary registrant' },
       ...groupMembers.map((member, idx) => ({
         index: idx + 1,
         label: member.name.trim() || `Group member ${idx + 1}`,
       })),
     ],
-    [contactName, groupMembers],
+    [contactFirstName, contactLastName, groupMembers],
   );
 
   useEffect(() => {
@@ -193,7 +196,9 @@ export default function AdminEventRegistrationEditor() {
         const reg = regRes.data;
         setRegistration(reg);
         if (reg) {
-          setContactName(reg.contact_name || '');
+          const { firstName, lastName } = splitDisplayName(reg.contact_name || '');
+          setContactFirstName(firstName);
+          setContactLastName(lastName);
           setContactEmail(reg.contact_email || '');
           const sortedMembers = [...(reg.groupMembers ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
           setGroupMembers(sortedMembers.map((member) => ({ name: member.name || '', email: member.email || '' })));
@@ -211,7 +216,8 @@ export default function AdminEventRegistrationEditor() {
           }
           setFieldValueByKey(nextFieldValues);
         } else {
-          setContactName('');
+          setContactFirstName('');
+          setContactLastName('');
           setContactEmail('');
           setGroupMembers([]);
           setFieldValueByKey({});
@@ -299,7 +305,8 @@ export default function AdminEventRegistrationEditor() {
       });
 
       const payload = {
-        contactName: contactName.trim(),
+        contactFirstName: contactFirstName.trim(),
+        contactLastName: contactLastName.trim(),
         contactEmail: contactEmail.trim(),
         groupMembers: normalizedGroupMembers.map((member) => ({
           name: member.name,
@@ -506,26 +513,38 @@ export default function AdminEventRegistrationEditor() {
           <form onSubmit={handleSave} className="space-y-6">
             <section className="space-y-4">
               <h2 className="app-section-title">Contact details</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="app-label">Name</label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormField label="First name" htmlFor="admin-registration-first-name" required>
                   <input
-                    value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
+                    id="admin-registration-first-name"
+                    value={contactFirstName}
+                    onChange={(e) => setContactFirstName(e.target.value)}
                     className="app-input"
+                    autoComplete="given-name"
                     required
                   />
-                </div>
-                <div>
-                  <label className="app-label">Email</label>
+                </FormField>
+                <FormField label="Last name" htmlFor="admin-registration-last-name" required>
                   <input
+                    id="admin-registration-last-name"
+                    value={contactLastName}
+                    onChange={(e) => setContactLastName(e.target.value)}
+                    className="app-input"
+                    autoComplete="family-name"
+                    required
+                  />
+                </FormField>
+                <FormField label="Email" htmlFor="admin-registration-email" required>
+                  <input
+                    id="admin-registration-email"
                     type="email"
                     value={contactEmail}
                     onChange={(e) => setContactEmail(e.target.value)}
                     className="app-input"
+                    autoComplete="email"
                     required
                   />
-                </div>
+                </FormField>
               </div>
             </section>
 
@@ -751,6 +770,18 @@ function FieldInput({
         onChange={(e) => onChange(e.target.value)}
         className={className}
         required={field.required === 1}
+      />
+    );
+  }
+  if (field.field_type === 'preset_team_name') {
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={className}
+        required={field.required === 1}
+        placeholder="Team name"
       />
     );
   }

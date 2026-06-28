@@ -19,6 +19,7 @@ export type TournamentRosterSlotApi = {
   playerName: string | null;
   email: string | null;
   notes: string | null;
+  homeClub: string | null;
 };
 
 export type TournamentTeamApi = {
@@ -31,7 +32,7 @@ export type TournamentTeamApi = {
   roster: TournamentRosterSlotApi[];
 };
 
-type RosterFieldRow = { playerName: string; email: string; notes: string };
+type RosterFieldRow = { playerName: string; email: string; notes: string; homeClub: string };
 
 type AdminEventTournamentTeamModalProps = {
   isOpen: boolean;
@@ -44,7 +45,7 @@ type AdminEventTournamentTeamModalProps = {
 
 function emptyRosterFields(format: TournamentFormat): Record<string, RosterFieldRow> {
   return Object.fromEntries(
-    rosterSlotsForFormat(format).map((code) => [code, { playerName: '', email: '', notes: '' }]),
+    rosterSlotsForFormat(format).map((code) => [code, { playerName: '', email: '', notes: '', homeClub: '' }]),
   );
 }
 
@@ -60,7 +61,6 @@ export default function AdminEventTournamentTeamModal({
   const viceRadioName = `tournament-team-vice-${eventId}`;
   const skipRadioName = `tournament-team-skip-${eventId}`;
   const [teamName, setTeamName] = useState('');
-  const [homeClub, setHomeClub] = useState('');
   const [viceSlotCode, setViceSlotCode] = useState('');
   const [skipSlotCode, setSkipSlotCode] = useState('');
   const [rosterFields, setRosterFields] = useState<Record<string, RosterFieldRow>>(() => emptyRosterFields(format));
@@ -75,7 +75,6 @@ export default function AdminEventTournamentTeamModal({
     const defs = defaultViceSkip(format);
     if (team) {
       setTeamName(team.teamName ?? '');
-      setHomeClub(team.homeClub ?? '');
       setViceSlotCode(team.viceSlotCode);
       setSkipSlotCode(team.skipSlotCode);
       const bySlot = new Map(team.roster.map((r) => [r.slotCode, r]));
@@ -86,12 +85,12 @@ export default function AdminEventTournamentTeamModal({
           playerName: r?.playerName ?? '',
           email: r?.email ?? '',
           notes: r?.notes ?? '',
+          homeClub: r?.homeClub ?? '',
         };
       }
       setRosterFields(next);
     } else {
       setTeamName('');
-      setHomeClub('');
       setViceSlotCode(defs.vice);
       setSkipSlotCode(defs.skip);
       setRosterFields(emptyRosterFields(format));
@@ -137,17 +136,17 @@ export default function AdminEventTournamentTeamModal({
     setSaving(true);
     try {
       const roster = rosterSlotsForFormat(format).map((slotCode) => {
-        const row = rosterFields[slotCode] ?? { playerName: '', email: '', notes: '' };
+        const row = rosterFields[slotCode] ?? { playerName: '', email: '', notes: '', homeClub: '' };
         return {
           slotCode,
           playerName: row.playerName.trim() || null,
           email: row.email.trim() || null,
           notes: row.notes.trim() || null,
+          homeClub: row.homeClub.trim() || null,
         };
       });
       const body = {
         teamName: teamName.trim() || null,
-        homeClub: homeClub.trim() || null,
         viceSlotCode,
         skipSlotCode,
         roster,
@@ -181,34 +180,22 @@ export default function AdminEventTournamentTeamModal({
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <FormSection title="Team" surface="plain" className="!space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Team name" htmlFor="tournament-team-name">
-              <input
-                id="tournament-team-name"
-                type="text"
-                value={teamName}
-                onChange={(ev) => setTeamName(ev.target.value)}
-                className="app-input"
-                maxLength={200}
-              />
-            </FormField>
-            <FormField label="Home club" htmlFor="tournament-team-club">
-              <input
-                id="tournament-team-club"
-                type="text"
-                value={homeClub}
-                onChange={(ev) => setHomeClub(ev.target.value)}
-                className="app-input"
-                maxLength={200}
-              />
-            </FormField>
-          </div>
+          <FormField label="Team name" htmlFor="tournament-team-name">
+            <input
+              id="tournament-team-name"
+              type="text"
+              value={teamName}
+              onChange={(ev) => setTeamName(ev.target.value)}
+              className="app-input"
+              maxLength={200}
+            />
+          </FormField>
         </FormSection>
 
         <FormSection title="Roster" surface="plain" className="!space-y-3">
           <div className="space-y-3">
             {rosterSlotsForFormat(format).map((code) => {
-              const row = rosterFields[code] ?? { playerName: '', email: '', notes: '' };
+              const row = rosterFields[code] ?? { playerName: '', email: '', notes: '', homeClub: '' };
               const baseId = `roster-${code}`;
               const showViceSkip = eligibleViceSkipSlots.includes(code);
               const positionLabel = slotLabel(format, code);
@@ -246,7 +233,7 @@ export default function AdminEventTournamentTeamModal({
                       </div>
                     ) : null}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <FormField label="Name" htmlFor={`${baseId}-name`}>
                       <input
                         id={`${baseId}-name`}
@@ -267,6 +254,16 @@ export default function AdminEventTournamentTeamModal({
                         onChange={(ev) => updateRoster(code, { email: ev.target.value })}
                         className="app-input"
                         maxLength={320}
+                      />
+                    </FormField>
+                    <FormField label="Home club" htmlFor={`${baseId}-home-club`}>
+                      <input
+                        id={`${baseId}-home-club`}
+                        type="text"
+                        value={row.homeClub}
+                        onChange={(ev) => updateRoster(code, { homeClub: ev.target.value })}
+                        className="app-input"
+                        maxLength={200}
                       />
                     </FormField>
                     <FormField label="Notes" htmlFor={`${baseId}-notes`}>

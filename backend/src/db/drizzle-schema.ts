@@ -1180,6 +1180,8 @@ export const serverConfigSqlite = sqliteTable('server_config', {
   test_mode: integer('test_mode').default(0).notNull(),
   disable_email: integer('disable_email').default(0).notNull(),
   disable_sms: integer('disable_sms').default(0).notNull(),
+  disable_user_login: integer('disable_user_login').default(0).notNull(),
+  bypass_login_verification: integer('bypass_login_verification').default(0).notNull(),
   frontend_otel_enabled: integer('frontend_otel_enabled').default(1).notNull(),
   capture_frontend_logs: integer('capture_frontend_logs').default(1).notNull(),
   capture_backend_logs: integer('capture_backend_logs').default(1).notNull(),
@@ -1272,7 +1274,7 @@ export const paymentOrdersSqlite = sqliteTable('payment_orders', {
   status: text('status')
     .notNull()
     .default('created')
-    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'pending_refund' | 'refunded' | 'partially_refunded'>(),
   status_reason: text('status_reason'),
   provider_order_id: text('provider_order_id'),
   metadata: text('metadata'),
@@ -1298,7 +1300,7 @@ export const paymentTransactionsSqlite = sqliteTable('payment_transactions', {
   status: text('status')
     .notNull()
     .default('pending')
-    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'pending_refund' | 'refunded' | 'partially_refunded'>(),
   occurred_at: text('occurred_at'),
   metadata: text('metadata'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
@@ -1516,6 +1518,21 @@ export const siteConfigSqlite = sqliteTable('site_config', {
   announcement_expires_at: text('announcement_expires_at'),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
+
+// Public contact form recipient categories (contact page + article links)
+export const publicContactRecipientsSqlite = sqliteTable('public_contact_recipients', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  slug: text('slug').notNull().unique(),
+  label: text('label').notNull(),
+  email: text('email').notNull(),
+  sort_order: integer('sort_order').default(0).notNull(),
+  is_active: integer('is_active').default(1).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  slugIdx: index('idx_public_contact_recipients_slug').on(table.slug),
+  sortIdx: index('idx_public_contact_recipients_sort_order').on(table.sort_order),
+}));
 
 // Showcase images for homepage (URLs only)
 export const showcaseImagesSqlite = sqliteTable('showcase_images', {
@@ -1739,6 +1756,7 @@ export type EventFieldType =
   | 'subheading'
   | 'preset_phone'
   | 'preset_address'
+  | 'preset_team_name'
   | 'preset_team_four'
   | 'preset_team_doubles'
   | 'preset_dob';
@@ -1785,6 +1803,8 @@ export const eventsSqlite = sqliteTable('events', {
   /** Versioned bonspiel bracket/draw graph JSON (see eventTournamentDrawSchema). */
   tournament_draw_json: text('tournament_draw_json'),
   terms_article_id: integer('terms_article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
+  /** Square/QuickBooks line item name for event registration checkout; falls back to a generated label when unset. */
+  payment_item_name: text('payment_item_name'),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
@@ -1916,6 +1936,7 @@ export const eventTournamentTeamsSqlite = sqliteTable('event_tournament_teams', 
   home_club: text('home_club'),
   vice_slot_code: text('vice_slot_code').notNull(),
   skip_slot_code: text('skip_slot_code').notNull(),
+  registration_id: integer('registration_id').references(() => eventRegistrationsSqlite.id, { onDelete: 'cascade' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -1929,6 +1950,7 @@ export const eventTournamentRosterSlotsSqlite = sqliteTable('event_tournament_ro
   player_name: text('player_name'),
   email: text('email'),
   notes: text('notes'),
+  home_club: text('home_club'),
 }, (table) => ({
   teamIdx: index('idx_event_tournament_roster_team_id').on(table.team_id),
   uniqueSlot: uniqueIndex('event_tournament_roster_team_slot_unique').on(table.team_id, table.slot_code),
@@ -2905,6 +2927,8 @@ export const serverConfigPg = pgTable('server_config', {
   test_mode: integerPg('test_mode').default(0).notNull(),
   disable_email: integerPg('disable_email').default(0).notNull(),
   disable_sms: integerPg('disable_sms').default(0).notNull(),
+  disable_user_login: integerPg('disable_user_login').default(0).notNull(),
+  bypass_login_verification: integerPg('bypass_login_verification').default(0).notNull(),
   frontend_otel_enabled: integerPg('frontend_otel_enabled').default(1).notNull(),
   capture_frontend_logs: integerPg('capture_frontend_logs').default(1).notNull(),
   capture_backend_logs: integerPg('capture_backend_logs').default(1).notNull(),
@@ -2996,7 +3020,7 @@ export const paymentOrdersPg = pgTable('payment_orders', {
   status: textPg('status')
     .notNull()
     .default('created')
-    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'pending_refund' | 'refunded' | 'partially_refunded'>(),
   status_reason: textPg('status_reason'),
   provider_order_id: textPg('provider_order_id'),
   metadata: textPg('metadata'),
@@ -3022,7 +3046,7 @@ export const paymentTransactionsPg = pgTable('payment_transactions', {
   status: textPg('status')
     .notNull()
     .default('pending')
-    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded'>(),
+    .$type<'created' | 'pending' | 'succeeded' | 'failed' | 'pending_refund' | 'refunded' | 'partially_refunded'>(),
   occurred_at: timestamp('occurred_at', { withTimezone: false }),
   metadata: textPg('metadata'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
@@ -3241,6 +3265,20 @@ export const siteConfigPg = pgTable('site_config', {
 });
 
 // Showcase images for homepage (URLs only)
+export const publicContactRecipientsPg = pgTable('public_contact_recipients', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  slug: textPg('slug').notNull().unique(),
+  label: textPg('label').notNull(),
+  email: textPg('email').notNull(),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  is_active: integerPg('is_active').default(1).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  slugIdx: indexPg('idx_public_contact_recipients_slug').on(table.slug),
+  sortIdx: indexPg('idx_public_contact_recipients_sort_order').on(table.sort_order),
+}));
+
 export const showcaseImagesPg = pgTable('showcase_images', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   url: textPg('url').notNull(),
@@ -3484,6 +3522,8 @@ export const eventsPg = pgTable('events', {
   tournament_format: textPg('tournament_format').$type<'fours' | 'doubles' | null>(),
   tournament_draw_json: textPg('tournament_draw_json'),
   terms_article_id: integerPg('terms_article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
+  /** Square/QuickBooks line item name for event registration checkout; falls back to a generated label when unset. */
+  payment_item_name: textPg('payment_item_name'),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
@@ -3615,6 +3655,7 @@ export const eventTournamentTeamsPg = pgTable('event_tournament_teams', {
   home_club: textPg('home_club'),
   vice_slot_code: textPg('vice_slot_code').notNull(),
   skip_slot_code: textPg('skip_slot_code').notNull(),
+  registration_id: integerPg('registration_id').references(() => eventRegistrationsPg.id, { onDelete: 'cascade' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -3628,6 +3669,7 @@ export const eventTournamentRosterSlotsPg = pgTable('event_tournament_roster_slo
   player_name: textPg('player_name'),
   email: textPg('email'),
   notes: textPg('notes'),
+  home_club: textPg('home_club'),
 }, (table) => ({
   teamIdx: indexPg('idx_event_tournament_roster_team_id').on(table.team_id),
   uniqueSlot: uniqueIndexPg('event_tournament_roster_team_slot_unique_pg').on(table.team_id, table.slot_code),
@@ -3704,6 +3746,7 @@ export const sqliteSchema = {
   permalinks: permalinksSqlite,
   permalinkHits: permalinkHitsSqlite,
   siteConfig: siteConfigSqlite,
+  publicContactRecipients: publicContactRecipientsSqlite,
   showcaseImages: showcaseImagesSqlite,
   menuItems: menuItemsSqlite,
   files: filesSqlite,
@@ -3801,6 +3844,7 @@ export const pgSchema = {
   permalinks: permalinksPg,
   permalinkHits: permalinkHitsPg,
   siteConfig: siteConfigPg,
+  publicContactRecipients: publicContactRecipientsPg,
   showcaseImages: showcaseImagesPg,
   menuItems: menuItemsPg,
   files: filesPg,

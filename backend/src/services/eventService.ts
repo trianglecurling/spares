@@ -13,7 +13,9 @@ import {
   countTournamentTeams,
   normalizeTournamentFormat,
 } from './eventTournamentTeamsService.js';
+import { syncTournamentTeamForRegistrationSafe } from './eventTournamentRegistrationSyncService.js';
 import { EventServiceError } from './eventServiceError.js';
+import { formatMemberDisplayName } from '../utils/memberName.js';
 import { getSeasonStartYearForUtcDate, parseFiscalYearStartMmdd, seasonStartYearsTouchingRangeUtc } from '../utils/fiscalSeason.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 
@@ -155,7 +157,8 @@ export interface UpdateEventInput {
 export interface RegisterForEventInput {
   eventId: number;
   memberId?: number | null;
-  contactName: string;
+  contactFirstName: string;
+  contactLastName: string;
   contactEmail: string;
   groupMembers?: Array<{ name: string; email?: string }>;
   fieldValues?: Array<{
@@ -630,8 +633,8 @@ export async function getConfirmedRegistrationCount(eventId: number): Promise<nu
     .where(
       and(
         eq(schema.eventRegistrations.event_id, eventId),
-        inArray(schema.eventRegistrations.status, ['confirmed', 'pending_payment'])
-      )
+        eq(schema.eventRegistrations.status, 'confirmed' as any),
+      ),
     );
   return rows.reduce((sum: number, r: any) => sum + (r.group_size || 1), 0);
 }
@@ -731,7 +734,7 @@ export async function registerForEvent(input: RegisterForEventInput) {
     .values({
       event_id: input.eventId,
       member_id: input.memberId ?? null,
-      contact_name: input.contactName,
+      contact_name: formatMemberDisplayName(input.contactFirstName, input.contactLastName),
       contact_email: input.contactEmail,
       status: status as any,
       group_size: groupSize,
@@ -799,6 +802,8 @@ export async function registerForEvent(input: RegisterForEventInput) {
     }
   }
 
+  await syncTournamentTeamForRegistrationSafe(registrationId);
+
   return {
     registrationId,
     status,
@@ -811,18 +816,55 @@ export async function registerForEvent(input: RegisterForEventInput) {
 export async function confirmRegistrationPayment(registrationId: number, paymentOrderId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();
 
+  const [reg] = await db
+    .select()
+    .from(schema.eventRegistrations)
+    .where(eq(schema.eventRegistrations.id, registrationId))
+    .limit(1);
+  if (!reg || reg.status !== 'pending_payment') return;
+
+  const event = await getEventById(reg.event_id);
+  if (!event) return;
+
+  const groupSize = reg.group_size ?? 1;
+  const confirmedCount = await getConfirmedRegistrationCount(reg.event_id);
+
+  let nextStatus: EventRegistrationStatus = 'confirmed';
+  let waitlistPosition: number | null = null;
+
+  if (event.capacity !== null && confirmedCount + groupSize > event.capacity) {
+    if (event.enable_waitlist) {
+      nextStatus = 'waitlisted';
+      const lastWaitlisted = await db
+        .select({ waitlist_position: schema.eventRegistrations.waitlist_position })
+        .from(schema.eventRegistrations)
+        .where(
+          and(
+            eq(schema.eventRegistrations.event_id, reg.event_id),
+            eq(schema.eventRegistrations.status, 'waitlisted' as any),
+          ),
+        )
+        .orderBy(desc(schema.eventRegistrations.waitlist_position))
+        .limit(1);
+      waitlistPosition = (lastWaitlisted[0]?.waitlist_position ?? 0) + 1;
+    }
+  }
+
   await db
     .update(schema.eventRegistrations)
     .set({
-      status: 'confirmed' as any,
+      status: nextStatus as any,
       payment_order_id: paymentOrderId,
+      waitlist_position: waitlistPosition,
     })
     .where(
       and(
         eq(schema.eventRegistrations.id, registrationId),
-        eq(schema.eventRegistrations.status, 'pending_payment' as any)
-      )
+        eq(schema.eventRegistrations.status, 'pending_payment' as any),
+      ),
     );
+
+  await syncTournamentTeamForRegistrationSafe(registrationId);
 }
 
 export async function cancelRegistration(registrationId: number): Promise<{ refundEligible: boolean; event: any }> {
@@ -852,6 +894,8 @@ export async function cancelRegistration(registrationId: number): Promise<{ refu
   if (reg.status === 'confirmed' || reg.status === 'pending_payment') {
     await promoteFromWaitlist(reg.event_id);
   }
+
+  await syncTournamentTeamForRegistrationSafe(registrationId);
 
   return { refundEligible, event };
 }
@@ -892,6 +936,8 @@ export async function promoteFromWaitlist(eventId: number): Promise<number | nul
     .set({ status: newStatus as any, waitlist_position: null })
     .where(eq(schema.eventRegistrations.id, nextWaitlisted.id));
 
+  await syncTournamentTeamForRegistrationSafe(nextWaitlisted.id);
+
   return nextWaitlisted.id;
 }
 
@@ -931,7 +977,8 @@ export async function getRegistrationForEvent(eventId: number, registrationId: n
 }
 
 export interface UpsertEventRegistrationInput {
-  contactName: string;
+  contactFirstName: string;
+  contactLastName: string;
   contactEmail: string;
   groupMembers?: Array<{ name: string; email?: string | null }>;
   fieldValues?: Array<{ fieldId: number; registrationMemberIndex?: number | null; value: string }>;
@@ -967,7 +1014,7 @@ export async function updateRegistrationForEvent(
   await db
     .update(schema.eventRegistrations)
     .set({
-      contact_name: input.contactName.trim(),
+      contact_name: formatMemberDisplayName(input.contactFirstName, input.contactLastName),
       contact_email: input.contactEmail.trim(),
       group_size: groupSize,
       updated_at: new Date() as any,
@@ -1020,6 +1067,8 @@ export async function updateRegistrationForEvent(
       }))
     );
   }
+
+  await syncTournamentTeamForRegistrationSafe(registrationId);
 
   return getRegistrationForEvent(eventId, registrationId);
 }
@@ -1263,4 +1312,43 @@ export async function getSpecialLinkByToken(token: string) {
     .where(eq(schema.eventSpecialLinks.token, token))
     .limit(1);
   return link ?? null;
+}
+
+function defaultEventRegistrationItemName(title: string): string {
+  return `Event registration — ${title}`;
+}
+
+export async function listUpcomingEventsForPaymentItemNames() {
+  const today = new Date().toISOString().slice(0, 10);
+  const events = await listEvents({ fromDate: today });
+  return events.map((event: any) => ({
+    id: event.id,
+    title: event.title,
+    slug: event.slug,
+    paymentItemName: event.payment_item_name ?? null,
+    timespans: (event.timespans ?? []).map((ts: any) => ({
+      startDt: ts.start_dt,
+      endDt: ts.end_dt,
+    })),
+    defaultItemName: defaultEventRegistrationItemName(event.title),
+  }));
+}
+
+export async function updateEventPaymentItemName(eventId: number, paymentItemName: string | null): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const [existing] = await db
+    .select({ id: schema.events.id })
+    .from(schema.events)
+    .where(eq(schema.events.id, eventId))
+    .limit(1);
+  if (!existing) {
+    throw new EventServiceError('Event not found', 404);
+  }
+
+  const trimmed = paymentItemName?.trim() ?? '';
+  const normalized = trimmed.length > 0 ? trimmed.slice(0, 512) : null;
+  await db
+    .update(schema.events)
+    .set({ payment_item_name: normalized })
+    .where(eq(schema.events.id, eventId));
 }

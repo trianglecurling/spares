@@ -1,9 +1,9 @@
 import { FormEvent, useId, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
-import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import PublicNotFoundPage from './PublicNotFoundPage';
 import api, { formatApiError } from '../utils/api';
 
 const publicInputClass =
@@ -85,21 +85,12 @@ export default function PublicMailingListPage() {
 
   if (!listInfo) {
     return (
-      <PublicLayout>
-        <SeoMeta title="Mailing list not found | Triangle Curling Club" />
-        <div className="public-container public-section max-w-2xl mx-auto py-12">
-          <PublicStateCard
-            title="Mailing list not found"
-            description="This page does not exist. Use a link from our website, or return home to browse programs and events."
-            action={
-              <Link to="/" className="text-sm font-medium text-primary-teal-link hover:underline">
-                Back to home
-              </Link>
-            }
-            tone="error"
-          />
-        </div>
-      </PublicLayout>
+      <PublicNotFoundPage
+        title="Mailing list not found"
+        description="This page does not exist. Use a link from our website, or return home to browse programs and events."
+        seoTitle="Mailing list not found | Triangle Curling Club"
+        showCode={false}
+      />
     );
   }
 

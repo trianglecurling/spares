@@ -74,6 +74,7 @@ export type MemberPaymentHistoryStatus =
   | 'pending'
   | 'succeeded'
   | 'failed'
+  | 'pending_refund'
   | 'refunded'
   | 'partially_refunded';
 
@@ -361,6 +362,8 @@ export type ConfigResponse = {
   testMode: boolean;
   disableEmail: boolean;
   disableSms: boolean;
+  disableUserLogin: boolean;
+  bypassLoginVerification: boolean;
   frontendOtelEnabled: boolean;
   captureFrontendLogs: boolean;
   captureBackendLogs: boolean;
@@ -387,6 +390,8 @@ export type UpdateConfigBody = {
   testMode?: boolean;
   disableEmail?: boolean;
   disableSms?: boolean;
+  disableUserLogin?: boolean;
+  bypassLoginVerification?: boolean;
   frontendOtelEnabled?: boolean;
   captureFrontendLogs?: boolean;
   captureBackendLogs?: boolean;

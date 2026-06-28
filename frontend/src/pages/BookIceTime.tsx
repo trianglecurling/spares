@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import Button from '../components/Button';
 import { AppPage, AppPageHeader } from '../components/AppPage';
+import InlineStateMessage from '../components/InlineStateMessage';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import api from '../utils/api';
 import { formatApiError } from '../utils/api';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
@@ -14,6 +16,17 @@ type PurposeOption = { value: Purpose; label: string };
 type Sheet = { id: number; name: string; isActive?: boolean };
 
 type Purpose = 'practice' | 'makeup_game' | 'guests_new' | 'guests_experienced' | 'other';
+
+type MyIceBooking = {
+  id: number;
+  sheetId: number;
+  sheetName: string;
+  start: string;
+  end: string;
+  purpose: Purpose;
+  purposeOther?: string;
+  guestNames?: string;
+};
 
 function toDatetimeLocalValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -32,9 +45,19 @@ function isGuestPurpose(p: Purpose): p is 'guests_new' | 'guests_experienced' {
   return p === 'guests_new' || p === 'guests_experienced';
 }
 
+function bookingPurposeLabel(booking: MyIceBooking): string {
+  const base = PURPOSE_OPTIONS.find((p) => p.value === booking.purpose)?.label ?? booking.purpose;
+  if (booking.purpose === 'other' && booking.purposeOther) return `${base}: ${booking.purposeOther}`;
+  if (isGuestPurpose(booking.purpose) && booking.guestNames) {
+    return `${base} (${booking.guestNames})`;
+  }
+  return base;
+}
+
 export default function BookIceTime() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [sheetsLoading, setSheetsLoading] = useState(true);
   const [sheetId, setSheetId] = useState('');
@@ -58,6 +81,9 @@ export default function BookIceTime() {
     purposeOther?: string;
     guestNames?: string;
   } | null>(null);
+  const [iceBookings, setIceBookings] = useState<MyIceBooking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(true);
+  const [cancelingId, setCancelingId] = useState<number | null>(null);
 
   const minLocal = useMemo(() => toDatetimeLocalValue(new Date()), []);
   const sheetOptions = useMemo<ChoiceOption<number>[]>(
@@ -68,6 +94,25 @@ export default function BookIceTime() {
     const d = new Date();
     d.setDate(d.getDate() + 7);
     return toDatetimeLocalValue(d);
+  }, []);
+  const upcomingBookings = useMemo(
+    () =>
+      iceBookings
+        .filter((b) => new Date(b.end).getTime() > Date.now())
+        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()),
+    [iceBookings]
+  );
+
+  const loadBookings = useCallback(async () => {
+    setBookingsLoading(true);
+    try {
+      const { data } = await api.get<MyIceBooking[]>('/ice-bookings');
+      setIceBookings(data ?? []);
+    } catch {
+      setIceBookings([]);
+    } finally {
+      setBookingsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -94,6 +139,11 @@ export default function BookIceTime() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (member?.socialMember) return;
+    void loadBookings();
+  }, [member?.socialMember, loadBookings]);
 
   const resetForm = () => {
     setStep('form');
@@ -146,6 +196,7 @@ export default function BookIceTime() {
         guestNames: data.guestNames,
       });
       setStep('done');
+      void loadBookings();
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data as { error?: string } | undefined)?.error
@@ -153,6 +204,28 @@ export default function BookIceTime() {
       showAlert(msg || formatApiError(err, 'Could not complete booking'), 'error');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCancelBooking = async (id: number) => {
+    const go = await confirm({
+      title: 'Cancel this ice booking?',
+      message: 'The sheet will be freed for that time. You can book another slot if you need to.',
+      confirmText: 'Cancel booking',
+      cancelText: 'Keep booking',
+      variant: 'danger',
+    });
+    if (!go) return;
+
+    setCancelingId(id);
+    try {
+      await api.delete(`/ice-bookings/${id}`);
+      showAlert('Your ice booking was cancelled.', 'success');
+      await loadBookings();
+    } catch (err: unknown) {
+      showAlert(formatApiError(err, 'Could not cancel booking'), 'error');
+    } finally {
+      setCancelingId(null);
     }
   };
 
@@ -448,6 +521,61 @@ export default function BookIceTime() {
             </Link>
           </div>
         </form>
+
+        <section className="mt-8" aria-labelledby="upcoming-ice-bookings-heading">
+          <h2 id="upcoming-ice-bookings-heading" className="app-section-title mb-4">
+            My upcoming ice bookings
+          </h2>
+          {bookingsLoading ? (
+            <div className="app-card">
+              <InlineStateMessage title="Loading your bookings..." />
+            </div>
+          ) : upcomingBookings.length === 0 ? (
+            <div className="app-card">
+              <InlineStateMessage title="You have no upcoming ice bookings." />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {upcomingBookings.map((b) => (
+                <div
+                  key={b.id}
+                  className="app-card p-4 flex flex-wrap items-center gap-3 justify-between"
+                >
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-900 dark:text-gray-100">
+                    <span className="font-medium">
+                      {new Date(b.start).toLocaleString(undefined, {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      →{' '}
+                      {new Date(b.end).toLocaleTimeString(undefined, {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                    <span className="text-gray-600 dark:text-gray-400">Sheet {b.sheetName}</span>
+                    <span className="text-gray-600 dark:text-gray-400 text-sm">
+                      {bookingPurposeLabel(b)}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={cancelingId === b.id}
+                    onClick={() => void handleCancelBooking(b.id)}
+                  >
+                    {cancelingId === b.id ? 'Cancelling…' : 'Cancel'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </AppPage>
     </>
   );

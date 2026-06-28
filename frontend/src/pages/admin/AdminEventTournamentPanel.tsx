@@ -73,13 +73,12 @@ function tournamentTeamsToTsv(format: TournamentFormat, teams: TournamentTeamApi
   const sorted = [...teams].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
   const lines = sorted.flatMap((t) => {
     const teamName = formatTeamDisplayName(t.teamName, t.sortOrder);
-    const homeClub = tsvCell(t.homeClub);
     const bySlot = new Map(t.roster.map((r) => [r.slotCode, r]));
     return slots.map((slotCode) => {
       const r = bySlot.get(slotCode);
       return [
         tsvCell(teamName),
-        homeClub,
+        tsvCell(r?.homeClub),
         tsvCell(slotLabel(format, slotCode)),
         tsvCell(r?.playerName),
         tsvCell(r?.email),

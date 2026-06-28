@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import PublicNotFoundPage from './PublicNotFoundPage';
 import TeamTournamentDrawPathDiagram from '../components/TeamTournamentDrawPathDiagram';
 import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
@@ -219,21 +220,12 @@ export default function PublicEventTeamPage() {
 
   if (eventError || !event) {
     return (
-      <PublicLayout>
-        <SeoMeta title="Event not found" />
-        <div className="max-w-4xl mx-auto px-4 py-16">
-          <PublicStateCard
-            title="Event not found"
-            description="This event may have been removed or is no longer available."
-            action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
-                All events
-              </Link>
-            }
-            tone="error"
-          />
-        </div>
-      </PublicLayout>
+      <PublicNotFoundPage
+        title="Event not found"
+        description="This event may have been removed or is no longer available."
+        seoTitle="Event not found | Triangle Curling Club"
+        showCode={false}
+      />
     );
   }
 
@@ -281,21 +273,12 @@ export default function PublicEventTeamPage() {
 
   if (!team) {
     return (
-      <PublicLayout>
-        <SeoMeta title={`Team · ${event.title}`} />
-        <div className="max-w-4xl mx-auto px-4 py-16">
-          <PublicStateCard
-            title="Team not found"
-            description="This team is not listed for this event."
-            action={
-              <Link to={teamsListHref} className="text-sm font-medium text-primary-teal-link hover:underline">
-                Back to teams
-              </Link>
-            }
-            tone="error"
-          />
-        </div>
-      </PublicLayout>
+      <PublicNotFoundPage
+        title="Team not found"
+        description="This team is not listed for this event."
+        seoTitle={`Team not found | ${event.title}`}
+        showCode={false}
+      />
     );
   }
 

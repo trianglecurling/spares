@@ -1,13 +1,14 @@
 import path from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { spaDocumentStatusPlugin } from './viteSpaDocumentStatusPlugin';
 
 export default defineConfig(({ mode }) => {
   const backendEnv = loadEnv(mode, path.resolve(__dirname, '../backend'), '');
   const backendTarget = `http://localhost:${backendEnv.PORT || '3001'}`;
 
   return {
-    plugins: [react()],
+    plugins: [react(), spaDocumentStatusPlugin(backendTarget)],
     build: {
       rollupOptions: {
         output: {
