@@ -84,7 +84,23 @@ const MS_DAY = 24 * 60 * 60 * 1000;
 const MS_WEEK = 7 * MS_DAY;
 const MS_HOUR = 60 * 60 * 1000;
 
-function formatTimespanRange(startDt: string, endDt: string): string {
+const LONG_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+};
+
+const TIME_FORMAT: Intl.DateTimeFormatOptions = {
+  hour: 'numeric',
+  minute: '2-digit',
+};
+
+type TimespanDisplay =
+  | { kind: 'single-day'; date: string; timeRange: string }
+  | { kind: 'multi-day'; startDate: string; endDate: string };
+
+function formatTimespanDisplay(startDt: string, endDt: string): TimespanDisplay {
   try {
     const start = new Date(startDt);
     const end = new Date(endDt);
@@ -93,34 +109,21 @@ function formatTimespanRange(startDt: string, endDt: string): string {
       start.getMonth() === end.getMonth() &&
       start.getDate() === end.getDate();
 
-    const startDateStr = start.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
-    const startTimeStr = start.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-    const endTimeStr = end.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-
     if (sameCalendarDay) {
-      return `${startDateStr}, ${startTimeStr} – ${endTimeStr}`;
+      return {
+        kind: 'single-day',
+        date: start.toLocaleDateString('en-US', LONG_DATE_FORMAT),
+        timeRange: `${start.toLocaleTimeString('en-US', TIME_FORMAT)} to ${end.toLocaleTimeString('en-US', TIME_FORMAT)}`,
+      };
     }
 
-    const endDateStr = end.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
-    return `${startDateStr}, ${startTimeStr} – ${endDateStr}, ${endTimeStr}`;
+    return {
+      kind: 'multi-day',
+      startDate: start.toLocaleDateString('en-US', LONG_DATE_FORMAT),
+      endDate: end.toLocaleDateString('en-US', LONG_DATE_FORMAT),
+    };
   } catch {
-    return startDt;
+    return { kind: 'single-day', date: startDt, timeRange: '' };
   }
 }
 
@@ -162,7 +165,7 @@ function sameLocalCalendarDate(a: Date, b: Date): boolean {
 }
 
 /**
- * When >24h and <1 week: "Registration opens on \<weekday\> at \<time\>".
+ * When >24h and <1 week: "Registration opens here on \<weekday\> at \<time\>".
  * When ≥1 week: weekday-only if registration falls on the next occurrence of that weekday; else full date/time.
  * Otherwise hours or mm:ss for the "Registration opens in …" pattern.
  */
@@ -185,13 +188,13 @@ function getRegistrationOpensCopy(
     if (msUntilOpen < MS_WEEK) {
       return {
         kind: 'datePhrase',
-        phrase: `Registration opens on ${weekday} at ${timeStr}`,
+        phrase: `Registration opens here on ${weekday} at ${timeStr}`,
       };
     }
 
     const nextSlot = nextLocalDateWithWeekday(serverNowMs, reg.getDay());
     if (sameLocalCalendarDate(nextSlot, reg)) {
-      return { kind: 'datePhrase', phrase: `Registration opens on ${weekday}` };
+      return { kind: 'datePhrase', phrase: `Registration opens here on ${weekday}` };
     }
     const dateOnly = reg.toLocaleDateString('en-US', {
       month: 'long',
@@ -200,7 +203,7 @@ function getRegistrationOpensCopy(
     });
     return {
       kind: 'datePhrase',
-      phrase: `Registration opens on ${weekday}, ${dateOnly} at ${timeStr}`,
+      phrase: `Registration opens here on ${weekday}, ${dateOnly} at ${timeStr}`,
     };
   }
   if (msUntilOpen > MS_HOUR) {
@@ -551,7 +554,13 @@ export default function PublicEventDetailPage() {
             &larr; All events
           </Link>
 
-          <div className="public-page-title-rule">
+          <div
+            className={
+              showEventTabs
+                ? 'public-page-title-rule public-page-title-rule--with-tabs'
+                : 'public-page-title-rule'
+            }
+          >
             <h1 className="public-heading text-balance min-w-0">{displayTitle}</h1>
           </div>
 
@@ -622,9 +631,9 @@ export default function PublicEventDetailPage() {
           ) : null
         ) : (
           <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 w-full min-w-0">
-          <div className="lg:grid lg:grid-cols-12 lg:gap-x-10 lg:items-start">
+          <div className="flex flex-col lg:grid lg:grid-cols-12 lg:gap-x-10 lg:items-start">
             <div
-              className={`space-y-6 mb-8 lg:mb-0 ${showEventInfoSidebar ? 'lg:col-span-8' : 'lg:col-span-12'}`}
+              className={`order-2 lg:order-none space-y-6 ${showEventInfoSidebar ? 'mb-0 lg:mb-0 lg:col-span-8' : 'mb-8 lg:mb-0 lg:col-span-12'}`}
             >
               {publicView === 'details' && (
               <>
@@ -740,15 +749,30 @@ export default function PublicEventDetailPage() {
             </div>
 
             {showEventInfoSidebar ? (
-            <aside className="lg:col-span-4 lg:sticky lg:top-6 mb-8 lg:mb-0 self-start">
+            <aside className="order-1 lg:order-none lg:col-span-4 lg:sticky lg:top-6 mb-8 lg:mb-0 self-start">
               <div className="bg-gray-50 rounded-lg p-6 space-y-4">
-                {event.timespans.map((ts) => (
-                  <DetailRow key={ts.id} icon={HiCalendarDays}>
-                    <p className="text-gray-900 font-medium">
-                      {formatTimespanRange(ts.start_dt, ts.end_dt)}
-                    </p>
-                  </DetailRow>
-                ))}
+                {event.timespans.map((ts) => {
+                  const display = formatTimespanDisplay(ts.start_dt, ts.end_dt);
+                  return (
+                    <DetailRow key={ts.id} icon={HiCalendarDays}>
+                      {display.kind === 'single-day' ? (
+                        <div className="text-gray-900 font-medium">
+                          <p>{display.date}</p>
+                          {display.timeRange ? <p className="mt-0.5">{display.timeRange}</p> : null}
+                        </div>
+                      ) : (
+                        <div className="space-y-1 text-gray-900 font-medium">
+                          <p>
+                            <span className="text-gray-600 font-normal">Start:</span> {display.startDate}
+                          </p>
+                          <p>
+                            <span className="text-gray-600 font-normal">End:</span> {display.endDate}
+                          </p>
+                        </div>
+                      )}
+                    </DetailRow>
+                  );
+                })}
 
                 <DetailRow icon={HiMapPin}>
                   <p className="text-gray-700">{formatPublicLocation(event.locations)}</p>

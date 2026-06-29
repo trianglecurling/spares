@@ -206,6 +206,19 @@ html.dark body {
     @apply mb-6;
   }
 
+  /** When a tab bar follows the title, its border replaces the heading gradient accent. */
+  .public-page-title-rule--with-tabs {
+    @apply mb-5;
+  }
+
+  .public-page-title-rule--with-tabs .public-heading {
+    @apply pb-0;
+  }
+
+  .public-page-title-rule--with-tabs .public-heading::after {
+    display: none;
+  }
+
   .public-subheading {
     @apply text-xl sm:text-2xl font-semibold tracking-tight text-gray-900;
   }

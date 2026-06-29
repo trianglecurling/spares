@@ -323,7 +323,7 @@ export async function permalinkAdminRoutes(fastify: FastifyInstance): Promise<vo
       }
     }
 
-    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const updates: Record<string, unknown> = { updated_at: new Date() };
     if (body.slug !== undefined) updates.slug = body.slug.trim().toLowerCase();
     if (body.destinationUrl !== undefined) updates.destination_url = body.destinationUrl.trim();
     if (body.label !== undefined) updates.label = body.label?.trim() || null;
