@@ -3,7 +3,7 @@ import path from 'path';
 import {
   resolveDatabaseConfigFilePath,
   resolveDefaultDatabaseConfigFilePath,
-} from '../../db-config-path.js';
+} from '../db-config-path.js';
 
 export interface DatabaseConfig {
   type: 'sqlite' | 'postgres';

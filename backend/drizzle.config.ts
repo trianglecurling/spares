@@ -1,6 +1,6 @@
 import type { Config } from 'drizzle-kit';
 import fs from 'fs';
-import { resolveDatabaseConfigFilePath } from './db-config-path.ts';
+import { resolveDatabaseConfigFilePath } from './src/db-config-path.ts';
 
 // Read db config directly to avoid import resolution issues with drizzle-kit
 const configPath = resolveDatabaseConfigFilePath();
