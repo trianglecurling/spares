@@ -124,6 +124,7 @@ type EventEditorSavePayload = {
   allowGroupRegistration: boolean;
   maxGroupSize: number | null;
   enableWaitlist: boolean;
+  pointOfContact: string;
   timespans: Array<{ startDt: string; endDt: string }>;
   locations: Array<
     | { locationType: 'sheet'; sheetId: number }
@@ -215,6 +216,7 @@ export default function AdminEventEditor() {
   const [allowGroupRegistration, setAllowGroupRegistration] = useState(false);
   const [maxGroupSize, setMaxGroupSize] = useState('');
   const [enableWaitlist, setEnableWaitlist] = useState(true);
+  const [pointOfContact, setPointOfContact] = useState('');
   const [timespans, setTimespans] = useState<Timespan[]>([{ startDt: '', endDt: '' }]);
   const [selectedSheets, setSelectedSheets] = useState<number[]>([]);
   const [selectedFixedLocs, setSelectedFixedLocs] = useState<
@@ -339,6 +341,7 @@ export default function AdminEventEditor() {
         setAllowGroupRegistration(!!e.allowGroupRegistration);
         setMaxGroupSize(e.maxGroupSize !== null ? String(e.maxGroupSize) : '');
         setEnableWaitlist(e.enableWaitlist !== 0);
+        setPointOfContact(e.pointOfContact ?? '');
         setTimespans(
           (e.timespans || []).map((ts: ApiEventTimespanRow) => ({
             startDt: toDateTimeLocal(ts.start_dt),
@@ -446,6 +449,7 @@ export default function AdminEventEditor() {
       allowGroupRegistration,
       maxGroupSize: maxGroupSize ? parseInt(maxGroupSize, 10) : null,
       enableWaitlist,
+      pointOfContact: pointOfContact.trim(),
       timespans: timespans
         .filter((ts) => ts.startDt && ts.endDt)
         .map((ts) => ({
@@ -1204,6 +1208,23 @@ export default function AdminEventEditor() {
                   onChange={setPublished}
                   helperText="Published events can appear on public or member-facing event lists based on visibility."
                 />
+                <FormField
+                  label="Point of contact"
+                  htmlFor="admin-event-point-of-contact"
+                  required
+                  className="max-w-md"
+                  helperText="Email address for event inquiries."
+                >
+                  <input
+                    id="admin-event-point-of-contact"
+                    type="email"
+                    required
+                    value={pointOfContact}
+                    onChange={(e) => setPointOfContact(e.target.value)}
+                    className="app-input"
+                    autoComplete="email"
+                  />
+                </FormField>
               </FormSection>
 
               {/* Schedule */}

@@ -1,36 +1,26 @@
 import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
-import PhysicalAddressCollect from '../components/PhysicalAddressCollect';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import PublicNotFoundPage from './PublicNotFoundPage';
 import api, { formatApiError } from '../utils/api';
-import { TeamPlayersField, defaultTeamPlayersJson } from '../components/eventRegistration/TeamPlayersField';
+import PublicRegistrationFieldInput, {
+  publicEventRegistrationInput,
+  fieldValueKey,
+  personLabel,
+  type EventRegistrationField,
+} from '../components/eventRegistration/PublicRegistrationFieldInput';
 import {
   defaultTeamNameFromLastName,
   isSubheadingFieldType,
   lastNameFromDisplayName,
-  teamFieldOptionsFromRegistrationField,
-  TEAM_POSITIONS_DOUBLES,
-  TEAM_POSITIONS_FOUR,
 } from '../utils/eventRegistrationFieldPresets';
-import { structuredPostalFromEventJson, structuredPostalToEventJson } from '../utils/structuredPostalAddress';
 
-const publicInput =
-  'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-teal focus:outline-none focus:ring-2 focus:ring-primary-teal/20 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:placeholder:text-gray-400 disabled:opacity-80 disabled:focus:border-gray-200 disabled:focus:ring-0 read-only:cursor-default read-only:border-gray-200 read-only:bg-gray-50 read-only:text-gray-700 read-only:focus:border-gray-300 read-only:focus:ring-0';
+const publicInput = publicEventRegistrationInput;
 
-interface EventField {
-  id: number;
-  label: string;
-  field_type: string;
-  scope: string;
-  required: number;
-  options: string | null;
-  sort_order?: number;
-}
+interface EventField extends EventRegistrationField {}
 
 interface EventDetail {
   id: number;
@@ -113,16 +103,6 @@ function formatRegistrationClosedDateTime(iso: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function fieldValueKey(fieldId: number, scope: string, personIndex: number): string {
-  if (scope === 'individual') return `${fieldId}-${personIndex}`;
-  return String(fieldId);
-}
-
-function personLabel(personIndex: number): string {
-  if (personIndex === 0) return 'Primary registrant';
-  return `Group member ${personIndex}`;
 }
 
 export default function PublicEventRegisterPage() {
@@ -694,7 +674,7 @@ export default function PublicEventRegisterPage() {
                       className="rounded-lg border border-gray-100 bg-gray-50/80 p-4 space-y-3"
                     >
                       <p className="text-sm font-medium text-gray-800">{personLabel(personIndex)}</p>
-                      <RegistrationFieldInput
+                      <PublicRegistrationFieldInput
                         field={field}
                         fieldGroupKey={fieldValueKey(field.id, field.scope, personIndex)}
                         value={fieldValues[fieldValueKey(field.id, field.scope, personIndex)] || ''}
@@ -707,7 +687,7 @@ export default function PublicEventRegisterPage() {
             }
 
             return (
-              <RegistrationFieldInput
+              <PublicRegistrationFieldInput
                 key={field.id}
                 field={field}
                 fieldGroupKey={fieldValueKey(field.id, field.scope, 0)}
@@ -774,254 +754,3 @@ export default function PublicEventRegisterPage() {
   );
 }
 
-function RegistrationFieldInput({
-  field,
-  fieldGroupKey,
-  value,
-  onChange,
-}: {
-  field: EventField;
-  fieldGroupKey?: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const gk = fieldGroupKey ?? String(field.id);
-  switch (field.field_type) {
-    case 'preset_phone':
-      return (
-        <FormField
-          tone="public"
-          label={field.label}
-          htmlFor={`field-${gk}`}
-          required={field.required === 1}
-        >
-          <input
-            id={`field-${gk}`}
-            type="tel"
-            autoComplete="tel"
-            required={field.required === 1}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={publicInput}
-            placeholder="Phone number"
-          />
-        </FormField>
-      );
-    case 'preset_team_name':
-      return (
-        <FormField
-          tone="public"
-          label={field.label}
-          htmlFor={`field-${gk}`}
-          required={field.required === 1}
-        >
-          <input
-            id={`field-${gk}`}
-            type="text"
-            autoComplete="organization"
-            required={field.required === 1}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={publicInput}
-            placeholder="Team name"
-          />
-        </FormField>
-      );
-    case 'preset_dob':
-      return (
-        <FormField
-          tone="public"
-          label={field.label}
-          htmlFor={`field-${gk}`}
-          required={field.required === 1}
-        >
-          <input
-            id={`field-${gk}`}
-            type="date"
-            required={field.required === 1}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={publicInput}
-          />
-        </FormField>
-      );
-    case 'preset_address':
-      return <PresetAddressField field={field} value={value} onChange={onChange} />;
-    case 'preset_team_four':
-      return (
-        <TeamPlayersField
-          label={field.label}
-          required={field.required === 1}
-          value={value || defaultTeamPlayersJson(4)}
-          onChange={onChange}
-          positions={TEAM_POSITIONS_FOUR}
-          inputClassName={publicInput}
-          lightOnly
-          collectDietaryRestrictions={
-            teamFieldOptionsFromRegistrationField(field).collectDietaryRestrictions
-          }
-        />
-      );
-    case 'preset_team_doubles':
-      return (
-        <TeamPlayersField
-          label={field.label}
-          required={field.required === 1}
-          value={value || defaultTeamPlayersJson(2)}
-          onChange={onChange}
-          positions={TEAM_POSITIONS_DOUBLES}
-          inputClassName={publicInput}
-          lightOnly
-          collectDietaryRestrictions={
-            teamFieldOptionsFromRegistrationField(field).collectDietaryRestrictions
-          }
-        />
-      );
-    default:
-      return <LegacyRegistrationField field={field} radioGroupName={gk} value={value} onChange={onChange} />;
-  }
-}
-
-function PresetAddressField({
-  field,
-  value,
-  onChange,
-}: {
-  field: EventField;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const structured = useMemo(() => structuredPostalFromEventJson(value), [value]);
-  return (
-    <PhysicalAddressCollect
-      sectionTitle={field.label}
-      sectionDescription={field.required === 1 ? 'Required' : 'Optional'}
-      value={structured}
-      onChange={(next) => onChange(structuredPostalToEventJson(next))}
-      entryMode="auto"
-      required={field.required === 1}
-      tone="public"
-      textInputClassName={publicInput}
-      nominatimContext="event registration"
-      className="space-y-3"
-    />
-  );
-}
-
-function LegacyRegistrationField({
-  field,
-  radioGroupName,
-  value,
-  onChange,
-}: {
-  field: EventField;
-  radioGroupName: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const options = field.options ? field.options.split(',').map((o) => o.trim()).filter(Boolean) : [];
-
-  switch (field.field_type) {
-    case 'checkbox':
-      return (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={value === '1' || value === 'true'}
-            onChange={(e) => onChange(e.target.checked ? '1' : '0')}
-          />
-          <span className="text-sm text-gray-700">
-            {field.label}
-            {field.required === 1 ? (
-              <span className="ml-2 text-xs font-medium text-gray-500">Required</span>
-            ) : null}
-          </span>
-        </label>
-      );
-
-    case 'dropdown': {
-      const dropdownOptions: ChoiceOption<string>[] = options.map((opt) => ({
-        value: opt,
-        label: opt,
-      }));
-      return (
-        <FormField
-          tone="public"
-          label={field.label}
-          htmlFor={`field-${radioGroupName}`}
-          required={field.required === 1}
-        >
-          <ChoiceInput<string>
-            inputId={`field-${radioGroupName}`}
-            required={field.required === 1}
-            options={dropdownOptions}
-            value={value || null}
-            onChange={(next) => onChange(next == null || Array.isArray(next) ? '' : next)}
-            placeholder="Select..."
-            listboxLabel={field.label}
-            inputClassName={publicInput}
-          />
-        </FormField>
-      );
-    }
-
-    case 'radio':
-      return (
-        <FormField tone="public" label={field.label} required={field.required === 1}>
-          <div className="space-y-1">
-            {options.map((opt) => (
-              <label key={opt} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name={`field-${radioGroupName}`}
-                  value={opt}
-                  checked={value === opt}
-                  onChange={() => onChange(opt)}
-                  required={field.required === 1}
-                />
-                <span className="text-sm text-gray-700">{opt}</span>
-              </label>
-            ))}
-          </div>
-        </FormField>
-      );
-
-    case 'number':
-      return (
-        <FormField
-          tone="public"
-          label={field.label}
-          htmlFor={`field-${radioGroupName}`}
-          required={field.required === 1}
-        >
-          <input
-            id={`field-${radioGroupName}`}
-            type="number"
-            required={field.required === 1}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={publicInput}
-          />
-        </FormField>
-      );
-
-    default:
-      return (
-        <FormField
-          tone="public"
-          label={field.label}
-          htmlFor={`field-${radioGroupName}`}
-          required={field.required === 1}
-        >
-          <input
-            id={`field-${radioGroupName}`}
-            type="text"
-            required={field.required === 1}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={publicInput}
-          />
-        </FormField>
-      );
-  }
-}

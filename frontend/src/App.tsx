@@ -77,6 +77,7 @@ const PublicEventDetailPage = lazy(() => import('./pages/PublicEventDetailPage')
 const PublicEventTeamPage = lazy(() => import('./pages/PublicEventTeamPage'));
 const PublicEventRegisterPage = lazy(() => import('./pages/PublicEventRegisterPage'));
 const PublicEventRegisterSuccessPage = lazy(() => import('./pages/PublicEventRegisterSuccessPage'));
+const PublicEventManageRegistrationPage = lazy(() => import('./pages/PublicEventManageRegistrationPage'));
 const PublicNotFoundPage = lazy(() => import('./pages/PublicNotFoundPage'));
 const PublicPermalinkInfo = lazy(() => import('./pages/PublicPermalinkInfo'));
 const RegistrationShellPage = lazy(() => import('./pages/RegistrationShellPage'));
@@ -175,6 +176,7 @@ function App() {
                       <Route path="/events/:slug" element={<PublicEventDetailPage />} />
                       <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
                       <Route path="/events/:slug/register/success" element={<PublicEventRegisterSuccessPage />} />
+                      <Route path="/events/registrations/manage/:accessToken" element={<PublicEventManageRegistrationPage />} />
                       <Route path="/registration/start" element={<RegistrationShellPage />} />
                       <Route path="/registration/success" element={<RegistrationShellPage />} />
                       <Route path="/registration/cancel" element={<RegistrationShellPage />} />

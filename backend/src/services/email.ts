@@ -1176,6 +1176,38 @@ export async function sendIceBookingConfirmationEmail(
 
 // ========== Event Registration Emails ==========
 
+export type EventRegistrationEmailLinks = {
+  manageRegistrationUrl?: string;
+  receiptUrl?: string | null;
+};
+
+function eventRegistrationEmailLinkSections(links?: EventRegistrationEmailLinks): { html: string; text: string } {
+  if (!links?.manageRegistrationUrl && !links?.receiptUrl) {
+    return { html: '', text: '' };
+  }
+
+  const receiptHtml = links.receiptUrl
+    ? `<p><a href="${escapeHtmlEmail(links.receiptUrl)}">View payment receipt</a></p>`
+    : '';
+  const manageHtml = links.manageRegistrationUrl
+    ? `<p><a href="${escapeHtmlEmail(links.manageRegistrationUrl)}">Manage your registration</a></p>`
+    : '';
+  const securityHtml = links.manageRegistrationUrl
+    ? '<p><strong>Important:</strong> Do not forward this email. Anyone with the manage link above can view or change your registration.</p>'
+    : '';
+
+  const receiptText = links.receiptUrl ? `View payment receipt: ${links.receiptUrl}` : null;
+  const manageText = links.manageRegistrationUrl ? `Manage your registration: ${links.manageRegistrationUrl}` : null;
+  const securityText = links.manageRegistrationUrl
+    ? 'Important: Do not forward this email. Anyone with the manage link above can view or change your registration.'
+    : null;
+
+  return {
+    html: `${receiptHtml}${manageHtml}${securityHtml}`,
+    text: [receiptText, manageText, securityText].filter(Boolean).join('\n'),
+  };
+}
+
 export async function sendEventRegistrationPaymentConfirmationEmail(
   to: string,
   recipientName: string,
@@ -1183,11 +1215,17 @@ export async function sendEventRegistrationPaymentConfirmationEmail(
   eventDateStr: string,
   groupSize: number,
   paymentDetailsUrl: string,
-  memberToken?: string
+  memberToken?: string,
+  links?: EventRegistrationEmailLinks
 ): Promise<void> {
   const groupLine = groupSize > 1
     ? `<p><strong>Group size:</strong> ${groupSize}</p>`
     : '';
+
+  const linkSections = eventRegistrationEmailLinkSections({
+    manageRegistrationUrl: links?.manageRegistrationUrl,
+    receiptUrl: links?.receiptUrl ?? paymentDetailsUrl,
+  });
 
   const htmlContent = `
     <h2>Payment received</h2>
@@ -1196,8 +1234,7 @@ export async function sendEventRegistrationPaymentConfirmationEmail(
     <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
     <p><strong>When:</strong> ${escapeHtmlEmail(eventDateStr)}</p>
     ${groupLine}
-    <p><a href="${escapeHtmlEmail(paymentDetailsUrl)}">View payment details</a></p>
-    <p>If you need to cancel your registration, you can do so from the event page.</p>
+    ${linkSections.html || `<p><a href="${escapeHtmlEmail(paymentDetailsUrl)}">View payment details</a></p>`}
   `;
 
   const textBody = [
@@ -1210,9 +1247,7 @@ export async function sendEventRegistrationPaymentConfirmationEmail(
     `Event: ${eventTitle}`,
     `When: ${eventDateStr}`,
     groupSize > 1 ? `Group size: ${groupSize}` : null,
-    `View payment details: ${paymentDetailsUrl}`,
-    '',
-    'If you need to cancel your registration, you can do so from the event page.',
+    linkSections.text || `View payment details: ${paymentDetailsUrl}`,
   ].filter(Boolean).join('\n');
 
   await sendEmail(
@@ -1234,7 +1269,8 @@ export async function sendEventRegistrationConfirmationEmail(
   eventDateStr: string,
   status: 'confirmed' | 'pending_payment' | 'waitlisted',
   groupSize: number,
-  memberToken?: string
+  memberToken?: string,
+  links?: EventRegistrationEmailLinks
 ): Promise<void> {
   const statusLabel = status === 'confirmed'
     ? 'Your registration is confirmed!'
@@ -1246,6 +1282,8 @@ export async function sendEventRegistrationConfirmationEmail(
     ? `<p><strong>Group size:</strong> ${groupSize}</p>`
     : '';
 
+  const linkSections = eventRegistrationEmailLinkSections(links);
+
   const htmlContent = `
     <h2>Event registration</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
@@ -1253,14 +1291,28 @@ export async function sendEventRegistrationConfirmationEmail(
     <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
     <p><strong>When:</strong> ${escapeHtmlEmail(eventDateStr)}</p>
     ${groupLine}
-    <p>If you need to cancel your registration, you can do so from the event page.</p>
+    ${linkSections.html}
   `;
+
+  const textBody = [
+    'Event registration',
+    '',
+    `Hi ${recipientName},`,
+    '',
+    statusLabel,
+    '',
+    `Event: ${eventTitle}`,
+    `When: ${eventDateStr}`,
+    groupSize > 1 ? `Group size: ${groupSize}` : null,
+    linkSections.text || null,
+  ].filter(Boolean).join('\n');
 
   await sendEmail(
     {
       to,
       subject: `Registration ${status === 'confirmed' ? 'confirmed' : status === 'waitlisted' ? 'waitlisted' : 'pending'}: ${eventTitle}`,
       htmlContent,
+      textContent: textBody,
       recipientName,
     },
     memberToken

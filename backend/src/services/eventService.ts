@@ -26,6 +26,10 @@ function toDateOrNull(value: string | null | undefined): Date | null {
   return new Date(value);
 }
 
+function normalizePointOfContact(value: string): string {
+  return value.trim();
+}
+
 /** Milliseconds for comparison. Do not use String(date) vs ISO strings — locale strings sort incorrectly. */
 function eventTimeMs(value: string | Date | null | undefined): number | null {
   if (value == null || value === '') return null;
@@ -102,6 +106,8 @@ export interface CreateEventInput {
   tournamentDrawPublished?: boolean;
   /** Bonspiel: fours vs doubles roster shape. */
   tournamentFormat?: 'fours' | 'doubles' | null;
+  /** Email address for event inquiries and operational contact. */
+  pointOfContact: string;
   createdByMemberId?: number | null;
   timespans: Array<{ startDt: string; endDt: string; sortOrder?: number }>;
   locations?: Array<{ locationType: string; sheetId?: number | null }>;
@@ -139,6 +145,7 @@ export interface UpdateEventInput {
   tournamentTeamsPublished?: boolean;
   tournamentDrawPublished?: boolean;
   tournamentFormat?: 'fours' | 'doubles' | null;
+  pointOfContact?: string;
   timespans?: Array<{ startDt: string; endDt: string; sortOrder?: number }>;
   locations?: Array<{ locationType: string; sheetId?: number | null }>;
   categoryIds?: number[];
@@ -198,6 +205,11 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
     throw new EventServiceError('At least one timespan is required');
   }
 
+  const pointOfContact = normalizePointOfContact(input.pointOfContact);
+  if (!pointOfContact) {
+    throw new EventServiceError('Point of contact is required', 400);
+  }
+
   const baseSlug = input.slug ? slugify(input.slug) : slugify(input.title);
   const slug = await ensureUniqueSlug(baseSlug);
 
@@ -228,6 +240,7 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
           ? null
           : normalizeTournamentFormat(input.tournamentFormat as string),
       terms_article_id: input.termsArticleId ?? null,
+      point_of_contact: pointOfContact,
       created_by_member_id: input.createdByMemberId ?? null,
     } as any)
     .returning({ id: schema.events.id });
@@ -345,6 +358,13 @@ export async function updateEvent(eventId: number, input: UpdateEventInput): Pro
       }
     }
     updateValues.tournament_format = next;
+  }
+  if (input.pointOfContact !== undefined) {
+    const pointOfContact = normalizePointOfContact(input.pointOfContact);
+    if (!pointOfContact) {
+      throw new EventServiceError('Point of contact is required', 400);
+    }
+    updateValues.point_of_contact = pointOfContact;
   }
 
   if (Object.keys(updateValues).length > 0) {
@@ -729,6 +749,8 @@ export async function registerForEvent(input: RegisterForEventInput) {
     waitlistPosition = (lastWaitlisted[0]?.waitlist_position ?? 0) + 1;
   }
 
+  const accessToken = crypto.randomUUID();
+
   const [registration] = await db
     .insert(schema.eventRegistrations)
     .values({
@@ -740,8 +762,9 @@ export async function registerForEvent(input: RegisterForEventInput) {
       group_size: groupSize,
       special_link_id: specialLink?.id ?? null,
       waitlist_position: waitlistPosition,
+      access_token: accessToken,
     } as any)
-    .returning({ id: schema.eventRegistrations.id });
+    .returning({ id: schema.eventRegistrations.id, access_token: schema.eventRegistrations.access_token });
 
   const registrationId = registration.id;
 
@@ -806,6 +829,7 @@ export async function registerForEvent(input: RegisterForEventInput) {
 
   return {
     registrationId,
+    accessToken: registration.access_token ?? accessToken,
     status,
     totalFee,
     needsPayment,
@@ -1094,6 +1118,7 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
     tournamentTeamsPublished: event.tournament_teams_published === 1,
     tournamentDrawPublished: event.tournament_draw_published === 1,
     tournamentFormat: normalizeTournamentFormat(event.tournament_format as string | null) ?? null,
+    pointOfContact: event.point_of_contact,
     createdByMemberId,
     timespans: (event.timespans || []).map((ts: any) => ({
       startDt: ts.start_dt,
@@ -1292,6 +1317,48 @@ export async function isEventOwner(eventId: number, memberId: number): Promise<b
     .where(and(eq(schema.eventOwners.event_id, eventId), eq(schema.eventOwners.member_id, memberId)))
     .limit(1);
   return !!row;
+}
+
+export function isBeforeCancellationCutoff(
+  event: { cancellation_cutoff?: string | Date | null },
+  nowMs: number = Date.now(),
+): boolean {
+  const cancelMs = eventTimeMs(event.cancellation_cutoff ?? null);
+  return cancelMs == null || nowMs <= cancelMs;
+}
+
+export async function ensureRegistrationAccessToken(registrationId: number): Promise<string> {
+  const { db, schema } = getDrizzleDb();
+  const [reg] = await db
+    .select({ access_token: schema.eventRegistrations.access_token })
+    .from(schema.eventRegistrations)
+    .where(eq(schema.eventRegistrations.id, registrationId))
+    .limit(1);
+  if (!reg) throw new EventServiceError('Registration not found', 404);
+  if (reg.access_token) return reg.access_token;
+
+  const accessToken = crypto.randomUUID();
+  await db
+    .update(schema.eventRegistrations)
+    .set({ access_token: accessToken, updated_at: new Date() as any })
+    .where(eq(schema.eventRegistrations.id, registrationId));
+  return accessToken;
+}
+
+export async function getRegistrationByAccessToken(accessToken: string) {
+  const { db, schema } = getDrizzleDb();
+  const normalized = accessToken.trim();
+  if (!normalized) return null;
+
+  const [reg] = await db
+    .select()
+    .from(schema.eventRegistrations)
+    .where(eq(schema.eventRegistrations.access_token, normalized))
+    .limit(1);
+  if (!reg) return null;
+
+  const full = await getRegistrationForEvent(reg.event_id, reg.id);
+  return full;
 }
 
 export async function getRegistrationById(registrationId: number) {

@@ -13,7 +13,7 @@ const REFUNDABLE_ORDER_STATUSES = new Set(['succeeded', 'partially_refunded']);
 export async function issueEventRegistrationRefund(input: {
   paymentOrderId: number;
   reason: string;
-  requestedByMemberId: number;
+  requestedByMemberId?: number | null;
   surfaceIneligibleError?: boolean;
 }): Promise<EventRegistrationRefundResult> {
   const { db, schema } = getDrizzleDb();

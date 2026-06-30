@@ -1,9 +1,10 @@
 import type { Config } from 'drizzle-kit';
 import fs from 'fs';
-import path from 'path';
+import { resolveDatabaseConfigFilePath } from './db-config-path.ts';
 
-// Read db-config.json directly to avoid import resolution issues with drizzle-kit
-const configPath = path.resolve(process.cwd(), 'data/db-config.json');
+// Read db config directly to avoid import resolution issues with drizzle-kit
+const configPath = resolveDatabaseConfigFilePath();
+console.log(`Using database config: ${configPath}`);
 
 if (!fs.existsSync(configPath)) {
   throw new Error('Database not configured. Run installation first. Config file not found at: ' + configPath);

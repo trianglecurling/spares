@@ -1818,6 +1818,8 @@ export const eventsSqlite = sqliteTable('events', {
   terms_article_id: integer('terms_article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
   /** Square/QuickBooks line item name for event registration checkout; falls back to a generated label when unset. */
   payment_item_name: text('payment_item_name'),
+  /** Email address for event inquiries and operational contact. */
+  point_of_contact: text('point_of_contact').notNull(),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
@@ -1892,6 +1894,7 @@ export const eventRegistrationsSqlite = sqliteTable('event_registrations', {
   payment_order_id: integer('payment_order_id'),
   special_link_id: integer('special_link_id'),
   waitlist_position: integer('waitlist_position'),
+  access_token: text('access_token'),
   registered_at: text('registered_at').default(sql`datetime('now')`).notNull(),
   cancelled_at: text('cancelled_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
@@ -1900,6 +1903,7 @@ export const eventRegistrationsSqlite = sqliteTable('event_registrations', {
   eventIdx: index('idx_event_registrations_event_id').on(table.event_id),
   memberIdx: index('idx_event_registrations_member_id').on(table.member_id),
   statusIdx: index('idx_event_registrations_status').on(table.status),
+  accessTokenIdx: uniqueIndex('event_registrations_access_token_unique').on(table.access_token),
 }));
 
 export const eventRegistrationMembersSqlite = sqliteTable('event_registration_members', {
@@ -3542,6 +3546,8 @@ export const eventsPg = pgTable('events', {
   terms_article_id: integerPg('terms_article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
   /** Square/QuickBooks line item name for event registration checkout; falls back to a generated label when unset. */
   payment_item_name: textPg('payment_item_name'),
+  /** Email address for event inquiries and operational contact. */
+  point_of_contact: textPg('point_of_contact').notNull(),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
@@ -3616,6 +3622,7 @@ export const eventRegistrationsPg = pgTable('event_registrations', {
   payment_order_id: integerPg('payment_order_id'),
   special_link_id: integerPg('special_link_id'),
   waitlist_position: integerPg('waitlist_position'),
+  access_token: textPg('access_token'),
   registered_at: timestamp('registered_at', { withTimezone: false }).defaultNow().notNull(),
   cancelled_at: timestamp('cancelled_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
@@ -3624,6 +3631,7 @@ export const eventRegistrationsPg = pgTable('event_registrations', {
   eventIdx: indexPg('idx_event_registrations_event_id').on(table.event_id),
   memberIdx: indexPg('idx_event_registrations_member_id').on(table.member_id),
   statusIdx: indexPg('idx_event_registrations_status').on(table.status),
+  accessTokenIdx: uniqueIndexPg('event_registrations_access_token_unique').on(table.access_token),
 }));
 
 export const eventRegistrationMembersPg = pgTable('event_registration_members', {

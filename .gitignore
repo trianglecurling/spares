@@ -9,5 +9,5 @@ dist
 coverage
 .vscode
 .idea
-db-config.json
+db-config*.json
 backend/data/uploads/

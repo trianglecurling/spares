@@ -113,6 +113,20 @@
       "when": 1780352498457,
       "tag": "0016_add_registration_payment_item_names",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1780352498458,
+      "tag": "0017_add_events_point_of_contact",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780352498459,
+      "tag": "0018_add_event_registrations_access_token",
+      "breakpoints": true
     }
   ]
 }

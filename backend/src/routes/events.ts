@@ -6,11 +6,14 @@ import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembersh
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import { issueEventRegistrationRefund } from '../services/eventRegistrationRefundService.js';
 import { resolveFrontendBaseUrl, normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
-import { formatMemberDisplayName } from '../utils/memberName.js';
+import { formatMemberDisplayName, splitMemberDisplayName } from '../utils/memberName.js';
+import { eventRegistrationManageUrl } from '../utils/eventRegistrationManageUrl.js';
+import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import {
   sendEventRegistrationConfirmationEmail,
   sendEventRegistrationCancelledEmail,
   sendEventOwnerNewRegistrationEmail,
+  type EventRegistrationEmailLinks,
 } from '../services/email.js';
 import {
   createEvent,
@@ -37,6 +40,9 @@ import {
   getSpecialLinkByToken,
   getRegistrationForEvent,
   updateRegistrationForEvent,
+  ensureRegistrationAccessToken,
+  getRegistrationByAccessToken,
+  isBeforeCancellationCutoff,
   EventServiceError,
   normalizeCalendarTypeId,
   resolveEventRegistrationFeeMinor,
@@ -100,6 +106,7 @@ interface EventFormattingSource {
   enable_waitlist: number;
   terms_article_id: number | null;
   payment_item_name?: string | null;
+  point_of_contact: string;
   tournament_teams_published?: number;
   tournament_draw_published?: number;
   tournament_format?: string | null;
@@ -149,6 +156,8 @@ const registrationFieldSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+const eventPointOfContactSchema = z.string().trim().min(1).email().max(320);
+
 const createEventSchema = z.object({
   title: z.string().min(1).max(300),
   slug: z.string().max(200).optional(),
@@ -170,6 +179,7 @@ const createEventSchema = z.object({
   tournamentTeamsPublished: z.boolean().optional(),
   tournamentDrawPublished: z.boolean().optional(),
   tournamentFormat: z.enum(['fours', 'doubles']).nullable().optional(),
+  pointOfContact: eventPointOfContactSchema,
   timespans: z.array(timespanSchema).min(1),
   locations: z.array(locationSchema).optional(),
   categoryIds: z.array(z.number().int()).optional(),
@@ -180,6 +190,7 @@ const createEventSchema = z.object({
 const updateEventSchema = createEventSchema.partial().extend({
   published: z.boolean().optional(),
   timespans: z.array(timespanSchema).optional(),
+  pointOfContact: eventPointOfContactSchema.optional(),
 });
 
 const registrationContactSchema = z.object({
@@ -311,6 +322,143 @@ function formatEventDate(timespans: Array<{ start_dt: string; end_dt: string }>)
   } catch {
     return first.start_dt;
   }
+}
+
+async function buildRegistrationEmailLinks(
+  registrationId: number,
+  accessToken?: string | null,
+): Promise<EventRegistrationEmailLinks> {
+  const token = accessToken ?? await ensureRegistrationAccessToken(registrationId);
+  const manageRegistrationUrl = eventRegistrationManageUrl(token);
+
+  const reg = await getRegistrationById(registrationId);
+  let receiptUrl: string | null = null;
+  if (reg?.payment_order_id) {
+    const { db, schema } = getDrizzleDb();
+    const [order] = await db
+      .select({
+        order_token: schema.paymentOrders.order_token,
+        status: schema.paymentOrders.status,
+      })
+      .from(schema.paymentOrders)
+      .where(eq(schema.paymentOrders.id, reg.payment_order_id))
+      .limit(1);
+    if (order && (order.status === 'succeeded' || order.status === 'partially_refunded')) {
+      receiptUrl = paymentDetailsUrl(order.order_token);
+    }
+  }
+
+  return { manageRegistrationUrl, receiptUrl };
+}
+
+async function sendRegistrationConfirmationEmailForResult(
+  registrationId: number,
+  accessToken: string | null | undefined,
+  contactEmail: string,
+  contactFirstName: string,
+  contactLastName: string,
+  event: EventFormattingSource,
+  status: 'confirmed' | 'pending_payment' | 'waitlisted',
+  groupSize: number,
+): Promise<void> {
+  const links = await buildRegistrationEmailLinks(registrationId, accessToken);
+  await sendEventRegistrationConfirmationEmail(
+    contactEmail,
+    formatMemberDisplayName(contactFirstName, contactLastName),
+    event.title,
+    formatEventDate((event.timespans ?? []) as Array<{ start_dt: string; end_dt: string }>),
+    status,
+    groupSize,
+    undefined,
+    links,
+  );
+}
+
+function formatManageRegistrationFieldValues(registration: {
+  groupMembers?: Array<{ id?: number; sort_order?: number }>;
+  fieldValues?: Array<{ field_id: number; registration_member_id: number | null; value: string | null }>;
+}): Array<{ fieldId: number; registrationMemberIndex: number | null; value: string }> {
+  const sortedMembers = [...(registration.groupMembers ?? [])].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  );
+  const memberIndexById = new Map<number, number>();
+  sortedMembers.forEach((member, idx) => {
+    if (member.id != null) memberIndexById.set(member.id, idx + 1);
+  });
+
+  return (registration.fieldValues ?? []).map((fieldValue) => ({
+    fieldId: fieldValue.field_id,
+    registrationMemberIndex:
+      fieldValue.registration_member_id == null
+        ? null
+        : (memberIndexById.get(fieldValue.registration_member_id) ?? null),
+    value: fieldValue.value ?? '',
+  }));
+}
+
+async function formatManageRegistrationResponse(accessToken: string) {
+  const registration = await getRegistrationByAccessToken(accessToken);
+  if (!registration) return null;
+
+  const event = await getEventById(registration.event_id);
+  if (!event) return null;
+
+  const nowMs = Date.now();
+  const canCancel =
+    registration.status !== 'cancelled' && isBeforeCancellationCutoff(event, nowMs);
+  const cancellationCutoffPassed =
+    registration.status !== 'cancelled' && !isBeforeCancellationCutoff(event, nowMs);
+
+  const { firstName, lastName } = splitMemberDisplayName(registration.contact_name ?? '');
+  const sortedMembers = [...(registration.groupMembers ?? [])].sort(
+    (a: { sort_order?: number }, b: { sort_order?: number }) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  );
+
+  let receiptUrl: string | null = null;
+  if (registration.payment_order_id) {
+    const { db, schema } = getDrizzleDb();
+    const [order] = await db
+      .select({
+        order_token: schema.paymentOrders.order_token,
+        status: schema.paymentOrders.status,
+      })
+      .from(schema.paymentOrders)
+      .where(eq(schema.paymentOrders.id, registration.payment_order_id))
+      .limit(1);
+    if (order && (order.status === 'succeeded' || order.status === 'partially_refunded')) {
+      receiptUrl = paymentDetailsUrl(order.order_token);
+    }
+  }
+
+  return {
+    event: {
+      id: event.id,
+      title: event.title,
+      slug: event.slug,
+      allowGroupRegistration: event.allow_group_registration,
+      maxGroupSize: event.max_group_size,
+      registrationFields: event.registrationFields ?? [],
+      cancellationCutoff: event.cancellation_cutoff,
+      pointOfContact: event.point_of_contact,
+    },
+    registration: {
+      id: registration.id,
+      status: registration.status,
+      contactFirstName: firstName,
+      contactLastName: lastName,
+      contactEmail: registration.contact_email,
+      groupMembers: sortedMembers.map((m: { name: string; email?: string | null }) => ({
+        name: m.name,
+        email: m.email ?? '',
+      })),
+      fieldValues: formatManageRegistrationFieldValues(registration),
+      waitlistPosition: registration.waitlist_position,
+    },
+    receiptUrl,
+    canCancel,
+    cancellationCutoffPassed,
+    serverNow: new Date(nowMs).toISOString(),
+  };
 }
 
 /**
@@ -593,13 +741,15 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           );
         }
 
-        sendEventRegistrationConfirmationEmail(
+        sendRegistrationConfirmationEmailForResult(
+          result.registrationId,
+          result.accessToken,
           parsed.data.contactEmail,
-          formatMemberDisplayName(parsed.data.contactFirstName, parsed.data.contactLastName),
-          event.title,
-          formatEventDate(event.timespans),
+          parsed.data.contactFirstName,
+          parsed.data.contactLastName,
+          event,
           result.status,
-          parsed.data.groupMembers ? parsed.data.groupMembers.length + 1 : 1
+          parsed.data.groupMembers ? parsed.data.groupMembers.length + 1 : 1,
         ).catch((err) => request.log.error({ err }, 'Failed to send registration email'));
 
         notifyEventOwners(
@@ -652,6 +802,112 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         bypassCapacity: link.bypass_capacity === 1,
         ignoreRegistrationDates: link.ignore_registration_dates === 1,
       };
+    }
+  );
+
+  // Self-service registration management (access token auth)
+  fastify.get<{ Params: { accessToken: string } }>(
+    '/public/events/registrations/manage/:accessToken',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const payload = await formatManageRegistrationResponse(request.params.accessToken);
+      if (!payload) return sendApiError(reply, 404, 'Registration not found');
+      return payload;
+    }
+  );
+
+  fastify.patch<{ Params: { accessToken: string }; Body: unknown }>(
+    '/public/events/registrations/manage/:accessToken',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const registration = await getRegistrationByAccessToken(request.params.accessToken);
+      if (!registration) return sendApiError(reply, 404, 'Registration not found');
+
+      const parsed = adminUpsertRegistrationSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
+      }
+
+      try {
+        await updateRegistrationForEvent(registration.event_id, registration.id, {
+          contactFirstName: parsed.data.contactFirstName,
+          contactLastName: parsed.data.contactLastName,
+          contactEmail: parsed.data.contactEmail,
+          groupMembers: parsed.data.groupMembers?.map((m) => ({
+            name: m.name,
+            email: m.email ?? undefined,
+          })),
+          fieldValues: parsed.data.fieldValues?.map((fv) => ({
+            fieldId: fv.fieldId,
+            registrationMemberIndex: fv.registrationMemberIndex ?? null,
+            value: fv.value,
+          })),
+        });
+        const payload = await formatManageRegistrationResponse(request.params.accessToken);
+        if (!payload) return sendApiError(reply, 404, 'Registration not found');
+        return payload;
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  fastify.post<{ Params: { accessToken: string } }>(
+    '/public/events/registrations/manage/:accessToken/cancel',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const registration = await getRegistrationByAccessToken(request.params.accessToken);
+      if (!registration) return sendApiError(reply, 404, 'Registration not found');
+      if (registration.status === 'cancelled') {
+        return sendApiError(reply, 400, 'Registration is already cancelled');
+      }
+
+      const event = await getEventById(registration.event_id);
+      if (!event) return sendApiError(reply, 404, 'Event not found');
+
+      if (!isBeforeCancellationCutoff(event)) {
+        return sendApiError(
+          reply,
+          403,
+          `Cancellation is no longer available. Contact ${event.point_of_contact} for help.`,
+        );
+      }
+
+      try {
+        const { refundEligible, event: cancelledEvent } = await cancelRegistration(registration.id);
+
+        let refundIssued = false;
+        let refundError: string | null = null;
+        if (refundEligible && registration.payment_order_id) {
+          const refundResult = await issueEventRegistrationRefund({
+            paymentOrderId: registration.payment_order_id,
+            reason: 'Event registration cancelled by registrant',
+            requestedByMemberId: registration.member_id ?? null,
+          });
+          refundIssued = refundResult.refundIssued;
+          refundError = refundResult.refundError;
+          if (refundError) {
+            request.log.error({ refundError }, 'Failed to create refund for event registration cancellation');
+          }
+        }
+
+        sendEventRegistrationCancelledEmail(
+          registration.contact_email,
+          registration.contact_name,
+          cancelledEvent.title,
+          refundIssued
+        ).catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
+
+        return { success: true, refundIssued, refundError };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
     }
   );
 
@@ -1127,13 +1383,15 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           );
         }
 
-        sendEventRegistrationConfirmationEmail(
+        sendRegistrationConfirmationEmailForResult(
+          result.registrationId,
+          result.accessToken,
           parsed.data.contactEmail,
-          formatMemberDisplayName(parsed.data.contactFirstName, parsed.data.contactLastName),
-          event.title,
-          formatEventDate(event.timespans),
+          parsed.data.contactFirstName,
+          parsed.data.contactLastName,
+          event,
           result.status,
-          parsed.data.groupMembers ? parsed.data.groupMembers.length + 1 : 1
+          parsed.data.groupMembers ? parsed.data.groupMembers.length + 1 : 1,
         ).catch((err) => request.log.error({ err }, 'Failed to send registration email'));
 
         notifyEventOwners(
@@ -1288,13 +1546,15 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           adminOverride: true,
         });
 
-        sendEventRegistrationConfirmationEmail(
+        sendRegistrationConfirmationEmailForResult(
+          result.registrationId,
+          result.accessToken,
           parsed.data.contactEmail,
-          formatMemberDisplayName(parsed.data.contactFirstName, parsed.data.contactLastName),
-          event.title,
-          formatEventDate(event.timespans),
+          parsed.data.contactFirstName,
+          parsed.data.contactLastName,
+          event,
           result.status,
-          parsed.data.groupMembers ? parsed.data.groupMembers.length + 1 : 1
+          parsed.data.groupMembers ? parsed.data.groupMembers.length + 1 : 1,
         ).catch((err) => request.log.error({ err }, 'Failed to send registration email'));
 
         notifyEventOwners(
@@ -1616,6 +1876,7 @@ function formatEventResponse(event: EventFormattingSource) {
     maxGroupSize: event.max_group_size,
     enableWaitlist: event.enable_waitlist,
     termsArticleId: event.terms_article_id,
+    pointOfContact: event.point_of_contact,
     createdByMemberId: event.created_by_member_id,
     timespans: event.timespans || [],
     locations: event.locations || [],

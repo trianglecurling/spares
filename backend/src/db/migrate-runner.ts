@@ -12,6 +12,10 @@ const drizzleDir = path.join(__dirname, '../../drizzle');
 const MIGRATIONS_SCHEMA = 'public';
 const MIGRATIONS_TABLE = '__drizzle_migrations';
 
+function isSqliteIncompatibleMigrationStatement(statement: string): boolean {
+  return /\bALTER\s+COLUMN\b/i.test(statement);
+}
+
 /** Migrations already satisfied by the legacy createSchema bootstrap on existing DBs. */
 const LEGACY_BASELINE_TAGS = new Set(['0000_furry_annihilus']);
 
@@ -92,6 +96,21 @@ async function latestAppliedMigrationWhen(): Promise<number | null> {
   return Number(rows[0].created_at);
 }
 
+async function sqliteTableExists(tableName: string): Promise<boolean> {
+  const { db } = getDrizzleDb();
+  const result = await db.execute(
+    sql.raw(`
+      SELECT 1
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name = '${tableName}'
+      LIMIT 1
+    `)
+  );
+  const rows = (result as { rows?: unknown[] }).rows ?? result;
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 /**
  * Marks existing Drizzle journal migrations as applied when the database was
  * created by the legacy createSchema bootstrap (no __drizzle_migrations table).
@@ -124,6 +143,35 @@ export async function baselineExistingPostgresDatabaseIfNeeded(): Promise<void> 
   }
 }
 
+async function ensureSqliteEventsPointOfContactColumn(): Promise<void> {
+  if (!(await sqliteTableExists('events'))) {
+    return;
+  }
+
+  const { db } = getDrizzleDb();
+  const result = await db.execute(sql.raw(`PRAGMA table_info(events)`));
+  const rows = (result as { rows?: Array<{ name?: string | null }> }).rows ?? result;
+  if (!Array.isArray(rows)) {
+    return;
+  }
+  if (rows.some((column) => column.name === 'point_of_contact')) {
+    return;
+  }
+
+  const migration = readMigrationFile({
+    idx: 17,
+    tag: '0017_add_events_point_of_contact',
+    when: 1780352498458,
+  });
+  for (const statement of migration.statements) {
+    if (isSqliteIncompatibleMigrationStatement(statement)) {
+      continue;
+    }
+    await db.execute(sql.raw(statement));
+  }
+  console.log('Applied SQLite data migration 0017_add_events_point_of_contact');
+}
+
 async function applyPendingPostgresMigrations(): Promise<void> {
   await ensureMigrationsTable();
   const latestWhen = await latestAppliedMigrationWhen();
@@ -146,7 +194,7 @@ async function applyPendingPostgresMigrations(): Promise<void> {
         VALUES ('${migration.hash}', ${migration.when})
       `)
     );
-    console.log(`Applied migration ${migration.tag}`);
+    console.log(`Applied migration ${entry.tag}`);
   }
 }
 
@@ -171,6 +219,7 @@ async function spawnDrizzleKit(args: string[]): Promise<void> {
 
 export async function runDrizzleMigrations(config: DatabaseConfig): Promise<void> {
   if (config.type === 'sqlite') {
+    await ensureSqliteEventsPointOfContactColumn();
     await spawnDrizzleKit(['push', '--force']);
     return;
   }

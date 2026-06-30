@@ -1950,6 +1950,7 @@ export class PaymentService {
           contactEmail: this.schema.eventRegistrations.contact_email,
           groupSize: this.schema.eventRegistrations.group_size,
           eventId: this.schema.eventRegistrations.event_id,
+          accessToken: this.schema.eventRegistrations.access_token,
         })
         .from(this.schema.eventRegistrations)
         .where(eq(this.schema.eventRegistrations.id, order.subject_id))
@@ -1977,13 +1978,23 @@ export class PaymentService {
           })
         : 'See event page';
 
+      const { ensureRegistrationAccessToken } = await import('./eventService.js');
+      const { eventRegistrationManageUrl } = await import('../utils/eventRegistrationManageUrl.js');
+      const accessToken = registration.accessToken
+        ?? await ensureRegistrationAccessToken(order.subject_id);
+
       await sendEventRegistrationPaymentConfirmationEmail(
         registration.contactEmail,
         registration.contactName,
         event.title,
         eventDateStr,
         registration.groupSize ?? 1,
-        paymentDetailsUrl(order.order_token)
+        paymentDetailsUrl(order.order_token),
+        undefined,
+        {
+          manageRegistrationUrl: eventRegistrationManageUrl(accessToken),
+          receiptUrl: paymentDetailsUrl(order.order_token),
+        },
       );
 
       metadata.eventPaymentConfirmationSentAt = new Date().toISOString();

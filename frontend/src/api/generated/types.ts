@@ -1436,7 +1436,7 @@ export interface paths {
                             amountMinor: number;
                             currency: string;
                             /** @enum {string} */
-                            status: "created" | "pending" | "succeeded" | "failed" | "refunded" | "partially_refunded";
+                            status: "created" | "pending" | "succeeded" | "failed" | "pending_refund" | "refunded" | "partially_refunded";
                             /** @enum {string} */
                             provider: "stripe" | "paypal" | "square";
                             providerReference: null | string;
@@ -2570,7 +2570,7 @@ export interface paths {
                                 amountMinor: number;
                                 currency: string;
                                 /** @enum {string} */
-                                status: "created" | "pending" | "succeeded" | "failed" | "refunded" | "partially_refunded";
+                                status: "created" | "pending" | "succeeded" | "failed" | "pending_refund" | "refunded" | "partially_refunded";
                                 paidAt: null | string;
                                 createdAt: string;
                             }[];
@@ -2619,7 +2619,7 @@ export interface paths {
                             amountMinor: number;
                             currency: string;
                             /** @enum {string} */
-                            status: "created" | "pending" | "succeeded" | "failed" | "refunded" | "partially_refunded";
+                            status: "created" | "pending" | "succeeded" | "failed" | "pending_refund" | "refunded" | "partially_refunded";
                             /** @enum {string} */
                             provider: "stripe" | "paypal" | "square";
                             providerReference: null | string;
@@ -3140,7 +3140,7 @@ export interface paths {
                                 amountMinor: number;
                                 currency: string;
                                 /** @enum {string} */
-                                status: "created" | "pending" | "succeeded" | "failed" | "refunded" | "partially_refunded";
+                                status: "created" | "pending" | "succeeded" | "failed" | "pending_refund" | "refunded" | "partially_refunded";
                                 paidAt: null | string;
                                 createdAt: string;
                             }[];
@@ -11372,7 +11372,7 @@ export interface paths {
                     offset?: number;
                     provider?: "stripe" | "paypal" | "square";
                     subjectType?: "donation" | "membership" | "event_registration" | "curling_registration";
-                    status?: "created" | "pending" | "succeeded" | "failed" | "refunded" | "partially_refunded";
+                    status?: "created" | "pending" | "succeeded" | "failed" | "pending_refund" | "refunded" | "partially_refunded";
                 };
                 header?: never;
                 path?: never;
@@ -11557,6 +11557,80 @@ export interface paths {
                 header?: never;
                 path: {
                     eventId: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        paymentItemName: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/payments/registration-item-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/registration-item-names/{lineType}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    lineType: "regular_membership_fee" | "social_membership_fee" | "junior_recreational_fee" | "league_fee" | "spare_only_fee" | "sabbatical_fee";
                 };
                 cookie?: never;
             };
