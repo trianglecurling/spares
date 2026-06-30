@@ -34,6 +34,39 @@ export function presetScopeLocked(ft: string): boolean {
   return ft === 'preset_team_four' || ft === 'preset_team_doubles';
 }
 
+export function isTeamPresetFieldType(ft: string): boolean {
+  return ft === 'preset_team_four' || ft === 'preset_team_doubles';
+}
+
+const TEAM_DIETARY_KEYS = ['vegetarian', 'glutenFree', 'dairyFree'] as const;
+
+function normalizeTeamFieldOptions(options: string | null | undefined): string | null {
+  if (!options?.trim()) return null;
+  try {
+    const parsed = JSON.parse(options) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const collectDietaryRestrictions = (parsed as Record<string, unknown>).collectDietaryRestrictions === true;
+    return collectDietaryRestrictions ? JSON.stringify({ collectDietaryRestrictions: true }) : null;
+  } catch {
+    return null;
+  }
+}
+
+function validateTeamPlayerRow(row: unknown, fieldLabel: string): void {
+  if (typeof row !== 'object' || row === null) {
+    throw new EventServiceError(`Invalid team data for "${fieldLabel}"`, 400);
+  }
+  const r = row as Record<string, unknown>;
+  if (typeof r.name !== 'string' || typeof r.email !== 'string' || typeof r.homeClub !== 'string') {
+    throw new EventServiceError(`Invalid team data for "${fieldLabel}"`, 400);
+  }
+  for (const key of TEAM_DIETARY_KEYS) {
+    if (r[key] != null && typeof r[key] !== 'boolean') {
+      throw new EventServiceError(`Invalid team data for "${fieldLabel}"`, 400);
+    }
+  }
+}
+
 export function normalizeRegistrationFieldRow(field: {
   label: string;
   fieldType: string;
@@ -62,12 +95,13 @@ export function normalizeRegistrationFieldRow(field: {
   }
   if (isPresetFieldType(ft)) {
     const scope = presetScopeLocked(ft) ? 'group' : (field.scope === 'individual' ? 'individual' : 'group');
+    const options = isTeamPresetFieldType(ft) ? normalizeTeamFieldOptions(field.options) : null;
     return {
       label: PRESET_LABELS[ft],
       fieldType: ft,
       scope,
       required: !!field.required,
-      options: null,
+      options,
       sortOrder: field.sortOrder,
     };
   }
@@ -262,13 +296,7 @@ function validateValueForFieldType(field: RegistrationFieldRow, value: string): 
         throw new EventServiceError(`Invalid team data for "${field.label}"`, 400);
       }
       for (const row of parsed) {
-        if (typeof row !== 'object' || row === null) {
-          throw new EventServiceError(`Invalid team data for "${field.label}"`, 400);
-        }
-        const r = row as Record<string, unknown>;
-        if (typeof r.name !== 'string' || typeof r.email !== 'string' || typeof r.homeClub !== 'string') {
-          throw new EventServiceError(`Invalid team data for "${field.label}"`, 400);
-        }
+        validateTeamPlayerRow(row, field.label);
       }
       return;
     }

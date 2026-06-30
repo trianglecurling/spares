@@ -9,6 +9,7 @@ import { useAlert } from '../../contexts/AlertContext';
 import { TeamPlayersField, defaultTeamPlayersJson } from '../../components/eventRegistration/TeamPlayersField';
 import {
   isSubheadingFieldType,
+  teamFieldOptionsFromRegistrationField,
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
 } from '../../utils/eventRegistrationFieldPresets';
@@ -806,6 +807,9 @@ function FieldInput({
         positions={TEAM_POSITIONS_FOUR}
         inputClassName={className}
         showLegend={false}
+        collectDietaryRestrictions={
+          teamFieldOptionsFromRegistrationField(field).collectDietaryRestrictions
+        }
       />
     );
   }
@@ -819,6 +823,9 @@ function FieldInput({
         positions={TEAM_POSITIONS_DOUBLES}
         inputClassName={className}
         showLegend={false}
+        collectDietaryRestrictions={
+          teamFieldOptionsFromRegistrationField(field).collectDietaryRestrictions
+        }
       />
     );
   }

@@ -27,11 +27,19 @@ import { LOCATION_OPTIONS } from '../calendarEventFormShared';
 import {
   CUSTOM_FIELD_TYPES,
   PRESET_LABELS,
+  addDietaryCounts,
+  countDietaryRestrictionsFromTeamValue,
+  emptyDietaryRestrictionCounts,
   isPresetFieldType,
   isSubheadingFieldType,
+  isTeamPresetFieldType,
+  parseTeamFieldOptions,
   presetScopeLocked,
+  serializeTeamFieldOptions,
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
+  DIETARY_RESTRICTION_KEYS,
+  DIETARY_RESTRICTION_LABELS,
   type PresetFieldType,
 } from '../../utils/eventRegistrationFieldPresets';
 import type { TournamentFormat } from '../../utils/tournamentDisplay';
@@ -453,7 +461,9 @@ export default function AdminEventEditor() {
         fieldType: f.fieldType,
         scope: f.scope,
         required: f.required,
-        options: f.options || null,
+        options: isTeamPresetFieldType(f.fieldType)
+          ? serializeTeamFieldOptions(parseTeamFieldOptions(f.options))
+          : f.options || null,
         sortOrder: i,
       })),
     };
@@ -761,6 +771,34 @@ export default function AdminEventEditor() {
   ]);
 
   const activeRegistrationCount = registrations.filter((r) => r.status !== 'cancelled').length;
+
+  const collectDietaryRestrictionsEnabled = useMemo(
+    () =>
+      registrationFields.some(
+        (field) =>
+          isTeamPresetFieldType(field.fieldType) &&
+          parseTeamFieldOptions(field.options).collectDietaryRestrictions,
+      ),
+    [registrationFields],
+  );
+
+  const dietaryRestrictionSummary = useMemo(() => {
+    if (!collectDietaryRestrictionsEnabled) return emptyDietaryRestrictionCounts();
+    const teamFieldsWithDietary = registrationFields.filter(
+      (field) =>
+        isTeamPresetFieldType(field.fieldType) &&
+        parseTeamFieldOptions(field.options).collectDietaryRestrictions,
+    );
+    let totals = emptyDietaryRestrictionCounts();
+    for (const registration of registrations) {
+      if (registration.status === 'cancelled') continue;
+      for (const field of teamFieldsWithDietary) {
+        const raw = getRegistrationFieldGroupRawValue(registration, field);
+        totals = addDietaryCounts(totals, countDietaryRestrictionsFromTeamValue(raw));
+      }
+    }
+    return totals;
+  }, [collectDietaryRestrictionsEnabled, registrationFields, registrations]);
 
   const registrationColumns: Array<DataTableColumn<Registration, string>> = useMemo(() => {
     const baseColumns: Array<DataTableColumn<Registration, string>> = [
@@ -1625,11 +1663,25 @@ export default function AdminEventEditor() {
                       )}
                       {isPresetFieldType(field.fieldType) && (
                         <div className="space-y-2">
-                          <FormCheckbox
-                            label="Required"
-                            checked={field.required}
-                            onChange={(checked) => updateField(i, { required: checked })}
-                          />
+                          <div className="flex flex-wrap gap-x-6 gap-y-2">
+                            <FormCheckbox
+                              label="Required"
+                              checked={field.required}
+                              onChange={(checked) => updateField(i, { required: checked })}
+                            />
+                            {isTeamPresetFieldType(field.fieldType) ? (
+                              <FormCheckbox
+                                label="Collect dietary restrictions"
+                                checked={parseTeamFieldOptions(field.options).collectDietaryRestrictions}
+                                onChange={(checked) =>
+                                  updateField(i, {
+                                    options:
+                                      serializeTeamFieldOptions({ collectDietaryRestrictions: checked }) ?? '',
+                                  })
+                                }
+                              />
+                            ) : null}
+                          </div>
                           {allowGroupRegistration && !presetScopeLocked(field.fieldType) && (
                             <FormField
                               label="Field scope"
@@ -1888,6 +1940,25 @@ export default function AdminEventEditor() {
                 }
                 getRowClassName={(registration) => (registration.status === 'cancelled' ? 'opacity-60' : undefined)}
               />
+            ) : null}
+
+            {registrationsLoaded && collectDietaryRestrictionsEnabled ? (
+              <div className="app-card-subtle space-y-3">
+                <h3 className="app-section-title">Dietary restrictions summary</h3>
+                <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {DIETARY_RESTRICTION_KEYS.map((key) => (
+                    <div key={key} className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                      <dt className="text-sm text-gray-600 dark:text-gray-400">{DIETARY_RESTRICTION_LABELS[key]}</dt>
+                      <dd className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                        {dietaryRestrictionSummary[key]}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Counts include active registrations only and reflect each player who selected a restriction.
+                </p>
+              </div>
             ) : null}
           </div>
         )}
@@ -2203,10 +2274,6 @@ function getRegistrationFieldGroupRawValue(registration: Registration, field: Re
   if (values.length === 0) return '';
   const groupValue = values.find((fv) => fv.registration_member_id == null) ?? values[0];
   return groupValue?.value ?? '';
-}
-
-function isTeamPresetFieldType(fieldType: string): boolean {
-  return fieldType === 'preset_team_four' || fieldType === 'preset_team_doubles';
 }
 
 function teamPresetPositionLabels(fieldType: string): readonly string[] {

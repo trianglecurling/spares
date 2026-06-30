@@ -1,4 +1,18 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
+import ChoiceInput, { type ChoiceOption } from '../ChoiceInput';
+import {
+  DIETARY_RESTRICTION_KEYS,
+  DIETARY_RESTRICTION_LABELS,
+  parseTeamPlayersJson,
+  playerHasDietaryRestrictions,
+  type DietaryRestrictionKey,
+  type TeamPlayerRow,
+} from '../../utils/eventRegistrationFieldPresets';
+
+const DIETARY_CHOICE_OPTIONS: ChoiceOption<DietaryRestrictionKey>[] = DIETARY_RESTRICTION_KEYS.map((key) => ({
+  value: key,
+  label: DIETARY_RESTRICTION_LABELS[key],
+}));
 
 export function defaultTeamPlayersJson(rowCount: number): string {
   return JSON.stringify(
@@ -17,6 +31,7 @@ export type TeamPlayersFieldProps = {
   showLegend?: boolean;
   /** Public event forms are light-only; omit dark-mode styles so system dark theme does not apply. */
   lightOnly?: boolean;
+  collectDietaryRestrictions?: boolean;
 };
 
 function playerSectionClasses(i: number, total: number, lightOnly: boolean): string {
@@ -39,32 +54,38 @@ export function TeamPlayersField({
   inputClassName,
   showLegend = true,
   lightOnly = false,
+  collectDietaryRestrictions = false,
 }: TeamPlayersFieldProps) {
   const fieldsetId = useId();
+  const [expandedDietary, setExpandedDietary] = useState<Set<number>>(() => new Set());
 
-  let rows: Array<{ name: string; email: string; homeClub: string }>;
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed) || parsed.length !== positions.length) {
-      rows = positions.map(() => ({ name: '', email: '', homeClub: '' }));
-    } else {
-      rows = parsed.map((r: unknown) => {
-        const o = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
-        return {
-          name: typeof o.name === 'string' ? o.name : '',
-          email: typeof o.email === 'string' ? o.email : '',
-          homeClub: typeof o.homeClub === 'string' ? o.homeClub : '',
-        };
-      });
-    }
-  } catch {
-    rows = positions.map(() => ({ name: '', email: '', homeClub: '' }));
-  }
+  const rows = parseTeamPlayersJson(value, positions.length);
 
-  const updateRow = (i: number, key: 'name' | 'email' | 'homeClub', v: string) => {
+  const updateRow = (i: number, key: keyof TeamPlayerRow, v: string | boolean) => {
     const next = [...rows];
     next[i] = { ...next[i], [key]: v };
     onChange(JSON.stringify(next));
+  };
+
+  const updateDietarySelection = (i: number, nextValue: DietaryRestrictionKey | DietaryRestrictionKey[] | null) => {
+    const selected = Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [];
+    const next = [...rows];
+    const row: TeamPlayerRow = { ...next[i] };
+    for (const key of DIETARY_RESTRICTION_KEYS) {
+      if (selected.includes(key)) row[key] = true;
+      else delete row[key];
+    }
+    next[i] = row;
+    onChange(JSON.stringify(next));
+  };
+
+  const toggleDietaryExpanded = (i: number) => {
+    setExpandedDietary((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
   };
 
   const legendClass = showLegend
@@ -85,6 +106,9 @@ export function TeamPlayersField({
   const copyPreviousButtonClass = lightOnly
     ? 'shrink-0 pt-2 text-sm text-primary-teal-link hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline'
     : 'shrink-0 pt-2 text-sm text-primary-teal hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline dark:text-primary-teal';
+  const dietaryButtonClass = lightOnly
+    ? 'text-sm text-primary-teal-link hover:underline'
+    : 'text-sm text-primary-teal hover:underline dark:text-primary-teal';
 
   return (
     <fieldset>
@@ -96,6 +120,9 @@ export function TeamPlayersField({
         const nameId = `${fieldsetId}-${i}-name`;
         const emailId = `${fieldsetId}-${i}-email`;
         const homeClubId = `${fieldsetId}-${i}-home-club`;
+        const dietaryExpanded =
+          expandedDietary.has(i) ||
+          playerHasDietaryRestrictions(rows[i] ?? { name: '', email: '', homeClub: '' });
 
         return (
           <div key={pos} className={playerSectionClasses(i, positions.length, lightOnly)}>
@@ -152,6 +179,30 @@ export function TeamPlayersField({
                 </button>
               )}
             </div>
+            {collectDietaryRestrictions ? (
+              <div className="pt-1">
+                {!dietaryExpanded ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleDietaryExpanded(i)}
+                    className={dietaryButtonClass}
+                  >
+                    Add dietary restrictions
+                  </button>
+                ) : (
+                  <ChoiceInput<DietaryRestrictionKey>
+                    options={DIETARY_CHOICE_OPTIONS}
+                    value={DIETARY_RESTRICTION_KEYS.filter((key) => rows[i]?.[key] === true)}
+                    onChange={(nextValue) => updateDietarySelection(i, nextValue)}
+                    layout="inline"
+                    maxSelectedItems={null}
+                    multiSelectionIndicatorStyle="checkboxes"
+                    ariaLabel={`${pos} dietary restrictions`}
+                    name={`${fieldsetId}-${i}-dietary`}
+                  />
+                )}
+              </div>
+            ) : null}
           </div>
         );
       })}

@@ -13,6 +13,7 @@ import {
   defaultTeamNameFromLastName,
   isSubheadingFieldType,
   lastNameFromDisplayName,
+  teamFieldOptionsFromRegistrationField,
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
 } from '../utils/eventRegistrationFieldPresets';
@@ -856,6 +857,9 @@ function RegistrationFieldInput({
           positions={TEAM_POSITIONS_FOUR}
           inputClassName={publicInput}
           lightOnly
+          collectDietaryRestrictions={
+            teamFieldOptionsFromRegistrationField(field).collectDietaryRestrictions
+          }
         />
       );
     case 'preset_team_doubles':
@@ -868,6 +872,9 @@ function RegistrationFieldInput({
           positions={TEAM_POSITIONS_DOUBLES}
           inputClassName={publicInput}
           lightOnly
+          collectDietaryRestrictions={
+            teamFieldOptionsFromRegistrationField(field).collectDietaryRestrictions
+          }
         />
       );
     default:
