@@ -8,6 +8,11 @@ import {
   updateEventPaymentItemName,
   EventServiceError,
 } from '../services/eventService.js';
+import {
+  listRegistrationPaymentItemNames,
+  updateRegistrationPaymentItemName,
+  RegistrationPaymentItemNamesServiceError,
+} from '../services/registrationPaymentItemNamesService.js';
 import { hasScope } from '../utils/rbac.js';
 
 const listOrdersQuerySchema = z.object({
@@ -33,8 +38,23 @@ const updateEventItemNameBodySchema = z.object({
   paymentItemName: z.string().max(512).nullable(),
 });
 
+const updateRegistrationItemNameBodySchema = z.object({
+  paymentItemName: z.string().max(512).nullable(),
+});
+
 const eventIdParamSchema = z.object({
   eventId: z.coerce.number().int().positive(),
+});
+
+const registrationItemLineTypeParamSchema = z.object({
+  lineType: z.enum([
+    'regular_membership_fee',
+    'social_membership_fee',
+    'junior_recreational_fee',
+    'league_fee',
+    'spare_only_fee',
+    'sabbatical_fee',
+  ]),
 });
 
 function tryParseJson(value: string | null): unknown {
@@ -363,6 +383,70 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
         await updateEventPaymentItemName(params.eventId, body.paymentItemName);
       } catch (error) {
         if (error instanceof EventServiceError) {
+          reply.code(error.statusCode).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+      return { ok: true };
+    }
+  );
+
+  fastify.get(
+    '/payments/registration-item-names',
+    {
+      schema: {
+        tags: ['payments'],
+      },
+    },
+    async (request, reply) => {
+      if (!requirePaymentsRead(request, reply)) return;
+      const items = await listRegistrationPaymentItemNames();
+      return { items };
+    }
+  );
+
+  fastify.patch<{ Params: { lineType: string }; Body: { paymentItemName: string | null } }>(
+    '/payments/registration-item-names/:lineType',
+    {
+      schema: {
+        tags: ['payments'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['lineType'],
+          properties: {
+            lineType: {
+              type: 'string',
+              enum: [
+                'regular_membership_fee',
+                'social_membership_fee',
+                'junior_recreational_fee',
+                'league_fee',
+                'spare_only_fee',
+                'sabbatical_fee',
+              ],
+            },
+          },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['paymentItemName'],
+          properties: {
+            paymentItemName: { type: ['string', 'null'], maxLength: 512 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requirePaymentsManage(request, reply)) return;
+      const params = registrationItemLineTypeParamSchema.parse(request.params);
+      const body = updateRegistrationItemNameBodySchema.parse(request.body ?? {});
+      try {
+        await updateRegistrationPaymentItemName(params.lineType, body.paymentItemName);
+      } catch (error) {
+        if (error instanceof RegistrationPaymentItemNamesServiceError) {
           reply.code(error.statusCode).send({ error: error.message });
           return;
         }

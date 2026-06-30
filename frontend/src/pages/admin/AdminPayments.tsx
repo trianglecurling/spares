@@ -344,7 +344,7 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
           title="Manage payments"
           description={
             activeTab === 'item-names'
-              ? 'Configure Square line item names for upcoming event registrations.'
+              ? 'Configure Square line item names for season registration and upcoming event registrations.'
               : 'Inspect payment orders, provider reconciliation details, and recent webhook processing events.'
           }
           actions={

@@ -8,6 +8,10 @@ import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { logEvent } from './observability.js';
 import { dispatchWebhookEvent } from './webhookService.js';
 import { SquarePaymentProviderAdapter } from './squarePaymentProviderAdapter.js';
+import {
+  loadRegistrationPaymentItemNameMap,
+  resolveRegistrationCheckoutItemDescription,
+} from './registrationPaymentItemNamesService.js';
 
 export type PaymentProvider = 'stripe' | 'paypal' | 'square';
 export type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
@@ -842,8 +846,11 @@ export class PaymentService {
 
       if (!invoice) return undefined;
 
+      const configuredRegistrationItemNames = await loadRegistrationPaymentItemNameMap();
+
       const lineRows = await this.db
         .select({
+          lineType: this.schema.registrationInvoiceLineItems.line_type,
           description: this.schema.registrationInvoiceLineItems.description,
           amountMinor: this.schema.registrationInvoiceLineItems.amount_minor,
         })
@@ -856,7 +863,11 @@ export class PaymentService {
 
       const lineItems = lineRows
         .map((line) => ({
-          description: line.description.trim(),
+          description: resolveRegistrationCheckoutItemDescription({
+            lineType: line.lineType,
+            invoiceDescription: line.description.trim(),
+            configuredNames: configuredRegistrationItemNames,
+          }),
           amountMinor: line.amountMinor,
         }))
         .filter((line) => line.description.length > 0 && line.amountMinor !== 0);

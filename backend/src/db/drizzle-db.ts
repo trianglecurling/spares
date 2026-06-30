@@ -25,6 +25,7 @@ type PgSchema = {
   financialAssistanceRequests: typeof pgSchema.financialAssistanceRequestsPg;
   registrationInvoices: typeof pgSchema.registrationInvoicesPg;
   registrationInvoiceLineItems: typeof pgSchema.registrationInvoiceLineItemsPg;
+  registrationPaymentItemNames: typeof pgSchema.registrationPaymentItemNamesPg;
   registrationPriceSettings: typeof pgSchema.registrationPriceSettingsPg;
   registrationDiscountSettings: typeof pgSchema.registrationDiscountSettingsPg;
   seasonMemberships: typeof pgSchema.seasonMembershipsPg;
@@ -146,6 +147,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       financialAssistanceRequests: sqliteSchema.financialAssistanceRequestsSqlite,
       registrationInvoices: sqliteSchema.registrationInvoicesSqlite,
       registrationInvoiceLineItems: sqliteSchema.registrationInvoiceLineItemsSqlite,
+      registrationPaymentItemNames: sqliteSchema.registrationPaymentItemNamesSqlite,
       registrationPriceSettings: sqliteSchema.registrationPriceSettingsSqlite,
       registrationDiscountSettings: sqliteSchema.registrationDiscountSettingsSqlite,
       seasonMemberships: sqliteSchema.seasonMembershipsSqlite,
@@ -258,6 +260,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       financialAssistanceRequests: pgSchema.financialAssistanceRequestsPg,
       registrationInvoices: pgSchema.registrationInvoicesPg,
       registrationInvoiceLineItems: pgSchema.registrationInvoiceLineItemsPg,
+      registrationPaymentItemNames: pgSchema.registrationPaymentItemNamesPg,
       registrationPriceSettings: pgSchema.registrationPriceSettingsPg,
       registrationDiscountSettings: pgSchema.registrationDiscountSettingsPg,
       seasonMemberships: pgSchema.seasonMembershipsPg,

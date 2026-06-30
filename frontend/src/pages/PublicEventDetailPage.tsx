@@ -188,13 +188,13 @@ function getRegistrationOpensCopy(
     if (msUntilOpen < MS_WEEK) {
       return {
         kind: 'datePhrase',
-        phrase: `Registration opens here on ${weekday} at ${timeStr}`,
+        phrase: `Registration opens here this ${weekday} at ${timeStr}`,
       };
     }
 
     const nextSlot = nextLocalDateWithWeekday(serverNowMs, reg.getDay());
     if (sameLocalCalendarDate(nextSlot, reg)) {
-      return { kind: 'datePhrase', phrase: `Registration opens here on ${weekday}` };
+      return { kind: 'datePhrase', phrase: `Registration opens here this ${weekday}` };
     }
     const dateOnly = reg.toLocaleDateString('en-US', {
       month: 'long',

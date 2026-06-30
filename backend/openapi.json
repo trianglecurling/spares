@@ -1690,6 +1690,7 @@
                         "pending",
                         "succeeded",
                         "failed",
+                        "pending_refund",
                         "refunded",
                         "partially_refunded"
                       ]
@@ -3545,6 +3546,7 @@
                               "pending",
                               "succeeded",
                               "failed",
+                              "pending_refund",
                               "refunded",
                               "partially_refunded"
                             ]
@@ -3637,6 +3639,7 @@
                         "pending",
                         "succeeded",
                         "failed",
+                        "pending_refund",
                         "refunded",
                         "partially_refunded"
                       ]
@@ -4651,6 +4654,7 @@
                               "pending",
                               "succeeded",
                               "failed",
+                              "pending_refund",
                               "refunded",
                               "partially_refunded"
                             ]
@@ -19054,6 +19058,7 @@
                 "pending",
                 "succeeded",
                 "failed",
+                "pending_refund",
                 "refunded",
                 "partially_refunded"
               ]
@@ -19218,6 +19223,71 @@
             },
             "in": "path",
             "name": "eventId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/payments/registration-item-names": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/payments/registration-item-names/{lineType}": {
+      "patch": {
+        "tags": [
+          "payments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "paymentItemName"
+                ],
+                "properties": {
+                  "paymentItemName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 512
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "regular_membership_fee",
+                "social_membership_fee",
+                "junior_recreational_fee",
+                "league_fee",
+                "spare_only_fee",
+                "sabbatical_fee"
+              ]
+            },
+            "in": "path",
+            "name": "lineType",
             "required": true
           }
         ],

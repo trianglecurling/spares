@@ -242,6 +242,11 @@ export const curlingRegistrationExtendedDDL = `
   );
   CREATE INDEX IF NOT EXISTS idx_registration_invoice_line_items_invoice_id ON registration_invoice_line_items(invoice_id);
 
+  CREATE TABLE IF NOT EXISTS registration_payment_item_names (
+    line_type TEXT PRIMARY KEY NOT NULL,
+    payment_item_name TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS season_memberships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,

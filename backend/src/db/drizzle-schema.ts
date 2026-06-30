@@ -613,6 +613,19 @@ export const registrationInvoiceLineItemsSqlite = sqliteTable('registration_invo
   invoiceIdx: index('idx_registration_invoice_line_items_invoice_id').on(table.invoice_id),
 }));
 
+export type RegistrationPaymentItemLineTypeSqlite =
+  | 'regular_membership_fee'
+  | 'social_membership_fee'
+  | 'junior_recreational_fee'
+  | 'league_fee'
+  | 'spare_only_fee'
+  | 'sabbatical_fee';
+
+export const registrationPaymentItemNamesSqlite = sqliteTable('registration_payment_item_names', {
+  line_type: text('line_type').primaryKey().notNull().$type<RegistrationPaymentItemLineTypeSqlite>(),
+  payment_item_name: text('payment_item_name'),
+});
+
 export const registrationPriceSettingsSqlite = sqliteTable('registration_price_settings', {
   scope: text('scope').primaryKey().notNull().default('singleton'),
   regular_membership_fee_minor: integer('regular_membership_fee_minor').default(0).notNull(),
@@ -2369,6 +2382,11 @@ export const registrationInvoiceLineItemsPg = pgTable('registration_invoice_line
   invoiceIdx: indexPg('idx_registration_invoice_line_items_invoice_id').on(table.invoice_id),
 }));
 
+export const registrationPaymentItemNamesPg = pgTable('registration_payment_item_names', {
+  line_type: textPg('line_type').primaryKey().notNull().$type<RegistrationPaymentItemLineTypeSqlite>(),
+  payment_item_name: textPg('payment_item_name'),
+});
+
 export const registrationPriceSettingsPg = pgTable('registration_price_settings', {
   scope: textPg('scope').primaryKey().notNull().default('singleton'),
   regular_membership_fee_minor: integerPg('regular_membership_fee_minor').default(0).notNull(),
@@ -3695,6 +3713,7 @@ export const sqliteSchema = {
   financialAssistanceRequests: financialAssistanceRequestsSqlite,
   registrationInvoices: registrationInvoicesSqlite,
   registrationInvoiceLineItems: registrationInvoiceLineItemsSqlite,
+  registrationPaymentItemNames: registrationPaymentItemNamesSqlite,
   registrationPriceSettings: registrationPriceSettingsSqlite,
   registrationDiscountSettings: registrationDiscountSettingsSqlite,
   seasonMemberships: seasonMembershipsSqlite,
@@ -3793,6 +3812,7 @@ export const pgSchema = {
   financialAssistanceRequests: financialAssistanceRequestsPg,
   registrationInvoices: registrationInvoicesPg,
   registrationInvoiceLineItems: registrationInvoiceLineItemsPg,
+  registrationPaymentItemNames: registrationPaymentItemNamesPg,
   registrationPriceSettings: registrationPriceSettingsPg,
   registrationDiscountSettings: registrationDiscountSettingsPg,
   seasonMemberships: seasonMembershipsPg,

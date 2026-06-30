@@ -108,10 +108,10 @@
       "breakpoints": true
     },
     {
-      "idx": 15,
+      "idx": 16,
       "version": "7",
-      "when": 1780352498456,
-      "tag": "0015_add_payment_orders_pending_refund_status",
+      "when": 1780352498457,
+      "tag": "0016_add_registration_payment_item_names",
       "breakpoints": true
     }
   ]
