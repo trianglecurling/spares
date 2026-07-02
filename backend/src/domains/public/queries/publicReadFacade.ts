@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, exists, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
+import { getDatabaseConfigProfile } from '../../../db-config-path.js';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { getDefaultPaymentProvider } from '../../../services/paymentService.js';
 import { getUpcomingBonspiels } from '../../calendar/queries/calendarReadFacade.js';
@@ -344,6 +345,7 @@ export async function getPublicHomeData() {
 
 export async function getPublicBootstrap(includeHome: boolean) {
   const defaultPaymentProvider = getDefaultPaymentProvider();
+  const isPreviewDatabase = getDatabaseConfigProfile() === 'preview';
 
   if (includeHome) {
     const [home, navbarMenu] = await Promise.all([getPublicHomeData(), getMenuTree('navbar')]);
@@ -352,6 +354,7 @@ export async function getPublicBootstrap(includeHome: boolean) {
       navbarMenu,
       home,
       defaultPaymentProvider,
+      isPreviewDatabase,
     };
   }
 
@@ -361,6 +364,7 @@ export async function getPublicBootstrap(includeHome: boolean) {
     navbarMenu,
     home: null,
     defaultPaymentProvider,
+    isPreviewDatabase,
   };
 }
 

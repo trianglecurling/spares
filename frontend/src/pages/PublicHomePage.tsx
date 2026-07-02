@@ -24,6 +24,7 @@ import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { useAuth } from '../contexts/AuthContext';
+import { syncSiteBrandingFromBootstrap } from '../hooks/useSiteBranding';
 
 interface HomeData {
   siteConfig: {
@@ -92,6 +93,7 @@ interface PublicHomeBootstrapResponse {
   navbarMenu: MenuItemNode[];
   home: HomeData | null;
   defaultPaymentProvider?: 'stripe' | 'paypal' | 'square';
+  isPreviewDatabase?: boolean;
 }
 
 const HOMEPAGE_COPY = {
@@ -354,6 +356,7 @@ export default function PublicHomePage() {
         })
         .then((res) => {
           setCachedDefaultPaymentProvider(res.data?.defaultPaymentProvider);
+          syncSiteBrandingFromBootstrap(res.data);
           setLayoutSiteConfig(res.data?.siteConfig ?? null);
           setLayoutMenuItems(Array.isArray(res.data?.navbarMenu) ? res.data.navbarMenu : []);
           if (res.data?.home) {

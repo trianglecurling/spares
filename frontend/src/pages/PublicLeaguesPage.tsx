@@ -46,7 +46,7 @@ export default function PublicLeaguesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     setError(null);
 
@@ -54,21 +54,21 @@ export default function PublicLeaguesPage() {
     api
       .get<PublicLeaguesResponse>(`/public/leagues${query}`)
       .then((res) => {
-        if (!cancelled) setData(res.data);
+        if (!canceled) setData(res.data);
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (!canceled) {
           const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
           setError(msg || 'Failed to load leagues');
           setData(null);
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [sessionId]);
 

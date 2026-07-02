@@ -70,11 +70,11 @@ All spare templates live in `backend/src/services/email.ts` and are invoked from
 | **Request filled** | **Requester** | `sendSpareResponseEmail`: which spare accepted, details, optional comment. |
 | **Request filled (CC)** | **CC** members | `sendSpareRequestCcFilledEmail`: who accepted, for whom, requester name, details, comment. |
 | **Spare signed up (responder copy)** | **Responding member** (offer confirmation) | `sendSpareOfferConfirmationEmail`: you’re signed up, requester, date/time, optional comment, cancel in app. |
-| **Requester or admin cancelled open request** | Notified **spares** who had been told about the request | `sendSpareRequestCancelledEmail`: who cancelled, for whom, when. |
-| **Requester cancel confirmation** | **Person who cancelled** | `sendSpareRequestCancelConfirmationEmail`. |
-| **Responder cancelled their offer** | **Requester** | `sendSpareCancellationEmail`: who cancelled, reason, re-issue from My requests. |
+| **Requester or admin canceled open request** | Notified **spares** who had been told about the request | `sendSpareRequestCancelledEmail`: who canceled, for whom, when. |
+| **Requester cancel confirmation** | **Person who canceled** | `sendSpareRequestCancelConfirmationEmail`. |
+| **Responder canceled their offer** | **Requester** | `sendSpareCancellationEmail`: who canceled, reason, re-issue from My requests. |
 | **Responder cancel confirmation** | **Responder** | `sendSpareOfferCancellationConfirmationEmail`: confirms they withdrew, reason. |
-| **CC: responder cancelled** | **CC** | `sendSpareRequestCcCancellationEmail`: same cancellation context with reason. |
+| **CC: responder canceled** | **CC** | `sendSpareRequestCcCancellationEmail`: same cancellation context with reason. |
 
 Exact API routes and branches are in `backend/src/routes/spares.ts` (including re-issue flows that call the same `sendSpareRequestEmail`).
 
@@ -101,7 +101,7 @@ Exact API routes and branches are in `backend/src/routes/spares.ts` (including r
 | Trigger | Recipient | What it says |
 |--------|-----------|--------------|
 | **Successful registration** when no hosted checkout is returned (e.g. free, waitlisted, or no payment required path) | **Contact email** on the registration | `sendEventRegistrationConfirmationEmail`: status line (confirmed vs waitlist vs pending payment), event title, when, group size, cancel on event page (`events.ts` public and authenticated register + admin create registration). **Note:** when the API returns a **checkout URL** for payment, this confirmation is **not** sent in that same response; `confirmRegistrationPayment` does not send an email. |
-| **Registration cancelled** (user or admin path that calls `sendEventRegistrationCancelledEmail`) | **Contact email** on the registration | `sendEventRegistrationCancelledEmail`: event title; if a refund record was created, says refund will process in a few business days. |
+| **Registration canceled** (user or admin path that calls `sendEventRegistrationCancelledEmail`) | **Contact email** on the registration | `sendEventRegistrationCancelledEmail`: event title; if a refund record was created, says refund will process in a few business days. |
 | **New registration** (same non-checkout path as confirmation above) | **Each event owner** (members listed as owners, per `notifyEventOwners` in `events.ts`) | `sendEventOwnerNewRegistrationEmail`: event title, registrant name and email, group size, status. **Not** sent when the API returns a hosted **checkout** for payment (early return). |
 
 If an owner’s email is missing, behavior depends on `sendEmail` (likely failure path → log).
@@ -121,7 +121,7 @@ If an owner’s email is missing, behavior depends on `sendEmail` (likely failur
 These functions exist in `backend/src/services/email.ts` and are **not** imported by any other module in the repo (no current automated send path):
 
 - `sendEventWaitlistPromotionEmail` – waitlist spot opened, payment vs auto-confirm.
-- `sendEventCancelledEmail` – event cancelled to registrants.
+- `sendEventCancelledEmail` – event canceled to registrants.
 - `sendEventReminderEmail` – upcoming event reminder.
 
 They are **candidates** for future jobs or routes; as of this audit, nothing calls them.

@@ -116,12 +116,12 @@ export default function BookIceTime() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     setSheetsLoading(true);
     api
       .get<Sheet[]>('/sheets')
       .then((res) => {
-        if (!cancelled) {
+        if (!canceled) {
           const active = (res.data ?? []).filter((s) => s.isActive !== false);
           setSheets(active);
           if (active.length > 0 && !sheetId) {
@@ -130,13 +130,13 @@ export default function BookIceTime() {
         }
       })
       .catch(() => {
-        if (!cancelled) setSheets([]);
+        if (!canceled) setSheets([]);
       })
       .finally(() => {
-        if (!cancelled) setSheetsLoading(false);
+        if (!canceled) setSheetsLoading(false);
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, []);
 
@@ -220,7 +220,7 @@ export default function BookIceTime() {
     setCancelingId(id);
     try {
       await api.delete(`/ice-bookings/${id}`);
-      showAlert('Your ice booking was cancelled.', 'success');
+      showAlert('Your ice booking was canceled.', 'success');
       await loadBookings();
     } catch (err: unknown) {
       showAlert(formatApiError(err, 'Could not cancel booking'), 'error');
@@ -569,7 +569,7 @@ export default function BookIceTime() {
                     disabled={cancelingId === b.id}
                     onClick={() => void handleCancelBooking(b.id)}
                   >
-                    {cancelingId === b.id ? 'Cancelling…' : 'Cancel'}
+                    {cancelingId === b.id ? 'Canceling…' : 'Cancel'}
                   </Button>
                 </div>
               ))}

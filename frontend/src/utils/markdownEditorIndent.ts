@@ -1,13 +1,20 @@
-import { chainCommands, splitBlockAs } from 'prosemirror-commands';
+import { chainCommands, lift, splitBlockAs } from 'prosemirror-commands';
 import { keydownHandler } from 'prosemirror-keymap';
 import type { Node as ProseMirrorNode, ResolvedPos } from 'prosemirror-model';
-import { Plugin, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { Plugin, TextSelection, EditorState, type Command, type Transaction } from 'prosemirror-state';
 import { sinkListItem, liftListItem } from 'prosemirror-schema-list';
 import { writeWysiwygInlineAsHtml, repairMarkdownLinksInHtmlContent } from './markdownEditorInlineHtml';
 
 export const TCC_INDENT_ATTR = 'data-tcc-indent';
 export const MAX_TCC_INDENT = 8;
 export const TCC_INDENT_EM = 1.5;
+
+const BLOCK_QUOTE_NODE = 'blockQuote';
+
+type BlockTarget = {
+  blockPos: number;
+  type: 'listItem' | 'textblock';
+};
 
 /** Structural view type — avoids duplicate `prosemirror-view` installs across PM packages. */
 type TccEditorView = {
@@ -140,6 +147,193 @@ export function findIndentableBlockDepth($from: ResolvedPos): number | null {
   return null;
 }
 
+function isInBlockQuote($from: ResolvedPos): boolean {
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    if ($from.node(depth).type.name === BLOCK_QUOTE_NODE) return true;
+  }
+  return false;
+}
+
+function collectBlockTargets(doc: ProseMirrorNode, from: number, to: number): BlockTarget[] {
+  const targets: BlockTarget[] = [];
+  const seen = new Set<number>();
+
+  doc.nodesBetween(from, to, (node, pos, parent) => {
+    if (node.type.name === 'listItem') {
+      if (!seen.has(pos)) {
+        seen.add(pos);
+        targets.push({ blockPos: pos, type: 'listItem' });
+      }
+      return false;
+    }
+    if (
+      (node.type.name === 'paragraph' || node.type.name === 'heading') &&
+      parent?.type.name !== 'listItem'
+    ) {
+      if (!seen.has(pos)) {
+        seen.add(pos);
+        targets.push({ blockPos: pos, type: 'textblock' });
+      }
+    }
+    return undefined;
+  });
+
+  return targets;
+}
+
+function createTargetSelection(doc: ProseMirrorNode, target: BlockTarget): TextSelection | null {
+  const node = doc.nodeAt(target.blockPos);
+  if (!node) return null;
+  const innerFrom = target.blockPos + 1;
+  const innerTo = target.blockPos + node.nodeSize - 1;
+  return TextSelection.create(doc, innerFrom, innerTo);
+}
+
+function applyCommandToDoc(
+  doc: ProseMirrorNode,
+  schema: EditorState['schema'],
+  target: BlockTarget,
+  command: Command
+): ProseMirrorNode | null {
+  const selection = createTargetSelection(doc, target);
+  if (!selection) return null;
+  const tempState = EditorState.create({ doc, schema, selection });
+  let nextDoc: ProseMirrorNode | null = null;
+  const applied = command(tempState, (tr) => {
+    nextDoc = tr.doc;
+  });
+  return applied ? nextDoc : null;
+}
+
+function increaseTccIndentOnBlock(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  const $from = state.selection.$from;
+  if (isInTableContext($from)) return false;
+  const depth = findIndentableBlockDepth($from);
+  if (depth == null) return false;
+  const block = $from.node(depth);
+  const indent = getTccIndent(block);
+  if (indent >= MAX_TCC_INDENT) return false;
+  if (!dispatch) return true;
+  const pos = $from.before(depth);
+  dispatch(
+    state.tr
+      .setNodeMarkup(pos, undefined, setTccIndentInAttrs(block.attrs as BlockAttrs, indent + 1))
+      .scrollIntoView()
+  );
+  return true;
+}
+
+function decreaseTccIndentOnBlock(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  const $from = state.selection.$from;
+  if (isInTableContext($from)) return false;
+  const depth = findIndentableBlockDepth($from);
+  if (depth == null) return false;
+  const block = $from.node(depth);
+  const indent = getTccIndent(block);
+  if (indent <= 0) return false;
+  if (!dispatch) return true;
+  const pos = $from.before(depth);
+  dispatch(
+    state.tr
+      .setNodeMarkup(pos, undefined, setTccIndentInAttrs(block.attrs as BlockAttrs, indent - 1))
+      .scrollIntoView()
+  );
+  return true;
+}
+
+function canOutdentTarget(
+  doc: ProseMirrorNode,
+  schema: EditorState['schema'],
+  target: BlockTarget
+): boolean {
+  const selection = createTargetSelection(doc, target);
+  if (!selection) return false;
+  const tempState = EditorState.create({ doc, schema, selection });
+  const $from = selection.$from;
+
+  if (target.type === 'listItem') {
+    return liftListItem(schema.nodes.listItem)(tempState, undefined);
+  }
+  if (isInTableContext($from)) return false;
+  if (isInBlockQuote($from)) return lift(tempState, undefined);
+  return decreaseTccIndentOnBlock(tempState, undefined);
+}
+
+function dispatchDocReplacement(
+  state: EditorState,
+  dispatch: TccEditorViewDispatch,
+  doc: ProseMirrorNode
+): void {
+  const { from, to } = state.selection;
+  const tr = state.tr.replaceWith(0, state.doc.content.size, doc.content);
+  const mappedFrom = Math.min(from, tr.doc.content.size);
+  const mappedTo = Math.min(to, tr.doc.content.size);
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, mappedFrom, mappedTo)).scrollIntoView());
+}
+
+function increaseIndentOnAllBlocks(
+  state: EditorState,
+  dispatch: TccEditorViewDispatch | undefined,
+  schema: EditorState['schema']
+): boolean {
+  const targets = collectBlockTargets(state.doc, state.selection.from, state.selection.to);
+  if (targets.length === 0) return false;
+
+  let doc = state.doc;
+  let changed = false;
+
+  for (let index = targets.length - 1; index >= 0; index -= 1) {
+    const target = targets[index]!;
+    const nextDoc =
+      target.type === 'listItem'
+        ? applyCommandToDoc(doc, schema, target, sinkListItem(schema.nodes.listItem))
+        : applyCommandToDoc(doc, schema, target, increaseTccIndentOnBlock);
+    if (!nextDoc) continue;
+    doc = nextDoc;
+    changed = true;
+  }
+
+  if (!changed) return false;
+  if (dispatch) dispatchDocReplacement(state, dispatch, doc);
+  return true;
+}
+
+function decreaseIndentOnAllBlocks(
+  state: EditorState,
+  dispatch: TccEditorViewDispatch | undefined,
+  schema: EditorState['schema']
+): boolean {
+  const targets = collectBlockTargets(state.doc, state.selection.from, state.selection.to);
+  if (targets.length === 0) return false;
+
+  let doc = state.doc;
+  let changed = false;
+
+  for (let index = targets.length - 1; index >= 0; index -= 1) {
+    const target = targets[index]!;
+    const selection = createTargetSelection(doc, target);
+    if (!selection) continue;
+    const $from = selection.$from;
+
+    let nextDoc: ProseMirrorNode | null = null;
+    if (target.type === 'listItem') {
+      nextDoc = applyCommandToDoc(doc, schema, target, liftListItem(schema.nodes.listItem));
+    } else if (isInBlockQuote($from)) {
+      nextDoc = applyCommandToDoc(doc, schema, target, lift);
+    } else {
+      nextDoc = applyCommandToDoc(doc, schema, target, decreaseTccIndentOnBlock);
+    }
+
+    if (!nextDoc) continue;
+    doc = nextDoc;
+    changed = true;
+  }
+
+  if (!changed) return false;
+  if (dispatch) dispatchDocReplacement(state, dispatch, doc);
+  return true;
+}
+
 function blockHasPreservedSplitAttrs(node: ProseMirrorNode, hasBlockStyle: (classNames: string[] | null | undefined) => boolean): boolean {
   if (node.type.name === 'paragraph') {
     return Boolean(hasBlockStyle(node.attrs?.classNames as string[] | null | undefined)) || getTccIndent(node) > 0;
@@ -167,6 +361,11 @@ function increaseIndent(forceLineStart: boolean): Command {
     if (view?.composing) return false;
     const { selection, schema } = state;
     if (!(selection instanceof TextSelection)) return false;
+
+    if (!selection.empty) {
+      return increaseIndentOnAllBlocks(state, dispatch, schema);
+    }
+
     const $from = selection.$from;
 
     if (isInListContext($from)) {
@@ -177,19 +376,7 @@ function increaseIndent(forceLineStart: boolean): Command {
     if (isInTableContext($from)) return false;
     if (!forceLineStart && !isAtBlockTextStart($from)) return false;
 
-    const depth = findIndentableBlockDepth($from);
-    if (depth == null) return false;
-    const block = $from.node(depth);
-    const indent = getTccIndent(block);
-    if (indent >= MAX_TCC_INDENT) return false;
-    if (!dispatch) return true;
-    const pos = $from.before(depth);
-    dispatch(
-      state.tr
-        .setNodeMarkup(pos, undefined, setTccIndentInAttrs(block.attrs as BlockAttrs, indent + 1))
-        .scrollIntoView()
-    );
-    return true;
+    return increaseTccIndentOnBlock(state, dispatch);
   };
 }
 
@@ -198,6 +385,11 @@ function decreaseIndent(forceLineStart: boolean): Command {
     if (view?.composing) return false;
     const { selection, schema } = state;
     if (!(selection instanceof TextSelection)) return false;
+
+    if (!selection.empty) {
+      return decreaseIndentOnAllBlocks(state, dispatch, schema);
+    }
+
     const $from = selection.$from;
 
     if (isInListContext($from)) {
@@ -208,19 +400,11 @@ function decreaseIndent(forceLineStart: boolean): Command {
     if (isInTableContext($from)) return false;
     if (!forceLineStart && !isAtBlockTextStart($from)) return false;
 
-    const depth = findIndentableBlockDepth($from);
-    if (depth == null) return false;
-    const block = $from.node(depth);
-    const indent = getTccIndent(block);
-    if (indent <= 0) return false;
-    if (!dispatch) return true;
-    const pos = $from.before(depth);
-    dispatch(
-      state.tr
-        .setNodeMarkup(pos, undefined, setTccIndentInAttrs(block.attrs as BlockAttrs, indent - 1))
-        .scrollIntoView()
-    );
-    return true;
+    if (isInBlockQuote($from)) {
+      return lift(state, dispatch);
+    }
+
+    return decreaseTccIndentOnBlock(state, dispatch);
   };
 }
 
@@ -252,13 +436,23 @@ function emptyIndentedBlockEnter(): Command {
 }
 
 export function canTccOutdent(state: EditorState): boolean {
-  const $from = state.selection.$from;
-  if (isInListContext($from)) {
-    return liftListItem(state.schema.nodes.listItem)(state, undefined);
+  const { selection, schema, doc } = state;
+  if (!(selection instanceof TextSelection)) return false;
+
+  if (!selection.empty) {
+    const targets = collectBlockTargets(doc, selection.from, selection.to);
+    return targets.some((target) => canOutdentTarget(doc, schema, target));
   }
-  const depth = findIndentableBlockDepth($from);
-  if (depth == null) return false;
-  return getTccIndent($from.node(depth)) > 0;
+
+  const $from = selection.$from;
+  if (isInListContext($from)) {
+    return liftListItem(schema.nodes.listItem)(state, undefined);
+  }
+  if (isInTableContext($from)) return false;
+  if (isInBlockQuote($from)) {
+    return lift(state, undefined);
+  }
+  return decreaseTccIndentOnBlock(state, undefined);
 }
 
 function backspaceExitTrailingEmptyListItem(): Command {

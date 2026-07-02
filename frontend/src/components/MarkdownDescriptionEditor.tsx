@@ -38,6 +38,7 @@ import {
   repairMarkdownLinksInRawHtmlBlocks,
   writeWysiwygInlineAsHtml,
 } from '../utils/markdownEditorInlineHtml';
+import { createTccPlainTextPastePlugin } from '../utils/markdownEditorPaste';
 import {
   applyAccordionBlockStyleToSelection,
   applyAccordionHeadingToSelection,
@@ -1011,6 +1012,10 @@ function tccIndentEditorPlugin(context: { pmKeymap: { keymap: (bindings: Record<
     preservingBlockSplit: tccPreservingBlockSplit,
     hasBlockStyle: (classNames) => Boolean(getTccBlockClassFromParagraphClassNames(classNames)),
   });
+}
+
+function tccPlainTextPastePlugin() {
+  return createTccPlainTextPastePlugin();
 }
 
 function tccAccordionEditorPlugin() {
@@ -2171,7 +2176,7 @@ const MarkdownDescriptionEditor = forwardRef<
         return;
       }
 
-      let cancelled = false;
+      let canceled = false;
       const slug = linkDraft.articleSlug;
 
       void (async () => {
@@ -2180,7 +2185,7 @@ const MarkdownDescriptionEditor = forwardRef<
             params: { q: slug, limit: 20 },
           });
           const match = res.data.find((article) => article.slug === slug);
-          if (!cancelled && match) {
+          if (!canceled && match) {
             setSelectedArticle(match);
           }
         } catch {
@@ -2189,7 +2194,7 @@ const MarkdownDescriptionEditor = forwardRef<
       })();
 
       return () => {
-        cancelled = true;
+        canceled = true;
       };
     }, [linkDraft?.articleSlug, linkDraft?.linkType]);
 
@@ -2894,7 +2899,7 @@ const MarkdownDescriptionEditor = forwardRef<
           useCommandShortcut
           usageStatistics={false}
           onLoad={handleEditorLoad}
-          plugins={[linkEditPlugin, tccIndentEditorPlugin, tccAccordionEditorPlugin, tccBlockStyleEnterPlugin]}
+          plugins={[linkEditPlugin, tccIndentEditorPlugin, tccAccordionEditorPlugin, tccBlockStyleEnterPlugin, tccPlainTextPastePlugin]}
           customMarkdownRenderer={{
             html: markdownHtmlRenderer,
           }}

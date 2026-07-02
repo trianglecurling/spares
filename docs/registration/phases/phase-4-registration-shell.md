@@ -511,7 +511,7 @@ Minimum automated tests are listed below.
 - Logged-in user can resume an incomplete registration.
 - Duplicate active drafts are not created for the same curler and registration
   period if an existing draft can be resumed.
-- A cancelled draft is not resumed by default.
+- A canceled draft is not resumed by default.
 
 ### Returning curler
 

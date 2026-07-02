@@ -20,22 +20,22 @@ export default function PublicPaymentDetailPage() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     const loadDetail = async () => {
       setLoading(true);
       setError(null);
       try {
         const { data } = await api.get<MemberPaymentDetail>(`/public/payments/${encodeURIComponent(orderToken)}`);
-        if (!cancelled) {
+        if (!canceled) {
           setDetail(data);
         }
       } catch (loadError) {
-        if (!cancelled) {
+        if (!canceled) {
           setDetail(null);
           setError(formatApiError(loadError, 'Could not load payment details.'));
         }
       } finally {
-        if (!cancelled) {
+        if (!canceled) {
           setLoading(false);
         }
       }
@@ -43,7 +43,7 @@ export default function PublicPaymentDetailPage() {
 
     void loadDetail();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [orderToken]);
 

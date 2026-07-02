@@ -925,17 +925,17 @@ export default function LeagueDetail() {
       canManageSetup &&
       (waitlistModalOpen || (normalizedTab === 'configuration' && Boolean(league?.waitlistId)));
     if (!shouldLoadOptions) return;
-    let cancelled = false;
+    let canceled = false;
     void api
       .get<WaitlistOption[]>('/leagues/waitlist-options')
       .then((response) => {
-        if (!cancelled) setWaitlistOptions(response.data);
+        if (!canceled) setWaitlistOptions(response.data);
       })
       .catch(() => {
-        if (!cancelled) setWaitlistOptions([]);
+        if (!canceled) setWaitlistOptions([]);
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [waitlistModalOpen, canManageSetup, normalizedTab, league?.waitlistId]);
 

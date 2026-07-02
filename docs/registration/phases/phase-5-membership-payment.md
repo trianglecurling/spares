@@ -340,7 +340,7 @@ Deferral can happen in later phases for:
 
 In Phase 5, deferred payment may be needed only if the current workflow includes a path that explicitly requires deferral.
 
-### Cancelled / abandoned
+### Canceled / abandoned
 
 Optional for Phase 5 unless already part of the app’s registration shell.
 
@@ -763,7 +763,7 @@ On successful payment:
 - Persist fee snapshot.
 - Trigger confirmation email if available.
 
-On failed/cancelled/incomplete payment:
+On failed/canceled/incomplete payment:
 
 - Do not confirm registration.
 - Leave registration awaiting payment or unpaid.
@@ -847,7 +847,7 @@ Do not leave undocumented business-rule changes in code only.
 ### Payment validation
 
 - Registration cannot be marked paid until Stripe confirms payment.
-- Failed/cancelled checkout does not confirm registration.
+- Failed/canceled checkout does not confirm registration.
 - Deferred registrations must not create a Stripe Checkout Session.
 - Immediate-payment registrations must have a fee calculation snapshot before checkout.
 
@@ -968,7 +968,7 @@ Phase 5 is complete when all of the following are true:
 
 - Immediate-payment registrations create Stripe Checkout sessions.
 - Successful Stripe payment confirms the registration.
-- Failed or cancelled payment does not confirm the registration.
+- Failed or canceled payment does not confirm the registration.
 - Deferred registrations do not create Stripe Checkout sessions.
 - Payment decisions are persisted with clear reasons.
 - Fee calculation snapshots are stored before checkout.

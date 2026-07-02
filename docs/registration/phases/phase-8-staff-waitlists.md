@@ -233,7 +233,7 @@ A waitlist offer should conceptually include:
 - Declined timestamp.
 - Staff actor ID, if staff-created or staff-updated.
 - Token/hash for email action links, if email links are implemented.
-- Cancellation reason, if cancelled.
+- Cancellation reason, if canceled.
 - Staff notes, optional.
 
 `EXPIRED_ACCEPTED` means the 24-hour period elapsed without a decline, so the
@@ -467,7 +467,7 @@ If the deadline passes with no decline:
 - Audit the placement.
 - Trigger payment workflow if needed.
 
-### Cancelled by staff
+### Canceled by staff
 
 Staff may cancel a pending offer.
 
@@ -584,7 +584,7 @@ Audit these actions at minimum:
 - Offer accepted.
 - Offer auto-accepted after deadline.
 - Offer declined.
-- Offer cancelled.
+- Offer canceled.
 - Permanent placement created from waitlist.
 - Temporary sabbatical-fill placement created.
 - Waitlist entry deactivated after permanent placement.
@@ -618,7 +618,7 @@ Examples:
 - Removing someone from a waitlist.
 - Moving someone to the bottom.
 - Marking an offer declined.
-- Cancelling an offer.
+- Canceling an offer.
 - Reordering the waitlist.
 - Releasing a replaced league placement.
 

@@ -9,7 +9,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "dev:preview": "DB_CONFIG_PROFILE=preview bun run dev",
+    "dev:preview": "bun --no-env-file --env-file=.env.preview run dev",
     "build": "tsgo",
     "typecheck": "tsgo --noEmit",
     "typecheck-legacy": "tsc --noEmit",

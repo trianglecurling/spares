@@ -358,7 +358,7 @@ The exact enum values may differ, but the system must be able to distinguish:
 4. Submitted with no payment due
 5. Paid
 6. Confirmed
-7. Cancelled
+7. Canceled
 
 ---
 
@@ -613,7 +613,7 @@ Stripe Checkout should redirect to existing app routes.
 Recommended routes:
 
 - Success: registration payment status page
-- Cancel: registration payment cancelled page or registration review page
+- Cancel: registration payment canceled page or registration review page
 
 The success page must not claim payment is final unless webhook-confirmed status
 is already known.
@@ -835,7 +835,7 @@ Add or verify tests for the following cases.
 3. Successful webhook marks registration paid/confirmed.
 4. Duplicate webhook does not duplicate effects.
 5. Client success redirect does not mark registration paid by itself.
-6. Cancelled checkout leaves registration unpaid and unconfirmed.
+6. Canceled checkout leaves registration unpaid and unconfirmed.
 7. Failed checkout leaves registration unpaid and unconfirmed.
 
 ### Idempotency

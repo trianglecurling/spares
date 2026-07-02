@@ -73,7 +73,7 @@ export default function DashboardMembershipCard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     setError(null);
 
@@ -84,7 +84,7 @@ export default function DashboardMembershipCard() {
           api.get<PublicSiteConfigPayload>('/public/site-config'),
         ]);
 
-        if (cancelled) return;
+        if (canceled) return;
 
         if (cardResult.status === 'fulfilled') {
           setData(cardResult.value.data);
@@ -101,12 +101,12 @@ export default function DashboardMembershipCard() {
           setClubName(null);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       }
     }
     void load();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [member?.id]);
 

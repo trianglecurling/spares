@@ -149,8 +149,8 @@ export function formatWaitlistAuditSummary(input: {
       return `${memberName} auto-accepted a waitlist offer after 24 hours${teamSuffix}`;
     case 'offer_cancelled':
       return actorName
-        ? `${actorName} cancelled a waitlist offer to ${memberName}${teamSuffix}`
-        : `Waitlist offer to ${memberName} cancelled${teamSuffix}`;
+        ? `${actorName} canceled a waitlist offer to ${memberName}${teamSuffix}`
+        : `Waitlist offer to ${memberName} canceled${teamSuffix}`;
     case 'entry_placed':
       return `${memberName} placed from the waitlist${teamSuffix}`;
     case 'entry_converted_add_to_replace':

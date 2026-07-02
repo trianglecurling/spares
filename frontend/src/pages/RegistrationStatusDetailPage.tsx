@@ -79,7 +79,9 @@ type RegistrationDetail = {
 };
 
 function label(value: string | null | undefined) {
-  return value ? value.replace(/_/g, ' ') : 'Not available';
+  if (!value) return 'Not available';
+  if (value === 'cancelled') return 'Canceled';
+  return value.replace(/_/g, ' ');
 }
 
 function money(minor: number | null) {

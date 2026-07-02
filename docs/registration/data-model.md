@@ -328,7 +328,7 @@ Recommended fields:
 - Payment status
 - Submitted at
 - Paid at
-- Cancelled at
+- Canceled at
 - Created at
 - Updated at
 

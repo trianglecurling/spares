@@ -330,7 +330,7 @@
 
 **Negative Cases:**
 - Responding to already-filled request shows error
-- Cancelled requests cannot be responded to
+- Canceled requests cannot be responded to
 
 ---
 
@@ -421,17 +421,17 @@
 4. Confirm cancellation in dialog
 5. Verify request status changes to "cancelled"
 6. Verify request no longer appears in outstanding requests
-7. Verify cancelled request still appears in "My spare requests" with cancelled status
+7. Verify canceled request still appears appears in "My spare requests" with canceled status display
 
 **Expected Results:**
 - Cancellation requires confirmation
 - Request status updates correctly
-- Cancelled requests are removed from public view
-- User can still see their cancelled requests
+- Canceled requests are removed from public view
+- User can still see their canceled requests
 
 **Negative Cases:**
 - Cannot cancel already-filled requests
-- Cannot cancel already-cancelled requests
+- Cannot cancel already-canceled requests
 
 ---
 
@@ -892,7 +892,7 @@
 - Public requests for various leagues
 - Private requests with different invitee combinations
 - Filled requests
-- Cancelled requests
+- Canceled requests
 - Requests with positions specified
 - Requests with messages
 

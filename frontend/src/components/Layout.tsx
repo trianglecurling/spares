@@ -90,6 +90,7 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
         clubName={clubName}
         logoUrl={branding?.logoUrl ?? null}
         brandingLoading={brandingLoading}
+        isPreviewDatabase={branding?.isPreviewDatabase}
         subtitle="members-area"
         brandTo="/dashboard"
         showPublicHomeLink

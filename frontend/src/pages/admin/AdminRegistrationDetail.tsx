@@ -98,7 +98,9 @@ type RegistrationDetail = {
 };
 
 function label(value: string | null | undefined) {
-  return value ? value.replace(/_/g, ' ') : 'Not available';
+  if (!value) return 'Not available';
+  if (value === 'cancelled') return 'Canceled';
+  return value.replace(/_/g, ' ');
 }
 
 function money(minor: number | null, currency = 'usd') {
@@ -325,10 +327,10 @@ export default function AdminRegistrationDetail() {
       const response = await api.post<{ refundIssued: boolean }>(`/registration/staff/registrations/${numericId}/cancel`, {});
       showAlert(
         response.data.refundIssued
-          ? 'Registration cancelled and refund issued.'
-          : 'Registration cancelled.',
+          ? 'Registration canceled and refund issued.'
+          : 'Registration canceled.',
         'success',
-        'Registration cancelled',
+        'Registration canceled',
       );
       navigate('/admin/registrations', { replace: true });
     } catch (err) {

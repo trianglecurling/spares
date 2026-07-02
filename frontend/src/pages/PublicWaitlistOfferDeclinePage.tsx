@@ -11,7 +11,7 @@ export default function PublicWaitlistOfferDeclinePage() {
   const [message, setMessage] = useState('Declining your waitlist offer.');
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     async function decline() {
       if (!offerId) {
         setStatus('error');
@@ -20,18 +20,18 @@ export default function PublicWaitlistOfferDeclinePage() {
       }
       try {
         await api.post(`/registration/member/waitlist-offers/${encodeURIComponent(offerId)}/decline`);
-        if (cancelled) return;
+        if (canceled) return;
         setStatus('success');
         setMessage('Your waitlist offer has been declined. If this was your first decline for this waitlist, your position is preserved. If it was your second decline, staff will move you to the bottom according to the waitlist rules.');
       } catch (error) {
-        if (cancelled) return;
+        if (canceled) return;
         setStatus('error');
         setMessage(getApiErrorMessage(error, 'Unable to decline this waitlist offer.'));
       }
     }
     void decline();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [offerId]);
 

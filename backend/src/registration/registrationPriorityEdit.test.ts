@@ -5,7 +5,7 @@ import {
 } from './registrationPriorityEdit.js';
 
 describe('registration priority edit eligibility', () => {
-  test('confirmed registrations can be cancelled but not edited during priority', () => {
+  test('confirmed registrations can be canceled but not edited during priority', () => {
     expect(isPriorityCancellableRegistrationStatus('confirmed')).toBe(true);
     expect(isPriorityEditableRegistrationStatus('confirmed')).toBe(false);
   });
@@ -15,7 +15,7 @@ describe('registration priority edit eligibility', () => {
     expect(isPriorityEditableRegistrationStatus('paid')).toBe(true);
   });
 
-  test('draft and cancelled registrations are neither editable nor cancellable', () => {
+  test('draft and canceled registrations are neither editable nor cancelable', () => {
     for (const status of ['identity_incomplete', 'shell_complete', 'cancelled']) {
       expect(isPriorityCancellableRegistrationStatus(status)).toBe(false);
       expect(isPriorityEditableRegistrationStatus(status)).toBe(false);

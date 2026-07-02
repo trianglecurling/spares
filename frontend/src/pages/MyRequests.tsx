@@ -543,7 +543,7 @@ export default function MyRequests() {
                               if (status.notificationStatus === 'stopped') {
                                 return (
                                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                                    Notifications stopped (request filled or cancelled).
+                                    Notifications stopped (request filled or canceled).
                                   </p>
                                 );
                               }
@@ -644,7 +644,7 @@ export default function MyRequests() {
                 {request.status === 'cancelled' && (
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-gray-600 dark:text-gray-400">
-                      This request was cancelled
+                      This request was canceled
                       {request.cancelledByName
                         ? ` by ${renderMe(request.cancelledByName, member?.name)}`
                         : ''}
@@ -732,7 +732,7 @@ export default function MyRequests() {
                           )}
                         {request.status === 'cancelled' && request.cancelledByName && (
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Cancelled by {renderMe(request.cancelledByName, member?.name)}
+                            Canceled by {renderMe(request.cancelledByName, member?.name)}
                           </div>
                         )}
                         {request.status === 'filled' && request.filledByName && (

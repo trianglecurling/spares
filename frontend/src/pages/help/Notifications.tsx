@@ -123,7 +123,7 @@ export default function Notifications() {
                         notifications have been sent
                       </li>
                       <li>
-                        <strong>"Notifications stopped":</strong> Request was filled or cancelled
+                        <strong>"Notifications stopped":</strong> Request was request filled or canceled
                       </li>
                       <li>
                         <strong>"(Paused)":</strong> Notifications are temporarily paused

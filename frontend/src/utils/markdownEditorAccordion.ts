@@ -12,6 +12,9 @@ export const TCC_ACCORDION_PANEL_CLASS = 'tcc-accordion-panel';
 export const TCC_ACCORDION_PANEL_INNER_CLASS = 'tcc-accordion-panel-inner';
 export const TCC_ACCORDION_EDITABLE_CLASS = 'tcc-accordion-editable';
 export const TCC_ACCORDION_MIN_ENTRIES = 1;
+/** Keeps empty accordion titles editable without showing the browser default "Details" label. */
+const SUMMARY_EDITOR_PLACEHOLDER = '\u200B';
+const BROWSER_DEFAULT_SUMMARY_LABEL = 'Details';
 
 type AccordionNodeAttrs = {
   htmlAttrs?: Record<string, string>;
@@ -57,11 +60,22 @@ function serializeDirectDetailsHtml(detailsElements: HTMLDetailsElement[]): stri
   const sanitized = document.createElement('div');
   for (const detailsEl of detailsElements) {
     const clone = detailsEl.cloneNode(true) as HTMLDetailsElement;
+    const summary = clone.querySelector(':scope > summary');
+    if (summary instanceof HTMLElement) {
+      normalizeSummaryForStorage(summary);
+    }
     clone.removeAttribute('open');
     clone.open = false;
     sanitized.appendChild(clone);
   }
   return sanitized.innerHTML;
+}
+
+function normalizeSummaryForStorage(summary: HTMLElement): void {
+  const text = (summary.textContent ?? '').replace(/\u200B/g, '').trim();
+  if (!text) {
+    summary.textContent = '';
+  }
 }
 
 /** Remove editor-only nodes between accordion sections (e.g. blank divs from contenteditable). */
@@ -224,10 +238,20 @@ function isAccordionEditableFocused(): boolean {
   return active instanceof Element && Boolean(active.closest(`.${TCC_ACCORDION_CLASS} .${TCC_ACCORDION_EDITABLE_CLASS}`));
 }
 
+function isAccordionDomBeingEdited(accordionDom: HTMLElement): boolean {
+  const editable = getAccordionEditableRoot(accordionDom);
+  const active = document.activeElement;
+  return active instanceof Node && editable.contains(active);
+}
+
 function readAccordionChildrenHtml(accordionDom: HTMLElement): string {
   const editable = getAccordionEditableRoot(accordionDom);
-  pruneAccordionEditableDom(editable);
-  normalizeAccordionDetailsStructure(editable);
+  // Dirty-check polling calls getMarkdown while the user may be typing in an accordion.
+  // Normalizing the live DOM during that read disrupts the native selection and scroll.
+  if (!isAccordionDomBeingEdited(accordionDom)) {
+    pruneAccordionEditableDom(editable);
+    normalizeAccordionDetailsStructure(editable);
+  }
   return serializeDirectDetailsHtml(extractDirectDetailsElements(editable));
 }
 
@@ -326,7 +350,11 @@ function replaceTccAccordionNode(
     childrenHTML: normalizedNext,
   });
   const tr = view.state.tr.replaceWith(pos, pos + node.nodeSize, newNode);
-  view.dispatch(tr.setMeta('addToHistory', addToHistory).scrollIntoView());
+  const transaction = tr.setMeta('addToHistory', addToHistory);
+  if (!isAccordionEditableFocused()) {
+    transaction.scrollIntoView();
+  }
+  view.dispatch(transaction);
   return true;
 }
 
@@ -1001,6 +1029,118 @@ function ensurePanelInnerMinimumParagraph(panelInner: HTMLElement): boolean {
   return true;
 }
 
+function getSummaryFromSelection(): HTMLElement | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const anchor = selection.anchorNode;
+  if (!anchor) return null;
+  const element = anchor instanceof Element ? anchor : anchor.parentElement;
+  const summary = element?.closest('summary');
+  return summary instanceof HTMLElement ? summary : null;
+}
+
+function getSummaryMeaningfulText(summary: HTMLElement): string {
+  return (summary.textContent ?? '').replace(/\u200B/g, '').trim();
+}
+
+function isSummaryEffectivelyEmpty(summary: HTMLElement): boolean {
+  return getSummaryMeaningfulText(summary).length === 0;
+}
+
+function isRangeAtSummaryStart(range: Range, summary: HTMLElement): boolean {
+  const testRange = document.createRange();
+  testRange.selectNodeContents(summary);
+  testRange.setEnd(range.startContainer, range.startOffset);
+  return testRange.toString().replace(/\u200B/g, '').length === 0;
+}
+
+function placeCaretInSummary(summary: HTMLElement, offset: number) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const textNode = Array.from(summary.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+  if (textNode) {
+    const range = document.createRange();
+    range.setStart(textNode, Math.min(offset, textNode.textContent?.length ?? 0));
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return;
+  }
+  const range = document.createRange();
+  range.setStart(summary, 0);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function ensureSummaryMinimumContent(summary: HTMLElement): boolean {
+  let changed = false;
+  const meaningful = getSummaryMeaningfulText(summary);
+
+  if (meaningful === BROWSER_DEFAULT_SUMMARY_LABEL && summary.childNodes.length <= 1) {
+    summary.textContent = '';
+    changed = true;
+  }
+
+  if (!isSummaryEffectivelyEmpty(summary)) {
+    return changed;
+  }
+
+  if ((summary.textContent ?? '').replace(/\u200B/g, '') !== '') {
+    summary.textContent = '';
+    changed = true;
+  }
+
+  if (!(summary.textContent ?? '').includes(SUMMARY_EDITOR_PLACEHOLDER)) {
+    summary.textContent = SUMMARY_EDITOR_PLACEHOLDER;
+    changed = true;
+  }
+
+  if (changed) {
+    placeCaretInSummary(summary, SUMMARY_EDITOR_PLACEHOLDER.length);
+  }
+
+  return changed;
+}
+
+function ensureAccordionDetailsSummary(detailsEl: HTMLDetailsElement): boolean {
+  const existing = detailsEl.querySelector(':scope > summary');
+  if (existing instanceof HTMLElement) {
+    return ensureSummaryMinimumContent(existing);
+  }
+
+  const summary = document.createElement('summary');
+  summary.textContent = SUMMARY_EDITOR_PLACEHOLDER;
+  detailsEl.insertBefore(summary, detailsEl.firstChild);
+  return true;
+}
+
+function ensureAllAccordionSummaries(editable: HTMLElement): boolean {
+  let changed = false;
+  editable.querySelectorAll(`details.${TCC_ACCORDION_ITEM_CLASS}, details`).forEach((node) => {
+    if (!(node instanceof HTMLDetailsElement)) return;
+    if (ensureAccordionDetailsSummary(node)) changed = true;
+  });
+  return changed;
+}
+
+function shouldPreventSummaryDelete(summary: HTMLElement): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return false;
+  const range = selection.getRangeAt(0);
+  if (!summary.contains(range.startContainer)) return false;
+
+  if (!range.collapsed) {
+    return false;
+  }
+
+  return isSummaryEffectivelyEmpty(summary) && isRangeAtSummaryStart(range, summary);
+}
+
+function ensureAccordionEditableStructure(editable: HTMLElement): boolean {
+  return ensureAllAccordionPanelParagraphs(editable) || ensureAllAccordionSummaries(editable);
+}
+
 function ensureAllAccordionPanelParagraphs(editable: HTMLElement): boolean {
   let changed = normalizeAccordionDetailsStructure(editable);
   editable.querySelectorAll(`.${TCC_ACCORDION_PANEL_INNER_CLASS}`).forEach((node) => {
@@ -1094,7 +1234,7 @@ function createTccAccordionNodeView(
   dom.appendChild(content);
   pruneAccordionEditableDom(content);
   migrateLegacyAccordionPanelBlockStyles(content);
-  ensureAllAccordionPanelParagraphs(content);
+  ensureAccordionEditableStructure(content);
   ensureAccordionDetailsOpen(content);
 
   const syncFromDom = (addToHistory: boolean) => {
@@ -1103,7 +1243,7 @@ function createTccAccordionNodeView(
     const current = view.state.doc.nodeAt(pos);
     if (!current || !isTccAccordionNode(current)) return;
     pruneAccordionEditableDom(content);
-    ensureAllAccordionPanelParagraphs(content);
+    ensureAccordionEditableStructure(content);
     replaceTccAccordionNode(
       view,
       pos,
@@ -1115,7 +1255,7 @@ function createTccAccordionNodeView(
 
   const scheduleEditablePrune = () => {
     requestAnimationFrame(() => {
-      ensureAllAccordionPanelParagraphs(content);
+      ensureAccordionEditableStructure(content);
       pruneAccordionEditableDom(content);
     });
   };
@@ -1129,6 +1269,14 @@ function createTccAccordionNodeView(
     }
 
     if (!event.inputType.startsWith('delete')) return;
+
+    const summary = getSummaryFromSelection();
+    if (summary && shouldPreventSummaryDelete(summary)) {
+      event.preventDefault();
+      ensureSummaryMinimumContent(summary);
+      return;
+    }
+
     const panelInner = getPanelInnerFromSelection();
     if (!panelInner) return;
     const onlyParagraph = panelInner.querySelector('p');
@@ -1147,6 +1295,14 @@ function createTccAccordionNodeView(
     }
 
     if (event.key !== 'Backspace' && event.key !== 'Delete') return;
+
+    const summary = getSummaryFromSelection();
+    if (summary && shouldPreventSummaryDelete(summary)) {
+      event.preventDefault();
+      ensureSummaryMinimumContent(summary);
+      return;
+    }
+
     const panelInner = getPanelInnerFromSelection();
     if (!panelInner) return;
     const onlyParagraph = panelInner.querySelector('p');
@@ -1157,7 +1313,7 @@ function createTccAccordionNodeView(
   };
 
   const onEditableInput = () => {
-    ensureAllAccordionPanelParagraphs(content);
+    ensureAccordionEditableStructure(content);
     scheduleEditablePrune();
   };
 
@@ -1166,22 +1322,27 @@ function createTccAccordionNodeView(
     fixSummaryEndCaretOnClick(event);
 
     const pos = getPos();
-    const hadNodeSelection =
-      pos != null &&
-      view.state.selection instanceof NodeSelection &&
-      view.state.selection.from === pos;
+    if (pos == null) return;
 
-    if (hadNodeSelection) {
-      requestAnimationFrame(() => {
-        const currentPos = getPos();
-        if (currentPos == null) return;
-        const { selection } = view.state;
-        if (!(selection instanceof NodeSelection) || selection.from !== currentPos) return;
-        view.dispatch(
-          view.state.tr.setSelection(TextSelection.create(view.state.doc, currentPos)).setMeta('addToHistory', false)
-        );
-      });
-    }
+    requestAnimationFrame(() => {
+      const currentPos = getPos();
+      if (currentPos == null) return;
+      const { selection } = view.state;
+      const node = view.state.doc.nodeAt(currentPos);
+      if (!node) return;
+
+      const selectionOnAccordion =
+        (selection instanceof NodeSelection && selection.from === currentPos) ||
+        (selection.from >= currentPos && selection.to <= currentPos + node.nodeSize);
+
+      if (selectionOnAccordion) return;
+
+      view.dispatch(
+        view.state.tr
+          .setSelection(NodeSelection.create(view.state.doc, currentPos))
+          .setMeta('addToHistory', false)
+      );
+    });
   };
 
   const onBlur = (event: FocusEvent) => {
@@ -1208,7 +1369,9 @@ function createTccAccordionNodeView(
   return {
     dom,
     ignoreMutation(mutation) {
-      if (mutation.type === 'selection') return false;
+      // Accordion panels use a nested contenteditable; ignore all DOM mutations there
+      // (including selection) so ProseMirror does not call selectionToDOM and scroll back
+      // to the last main-document caret while the user is typing inside the accordion.
       if ('target' in mutation && mutation.target instanceof Node && dom.contains(mutation.target)) {
         return true;
       }
@@ -1243,7 +1406,7 @@ function createTccAccordionNodeView(
         content.innerHTML = nextHtml;
         pruneAccordionEditableDom(content);
         migrateLegacyAccordionPanelBlockStyles(content);
-        ensureAllAccordionPanelParagraphs(content);
+        ensureAccordionEditableStructure(content);
         ensureAccordionDetailsOpen(content);
       }
       return true;
@@ -1276,6 +1439,17 @@ export function createTccAccordionEditorPlugin() {
     },
     wysiwygPlugins: [
       () => keymap({ Backspace: blockSentinelBackspace }),
+      () =>
+        new Plugin({
+          props: {
+            handleScrollToSelection() {
+              if (isAccordionEditableFocused() || getAccordionSelectionContext()) {
+                return true;
+              }
+              return false;
+            },
+          },
+        }),
       () =>
         new Plugin({
           appendTransaction(transactions, _oldState, newState) {

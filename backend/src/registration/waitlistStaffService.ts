@@ -1552,7 +1552,7 @@ export async function cancelWaitlistOffer(input: { offerId: number; actorMemberI
   const reason = requireReason(input.reason);
   const [offer] = await db.select().from(schema.waitlistOffers).where(eq(schema.waitlistOffers.id, input.offerId)).limit(1);
   if (!offer) throw new WaitlistStaffValidationError({ offer: 'Waitlist offer was not found.' });
-  if (offer.status !== 'pending') throw new WaitlistStaffValidationError({ offer: 'Only pending offers can be cancelled.' });
+  if (offer.status !== 'pending') throw new WaitlistStaffValidationError({ offer: 'Only pending offers can be canceled.' });
   await db.transaction(async (tx) => {
     await tx
       .update(schema.waitlistOffers)

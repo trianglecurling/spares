@@ -344,7 +344,7 @@ async function buildCurlingRegistrationPaymentDetail(
   if (registration?.status) {
     context.push({
       label: 'Registration status',
-      value: registration.status.replace(/_/g, ' '),
+      value: registration.status === 'cancelled' ? 'Canceled' : registration.status.replace(/_/g, ' '),
     });
   }
 
@@ -399,7 +399,7 @@ async function buildEventRegistrationPaymentDetail(
     { label: 'Registrant', value: registration.contactName },
     { label: 'Email', value: registration.contactEmail },
     { label: 'Group size', value: String(groupSize) },
-    { label: 'Registration status', value: registration.status.replace(/_/g, ' ') },
+    { label: 'Registration status', value: registration.status === 'cancelled' ? 'Canceled' : registration.status.replace(/_/g, ' ') },
   ];
 
   return {

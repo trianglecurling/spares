@@ -80,7 +80,7 @@ export async function processNextNotification(): Promise<void> {
 
     // Find spare requests that need the next notification sent
     // Conditions:
-    // 1. Status is 'open' (not filled or cancelled)
+    // 1. Status is 'open' (not request filled or canceled)
     // 2. notification_status is 'in_progress' (staggered notifications active)
     // 3. notification_paused is 0 (not paused)
     // 4. next_notification_at is in the past or null
@@ -313,7 +313,7 @@ export async function processNextNotification(): Promise<void> {
     const currentStatus = currentStatusResults[0] as { status: string } | undefined;
 
     if (currentStatus?.status !== 'open') {
-      // Request was filled or cancelled - stop notifications
+      // Request was request filled or canceled - stop notifications
       await db
         .update(schema.spareRequests)
         .set({

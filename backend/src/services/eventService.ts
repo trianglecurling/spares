@@ -845,50 +845,68 @@ export async function confirmRegistrationPayment(registrationId: number, payment
     .from(schema.eventRegistrations)
     .where(eq(schema.eventRegistrations.id, registrationId))
     .limit(1);
-  if (!reg || reg.status !== 'pending_payment') return;
+  if (!reg) return;
 
   const event = await getEventById(reg.event_id);
   if (!event) return;
 
-  const groupSize = reg.group_size ?? 1;
-  const confirmedCount = await getConfirmedRegistrationCount(reg.event_id);
+  if (reg.status === 'pending_payment') {
+    const groupSize = reg.group_size ?? 1;
+    const confirmedCount = await getConfirmedRegistrationCount(reg.event_id);
 
-  let nextStatus: EventRegistrationStatus = 'confirmed';
-  let waitlistPosition: number | null = null;
+    let nextStatus: EventRegistrationStatus = 'confirmed';
+    let waitlistPosition: number | null = null;
 
-  if (event.capacity !== null && confirmedCount + groupSize > event.capacity) {
-    if (event.enable_waitlist) {
-      nextStatus = 'waitlisted';
-      const lastWaitlisted = await db
-        .select({ waitlist_position: schema.eventRegistrations.waitlist_position })
-        .from(schema.eventRegistrations)
-        .where(
-          and(
-            eq(schema.eventRegistrations.event_id, reg.event_id),
-            eq(schema.eventRegistrations.status, 'waitlisted' as any),
-          ),
-        )
-        .orderBy(desc(schema.eventRegistrations.waitlist_position))
-        .limit(1);
-      waitlistPosition = (lastWaitlisted[0]?.waitlist_position ?? 0) + 1;
+    if (event.capacity !== null && confirmedCount + groupSize > event.capacity) {
+      if (event.enable_waitlist) {
+        nextStatus = 'waitlisted';
+        const lastWaitlisted = await db
+          .select({ waitlist_position: schema.eventRegistrations.waitlist_position })
+          .from(schema.eventRegistrations)
+          .where(
+            and(
+              eq(schema.eventRegistrations.event_id, reg.event_id),
+              eq(schema.eventRegistrations.status, 'waitlisted' as any),
+            ),
+          )
+          .orderBy(desc(schema.eventRegistrations.waitlist_position))
+          .limit(1);
+        waitlistPosition = (lastWaitlisted[0]?.waitlist_position ?? 0) + 1;
+      }
     }
+
+    await db
+      .update(schema.eventRegistrations)
+      .set({
+        status: nextStatus as any,
+        payment_order_id: paymentOrderId,
+        waitlist_position: waitlistPosition,
+      })
+      .where(
+        and(
+          eq(schema.eventRegistrations.id, registrationId),
+          eq(schema.eventRegistrations.status, 'pending_payment' as any),
+        ),
+      );
+
+    await syncTournamentTeamForRegistrationSafe(registrationId);
   }
 
-  await db
-    .update(schema.eventRegistrations)
-    .set({
-      status: nextStatus as any,
-      payment_order_id: paymentOrderId,
-      waitlist_position: waitlistPosition,
+  const [current] = await db
+    .select({
+      status: schema.eventRegistrations.status,
+      payment_order_id: schema.eventRegistrations.payment_order_id,
     })
-    .where(
-      and(
-        eq(schema.eventRegistrations.id, registrationId),
-        eq(schema.eventRegistrations.status, 'pending_payment' as any),
-      ),
-    );
+    .from(schema.eventRegistrations)
+    .where(eq(schema.eventRegistrations.id, registrationId))
+    .limit(1);
 
-  await syncTournamentTeamForRegistrationSafe(registrationId);
+  if (!current) return;
+  if (current.status !== 'confirmed' && current.status !== 'waitlisted') return;
+  if (current.payment_order_id != null && current.payment_order_id !== paymentOrderId) return;
+
+  const { sendEventRegistrationCompletionEmailsForOrder } = await import('./paymentService.js');
+  await sendEventRegistrationCompletionEmailsForOrder(paymentOrderId);
 }
 
 export async function cancelRegistration(registrationId: number): Promise<{ refundEligible: boolean; event: any }> {
@@ -900,7 +918,7 @@ export async function cancelRegistration(registrationId: number): Promise<{ refu
     .where(eq(schema.eventRegistrations.id, registrationId))
     .limit(1);
   if (!reg) throw new EventServiceError('Registration not found', 404);
-  if (reg.status === 'cancelled') throw new EventServiceError('Registration is already cancelled', 400);
+  if (reg.status === 'cancelled') throw new EventServiceError('Registration is already canceled', 400);
 
   const event = await getEventById(reg.event_id);
   if (!event) throw new EventServiceError('Event not found', 404);
@@ -1020,7 +1038,7 @@ export async function updateRegistrationForEvent(
     .where(and(eq(schema.eventRegistrations.id, registrationId), eq(schema.eventRegistrations.event_id, eventId)))
     .limit(1);
   if (!existing) throw new EventServiceError('Registration not found', 404);
-  if (existing.status === 'cancelled') throw new EventServiceError('Cancelled registrations cannot be edited', 400);
+  if (existing.status === 'cancelled') throw new EventServiceError('Canceled registrations cannot be edited', 400);
 
   const normalizedGroupMembers = (input.groupMembers ?? [])
     .map((m) => ({ name: m.name.trim(), email: m.email?.trim() || null }))

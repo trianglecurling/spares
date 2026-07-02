@@ -9,7 +9,7 @@ import {
   PUBLIC_BOOTSTRAP_INVALIDATED_EVENT,
   publicBootstrapFetchConfig,
 } from '../utils/publicBootstrapClient';
-import { syncSiteBrandingFromConfig } from '../hooks/useSiteBranding';
+import { syncSiteBrandingFromBootstrap, syncSiteBrandingFromConfig, useSiteBranding } from '../hooks/useSiteBranding';
 import ObfuscatedEmailLink, { splitEmailAddress } from './ObfuscatedEmailLink';
 import MemberNavigationPanel from './MemberNavigationPanel';
 import SiteNavAccountControl, { SiteNavLoginLink } from './SiteNavAccountControl';
@@ -49,6 +49,7 @@ interface PublicBootstrapResponse {
   siteConfig: SiteConfig | null;
   navbarMenu: NavMenuItemNode[];
   defaultPaymentProvider?: PaymentProvider;
+  isPreviewDatabase?: boolean;
 }
 
 interface PublicLayoutProps {
@@ -80,6 +81,7 @@ export default function PublicLayout({
   deferPublicBootstrapLoad = false,
 }: PublicLayoutProps) {
   const { isLoading, isLikelyAuthenticated } = useAuth();
+  const { branding } = useSiteBranding();
   const [siteConfig, setSiteConfig] = useState<SiteConfig | null>(initialSiteConfig ?? cachedSiteConfig);
   const [menuItems, setMenuItems] = useState<NavMenuItemNode[]>(initialMenuItems ?? cachedMenuItems);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -124,7 +126,7 @@ export default function PublicLayout({
         const menu = Array.isArray(r.data?.navbarMenu) ? r.data.navbarMenu : [];
         cachedSiteConfig = config;
         cachedMenuItems = menu;
-        syncSiteBrandingFromConfig(config);
+        syncSiteBrandingFromBootstrap(r.data);
         setCachedDefaultPaymentProvider(r.data?.defaultPaymentProvider);
         setSiteConfig(config);
         setMenuItems(menu);
@@ -183,6 +185,7 @@ export default function PublicLayout({
         clubName={clubName}
         logoUrl={siteConfig?.logoUrl ?? null}
         brandingLoading={!publicDataReady}
+        isPreviewDatabase={branding?.isPreviewDatabase}
         backToHome={backToHome}
         mobileOpen={mobileOpen}
         onMobileOpenChange={setMobileOpen}

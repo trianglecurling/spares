@@ -85,11 +85,11 @@ export default function PublicArticle() {
     setArticle(null);
     setShowSlowLoadIndicator(false);
     const slowLoadTimer = window.setTimeout(() => setShowSlowLoadIndicator(true), SLOW_LOAD_INDICATOR_MS);
-    let cancelled = false;
+    let canceled = false;
     api
       .get<ArticleData>(`/public/articles/${slug}`)
       .then((res) => {
-        if (!cancelled) setArticle(res.data);
+        if (!canceled) setArticle(res.data);
       })
       .catch((err) => {
         const redirectToEventSlug = err?.response?.data?.redirectToEventSlug as unknown;
@@ -98,10 +98,10 @@ export default function PublicArticle() {
           typeof redirectToEventSlug === 'string' &&
           redirectToEventSlug.length > 0
         ) {
-          if (!cancelled) setRedirectEventSlug(redirectToEventSlug);
+          if (!canceled) setRedirectEventSlug(redirectToEventSlug);
           return;
         }
-        if (!cancelled) {
+        if (!canceled) {
           if (err?.response?.status === 404) {
             setNotFound(true);
           } else {
@@ -113,7 +113,7 @@ export default function PublicArticle() {
         window.clearTimeout(slowLoadTimer);
       });
     return () => {
-      cancelled = true;
+      canceled = true;
       window.clearTimeout(slowLoadTimer);
     };
   }, [slug]);

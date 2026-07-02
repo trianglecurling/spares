@@ -9,12 +9,22 @@ import { resolveFrontendBaseUrl, normalizeFrontendBaseUrl } from '../utils/front
 import { formatMemberDisplayName, splitMemberDisplayName } from '../utils/memberName.js';
 import { eventRegistrationManageUrl } from '../utils/eventRegistrationManageUrl.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
+import { formatEventTimespansForDisplay } from '../utils/formatEventTimespans.js';
 import {
   sendEventRegistrationConfirmationEmail,
   sendEventRegistrationCancelledEmail,
   sendEventOwnerNewRegistrationEmail,
   type EventRegistrationEmailLinks,
 } from '../services/email.js';
+import {
+  buildRegistrationFormSnapshotFromInput,
+  buildRegistrationFormSnapshotFromRegistration,
+  diffRegistrationFormSnapshots,
+  notifyPointOfContactOfNewRegistration,
+  notifyPointOfContactOfRegistrationCancellation,
+  notifyPointOfContactOfRegistrationUpdate,
+  shouldNotifyPointOfContactAtRegistration,
+} from '../services/eventRegistrationPointOfContactNotification.js';
 import {
   createEvent,
   updateEvent,
@@ -307,21 +317,47 @@ function canManageEvent(member: Member, eventId?: number): Promise<boolean> | bo
   return false;
 }
 
-function formatEventDate(timespans: Array<{ start_dt: string; end_dt: string }>): string {
-  if (!timespans || timespans.length === 0) return 'TBD';
-  const first = timespans[0];
-  try {
-    const start = new Date(first.start_dt);
-    const end = new Date(first.end_dt);
-    return `${start.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    })} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
-  } catch {
-    return first.start_dt;
+const REGISTRATION_RECEIPT_ORDER_STATUSES = new Set([
+  'succeeded',
+  'partially_refunded',
+  'refunded',
+  'pending_refund',
+]);
+
+async function resolveRegistrationReceiptUrl(paymentOrderId: number | null | undefined): Promise<string | null> {
+  if (!paymentOrderId) return null;
+
+  const { db, schema } = getDrizzleDb();
+  const [order] = await db
+    .select({
+      order_token: schema.paymentOrders.order_token,
+      status: schema.paymentOrders.status,
+    })
+    .from(schema.paymentOrders)
+    .where(eq(schema.paymentOrders.id, paymentOrderId))
+    .limit(1);
+
+  if (order && REGISTRATION_RECEIPT_ORDER_STATUSES.has(order.status)) {
+    return paymentDetailsUrl(order.order_token);
   }
+  return null;
+}
+
+async function notifyRegistrationCancelledByEmail(
+  registration: { contact_email: string; contact_name: string; payment_order_id?: number | null },
+  eventTitle: string,
+  refundIssued: boolean,
+  pointOfContact: string,
+): Promise<void> {
+  const refundReceiptUrl = await resolveRegistrationReceiptUrl(registration.payment_order_id ?? null);
+  await sendEventRegistrationCancelledEmail(
+    registration.contact_email,
+    registration.contact_name,
+    eventTitle,
+    refundIssued,
+    undefined,
+    { refundReceiptUrl, pointOfContact },
+  );
 }
 
 async function buildRegistrationEmailLinks(
@@ -332,21 +368,9 @@ async function buildRegistrationEmailLinks(
   const manageRegistrationUrl = eventRegistrationManageUrl(token);
 
   const reg = await getRegistrationById(registrationId);
-  let receiptUrl: string | null = null;
-  if (reg?.payment_order_id) {
-    const { db, schema } = getDrizzleDb();
-    const [order] = await db
-      .select({
-        order_token: schema.paymentOrders.order_token,
-        status: schema.paymentOrders.status,
-      })
-      .from(schema.paymentOrders)
-      .where(eq(schema.paymentOrders.id, reg.payment_order_id))
-      .limit(1);
-    if (order && (order.status === 'succeeded' || order.status === 'partially_refunded')) {
-      receiptUrl = paymentDetailsUrl(order.order_token);
-    }
-  }
+  const receiptUrl = reg?.payment_order_id
+    ? await resolveRegistrationReceiptUrl(reg.payment_order_id)
+    : null;
 
   return { manageRegistrationUrl, receiptUrl };
 }
@@ -362,15 +386,16 @@ async function sendRegistrationConfirmationEmailForResult(
   groupSize: number,
 ): Promise<void> {
   const links = await buildRegistrationEmailLinks(registrationId, accessToken);
+  const eventWhen = formatEventTimespansForDisplay(event.timespans as Array<{ start_dt: string; end_dt: string; sort_order?: number }>);
   await sendEventRegistrationConfirmationEmail(
     contactEmail,
     formatMemberDisplayName(contactFirstName, contactLastName),
     event.title,
-    formatEventDate((event.timespans ?? []) as Array<{ start_dt: string; end_dt: string }>),
+    eventWhen,
     status,
     groupSize,
     undefined,
-    links,
+    { ...links, pointOfContact: event.point_of_contact },
   );
 }
 
@@ -416,18 +441,7 @@ async function formatManageRegistrationResponse(accessToken: string) {
 
   let receiptUrl: string | null = null;
   if (registration.payment_order_id) {
-    const { db, schema } = getDrizzleDb();
-    const [order] = await db
-      .select({
-        order_token: schema.paymentOrders.order_token,
-        status: schema.paymentOrders.status,
-      })
-      .from(schema.paymentOrders)
-      .where(eq(schema.paymentOrders.id, registration.payment_order_id))
-      .limit(1);
-    if (order && (order.status === 'succeeded' || order.status === 'partially_refunded')) {
-      receiptUrl = paymentDetailsUrl(order.order_token);
-    }
+    receiptUrl = await resolveRegistrationReceiptUrl(registration.payment_order_id);
   }
 
   return {
@@ -731,6 +745,14 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           ...parsed.data,
         });
 
+        schedulePointOfContactNewRegistrationNotification(
+          request.log,
+          event,
+          result.registrationId,
+          result.status,
+          result.needsPayment,
+        );
+
         if (result.needsPayment && result.status !== 'waitlisted') {
           return createCheckoutForRegistration(
             event,
@@ -823,10 +845,15 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       const registration = await getRegistrationByAccessToken(request.params.accessToken);
       if (!registration) return sendApiError(reply, 404, 'Registration not found');
 
+      const event = await getEventById(registration.event_id);
+      if (!event) return sendApiError(reply, 404, 'Event not found');
+
       const parsed = adminUpsertRegistrationSchema.safeParse(request.body);
       if (!parsed.success) {
         return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
       }
+
+      const beforeSnapshot = buildRegistrationFormSnapshotFromRegistration(event, registration);
 
       try {
         await updateRegistrationForEvent(registration.event_id, registration.id, {
@@ -843,6 +870,24 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
             value: fv.value,
           })),
         });
+        const afterSnapshot = buildRegistrationFormSnapshotFromInput(event, {
+          contactFirstName: parsed.data.contactFirstName,
+          contactLastName: parsed.data.contactLastName,
+          contactEmail: parsed.data.contactEmail,
+          groupMembers: parsed.data.groupMembers?.map((m) => ({
+            name: m.name,
+            email: m.email ?? undefined,
+          })),
+          fieldValues: parsed.data.fieldValues?.map((fv) => ({
+            fieldId: fv.fieldId,
+            registrationMemberIndex: fv.registrationMemberIndex ?? null,
+            value: fv.value,
+          })),
+        });
+        const changes = diffRegistrationFormSnapshots(beforeSnapshot, afterSnapshot);
+        notifyPointOfContactOfRegistrationUpdate({ event, registration, changes }).catch((err) =>
+          request.log.error({ err }, 'Failed to notify event point of contact'),
+        );
         const payload = await formatManageRegistrationResponse(request.params.accessToken);
         if (!payload) return sendApiError(reply, 404, 'Registration not found');
         return payload;
@@ -862,7 +907,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       const registration = await getRegistrationByAccessToken(request.params.accessToken);
       if (!registration) return sendApiError(reply, 404, 'Registration not found');
       if (registration.status === 'cancelled') {
-        return sendApiError(reply, 400, 'Registration is already cancelled');
+        return sendApiError(reply, 400, 'Registration is already canceled');
       }
 
       const event = await getEventById(registration.event_id);
@@ -877,14 +922,18 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       }
 
       try {
-        const { refundEligible, event: cancelledEvent } = await cancelRegistration(registration.id);
+        notifyPointOfContactOfRegistrationCancellation({ event, registration }).catch((err) =>
+          request.log.error({ err }, 'Failed to notify event point of contact'),
+        );
+
+        const { refundEligible, event: canceledEvent } = await cancelRegistration(registration.id);
 
         let refundIssued = false;
         let refundError: string | null = null;
         if (refundEligible && registration.payment_order_id) {
           const refundResult = await issueEventRegistrationRefund({
             paymentOrderId: registration.payment_order_id,
-            reason: 'Event registration cancelled by registrant',
+            reason: 'Event registration canceled by registrant',
             requestedByMemberId: registration.member_id ?? null,
           });
           refundIssued = refundResult.refundIssued;
@@ -894,11 +943,11 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           }
         }
 
-        sendEventRegistrationCancelledEmail(
-          registration.contact_email,
-          registration.contact_name,
-          cancelledEvent.title,
-          refundIssued
+        notifyRegistrationCancelledByEmail(
+          registration,
+          canceledEvent.title,
+          refundIssued,
+          canceledEvent.point_of_contact,
         ).catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
         return { success: true, refundIssued, refundError };
@@ -941,8 +990,6 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           await paymentService.reconcilePaymentOrder(reg.payment_order_id, 'checkout-return');
         }
 
-        await paymentService.finalizeEventRegistrationPaymentForOrder(reg.payment_order_id);
-
         const [updatedOrder] = await db
           .select({ status: schema.paymentOrders.status })
           .from(schema.paymentOrders)
@@ -950,6 +997,16 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           .limit(1);
 
         const updatedReg = await getRegistrationById(registrationId);
+
+        if (
+          updatedReg?.payment_order_id &&
+          (updatedReg.status === 'confirmed' || updatedReg.status === 'waitlisted')
+        ) {
+          const { sendEventRegistrationCompletionEmailsForOrder } = await import('../services/paymentService.js');
+          sendEventRegistrationCompletionEmailsForOrder(updatedReg.payment_order_id).catch((err) =>
+            request.log.error({ err }, 'Failed to send registration completion emails'),
+          );
+        }
 
         return {
           status: updatedOrder?.status ?? 'unknown',
@@ -1373,6 +1430,14 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           ...parsed.data,
         });
 
+        schedulePointOfContactNewRegistrationNotification(
+          request.log,
+          event,
+          result.registrationId,
+          result.status,
+          result.needsPayment,
+        );
+
         if (result.needsPayment && result.status !== 'waitlisted') {
           return createCheckoutForRegistration(
             event,
@@ -1442,7 +1507,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         if (refundEligible && reg.payment_order_id) {
           const refundResult = await issueEventRegistrationRefund({
             paymentOrderId: reg.payment_order_id,
-            reason: 'Event registration cancelled',
+            reason: 'Event registration canceled',
             requestedByMemberId: member.id,
           });
           refundIssued = refundResult.refundIssued;
@@ -1452,12 +1517,8 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           }
         }
 
-        sendEventRegistrationCancelledEmail(
-          reg.contact_email,
-          reg.contact_name,
-          event.title,
-          refundIssued
-        ).catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
+        notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact)
+          .catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
         return { success: true, refundIssued, refundError };
       } catch (err) {
@@ -1545,6 +1606,14 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           })),
           adminOverride: true,
         });
+
+        schedulePointOfContactNewRegistrationNotification(
+          request.log,
+          event,
+          result.registrationId,
+          result.status,
+          result.needsPayment,
+        );
 
         sendRegistrationConfirmationEmailForResult(
           result.registrationId,
@@ -1647,7 +1716,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         if (shouldRefund && reg.payment_order_id) {
           const refundResult = await issueEventRegistrationRefund({
             paymentOrderId: reg.payment_order_id,
-            reason: 'Event registration cancelled by admin',
+            reason: 'Event registration canceled by admin',
             requestedByMemberId: member.id,
             surfaceIneligibleError: true,
           });
@@ -1659,12 +1728,8 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           }
         }
 
-        sendEventRegistrationCancelledEmail(
-          reg.contact_email,
-          reg.contact_name,
-          event.title,
-          refundIssued
-        ).catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
+        notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact)
+          .catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
         return { success: true, refundIssued, refundStatus, refundError };
       } catch (err) {
@@ -1923,7 +1988,7 @@ async function createCheckoutForRegistration(
     `${checkoutFrontendBaseUrl}/events/${encodeURIComponent(event.slug)}/register/success?registrationId=${registrationResult.registrationId}`,
     paymentProvider
   );
-  const cancelUrl = `${checkoutFrontendBaseUrl}/events/${encodeURIComponent(event.slug)}/register?cancelled=true`;
+  const cancelUrl = `${checkoutFrontendBaseUrl}/events/${encodeURIComponent(event.slug)}/register?canceled=true`;
 
   const checkout = await paymentService.createHostedCheckoutForOrder({
     orderId: order.id,
@@ -1967,4 +2032,20 @@ async function notifyEventOwners(
       );
     }
   }
+}
+
+function schedulePointOfContactNewRegistrationNotification(
+  log: { error: (payload: unknown, message: string) => void },
+  event: EventFormattingSource,
+  registrationId: number,
+  status: string,
+  needsPayment: boolean,
+) {
+  if (!shouldNotifyPointOfContactAtRegistration({ needsPayment, status })) {
+    return;
+  }
+
+  notifyPointOfContactOfNewRegistration({ event, registrationId, status }).catch((err) =>
+    log.error({ err }, 'Failed to notify event point of contact'),
+  );
 }

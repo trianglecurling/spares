@@ -72,7 +72,7 @@ Exceptions:
 
 - Use `useConfirm()` for in-app confirmations.
 - Do not use `window.confirm()` for normal navigation or destructive flows.
-- Destructive actions must say what is being deleted, cancelled, or converted.
+- Destructive actions must say what is being deleted, canceled, or converted.
 
 ## Loading, empty, and error states
 
@@ -137,7 +137,7 @@ Exceptions:
 
 ## DOM events and bubbling
 
-- Prefer **`event.preventDefault()`** when cancelling default browser behavior or marking an interaction as handled; rely on **`event.defaultPrevented`** in ancestor or delegated listeners instead of **`event.stopPropagation()`**.
+- Prefer **`event.preventDefault()`** when canceling default browser behavior or marking an interaction as handled; rely on **`event.defaultPrevented`** in ancestor or delegated listeners instead of **`event.stopPropagation()`**.
 - Container handlers for **`click`**, **`keydown`**, **`pointerdown`**, **`wheel`**, and similar bubbled events should **return early when `event.defaultPrevented`** so nested controls can opt out without cutting off the rest of the tree.
 - **`stopPropagation()`** is reserved for narrow exceptions—typically third-party code that attaches native DOM listeners which ignore **`defaultPrevented`**. When it is truly necessary, document the reason inline at the callsite (see **`MarkdownDescriptionEditor`** managed-image **`dblclick`** on Toast UI’s editing surface).
 

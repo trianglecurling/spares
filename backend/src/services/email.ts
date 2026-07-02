@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 import { formatDateForEmail, formatTimeForEmail } from '../utils/dateFormat.js';
+import type { FormattedEventWhen } from '../utils/formatEventTimespans.js';
 import { logEvent } from './observability.js';
 
 let emailClient: EmailClient | null = null;
@@ -692,7 +693,7 @@ export async function sendSpareRequestCancelledEmail(
     : '';
 
   const htmlContent = `
-    <h2>Spare Request Cancelled</h2>
+    <h2>Spare Request Canceled</h2>
     <p>Hi ${recipientName},</p>
     <p><strong>${cancelledByName}</strong> canceled the spare request for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
@@ -703,7 +704,7 @@ export async function sendSpareRequestCancelledEmail(
   await sendEmail(
     {
       to: recipientEmail,
-      subject: `Spare request cancelled: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
+      subject: `Spare request canceled: ${formattedDate} at ${formattedTime}${requestDetails.leagueName ? ` (${requestDetails.leagueName})` : ''}`,
       htmlContent,
       recipientName,
     },
@@ -903,9 +904,9 @@ export async function sendSpareOfferCancellationConfirmationEmail(
     : '';
 
   const htmlContent = `
-    <h2>Spare Offer Cancelled</h2>
+    <h2>Spare Offer Canceled</h2>
     <p>Hi ${responderName},</p>
-    <p>This confirms you cancelled your offer to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
+    <p>This confirms you canceled your offer to spare for <strong>${requestDetails.requestedForName}</strong>${positionText}.</p>
     <p><strong>Requested by:</strong> ${requesterName}</p>
     <p><strong>Date:</strong> ${formattedDate}<br>
     <strong>Time:</strong> ${formattedTime}</p>
@@ -1174,12 +1175,21 @@ export async function sendIceBookingConfirmationEmail(
   );
 }
 
-// ========== Event Registration Emails ==========
-
 export type EventRegistrationEmailLinks = {
   manageRegistrationUrl?: string;
   receiptUrl?: string | null;
+  pointOfContact?: string;
 };
+
+function eventPointOfContactSections(pointOfContact?: string | null): { html: string; text: string } {
+  const trimmed = pointOfContact?.trim();
+  if (!trimmed) return { html: '', text: '' };
+
+  return {
+    html: `<p>Questions about this event? Contact <a href="mailto:${escapeHtmlEmail(trimmed)}">${escapeHtmlEmail(trimmed)}</a>.</p>`,
+    text: `Questions about this event? Contact ${trimmed}.`,
+  };
+}
 
 function eventRegistrationEmailLinkSections(links?: EventRegistrationEmailLinks): { html: string; text: string } {
   if (!links?.manageRegistrationUrl && !links?.receiptUrl) {
@@ -1212,7 +1222,7 @@ export async function sendEventRegistrationPaymentConfirmationEmail(
   to: string,
   recipientName: string,
   eventTitle: string,
-  eventDateStr: string,
+  eventWhen: FormattedEventWhen,
   groupSize: number,
   paymentDetailsUrl: string,
   memberToken?: string,
@@ -1226,15 +1236,17 @@ export async function sendEventRegistrationPaymentConfirmationEmail(
     manageRegistrationUrl: links?.manageRegistrationUrl,
     receiptUrl: links?.receiptUrl ?? paymentDetailsUrl,
   });
+  const contactSections = eventPointOfContactSections(links?.pointOfContact);
 
   const htmlContent = `
     <h2>Payment received</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
     <p>We received your payment and your registration is confirmed.</p>
     <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
-    <p><strong>When:</strong> ${escapeHtmlEmail(eventDateStr)}</p>
+    <p><strong>When:</strong><br>${eventWhen.html}</p>
     ${groupLine}
     ${linkSections.html || `<p><a href="${escapeHtmlEmail(paymentDetailsUrl)}">View payment details</a></p>`}
+    ${contactSections.html}
   `;
 
   const textBody = [
@@ -1245,9 +1257,10 @@ export async function sendEventRegistrationPaymentConfirmationEmail(
     'We received your payment and your registration is confirmed.',
     '',
     `Event: ${eventTitle}`,
-    `When: ${eventDateStr}`,
+    `When: ${eventWhen.text}`,
     groupSize > 1 ? `Group size: ${groupSize}` : null,
     linkSections.text || `View payment details: ${paymentDetailsUrl}`,
+    contactSections.text || null,
   ].filter(Boolean).join('\n');
 
   await sendEmail(
@@ -1266,7 +1279,7 @@ export async function sendEventRegistrationConfirmationEmail(
   to: string,
   recipientName: string,
   eventTitle: string,
-  eventDateStr: string,
+  eventWhen: FormattedEventWhen,
   status: 'confirmed' | 'pending_payment' | 'waitlisted',
   groupSize: number,
   memberToken?: string,
@@ -1283,15 +1296,17 @@ export async function sendEventRegistrationConfirmationEmail(
     : '';
 
   const linkSections = eventRegistrationEmailLinkSections(links);
+  const contactSections = eventPointOfContactSections(links?.pointOfContact);
 
   const htmlContent = `
     <h2>Event registration</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
     <p>${statusLabel}</p>
     <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
-    <p><strong>When:</strong> ${escapeHtmlEmail(eventDateStr)}</p>
+    <p><strong>When:</strong><br>${eventWhen.html}</p>
     ${groupLine}
     ${linkSections.html}
+    ${contactSections.html}
   `;
 
   const textBody = [
@@ -1302,9 +1317,10 @@ export async function sendEventRegistrationConfirmationEmail(
     statusLabel,
     '',
     `Event: ${eventTitle}`,
-    `When: ${eventDateStr}`,
+    `When: ${eventWhen.text}`,
     groupSize > 1 ? `Group size: ${groupSize}` : null,
     linkSections.text || null,
+    contactSections.text || null,
   ].filter(Boolean).join('\n');
 
   await sendEmail(
@@ -1324,24 +1340,49 @@ export async function sendEventRegistrationCancelledEmail(
   recipientName: string,
   eventTitle: string,
   refundIssued: boolean,
-  memberToken?: string
+  memberToken?: string,
+  options?: {
+    refundReceiptUrl?: string | null;
+    pointOfContact?: string;
+  }
 ): Promise<void> {
+  const refundReceiptUrl = options?.refundReceiptUrl?.trim() || null;
+  const contactSections = eventPointOfContactSections(options?.pointOfContact);
+
   const refundLine = refundIssued
-    ? '<p>A refund has been issued and will be processed within a few business days.</p>'
+    ? '<p>A full refund has been issued and should appear within a few business days.</p>'
+    : '';
+
+  const refundReceiptHtml = refundReceiptUrl
+    ? `<p><a href="${escapeHtmlEmail(refundReceiptUrl)}">View refund receipt</a></p>`
     : '';
 
   const htmlContent = `
-    <h2>Registration cancelled</h2>
+    <h2>Registration canceled</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
-    <p>Your registration for <strong>${escapeHtmlEmail(eventTitle)}</strong> has been cancelled.</p>
+    <p>Your registration for <strong>${escapeHtmlEmail(eventTitle)}</strong> has been canceled.</p>
     ${refundLine}
+    ${refundReceiptHtml}
+    ${contactSections.html}
   `;
+
+  const textBody = [
+    'Registration canceled',
+    '',
+    `Hi ${recipientName},`,
+    '',
+    `Your registration for ${eventTitle} has been canceled.`,
+    refundIssued ? 'A full refund has been issued and should appear within a few business days.' : null,
+    refundReceiptUrl ? `View refund receipt: ${refundReceiptUrl}` : null,
+    contactSections.text || null,
+  ].filter(Boolean).join('\n');
 
   await sendEmail(
     {
       to,
-      subject: `Registration cancelled: ${eventTitle}`,
+      subject: `Registration canceled: ${eventTitle}`,
       htmlContent,
+      textContent: textBody,
       recipientName,
     },
     memberToken
@@ -1378,6 +1419,162 @@ export async function sendEventWaitlistPromotionEmail(
   );
 }
 
+export type EventRegistrationFormEmailRow = {
+  key: string;
+  label: string;
+  value: string;
+};
+
+export type EventRegistrationFormFieldChange = {
+  label: string;
+  oldValue: string;
+  newValue: string;
+};
+
+function eventRegistrationFormRowsHtml(rows: EventRegistrationFormEmailRow[]): string {
+  if (rows.length === 0) return '';
+  const body = rows
+    .map(
+      (row) =>
+        `<tr><td style="padding:4px 12px 4px 0;vertical-align:top;"><strong>${escapeHtmlEmail(row.label)}</strong></td><td style="padding:4px 0;vertical-align:top;">${escapeHtmlEmail(row.value)}</td></tr>`,
+    )
+    .join('');
+  return `<table style="border-collapse:collapse;">${body}</table>`;
+}
+
+function eventRegistrationFormRowsText(rows: EventRegistrationFormEmailRow[]): string {
+  return rows.map((row) => `${row.label}: ${row.value}`).join('\n');
+}
+
+function eventRegistrationFormChangesHtml(changes: EventRegistrationFormFieldChange[]): string {
+  if (changes.length === 0) return '';
+  const body = changes
+    .map(
+      (change) =>
+        `<tr><td style="padding:4px 12px 4px 0;vertical-align:top;"><strong>${escapeHtmlEmail(change.label)}</strong></td><td style="padding:4px 8px 4px 0;vertical-align:top;">${escapeHtmlEmail(change.oldValue)}</td><td style="padding:4px 0;vertical-align:top;">${escapeHtmlEmail(change.newValue)}</td></tr>`,
+    )
+    .join('');
+  return `<table style="border-collapse:collapse;"><thead><tr><th align="left" style="padding:0 12px 8px 0;">Field</th><th align="left" style="padding:0 8px 8px 0;">Previous</th><th align="left" style="padding:0 0 8px 0;">New</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function eventRegistrationFormChangesText(changes: EventRegistrationFormFieldChange[]): string {
+  return changes
+    .map((change) => `${change.label}\n  Previous: ${change.oldValue}\n  New: ${change.newValue}`)
+    .join('\n\n');
+}
+
+export async function sendEventPointOfContactNewRegistrationEmail(
+  to: string,
+  eventTitle: string,
+  registrantName: string,
+  registrantEmail: string,
+  status: string,
+  formRows: EventRegistrationFormEmailRow[],
+): Promise<void> {
+  const formHtml = eventRegistrationFormRowsHtml(formRows);
+  const formText = eventRegistrationFormRowsText(formRows);
+
+  const htmlContent = `
+    <h2>New event registration</h2>
+    <p>A new registration was submitted for <strong>${escapeHtmlEmail(eventTitle)}</strong>.</p>
+    <p><strong>Registrant:</strong> ${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)})</p>
+    <p><strong>Status:</strong> ${escapeHtmlEmail(status)}</p>
+    ${formHtml ? `<h3>Submitted information</h3>${formHtml}` : ''}
+  `;
+
+  const textBody = [
+    'New event registration',
+    '',
+    `A new registration was submitted for ${eventTitle}.`,
+    '',
+    `Registrant: ${registrantName} (${registrantEmail})`,
+    `Status: ${status}`,
+    formText ? '' : null,
+    formText ? 'Submitted information:' : null,
+    formText || null,
+  ].filter((line) => line !== null).join('\n');
+
+  await sendEmail({
+    to,
+    subject: `New registration: ${eventTitle}`,
+    htmlContent,
+    textContent: textBody,
+    recipientName: to,
+    includeUnsubscribeFooter: false,
+  });
+}
+
+export async function sendEventPointOfContactRegistrationUpdatedEmail(
+  to: string,
+  eventTitle: string,
+  registrantName: string,
+  registrantEmail: string,
+  changes: EventRegistrationFormFieldChange[],
+): Promise<void> {
+  const changesHtml = eventRegistrationFormChangesHtml(changes);
+  const changesText = eventRegistrationFormChangesText(changes);
+
+  const htmlContent = `
+    <h2>Registration updated</h2>
+    <p>${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)}) updated their registration for <strong>${escapeHtmlEmail(eventTitle)}</strong>.</p>
+    <h3>Changes</h3>
+    ${changesHtml}
+  `;
+
+  const textBody = [
+    'Registration updated',
+    '',
+    `${registrantName} (${registrantEmail}) updated their registration for ${eventTitle}.`,
+    '',
+    'Changes:',
+    changesText,
+  ].join('\n');
+
+  await sendEmail({
+    to,
+    subject: `Registration updated: ${eventTitle}`,
+    htmlContent,
+    textContent: textBody,
+    recipientName: to,
+    includeUnsubscribeFooter: false,
+  });
+}
+
+export async function sendEventPointOfContactRegistrationCancelledEmail(
+  to: string,
+  eventTitle: string,
+  registrantName: string,
+  registrantEmail: string,
+  formRows: EventRegistrationFormEmailRow[],
+): Promise<void> {
+  const formHtml = eventRegistrationFormRowsHtml(formRows);
+  const formText = eventRegistrationFormRowsText(formRows);
+
+  const htmlContent = `
+    <h2>Registration canceled</h2>
+    <p>${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)}) canceled their registration for <strong>${escapeHtmlEmail(eventTitle)}</strong>.</p>
+    ${formHtml ? `<h3>Registration information</h3>${formHtml}` : ''}
+  `;
+
+  const textBody = [
+    'Registration canceled',
+    '',
+    `${registrantName} (${registrantEmail}) canceled their registration for ${eventTitle}.`,
+    formText ? '' : null,
+    formText ? 'Registration information:' : null,
+    formText || null,
+  ].filter((line) => line !== null).join('\n');
+
+  await sendEmail({
+    to,
+    subject: `Registration canceled: ${eventTitle}`,
+    htmlContent,
+    textContent: textBody,
+    recipientName: to,
+    includeUnsubscribeFooter: false,
+  });
+}
+
 export async function sendEventOwnerNewRegistrationEmail(
   to: string,
   ownerName: string,
@@ -1412,16 +1609,16 @@ export async function sendEventCancelledEmail(
   memberToken?: string
 ): Promise<void> {
   const htmlContent = `
-    <h2>Event cancelled</h2>
+    <h2>Event canceled</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
-    <p>The event <strong>${escapeHtmlEmail(eventTitle)}</strong> has been cancelled.</p>
+    <p>The event <strong>${escapeHtmlEmail(eventTitle)}</strong> has been canceled.</p>
     <p>If you were registered and paid a fee, a refund will be processed within a few business days.</p>
   `;
 
   await sendEmail(
     {
       to,
-      subject: `Event cancelled: ${eventTitle}`,
+      subject: `Event canceled: ${eventTitle}`,
       htmlContent,
       recipientName,
     },

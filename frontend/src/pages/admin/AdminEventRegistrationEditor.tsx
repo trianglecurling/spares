@@ -183,7 +183,7 @@ export default function AdminEventRegistrationEditor() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     Promise.all([
       api.get<EventDetail>(`/events/${eventId}`),
@@ -192,7 +192,7 @@ export default function AdminEventRegistrationEditor() {
         : api.get<RegistrationDetail>(`/events/${eventId}/registrations/${numericRegistrationId}`),
     ])
       .then(([eventRes, regRes]) => {
-        if (cancelled) return;
+        if (canceled) return;
         setEvent(eventRes.data);
         const reg = regRes.data;
         setRegistration(reg);
@@ -225,16 +225,16 @@ export default function AdminEventRegistrationEditor() {
         }
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (canceled) return;
         showAlert(formatApiError(error, 'Failed to load registration'), 'error');
         navigate(`/admin/events/${eventId}/registrations`, { replace: true });
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [eventId, isNew, numericRegistrationId, navigate, showAlert]);
 
@@ -341,11 +341,11 @@ export default function AdminEventRegistrationEditor() {
         { refund },
       );
       if (response.data?.refundError) {
-        showAlert(`Registration cancelled. Refund failed: ${response.data.refundError}`, 'warning');
+        showAlert(`Registration canceled. Refund failed: ${response.data.refundError}`, 'warning');
       } else if (refund && response.data?.refundIssued) {
-        showAlert('Registration cancelled and refund initiated', 'success');
+        showAlert('Registration canceled and refund initiated', 'success');
       } else {
-        showAlert('Registration cancelled', 'success');
+        showAlert('Registration canceled', 'success');
       }
       navigate(`/admin/events/${eventId}/registrations`, { replace: true });
     } catch (error) {
@@ -411,7 +411,9 @@ export default function AdminEventRegistrationEditor() {
           <div className="app-card-subtle grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Status</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mt-0.5">{registration.status.replace('_', ' ')}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mt-0.5">
+                {registration.status === 'cancelled' ? 'Canceled' : registration.status.replace(/_/g, ' ')}
+              </p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Registered</p>
@@ -677,7 +679,7 @@ export default function AdminEventRegistrationEditor() {
               </p>
               {showRefundWarning && (
                 <p className="text-sm text-gray-700 dark:text-gray-300">
-                  Cancelling this registration will automatically refund the customer.
+                  Canceling this registration will automatically refund the customer.
                 </p>
               )}
               <div className="flex flex-wrap justify-end gap-2 pt-2">
@@ -700,7 +702,7 @@ export default function AdminEventRegistrationEditor() {
                   onClick={() => handleCancelRegistration(showRefundWarning)}
                   disabled={cancelBusy}
                 >
-                  {cancelBusy ? 'Cancelling...' : showRefundWarning ? 'Cancel and refund customer' : 'Cancel registration'}
+                  {cancelBusy ? 'Canceling...' : showRefundWarning ? 'Cancel and refund customer' : 'Cancel registration'}
                 </Button>
               </div>
             </div>

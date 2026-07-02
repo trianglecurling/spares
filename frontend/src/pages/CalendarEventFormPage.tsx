@@ -72,7 +72,7 @@ export default function CalendarEventFormPage() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     setEvent(undefined);
     setLoadError(null);
 
@@ -85,7 +85,7 @@ export default function CalendarEventFormPage() {
           `/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`
         );
         const found = (data ?? []).map(apiEventToCalendar).find((e) => e.id === eventId);
-        if (cancelled) return;
+        if (canceled) return;
         if (!found) {
           setLoadError(
             'That event could not be found. It may be outside the search window—open it from the calendar and try again.'
@@ -95,7 +95,7 @@ export default function CalendarEventFormPage() {
         }
         setEvent(found);
       } catch {
-        if (!cancelled) {
+        if (!canceled) {
           setLoadError('Failed to load the event.');
           setEvent(null);
         }
@@ -103,7 +103,7 @@ export default function CalendarEventFormPage() {
     })();
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [eventId, location.state]);
 

@@ -1617,23 +1617,23 @@ export default function RegistrationShellPage() {
   useEffect(() => {
     if (!isPriorityEdit || !member || currentStep === 'start' || currentStep === 'success' || currentStep === 'cancel') return;
     if (registrationId !== null && payload) return;
-    let cancelled = false;
+    let canceled = false;
     void (async () => {
       try {
         const { data: current } = await api.get<{ registration: { id: number } }>('/registration/member/registrations/current', {
           params: priorityEditCurlerMemberId != null ? { curlerMemberId: priorityEditCurlerMemberId } : undefined,
         });
-        if (cancelled) return;
+        if (canceled) return;
         await hydrateDraftFromServerById(current.registration.id);
         const membershipSteps = new Set(['membership', 'discounts', 'experience', 'basic-ice', 'ice-privileges', 'review']);
         const leagueSteps = new Set(['prior-league-selection', 'league-selection', 'league-requests', 'basic-ice-fallback', 'third-league-interest', 'league-summary']);
         if (membershipSteps.has(currentStep)) {
           const response = await api.get(`/registration/drafts/${current.registration.id}/membership-payment`);
-          if (!cancelled) setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
+          if (!canceled) setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
         }
         if (leagueSteps.has(currentStep)) {
           const response = await api.get(`/registration/drafts/${current.registration.id}/league-catalog`);
-          if (!cancelled) {
+          if (!canceled) {
             const data = response.data as RegistrationLeagueSelectionPayload;
             setLeaguePayload(data);
             setLeagueSelections(data.selections);
@@ -1641,11 +1641,11 @@ export default function RegistrationShellPage() {
           }
         }
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Unable to load this registration for editing.'));
+        if (!canceled) setError(errorMessage(err, 'Unable to load this registration for editing.'));
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [
     currentStep,
@@ -1682,22 +1682,22 @@ export default function RegistrationShellPage() {
   useEffect(() => {
     if (isPriorityEdit) return;
     if (!member || currentStep === 'start' || currentStep === 'success' || currentStep === 'cancel') return;
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const { data } = await api.get<{ draft: (RegistrationShellPayload & { id: number }) | null }>('/registration/drafts/me');
-        if (cancelled) return;
+        if (canceled) return;
         if (!data.draft) {
           navigate('/registration/start', { replace: true });
           return;
         }
         hydrateFromServerPayload(data.draft);
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Unable to load this registration draft.'));
+        if (!canceled) setError(errorMessage(err, 'Unable to load this registration draft.'));
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [member?.id, currentStep, navigate, hydrateFromServerPayload, isPriorityEdit]);
 
@@ -1717,7 +1717,7 @@ export default function RegistrationShellPage() {
       return;
     }
     setReturningProfilesFetchStatus('loading');
-    let cancelled = false;
+    let canceled = false;
     api
       .get('/registration/returning-profiles', {
         params: {
@@ -1726,18 +1726,18 @@ export default function RegistrationShellPage() {
         },
       })
       .then((response) => {
-        if (cancelled) return;
+        if (canceled) return;
         setProfiles(response.data);
         setReturningProfilesFetchStatus('ready');
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (canceled) return;
         setProfiles([]);
         setReturningProfilesFetchStatus('error');
         setError(errorMessage(err, 'Unable to load eligible curler profiles.'));
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [
     currentStep,
@@ -1837,22 +1837,22 @@ export default function RegistrationShellPage() {
     )
       return;
 
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         if (payload.registration.status !== 'shell_complete' && !isPriorityEdit) {
           await api.post(`/registration/drafts/${registrationId}/complete-shell`);
-          if (cancelled) return;
+          if (canceled) return;
           const { data } = await api.get<RegistrationShellPayload>(`/registration/drafts/${registrationId}`);
-          if (cancelled) return;
+          if (canceled) return;
           hydrateFromServerPayload({ id: registrationId, ...data });
         }
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Unable to continue registration.'));
+        if (!canceled) setError(errorMessage(err, 'Unable to continue registration.'));
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [member, registrationId, payload, currentStep, hydrateFromServerPayload, isPriorityEdit]);
 
@@ -1912,7 +1912,7 @@ export default function RegistrationShellPage() {
     }
     if (suppressExperienceAutoSkipRef.current) return;
 
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       setError('');
       try {
@@ -1922,18 +1922,18 @@ export default function RegistrationShellPage() {
               experienceType: 'known_existing',
               experienceSelfReportedYears: null,
             });
-            if (cancelled) return;
+            if (canceled) return;
             setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
           }
           setExperienceChoice('known_existing');
         }
-        if (!cancelled) navigate('/registration/basic-ice', { replace: true });
+        if (!canceled) navigate('/registration/basic-ice', { replace: true });
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Unable to apply club curling experience record.'));
+        if (!canceled) setError(errorMessage(err, 'Unable to apply club curling experience record.'));
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [currentStep, member, registrationId, membershipPayment, experienceChoice, navigate]);
 
@@ -1941,11 +1941,11 @@ export default function RegistrationShellPage() {
     const leagueSteps = ['prior-league-selection', 'league-selection', 'league-requests', 'basic-ice-fallback', 'third-league-interest', 'league-summary', 'review'];
     if (!member || !registrationId || !leagueSteps.includes(currentStep)) return;
     const loadKey = `${registrationId}:${currentStep}`;
-    let cancelled = false;
+    let canceled = false;
     api
       .get(`/registration/drafts/${registrationId}/league-catalog`)
       .then((response) => {
-        if (cancelled) return;
+        if (canceled) return;
         const data = response.data as RegistrationLeagueSelectionPayload;
         setLeaguePayload(data);
         if (leagueCatalogAppliedKeyRef.current !== loadKey) {
@@ -1955,10 +1955,10 @@ export default function RegistrationShellPage() {
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(errorMessage(err, 'Unable to load league choices.'));
+        if (!canceled) setError(errorMessage(err, 'Unable to load league choices.'));
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [registrationId, member?.id, currentStep]);
 
@@ -2039,7 +2039,7 @@ export default function RegistrationShellPage() {
   useEffect(() => {
     const guestPhaseSteps = ['discounts', 'membership', 'experience', 'basic-ice', 'review'];
     if (!isGuestLocal || !windowState || !guestPhaseSteps.includes(currentStep)) return;
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const { data } = await api.post<RegistrationMembershipPaymentPayload>('/registration/guest/preview-membership-payment', {
@@ -2055,13 +2055,13 @@ export default function RegistrationShellPage() {
           experienceType: experienceChoice,
           experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
         });
-        if (!cancelled) setMembershipPayment(data);
+        if (!canceled) setMembershipPayment(data);
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Unable to load membership preview.'));
+        if (!canceled) setError(errorMessage(err, 'Unable to load membership preview.'));
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [
     currentStep,
@@ -2081,7 +2081,7 @@ export default function RegistrationShellPage() {
   useEffect(() => {
     if (currentStep !== 'complete') return;
     if (member && registrationId !== null) {
-      let cancelled = false;
+      let canceled = false;
       (async () => {
         setLoading(true);
         setError('');
@@ -2089,9 +2089,9 @@ export default function RegistrationShellPage() {
           if (payload?.registration.status !== 'shell_complete') {
             await api.post(`/registration/drafts/${registrationId}/complete-shell`);
           }
-          if (!cancelled) navigate('/registration/discounts', { replace: true });
+          if (!canceled) navigate('/registration/discounts', { replace: true });
         } catch (err) {
-          if (!cancelled) {
+          if (!canceled) {
             setError(errorMessage(err, 'Unable to continue registration.'));
             if (payload) {
               const target = nextStepFor(shellResumePayload(payload, registrationId));
@@ -2099,11 +2099,11 @@ export default function RegistrationShellPage() {
             }
           }
         } finally {
-          if (!cancelled) setLoading(false);
+          if (!canceled) setLoading(false);
         }
       })();
       return () => {
-        cancelled = true;
+        canceled = true;
       };
     }
     navigate('/registration/discounts', { replace: true });
@@ -2122,14 +2122,14 @@ export default function RegistrationShellPage() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     let pollTimeoutId: number | null = null;
     let resolveAttempted = false;
     setPaymentStatusPolling(true);
     setShowDetailedPaymentPending(false);
 
     const detailTimerId = window.setTimeout(() => {
-      if (cancelled) return;
+      if (canceled) return;
       setShowDetailedPaymentPending(true);
     }, REGISTRATION_PAYMENT_PROCESSING_GRACE_MS);
 
@@ -2142,7 +2142,7 @@ export default function RegistrationShellPage() {
           `/registration/payment-status/${encodeURIComponent(paymentOrderToken)}/resolve`,
           paymentSessionId ? { sessionId: paymentSessionId } : {},
         );
-        if (cancelled) return false;
+        if (canceled) return false;
         setPaymentStatus(data);
         setError('');
         if (!isRegistrationPaymentPending(data.paymentStatus)) {
@@ -2164,7 +2164,7 @@ export default function RegistrationShellPage() {
         const { data } = await api.get<RegistrationPaymentStatusPayload>(
           `/registration/payment-status/${encodeURIComponent(paymentOrderToken)}`,
         );
-        if (cancelled) return;
+        if (canceled) return;
         setPaymentStatus(data);
         setError('');
 
@@ -2177,7 +2177,7 @@ export default function RegistrationShellPage() {
           void poll();
         }, REGISTRATION_PAYMENT_POLL_INTERVAL_MS);
       } catch (err) {
-        if (cancelled) return;
+        if (canceled) return;
         setPaymentStatusPolling(false);
         setError(errorMessage(err, 'Unable to confirm payment status.'));
       }
@@ -2186,7 +2186,7 @@ export default function RegistrationShellPage() {
     void poll();
 
     return () => {
-      cancelled = true;
+      canceled = true;
       window.clearTimeout(detailTimerId);
       if (pollTimeoutId !== null) {
         window.clearTimeout(pollTimeoutId);
@@ -2200,11 +2200,11 @@ export default function RegistrationShellPage() {
     const id = paymentRegistrationId ?? registrationId;
     if (id === null || payload?.curler?.name) return;
 
-    let cancelled = false;
+    let canceled = false;
     void api
       .get<RegistrationShellPayload>(`/registration/drafts/${id}`)
       .then(({ data }) => {
-        if (cancelled) return;
+        if (canceled) return;
         hydrateFromServerPayload({ id, ...data });
       })
       .catch(() => {
@@ -2212,7 +2212,7 @@ export default function RegistrationShellPage() {
       });
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [
     currentStep,
@@ -5794,7 +5794,7 @@ export default function RegistrationShellPage() {
         : paymentStatus?.paymentStatus === 'payment_unapplied'
           ? 'Payment received'
           : paymentStatus?.paymentStatus === 'cancelled'
-            ? 'Registration cancelled'
+            ? 'Registration canceled'
             : paymentStatus?.paymentStatus === 'failed'
               ? 'Payment was not completed'
               : showPaymentProcessingScreen
@@ -5804,9 +5804,9 @@ export default function RegistrationShellPage() {
       ? paymentStatus?.paymentStatus === 'confirmed'
         ? registrationPaymentConfirmedMessage()
         : paymentStatus?.paymentStatus === 'payment_unapplied'
-          ? 'Your registration was cancelled before checkout finished. Your payment was received but could not be applied to this registration. Please contact treasurer@trianglecurling.com for help with a refund.'
+          ? 'Your registration was canceled before checkout finished. Your payment was received but could not be applied to this registration. Please contact treasurer@trianglecurling.com for help with a refund.'
           : paymentStatus?.paymentStatus === 'cancelled'
-            ? 'This registration was cancelled. No payment was applied.'
+            ? 'This registration was canceled. No payment was applied.'
             : paymentStatus?.paymentStatus === 'failed'
               ? registrationPaymentFailedMessage()
               : showPaymentProcessingScreen

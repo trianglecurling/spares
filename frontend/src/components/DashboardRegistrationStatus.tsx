@@ -38,6 +38,7 @@ function money(minor: number | null) {
 }
 
 function statusLabel(value: string) {
+  if (value === 'cancelled') return 'Canceled';
   const label = value.replace(/_/g, ' ');
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -76,7 +77,7 @@ export default function DashboardRegistrationStatus() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     setError(null);
 
@@ -85,19 +86,19 @@ export default function DashboardRegistrationStatus() {
         const response = await api.get<DashboardRegistrationPayload>(
           '/registration/member/dashboard-status'
         );
-        if (!cancelled) setData(response.data);
+        if (!canceled) setData(response.data);
       } catch (err) {
-        if (!cancelled) {
+        if (!canceled) {
           setData(null);
           setError(getApiErrorMessage(err, 'Unable to load registration status.'));
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       }
     }
     void load();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [member?.id]);
 

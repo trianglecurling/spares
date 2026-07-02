@@ -121,20 +121,20 @@ export default function RegistrationByotWaitlistFields({
 
   useEffect(() => {
     if (!rosterExpanded || teammateMemberIds.length === 0 || selection.leagueId == null) return;
-    let cancelled = false;
+    let canceled = false;
     void api
       .get<Record<number, WaitlistTeamMemberPlacementOptions>>(
         `/registration/leagues/${selection.leagueId}/team-member-placement-options`,
         { params: { memberIds: teammateMemberIdsKey } },
       )
       .then((response) => {
-        if (!cancelled) onPlacementOptionsLoadedRef.current(response.data);
+        if (!canceled) onPlacementOptionsLoadedRef.current(response.data);
       })
       .catch(() => {
-        if (!cancelled) onPlacementOptionsLoadedRef.current({});
+        if (!canceled) onPlacementOptionsLoadedRef.current({});
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [rosterExpanded, teammateMemberIds.length, teammateMemberIdsKey, selection.leagueId]);
 

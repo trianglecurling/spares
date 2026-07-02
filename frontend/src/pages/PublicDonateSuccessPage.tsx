@@ -65,11 +65,11 @@ export default function PublicDonateSuccessPage() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     let pollTimeoutId: number | null = null;
     let resolveAttempted = false;
     const detailTimerId = window.setTimeout(() => {
-      if (cancelled) return;
+      if (canceled) return;
       setShowDetailedPending(true);
     }, PROCESSING_GRACE_MS);
 
@@ -81,7 +81,7 @@ export default function PublicDonateSuccessPage() {
         const response = await api.post(`/public/donations/orders/${encodeURIComponent(orderToken)}/resolve`, {
           ...(sessionId ? { sessionId } : {}),
         });
-        if (cancelled) return false;
+        if (canceled) return false;
         const resolvedOrder: DonationOrder | null = response.data?.order ?? null;
         if (!resolvedOrder) return false;
         setOrder(resolvedOrder);
@@ -103,7 +103,7 @@ export default function PublicDonateSuccessPage() {
         if (resolved) return;
 
         const response = await api.get(`/public/donations/orders/${encodeURIComponent(orderToken)}`);
-        if (cancelled) return;
+        if (canceled) return;
         const nextOrder: DonationOrder | null = response.data?.order ?? null;
         if (!nextOrder) {
           setError('Donation not found.');
@@ -122,7 +122,7 @@ export default function PublicDonateSuccessPage() {
           void poll();
         }, POLL_INTERVAL_MS);
       } catch (requestError: unknown) {
-        if (cancelled) return;
+        if (canceled) return;
         setError(formatApiError(requestError, 'Unable to load donation status'));
         setIsPolling(false);
       }
@@ -130,7 +130,7 @@ export default function PublicDonateSuccessPage() {
     void poll();
 
     return () => {
-      cancelled = true;
+      canceled = true;
       window.clearTimeout(detailTimerId);
       if (pollTimeoutId !== null) {
         window.clearTimeout(pollTimeoutId);

@@ -131,15 +131,15 @@ export default function Profile() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     const seq = ++profileLoadSeqRef.current;
     const loadProfile = async () => {
       try {
         const profile = await get('/members/me');
-        if (cancelled || seq !== profileLoadSeqRef.current) return;
+        if (canceled || seq !== profileLoadSeqRef.current) return;
         applyProfileToForm(profile);
       } catch {
-        if (cancelled || seq !== profileLoadSeqRef.current) return;
+        if (canceled || seq !== profileLoadSeqRef.current) return;
         if (member) {
           setDemographics(
             memberDemographicsFormFromProfile({
@@ -170,39 +170,39 @@ export default function Profile() {
         }
         setMessage({ type: 'error', text: 'Could not load your full profile. Showing saved session data.' });
       } finally {
-        if (!cancelled && seq === profileLoadSeqRef.current) {
+        if (!canceled && seq === profileLoadSeqRef.current) {
           setProfileLoading(false);
         }
       }
     };
     void loadProfile();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [member?.id]);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     const loadAccess = async () => {
       try {
         const res = await get('/members/me/account-access-delegates');
-        if (!cancelled) {
+        if (!canceled) {
           setDelegateIds(res.delegatedToMemberIds);
           setImplicitAccessIds(res.implicitAccessMemberIds);
         }
       } catch {
-        if (!cancelled) {
+        if (!canceled) {
           setAccessMessage({ type: 'error', text: 'Could not load account access settings.' });
         }
       } finally {
-        if (!cancelled) {
+        if (!canceled) {
           setAccessLoading(false);
         }
       }
     };
     loadAccess();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, []);
 

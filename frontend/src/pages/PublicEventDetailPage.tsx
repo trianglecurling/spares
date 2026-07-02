@@ -5,6 +5,7 @@ import {
   HiCalendarDays,
   HiCurrencyDollar,
   HiMapPin,
+  HiOutlineEnvelope,
   HiUserGroup,
 } from 'react-icons/hi2';
 import PublicLayout from '../components/PublicLayout';
@@ -47,6 +48,7 @@ interface EventDetail {
   allowGroupRegistration: number;
   maxGroupSize: number | null;
   enableWaitlist: number;
+  pointOfContact: string;
   termsArticleId: number | null;
   timespans: Array<{ id: number; start_dt: string; end_dt: string; sort_order: number }>;
   locations: Array<{ location_type: string; sheet_id?: number }>;
@@ -792,6 +794,17 @@ export default function PublicEventDetailPage() {
                     )}
                   </div>
                 </DetailRow>
+
+                {event.pointOfContact.trim() !== '' && (
+                  <DetailRow icon={HiOutlineEnvelope}>
+                    <a
+                      href={`mailto:${event.pointOfContact}`}
+                      className="text-primary-teal-link hover:underline break-all"
+                    >
+                      {event.pointOfContact}
+                    </a>
+                  </DetailRow>
+                )}
 
                 {event.capacity !== null && (
                   <DetailRow icon={HiUserGroup}>

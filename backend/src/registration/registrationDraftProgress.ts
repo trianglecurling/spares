@@ -27,7 +27,7 @@ export function isSubmittedCurlerRegistrationStatus(status: string): status is S
   return (SUBMITTED_CURLER_REGISTRATION_STATUSES as readonly string[]).includes(status);
 }
 
-/** Picks the most recently touched in-progress draft; ignores submitted or cancelled rows. */
+/** Picks the most recently touched in-progress draft; ignores submitted or canceled rows. */
 export function pickMostRecentInProgressDraft<T extends { status: string; updated_at: string }>(
   registrations: readonly T[],
 ): T | null {

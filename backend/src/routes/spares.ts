@@ -1726,7 +1726,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     if (spareRequest.status !== 'open') {
-      return reply.code(400).send({ error: 'Only open spare requests can be cancelled' });
+      return reply.code(400).send({ error: 'Only open spare requests can be canceled' });
     }
 
     await db
@@ -1799,7 +1799,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
           member.name,
           requestDetails
         ).catch((error) => {
-          console.error('Error sending spare request cancelled email:', error);
+          console.error('Error sending spare request canceled email:', error);
         });
       }
     } catch (error) {
@@ -1911,7 +1911,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Confirmation email to the responder (the member who cancelled sparing)
+    // Confirmation email to the responder (the member who canceled sparing)
     if (member.email && member.email_subscribed === 1) {
       sendSpareOfferCancellationConfirmationEmail(
         member.email,

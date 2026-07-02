@@ -197,7 +197,7 @@ The phases below are designed so each can be manually validated before moving on
 - Are ties allowed, and if so, how should they be represented given the "non-negative integers" constraint? League managers can decide this. A zero is a non-negative integer, and would typically be used for a loss. A tie might be a 1 for each team, and a win might be 2.
 - Should the scheduler hard-block conflicts (same sheet/time or same team/time), or allow manual override? Hard block, and sheet conflicts are global across all leagues.
 - For draw overrides, is it acceptable to store one-off draws and sheet availability keyed by date/time even if draws are not first-class entities? There may be one-off games that are scheduled outside of the defined draw times of the league. The system should track sheet availability globally - across all games for all leagues - using a real calendar. Otherwise, I don't really understand this question.
-- Should the kiosk endpoint be public or authenticated? Should it include league name and game status (scheduled/cancelled)? Public is fine. Including league name and game status is fine.
+- Should the kiosk endpoint be public or authenticated? Should it include league name and game status (scheduled/canceled)? Public is fine. Including league name and game status is fine.
 - For league visibility to non-members, should rosters hide contact info using existing email/phone visibility flags? We will always respect the contact visibility preferences of each member.
 - Who receives league reminder emails: all rostered players, only skips? All rostered players should receive reminder emails.
 - Should spare requests for league games link directly to a game (game_id) and appear in the league schedule view? Yes.

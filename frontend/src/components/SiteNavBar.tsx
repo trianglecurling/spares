@@ -14,6 +14,8 @@ export interface SiteNavBarProps {
   showPublicHomeLink?: boolean;
   /** Replace logo + club name with a back link. */
   backToHome?: boolean;
+  /** When true, club name is shown in red to indicate a preview database connection. */
+  isPreviewDatabase?: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
   mobileMenuId: string;
@@ -32,6 +34,7 @@ export default function SiteNavBar({
   brandTo = '/',
   showPublicHomeLink = false,
   backToHome = false,
+  isPreviewDatabase = false,
   mobileOpen,
   onMobileOpenChange,
   mobileMenuId,
@@ -45,7 +48,14 @@ export default function SiteNavBar({
       {brandingLoading && !clubName ? (
         <span className="h-5 w-40 rounded bg-gray-100 dark:bg-gray-700" aria-hidden />
       ) : (
-        <span className="truncate text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100 sm:text-xl">
+        <span
+          className={`truncate text-lg font-semibold tracking-tight sm:text-xl ${
+            isPreviewDatabase
+              ? 'text-red-600 dark:text-red-400'
+              : 'text-gray-900 dark:text-gray-100'
+          }`}
+          title={isPreviewDatabase ? 'Preview database' : undefined}
+        >
           {clubName}
         </span>
       )}

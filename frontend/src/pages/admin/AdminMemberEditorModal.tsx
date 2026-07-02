@@ -135,7 +135,7 @@ function membershipStatusLabel(status: MemberSeasonMembershipResponse['status'])
     case 'active':
       return 'Active';
     case 'cancelled':
-      return 'Cancelled';
+      return 'Canceled';
     case 'refunded':
       return 'Refunded';
     case 'expired':
@@ -307,26 +307,26 @@ export default function AdminMemberEditorModal({
   useEffect(() => {
     const memberId = editingMember?.id;
     if (!isOpen || memberId === undefined) return;
-    let cancelled = false;
+    let canceled = false;
     async function fetchProfile() {
       setProfileLoading(true);
       try {
         const profile = await api.get<MemberProfileResponse>(`/members/${memberId}/profile`);
-        if (cancelled) return;
+        if (canceled) return;
         setDemographics(memberDemographicsFormFromProfile(profile.data));
         setGuardian(memberGuardianFormFromProfile(profile.data));
       } catch {
-        if (!cancelled) {
+        if (!canceled) {
           setDemographics(emptyMemberDemographicsForm());
           setGuardian(emptyMemberGuardianForm());
         }
       } finally {
-        if (!cancelled) setProfileLoading(false);
+        if (!canceled) setProfileLoading(false);
       }
     }
     void fetchProfile();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [isOpen, editingMember?.id]);
 
@@ -334,7 +334,7 @@ export default function AdminMemberEditorModal({
     const memberId = editingMember?.id;
     if (!isOpen || memberId === undefined || !currentMember?.isServerAdmin) return;
 
-    let cancelled = false;
+    let canceled = false;
     async function fetchAssignments() {
       setAssignmentsLoading(true);
       setAssignmentsError(null);
@@ -343,7 +343,7 @@ export default function AdminMemberEditorModal({
           api.get<RbacRole[]>('/rbac/roles'),
           api.get<MemberAssignmentApi[]>(`/rbac/members/${memberId}/assignments`),
         ]);
-        if (cancelled) return;
+        if (canceled) return;
         const roles = rolesResponse.data.filter((role) => role.isAssignable);
         const firstRoleId = roles[0]?.id ?? 0;
         setAssignableRoles(roles);
@@ -359,18 +359,18 @@ export default function AdminMemberEditorModal({
           }))
         );
       } catch (error: unknown) {
-        if (!cancelled) {
+        if (!canceled) {
           setAssignableRoles([]);
           setMemberAssignments([]);
           setAssignmentsError(formatApiError(error, 'Failed to load roles and assignments'));
         }
       } finally {
-        if (!cancelled) setAssignmentsLoading(false);
+        if (!canceled) setAssignmentsLoading(false);
       }
     }
     void fetchAssignments();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [isOpen, editingMember?.id, currentMember?.isServerAdmin]);
 
@@ -384,38 +384,38 @@ export default function AdminMemberEditorModal({
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     async function fetchSeasonMemberships() {
       setSeasonMembershipsLoading(true);
       setSeasonMembershipsError(null);
       try {
         const memberships = await get('/members/{id}/season-memberships', undefined, { id: String(memberId) });
-        if (!cancelled) setSeasonMemberships(memberships);
+        if (!canceled) setSeasonMemberships(memberships);
       } catch (error: unknown) {
-        if (!cancelled) {
+        if (!canceled) {
           setSeasonMemberships([]);
           setSeasonMembershipsError(formatApiError(error, 'Failed to load memberships'));
         }
       } finally {
-        if (!cancelled) setSeasonMembershipsLoading(false);
+        if (!canceled) setSeasonMembershipsLoading(false);
       }
     }
 
     void fetchSeasonMemberships();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [isOpen, editingMember?.id, activeMemberModalTab, formData.lifetimeMember]);
 
   useEffect(() => {
     if (!isOpen || activeMemberModalTab !== 'memberships') return;
 
-    let cancelled = false;
+    let canceled = false;
     async function fetchSeasonOptions() {
       setSeasonOptionsLoading(true);
       try {
         const seasons = await get('/registration-config/seasons');
-        if (!cancelled) {
+        if (!canceled) {
           setSeasonOptions(
             seasons.map((season) => ({
               id: season.id,
@@ -426,15 +426,15 @@ export default function AdminMemberEditorModal({
           );
         }
       } catch {
-        if (!cancelled) setSeasonOptions([]);
+        if (!canceled) setSeasonOptions([]);
       } finally {
-        if (!cancelled) setSeasonOptionsLoading(false);
+        if (!canceled) setSeasonOptionsLoading(false);
       }
     }
 
     void fetchSeasonOptions();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [isOpen, activeMemberModalTab]);
 

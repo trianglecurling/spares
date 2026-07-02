@@ -460,7 +460,7 @@ Then only discount-eligible items are discounted
 | User starts registration | Draft registration is created |
 | User abandons registration and returns | Existing draft can be resumed |
 | User has existing draft for same curler/session | App resumes or reuses existing draft instead of creating duplicate active draft |
-| User cancels draft | Draft is marked cancelled and is not resumed by default |
+| User cancels draft | Draft is marked canceled and is not resumed by default |
 
 ### Returning curler identity
 
@@ -714,7 +714,7 @@ creation/update phases.
 | `checkout.session.completed` received | Invoice/payment marked paid |
 | `checkout.session.completed` received | Registration marked paid/confirmed |
 | Duplicate webhook received | No duplicate side effects |
-| Checkout cancelled | Registration remains unpaid/unconfirmed |
+| Checkout canceled | Registration remains unpaid/unconfirmed |
 | Checkout fails or expires | Registration remains unpaid/unconfirmed |
 
 ### Idempotency tests
@@ -956,7 +956,7 @@ And the change is audited.
 Given staff cancels a pending offer  
 When they submit the cancellation  
 Then a reason is required  
-And the offer is marked cancelled  
+And the offer is marked canceled  
 And the cancellation is audited.
 
 ---
@@ -1661,7 +1661,7 @@ These tests supplement the existing registration test matrix.
 | P10-PAY-007 | Deferred payment succeeds | Registration/payment status updates correctly | Blocker |
 | P10-PAY-008 | Deferred payment fails | Registration remains unpaid and staff can see failure/pending status | High |
 | P10-PAY-009 | Staff resends payment link | Existing registration remains consistent; duplicate invoice/payment records are not incorrectly created | High |
-| P10-PAY-010 | Registration is cancelled before deferred payment | Old payment link cannot incorrectly confirm cancelled registration | Blocker |
+| P10-PAY-010 | Registration is canceled before deferred payment | Old payment link cannot incorrectly confirm canceled registration | Blocker |
 | P10-PAY-011 | Stripe amount differs from internal calculation due to tampering attempt | Payment creation uses server-calculated amount only | Blocker |
 | P10-PAY-012 | Social membership registration with attempted discount | Stripe amount excludes discount | Blocker |
 | P10-PAY-013 | Sabbatical fee with attempted percentage discount | Stripe amount does not discount sabbatical fee | Blocker |
@@ -1678,7 +1678,7 @@ These tests supplement the existing registration test matrix.
 | P10-STATUS-003 | Submitted registration requires deferred payment | Registration enters awaiting-placement/review/payment state with clear reason | Blocker |
 | P10-STATUS-004 | Payment succeeds | Registration enters paid/confirmed state | Blocker |
 | P10-STATUS-005 | Payment fails | Registration does not enter confirmed state | Blocker |
-| P10-STATUS-006 | Staff cancels registration | Registration enters cancelled state and is not payable unless restored | High |
+| P10-STATUS-006 | Staff cancels registration | Registration enters canceled state and is not payable unless restored | High |
 | P10-STATUS-007 | Deferred registration receives placement decision | Registration can generate correct payment amount | High |
 | P10-STATUS-008 | Junior Recreational assistance request submitted | Registration enters assistance-review state and payment is deferred | High |
 | P10-STATUS-009 | Junior Recreational assistance decision made | Registration can be invoiced for approved amount | High |

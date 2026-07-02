@@ -130,7 +130,7 @@ export class RegistrationShellValidationError extends Error {
   }
 }
 
-/** Thrown when a signed-in member already has a registration that is not finished or cancelled. */
+/** Thrown when a signed-in member already has a registration that is not finished or canceled. */
 export class RegistrationInProgressError extends Error {
   constructor() {
     super('Registration already in progress');

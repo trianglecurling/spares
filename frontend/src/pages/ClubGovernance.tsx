@@ -40,19 +40,19 @@ export default function ClubGovernance() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     setError(null);
     api
       .get<GovernanceSummaryResponse>('/governance')
       .then((response) => {
-        if (!cancelled) {
+        if (!canceled) {
           setData(response.data);
           setLoading(false);
         }
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
+        if (canceled) return;
         const message =
           typeof err === 'object' && err !== null && 'response' in err
             ? String((err as { response?: { data?: { error?: string } } }).response?.data?.error ?? 'Unable to load club governance.')
@@ -61,7 +61,7 @@ export default function ClubGovernance() {
         setLoading(false);
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, []);
 

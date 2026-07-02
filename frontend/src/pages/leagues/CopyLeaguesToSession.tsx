@@ -99,7 +99,7 @@ export default function CopyLeaguesToSession() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
 
     async function load() {
       setLoadingMeta(true);
@@ -109,7 +109,7 @@ export default function CopyLeaguesToSession() {
           get('/registration-config/seasons'),
           get('/registration-config/sessions'),
         ]);
-        if (cancelled) return;
+        if (canceled) return;
         const leagueList = leagueRes as Array<{
           id: number;
           name: string;
@@ -127,17 +127,17 @@ export default function CopyLeaguesToSession() {
         setSeasons(seasonRes as RegistrationSeason[]);
         setSessions(sessionRes as RegistrationSession[]);
       } catch (error: unknown) {
-        if (!cancelled) {
+        if (!canceled) {
           showAlert(formatApiError(error, 'Failed to load seasons and leagues'), 'error');
         }
       } finally {
-        if (!cancelled) setLoadingMeta(false);
+        if (!canceled) setLoadingMeta(false);
       }
     }
 
     void load();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [canManage, showAlert]);
 

@@ -30,26 +30,26 @@ export default function PublicPermalinkInfo() {
       setNotFound(true);
       return;
     }
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       setLoading(true);
       setError(null);
       setNotFound(false);
       try {
         const res = await api.get<PublicPermalinkMeta>(`/public/permalinks/${encodeURIComponent(slug)}`);
-        if (!cancelled) setData(res.data);
+        if (!canceled) setData(res.data);
       } catch (err: unknown) {
         const status = (err as { response?: { status?: number } })?.response?.status;
-        if (!cancelled) {
+        if (!canceled) {
           if (status === 404) setNotFound(true);
           else setError('Could not load link information.');
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [slug]);
 

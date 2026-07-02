@@ -17,7 +17,7 @@ export function useMemberNavigation() {
   const [myRosterLeagueIds, setMyRosterLeagueIds] = useState<number[]>([]);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     const memberId = member?.id ?? null;
     if (memberId == null) {
       setMyRosterLeagueIds([]);
@@ -26,18 +26,18 @@ export function useMemberNavigation() {
 
     get('/members/{memberId}/leagues', { relevantSession: 'true' }, { memberId: String(memberId) })
       .then((myLeaguesRows) => {
-        if (cancelled) return;
+        if (canceled) return;
         const rows = Array.isArray(myLeaguesRows) ? myLeaguesRows : [];
         setMyRosterLeagueIds([...new Set(rows.map((r) => r.leagueId))]);
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!canceled) {
           setMyRosterLeagueIds([]);
         }
       });
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [member?.id]);
 

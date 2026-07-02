@@ -64,7 +64,7 @@ export default function ProfilePaymentHistoryTab({ memberId }: ProfilePaymentHis
   );
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
 
     const loadHistory = async () => {
       setLoading(true);
@@ -78,11 +78,11 @@ export default function ProfilePaymentHistoryTab({ memberId }: ProfilePaymentHis
                 { id: String(memberId) },
               )
             : await get('/members/me/payment-history', { limit: 50, offset: 0 });
-        if (!cancelled) {
+        if (!canceled) {
           setHistory(response);
         }
       } catch (loadError) {
-        if (!cancelled) {
+        if (!canceled) {
           setHistory(null);
           setError(
             getApiErrorMessage(
@@ -94,7 +94,7 @@ export default function ProfilePaymentHistoryTab({ memberId }: ProfilePaymentHis
           );
         }
       } finally {
-        if (!cancelled) {
+        if (!canceled) {
           setLoading(false);
         }
       }
@@ -102,7 +102,7 @@ export default function ProfilePaymentHistoryTab({ memberId }: ProfilePaymentHis
 
     void loadHistory();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [memberId]);
 

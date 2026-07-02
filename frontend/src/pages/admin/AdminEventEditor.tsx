@@ -843,7 +843,7 @@ export default function AdminEventEditor() {
         align: 'center',
         renderCell: (registration) => (
           <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(registration.status)}`}>
-            {registration.status.replace('_', ' ')}
+            {registration.status === 'cancelled' ? 'Canceled' : registration.status.replace(/_/g, ' ')}
           </span>
         ),
       },
@@ -1071,11 +1071,11 @@ export default function AdminEventEditor() {
         ),
       );
       if (res.data?.refundError) {
-        showAlert(`Registration cancelled. Refund failed: ${res.data.refundError}`, 'warning');
+        showAlert(`Registration canceled. Refund failed: ${res.data.refundError}`, 'warning');
       } else if (withRefund && res.data?.refundIssued) {
-        showAlert('Registration cancelled and refund initiated', 'success');
+        showAlert('Registration canceled and refund initiated', 'success');
       } else {
-        showAlert('Registration cancelled', 'success');
+        showAlert('Registration canceled', 'success');
       }
     } catch (error) {
       showAlert(formatApiError(error, 'Failed to cancel registration'), 'error');
@@ -2220,7 +2220,7 @@ export default function AdminEventEditor() {
               </p>
               {toMinor(feeDollars) > 0 && (
                 <p className="text-sm text-gray-700 dark:text-gray-300">
-                  Cancelling this registration will automatically refund the customer.
+                  Canceling this registration will automatically refund the customer.
                 </p>
               )}
               <div className="flex flex-wrap justify-end gap-2 pt-2">
@@ -2248,7 +2248,7 @@ export default function AdminEventEditor() {
                   onClick={() => handleCancelRegistration(toMinor(feeDollars) > 0)}
                   disabled={cancelBusy}
                 >
-                  {cancelBusy ? 'Cancelling...' : toMinor(feeDollars) > 0 ? 'Cancel and refund' : 'Cancel registration'}
+                  {cancelBusy ? 'Canceling...' : toMinor(feeDollars) > 0 ? 'Cancel and refund' : 'Cancel registration'}
                 </Button>
               </div>
             </div>

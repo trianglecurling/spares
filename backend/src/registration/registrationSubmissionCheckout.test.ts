@@ -187,7 +187,7 @@ describe('Phase 7 submission and checkout decisions', () => {
     ).toBe('confirmed');
   });
 
-  test('cancelled registration stops confirming once payment succeeds without confirmation', () => {
+  test('canceled registration stops confirming once payment succeeds without confirmation', () => {
     expect(
       resolveRegistrationPaymentStatus({
         invoiceStatus: 'cancelled',

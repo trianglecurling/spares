@@ -49,8 +49,8 @@ export default function PublicDonateCancelPage() {
   return (
     <PublicLayout>
       <SeoMeta
-        title="Donation Cancelled | Triangle Curling Club"
-        description="Donation checkout was cancelled."
+        title="Donation Canceled | Triangle Curling Club"
+        description="Donation checkout was canceled."
         canonicalPath="/donate/cancel"
       />
 
@@ -58,7 +58,7 @@ export default function PublicDonateCancelPage() {
         <div className="mx-auto max-w-2xl">
           <section className="public-card p-7 sm:p-9">
             <div className="public-page-title-rule">
-              <h1 className="public-heading">Donation checkout cancelled</h1>
+              <h1 className="public-heading">Donation checkout canceled</h1>
             </div>
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               No worries - your payment was not completed.

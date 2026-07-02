@@ -156,7 +156,7 @@ export default function AdminEventTournamentPanel({
   // Depends on eventId only so tab clicks (hash change, same event) do not re-scroll.
   useLayoutEffect(() => {
     if (!isDrawWorkspaceHash(location.hash)) return;
-    let cancelled = false;
+    let canceled = false;
     let frames = 0;
     const maxFrames = 40;
 
@@ -168,7 +168,7 @@ export default function AdminEventTournamentPanel({
     };
 
     const step = () => {
-      if (cancelled) return;
+      if (canceled) return;
       if (tryScroll()) return;
       frames += 1;
       if (frames < maxFrames) {
@@ -178,7 +178,7 @@ export default function AdminEventTournamentPanel({
 
     step();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [eventId]);
 

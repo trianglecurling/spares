@@ -15,7 +15,7 @@ Here are some key details about Events:
 - Events will optionally support a waitlist for when the event is full
 - We will have an events manager role that will be able to create, edit, and delete events.
 - Each event will have one or more owners, who will have permissions to manage that particular event.
-- The events system will support many kinds email notifications: registration confirmation, registration reminder, event reminder, event cancelled, registration cancel confirmation, notification to the owner when there is a new registration, promoted from waitlist to registered, etc.
+- The events system will support many kinds email notifications: registration confirmation, registration reminder, event reminder, event canceled, registration cancel confirmation, notification to the owner when there is a new registration, promoted from waitlist to registered, etc.
 
 Detailed list of features:
 - Article associated with event will share the event's title

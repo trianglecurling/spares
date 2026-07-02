@@ -134,7 +134,7 @@ export async function assertStaffEditableRegistration(
   }
   if (registration.status === 'cancelled') {
     throw new RegistrationPriorityEditValidationError({
-      registration: 'Cancelled registrations cannot be edited.',
+      registration: 'Canceled registrations cannot be edited.',
     });
   }
   if (STAFF_NON_EDITABLE_DRAFT_STATUSES.has(registration.status)) {
@@ -182,10 +182,10 @@ export async function cancelStaffRegistration(input: {
     throw new RegistrationPriorityEditValidationError({ registration: 'Registration was not found.' });
   }
   if (registration.status === 'cancelled') {
-    throw new RegistrationPriorityEditValidationError({ registration: 'Registration is already cancelled.' });
+    throw new RegistrationPriorityEditValidationError({ registration: 'Registration is already canceled.' });
   }
   if (STAFF_NON_EDITABLE_DRAFT_STATUSES.has(registration.status)) {
-    throw new RegistrationPriorityEditValidationError({ registration: 'Only submitted registrations can be cancelled.' });
+    throw new RegistrationPriorityEditValidationError({ registration: 'Only submitted registrations can be canceled.' });
   }
   return cancelMemberRegistrationCore(input);
 }
@@ -235,7 +235,7 @@ async function cancelMemberRegistrationCore(input: {
         await createPaymentService().createRefundForOrder({
           orderId: order.id,
           amountMinor: order.amount_minor,
-          reason: 'Registration cancelled during priority registration',
+          reason: 'Registration canceled during priority registration',
           requestedByMemberId: input.actor.id,
         });
         refundIssued = true;
@@ -245,7 +245,7 @@ async function cancelMemberRegistrationCore(input: {
           provider: order.provider,
           amount_minor: order.amount_minor,
           currency: order.currency,
-          reason: 'Registration cancelled during priority registration',
+          reason: 'Registration canceled during priority registration',
           status: 'requested',
           requested_by_member_id: input.actor.id,
         });

@@ -58,7 +58,7 @@ function formatStatusLabel(status: string): string {
     case 'pending_payment':
       return 'Pending payment';
     case 'cancelled':
-      return 'Cancelled';
+      return 'Canceled';
     default:
       return status.replace(/_/g, ' ');
   }
@@ -94,9 +94,9 @@ export default function PublicEventManageRegistrationPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [cancelled, setCancelled] = useState(false);
+  const [canceled, setCanceled] = useState(false);
 
   const [contactFirstName, setContactFirstName] = useState('');
   const [contactLastName, setContactLastName] = useState('');
@@ -122,7 +122,7 @@ export default function PublicEventManageRegistrationPage() {
         setContactEmail(formState.contactEmail);
         setGroupMembers(formState.groupMembers);
         setFieldValues(formState.fieldValues);
-        setCancelled(res.data.registration.status === 'cancelled');
+        setCanceled(res.data.registration.status === 'cancelled');
       })
       .catch(() => setLoadError('Registration not found'))
       .finally(() => setLoading(false));
@@ -135,7 +135,8 @@ export default function PublicEventManageRegistrationPage() {
 
   const groupSize = groupMembers.length + 1;
   const totalPeople = groupSize;
-  const isEditable = payload?.registration.status !== 'cancelled' && !cancelled;
+  const isCanceled = payload?.registration.status === 'cancelled' || canceled;
+  const isEditable = !isCanceled;
 
   const addGroupMember = () => {
     setGroupMembers((prev) => [...prev, { name: '', email: '' }]);
@@ -230,7 +231,7 @@ export default function PublicEventManageRegistrationPage() {
   };
 
   const handleCancelRegistration = async () => {
-    if (!accessToken || !payload || cancelling || !payload.canCancel) return;
+    if (!accessToken || !payload || canceling || !payload.canCancel) return;
 
     const confirmed = await confirm({
       title: 'Cancel registration?',
@@ -242,25 +243,20 @@ export default function PublicEventManageRegistrationPage() {
     });
     if (!confirmed) return;
 
-    setCancelling(true);
+    setCanceling(true);
     setSubmitError(null);
     try {
       await api.post(`/public/events/registrations/manage/${encodeURIComponent(accessToken)}/cancel`);
-      setCancelled(true);
-      setPayload((prev) =>
-        prev
-          ? {
-              ...prev,
-              canCancel: false,
-              registration: { ...prev.registration, status: 'cancelled' },
-            }
-          : prev,
+      const { data } = await api.get<ManageRegistrationPayload>(
+        `/public/events/registrations/manage/${encodeURIComponent(accessToken)}`,
       );
-      showAlert('Registration cancelled', 'success');
+      setPayload(data);
+      setCanceled(true);
+      showAlert('Registration canceled', 'success');
     } catch (err: unknown) {
       setSubmitError(formatApiError(err, 'Unable to cancel registration'));
     } finally {
-      setCancelling(false);
+      setCanceling(false);
     }
   };
 
@@ -289,6 +285,7 @@ export default function PublicEventManageRegistrationPage() {
   }
 
   const { event, registration } = payload;
+  const isCanceledView = registration.status === 'cancelled' || canceled;
 
   return (
     <PublicLayout>
@@ -299,6 +296,23 @@ export default function PublicEventManageRegistrationPage() {
         </Link>
 
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Manage registration</h1>
+
+        {isCanceledView ? (
+          <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 text-gray-700">
+            <p className="font-medium text-gray-900">This registration has been canceled.</p>
+            {payload.receiptUrl ? (
+              <p className="mt-2 text-sm">
+                If you paid a registration fee, your refund should appear within a few business days. You can review
+                refund details on your{' '}
+                <a href={payload.receiptUrl} className="text-primary-teal-link hover:underline">
+                  refund receipt
+                </a>
+                .
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <p className="text-gray-600 mb-2">{event.title}</p>
         <p className="text-sm text-gray-600 mb-6">
           Status: <span className="font-medium text-gray-800">{formatStatusLabel(registration.status)}</span>
@@ -307,23 +321,21 @@ export default function PublicEventManageRegistrationPage() {
             : null}
         </p>
 
-        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          Keep this page private. Anyone with this link can view or change your registration.
-        </div>
+        {!isCanceledView ? (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            Keep this page private. Anyone with this link can view or change your registration.
+          </div>
+        ) : null}
 
-        {payload.receiptUrl && (
+        {!isCanceledView && payload.receiptUrl ? (
           <p className="mb-6 text-sm text-gray-700">
             <a href={payload.receiptUrl} className="text-primary-teal-link hover:underline">
               View payment receipt
             </a>
           </p>
-        )}
+        ) : null}
 
-        {cancelled || registration.status === 'cancelled' ? (
-          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-gray-700">
-            This registration has been cancelled.
-          </div>
-        ) : (
+        {isCanceledView ? null : (
           <>
             {submitError && (
               <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6">{submitError}</div>
@@ -474,10 +486,10 @@ export default function PublicEventManageRegistrationPage() {
                   <button
                     type="button"
                     onClick={() => void handleCancelRegistration()}
-                    disabled={cancelling}
+                    disabled={canceling}
                     className="px-4 py-2 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
                   >
-                    {cancelling ? 'Cancelling...' : 'Cancel registration'}
+                    {canceling ? 'Canceling...' : 'Cancel registration'}
                   </button>
                 </>
               ) : payload.cancellationCutoffPassed ? (

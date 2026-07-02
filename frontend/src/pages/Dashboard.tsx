@@ -293,7 +293,7 @@ export default function Dashboard() {
         searchParams.delete('requestId');
         setSearchParams(searchParams, { replace: true });
       } else {
-        // If the request isn't in the open list, it was likely filled/cancelled/deleted already.
+        // If the request isn't in the open list, it was likely filled/canceled/deleted already.
         // Ask the backend for the status so we can show a specific message.
         (async () => {
           try {
@@ -370,7 +370,7 @@ export default function Dashboard() {
       setMySparing(mySparingRes);
       setFilledRequests(filledRes);
       setCcRequests(ccRes || []);
-      // Filter out cancelled requests - only show open and filled
+      // Filter out canceled requests - only show open and filled
       setMyRequests(myRequestsRes.filter((r: MySpareRequest) => r.status !== 'cancelled'));
       setUpcomingGames(upcomingGamesRes || []);
       setIceBookings(iceRes);
@@ -392,7 +392,7 @@ export default function Dashboard() {
     if (!go) return;
     try {
       await api.delete(`/ice-bookings/${id}`);
-      showAlert('Your ice booking was cancelled.', 'success');
+      showAlert('Your ice booking was canceled.', 'success');
       await loadAllData();
     } catch (error: unknown) {
       showAlert(formatApiError(error, 'Could not cancel booking'), 'error');
@@ -513,7 +513,7 @@ export default function Dashboard() {
     }
   };
 
-  // Note: cancelling / managing spare requests is handled on the My Requests page (/my-requests).
+  // Note: canceling / managing spare requests is handled on the My Requests page (/my-requests).
 
   const formatDate = (dateStr: string) => {
     // Parse date string as local date to avoid timezone issues
@@ -557,7 +557,7 @@ export default function Dashboard() {
     if (status === 'cancelled') {
       return (
         <span className="px-2 py-1 rounded text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
-          Cancelled
+          Canceled
         </span>
       );
     }

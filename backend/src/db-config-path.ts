@@ -5,7 +5,7 @@ dotenv.config();
 
 const DEFAULT_CONFIG_FILE_NAME = 'db-config.json';
 
-function getDatabaseConfigProfile(): string | undefined {
+export function getDatabaseConfigProfile(): string | undefined {
   const profile = process.env.DB_CONFIG_PROFILE?.trim();
   if (!profile) {
     return undefined;

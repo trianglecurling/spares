@@ -224,10 +224,10 @@ export default function AdminMembers() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
 
     const updatePosition = () => {
-      if (cancelled) return;
+      if (canceled) return;
       const anchor = menuRefs.current[openMenuId];
       const trigger = anchor?.querySelector('button');
       if (!(trigger instanceof HTMLButtonElement)) {
@@ -264,7 +264,7 @@ export default function AdminMembers() {
     window.addEventListener('resize', updatePosition);
 
     return () => {
-      cancelled = true;
+      canceled = true;
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', updatePosition);
     };

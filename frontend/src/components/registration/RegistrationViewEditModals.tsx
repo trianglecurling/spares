@@ -128,12 +128,12 @@ function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdi
 
   useEffect(() => {
     if (!isOpen) return;
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     setError(null);
     void loadRegistrationEditContext(registrationId)
       .then((context) => {
-        if (cancelled) return;
+        if (canceled) return;
         setLeaguePayload(context.league);
         setSelections(context.league.selections);
         setAddWaitlistPriority(addWaitlistPriorityFromSelections(context.league.selections));
@@ -148,13 +148,13 @@ function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdi
         setMembership(context.membership);
       })
       .catch((err) => {
-        if (!cancelled) setError(editValidationErrorMessage(err, 'Unable to load league choices.'));
+        if (!canceled) setError(editValidationErrorMessage(err, 'Unable to load league choices.'));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [isOpen, registrationId]);
 
@@ -367,12 +367,12 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
 
   useEffect(() => {
     if (!isOpen) return;
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     setError(null);
     void loadMembershipEditContext(registrationId)
       .then((context) => {
-        if (cancelled) return;
+        if (canceled) return;
         setMembershipPayment(context.membership);
         setWindowState(context.window);
         setCurlerDateOfBirth(context.curler?.dateOfBirth ?? null);
@@ -391,13 +391,13 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
         setIcePrivilegesChoice(context.membership.icePrivilegesChoice ?? null);
       })
       .catch((err) => {
-        if (!cancelled) setError(editValidationErrorMessage(err, 'Unable to load membership details.'));
+        if (!canceled) setError(editValidationErrorMessage(err, 'Unable to load membership details.'));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [isOpen, registrationId]);
 

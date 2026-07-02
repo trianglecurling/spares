@@ -38,7 +38,7 @@ export default function PublicEventRegisterSuccessPage() {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
 
     const resolveOnce = async (): Promise<ResolveResponse> => {
       const res = await api.post<ResolveResponse>(
@@ -50,10 +50,10 @@ export default function PublicEventRegisterSuccessPage() {
 
     const run = async () => {
       for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1) {
-        if (cancelled) return;
+        if (canceled) return;
         try {
           const data = await resolveOnce();
-          if (cancelled) return;
+          if (canceled) return;
 
           if (data.registrationStatus === 'confirmed') {
             setStatus('confirmed');
@@ -77,13 +77,13 @@ export default function PublicEventRegisterSuccessPage() {
             await sleep(POLL_INTERVAL_MS);
           }
         } catch {
-          if (cancelled) return;
+          if (canceled) return;
           if (attempt >= MAX_POLL_ATTEMPTS) break;
           await sleep(POLL_INTERVAL_MS);
         }
       }
 
-      if (!cancelled) {
+      if (!canceled) {
         setStatus('processing');
         setError(
           'Your payment is still processing. You will receive a confirmation email once your registration is complete.',
@@ -94,7 +94,7 @@ export default function PublicEventRegisterSuccessPage() {
     void run();
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [registrationId, sessionId]);
 

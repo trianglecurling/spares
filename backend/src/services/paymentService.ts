@@ -2,8 +2,10 @@ import crypto from 'crypto';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { config } from '../config.js';
+import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendDonationReceiptEmail, sendEventRegistrationPaymentConfirmationEmail } from './email.js';
+import { formatEventTimespansForDisplay } from '../utils/formatEventTimespans.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { logEvent } from './observability.js';
 import { dispatchWebhookEvent } from './webhookService.js';
@@ -526,7 +528,7 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
         ? 'succeeded'
         : refund.status === 'failed'
           ? 'failed'
-          : refund.status === 'canceled'
+          : refund.status === 'cancelled'
             ? 'rejected'
             : 'processing';
 
@@ -542,7 +544,7 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
     const refund = await stripe.refunds.retrieve(providerRefundId);
     if (refund.status === 'succeeded') return 'succeeded';
     if (refund.status === 'failed') return 'failed';
-    if (refund.status === 'canceled') return 'rejected';
+    if (refund.status === 'cancelled') return 'rejected';
     return 'processing';
   }
 }
@@ -1881,8 +1883,49 @@ export class PaymentService {
     }
   }
 
-  async finalizeEventRegistrationPaymentForOrder(orderId: number): Promise<void> {
-    await this.confirmEventRegistrationForSucceededOrder(orderId);
+  private async claimEventPaymentConfirmationEmail(orderId: number): Promise<boolean> {
+    const sentAt = new Date().toISOString();
+    const isPostgres = getDatabaseConfig()?.type === 'postgres';
+    const metadataColumn = this.schema.paymentOrders.metadata;
+
+    const notSentCondition = isPostgres
+      ? sql`COALESCE(${metadataColumn}::jsonb->>'eventPaymentConfirmationSentAt', '') = '' AND COALESCE(${metadataColumn}::jsonb->>'event_payment_confirmation_sent_at', '') = ''`
+      : sql`COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.eventPaymentConfirmationSentAt'), '') = '' AND COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.event_payment_confirmation_sent_at'), '') = ''`;
+
+    const claimed = await this.db
+      .update(this.schema.paymentOrders)
+      .set({
+        metadata: isPostgres
+          ? sql`(COALESCE(${metadataColumn}::jsonb, '{}'::jsonb) || jsonb_build_object('eventPaymentConfirmationSentAt', cast(${sentAt} as text)))::text`
+          : sql`json_set(COALESCE(${metadataColumn}, '{}'), '$.eventPaymentConfirmationSentAt', ${sentAt})`,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(
+        and(
+          eq(this.schema.paymentOrders.id, orderId),
+          eq(this.schema.paymentOrders.status, 'succeeded'),
+          eq(this.schema.paymentOrders.subject_type, 'event_registration'),
+          notSentCondition,
+        ),
+      )
+      .returning({ id: this.schema.paymentOrders.id });
+
+    return claimed.length > 0;
+  }
+
+  private async clearEventPaymentConfirmationEmailClaim(orderId: number): Promise<void> {
+    const isPostgres = getDatabaseConfig()?.type === 'postgres';
+    const metadataColumn = this.schema.paymentOrders.metadata;
+
+    await this.db
+      .update(this.schema.paymentOrders)
+      .set({
+        metadata: isPostgres
+          ? sql`(COALESCE(${metadataColumn}::jsonb, '{}'::jsonb) - 'eventPaymentConfirmationSentAt')::text`
+          : sql`json_remove(COALESCE(${metadataColumn}, '{}'), '$.eventPaymentConfirmationSentAt')`,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(this.schema.paymentOrders.id, orderId));
   }
 
   private async confirmEventRegistrationForSucceededOrder(orderId: number): Promise<void> {
@@ -1904,7 +1947,6 @@ export class PaymentService {
 
       const { confirmRegistrationPayment } = await import('./eventService.js');
       await confirmRegistrationPayment(order.subject_id, order.id);
-      await this.sendEventRegistrationPaymentConfirmationForSucceededOrder(orderId);
 
       await logEvent({
         eventType: 'event.registration.payment_confirmed',
@@ -1920,98 +1962,161 @@ export class PaymentService {
     }
   }
 
-  private async sendEventRegistrationPaymentConfirmationForSucceededOrder(orderId: number): Promise<void> {
+  private async claimEventPointOfContactNotification(orderId: number): Promise<boolean> {
+    const sentAt = new Date().toISOString();
+    const isPostgres = getDatabaseConfig()?.type === 'postgres';
+    const metadataColumn = this.schema.paymentOrders.metadata;
+
+    const notSentCondition = isPostgres
+      ? sql`COALESCE(${metadataColumn}::jsonb->>'eventPointOfContactNotificationSentAt', '') = '' AND COALESCE(${metadataColumn}::jsonb->>'event_point_of_contact_notification_sent_at', '') = ''`
+      : sql`COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.eventPointOfContactNotificationSentAt'), '') = '' AND COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.event_point_of_contact_notification_sent_at'), '') = ''`;
+
+    const claimed = await this.db
+      .update(this.schema.paymentOrders)
+      .set({
+        metadata: isPostgres
+          ? sql`(COALESCE(${metadataColumn}::jsonb, '{}'::jsonb) || jsonb_build_object('eventPointOfContactNotificationSentAt', cast(${sentAt} as text)))::text`
+          : sql`json_set(COALESCE(${metadataColumn}, '{}'), '$.eventPointOfContactNotificationSentAt', ${sentAt})`,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(
+        and(
+          eq(this.schema.paymentOrders.id, orderId),
+          eq(this.schema.paymentOrders.status, 'succeeded'),
+          eq(this.schema.paymentOrders.subject_type, 'event_registration'),
+          notSentCondition,
+        ),
+      )
+      .returning({ id: this.schema.paymentOrders.id });
+
+    return claimed.length > 0;
+  }
+
+  private async notifyPointOfContactForPaidEventRegistration(
+    orderId: number,
+    registrationId: number,
+    event: { id: number; title: string; point_of_contact: string; registrationFields?: unknown[] },
+    status: string,
+  ): Promise<void> {
+    let claimed = false;
     try {
-      const [order] = await this.db
-        .select({
-          id: this.schema.paymentOrders.id,
-          order_token: this.schema.paymentOrders.order_token,
-          subject_type: this.schema.paymentOrders.subject_type,
-          subject_id: this.schema.paymentOrders.subject_id,
-          status: this.schema.paymentOrders.status,
-          metadata: this.schema.paymentOrders.metadata,
-        })
-        .from(this.schema.paymentOrders)
-        .where(eq(this.schema.paymentOrders.id, orderId))
-        .limit(1);
-
-      if (!order || order.subject_type !== 'event_registration' || order.status !== 'succeeded' || !order.subject_id) {
-        return;
-      }
-
-      const metadata = safeJsonParseObject(order.metadata);
-      if (asString(metadata.eventPaymentConfirmationSentAt ?? metadata.event_payment_confirmation_sent_at)) {
-        return;
-      }
-
-      const [registration] = await this.db
-        .select({
-          contactName: this.schema.eventRegistrations.contact_name,
-          contactEmail: this.schema.eventRegistrations.contact_email,
-          groupSize: this.schema.eventRegistrations.group_size,
-          eventId: this.schema.eventRegistrations.event_id,
-          accessToken: this.schema.eventRegistrations.access_token,
-        })
-        .from(this.schema.eventRegistrations)
-        .where(eq(this.schema.eventRegistrations.id, order.subject_id))
-        .limit(1);
-
-      if (!registration?.contactEmail) {
-        return;
-      }
-
-      const { getEventById } = await import('./eventService.js');
-      const event = await getEventById(registration.eventId);
-      if (!event) {
-        return;
-      }
-
-      const firstTimespan = event.timespans?.[0];
-      const eventDateStr = firstTimespan?.start_dt
-        ? new Date(firstTimespan.start_dt).toLocaleString('en-US', {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-          })
-        : 'See event page';
-
-      const { ensureRegistrationAccessToken } = await import('./eventService.js');
-      const { eventRegistrationManageUrl } = await import('../utils/eventRegistrationManageUrl.js');
-      const accessToken = registration.accessToken
-        ?? await ensureRegistrationAccessToken(order.subject_id);
-
-      await sendEventRegistrationPaymentConfirmationEmail(
-        registration.contactEmail,
-        registration.contactName,
-        event.title,
-        eventDateStr,
-        registration.groupSize ?? 1,
-        paymentDetailsUrl(order.order_token),
-        undefined,
-        {
-          manageRegistrationUrl: eventRegistrationManageUrl(accessToken),
-          receiptUrl: paymentDetailsUrl(order.order_token),
-        },
-      );
-
-      metadata.eventPaymentConfirmationSentAt = new Date().toISOString();
-      await this.db
-        .update(this.schema.paymentOrders)
-        .set({
-          metadata: safeJsonStringify(metadata),
-          updated_at: sql`CURRENT_TIMESTAMP`,
-        })
-        .where(eq(this.schema.paymentOrders.id, orderId));
+      claimed = await this.claimEventPointOfContactNotification(orderId);
     } catch (error) {
+      console.error('[Payment Service] Failed to claim event point of contact notification:', error);
+      return;
+    }
+
+    if (!claimed) {
+      return;
+    }
+
+    try {
+      const { notifyPointOfContactOfNewRegistration } = await import('./eventRegistrationPointOfContactNotification.js');
+      await notifyPointOfContactOfNewRegistration({
+        event,
+        registrationId,
+        status,
+      });
+    } catch (error) {
+      console.error('[Payment Service] Failed to notify event point of contact:', error);
+    }
+  }
+
+  async sendEventRegistrationCompletionEmailsForOrder(orderId: number): Promise<void> {
+    const [order] = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+        order_token: this.schema.paymentOrders.order_token,
+        subject_type: this.schema.paymentOrders.subject_type,
+        subject_id: this.schema.paymentOrders.subject_id,
+        status: this.schema.paymentOrders.status,
+      })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, orderId))
+      .limit(1);
+
+    if (!order || order.subject_type !== 'event_registration' || order.status !== 'succeeded' || !order.subject_id) {
+      return;
+    }
+
+    const [registration] = await this.db
+      .select({
+        contactName: this.schema.eventRegistrations.contact_name,
+        contactEmail: this.schema.eventRegistrations.contact_email,
+        groupSize: this.schema.eventRegistrations.group_size,
+        eventId: this.schema.eventRegistrations.event_id,
+        accessToken: this.schema.eventRegistrations.access_token,
+        status: this.schema.eventRegistrations.status,
+      })
+      .from(this.schema.eventRegistrations)
+      .where(eq(this.schema.eventRegistrations.id, order.subject_id))
+      .limit(1);
+
+    if (!registration?.contactEmail) {
+      return;
+    }
+
+    const { getEventById } = await import('./eventService.js');
+    const event = await getEventById(registration.eventId);
+    if (!event) {
+      return;
+    }
+
+    let emailClaimed = false;
+    try {
+      emailClaimed = await this.claimEventPaymentConfirmationEmail(orderId);
+      if (emailClaimed) {
+        const eventWhen = formatEventTimespansForDisplay(event.timespans);
+
+        const { ensureRegistrationAccessToken } = await import('./eventService.js');
+        const { eventRegistrationManageUrl } = await import('../utils/eventRegistrationManageUrl.js');
+        const accessToken = registration.accessToken
+          ?? await ensureRegistrationAccessToken(order.subject_id);
+
+        await sendEventRegistrationPaymentConfirmationEmail(
+          registration.contactEmail,
+          registration.contactName,
+          event.title,
+          eventWhen,
+          registration.groupSize ?? 1,
+          paymentDetailsUrl(order.order_token),
+          undefined,
+          {
+            manageRegistrationUrl: eventRegistrationManageUrl(accessToken),
+            receiptUrl: paymentDetailsUrl(order.order_token),
+            pointOfContact: event.point_of_contact,
+          },
+        );
+
+        await logEvent({
+          eventType: 'event.registration.payment_confirmation_email.sent',
+          relatedId: orderId,
+          meta: { registrationId: order.subject_id },
+        });
+      }
+    } catch (error) {
+      if (emailClaimed) {
+        await this.clearEventPaymentConfirmationEmailClaim(orderId).catch(() => {});
+      }
       await logEvent({
         eventType: 'event.registration.payment_confirmation_email_failed',
         relatedId: orderId,
         meta: { error: error instanceof Error ? error.message : 'Unknown error' },
       });
     }
+
+    const [latestRegistration] = await this.db
+      .select({ status: this.schema.eventRegistrations.status })
+      .from(this.schema.eventRegistrations)
+      .where(eq(this.schema.eventRegistrations.id, order.subject_id))
+      .limit(1);
+
+    await this.notifyPointOfContactForPaidEventRegistration(
+      orderId,
+      order.subject_id,
+      event,
+      latestRegistration?.status ?? registration.status,
+    );
   }
 
   private async confirmCurlingRegistrationForSucceededOrder(orderId: number): Promise<void> {
@@ -2267,4 +2372,8 @@ export function normalizeRequestHeaders(
 export function createPaymentService(): PaymentService {
   const { db, schema } = getDrizzleDb();
   return new PaymentService(db, schema, buildDefaultAdapters(), getDefaultPaymentProvider());
+}
+
+export async function sendEventRegistrationCompletionEmailsForOrder(orderId: number): Promise<void> {
+  await createPaymentService().sendEventRegistrationCompletionEmailsForOrder(orderId);
 }

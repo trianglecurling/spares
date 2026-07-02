@@ -1075,7 +1075,7 @@ async function assertEditableForMembershipPayment(
   if (actor && memberCanManageRegistrations(actor) && isStaffEditableRegistrationStatus(registration.status)) {
     if (registration.status === 'cancelled') {
       throw new RegistrationMembershipPaymentValidationError({
-        registration: 'Cancelled registrations cannot be edited.',
+        registration: 'Canceled registrations cannot be edited.',
       });
     }
     return;

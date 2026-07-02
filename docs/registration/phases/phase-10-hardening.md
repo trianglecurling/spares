@@ -224,7 +224,7 @@ Verify that immediate and deferred payment flows are safe, accurate, and recover
 - Deferred payment succeeds.
 - Deferred payment fails.
 - Staff resends deferred payment link.
-- Registration is cancelled before deferred payment.
+- Registration is canceled before deferred payment.
 - Stripe amount equals internal invoice amount.
 
 ## Acceptance criteria

@@ -11,7 +11,7 @@ export default function WaitlistOfferAcceptPage() {
   const [message, setMessage] = useState('Accepting your waitlist offer.');
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     async function accept() {
       if (!offerId) {
         setStatus('error');
@@ -20,18 +20,18 @@ export default function WaitlistOfferAcceptPage() {
       }
       try {
         await api.post(`/registration/member/waitlist-offers/${encodeURIComponent(offerId)}/accept`, {});
-        if (cancelled) return;
+        if (canceled) return;
         setStatus('success');
         setMessage('Your waitlist offer has been accepted. If payment is required, staff will follow up or your payment link will appear on your dashboard.');
       } catch (error) {
-        if (cancelled) return;
+        if (canceled) return;
         setStatus('error');
         setMessage(getApiErrorMessage(error, 'Unable to accept this waitlist offer.'));
       }
     }
     void accept();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [offerId]);
 

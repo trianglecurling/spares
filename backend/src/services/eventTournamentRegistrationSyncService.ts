@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { isUniqueConstraintViolation } from '../api/errors.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { splitMemberDisplayName } from '../utils/memberName.js';
 import {
@@ -121,7 +122,7 @@ async function findRegistrationLinkedTeamId(registrationId: number): Promise<num
 
 /**
  * Keeps the event tournament roster in sync with a bonspiel registration.
- * Creates or updates a linked team for active registrations; removes it when cancelled or waitlisted.
+ * Creates or updates a linked team for active registrations; removes it when canceled or waitlisted.
  */
 export async function syncTournamentTeamForRegistration(registrationId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();
@@ -188,24 +189,29 @@ export async function syncTournamentTeamForRegistration(registrationId: number):
   const roster = buildRosterFromRegistration(format, teamFieldType, players);
   const teamName = resolveTeamName(fieldValues, fields, reg.contact_name);
   const defs = defaultViceSkip(format);
+  const formatOverride = normalizeTournamentFormat(eventRow.tournament_format) ? undefined : format;
+  const teamUpdateInput = { teamName, roster, formatOverride };
 
   if (existingTeamId != null) {
-    await updateTournamentTeam(reg.event_id, existingTeamId, {
-      teamName,
-      roster,
-      formatOverride: normalizeTournamentFormat(eventRow.tournament_format) ? undefined : format,
-    });
+    await updateTournamentTeam(reg.event_id, existingTeamId, teamUpdateInput);
     return;
   }
 
-  await createTournamentTeam(reg.event_id, {
-    teamName,
-    roster,
-    viceSlotCode: defs.vice,
-    skipSlotCode: defs.skip,
-    registrationId,
-    formatOverride: normalizeTournamentFormat(eventRow.tournament_format) ? undefined : format,
-  });
+  try {
+    await createTournamentTeam(reg.event_id, {
+      teamName,
+      roster,
+      viceSlotCode: defs.vice,
+      skipSlotCode: defs.skip,
+      registrationId,
+      formatOverride,
+    });
+  } catch (err) {
+    if (!isUniqueConstraintViolation(err)) throw err;
+    const racedTeamId = await findRegistrationLinkedTeamId(registrationId);
+    if (racedTeamId == null) throw err;
+    await updateTournamentTeam(reg.event_id, racedTeamId, teamUpdateInput);
+  }
 }
 
 export async function syncTournamentTeamForRegistrationSafe(registrationId: number): Promise<void> {

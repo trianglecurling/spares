@@ -75,7 +75,7 @@ export function createSortableAnnouncements<T>({
     onDragCancel({ active }: DragCancelEvent) {
       const activeItem = getItem(items, getId, active.id);
       if (!activeItem) return;
-      return `Cancelled dragging ${getItemLabel(activeItem)} ${itemNoun}.`;
+      return `Canceled dragging ${getItemLabel(activeItem)} ${itemNoun}.`;
     },
   };
 }
