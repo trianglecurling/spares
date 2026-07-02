@@ -66,6 +66,27 @@ export default function DataTable<Row, SortKey extends string, RowId extends Tab
     selectableRows.length > 0 && !allPageSelected && selectableRows.some((row) => selectedIdSet.has(rowKey(row)));
 
   const colSpan = columns.length + (selection ? 1 : 0) + (actions ? 1 : 0);
+  const actionsOnLeft = actions?.position === 'left';
+  const actionsHeaderClassName = joinClasses(
+    'app-table-th',
+    actionsOnLeft ? 'text-left' : 'text-right',
+    actions?.widthClassName,
+  );
+  const actionsCellClassName = joinClasses(
+    'app-table-td align-middle',
+    actionsOnLeft ? 'text-left' : 'text-right',
+    actions?.widthClassName,
+  );
+
+  const renderActionsHeader = () =>
+    actions ? (
+      <th className={actionsHeaderClassName}>
+        <div className={actionsOnLeft ? 'text-left' : 'text-right'}>{actions.header ?? 'Actions'}</div>
+      </th>
+    ) : null;
+
+  const renderActionsCell = (row: Row) =>
+    actions ? <td className={actionsCellClassName}>{actions.renderActions(row)}</td> : null;
 
   const bodyState = loading
     ? (
@@ -110,6 +131,7 @@ export default function DataTable<Row, SortKey extends string, RowId extends Tab
                   />
                 </th>
               ) : null}
+              {actionsOnLeft ? renderActionsHeader() : null}
               {columns.map((column) => (
                 <DataTableHeaderCell
                   key={column.id}
@@ -127,11 +149,7 @@ export default function DataTable<Row, SortKey extends string, RowId extends Tab
                   {column.header}
                 </DataTableHeaderCell>
               ))}
-              {actions ? (
-                <th className={joinClasses('app-table-th text-right', actions.widthClassName)}>
-                  <div className="text-right">{actions.header ?? 'Actions'}</div>
-                </th>
-              ) : null}
+              {!actionsOnLeft ? renderActionsHeader() : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -166,6 +184,7 @@ export default function DataTable<Row, SortKey extends string, RowId extends Tab
                         ) : null}
                       </td>
                     ) : null}
+                    {actionsOnLeft ? renderActionsCell(row) : null}
                     {columns.map((column) => (
                       <td
                         key={column.id}
@@ -178,16 +197,7 @@ export default function DataTable<Row, SortKey extends string, RowId extends Tab
                         {column.renderCell(row)}
                       </td>
                     ))}
-                    {actions ? (
-                      <td
-                        className={joinClasses(
-                          'app-table-td align-middle text-right',
-                          actions.widthClassName
-                        )}
-                      >
-                        {actions.renderActions(row)}
-                      </td>
-                    ) : null}
+                    {!actionsOnLeft ? renderActionsCell(row) : null}
                   </tr>
                 );
               })

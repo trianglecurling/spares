@@ -1,4 +1,4 @@
-import { FastifyInstance, type FastifyRequest } from 'fastify';
+import { FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin } from '../utils/auth.js';
@@ -56,7 +56,24 @@ import {
   EventServiceError,
   normalizeCalendarTypeId,
   resolveEventRegistrationFeeMinor,
+  confirmRegistrationPayment,
 } from '../services/eventService.js';
+import {
+  EventWaitlistServiceError,
+  acceptWaitlistOfferByToken,
+  addManualWaitlistEntry,
+  declineWaitlistOfferByToken,
+  forceDeclineWaitlistOffer,
+  getOpenSpots,
+  getPublicWaitlistOffer,
+  getWaitlistLength,
+  getWaitlistedCount,
+  listEventWaitlist,
+  promoteWaitlistRegistration,
+  removeFromEventWaitlist,
+  reorderEventWaitlist,
+  resolveWaitlistOfferPaymentByToken,
+} from '../services/eventWaitlistService.js';
 import {
   createTournamentTeam,
   deleteTournamentTeam,
@@ -241,6 +258,31 @@ const adminCancelRegistrationSchema = z.object({
   refund: z.boolean().optional(),
 });
 
+const waitlistReorderSchema = z.object({
+  registrationIds: z.array(z.number().int().positive()).min(1),
+});
+
+const waitlistPromoteSchema = z.object({
+  respondByDays: z.number().int().min(1).max(30).optional(),
+});
+
+const waitlistAddSchema = adminUpsertRegistrationSchema.extend({
+  memberId: z.number().int().positive().optional().nullable(),
+});
+
+function handleEventWaitlistError(reply: FastifyReply, error: unknown): boolean {
+  if (error instanceof EventWaitlistServiceError) {
+    if (error.details) {
+      return !!sendValidationError(reply, error.message, error.details);
+    }
+    if (error.code) {
+      return !!sendApiError(reply, error.statusCode, error.message, { code: error.code });
+    }
+    return !!sendApiError(reply, error.statusCode, error.message);
+  }
+  return false;
+}
+
 const createSpecialLinkSchema = z.object({
   label: z.string().max(200).optional(),
   overrideFeeminor: z.number().int().min(0).nullable().optional(),
@@ -348,15 +390,18 @@ async function notifyRegistrationCancelledByEmail(
   eventTitle: string,
   refundIssued: boolean,
   pointOfContact: string,
+  isWaitlistEntry = false,
 ): Promise<void> {
-  const refundReceiptUrl = await resolveRegistrationReceiptUrl(registration.payment_order_id ?? null);
+  const refundReceiptUrl = isWaitlistEntry
+    ? null
+    : await resolveRegistrationReceiptUrl(registration.payment_order_id ?? null);
   await sendEventRegistrationCancelledEmail(
     registration.contact_email,
     registration.contact_name,
     eventTitle,
     refundIssued,
     undefined,
-    { refundReceiptUrl, pointOfContact },
+    { refundReceiptUrl, pointOfContact, isWaitlistEntry },
   );
 }
 
@@ -429,18 +474,29 @@ async function formatManageRegistrationResponse(accessToken: string) {
   if (!event) return null;
 
   const nowMs = Date.now();
+  const isWaitlisted = registration.status === 'waitlisted';
   const canCancel =
-    registration.status !== 'cancelled' && isBeforeCancellationCutoff(event, nowMs);
+    registration.status !== 'cancelled' &&
+    (isWaitlisted || isBeforeCancellationCutoff(event, nowMs));
   const cancellationCutoffPassed =
-    registration.status !== 'cancelled' && !isBeforeCancellationCutoff(event, nowMs);
+    registration.status !== 'cancelled' &&
+    !isWaitlisted &&
+    !isBeforeCancellationCutoff(event, nowMs);
 
   const { firstName, lastName } = splitMemberDisplayName(registration.contact_name ?? '');
   const sortedMembers = [...(registration.groupMembers ?? [])].sort(
     (a: { sort_order?: number }, b: { sort_order?: number }) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
   );
 
+  const waitlistLength =
+    registration.status === 'waitlisted' ? await getWaitlistLength(registration.event_id) : null;
+
+  const isWaitlistEntry =
+    registration.status === 'waitlisted' ||
+    (registration.status === 'cancelled' && registration.waitlist_position != null);
+
   let receiptUrl: string | null = null;
-  if (registration.payment_order_id) {
+  if (!isWaitlistEntry && registration.payment_order_id) {
     receiptUrl = await resolveRegistrationReceiptUrl(registration.payment_order_id);
   }
 
@@ -467,8 +523,10 @@ async function formatManageRegistrationResponse(accessToken: string) {
       })),
       fieldValues: formatManageRegistrationFieldValues(registration),
       waitlistPosition: registration.waitlist_position,
+      waitlistLength,
     },
     receiptUrl,
+    isWaitlistEntry,
     canCancel,
     cancellationCutoffPassed,
     serverNow: new Date(nowMs).toISOString(),
@@ -556,6 +614,10 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       }
 
       const confirmedCount = await getConfirmedRegistrationCount(event.id);
+      const [waitlistedCount, openSpots] = await Promise.all([
+        getWaitlistedCount(event.id),
+        getOpenSpots(event.id, event.capacity),
+      ]);
       const member = (request as { member?: Member }).member;
       const yourFeeMinor =
         member != null
@@ -572,6 +634,8 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       return {
         ...formatEventResponse(event),
         confirmedCount,
+        waitlistedCount,
+        openSpots,
         yourFeeMinor,
         serverNow: new Date().toISOString(),
       };
@@ -913,7 +977,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       const event = await getEventById(registration.event_id);
       if (!event) return sendApiError(reply, 404, 'Event not found');
 
-      if (!isBeforeCancellationCutoff(event)) {
+      if (registration.status !== 'waitlisted' && !isBeforeCancellationCutoff(event)) {
         return sendApiError(
           reply,
           403,
@@ -926,11 +990,12 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           request.log.error({ err }, 'Failed to notify event point of contact'),
         );
 
+        const wasWaitlisted = registration.status === 'waitlisted';
         const { refundEligible, event: canceledEvent } = await cancelRegistration(registration.id);
 
         let refundIssued = false;
         let refundError: string | null = null;
-        if (refundEligible && registration.payment_order_id) {
+        if (!wasWaitlisted && refundEligible && registration.payment_order_id) {
           const refundResult = await issueEventRegistrationRefund({
             paymentOrderId: registration.payment_order_id,
             reason: 'Event registration canceled by registrant',
@@ -948,6 +1013,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           canceledEvent.title,
           refundIssued,
           canceledEvent.point_of_contact,
+          wasWaitlisted,
         ).catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
         return { success: true, refundIssued, refundError };
@@ -998,9 +1064,14 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
 
         const updatedReg = await getRegistrationById(registrationId);
 
-        if (
+        let confirmResult: Awaited<ReturnType<typeof confirmRegistrationPayment>> | null = null;
+        if (updatedOrder?.status === 'succeeded' && updatedReg?.status === 'pending_payment') {
+          confirmResult = await confirmRegistrationPayment(registrationId, reg.payment_order_id);
+        } else if (
           updatedReg?.payment_order_id &&
-          (updatedReg.status === 'confirmed' || updatedReg.status === 'waitlisted')
+          (updatedReg.status === 'confirmed' ||
+            updatedReg.status === 'waitlisted' ||
+            updatedReg.status === 'cancelled')
         ) {
           const { sendEventRegistrationCompletionEmailsForOrder } = await import('../services/paymentService.js');
           sendEventRegistrationCompletionEmailsForOrder(updatedReg.payment_order_id).catch((err) =>
@@ -1008,10 +1079,19 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           );
         }
 
+        const finalReg = confirmResult ? await getRegistrationById(registrationId) : updatedReg;
+        const waitlistLength =
+          finalReg?.status === 'waitlisted' && finalReg.event_id
+            ? await getWaitlistLength(finalReg.event_id)
+            : null;
+
         return {
           status: updatedOrder?.status ?? 'unknown',
-          registrationStatus: updatedReg?.status ?? null,
+          registrationStatus: finalReg?.status ?? null,
           registrationId,
+          refundIssued: confirmResult?.refundIssued ?? false,
+          waitlistPosition: finalReg?.waitlist_position ?? confirmResult?.waitlistPosition ?? null,
+          waitlistLength: confirmResult?.waitlistLength ?? waitlistLength,
         };
       } catch (err) {
         if (err instanceof PaymentServiceError) {
@@ -1020,6 +1100,68 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         throw err;
       }
     }
+  );
+
+  fastify.get<{ Params: { responseToken: string } }>(
+    '/public/events/waitlist-offers/:responseToken',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      try {
+        return await getPublicWaitlistOffer(request.params.responseToken);
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
+  );
+
+  fastify.post<{ Params: { responseToken: string }; Body: unknown }>(
+    '/public/events/waitlist-offers/:responseToken/resolve',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const body = request.body as { sessionId?: string | null };
+      const sessionId = body?.sessionId?.trim() || null;
+
+      try {
+        return await resolveWaitlistOfferPaymentByToken(request.params.responseToken, sessionId);
+      } catch (err) {
+        if (err instanceof PaymentServiceError) {
+          return reply.code(err.statusCode).send({ error: err.message });
+        }
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
+  );
+
+  fastify.post<{ Params: { responseToken: string } }>(
+    '/public/events/waitlist-offers/:responseToken/accept',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      try {
+        return await acceptWaitlistOfferByToken(
+          request.params.responseToken,
+          resolveFrontendBaseUrl(request),
+        );
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
+  );
+
+  fastify.post<{ Params: { responseToken: string } }>(
+    '/public/events/waitlist-offers/:responseToken/decline',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      try {
+        await declineWaitlistOfferByToken(request.params.responseToken);
+        return { success: true };
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
   );
 }
 
@@ -1500,11 +1642,12 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       }
 
       try {
+        const wasWaitlisted = reg.status === 'waitlisted';
         const { refundEligible, event } = await cancelRegistration(registrationId);
 
         let refundIssued = false;
         let refundError: string | null = null;
-        if (refundEligible && reg.payment_order_id) {
+        if (!wasWaitlisted && refundEligible && reg.payment_order_id) {
           const refundResult = await issueEventRegistrationRefund({
             paymentOrderId: reg.payment_order_id,
             reason: 'Event registration canceled',
@@ -1517,7 +1660,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           }
         }
 
-        notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact)
+        notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact, wasWaitlisted)
           .catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
         return { success: true, refundIssued, refundError };
@@ -1708,12 +1851,13 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       if (!reg || reg.event_id !== eventId) return sendApiError(reply, 404, 'Registration not found');
 
       try {
+        const wasWaitlisted = reg.status === 'waitlisted';
         const { event } = await cancelRegistration(registrationId);
 
         let refundIssued = false;
         let refundStatus: string | null = null;
         let refundError: string | null = null;
-        if (shouldRefund && reg.payment_order_id) {
+        if (shouldRefund && !wasWaitlisted && reg.payment_order_id) {
           const refundResult = await issueEventRegistrationRefund({
             paymentOrderId: reg.payment_order_id,
             reason: 'Event registration canceled by admin',
@@ -1728,7 +1872,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           }
         }
 
-        notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact)
+        notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact, wasWaitlisted)
           .catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
         return { success: true, refundIssued, refundStatus, refundError };
@@ -1852,6 +1996,172 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       await deleteCategory(categoryId);
       return { success: true };
     }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/events/:id/waitlist',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      try {
+        return await listEventWaitlist(eventId);
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
+  );
+
+  fastify.post<{ Params: { id: string }; Body: unknown }>(
+    '/events/:id/waitlist/reorder',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsed = waitlistReorderSchema.safeParse(request.body);
+      if (!parsed.success) return sendValidationError(reply, 'Invalid request body', parsed.error.flatten());
+
+      try {
+        await reorderEventWaitlist(eventId, parsed.data.registrationIds);
+        return { success: true };
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
+  );
+
+  fastify.post<{ Params: { id: string }; Body: unknown }>(
+    '/events/:id/waitlist',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsed = waitlistAddSchema.safeParse(request.body);
+      if (!parsed.success) return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
+
+      try {
+        const result = await addManualWaitlistEntry({
+          eventId,
+          memberId: parsed.data.memberId ?? null,
+          contactFirstName: parsed.data.contactFirstName,
+          contactLastName: parsed.data.contactLastName,
+          contactEmail: parsed.data.contactEmail,
+          groupMembers: parsed.data.groupMembers?.map((m) => ({
+            name: m.name,
+            email: m.email ?? undefined,
+          })),
+          fieldValues: parsed.data.fieldValues?.map((fv) => ({
+            fieldId: fv.fieldId,
+            registrationMemberIndex: fv.registrationMemberIndex ?? null,
+            value: fv.value,
+          })),
+        });
+        return reply.code(201).send(result);
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    },
+  );
+
+  fastify.delete<{ Params: { id: string; registrationId: string } }>(
+    '/events/:id/waitlist/:registrationId',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      const registrationId = parseInt(request.params.registrationId, 10);
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      try {
+        await removeFromEventWaitlist(eventId, registrationId);
+        return { success: true };
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
+  );
+
+  fastify.post<{ Params: { id: string; registrationId: string }; Body: unknown }>(
+    '/events/:id/waitlist/:registrationId/promote',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      const registrationId = parseInt(request.params.registrationId, 10);
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsed = waitlistPromoteSchema.safeParse(request.body ?? {});
+      if (!parsed.success) return sendValidationError(reply, 'Invalid request body', parsed.error.flatten());
+
+      try {
+        const offer = await promoteWaitlistRegistration({
+          eventId,
+          registrationId,
+          respondByDays: parsed.data.respondByDays,
+          createdByMemberId: member.id,
+        });
+        return reply.code(201).send(offer);
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
+  );
+
+  fastify.post<{ Params: { id: string; offerId: string } }>(
+    '/events/:id/waitlist/offers/:offerId/force-decline',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      const offerId = parseInt(request.params.offerId, 10);
+      if (isNaN(eventId) || isNaN(offerId)) return sendApiError(reply, 400, 'Invalid id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      try {
+        await forceDeclineWaitlistOffer(eventId, offerId);
+        return { success: true };
+      } catch (err) {
+        if (handleEventWaitlistError(reply, err)) return;
+        throw err;
+      }
+    },
   );
 }
 

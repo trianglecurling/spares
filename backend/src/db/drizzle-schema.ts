@@ -1760,6 +1760,8 @@ export const governanceOfficersSqlite = sqliteTable('governance_officers', {
 
 export type EventVisibility = 'public' | 'active_members' | 'ice_members';
 export type EventRegistrationStatus = 'confirmed' | 'pending_payment' | 'waitlisted' | 'cancelled';
+export type EventWaitlistOfferStatus = 'pending' | 'accepted' | 'declined' | 'superseded';
+export type EventWaitlistOfferDeclinedBy = 'registrant' | 'manager';
 export type EventFieldType =
   | 'text'
   | 'number'
@@ -1904,6 +1906,27 @@ export const eventRegistrationsSqlite = sqliteTable('event_registrations', {
   memberIdx: index('idx_event_registrations_member_id').on(table.member_id),
   statusIdx: index('idx_event_registrations_status').on(table.status),
   accessTokenIdx: uniqueIndex('event_registrations_access_token_unique').on(table.access_token),
+}));
+
+export const eventWaitlistOffersSqlite = sqliteTable('event_waitlist_offers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  registration_id: integer('registration_id').notNull().references(() => eventRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending').$type<EventWaitlistOfferStatus>(),
+  declined_by: text('declined_by').$type<EventWaitlistOfferDeclinedBy>(),
+  respond_by_days: integer('respond_by_days').notNull(),
+  expires_at: text('expires_at').notNull(),
+  response_token: text('response_token').notNull(),
+  payment_order_id: integer('payment_order_id'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  resolved_at: text('resolved_at'),
+}, (table) => ({
+  eventIdx: index('idx_event_waitlist_offers_event_id').on(table.event_id),
+  registrationIdx: index('idx_event_waitlist_offers_registration_id').on(table.registration_id),
+  statusIdx: index('idx_event_waitlist_offers_status').on(table.status),
+  expiresIdx: index('idx_event_waitlist_offers_expires_at').on(table.expires_at),
+  responseTokenIdx: uniqueIndex('idx_event_waitlist_offers_response_token').on(table.response_token),
 }));
 
 export const eventRegistrationMembersSqlite = sqliteTable('event_registration_members', {
@@ -3634,6 +3657,27 @@ export const eventRegistrationsPg = pgTable('event_registrations', {
   accessTokenIdx: uniqueIndexPg('event_registrations_access_token_unique').on(table.access_token),
 }));
 
+export const eventWaitlistOffersPg = pgTable('event_waitlist_offers', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  registration_id: integerPg('registration_id').notNull().references(() => eventRegistrationsPg.id, { onDelete: 'cascade' }),
+  status: textPg('status').notNull().default('pending').$type<EventWaitlistOfferStatus>(),
+  declined_by: textPg('declined_by').$type<EventWaitlistOfferDeclinedBy>(),
+  respond_by_days: integerPg('respond_by_days').notNull(),
+  expires_at: timestamp('expires_at', { withTimezone: false }).notNull(),
+  response_token: textPg('response_token').notNull(),
+  payment_order_id: integerPg('payment_order_id'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  resolved_at: timestamp('resolved_at', { withTimezone: false }),
+}, (table) => ({
+  eventIdx: indexPg('idx_event_waitlist_offers_event_id').on(table.event_id),
+  registrationIdx: indexPg('idx_event_waitlist_offers_registration_id').on(table.registration_id),
+  statusIdx: indexPg('idx_event_waitlist_offers_status').on(table.status),
+  expiresIdx: indexPg('idx_event_waitlist_offers_expires_at').on(table.expires_at),
+  responseTokenIdx: uniqueIndexPg('idx_event_waitlist_offers_response_token').on(table.response_token),
+}));
+
 export const eventRegistrationMembersPg = pgTable('event_registration_members', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   registration_id: integerPg('registration_id').notNull().references(() => eventRegistrationsPg.id, { onDelete: 'cascade' }),
@@ -3794,6 +3838,7 @@ export const sqliteSchema = {
   eventOwners: eventOwnersSqlite,
   eventRegistrationFields: eventRegistrationFieldsSqlite,
   eventRegistrations: eventRegistrationsSqlite,
+  eventWaitlistOffers: eventWaitlistOffersSqlite,
   eventRegistrationMembers: eventRegistrationMembersSqlite,
   eventRegistrationFieldValues: eventRegistrationFieldValuesSqlite,
   eventSpecialLinks: eventSpecialLinksSqlite,
@@ -3893,6 +3938,7 @@ export const pgSchema = {
   eventOwners: eventOwnersPg,
   eventRegistrationFields: eventRegistrationFieldsPg,
   eventRegistrations: eventRegistrationsPg,
+  eventWaitlistOffers: eventWaitlistOffersPg,
   eventRegistrationMembers: eventRegistrationMembersPg,
   eventRegistrationFieldValues: eventRegistrationFieldValuesPg,
   eventSpecialLinks: eventSpecialLinksPg,

@@ -42,8 +42,10 @@ interface ManageRegistrationPayload {
     groupMembers: GroupMember[];
     fieldValues: Array<{ fieldId: number; registrationMemberIndex: number | null; value: string }>;
     waitlistPosition: number | null;
+    waitlistLength?: number | null;
   };
   receiptUrl: string | null;
+  isWaitlistEntry?: boolean;
   canCancel: boolean;
   cancellationCutoffPassed: boolean;
   serverNow: string;
@@ -233,12 +235,15 @@ export default function PublicEventManageRegistrationPage() {
   const handleCancelRegistration = async () => {
     if (!accessToken || !payload || canceling || !payload.canCancel) return;
 
+    const isWaitlistEntry = payload.isWaitlistEntry ?? payload.registration.status === 'waitlisted';
+
     const confirmed = await confirm({
-      title: 'Cancel registration?',
-      message:
-        'This will cancel your registration for this event. Registering again may not be possible if the event is full. If you paid a registration fee, you should receive a full refund within a few business days.',
-      confirmText: 'Cancel registration',
-      cancelText: 'Keep registration',
+      title: isWaitlistEntry ? 'Cancel waitlist entry?' : 'Cancel registration?',
+      message: isWaitlistEntry
+        ? 'This will remove your waitlist entry for this event. You will lose your place on the waitlist.'
+        : 'This will cancel your registration for this event. Registering again may not be possible if the event is full. If you paid a registration fee, you should receive a full refund within a few business days.',
+      confirmText: isWaitlistEntry ? 'Cancel waitlist entry' : 'Cancel registration',
+      cancelText: isWaitlistEntry ? 'Keep waitlist entry' : 'Keep registration',
       variant: 'danger',
     });
     if (!confirmed) return;
@@ -252,7 +257,7 @@ export default function PublicEventManageRegistrationPage() {
       );
       setPayload(data);
       setCanceled(true);
-      showAlert('Registration canceled', 'success');
+      showAlert(isWaitlistEntry ? 'Waitlist entry canceled' : 'Registration canceled', 'success');
     } catch (err: unknown) {
       setSubmitError(formatApiError(err, 'Unable to cancel registration'));
     } finally {
@@ -285,22 +290,27 @@ export default function PublicEventManageRegistrationPage() {
   }
 
   const { event, registration } = payload;
+  const isWaitlistEntry = payload.isWaitlistEntry ?? registration.status === 'waitlisted';
   const isCanceledView = registration.status === 'cancelled' || canceled;
+  const manageTitle = isWaitlistEntry ? 'Manage waitlist entry' : 'Manage registration';
+  const cancelTitle = isWaitlistEntry ? 'Cancel waitlist entry' : 'Cancel registration';
 
   return (
     <PublicLayout>
-      <SeoMeta title={`Manage registration: ${event.title}`} />
+      <SeoMeta title={`${manageTitle}: ${event.title}`} />
       <div className="max-w-2xl mx-auto px-4 py-10">
         <Link to={`/events/${event.slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
           &larr; Back to event
         </Link>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Manage registration</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">{manageTitle}</h1>
 
         {isCanceledView ? (
           <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 text-gray-700">
-            <p className="font-medium text-gray-900">This registration has been canceled.</p>
-            {payload.receiptUrl ? (
+            <p className="font-medium text-gray-900">
+              {isWaitlistEntry ? 'This waitlist entry has been canceled.' : 'This registration has been canceled.'}
+            </p>
+            {!isWaitlistEntry && payload.receiptUrl ? (
               <p className="mt-2 text-sm">
                 If you paid a registration fee, your refund should appear within a few business days. You can review
                 refund details on your{' '}
@@ -317,17 +327,20 @@ export default function PublicEventManageRegistrationPage() {
         <p className="text-sm text-gray-600 mb-6">
           Status: <span className="font-medium text-gray-800">{formatStatusLabel(registration.status)}</span>
           {registration.status === 'waitlisted' && registration.waitlistPosition != null
-            ? ` (#${registration.waitlistPosition} on waitlist)`
+            ? registration.waitlistLength != null
+              ? ` (#${registration.waitlistPosition} of ${registration.waitlistLength} on waitlist)`
+              : ` (#${registration.waitlistPosition} on waitlist)`
             : null}
         </p>
 
         {!isCanceledView ? (
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            Keep this page private. Anyone with this link can view or change your registration.
+            Keep this page private. Anyone with this link can view or change your{' '}
+            {isWaitlistEntry ? 'waitlist entry' : 'registration'}.
           </div>
         ) : null}
 
-        {!isCanceledView && payload.receiptUrl ? (
+        {!isCanceledView && !isWaitlistEntry && payload.receiptUrl ? (
           <p className="mb-6 text-sm text-gray-700">
             <a href={payload.receiptUrl} className="text-primary-teal-link hover:underline">
               View payment receipt
@@ -476,12 +489,13 @@ export default function PublicEventManageRegistrationPage() {
             </form>
 
             <div className="mt-10 border-t border-gray-200 pt-8">
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">Cancel registration</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">{cancelTitle}</h2>
               {payload.canCancel ? (
                 <>
                   <p className="text-sm text-gray-600 mb-4">
-                    You can cancel before the cancellation cutoff. If you paid a fee, a full refund will be processed
-                    within a few business days.
+                    {isWaitlistEntry
+                      ? 'You can cancel your waitlist entry at any time.'
+                      : 'You can cancel before the cancellation cutoff. If you paid a fee, a full refund will be processed within a few business days.'}
                   </p>
                   <button
                     type="button"
@@ -489,7 +503,7 @@ export default function PublicEventManageRegistrationPage() {
                     disabled={canceling}
                     className="px-4 py-2 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
                   >
-                    {canceling ? 'Canceling...' : 'Cancel registration'}
+                    {canceling ? 'Canceling...' : cancelTitle}
                   </button>
                 </>
               ) : payload.cancellationCutoffPassed ? (

@@ -98,6 +98,7 @@ type PgSchema = {
   eventOwners: typeof pgSchema.eventOwnersPg;
   eventRegistrationFields: typeof pgSchema.eventRegistrationFieldsPg;
   eventRegistrations: typeof pgSchema.eventRegistrationsPg;
+  eventWaitlistOffers: typeof pgSchema.eventWaitlistOffersPg;
   eventRegistrationMembers: typeof pgSchema.eventRegistrationMembersPg;
   eventRegistrationFieldValues: typeof pgSchema.eventRegistrationFieldValuesPg;
   eventSpecialLinks: typeof pgSchema.eventSpecialLinksPg;
@@ -220,6 +221,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventOwners: sqliteSchema.eventOwnersSqlite,
       eventRegistrationFields: sqliteSchema.eventRegistrationFieldsSqlite,
       eventRegistrations: sqliteSchema.eventRegistrationsSqlite,
+      eventWaitlistOffers: sqliteSchema.eventWaitlistOffersSqlite,
       eventRegistrationMembers: sqliteSchema.eventRegistrationMembersSqlite,
       eventRegistrationFieldValues: sqliteSchema.eventRegistrationFieldValuesSqlite,
       eventSpecialLinks: sqliteSchema.eventSpecialLinksSqlite,
@@ -333,6 +335,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventOwners: pgSchema.eventOwnersPg,
       eventRegistrationFields: pgSchema.eventRegistrationFieldsPg,
       eventRegistrations: pgSchema.eventRegistrationsPg,
+      eventWaitlistOffers: pgSchema.eventWaitlistOffersPg,
       eventRegistrationMembers: pgSchema.eventRegistrationMembersPg,
       eventRegistrationFieldValues: pgSchema.eventRegistrationFieldValuesPg,
       eventSpecialLinks: pgSchema.eventSpecialLinksPg,

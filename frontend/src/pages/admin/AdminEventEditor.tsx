@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiChevronDown } from 'react-icons/hi2';
+import { HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiChevronDown, HiTrash } from 'react-icons/hi2';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
@@ -17,6 +17,7 @@ import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import AdminEventDetailsArticlePanel from './AdminEventDetailsArticlePanel';
 import AdminEventTournamentPanel from './AdminEventTournamentPanel';
+import AdminEventWaitlistPanel from './AdminEventWaitlistPanel';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
@@ -216,6 +217,7 @@ export default function AdminEventEditor() {
   const [allowGroupRegistration, setAllowGroupRegistration] = useState(false);
   const [maxGroupSize, setMaxGroupSize] = useState('');
   const [enableWaitlist, setEnableWaitlist] = useState(true);
+  const [hasWaitlistEntries, setHasWaitlistEntries] = useState(false);
   const [pointOfContact, setPointOfContact] = useState('');
   const [timespans, setTimespans] = useState<Timespan[]>([{ startDt: '', endDt: '' }]);
   const [selectedSheets, setSelectedSheets] = useState<number[]>([]);
@@ -255,14 +257,19 @@ export default function AdminEventEditor() {
   const [linkedArticleId, setLinkedArticleId] = useState<number | null>(null);
 
   const isBonspielEvent = calendarTypeId === 'bonspiel';
+  const showWaitlistTab = enableWaitlist || hasWaitlistEntries;
   const secondaryTabKeys = useMemo(() => {
     if (isNew) return [] as const;
-    const tail = ['registrations', 'links'] as const;
+    const tail = [
+      'registrations',
+      ...(showWaitlistTab ? (['waitlist'] as const) : []),
+      'links',
+    ] as const;
     if (isBonspielEvent) {
       return ['details', 'tournament', ...tail] as const;
     }
     return ['details', ...tail] as const;
-  }, [isNew, isBonspielEvent]);
+  }, [isNew, isBonspielEvent, showWaitlistTab]);
 
   type SecondaryTabKey = (typeof secondaryTabKeys)[number];
   type TabKey = 'settings' | SecondaryTabKey;
@@ -341,6 +348,7 @@ export default function AdminEventEditor() {
         setAllowGroupRegistration(!!e.allowGroupRegistration);
         setMaxGroupSize(e.maxGroupSize !== null ? String(e.maxGroupSize) : '');
         setEnableWaitlist(e.enableWaitlist !== 0);
+        setHasWaitlistEntries(false);
         setPointOfContact(e.pointOfContact ?? '');
         setTimespans(
           (e.timespans || []).map((ts: ApiEventTimespanRow) => ({
@@ -393,10 +401,22 @@ export default function AdminEventEditor() {
     setRegistrationsLoaded(false);
     setLinksLoaded(false);
     setSpecialLinks([]);
+    setHasWaitlistEntries(false);
     setRegistrationSearch('');
     setRegistrationSortKey('date');
     setRegistrationSortOrder('desc');
   }, [eventId]);
+
+  useEffect(() => {
+    if (isNew || !eventId || enableWaitlist) return;
+    api
+      .get<{ summary?: { waitlistLength?: number } }>(`/events/${eventId}/waitlist`)
+      .then((res) => {
+        const length = res.data?.summary?.waitlistLength ?? 0;
+        if (length > 0) setHasWaitlistEntries(true);
+      })
+      .catch(() => {});
+  }, [eventId, isNew, enableWaitlist]);
 
   useEffect(() => {
     if (activeTab === 'registrations' && eventId && !registrationsLoaded) {
@@ -1107,6 +1127,7 @@ export default function AdminEventEditor() {
           { key: 'details' as const, label: 'Details' },
           ...(isBonspielEvent ? [{ key: 'tournament' as const, label: 'Tournament' }] : []),
           { key: 'registrations' as const, label: 'Registrations' },
+          ...(showWaitlistTab ? [{ key: 'waitlist' as const, label: 'Waitlist' }] : []),
           { key: 'links' as const, label: 'Special registration links' },
         ]
       : []),
@@ -1940,15 +1961,19 @@ export default function AdminEventEditor() {
                   setRegistrationSortOrder(sort.direction);
                 }}
                 actions={{
-                  widthClassName: 'w-[7rem]',
+                  position: 'left',
+                  header: '',
+                  widthClassName: 'w-12',
                   renderActions: (registration) =>
                     registration.status !== 'cancelled' ? (
                       <button
                         type="button"
                         onClick={() => setCancelTarget(registration)}
-                        className="text-red-600 hover:underline dark:text-red-400"
+                        className="shrink-0 rounded p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                        title="Cancel registration"
+                        aria-label="Cancel registration"
                       >
-                        Cancel
+                        <HiTrash className="h-4 w-4" />
                       </button>
                     ) : null,
                 }}
@@ -1982,6 +2007,16 @@ export default function AdminEventEditor() {
               </div>
             ) : null}
           </div>
+        )}
+
+        {activeTab === 'waitlist' && !isNew && eventId != null && (
+          <AdminEventWaitlistPanel
+            eventId={eventId}
+            isActive={activeTab === 'waitlist'}
+            onSummaryChange={(summary) => {
+              if (summary.waitlistLength > 0) setHasWaitlistEntries(true);
+            }}
+          />
         )}
 
         {activeTab === 'links' && (

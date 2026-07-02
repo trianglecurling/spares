@@ -1936,12 +1936,26 @@ export class PaymentService {
           subject_type: this.schema.paymentOrders.subject_type,
           subject_id: this.schema.paymentOrders.subject_id,
           status: this.schema.paymentOrders.status,
+          metadata: this.schema.paymentOrders.metadata,
         })
         .from(this.schema.paymentOrders)
         .where(eq(this.schema.paymentOrders.id, orderId))
         .limit(1);
 
       if (!order || order.subject_type !== 'event_registration' || order.status !== 'succeeded' || !order.subject_id) {
+        return;
+      }
+
+      const metadata = safeJsonParseObject(order.metadata);
+      const waitlistOfferId = Number(metadata.eventWaitlistOfferId ?? metadata.event_waitlist_offer_id);
+      if (Number.isFinite(waitlistOfferId) && waitlistOfferId > 0) {
+        const { confirmWaitlistOfferPayment } = await import('./eventWaitlistService.js');
+        await confirmWaitlistOfferPayment(orderId, waitlistOfferId);
+        await logEvent({
+          eventType: 'event.waitlist_offer.payment_confirmed',
+          relatedId: waitlistOfferId,
+          meta: { paymentOrderId: orderId },
+        });
         return;
       }
 
@@ -2030,12 +2044,22 @@ export class PaymentService {
         subject_type: this.schema.paymentOrders.subject_type,
         subject_id: this.schema.paymentOrders.subject_id,
         status: this.schema.paymentOrders.status,
+        metadata: this.schema.paymentOrders.metadata,
       })
       .from(this.schema.paymentOrders)
       .where(eq(this.schema.paymentOrders.id, orderId))
       .limit(1);
 
-    if (!order || order.subject_type !== 'event_registration' || order.status !== 'succeeded' || !order.subject_id) {
+    if (!order || order.subject_type !== 'event_registration' || !order.subject_id) {
+      return;
+    }
+
+    const metadata = safeJsonParseObject(order.metadata);
+    const paymentOutcome = asString(metadata.eventRegistrationPaymentOutcome);
+    const isRaceOutcome =
+      paymentOutcome === 'waitlisted_with_refund' || paymentOutcome === 'cancelled_with_refund';
+    const emailEligibleStatuses = new Set(['succeeded', 'pending_refund', 'refunded', 'partially_refunded']);
+    if (!emailEligibleStatuses.has(order.status) && !isRaceOutcome) {
       return;
     }
 
@@ -2047,6 +2071,7 @@ export class PaymentService {
         eventId: this.schema.eventRegistrations.event_id,
         accessToken: this.schema.eventRegistrations.access_token,
         status: this.schema.eventRegistrations.status,
+        waitlistPosition: this.schema.eventRegistrations.waitlist_position,
       })
       .from(this.schema.eventRegistrations)
       .where(eq(this.schema.eventRegistrations.id, order.subject_id))
@@ -2073,25 +2098,58 @@ export class PaymentService {
         const accessToken = registration.accessToken
           ?? await ensureRegistrationAccessToken(order.subject_id);
 
-        await sendEventRegistrationPaymentConfirmationEmail(
-          registration.contactEmail,
-          registration.contactName,
-          event.title,
-          eventWhen,
-          registration.groupSize ?? 1,
-          paymentDetailsUrl(order.order_token),
-          undefined,
-          {
-            manageRegistrationUrl: eventRegistrationManageUrl(accessToken),
-            receiptUrl: paymentDetailsUrl(order.order_token),
-            pointOfContact: event.point_of_contact,
-          },
-        );
+        if (paymentOutcome === 'waitlisted_with_refund') {
+          const { getWaitlistLength } = await import('./eventWaitlistService.js');
+          const waitlistLength = await getWaitlistLength(registration.eventId);
+          const { sendEventRegistrationPaymentRaceWaitlistEmail } = await import('./email.js');
+          await sendEventRegistrationPaymentRaceWaitlistEmail(
+            registration.contactEmail,
+            registration.contactName,
+            event.title,
+            eventWhen,
+            registration.waitlistPosition ?? 0,
+            waitlistLength,
+            {
+              manageRegistrationUrl: eventRegistrationManageUrl(accessToken),
+              pointOfContact: event.point_of_contact,
+            },
+          );
+        } else if (paymentOutcome === 'cancelled_with_refund') {
+          const { sendEventRegistrationPaymentRaceCancelledEmail } = await import('./email.js');
+          await sendEventRegistrationPaymentRaceCancelledEmail(
+            registration.contactEmail,
+            registration.contactName,
+            event.title,
+            eventWhen,
+            {
+              pointOfContact: event.point_of_contact,
+            },
+          );
+        } else if (registration.status === 'confirmed') {
+          await sendEventRegistrationPaymentConfirmationEmail(
+            registration.contactEmail,
+            registration.contactName,
+            event.title,
+            eventWhen,
+            registration.groupSize ?? 1,
+            paymentDetailsUrl(order.order_token),
+            undefined,
+            {
+              manageRegistrationUrl: eventRegistrationManageUrl(accessToken),
+              receiptUrl: paymentDetailsUrl(order.order_token),
+              pointOfContact: event.point_of_contact,
+            },
+          );
+        } else {
+          emailClaimed = false;
+          await this.clearEventPaymentConfirmationEmailClaim(orderId).catch(() => {});
+          return;
+        }
 
         await logEvent({
           eventType: 'event.registration.payment_confirmation_email.sent',
           relatedId: orderId,
-          meta: { registrationId: order.subject_id },
+          meta: { registrationId: order.subject_id, paymentOutcome: paymentOutcome ?? 'confirmed' },
         });
       }
     } catch (error) {
@@ -2179,7 +2237,7 @@ export class PaymentService {
         .where(eq(this.schema.eventRegistrations.id, order.subject_id))
         .limit(1);
 
-      if (!reg || reg.status === 'cancelled') {
+      if (!reg || reg.status === 'cancelled' || reg.status === 'waitlisted') {
         return;
       }
 

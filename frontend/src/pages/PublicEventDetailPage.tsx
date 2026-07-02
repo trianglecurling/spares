@@ -17,6 +17,7 @@ import SeoMeta from '../components/SeoMeta';
 import PublicNotFoundPage from './PublicNotFoundPage';
 import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
+import { waitlistEntryCountLabel } from '../components/registration/registrationViewEditShared';
 import { teamIdsAssignedOnDraw, type TournamentDrawState } from '../utils/tournamentDrawModel';
 import {
   formatPositionCell,
@@ -63,6 +64,8 @@ interface EventDetail {
     sort_order: number;
   }>;
   confirmedCount: number;
+  waitlistedCount?: number;
+  openSpots?: number | null;
   serverNow?: string;
 }
 
@@ -515,8 +518,13 @@ export default function PublicEventDetailPage() {
   }
 
   const spotsRemaining =
-    event.capacity !== null ? Math.max(0, event.capacity - event.confirmedCount) : null;
+    event.openSpots != null
+      ? event.openSpots
+      : event.capacity !== null
+        ? Math.max(0, event.capacity - event.confirmedCount)
+        : null;
   const isFull = spotsRemaining !== null && spotsRemaining <= 0;
+  const waitlistedCount = event.waitlistedCount ?? 0;
 
   const opensCopy =
     event.registrationStart && hasNotOpenedYet && msUntilOpen > 0
@@ -822,6 +830,9 @@ export default function PublicEventDetailPage() {
                       {!isFull && spotsRemaining !== null && (
                         <p className="text-sm text-gray-600">{spotsRemaining} spots remaining</p>
                       )}
+                      {event.enableWaitlist === 1 && waitlistedCount > 0 ? (
+                        <p className="text-sm text-gray-600">{waitlistEntryCountLabel(waitlistedCount)}</p>
+                      ) : null}
                     </div>
                   </DetailRow>
                 )}

@@ -1179,6 +1179,8 @@ export type EventRegistrationEmailLinks = {
   manageRegistrationUrl?: string;
   receiptUrl?: string | null;
   pointOfContact?: string;
+  manageLinkLabel?: string;
+  manageSecuritySubject?: string;
 };
 
 function eventPointOfContactSections(pointOfContact?: string | null): { html: string; text: string } {
@@ -1199,17 +1201,19 @@ function eventRegistrationEmailLinkSections(links?: EventRegistrationEmailLinks)
   const receiptHtml = links.receiptUrl
     ? `<p><a href="${escapeHtmlEmail(links.receiptUrl)}">View payment receipt</a></p>`
     : '';
+  const manageLabel = links.manageLinkLabel ?? 'Manage your registration';
+  const manageSubject = links.manageSecuritySubject ?? 'registration';
   const manageHtml = links.manageRegistrationUrl
-    ? `<p><a href="${escapeHtmlEmail(links.manageRegistrationUrl)}">Manage your registration</a></p>`
+    ? `<p><a href="${escapeHtmlEmail(links.manageRegistrationUrl)}">${escapeHtmlEmail(manageLabel)}</a></p>`
     : '';
   const securityHtml = links.manageRegistrationUrl
-    ? '<p><strong>Important:</strong> Do not forward this email. Anyone with the manage link above can view or change your registration.</p>'
+    ? `<p><strong>Important:</strong> Do not forward this email. Anyone with the manage link above can view or change your ${escapeHtmlEmail(manageSubject)}.</p>`
     : '';
 
   const receiptText = links.receiptUrl ? `View payment receipt: ${links.receiptUrl}` : null;
-  const manageText = links.manageRegistrationUrl ? `Manage your registration: ${links.manageRegistrationUrl}` : null;
+  const manageText = links.manageRegistrationUrl ? `${manageLabel}: ${links.manageRegistrationUrl}` : null;
   const securityText = links.manageRegistrationUrl
-    ? 'Important: Do not forward this email. Anyone with the manage link above can view or change your registration.'
+    ? `Important: Do not forward this email. Anyone with the manage link above can view or change your ${manageSubject}.`
     : null;
 
   return {
@@ -1295,7 +1299,13 @@ export async function sendEventRegistrationConfirmationEmail(
     ? `<p><strong>Group size:</strong> ${groupSize}</p>`
     : '';
 
-  const linkSections = eventRegistrationEmailLinkSections(links);
+  const isWaitlisted = status === 'waitlisted';
+  const linkSections = eventRegistrationEmailLinkSections({
+    ...links,
+    receiptUrl: isWaitlisted ? null : links?.receiptUrl,
+    manageLinkLabel: isWaitlisted ? 'Manage your waitlist entry' : links?.manageLinkLabel,
+    manageSecuritySubject: isWaitlisted ? 'waitlist entry' : links?.manageSecuritySubject,
+  });
   const contactSections = eventPointOfContactSections(links?.pointOfContact);
 
   const htmlContent = `
@@ -1344,12 +1354,14 @@ export async function sendEventRegistrationCancelledEmail(
   options?: {
     refundReceiptUrl?: string | null;
     pointOfContact?: string;
+    isWaitlistEntry?: boolean;
   }
 ): Promise<void> {
-  const refundReceiptUrl = options?.refundReceiptUrl?.trim() || null;
+  const isWaitlistEntry = options?.isWaitlistEntry === true;
+  const refundReceiptUrl = isWaitlistEntry ? null : (options?.refundReceiptUrl?.trim() || null);
   const contactSections = eventPointOfContactSections(options?.pointOfContact);
 
-  const refundLine = refundIssued
+  const refundLine = !isWaitlistEntry && refundIssued
     ? '<p>A full refund has been issued and should appear within a few business days.</p>'
     : '';
 
@@ -1357,22 +1369,29 @@ export async function sendEventRegistrationCancelledEmail(
     ? `<p><a href="${escapeHtmlEmail(refundReceiptUrl)}">View refund receipt</a></p>`
     : '';
 
+  const heading = isWaitlistEntry ? 'Waitlist entry canceled' : 'Registration canceled';
+  const canceledLine = isWaitlistEntry
+    ? `Your waitlist entry for <strong>${escapeHtmlEmail(eventTitle)}</strong> has been canceled.`
+    : `Your registration for <strong>${escapeHtmlEmail(eventTitle)}</strong> has been canceled.`;
+
   const htmlContent = `
-    <h2>Registration canceled</h2>
+    <h2>${heading}</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
-    <p>Your registration for <strong>${escapeHtmlEmail(eventTitle)}</strong> has been canceled.</p>
+    <p>${canceledLine}</p>
     ${refundLine}
     ${refundReceiptHtml}
     ${contactSections.html}
   `;
 
   const textBody = [
-    'Registration canceled',
+    heading,
     '',
     `Hi ${recipientName},`,
     '',
-    `Your registration for ${eventTitle} has been canceled.`,
-    refundIssued ? 'A full refund has been issued and should appear within a few business days.' : null,
+    isWaitlistEntry
+      ? `Your waitlist entry for ${eventTitle} has been canceled.`
+      : `Your registration for ${eventTitle} has been canceled.`,
+    !isWaitlistEntry && refundIssued ? 'A full refund has been issued and should appear within a few business days.' : null,
     refundReceiptUrl ? `View refund receipt: ${refundReceiptUrl}` : null,
     contactSections.text || null,
   ].filter(Boolean).join('\n');
@@ -1380,7 +1399,7 @@ export async function sendEventRegistrationCancelledEmail(
   await sendEmail(
     {
       to,
-      subject: `Registration canceled: ${eventTitle}`,
+      subject: `${heading}: ${eventTitle}`,
       htmlContent,
       textContent: textBody,
       recipientName,
@@ -1397,26 +1416,168 @@ export async function sendEventWaitlistPromotionEmail(
   eventUrl: string,
   memberToken?: string
 ): Promise<void> {
-  const actionLine = needsPayment
-    ? `<p>A spot has opened up! Please <a href="${eventUrl}">complete your payment</a> to confirm your registration.</p>`
-    : '<p>A spot has opened up and your registration has been confirmed!</p>';
+  await sendEventWaitlistPromotionOfferEmail(
+    to,
+    recipientName,
+    eventTitle,
+    needsPayment,
+    3,
+    new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    eventUrl,
+    memberToken,
+  );
+}
+
+export async function sendEventWaitlistPromotionOfferEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  needsPayment: boolean,
+  respondByDays: number,
+  expiresAt: Date,
+  offerUrl: string,
+  memberToken?: string,
+): Promise<void> {
+  const expiresLabel = expiresAt.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const declineUrl = `${offerUrl}${offerUrl.includes('?') ? '&' : '?'}action=decline`;
+  const paymentLine = needsPayment
+    ? 'You can accept the spot and complete payment from the link below.'
+    : 'You can accept the spot from the link below — no payment is required.';
 
   const htmlContent = `
-    <h2>You've been promoted from the waitlist!</h2>
+    <h2>A spot opened up!</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
-    ${actionLine}
+    <p>Good news — a spot has opened for <strong>${escapeHtmlEmail(eventTitle)}</strong>.</p>
+    <p>You have <strong>${respondByDays} day${respondByDays === 1 ? '' : 's'}</strong> to respond (until ${escapeHtmlEmail(expiresLabel)}).</p>
+    <p>${paymentLine}</p>
+    <p><a href="${escapeHtmlEmail(offerUrl)}">Review and respond to this offer</a></p>
+    <p><a href="${escapeHtmlEmail(declineUrl)}">Decline this spot</a></p>
     <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
   `;
+
+  const textBody = [
+    'A spot opened up!',
+    '',
+    `Hi ${recipientName},`,
+    '',
+    `Good news — a spot has opened for ${eventTitle}.`,
+    `You have ${respondByDays} day${respondByDays === 1 ? '' : 's'} to respond (until ${expiresLabel}).`,
+    paymentLine,
+    '',
+    `Review and respond: ${offerUrl}`,
+    `Decline this spot: ${declineUrl}`,
+  ].join('\n');
 
   await sendEmail(
     {
       to,
       subject: `Spot available: ${eventTitle}`,
       htmlContent,
+      textContent: textBody,
       recipientName,
     },
-    memberToken
+    memberToken,
   );
+}
+
+export async function sendEventRegistrationPaymentRaceWaitlistEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  eventWhen: FormattedEventWhen,
+  waitlistPosition: number,
+  waitlistLength: number,
+  links?: EventRegistrationEmailLinks,
+): Promise<void> {
+  const linkSections = eventRegistrationEmailLinkSections(links);
+  const contactSections = eventPointOfContactSections(links?.pointOfContact);
+  const positionLine =
+    waitlistLength > 0
+      ? `You have been placed on the waitlist at position ${waitlistPosition} of ${waitlistLength}.`
+      : `You have been placed on the waitlist at position ${waitlistPosition}.`;
+
+  const htmlContent = `
+    <h2>Payment received — event filled</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>We received your payment, but the event filled before your payment completed.</p>
+    <p>${positionLine}</p>
+    <p>A full refund has been issued, and it should appear on your statement within the next few business days.</p>
+    <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
+    <p><strong>When:</strong><br>${eventWhen.html}</p>
+    ${linkSections.html}
+    ${contactSections.html}
+  `;
+
+  const textBody = [
+    'Payment received — event filled',
+    '',
+    `Hi ${recipientName},`,
+    '',
+    'We received your payment, but the event filled before your payment completed.',
+    positionLine,
+    'A full refund has been issued, and it should appear on your statement within the next few business days.',
+    '',
+    `Event: ${eventTitle}`,
+    `When: ${eventWhen.text}`,
+    linkSections.text || null,
+    contactSections.text || null,
+  ].filter(Boolean).join('\n');
+
+  await sendEmail({
+    to,
+    subject: `Waitlisted after payment: ${eventTitle}`,
+    htmlContent,
+    textContent: textBody,
+    recipientName,
+  });
+}
+
+export async function sendEventRegistrationPaymentRaceCancelledEmail(
+  to: string,
+  recipientName: string,
+  eventTitle: string,
+  eventWhen: FormattedEventWhen,
+  links?: EventRegistrationEmailLinks,
+): Promise<void> {
+  const contactSections = eventPointOfContactSections(links?.pointOfContact);
+
+  const htmlContent = `
+    <h2>Payment received — registration could not be completed</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>We received your payment, but the event filled before your payment completed and the waitlist is not available for this event.</p>
+    <p>Your registration could not be completed.</p>
+    <p>A full refund has been issued, and it should appear on your statement within the next few business days.</p>
+    <p><strong>Event:</strong> ${escapeHtmlEmail(eventTitle)}</p>
+    <p><strong>When:</strong><br>${eventWhen.html}</p>
+    ${contactSections.html}
+  `;
+
+  const textBody = [
+    'Payment received — registration could not be completed',
+    '',
+    `Hi ${recipientName},`,
+    '',
+    'We received your payment, but the event filled before your payment completed and the waitlist is not available for this event.',
+    'Your registration could not be completed.',
+    'A full refund has been issued, and it should appear on your statement within the next few business days.',
+    '',
+    `Event: ${eventTitle}`,
+    `When: ${eventWhen.text}`,
+    contactSections.text || null,
+  ].filter(Boolean).join('\n');
+
+  await sendEmail({
+    to,
+    subject: `Registration could not be completed: ${eventTitle}`,
+    htmlContent,
+    textContent: textBody,
+    recipientName,
+  });
 }
 
 export type EventRegistrationFormEmailRow = {
@@ -1546,28 +1707,37 @@ export async function sendEventPointOfContactRegistrationCancelledEmail(
   registrantName: string,
   registrantEmail: string,
   formRows: EventRegistrationFormEmailRow[],
+  isWaitlistEntry = false,
 ): Promise<void> {
   const formHtml = eventRegistrationFormRowsHtml(formRows);
   const formText = eventRegistrationFormRowsText(formRows);
 
+  const heading = isWaitlistEntry ? 'Waitlist entry canceled' : 'Registration canceled';
+  const canceledLine = isWaitlistEntry
+    ? `${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)}) canceled their waitlist entry for <strong>${escapeHtmlEmail(eventTitle)}</strong>.`
+    : `${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)}) canceled their registration for <strong>${escapeHtmlEmail(eventTitle)}</strong>.`;
+  const formHeading = isWaitlistEntry ? 'Waitlist entry information' : 'Registration information';
+
   const htmlContent = `
-    <h2>Registration canceled</h2>
-    <p>${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)}) canceled their registration for <strong>${escapeHtmlEmail(eventTitle)}</strong>.</p>
-    ${formHtml ? `<h3>Registration information</h3>${formHtml}` : ''}
+    <h2>${heading}</h2>
+    <p>${canceledLine}</p>
+    ${formHtml ? `<h3>${formHeading}</h3>${formHtml}` : ''}
   `;
 
   const textBody = [
-    'Registration canceled',
+    heading,
     '',
-    `${registrantName} (${registrantEmail}) canceled their registration for ${eventTitle}.`,
+    isWaitlistEntry
+      ? `${registrantName} (${registrantEmail}) canceled their waitlist entry for ${eventTitle}.`
+      : `${registrantName} (${registrantEmail}) canceled their registration for ${eventTitle}.`,
     formText ? '' : null,
-    formText ? 'Registration information:' : null,
+    formText ? `${formHeading}:` : null,
     formText || null,
   ].filter((line) => line !== null).join('\n');
 
   await sendEmail({
     to,
-    subject: `Registration canceled: ${eventTitle}`,
+    subject: `${heading}: ${eventTitle}`,
     htmlContent,
     textContent: textBody,
     recipientName: to,

@@ -18,9 +18,13 @@ import { startWaitlistOfferProcessor } from './services/waitlistOfferProcessor.j
 import { isDatabaseConfigured } from './db/config.js';
 import { warmPublicBootstrapCache } from './services/publicBootstrapCache.js';
 import { maybeInvalidatePublicBootstrapCache } from './services/publicBootstrapCacheInvalidation.js';
+import { FASTIFY_MAX_PARAM_LENGTH } from './utils/eventRegistrationAccessToken.js';
 
 const fastify = Fastify({
   logger: config.nodeEnv === 'development',
+  routerOptions: {
+    maxParamLength: FASTIFY_MAX_PARAM_LENGTH,
+  },
 });
 
 fastify.addHook('onResponse', async (request, reply) => {

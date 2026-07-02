@@ -16,6 +16,7 @@ import {
 import { syncTournamentTeamForRegistrationSafe } from './eventTournamentRegistrationSyncService.js';
 import { EventServiceError } from './eventServiceError.js';
 import { formatMemberDisplayName } from '../utils/memberName.js';
+import { generateEventRegistrationAccessToken } from '../utils/eventRegistrationAccessToken.js';
 import { getSeasonStartYearForUtcDate, parseFiscalYearStartMmdd, seasonStartYearsTouchingRangeUtc } from '../utils/fiscalSeason.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 
@@ -176,6 +177,8 @@ export interface RegisterForEventInput {
   }>;
   specialLinkToken?: string | null;
   adminOverride?: boolean;
+  /** Manager manual waitlist add: always waitlist regardless of capacity. */
+  forceWaitlist?: boolean;
 }
 
 async function ensureUniqueSlug(baseSlug: string, excludeId?: number): Promise<string> {
@@ -710,9 +713,12 @@ export async function registerForEvent(input: RegisterForEventInput) {
     throw new EventServiceError(`Maximum group size is ${effectiveMaxGroupSize}`, 400);
   }
 
-  const confirmedCount = await getConfirmedRegistrationCount(input.eventId);
+  const { getCapacityHoldCount } = await import('./eventWaitlistService.js');
+  const capacityHoldCount = await getCapacityHoldCount(input.eventId);
   const bypassCapacity = specialLink?.bypass_capacity === 1;
-  const capacityAvailable = event.capacity === null || bypassCapacity || confirmedCount + groupSize <= event.capacity;
+  const capacityAvailable = input.forceWaitlist
+    ? false
+    : event.capacity === null || bypassCapacity || capacityHoldCount + groupSize <= event.capacity;
 
   const effectiveFee = resolveEventRegistrationFeeMinor(event, {
     memberId: input.memberId,
@@ -723,7 +729,12 @@ export async function registerForEvent(input: RegisterForEventInput) {
   const needsPayment = totalFee > 0;
 
   let status: EventRegistrationStatus;
-  if (!capacityAvailable && event.enable_waitlist) {
+  if (input.forceWaitlist) {
+    if (!event.enable_waitlist) {
+      throw new EventServiceError('Waitlist is not enabled for this event', 400);
+    }
+    status = 'waitlisted';
+  } else if (!capacityAvailable && event.enable_waitlist) {
     status = 'waitlisted';
   } else if (!capacityAvailable) {
     throw new EventServiceError('Event is full', 400);
@@ -749,7 +760,7 @@ export async function registerForEvent(input: RegisterForEventInput) {
     waitlistPosition = (lastWaitlisted[0]?.waitlist_position ?? 0) + 1;
   }
 
-  const accessToken = crypto.randomUUID();
+  const accessToken = generateEventRegistrationAccessToken();
 
   const [registration] = await db
     .insert(schema.eventRegistrations)
@@ -837,7 +848,18 @@ export async function registerForEvent(input: RegisterForEventInput) {
   };
 }
 
-export async function confirmRegistrationPayment(registrationId: number, paymentOrderId: number): Promise<void> {
+export type ConfirmRegistrationPaymentResult = {
+  outcome: 'confirmed' | 'waitlisted_with_refund' | 'cancelled_with_refund' | 'already_processed' | 'skipped';
+  registrationStatus: EventRegistrationStatus | null;
+  refundIssued: boolean;
+  waitlistPosition: number | null;
+  waitlistLength: number | null;
+};
+
+export async function confirmRegistrationPayment(
+  registrationId: number,
+  paymentOrderId: number,
+): Promise<ConfirmRegistrationPaymentResult> {
   const { db, schema } = getDrizzleDb();
 
   const [reg] = await db
@@ -845,68 +867,158 @@ export async function confirmRegistrationPayment(registrationId: number, payment
     .from(schema.eventRegistrations)
     .where(eq(schema.eventRegistrations.id, registrationId))
     .limit(1);
-  if (!reg) return;
-
-  const event = await getEventById(reg.event_id);
-  if (!event) return;
-
-  if (reg.status === 'pending_payment') {
-    const groupSize = reg.group_size ?? 1;
-    const confirmedCount = await getConfirmedRegistrationCount(reg.event_id);
-
-    let nextStatus: EventRegistrationStatus = 'confirmed';
-    let waitlistPosition: number | null = null;
-
-    if (event.capacity !== null && confirmedCount + groupSize > event.capacity) {
-      if (event.enable_waitlist) {
-        nextStatus = 'waitlisted';
-        const lastWaitlisted = await db
-          .select({ waitlist_position: schema.eventRegistrations.waitlist_position })
-          .from(schema.eventRegistrations)
-          .where(
-            and(
-              eq(schema.eventRegistrations.event_id, reg.event_id),
-              eq(schema.eventRegistrations.status, 'waitlisted' as any),
-            ),
-          )
-          .orderBy(desc(schema.eventRegistrations.waitlist_position))
-          .limit(1);
-        waitlistPosition = (lastWaitlisted[0]?.waitlist_position ?? 0) + 1;
-      }
-    }
-
-    await db
-      .update(schema.eventRegistrations)
-      .set({
-        status: nextStatus as any,
-        payment_order_id: paymentOrderId,
-        waitlist_position: waitlistPosition,
-      })
-      .where(
-        and(
-          eq(schema.eventRegistrations.id, registrationId),
-          eq(schema.eventRegistrations.status, 'pending_payment' as any),
-        ),
-      );
-
-    await syncTournamentTeamForRegistrationSafe(registrationId);
+  if (!reg) {
+    return {
+      outcome: 'skipped',
+      registrationStatus: null,
+      refundIssued: false,
+      waitlistPosition: null,
+      waitlistLength: null,
+    };
   }
 
-  const [current] = await db
-    .select({
-      status: schema.eventRegistrations.status,
-      payment_order_id: schema.eventRegistrations.payment_order_id,
+  const event = await getEventById(reg.event_id);
+  if (!event) {
+    return {
+      outcome: 'skipped',
+      registrationStatus: reg.status as EventRegistrationStatus,
+      refundIssued: false,
+      waitlistPosition: reg.waitlist_position,
+      waitlistLength: null,
+    };
+  }
+
+  if (reg.status !== 'pending_payment') {
+    const { getWaitlistLength } = await import('./eventWaitlistService.js');
+    return {
+      outcome: 'already_processed',
+      registrationStatus: reg.status as EventRegistrationStatus,
+      refundIssued: false,
+      waitlistPosition: reg.waitlist_position,
+      waitlistLength: reg.status === 'waitlisted' ? await getWaitlistLength(reg.event_id) : null,
+    };
+  }
+
+  const groupSize = reg.group_size ?? 1;
+  const { getCapacityHoldCount, getWaitlistLength } = await import('./eventWaitlistService.js');
+  const capacityHoldCount = await getCapacityHoldCount(reg.event_id);
+
+  let nextStatus: EventRegistrationStatus = 'confirmed';
+  let waitlistPosition: number | null = null;
+  let outcome: ConfirmRegistrationPaymentResult['outcome'] = 'confirmed';
+
+  if (event.capacity !== null && capacityHoldCount + groupSize > event.capacity) {
+    if (event.enable_waitlist) {
+      nextStatus = 'waitlisted';
+      outcome = 'waitlisted_with_refund';
+      const lastWaitlisted = await db
+        .select({ waitlist_position: schema.eventRegistrations.waitlist_position })
+        .from(schema.eventRegistrations)
+        .where(
+          and(
+            eq(schema.eventRegistrations.event_id, reg.event_id),
+            eq(schema.eventRegistrations.status, 'waitlisted' as any),
+          ),
+        )
+        .orderBy(desc(schema.eventRegistrations.waitlist_position))
+        .limit(1);
+      waitlistPosition = (lastWaitlisted[0]?.waitlist_position ?? 0) + 1;
+    } else {
+      nextStatus = 'cancelled';
+      outcome = 'cancelled_with_refund';
+    }
+  }
+
+  const updated = await db
+    .update(schema.eventRegistrations)
+    .set({
+      status: nextStatus as any,
+      payment_order_id: paymentOrderId,
+      waitlist_position: waitlistPosition,
+      cancelled_at: nextStatus === 'cancelled' ? (new Date() as any) : null,
     })
-    .from(schema.eventRegistrations)
-    .where(eq(schema.eventRegistrations.id, registrationId))
-    .limit(1);
+    .where(
+      and(
+        eq(schema.eventRegistrations.id, registrationId),
+        eq(schema.eventRegistrations.status, 'pending_payment' as any),
+      ),
+    )
+    .returning({ id: schema.eventRegistrations.id });
 
-  if (!current) return;
-  if (current.status !== 'confirmed' && current.status !== 'waitlisted') return;
-  if (current.payment_order_id != null && current.payment_order_id !== paymentOrderId) return;
+  if (updated.length === 0) {
+    const [current] = await db
+      .select({
+        status: schema.eventRegistrations.status,
+        waitlist_position: schema.eventRegistrations.waitlist_position,
+      })
+      .from(schema.eventRegistrations)
+      .where(eq(schema.eventRegistrations.id, registrationId))
+      .limit(1);
+    return {
+      outcome: 'already_processed',
+      registrationStatus: (current?.status as EventRegistrationStatus) ?? null,
+      refundIssued: false,
+      waitlistPosition: current?.waitlist_position ?? null,
+      waitlistLength: current?.status === 'waitlisted' ? await getWaitlistLength(reg.event_id) : null,
+    };
+  }
 
-  const { sendEventRegistrationCompletionEmailsForOrder } = await import('./paymentService.js');
-  await sendEventRegistrationCompletionEmailsForOrder(paymentOrderId);
+  await syncTournamentTeamForRegistrationSafe(registrationId);
+
+  let refundIssued = false;
+  if (outcome === 'waitlisted_with_refund' || outcome === 'cancelled_with_refund') {
+    const { claimEventRegistrationRaceRefund, issueEventRegistrationRefund } = await import('./eventRegistrationRefundService.js');
+    const { getDatabaseConfig } = await import('../db/config.js');
+    const isPostgres = getDatabaseConfig()?.type === 'postgres';
+    const metadataColumn = schema.paymentOrders.metadata;
+    const claimed = await claimEventRegistrationRaceRefund(paymentOrderId);
+    if (claimed) {
+      const refundResult = await issueEventRegistrationRefund({
+        paymentOrderId,
+        reason: 'Event filled before payment completed',
+        bypassEligibility: true,
+      });
+      refundIssued = refundResult.refundIssued;
+    } else {
+      const [order] = await db
+        .select({ status: schema.paymentOrders.status })
+        .from(schema.paymentOrders)
+        .where(eq(schema.paymentOrders.id, paymentOrderId))
+        .limit(1);
+      refundIssued = order?.status === 'refunded' || order?.status === 'pending_refund';
+    }
+
+    const outcomeKey = outcome;
+    await db
+      .update(schema.paymentOrders)
+      .set({
+        metadata: isPostgres
+          ? sql`(COALESCE(${metadataColumn}::jsonb, '{}'::jsonb) || jsonb_build_object('eventRegistrationPaymentOutcome', cast(${outcomeKey} as text)))::text`
+          : sql`json_set(COALESCE(${metadataColumn}, '{}'), '$.eventRegistrationPaymentOutcome', ${outcomeKey})`,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.paymentOrders.id, paymentOrderId));
+  }
+
+  const waitlistLength =
+    nextStatus === 'waitlisted' ? await getWaitlistLength(reg.event_id) : null;
+
+  if (
+    outcome === 'confirmed' ||
+    outcome === 'waitlisted_with_refund' ||
+    outcome === 'cancelled_with_refund'
+  ) {
+    const { sendEventRegistrationCompletionEmailsForOrder } = await import('./paymentService.js');
+    await sendEventRegistrationCompletionEmailsForOrder(paymentOrderId);
+  }
+
+  return {
+    outcome,
+    registrationStatus: nextStatus,
+    refundIssued,
+    waitlistPosition,
+    waitlistLength,
+  };
 }
 
 export async function cancelRegistration(registrationId: number): Promise<{ refundEligible: boolean; event: any }> {
@@ -933,54 +1045,14 @@ export async function cancelRegistration(registrationId: number): Promise<{ refu
     .set({ status: 'cancelled' as any, cancelled_at: new Date() as any })
     .where(eq(schema.eventRegistrations.id, registrationId));
 
-  if (reg.status === 'confirmed' || reg.status === 'pending_payment') {
-    await promoteFromWaitlist(reg.event_id);
+  const { resolvePendingOfferForRegistration } = await import('./eventWaitlistService.js');
+  if (reg.status === 'waitlisted') {
+    await resolvePendingOfferForRegistration(registrationId, 'manager').catch(() => {});
   }
 
   await syncTournamentTeamForRegistrationSafe(registrationId);
 
   return { refundEligible, event };
-}
-
-export async function promoteFromWaitlist(eventId: number): Promise<number | null> {
-  const { db, schema } = getDrizzleDb();
-
-  const event = await getEventById(eventId);
-  if (!event || event.capacity === null) return null;
-
-  const confirmedCount = await getConfirmedRegistrationCount(eventId);
-  if (confirmedCount >= event.capacity) return null;
-
-  const [nextWaitlisted] = await db
-    .select()
-    .from(schema.eventRegistrations)
-    .where(
-      and(
-        eq(schema.eventRegistrations.event_id, eventId),
-        eq(schema.eventRegistrations.status, 'waitlisted' as any)
-      )
-    )
-    .orderBy(asc(schema.eventRegistrations.waitlist_position))
-    .limit(1);
-
-  if (!nextWaitlisted) return null;
-
-  const effectiveFee = resolveEventRegistrationFeeMinor(event, {
-    memberId: nextWaitlisted.member_id,
-    adminOverride: false,
-    specialLinkOverrideMinor: null,
-  });
-  const totalFee = effectiveFee * (nextWaitlisted.group_size || 1);
-  const newStatus: EventRegistrationStatus = totalFee > 0 ? 'pending_payment' : 'confirmed';
-
-  await db
-    .update(schema.eventRegistrations)
-    .set({ status: newStatus as any, waitlist_position: null })
-    .where(eq(schema.eventRegistrations.id, nextWaitlisted.id));
-
-  await syncTournamentTeamForRegistrationSafe(nextWaitlisted.id);
-
-  return nextWaitlisted.id;
 }
 
 export async function getRegistrationsForEvent(eventId: number) {
@@ -1355,7 +1427,7 @@ export async function ensureRegistrationAccessToken(registrationId: number): Pro
   if (!reg) throw new EventServiceError('Registration not found', 404);
   if (reg.access_token) return reg.access_token;
 
-  const accessToken = crypto.randomUUID();
+  const accessToken = generateEventRegistrationAccessToken();
   await db
     .update(schema.eventRegistrations)
     .set({ access_token: accessToken, updated_at: new Date() as any })

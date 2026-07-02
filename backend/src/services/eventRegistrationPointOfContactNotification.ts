@@ -26,6 +26,7 @@ type EventWithRegistrationFields = {
 };
 
 type DbRegistration = {
+  status?: string | null;
   contact_name?: string | null;
   contact_email?: string | null;
   groupMembers?: Array<{ id?: number; name: string; email?: string | null; sort_order?: number }>;
@@ -292,6 +293,7 @@ export async function notifyPointOfContactOfRegistrationCancellation(input: {
 
   const snapshot = buildRegistrationFormSnapshotFromRegistration(input.event, input.registration);
   const registrantName = input.registration.contact_name?.trim() || 'Registrant';
+  const isWaitlistEntry = input.registration.status === 'waitlisted';
 
   await sendEventPointOfContactRegistrationCancelledEmail(
     pointOfContact,
@@ -299,5 +301,6 @@ export async function notifyPointOfContactOfRegistrationCancellation(input: {
     registrantName,
     input.registration.contact_email ?? '',
     snapshot.rows,
+    isWaitlistEntry,
   );
 }

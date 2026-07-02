@@ -57,6 +57,7 @@ type RegistrationDetail = {
   waitlist_position: number | null;
   registered_at: string;
   payment_order_id: number | null;
+  access_token?: string | null;
   groupMembers: RegistrationGroupMember[];
   fieldValues: RegistrationFieldValue[];
   payment?: {
@@ -144,6 +145,7 @@ export default function AdminEventRegistrationEditor() {
   const [saving, setSaving] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [managementLinkCopied, setManagementLinkCopied] = useState(false);
 
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [registration, setRegistration] = useState<RegistrationDetail | null>(null);
@@ -356,6 +358,25 @@ export default function AdminEventRegistrationEditor() {
     }
   };
 
+  const copyRegistrationManagementLink = async () => {
+    if (!registration) return;
+
+    try {
+      const accessToken = registration.access_token?.trim();
+      if (!accessToken) {
+        showAlert('Registration management link is not available', 'error');
+        return;
+      }
+
+      const url = `${window.location.origin}/events/registrations/manage/${encodeURIComponent(accessToken)}`;
+      await navigator.clipboard.writeText(url);
+      setManagementLinkCopied(true);
+      setTimeout(() => setManagementLinkCopied(false), 2000);
+    } catch {
+      showAlert('Failed to copy to clipboard', 'error');
+    }
+  };
+
   if (loading) {
     return (
       <>
@@ -379,7 +400,7 @@ export default function AdminEventRegistrationEditor() {
   const pageTitle = isNew
     ? `New registration: ${event.title}`
     : `Registration #${registration?.id ?? ''}: ${event.title}`;
-  const showRefundWarning = event.feeMinor > 0;
+  const showRefundWarning = event.feeMinor > 0 && registration?.status !== 'waitlisted';
   const payment = registration?.payment ?? null;
   const primaryTransactionId = payment?.latest_transaction?.provider_transaction_id ?? null;
   const checkoutSessionId = payment?.provider_order_id ?? null;
@@ -511,6 +532,24 @@ export default function AdminEventRegistrationEditor() {
             )}
           </div>
         )}
+
+        {!isNew && registration ? (
+          <p className="text-sm">
+            <button
+              type="button"
+              onClick={() => void copyRegistrationManagementLink()}
+              className={`hover:underline ${
+                managementLinkCopied
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-primary-teal'
+              }`}
+            >
+              {managementLinkCopied
+                ? 'Registration management link copied'
+                : 'Copy registration management link'}
+            </button>
+          </p>
+        ) : null}
 
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-6">
           <form onSubmit={handleSave} className="space-y-6">

@@ -31,6 +31,7 @@ export type DataTableSelection<Row, RowId extends TableRowId> = {
 export type DataTableActions<Row> = {
   header?: ReactNode;
   widthClassName?: string;
+  position?: 'left' | 'right';
   renderActions: (row: Row) => ReactNode;
 };
 
