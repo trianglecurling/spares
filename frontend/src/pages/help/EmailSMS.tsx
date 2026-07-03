@@ -157,19 +157,11 @@ export default function EmailSMS() {
                     </p>
                     <ul className="list-disc list-inside space-y-2">
                       <li>
-                        <strong>Email notifications:</strong> Always enabled (required for account
-                        functionality)
+                        <strong>Email notifications:</strong> Sent for account activity, spare
+                        requests, registrations, and other club operations tied to your membership
                       </li>
                       <li>
                         <strong>SMS notifications:</strong> Opt in/out in your profile settings
-                      </li>
-                      <li>
-                        <strong>Unsubscribe:</strong> Use the unsubscribe link in any email to
-                        effectively be removed from all spare lists
-                      </li>
-                      <li>
-                        <strong>Note:</strong> You'll still receive login codes and important
-                        account notifications
                       </li>
                     </ul>
                   </section>

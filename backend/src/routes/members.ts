@@ -884,35 +884,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // Unsubscribe from emails
-  fastify.post<{ Reply: { success: boolean } | ApiErrorResponse }>(
-    '/members/me/unsubscribe',
-    {
-      schema: {
-        tags: ['members'],
-        response: {
-          200: successResponseSchema,
-        },
-      },
-    },
-    async (request, _reply) => {
-    const member = (request as AuthenticatedRequest).member;
-
-    const { db, schema } = getDrizzleDb();
-    
-    // Unsubscribe from emails and remove all availability
-    await db
-      .update(schema.members)
-      .set({ email_subscribed: 0 })
-      .where(eq(schema.members.id, member.id));
-    await db
-      .delete(schema.memberAvailability)
-      .where(eq(schema.memberAvailability.member_id, member.id));
-
-    return { success: true };
-    }
-  );
-
   // Get all members (filtered for non-admins)
   fastify.get<{ Reply: MemberSummaryResponse[] | ApiErrorResponse }>(
     '/members',

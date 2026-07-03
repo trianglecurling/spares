@@ -43,6 +43,7 @@ import {
   applyAccordionBlockStyleToSelection,
   applyAccordionHeadingToSelection,
   applyAccordionInlineStyleToSelection,
+  applyAccordionLinkToSelection,
   captureAccordionSelectionSnapshot,
   clampAccordionEntryCount,
   clearAccordionStylesInSelection,
@@ -53,7 +54,10 @@ import {
   findTccAccordionNodePos,
   getAccordionActiveFormat,
   getAccordionSelectionContext,
+  hasAccordionTouchedLink,
   insertTccAccordion,
+  readAccordionLinkDraftFromSelection,
+  removeAccordionLinkInSelection,
   resolveTccAccordionElement,
   restoreAccordionSelectionSnapshot,
   setTccAccordionEntryCount,
@@ -341,6 +345,7 @@ type LinkDraft = {
   from: number;
   to: number;
   empty: boolean;
+  accordionSnapshot?: AccordionSelectionSnapshot | null;
 };
 
 type YoutubeDraft = {
@@ -1169,6 +1174,7 @@ const MarkdownDescriptionEditor = forwardRef<
     const hoverManagedImageChipRef = useRef<HTMLDivElement | null>(null);
     const hoverAccordionChipRef = useRef<HTMLDivElement | null>(null);
     const accordionHeadingSnapshotRef = useRef<AccordionSelectionSnapshot | null>(null);
+    const accordionLinkSnapshotRef = useRef<AccordionSelectionSnapshot | null>(null);
 
     useImperativeHandle(ref, () => ({
       getMarkdown: () => {
@@ -1237,7 +1243,11 @@ const MarkdownDescriptionEditor = forwardRef<
       if (!button) return;
       const instance = getEditorInstance();
       const view = instance?.wwEditor?.view;
-      const canUnlink = Boolean(instance?.isWysiwygMode?.() && view?.state?.schema?.marks?.link && getTouchedLinkRanges(view).length);
+      const canUnlink = Boolean(
+        instance?.isWysiwygMode?.() &&
+          view?.state?.schema?.marks?.link &&
+          (getTouchedLinkRanges(view).length || hasAccordionTouchedLink())
+      );
       button.disabled = !canUnlink;
       button.setAttribute('aria-disabled', String(!canUnlink));
     };
@@ -1297,6 +1307,45 @@ const MarkdownDescriptionEditor = forwardRef<
       const view = instance.wwEditor?.view;
       if (!view?.state?.schema?.marks?.link) return;
 
+      const snapshot = accordionLinkSnapshotRef.current;
+      accordionLinkSnapshotRef.current = null;
+      if (!getAccordionSelectionContext() && snapshot) {
+        restoreAccordionSelectionSnapshot(snapshot);
+      }
+
+      const accordionLink = readAccordionLinkDraftFromSelection();
+
+      setSelectedArticle(null);
+      setYoutubeDraft(null);
+      setAccordionInsertDraft(null);
+      setAccordionEditDraft(null);
+
+      if (accordionLink) {
+        const inferred = inferMarkdownEditorLinkTarget(accordionLink.existingUrl);
+        const url = buildMarkdownEditorLinkUrl({
+          linkType: inferred.linkType,
+          articleSlug: inferred.articleSlug,
+          contactRecipient: inferred.contactRecipient,
+          systemPagePath: inferred.systemPagePath,
+          customUrl: inferred.customUrl,
+        });
+
+        setLinkDraft({
+          text: accordionLink.text,
+          url: inferred.linkType === 'custom-url' ? inferred.customUrl : url,
+          linkType: inferred.linkType,
+          articleSlug: inferred.articleSlug,
+          contactRecipient: inferred.contactRecipient,
+          systemPagePath: inferred.systemPagePath,
+          openInNewWindow: accordionLink.openInNewWindow,
+          from: 0,
+          to: 0,
+          empty: accordionLink.empty,
+          accordionSnapshot: accordionLink.snapshot,
+        });
+        return;
+      }
+
       const { doc, selection } = view.state;
       const touchedLink = getTouchedLinkRanges(view)[0];
       const from = touchedLink?.from ?? selection.from;
@@ -1305,11 +1354,6 @@ const MarkdownDescriptionEditor = forwardRef<
       const trimmed = selection.empty || touchedLink ? { from, to, text: selectedText } : trimSelectionEdges(selectedText, from, to);
       const cursorLinkMark = getLinkMark(selection.$from.marks(), view.state.schema.marks.link);
       const activeLink = touchedLink?.mark ?? cursorLinkMark;
-
-      setSelectedArticle(null);
-      setYoutubeDraft(null);
-      setAccordionInsertDraft(null);
-      setAccordionEditDraft(null);
 
       const existingUrl = activeLink?.attrs?.linkUrl ?? '';
       const inferred = inferMarkdownEditorLinkTarget(existingUrl);
@@ -1348,8 +1392,22 @@ const MarkdownDescriptionEditor = forwardRef<
       if (!isMarkdownEditorLinkDraftReady({ ...linkDraft, text, url })) return;
 
       const instance = getEditorInstance();
-      const view = instance?.wwEditor?.view;
+      const view = instance?.wwEditor?.view as unknown as EditorView | undefined;
       if (!view?.state?.schema?.marks?.link) return;
+
+      if (linkDraft.accordionSnapshot) {
+        restoreAccordionSelectionSnapshot(linkDraft.accordionSnapshot);
+        if (!applyAccordionLinkToSelection({ url, text, openInNewWindow: linkDraft.openInNewWindow, empty: linkDraft.empty })) {
+          showAlert('Could not apply link inside accordion.', 'error');
+          return;
+        }
+        syncTccAccordionHtmlFromDom(view, { force: true });
+        linkDraft.accordionSnapshot.editable.focus();
+        setLinkDraft(null);
+        setSelectedArticle(null);
+        updateUnlinkButtonState();
+        return;
+      }
 
       const { schema } = view.state;
       const mark = schema.mark('link', {
@@ -1509,6 +1567,13 @@ const MarkdownDescriptionEditor = forwardRef<
       if (!instance?.isWysiwygMode?.()) return;
       const view = instance.wwEditor?.view;
       if (!view?.state?.schema?.marks?.link) return;
+
+      if (hasAccordionTouchedLink()) {
+        if (!removeAccordionLinkInSelection()) return;
+        syncTccAccordionHtmlFromDom(view as unknown as EditorView, { force: true });
+        updateUnlinkButtonState();
+        return;
+      }
 
       const ranges = getTouchedLinkRanges(view);
       if (!ranges.length) return;
@@ -2013,6 +2078,12 @@ const MarkdownDescriptionEditor = forwardRef<
         }
 
         const linkBtn = createToolbarIconButton('Create or edit link (Ctrl+K)', <HiOutlineLink aria-hidden="true" />);
+        const onLinkBtnMouseDown = (event: MouseEvent) => {
+          const snapshot = captureAccordionSelectionSnapshot();
+          accordionLinkSnapshotRef.current = snapshot;
+          if (snapshot) event.preventDefault();
+        };
+        linkBtn.addEventListener('mousedown', onLinkBtnMouseDown, true);
         linkBtn.addEventListener('click', openLinkDialog);
         try {
           instance.insertToolbarItem({ groupIndex: 3, itemIndex: 0 }, {
@@ -2023,6 +2094,10 @@ const MarkdownDescriptionEditor = forwardRef<
         } catch {
           /* ignore */
         }
+        toolbarCleanupRef.current.push(() => {
+          linkBtn.removeEventListener('mousedown', onLinkBtnMouseDown, true);
+          linkBtn.removeEventListener('click', openLinkDialog);
+        });
 
         const unlinkBtn = createToolbarIconButton('Remove link', <HiOutlineLinkSlash aria-hidden="true" />);
         unlinkBtn.disabled = true;

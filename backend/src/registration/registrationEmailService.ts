@@ -653,7 +653,6 @@ export async function sendRegistrationEmail(input: SendRegistrationEmailInput): 
     subject: rendered.subject,
     htmlContent: rendered.htmlBody,
     textContent: rendered.textBody,
-    includeUnsubscribeFooter: false,
   });
 
   const deliveryStatus = deliveryStatusFromResult(result.status);
@@ -779,7 +778,6 @@ export async function resendRegistrationOutboundMessage(messageId: number): Prom
     subject: original.subject,
     htmlContent: original.html_body,
     textContent: original.text_body,
-    includeUnsubscribeFooter: false,
   });
   const deliveryStatus = deliveryStatusFromResult(result.status);
   const [updated] = await db

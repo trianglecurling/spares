@@ -172,7 +172,6 @@ export async function contactRoutes(fastify: FastifyInstance) {
       htmlContent,
       recipientName: recipientInfo.label,
       replyTo: pending.senderEmail,
-      includeUnsubscribeFooter: false,
     });
 
     return { ok: true };

@@ -14,14 +14,14 @@ import {
   type ReactNode,
   type TransitionEvent,
 } from 'react';
+import { flushSync } from 'react-dom';
 import type { ExtraProps } from 'react-markdown';
 import usePrefersReducedMotion from '../dragDrop/usePrefersReducedMotion';
 
 const PANEL_TRANSITION_MS = 200;
+const PANEL_TRANSITION_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
 
 const TccAccordionMarkdownContext = createContext(false);
-
-type PanelHeight = number | 'auto';
 
 function isTccAccordionRoot(className?: string): boolean {
   if (!className) return false;
@@ -39,11 +39,14 @@ function isPanelElement(child: ReactNode): boolean {
   return typeof className === 'string' && className.split(/\s+/).includes('tcc-accordion-panel');
 }
 
-function panelHeightStyle(height: PanelHeight, animate: boolean): CSSProperties {
+function panelAnimationStyle(heightPx: number, animate: boolean): CSSProperties {
   return {
-    '--tcc-accordion-panel-height': height === 'auto' ? 'auto' : `${height}px`,
-    '--tcc-accordion-panel-transition': animate ? `height ${PANEL_TRANSITION_MS}ms ease` : 'none',
-  } as CSSProperties;
+    display: 'block',
+    height: `${heightPx}px`,
+    overflow: 'hidden',
+    padding: 0,
+    transition: animate ? `height ${PANEL_TRANSITION_MS}ms ${PANEL_TRANSITION_EASING}` : 'none',
+  };
 }
 
 function AnimatedTccAccordionDetails({
@@ -51,8 +54,8 @@ function AnimatedTccAccordionDetails({
   children,
   ...props
 }: DetailsHTMLAttributes<HTMLDetailsElement>) {
-  const [open, setOpen] = useState(false);
-  const [panelHeight, setPanelHeight] = useState<PanelHeight>(0);
+  const [expanded, setExpanded] = useState(false);
+  const [panelHeight, setPanelHeight] = useState(0);
   const [animatePanel, setAnimatePanel] = useState(false);
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const pendingCloseRef = useRef(false);
@@ -60,36 +63,41 @@ function AnimatedTccAccordionDetails({
   const childArray = Children.toArray(children);
   const hasPanel = childArray.some(isPanelElement);
 
-  const getPanel = () =>
-    detailsRef.current?.querySelector(':scope > .tcc-accordion-panel') as HTMLDivElement | null;
+  const measurePanelHeight = () => {
+    const panel = detailsRef.current?.querySelector(':scope > .tcc-accordion-panel');
+    return panel instanceof HTMLElement ? panel.scrollHeight : 0;
+  };
+
+  const panelStyle = panelAnimationStyle(panelHeight, animatePanel);
 
   const handleSummaryClick = (event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
 
-    if (!open) {
+    if (!expanded) {
       pendingCloseRef.current = false;
-      setOpen(true);
-      setAnimatePanel(false);
-      setPanelHeight(0);
+      flushSync(() => {
+        setExpanded(true);
+        setAnimatePanel(false);
+        setPanelHeight(0);
+      });
 
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const panel = getPanel();
-          if (!panel) return;
-          setAnimatePanel(true);
-          setPanelHeight(panel.scrollHeight);
-        });
+        const nextHeight = measurePanelHeight();
+        setAnimatePanel(true);
+        setPanelHeight(nextHeight);
       });
       return;
     }
 
-    const panel = getPanel();
-    if (!panel) return;
-
     pendingCloseRef.current = true;
-    setAnimatePanel(true);
-    setPanelHeight(panel.scrollHeight);
+    const nextHeight = measurePanelHeight();
+    flushSync(() => {
+      setAnimatePanel(false);
+      setPanelHeight(nextHeight);
+    });
+
     requestAnimationFrame(() => {
+      setAnimatePanel(true);
       setPanelHeight(0);
     });
   };
@@ -100,24 +108,22 @@ function AnimatedTccAccordionDetails({
 
     if (pendingCloseRef.current) {
       pendingCloseRef.current = false;
-      setOpen(false);
+      setExpanded(false);
       setAnimatePanel(false);
       setPanelHeight(0);
       return;
     }
 
-    if (open) {
+    if (expanded) {
       setAnimatePanel(false);
-      setPanelHeight('auto');
     }
   };
 
-  const detailsStyle = panelHeightStyle(panelHeight, animatePanel);
-
   const enhanceSummary = (
-    child: ReactElement<{ onClick?: (event: MouseEvent<HTMLElement>) => void }>
+    child: ReactElement<{ onClick?: (event: MouseEvent<HTMLElement>) => void; 'aria-expanded'?: boolean }>
   ) =>
     cloneElement(child, {
+      'aria-expanded': expanded,
       onClick: (event: MouseEvent<HTMLElement>) => {
         child.props.onClick?.(event);
         handleSummaryClick(event);
@@ -127,30 +133,34 @@ function AnimatedTccAccordionDetails({
   const enhancePanel = (
     child: ReactElement<{
       className?: string;
+      style?: CSSProperties;
       onTransitionEnd?: (event: TransitionEvent<HTMLDivElement>) => void;
     }>
   ) =>
     cloneElement(child, {
+      style: { ...child.props.style, ...panelStyle },
       onTransitionEnd: (event: TransitionEvent<HTMLDivElement>) => {
         child.props.onTransitionEnd?.(event);
         handlePanelTransitionEnd(event);
       },
     });
 
+  const detailsProps = {
+    ...props,
+    ref: detailsRef,
+    className,
+    open: true as const,
+    'data-tcc-expanded': expanded ? 'true' : 'false',
+  };
+
   if (!hasPanel) {
     const summaryChild = childArray.find(isSummaryElement);
     const bodyChildren = childArray.filter((child) => !isSummaryElement(child));
 
     return (
-      <details
-        ref={detailsRef}
-        className={className}
-        open={open}
-        style={detailsStyle}
-        {...props}
-      >
+      <details {...detailsProps}>
         {summaryChild ? enhanceSummary(summaryChild) : null}
-        <div className="tcc-accordion-panel" onTransitionEnd={handlePanelTransitionEnd}>
+        <div className="tcc-accordion-panel" style={panelStyle} onTransitionEnd={handlePanelTransitionEnd}>
           {bodyChildren}
         </div>
       </details>
@@ -158,7 +168,7 @@ function AnimatedTccAccordionDetails({
   }
 
   return (
-    <details ref={detailsRef} className={className} open={open} style={detailsStyle} {...props}>
+    <details {...detailsProps}>
       {childArray.map((child, index) => {
         if (isSummaryElement(child)) {
           return cloneElement(enhanceSummary(child), { key: child.key ?? `summary-${index}` });

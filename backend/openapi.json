@@ -2107,6 +2107,28 @@
         }
       }
     },
+    "/public/events/waitlist-offers/{responseToken}/resolve": {
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "responseToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/events/waitlist-offers/{responseToken}/accept": {
       "post": {
         "tags": [
@@ -4012,34 +4034,6 @@
                   "required": [
                     "delegatedToMemberIds",
                     "implicitAccessMemberIds"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/members/me/unsubscribe": {
-      "post": {
-        "tags": [
-          "members"
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "success"
                   ]
                 }
               }

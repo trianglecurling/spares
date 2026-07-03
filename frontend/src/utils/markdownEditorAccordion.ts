@@ -1,3 +1,4 @@
+import { OPEN_IN_NEW_WINDOW_TITLE } from '../constants/markdownLink';
 import type { Node as PMNode, ResolvedPos } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
 import type { Command } from 'prosemirror-state';
@@ -72,8 +73,8 @@ function serializeDirectDetailsHtml(detailsElements: HTMLDetailsElement[]): stri
 }
 
 function normalizeSummaryForStorage(summary: HTMLElement): void {
-  const text = (summary.textContent ?? '').replace(/\u200B/g, '').trim();
-  if (!text) {
+  normalizeSummaryContent(summary);
+  if (getSummaryEditableText(summary).trim().length === 0) {
     summary.textContent = '';
   }
 }
@@ -836,6 +837,151 @@ function unwrapTccInlineStylesInRange(scope: HTMLElement, range: Range) {
   for (const element of candidates) unwrapElement(element);
 }
 
+export type AccordionLinkDraftFromSelection = {
+  snapshot: AccordionSelectionSnapshot;
+  text: string;
+  empty: boolean;
+  existingUrl: string;
+  openInNewWindow: boolean;
+};
+
+function getAccordionEnclosingLinkElement(range: Range, editable: HTMLElement): HTMLAnchorElement | null {
+  let current = elementFromNode(range.startContainer);
+  while (current && editable.contains(current)) {
+    if (current instanceof HTMLAnchorElement && current.contains(range.endContainer)) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function getAccordionTouchedLinkAnchor(ctx: AccordionSelectionContext): HTMLAnchorElement | null {
+  const enclosing = getAccordionEnclosingLinkElement(ctx.range, ctx.editable);
+  if (enclosing) return enclosing;
+
+  const scope = ctx.panelInner ?? ctx.editable;
+  for (const anchor of scope.querySelectorAll('a')) {
+    if (anchor instanceof HTMLAnchorElement && rangeIntersectsNode(ctx.range, anchor)) {
+      return anchor;
+    }
+  }
+  return null;
+}
+
+export function readAccordionLinkDraftFromSelection(): AccordionLinkDraftFromSelection | null {
+  const ctx = getAccordionSelectionContext();
+  if (!ctx) return null;
+
+  const snapshot = captureAccordionSelectionSnapshot();
+  if (!snapshot) return null;
+
+  const anchor = getAccordionTouchedLinkAnchor(ctx);
+  const rangeText = ctx.range.toString();
+  const empty = ctx.range.collapsed && !anchor;
+
+  let text = '';
+  if (anchor) {
+    text = anchor.textContent ?? '';
+  } else if (!ctx.range.collapsed) {
+    const leading = rangeText.match(/^\s*/)?.[0].length ?? 0;
+    const trailing = rangeText.match(/\s*$/)?.[0].length ?? 0;
+    text = rangeText.slice(leading, rangeText.length - trailing);
+  }
+
+  return {
+    snapshot,
+    text,
+    empty,
+    existingUrl: anchor?.getAttribute('href') ?? '',
+    openInNewWindow: anchor?.getAttribute('title') === OPEN_IN_NEW_WINDOW_TITLE,
+  };
+}
+
+export function hasAccordionTouchedLink(): boolean {
+  const ctx = getAccordionSelectionContext();
+  return ctx ? Boolean(getAccordionTouchedLinkAnchor(ctx)) : false;
+}
+
+export function applyAccordionLinkToSelection(options: {
+  url: string;
+  text: string;
+  openInNewWindow: boolean;
+  empty: boolean;
+}): boolean {
+  const ctx = getAccordionSelectionContext();
+  if (!ctx) return false;
+
+  const { url, text, openInNewWindow, empty } = options;
+  const title = openInNewWindow ? OPEN_IN_NEW_WINDOW_TITLE : null;
+  const existing = getAccordionTouchedLinkAnchor(ctx);
+
+  if (existing) {
+    existing.href = url;
+    if (title) existing.title = title;
+    else existing.removeAttribute('title');
+    if (text && text !== (existing.textContent ?? '').trim()) {
+      existing.textContent = text;
+    }
+    selectNodeContents(existing);
+    return true;
+  }
+
+  if (!empty && !ctx.range.collapsed) {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    if (title) anchor.title = title;
+
+    const selectedText = ctx.range.toString();
+    const trimmedSelectedText = selectedText.trim();
+    const textToUse = text || trimmedSelectedText;
+
+    if (text && text !== trimmedSelectedText) {
+      ctx.range.deleteContents();
+      anchor.textContent = text;
+      ctx.range.insertNode(anchor);
+    } else {
+      try {
+        anchor.textContent = textToUse;
+        ctx.range.surroundContents(anchor);
+      } catch {
+        const contents = ctx.range.extractContents();
+        anchor.appendChild(contents);
+        ctx.range.insertNode(anchor);
+      }
+    }
+    selectNodeContents(anchor);
+    return true;
+  }
+
+  if (!text) return false;
+
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  if (title) anchor.title = title;
+  anchor.textContent = text;
+  ctx.range.insertNode(anchor);
+
+  const selection = window.getSelection();
+  if (selection) {
+    selection.removeAllRanges();
+    const range = document.createRange();
+    range.setStartAfter(anchor);
+    range.collapse(true);
+    selection.addRange(range);
+  }
+  return true;
+}
+
+export function removeAccordionLinkInSelection(): boolean {
+  const ctx = getAccordionSelectionContext();
+  if (!ctx) return false;
+  const anchor = getAccordionTouchedLinkAnchor(ctx);
+  if (!anchor) return false;
+  unwrapElement(anchor);
+  return true;
+}
+
 export function applyAccordionInlineStyleToSelection(tag: 'span' | 'small', styleClass: string): boolean {
   const ctx = getAccordionSelectionContext();
   if (!ctx || ctx.inSummary || ctx.range.collapsed) return false;
@@ -1039,12 +1185,172 @@ function getSummaryFromSelection(): HTMLElement | null {
   return summary instanceof HTMLElement ? summary : null;
 }
 
-function getSummaryMeaningfulText(summary: HTMLElement): string {
-  return (summary.textContent ?? '').replace(/\u200B/g, '').trim();
+function getSummaryEditableText(summary: HTMLElement): string {
+  return (summary.textContent ?? '').replace(/\u200B/g, '');
 }
 
 function isSummaryEffectivelyEmpty(summary: HTMLElement): boolean {
-  return getSummaryMeaningfulText(summary).length === 0;
+  return getSummaryEditableText(summary).length === 0;
+}
+
+function getCaretTextOffsetWithin(summary: HTMLElement): number | null {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !summary.contains(selection.anchorNode)) return null;
+  const range = selection.getRangeAt(0);
+  const pre = document.createRange();
+  pre.selectNodeContents(summary);
+  pre.setEnd(range.endContainer, range.endOffset);
+  return pre.toString().replace(/\u200B/g, '').length;
+}
+
+function setCaretTextOffsetWithin(summary: HTMLElement, offset: number) {
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  let remaining = Math.max(0, offset);
+  const walker = document.createTreeWalker(summary, NodeFilter.SHOW_TEXT);
+  let textNode = walker.nextNode() as Text | null;
+
+  while (textNode) {
+    const text = (textNode.textContent ?? '').replace(/\u200B/g, '');
+    if (remaining <= text.length) {
+      const range = document.createRange();
+      range.setStart(textNode, remaining);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    remaining -= text.length;
+    textNode = walker.nextNode() as Text | null;
+  }
+
+  placeCaretAtSummaryEnd(summary);
+}
+
+function summaryContainsSelection(summary: HTMLElement): boolean {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return false;
+  const anchor = selection.anchorNode;
+  const focus = selection.focusNode;
+  return Boolean(
+    (anchor && summary.contains(anchor)) || (focus && summary.contains(focus))
+  );
+}
+
+function isCollapsedSelectionInSummary(summary: HTMLElement): boolean {
+  const selection = window.getSelection();
+  return Boolean(selection?.isCollapsed && summaryContainsSelection(summary));
+}
+
+function removeZwspTextNodes(root: Node) {
+  if (root instanceof HTMLElement && root.tagName === 'SUMMARY' && isSummaryEffectivelyEmpty(root)) {
+    return;
+  }
+
+  const textNodes: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    textNodes.push(node as Text);
+    node = walker.nextNode();
+  }
+
+  for (const textNode of textNodes) {
+    const text = textNode.textContent ?? '';
+    if (!text.includes(SUMMARY_EDITOR_PLACEHOLDER)) continue;
+    const next = text.replace(/\u200B/g, '');
+    if (!next.length) textNode.remove();
+    else textNode.textContent = next;
+  }
+}
+
+function unwrapSummaryBlockWrappers(summary: HTMLElement) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const child of Array.from(summary.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      if (child.tagName === 'P' || child.tagName === 'DIV') {
+        unwrapElement(child);
+        changed = true;
+      }
+    }
+  }
+}
+
+function unwrapSummaryPasteMarkup(summary: HTMLElement) {
+  summary.querySelectorAll('span').forEach((span) => {
+    if (!(span instanceof HTMLElement)) return;
+    if (Array.from(span.classList).some((className) => className.startsWith(TCC_STYLE_CLASS_PREFIX))) return;
+    unwrapElement(span);
+  });
+
+  summary.querySelectorAll('[data-pm-slice]').forEach((element) => {
+    element.removeAttribute('data-pm-slice');
+  });
+}
+
+/** Keep accordion titles as inline text (plus intentional marks like links) while editing. */
+function normalizeSummaryContent(summary: HTMLElement): boolean {
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed && summaryContainsSelection(summary)) {
+    return false;
+  }
+
+  const caretOffset = isCollapsedSelectionInSummary(summary)
+    ? getCaretTextOffsetWithin(summary)
+    : null;
+  const before = summary.innerHTML;
+
+  removeZwspTextNodes(summary);
+  unwrapSummaryBlockWrappers(summary);
+  unwrapSummaryPasteMarkup(summary);
+
+  if (isSummaryEffectivelyEmpty(summary)) {
+    ensureSummaryMinimumContent(summary);
+  } else if (caretOffset != null) {
+    setCaretTextOffsetWithin(summary, Math.min(caretOffset, getSummaryEditableText(summary).length));
+  }
+
+  return summary.innerHTML !== before;
+}
+
+function normalizeAllAccordionSummaries(editable: HTMLElement): boolean {
+  let changed = false;
+  editable.querySelectorAll(`details.${TCC_ACCORDION_ITEM_CLASS} > summary, details > summary`).forEach((node) => {
+    if (node instanceof HTMLElement && normalizeSummaryContent(node)) changed = true;
+  });
+  return changed;
+}
+
+function getClipboardPlainTextForSummary(clipboardData: DataTransfer | null): string {
+  if (!clipboardData) return '';
+  const plain = clipboardData.getData('text/plain') || clipboardData.getData('Text');
+  if (plain) return plain;
+
+  const html = clipboardData.getData('text/html');
+  if (!html) return '';
+
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  return container.textContent ?? '';
+}
+
+function insertPlainTextAtSelection(text: string) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const singleLine = text.replace(/\s*\r?\n+\s*/g, ' ').trim();
+  if (!singleLine) return;
+
+  selection.deleteFromDocument();
+  const range = selection.getRangeAt(0);
+  const textNode = document.createTextNode(singleLine);
+  range.insertNode(textNode);
+  range.setStartAfter(textNode);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 function isRangeAtSummaryStart(range: Range, summary: HTMLElement): boolean {
@@ -1075,9 +1381,9 @@ function placeCaretInSummary(summary: HTMLElement, offset: number) {
 
 function ensureSummaryMinimumContent(summary: HTMLElement): boolean {
   let changed = false;
-  const meaningful = getSummaryMeaningfulText(summary);
+  const visibleText = getSummaryEditableText(summary).trim();
 
-  if (meaningful === BROWSER_DEFAULT_SUMMARY_LABEL && summary.childNodes.length <= 1) {
+  if (visibleText === BROWSER_DEFAULT_SUMMARY_LABEL && summary.childNodes.length <= 1) {
     summary.textContent = '';
     changed = true;
   }
@@ -1086,17 +1392,12 @@ function ensureSummaryMinimumContent(summary: HTMLElement): boolean {
     return changed;
   }
 
-  if ((summary.textContent ?? '').replace(/\u200B/g, '') !== '') {
-    summary.textContent = '';
-    changed = true;
-  }
-
   if (!(summary.textContent ?? '').includes(SUMMARY_EDITOR_PLACEHOLDER)) {
     summary.textContent = SUMMARY_EDITOR_PLACEHOLDER;
     changed = true;
   }
 
-  if (changed) {
+  if (changed && summaryContainsSelection(summary)) {
     placeCaretInSummary(summary, SUMMARY_EDITOR_PLACEHOLDER.length);
   }
 
@@ -1106,7 +1407,7 @@ function ensureSummaryMinimumContent(summary: HTMLElement): boolean {
 function ensureAccordionDetailsSummary(detailsEl: HTMLDetailsElement): boolean {
   const existing = detailsEl.querySelector(':scope > summary');
   if (existing instanceof HTMLElement) {
-    return ensureSummaryMinimumContent(existing);
+    return normalizeSummaryContent(existing) || ensureSummaryMinimumContent(existing);
   }
 
   const summary = document.createElement('summary');
@@ -1138,7 +1439,11 @@ function shouldPreventSummaryDelete(summary: HTMLElement): boolean {
 }
 
 function ensureAccordionEditableStructure(editable: HTMLElement): boolean {
-  return ensureAllAccordionPanelParagraphs(editable) || ensureAllAccordionSummaries(editable);
+  return (
+    normalizeAllAccordionSummaries(editable) ||
+    ensureAllAccordionPanelParagraphs(editable) ||
+    ensureAllAccordionSummaries(editable)
+  );
 }
 
 function ensureAllAccordionPanelParagraphs(editable: HTMLElement): boolean {
@@ -1194,10 +1499,11 @@ function placeCaretAtSummaryEnd(summary: HTMLElement) {
   selection.addRange(range);
 }
 
-function fixSummaryEndCaretOnClick(event: MouseEvent) {
+function handleSummaryEndMouseDown(event: MouseEvent) {
+  if (event.button !== 0 || event.shiftKey) return;
   if (!(event.target instanceof Element)) return;
   const summary = event.target.closest('summary');
-  if (!summary || !summary.closest('[contenteditable="true"]')) return;
+  if (!(summary instanceof HTMLElement) || !summary.closest('[contenteditable="true"]')) return;
 
   const endRect = getSummaryTextEndRect(summary);
   if (!endRect) return;
@@ -1209,8 +1515,9 @@ function fixSummaryEndCaretOnClick(event: MouseEvent) {
 
   if (!withinSummaryRow || !clickPastTextEnd) return;
 
+  // Anchor the caret at the text end so clicks/drags in the trailing flex
+  // spacer can still extend selection backward. Do not preventDefault here.
   placeCaretAtSummaryEnd(summary);
-  event.preventDefault();
 }
 
 function isEventInsideAccordionDom(dom: HTMLElement, event: Event): boolean {
@@ -1255,7 +1562,11 @@ function createTccAccordionNodeView(
 
   const scheduleEditablePrune = () => {
     requestAnimationFrame(() => {
-      ensureAccordionEditableStructure(content);
+      const selection = window.getSelection();
+      const isSelectingText = Boolean(selection && !selection.isCollapsed);
+      if (!isSelectingText) {
+        ensureAccordionEditableStructure(content);
+      }
       pruneAccordionEditableDom(content);
     });
   };
@@ -1312,37 +1623,37 @@ function createTccAccordionNodeView(
     }
   };
 
+  const onEditablePaste = (event: ClipboardEvent) => {
+    const summary = getSummaryFromSelection();
+    if (!summary) return;
+
+    event.preventDefault();
+    insertPlainTextAtSelection(getClipboardPlainTextForSummary(event.clipboardData));
+    normalizeSummaryContent(summary);
+  };
+
   const onEditableInput = () => {
-    ensureAccordionEditableStructure(content);
+    const summary = getSummaryFromSelection();
+    if (summary instanceof HTMLElement) {
+      normalizeSummaryContent(summary);
+    }
+
+    const selection = window.getSelection();
+    const isSelectingText = Boolean(selection && !selection.isCollapsed);
+    if (!isSelectingText) {
+      ensureAccordionEditableStructure(content);
+    }
+
     scheduleEditablePrune();
   };
 
   const onMouseDown = (event: MouseEvent) => {
     event.stopPropagation();
-    fixSummaryEndCaretOnClick(event);
+    handleSummaryEndMouseDown(event);
+  };
 
-    const pos = getPos();
-    if (pos == null) return;
-
-    requestAnimationFrame(() => {
-      const currentPos = getPos();
-      if (currentPos == null) return;
-      const { selection } = view.state;
-      const node = view.state.doc.nodeAt(currentPos);
-      if (!node) return;
-
-      const selectionOnAccordion =
-        (selection instanceof NodeSelection && selection.from === currentPos) ||
-        (selection.from >= currentPos && selection.to <= currentPos + node.nodeSize);
-
-      if (selectionOnAccordion) return;
-
-      view.dispatch(
-        view.state.tr
-          .setSelection(NodeSelection.create(view.state.doc, currentPos))
-          .setMeta('addToHistory', false)
-      );
-    });
+  const preventAccordionDrag = (event: DragEvent) => {
+    event.preventDefault();
   };
 
   const onBlur = (event: FocusEvent) => {
@@ -1359,10 +1670,12 @@ function createTccAccordionNodeView(
   };
 
   content.addEventListener('mousedown', onMouseDown, true);
+  content.addEventListener('dragstart', preventAccordionDrag, true);
   content.addEventListener('click', preventSummaryToggle, true);
   content.addEventListener('blur', onBlur, true);
   content.addEventListener('beforeinput', onEditableBeforeInput, true);
   content.addEventListener('keydown', onEditableKeyDown, true);
+  content.addEventListener('paste', onEditablePaste, true);
   content.addEventListener('input', onEditableInput, true);
   content.addEventListener('toggle', onDetailsToggle, true);
 
@@ -1393,6 +1706,8 @@ function createTccAccordionNodeView(
         case 'compositionstart':
         case 'compositionupdate':
         case 'compositionend':
+        case 'dragstart':
+        case 'drag':
           return true;
         default:
           return false;
@@ -1414,10 +1729,12 @@ function createTccAccordionNodeView(
     destroy() {
       syncFromDom(false);
       content.removeEventListener('mousedown', onMouseDown, true);
+      content.removeEventListener('dragstart', preventAccordionDrag, true);
       content.removeEventListener('click', preventSummaryToggle, true);
       content.removeEventListener('blur', onBlur, true);
       content.removeEventListener('beforeinput', onEditableBeforeInput, true);
       content.removeEventListener('keydown', onEditableKeyDown, true);
+      content.removeEventListener('paste', onEditablePaste, true);
       content.removeEventListener('input', onEditableInput, true);
       content.removeEventListener('toggle', onDetailsToggle, true);
     },

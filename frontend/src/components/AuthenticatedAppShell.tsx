@@ -5,7 +5,6 @@ import AppStateCard from './AppStateCard';
 
 /** Paths that render without the shared nav shell (legacy full-page flows). */
 const BARE_ROUTE_PATTERNS = [
-  '/unsubscribe',
   '/spare-request/respond',
   '/spare-request/decline',
 ] as const;

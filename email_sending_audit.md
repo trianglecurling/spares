@@ -5,7 +5,7 @@ This document lists every code path that causes the app to **attempt** to send e
 **Global rules**
 
 - `disable_email` in server config, test mode, missing provider config, `@example.com` addresses, and send failures are handled inside `sendEmail` (log instead of send, or no-op in some cases).
-- Most member-facing marketing-style mail includes a standard HTML footer: do-not-forward warning, “Triangle Curling Club”, and unsubscribe link (some transactional emails set `includeUnsubscribeFooter: false`).
+- `sendEmail` wraps HTML bodies in a simple email shell when email is disabled, not configured, or send fails.
 
 ---
 
@@ -112,7 +112,7 @@ If an owner’s email is missing, behavior depends on `sendEmail` (likely failur
 
 | Trigger | Recipient | What it says |
 |--------|-----------|--------------|
-| **Donation receipt** after a succeeded donation order (once, idempotent in metadata) | **Donor email** from order metadata | `sendDonationReceiptEmail`: thank you, **amount and date**, 501(c)(3) and EIN text, treasurer name/signature block, `includeUnsubscribeFooter: false` (`paymentService.ts`). |
+| **Donation receipt** after a succeeded donation order (once, idempotent in metadata) | **Donor email** from order metadata | `sendDonationReceiptEmail`: thank you, **amount and date**, 501(c)(3) and EIN text, treasurer name/signature block (`paymentService.ts`). |
 
 ---
 

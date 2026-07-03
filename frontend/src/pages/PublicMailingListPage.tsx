@@ -112,8 +112,8 @@ export default function PublicMailingListPage() {
             </div>
             <p className="public-body text-base sm:text-lg">{listInfo.description}</p>
             <p className="text-sm text-gray-600">
-              We only use your name and email to send messages related to <strong>{listInfo.subscribeLabel}</strong>.
-              You can unsubscribe at any time using the link in our emails.
+              We only use your name and email to send messages related to{' '}
+              <strong>{listInfo.subscribeLabel}</strong>.
             </p>
           </div>
         </section>

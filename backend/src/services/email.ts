@@ -146,7 +146,6 @@ interface EmailOptions {
   textContent?: string;
   recipientName: string;
   replyTo?: string;
-  includeUnsubscribeFooter?: boolean;
 }
 
 export interface EmailDeliveryResult {
@@ -159,21 +158,7 @@ function getLoginRedirectUrl(pathAndSearch: string): string {
   return `${config.frontendUrl}/login?redirect=${encodeURIComponent(pathAndSearch)}`;
 }
 
-function getUnsubscribeFooter(): string {
-  const unsubscribeUrl = `${config.frontendUrl}/unsubscribe`;
-  return `
-    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 12px;">
-      <p>Triangle Curling Club</p>
-      <p><a href="${unsubscribeUrl}" style="color: #666;">Unsubscribe from all emails</a></p>
-    </div>
-  `;
-}
-
-function buildFullHtmlContent(
-  htmlContent: string,
-  _memberToken?: string,
-  includeUnsubscribeFooter = true
-): string {
+function buildFullHtmlContent(htmlContent: string, _memberToken?: string): string {
   return `
     <!DOCTYPE html>
     <html>
@@ -182,7 +167,6 @@ function buildFullHtmlContent(
     </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       ${htmlContent}
-      ${includeUnsubscribeFooter ? getUnsubscribeFooter() : ''}
     </body>
     </html>
   `;
@@ -201,11 +185,7 @@ function logEmail(options: EmailOptions, fullHtmlContent: string, prefix: string
 
 export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<EmailDeliveryResult> {
   console.log(`[Email Service] sendEmail called for ${options.to}`);
-  const fullHtmlContent = buildFullHtmlContent(
-    options.htmlContent,
-    memberToken,
-    options.includeUnsubscribeFooter !== false
-  );
+  const fullHtmlContent = buildFullHtmlContent(options.htmlContent, memberToken);
 
   // Special case: Never send emails to @example.com addresses (log instead)
   if (options.to.toLowerCase().endsWith('@example.com')) {
@@ -1106,7 +1086,6 @@ export async function sendDonationReceiptEmail(options: DonationReceiptEmailOpti
     htmlContent,
     textContent,
     recipientName: options.donorName,
-    includeUnsubscribeFooter: false,
   });
 }
 
@@ -1661,7 +1640,6 @@ export async function sendEventPointOfContactNewRegistrationEmail(
     htmlContent,
     textContent: textBody,
     recipientName: to,
-    includeUnsubscribeFooter: false,
   });
 }
 
@@ -1697,7 +1675,6 @@ export async function sendEventPointOfContactRegistrationUpdatedEmail(
     htmlContent,
     textContent: textBody,
     recipientName: to,
-    includeUnsubscribeFooter: false,
   });
 }
 
@@ -1741,7 +1718,6 @@ export async function sendEventPointOfContactRegistrationCancelledEmail(
     htmlContent,
     textContent: textBody,
     recipientName: to,
-    includeUnsubscribeFooter: false,
   });
 }
 
@@ -1768,7 +1744,6 @@ export async function sendEventOwnerNewRegistrationEmail(
     subject: `New registration for ${eventTitle}`,
     htmlContent,
     recipientName: ownerName,
-    includeUnsubscribeFooter: false,
   });
 }
 

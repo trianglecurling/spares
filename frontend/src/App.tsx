@@ -19,7 +19,6 @@ const RequestSpareConfirm = lazy(() => import('./pages/RequestSpareConfirm'));
 const RespondToSpare = lazy(() => import('./pages/RespondToSpare'));
 const DeclineSpare = lazy(() => import('./pages/DeclineSpare'));
 const MyRequests = lazy(() => import('./pages/MyRequests'));
-const Unsubscribe = lazy(() => import('./pages/Unsubscribe'));
 const MembersDirectory = lazy(() => import('./pages/MembersDirectory'));
 const Profile = lazy(() => import('./pages/Profile'));
 const ProfilePaymentDetailPage = lazy(() => import('./pages/ProfilePaymentDetailPage'));
@@ -209,15 +208,6 @@ function App() {
                     </Route>
 
                     <Route element={<AuthenticatedAppShell />}>
-                      <Route
-                        path="/unsubscribe"
-                        element={
-                          <ProtectedRoute>
-                            <Unsubscribe />
-                          </ProtectedRoute>
-                        }
-                      />
-
                       <Route
                         path="/dashboard"
                         element={

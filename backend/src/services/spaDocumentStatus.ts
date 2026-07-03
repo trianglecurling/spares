@@ -123,7 +123,6 @@ const SPA_ROUTE_RULES: SpaRouteRule[] = [
   { pattern: /^\/registration\/[^/]+$/ },
   { pattern: /^\/admin\/content\/articles\/[^/]+\/versions\/[^/]+\/preview$/ },
   { pattern: /^\/admin\/content\/articles\/draft-preview$/ },
-  { pattern: /^\/unsubscribe$/ },
   { pattern: /^\/dashboard$/ },
   { pattern: /^\/registration\/view$/ },
   { pattern: /^\/registration\/view\/[^/]+$/ },
