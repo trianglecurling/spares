@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { SquareClient, SquareEnvironment, WebhooksHelper } from 'square';
+import { SquareClient, SquareEnvironment, SquareError, WebhooksHelper } from 'square';
 import type { Currency } from 'square';
 import { config } from '../config.js';
 import type {
@@ -220,6 +220,38 @@ function squareWebhookNotificationUrl(): string {
   return `${configured}/api/payments/webhooks/square`;
 }
 
+/**
+ * Convert a Square SDK API error into a PaymentServiceError (502) whose message carries
+ * Square's own error details (category/code/detail), so callers and the frontend can see
+ * exactly why Square rejected the request instead of a bare provider status code.
+ */
+function toPaymentServiceError(error: unknown): PaymentServiceError | null {
+  if (!(error instanceof SquareError)) return null;
+
+  const details = (error.errors ?? [])
+    .map((bodyError) => {
+      const parts = [bodyError.category, bodyError.code, bodyError.detail].filter(
+        (part): part is string => typeof part === 'string' && part.trim().length > 0
+      );
+      return parts.join(' ');
+    })
+    .filter((detail) => detail.length > 0);
+
+  const summary = details.length > 0 ? details.join('; ') : error.message;
+  const status = error.statusCode != null ? ` (HTTP ${error.statusCode})` : '';
+  return new PaymentServiceError(`Square error${status}: ${summary}`, 502);
+}
+
+async function callSquare<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const mapped = toPaymentServiceError(error);
+    if (mapped) throw mapped;
+    throw error;
+  }
+}
+
 function resolveSquareEnvironment(): string {
   const normalized = config.payment.providers.square.environment.trim().toLowerCase();
   return normalized === 'production' ? SquareEnvironment.Production : SquareEnvironment.Sandbox;
@@ -267,7 +299,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     const locationId = this.requireLocationId();
 
     const squareOrderDetails = buildSquareOrderDetails(input);
-    const response = await client.checkout.paymentLinks.create({
+    const response = await callSquare(() => client.checkout.paymentLinks.create({
       idempotencyKey: crypto.randomUUID(),
       description: `Payment order ${input.orderId}`,
       order: {
@@ -280,7 +312,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
         redirectUrl: input.successUrl,
       },
       prePopulatedData: input.customerEmail ? { buyerEmail: input.customerEmail } : undefined,
-    });
+    }));
 
     const paymentLink = response.paymentLink;
     const checkoutUrl = paymentLink?.longUrl ?? paymentLink?.url ?? null;
@@ -422,13 +454,13 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
 
   async fetchPaymentStatus(providerOrderId: string): Promise<PaymentOrderStatus> {
     const client = this.requireClient();
-    const linkResponse = await client.checkout.paymentLinks.get({ id: providerOrderId });
+    const linkResponse = await callSquare(() => client.checkout.paymentLinks.get({ id: providerOrderId }));
     const squareOrderId = linkResponse.paymentLink?.orderId;
     if (!squareOrderId) {
       return 'pending';
     }
 
-    const orderResponse = await client.orders.get({ orderId: squareOrderId });
+    const orderResponse = await callSquare(() => client.orders.get({ orderId: squareOrderId }));
     return resolveSquareOrderPaymentStatus(client, orderResponse.order);
   }
 
@@ -437,7 +469,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     const paymentId =
       input.providerPaymentId?.trim()
       || await this.resolvePaymentIdForRefund(client, input);
-    const response = await client.refunds.refundPayment({
+    const response = await callSquare(() => client.refunds.refundPayment({
       idempotencyKey: crypto.randomUUID(),
       paymentId,
       amountMoney: {
@@ -445,7 +477,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
         currency: squareCurrency(input.currency),
       },
       reason: input.reason?.trim() ? 'Requested by customer' : undefined,
-    });
+    }));
 
     const refund = response.refund;
     if (!refund?.id) {
@@ -464,7 +496,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
 
   async fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null> {
     const client = this.requireClient();
-    const response = await client.refunds.get({ refundId: providerRefundId });
+    const response = await callSquare(() => client.refunds.get({ refundId: providerRefundId }));
     return mapSquareRefundStatus(asString(response.refund?.status));
   }
 

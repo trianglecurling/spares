@@ -4,6 +4,7 @@ import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import { useAuth } from '../contexts/AuthContext';
 import PublicNotFoundPage from './PublicNotFoundPage';
 import api, { formatApiError } from '../utils/api';
 import PublicRegistrationFieldInput, {
@@ -109,6 +110,7 @@ export default function PublicEventRegisterPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const specialLinkToken = searchParams.get('slk');
+  const { member } = useAuth();
 
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [specialLink, setSpecialLink] = useState<SpecialLinkInfo | null>(null);
@@ -163,51 +165,33 @@ export default function PublicEventRegisterPage() {
   }, [slug, specialLinkToken]);
 
   useEffect(() => {
-    if (!event) return;
-    const token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
-    if (!token) return;
-    api
-      .get('/members/me')
-      .then((res) => {
-        const m = res.data as {
-          name?: string | null;
-          firstName?: string | null;
-          lastName?: string | null;
-          email?: string | null;
-          phone?: string | null;
-        };
-        if (m?.firstName) setContactFirstName((prev) => prev || m.firstName || '');
-        if (m?.lastName) setContactLastName((prev) => prev || m.lastName || '');
-        if (!m?.firstName && !m?.lastName && m?.name) {
-          const parts = m.name.trim().split(/\s+/);
-          if (parts.length > 0) {
-            setContactFirstName((prev) => prev || parts[0] || '');
-            setContactLastName((prev) => prev || parts.slice(1).join(' ') || '');
+    if (!event || !member) return;
+    const nameParts = member.name.trim().split(/\s+/);
+    const firstFromName = nameParts[0] ?? '';
+    const lastFromName = nameParts.slice(1).join(' ');
+    if (firstFromName) setContactFirstName((prev) => prev || firstFromName);
+    if (lastFromName) setContactLastName((prev) => prev || lastFromName);
+    if (member.email) setContactEmail((prev) => prev || member.email || '');
+    const phone = member.phone?.trim();
+    if (!phone) return;
+    setFieldValues((prev) => {
+      const next = { ...prev };
+      const total = 1 + groupMembers.length;
+      for (const f of event.registrationFields) {
+        if (f.field_type !== 'preset_phone') continue;
+        if (f.scope === 'individual') {
+          for (let p = 0; p < total; p += 1) {
+            const k = fieldValueKey(f.id, f.scope, p);
+            if (!next[k]) next[k] = phone;
           }
+        } else {
+          const k = fieldValueKey(f.id, f.scope, 0);
+          if (!next[k]) next[k] = phone;
         }
-        if (m?.email) setContactEmail((prev) => prev || m.email || '');
-        const phone = m?.phone?.trim();
-        if (!phone) return;
-        setFieldValues((prev) => {
-          const next = { ...prev };
-          const total = 1 + groupMembers.length;
-          for (const f of event.registrationFields) {
-            if (f.field_type !== 'preset_phone') continue;
-            if (f.scope === 'individual') {
-              for (let p = 0; p < total; p += 1) {
-                const k = fieldValueKey(f.id, f.scope, p);
-                if (!next[k]) next[k] = phone;
-              }
-            } else {
-              const k = fieldValueKey(f.id, f.scope, 0);
-              if (!next[k]) next[k] = phone;
-            }
-          }
-          return next;
-        });
-      })
-      .catch(() => {});
-  }, [event, groupMembers.length]);
+      }
+      return next;
+    });
+  }, [event, groupMembers.length, member]);
 
   const setVal = useCallback((key: string, v: string) => {
     setFieldValues((prev) => ({ ...prev, [key]: v }));

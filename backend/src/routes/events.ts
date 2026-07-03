@@ -856,6 +856,10 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         if (err instanceof EventServiceError) {
           return sendApiError(reply, err.statusCode, err.message);
         }
+        if (err instanceof PaymentServiceError) {
+          request.log.error({ err }, 'Payment provider error during public event registration');
+          return sendApiError(reply, err.statusCode, err.message);
+        }
         throw err;
       }
     }
@@ -1617,6 +1621,10 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         };
       } catch (err) {
         if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        if (err instanceof PaymentServiceError) {
+          request.log.error({ err }, 'Payment provider error during event registration');
           return sendApiError(reply, err.statusCode, err.message);
         }
         throw err;

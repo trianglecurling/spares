@@ -1,5 +1,7 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
+import { isAccessTokenUsable } from './accessToken';
 import { clearCachedMemberDisplayName } from './memberDisplayCache';
+import { isPublicApiRequestUrl } from './publicApiPaths';
 import { isPublicLightPath } from './publicLightPaths';
 
 type RetriableRequestConfig = AxiosRequestConfig & { _retry?: boolean };
@@ -61,10 +63,10 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-// Add auth token to requests
+// Add auth token to requests (skip expired tokens so public guest flows are not blocked)
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
-  if (token) {
+  if (isAccessTokenUsable(token)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -87,12 +89,19 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       const originalRequest = error.config as RetriableRequestConfig | undefined;
       const requestUrl = originalRequest?.url || '';
+      const isPublicApi = isPublicApiRequestUrl(requestUrl);
       const isAuthEndpoint =
         requestUrl.includes('/auth/refresh') ||
         requestUrl.includes('/auth/request-code') ||
         requestUrl.includes('/auth/verify-code') ||
         requestUrl.includes('/auth/select-member');
-      if (originalRequest && !originalRequest._retry && !isAuthEndpoint && getRefreshToken()) {
+      if (
+        originalRequest &&
+        !originalRequest._retry &&
+        !isAuthEndpoint &&
+        !isPublicApi &&
+        getRefreshToken()
+      ) {
         originalRequest._retry = true;
         const newAccessToken = await refreshAccessToken();
         if (newAccessToken) {
@@ -102,6 +111,11 @@ api.interceptors.response.use(
           };
           return api(originalRequest);
         }
+      }
+
+      if (isPublicApi) {
+        clearAuthTokens();
+        return Promise.reject(error);
       }
 
       const currentPath = window.location.pathname;
