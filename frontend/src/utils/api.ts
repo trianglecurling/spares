@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
 import { clearCachedMemberDisplayName } from './memberDisplayCache';
+import { isPublicLightPath } from './publicLightPaths';
 
 type RetriableRequestConfig = AxiosRequestConfig & { _retry?: boolean };
 
@@ -104,17 +105,9 @@ api.interceptors.response.use(
       }
 
       const currentPath = window.location.pathname;
-      // Don't redirect when on public pages - user can stay and browse
-      const isPublicPath =
-        currentPath === '/' ||
-        currentPath === '/contact' ||
-        currentPath.startsWith('/contact/') ||
-        currentPath.startsWith('/article/') ||
-        currentPath === '/calendar/public' ||
-        currentPath.startsWith('/calendar/public/') ||
-        currentPath.startsWith('/mailing-list/') ||
-        /^\/go\/[^/]+\/info(\/|$)/.test(currentPath);
-      if (!currentPath.startsWith('/install') && currentPath !== '/login' && !isPublicPath) {
+      // Don't redirect when on public pages - stale tokens must not block guest flows.
+      // Keep in sync with AuthContext + PublicLightThemeOutlet via publicLightPaths.ts.
+      if (!currentPath.startsWith('/install') && currentPath !== '/login' && !isPublicLightPath(currentPath)) {
         clearAuthTokens();
         window.location.href = '/login';
       }
