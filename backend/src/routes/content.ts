@@ -4,6 +4,10 @@ import { eq, and, asc, desc, inArray, notExists, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isUniqueConstraintViolation } from '../api/errors.js';
 import { isContentAdmin } from '../utils/auth.js';
+import {
+  articleMatchesContentSearch,
+  type ArticleContentSearchMode,
+} from '../content/articleContentSearch.js';
 import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
 
@@ -278,6 +282,8 @@ export async function contentRoutes(fastify: FastifyInstance) {
       page?: string;
       pageSize?: string;
       search?: string;
+      contentSearch?: string;
+      contentSearchMode?: string;
       sort?: string;
       order?: string;
     };
@@ -288,6 +294,9 @@ export async function contentRoutes(fastify: FastifyInstance) {
     const pageSizeRaw = Number.parseInt(request.query.pageSize ?? '25', 10) || 25;
     const pageSize = Math.max(1, Math.min(100, pageSizeRaw));
     const search = (request.query.search ?? '').trim().toLowerCase();
+    const contentSearch = (request.query.contentSearch ?? '').trim();
+    const contentSearchMode: ArticleContentSearchMode =
+      request.query.contentSearchMode === 'markdown' ? 'markdown' : 'content';
     const sort = request.query.sort ?? 'updatedAt';
     const order = request.query.order === 'asc' ? 'asc' : 'desc';
 
@@ -306,9 +315,43 @@ export async function contentRoutes(fastify: FastifyInstance) {
         .where(eq(schema.events.article_id, schema.articles.id)),
     );
     const searchClause = search
-      ? sql`lower(${schema.articles.title}) like ${`%${search}%`}`
+      ? sql`(lower(${schema.articles.title}) like ${`%${search}%`} OR lower(${schema.articles.slug}) like ${`%${search}%`})`
       : undefined;
-    const listWhere = searchClause ? and(searchClause, notEventOwnedArticle) : notEventOwnedArticle;
+    const baseWhere = searchClause ? and(searchClause, notEventOwnedArticle) : notEventOwnedArticle;
+
+    let listWhere = baseWhere;
+    if (contentSearch) {
+      const candidates = await db
+        .select({
+          id: schema.articles.id,
+          content: schema.articles.content,
+          contentType: schema.articles.content_type,
+        })
+        .from(schema.articles)
+        .where(baseWhere);
+
+      const matchedIds = candidates
+        .filter((row) =>
+          articleMatchesContentSearch(
+            row.content,
+            (row.contentType ?? 'markdown') as 'markdown' | 'html',
+            contentSearch,
+            contentSearchMode,
+          ),
+        )
+        .map((row) => row.id);
+
+      if (matchedIds.length === 0) {
+        return {
+          items: [],
+          total: 0,
+          page,
+          pageSize,
+        };
+      }
+
+      listWhere = and(baseWhere, inArray(schema.articles.id, matchedIds));
+    }
 
     const [totalRow] = await db
       .select({ count: sql<number>`count(*)` })

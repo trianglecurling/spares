@@ -66,6 +66,7 @@ type FilesListResponse = {
 };
 
 type ArticleSortKey = 'updatedAt' | 'title' | 'slug' | 'publishedAt' | 'createdAt';
+type ArticleContentSearchMode = 'markdown' | 'content';
 type FileSortKey = 'createdAt' | 'name' | 'size' | 'type' | 'updatedAt';
 type FileOrphanFilter = 'all' | 'suspected';
 type FileVisibilityFilter = 'all' | 'public' | 'authenticated';
@@ -144,6 +145,11 @@ function buildMenuParentChoiceOptions(
 
 const ARTICLES_PAGE_SIZE = 25;
 const ARTICLE_SORT_KEYS = ['updatedAt', 'title', 'slug', 'publishedAt', 'createdAt'] as const;
+const ARTICLE_CONTENT_SEARCH_MODES = ['content', 'markdown'] as const;
+const ARTICLE_CONTENT_SEARCH_MODE_OPTIONS: ChoiceOption<ArticleContentSearchMode>[] = [
+  { value: 'content', label: 'Search content' },
+  { value: 'markdown', label: 'Search markdown' },
+];
 const FILES_PAGE_SIZE = 25;
 const FILE_SORT_KEYS = ['createdAt', 'name', 'size', 'type', 'updatedAt'] as const;
 const FILE_ORPHAN_VALUES = ['all', 'suspected'] as const;
@@ -334,6 +340,17 @@ export default function AdminContent() {
         defaultValue: '',
         debounceMs: 250,
       },
+      contentQuery: {
+        queryKey: 'articleContentQuery',
+        defaultValue: '',
+        debounceMs: 250,
+      },
+      contentMode: {
+        queryKey: 'articleContentMode',
+        defaultValue: 'content' as ArticleContentSearchMode,
+        parse: (raw: string | null) =>
+          parseEnumValue(raw, ARTICLE_CONTENT_SEARCH_MODES, 'content'),
+      },
     }),
     []
   );
@@ -345,7 +362,7 @@ export default function AdminContent() {
     setPage: setArticlePage,
     setSort: setArticleSort,
     setDraftFilter: setArticleDraftFilter,
-  } = useTableQueryState<ArticleSortKey, { query: string }>({
+  } = useTableQueryState<ArticleSortKey, { query: string; contentQuery: string; contentMode: ArticleContentSearchMode }>({
     defaultSort: { key: 'updatedAt', direction: 'desc' },
     sortKeys: ARTICLE_SORT_KEYS,
     pageParam: 'articlePage',
@@ -429,6 +446,10 @@ export default function AdminContent() {
         order: articleSort.direction,
       };
       if (articleFilters.query.trim()) articleParams.search = articleFilters.query.trim();
+      if (articleFilters.contentQuery.trim()) {
+        articleParams.contentSearch = articleFilters.contentQuery.trim();
+        articleParams.contentSearchMode = articleFilters.contentMode;
+      }
       const articlesRes = await api.get<ArticlesListResponse>('/content/articles', { params: articleParams });
       setArticles(articlesRes.data.items);
       setArticleTotal(articlesRes.data.total);
@@ -443,7 +464,15 @@ export default function AdminContent() {
     } finally {
       setArticleLoading(false);
     }
-  }, [articleFilters.query, articlePage, articleSort.direction, articleSort.key, setArticlePage]);
+  }, [
+    articleFilters.contentMode,
+    articleFilters.contentQuery,
+    articleFilters.query,
+    articlePage,
+    articleSort.direction,
+    articleSort.key,
+    setArticlePage,
+  ]);
 
   useEffect(() => {
     if (activeTab !== 'articles') return;
@@ -1840,20 +1869,53 @@ export default function AdminContent() {
                 <AppPageControlsRow
                   className="mb-4"
                   left={(
-                    <FormField
-                      label="Filter"
-                      htmlFor={`${formFieldId}-articles-query`}
-                      className="min-w-[16rem] flex-1"
-                    >
-                      <input
-                        id={`${formFieldId}-articles-query`}
-                        type="search"
-                        value={articleDraftFilters.query}
-                        onChange={(e) => setArticleDraftFilter('query', e.target.value)}
-                        placeholder="Search title or slug"
-                        className="app-input"
-                      />
-                    </FormField>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
+                      <FormField
+                        label="Filter"
+                        htmlFor={`${formFieldId}-articles-query`}
+                        className="min-w-[16rem] flex-1"
+                      >
+                        <input
+                          id={`${formFieldId}-articles-query`}
+                          type="search"
+                          value={articleDraftFilters.query}
+                          onChange={(e) => setArticleDraftFilter('query', e.target.value)}
+                          placeholder="Search title or slug"
+                          className="app-input"
+                        />
+                      </FormField>
+                      <FormField
+                        label="Search content"
+                        htmlFor={`${formFieldId}-articles-content-query`}
+                        className="min-w-[16rem] flex-1"
+                      >
+                        <input
+                          id={`${formFieldId}-articles-content-query`}
+                          type="search"
+                          value={articleDraftFilters.contentQuery}
+                          onChange={(e) => setArticleDraftFilter('contentQuery', e.target.value)}
+                          placeholder="Search article body"
+                          className="app-input"
+                        />
+                      </FormField>
+                      <FormField
+                        label="Content search mode"
+                        htmlFor={`${formFieldId}-articles-content-mode`}
+                      >
+                        <ChoiceInput<ArticleContentSearchMode>
+                          inputId={`${formFieldId}-articles-content-mode`}
+                          layout="inline"
+                          options={ARTICLE_CONTENT_SEARCH_MODE_OPTIONS}
+                          value={articleDraftFilters.contentMode}
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next)) {
+                              setArticleDraftFilter('contentMode', next);
+                            }
+                          }}
+                          listboxLabel="Content search mode"
+                        />
+                      </FormField>
+                    </div>
                   )}
                   right={(
                     <Button onClick={() => navigate('/admin/content/articles/new')}>Add article</Button>
@@ -1902,7 +1964,11 @@ export default function AdminContent() {
                   emptyState={
                     <AppStateCard
                       compact
-                      title={articleFilters.query ? 'No articles match those filters.' : 'No articles found.'}
+                      title={
+                        articleFilters.query || articleFilters.contentQuery
+                          ? 'No articles match those filters.'
+                          : 'No articles found.'
+                      }
                     />
                   }
                 />
