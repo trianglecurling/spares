@@ -12,6 +12,9 @@ export function isPublicLightPath(pathname: string): boolean {
   if (pathname === '/donate' || pathname.startsWith('/donate/')) {
     return true;
   }
+  if (pathname === '/dues' || pathname.startsWith('/dues/')) {
+    return true;
+  }
   if (pathname.startsWith('/mailing-list/')) {
     return true;
   }

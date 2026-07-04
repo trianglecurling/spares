@@ -14,6 +14,7 @@ import { iceBookingRoutes } from './routes/iceBookings.js';
 import { installRoutes } from './routes/install.js';
 import { publicFeedbackRoutes, protectedFeedbackRoutes } from './routes/feedback.js';
 import { publicConfigRoutes } from './routes/publicConfig.js';
+import { publicDuesRoutes } from './routes/publicDues.js';
 import { publicRoutes } from './routes/public.js';
 import { contactRoutes } from './routes/contact.js';
 import { mailingListRoutes } from './routes/mailingList.js';
@@ -42,6 +43,7 @@ export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise
   await fastify.register(publicAuthRoutes, { prefix: '/api' });
   await fastify.register(publicFeedbackRoutes, { prefix: '/api' });
   await fastify.register(publicRoutes, { prefix: '/api' });
+  await fastify.register(publicDuesRoutes, { prefix: '/api' });
   await fastify.register(contactRoutes, { prefix: '/api' });
   await fastify.register(mailingListRoutes, { prefix: '/api' });
   await fastify.register(donationRoutes, { prefix: '/api' });

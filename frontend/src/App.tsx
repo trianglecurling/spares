@@ -57,6 +57,7 @@ const PublicArticle = lazy(() => import('./pages/PublicArticle'));
 const PublicContactPage = lazy(() => import('./pages/PublicContactPage'));
 const PublicContactConfirmPage = lazy(() => import('./pages/PublicContactConfirmPage'));
 const PublicDonatePage = lazy(() => import('./pages/PublicDonatePage'));
+const PublicDuesPage = lazy(() => import('./pages/PublicDuesPage'));
 const PublicDonateSuccessPage = lazy(() => import('./pages/PublicDonateSuccessPage'));
 const PublicDonateCancelPage = lazy(() => import('./pages/PublicDonateCancelPage'));
 const PublicMailingListPage = lazy(() => import('./pages/PublicMailingListPage'));
@@ -162,6 +163,7 @@ function App() {
                       <Route path="/contact/confirm" element={<PublicContactConfirmPage />} />
                       <Route path="/payments/:orderToken" element={<PublicPaymentDetailPage />} />
                       <Route path="/donate" element={<PublicDonatePage />} />
+                      <Route path="/dues" element={<PublicDuesPage />} />
                       <Route path="/donate/success" element={<PublicDonateSuccessPage />} />
                       <Route path="/donate/cancel" element={<PublicDonateCancelPage />} />
                       <Route path="/mailing-list/:listSlug" element={<PublicMailingListPage />} />
