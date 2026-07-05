@@ -21,6 +21,7 @@ import {
   type NavMenuItemNode,
 } from './DesktopFlyoutNav';
 import { MobileNavAccordionGroup, MobileNavAccordionItem } from './MobileNavAccordion';
+import PublicSearchNav from './PublicSearchNav';
 
 const DEFAULT_CONTACT_EMAIL_LOCAL = 'info';
 const DEFAULT_CONTACT_EMAIL_DOMAIN = 'trianglecurling.com';
@@ -86,6 +87,7 @@ export default function PublicLayout({
   const [siteConfig, setSiteConfig] = useState<SiteConfig | null>(initialSiteConfig ?? cachedSiteConfig);
   const [menuItems, setMenuItems] = useState<NavMenuItemNode[]>(initialMenuItems ?? cachedMenuItems);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [publicDataReady, setPublicDataReady] = useState<boolean>(
@@ -193,16 +195,21 @@ export default function PublicLayout({
         mobileMenuId={MOBILE_MENU_ID}
         desktopNav={
           !backToHome && publicDataReady ? (
-            menuItems.length > 0 ? (
-              <DesktopMenuBar
-                items={menuItems}
-                onHoverMenuDisplayed={() => setProfileMenuOpen(false)}
-              />
-            ) : (
-              <Link to="/" className={publicFlyoutNavClasses.navLink}>
-                Home
-              </Link>
-            )
+            <div className="flex items-center gap-2 lg:gap-3">
+              {!searchOpen ? (
+                menuItems.length > 0 ? (
+                  <DesktopMenuBar
+                    items={menuItems}
+                    onHoverMenuDisplayed={() => setProfileMenuOpen(false)}
+                  />
+                ) : (
+                  <Link to="/" className={publicFlyoutNavClasses.navLink}>
+                    Home
+                  </Link>
+                )
+              ) : null}
+              <PublicSearchNav onSearchOpenChange={setSearchOpen} />
+            </div>
           ) : null
         }
         trailingAuth={
@@ -214,6 +221,11 @@ export default function PublicLayout({
         }
         mobileNav={
           <>
+            {!backToHome && publicDataReady ? (
+              <div className="mb-3 px-1">
+                <PublicSearchNav forceExpanded onNavigate={() => setMobileOpen(false)} />
+              </div>
+            ) : null}
             {!backToHome && publicDataReady ? (
               <MobileNavAccordionGroup>
                 {menuItems.length > 0 ? (

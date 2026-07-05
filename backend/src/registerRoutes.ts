@@ -36,6 +36,7 @@ import { protectedRegistrationMemberRoutes } from './routes/registrationMember.j
 import { protectedRegistrationStaffRoutes } from './routes/registrationStaff.js';
 import { protectedRegistrationWaitlistStaffRoutes, publicRegistrationWaitlistOfferRoutes } from './routes/registrationWaitlistStaff.js';
 import { waitlistRoutes } from './routes/waitlists.js';
+import { publicSearchRoutes } from './routes/publicSearch.js';
 import { webhookRoutes } from './routes/webhooks.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
@@ -49,6 +50,7 @@ export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise
   await fastify.register(donationRoutes, { prefix: '/api' });
   await fastify.register(publicPaymentRoutes, { prefix: '/api' });
   await fastify.register(publicEventRoutes, { prefix: '/api' });
+  await fastify.register(publicSearchRoutes);
   await fastify.register(publicRegistrationShellRoutes, { prefix: '/api' });
   await fastify.register(publicRegistrationWaitlistOfferRoutes, { prefix: '/api' });
   await fastify.register(paymentWebhookRoutes, { prefix: '/api' });

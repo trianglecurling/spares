@@ -17,6 +17,7 @@ import { startPaymentReconciliationProcessor } from './services/paymentReconcili
 import { startWaitlistOfferProcessor } from './services/waitlistOfferProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 import { warmPublicBootstrapCache } from './services/publicBootstrapCache.js';
+import { warmSearchIndex } from './search/searchIndexService.js';
 import { maybeInvalidatePublicBootstrapCache } from './services/publicBootstrapCacheInvalidation.js';
 import { FASTIFY_MAX_PARAM_LENGTH } from './utils/eventRegistrationAccessToken.js';
 
@@ -89,6 +90,9 @@ if (isDatabaseConfigured()) {
     console.log('Database connection verified successfully');
     await loadBackendLogCaptureFromDb();
     startBackgroundProcessorsIfReady();
+    void warmSearchIndex().catch((error) => {
+      console.error('Failed to warm search index on startup:', error);
+    });
   } catch (error: unknown) {
     const initError = error instanceof Error ? error : new Error('Unknown database initialization error');
     dbInitError = initError;
@@ -127,6 +131,9 @@ fastify.addHook('onRequest', async (request, reply) => {
       await loadBackendLogCaptureFromDb();
       void warmPublicBootstrapCache().catch((error) => {
         console.error('Failed to warm public bootstrap cache on first request:', error);
+      });
+      void warmSearchIndex().catch((error) => {
+        console.error('Failed to warm search index on first request:', error);
       });
       startBackgroundProcessorsIfReady();
 
@@ -181,6 +188,9 @@ const start = async () => {
     if (dbInitialized) {
       void warmPublicBootstrapCache().catch((error) => {
         console.error('Failed to warm public bootstrap cache after listen:', error);
+      });
+      void warmSearchIndex().catch((error) => {
+        console.error('Failed to warm search index after listen:', error);
       });
     }
   } catch (err) {

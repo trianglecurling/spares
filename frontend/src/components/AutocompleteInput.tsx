@@ -27,6 +27,8 @@ type AutocompleteInputProps<T> = {
   clearButton?: ClearButtonConfig
   onInputFocus?: () => void
   onOpenChange?: (open: boolean) => void
+  /** Text combobox: run search/submit when Enter is pressed and no suggestion is selected. */
+  onEnterKey?: () => void
   inputId?: string
   required?: boolean
   autoComplete?: string
@@ -52,6 +54,7 @@ export default function AutocompleteInput<T>({
   clearButton,
   onInputFocus,
   onOpenChange,
+  onEnterKey,
   inputId,
   required = false,
   autoComplete,
@@ -94,6 +97,7 @@ export default function AutocompleteInput<T>({
       shouldShowDropdown={shouldShowDropdown}
       onOpenChange={onOpenChange}
       onInputFocus={onInputFocus}
+      onComboboxEnter={onEnterKey}
     />
   )
 }

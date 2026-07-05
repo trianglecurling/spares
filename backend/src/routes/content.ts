@@ -10,6 +10,7 @@ import {
 } from '../content/articleContentSearch.js';
 import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
+import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
 
 async function ensureGeneratedCss(content: string, contentType: string): Promise<string> {
   if (contentType !== 'html') return content;
@@ -600,6 +601,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
         body.revisionNote ?? null
       );
     }
+    markSearchIndexDirty();
     return {
       id: row!.id,
       title: row!.title,
@@ -821,6 +823,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
         .limit(1);
 
       if (!row) return reply.code(404).send({ error: 'Article not found' });
+      markSearchIndexDirty();
       return {
         id: row.id,
         title: row.title,
@@ -971,6 +974,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .where(eq(schema.articles.id, id))
       .limit(1);
     if (!row) return reply.code(404).send({ error: 'Article not found' });
+    markSearchIndexDirty();
     return {
       id: row.id,
       title: row.title,
@@ -994,6 +998,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .where(eq(schema.articles.id, id))
       .returning({ id: schema.articles.id });
     if (deleted.length === 0) return reply.code(404).send({ error: 'Article not found' });
+    markSearchIndexDirty();
     return { success: true };
   });
 

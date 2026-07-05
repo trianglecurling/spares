@@ -130,6 +130,8 @@ type ChoiceInputProps<Value extends ChoicePrimitiveValue> = {
   onComboboxInput?: () => void
   /** Text combobox: fired on blur when focus leaves the combobox container (not when moving into the listbox). */
   onComboboxTextBlur?: () => void
+  /** Text combobox: submit/search action when Enter is pressed and no list item is selected. */
+  onComboboxEnter?: () => void
   createCustomValue?: (inputValue: string) => Value | null
   renderOption?: (
     option: ChoiceRenderableOption<Value>,
@@ -460,6 +462,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   onInputFocus,
   onComboboxInput,
   onComboboxTextBlur,
+  onComboboxEnter,
   createCustomValue,
   renderOption,
 }: ChoiceInputProps<Value>) {
@@ -1926,6 +1929,11 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
     }
 
     if ((event.key === 'Enter' || (!isTextInput && event.key === ' ')) && !open) {
+      if (isTextInput && onComboboxEnter) {
+        event.preventDefault()
+        onComboboxEnter()
+        return
+      }
       event.preventDefault()
       openPopover()
       return
@@ -1980,6 +1988,11 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
     }
 
     if (runOpenRootOptionKeys(event)) return
+
+    if (event.key === 'Enter' && isTextInput && onComboboxEnter) {
+      event.preventDefault()
+      onComboboxEnter()
+    }
   }
 
   const renderInlineOptions = (
@@ -2246,7 +2259,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
     .join(' ')
   const selectTriggerClassName = [
     popoverControlClassName,
-    resolvedClearButton?.visible ? 'pr-20' : 'pr-10',
+    resolvedClearButton?.visible ? 'pr-20' : isTextInput && !canOpenPopover ? 'pr-3' : 'pr-10',
     'select-none text-left',
     !isTextInput
       ? 'border-transparent bg-transparent focus:border-transparent focus:ring-0 disabled:border-transparent dark:disabled:border-transparent'
@@ -2417,7 +2430,9 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
                 : 'text-gray-500 group-focus-within:text-primary-teal dark:text-gray-400 dark:group-focus-within:text-primary-teal'
           }`}
         >
-          <HiChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          {canOpenPopover ? (
+            <HiChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          ) : null}
         </span>
       </div>
 

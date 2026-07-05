@@ -12,3 +12,4 @@ coverage
 .idea
 db-config*.json
 backend/data/uploads/
+backend/data/search-index.json

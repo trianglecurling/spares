@@ -17,6 +17,7 @@ import { generateEventRegistrationAccessToken } from '../utils/eventRegistration
 import { getSeasonStartYearForUtcDate, parseFiscalYearStartMmdd, seasonStartYearsTouchingRangeUtc } from '../utils/fiscalSeason.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 import { isArchivedAt, notArchivedCondition } from '../utils/softDelete.js';
+import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
 
 export { EventServiceError };
 
@@ -364,6 +365,7 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
     );
   }
 
+  markSearchIndexDirty();
   return { id: eventId, slug };
 }
 
@@ -528,6 +530,8 @@ export async function updateEvent(eventId: number, input: UpdateEventInput): Pro
       });
     }
   }
+
+  markSearchIndexDirty();
 }
 
 export async function archiveEvent(eventId: number): Promise<void> {
@@ -547,6 +551,7 @@ export async function archiveEvent(eventId: number): Promise<void> {
       updated_at: sql`CURRENT_TIMESTAMP`,
     } as Record<string, unknown>)
     .where(eq(schema.events.id, eventId));
+  markSearchIndexDirty();
 }
 
 export async function restoreEvent(eventId: number): Promise<void> {
@@ -564,6 +569,7 @@ export async function restoreEvent(eventId: number): Promise<void> {
       updated_at: sql`CURRENT_TIMESTAMP`,
     } as Record<string, unknown>)
     .where(eq(schema.events.id, eventId));
+  markSearchIndexDirty();
 }
 
 export async function deleteEvent(eventId: number): Promise<void> {
@@ -575,6 +581,7 @@ export async function deleteEvent(eventId: number): Promise<void> {
 
   const { db, schema } = getDrizzleDb();
   await db.delete(schema.events).where(eq(schema.events.id, eventId));
+  markSearchIndexDirty();
 }
 
 export async function getEventById(eventId: number) {

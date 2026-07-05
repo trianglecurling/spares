@@ -74,6 +74,7 @@ const AdminRegistrationRoute = lazy(() => import('./pages/admin/AdminRegistratio
 const AdminWaitlists = lazy(() => import('./pages/admin/AdminWaitlists'));
 const PublicLeaguesPage = lazy(() => import('./pages/PublicLeaguesPage'));
 const PublicEventsPage = lazy(() => import('./pages/PublicEventsPage'));
+const PublicSearchPage = lazy(() => import('./pages/PublicSearchPage'));
 const PublicEventDetailPage = lazy(() => import('./pages/PublicEventDetailPage'));
 const PublicEventTeamPage = lazy(() => import('./pages/PublicEventTeamPage'));
 const PublicEventRegisterPage = lazy(() => import('./pages/PublicEventRegisterPage'));
@@ -173,6 +174,7 @@ function App() {
                       <Route path="/article/:slug" element={<PublicArticle />} />
 
                       <Route path="/events" element={<PublicEventsPage />} />
+                      <Route path="/search" element={<PublicSearchPage />} />
                       <Route path="/public/leagues" element={<LegacyPublicLeaguesRedirect />} />
                       <Route path="/leagues/public" element={<PublicLeaguesPage />} />
                       <Route path="/events/:slug/teams/:teamId" element={<PublicEventTeamPage />} />
