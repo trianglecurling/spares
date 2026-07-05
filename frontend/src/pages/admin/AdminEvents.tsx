@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
+import IncludeArchivedToggle from '../../components/softDelete/IncludeArchivedToggle';
+import SoftDeleteRowActions from '../../components/softDelete/SoftDeleteRowActions';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
+import { useAuth } from '../../contexts/AuthContext';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { isArchivedAt } from '../../utils/softDelete';
 
 interface EventSummary {
   id: number;
@@ -20,6 +25,7 @@ interface EventSummary {
   memberFeeMinor?: number | null;
   currency: string;
   timespans: Array<{ start_dt: string; end_dt: string }>;
+  archivedAt?: string | null;
   createdAt: string;
 }
 
@@ -60,27 +66,69 @@ function visibilityBadge(visibility: string) {
 export default function AdminEvents() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [includeArchived, setIncludeArchived] = useState(false);
   const navigate = useNavigate();
+  const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const isServerAdmin = Boolean(member?.isServerAdmin);
 
   const loadEvents = () => {
     setLoading(true);
-    api.get('/events')
+    const params = includeArchived ? { includeArchived: '1' } : undefined;
+    api.get('/events', { params })
       .then((res) => setEvents(res.data || []))
       .catch((err) => showAlert(formatApiError(err, 'Failed to load events'), 'error'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadEvents(); }, []);
+  useEffect(() => { loadEvents(); }, [includeArchived]);
 
-  const handleDelete = async (event: EventSummary) => {
-    const confirmed = await confirm({ message: `Delete "${event.title}"? This will remove all registrations.`, title: 'Delete event', variant: 'danger' });
+  const handleArchive = async (event: EventSummary) => {
+    const confirmed = await confirm({
+      message: `Archive "${event.title}"? The event will be hidden from public listings. Registrations and related data are preserved and can be restored later.`,
+      title: 'Archive event',
+      variant: 'danger',
+    });
     if (!confirmed) return;
 
     try {
       await api.delete(`/events/${event.id}`);
-      showAlert('Event deleted', 'success');
+      showAlert('Event archived', 'success');
+      loadEvents();
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to archive event'), 'error');
+    }
+  };
+
+  const handleRestore = async (event: EventSummary) => {
+    const confirmed = await confirm({
+      message: `Restore "${event.title}"? The event will appear in admin lists again. You can publish it when you are ready.`,
+      title: 'Restore event',
+      variant: 'info',
+    });
+    if (!confirmed) return;
+
+    try {
+      await api.post(`/events/${event.id}/restore`);
+      showAlert('Event restored', 'success');
+      loadEvents();
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to restore event'), 'error');
+    }
+  };
+
+  const handleDeletePermanently = async (event: EventSummary) => {
+    const confirmed = await confirm({
+      message: `Permanently delete "${event.title}"? This removes the event and all registrations. This cannot be undone.`,
+      title: 'Delete event permanently',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/events/${event.id}/permanent`);
+      showAlert('Event deleted permanently', 'success');
       loadEvents();
     } catch (err) {
       showAlert(formatApiError(err, 'Failed to delete event'), 'error');
@@ -132,17 +180,27 @@ export default function AdminEvents() {
         id: 'status',
         header: 'Status',
         align: 'center',
-        renderCell: (event) => (
-          <span
-            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-              event.published
-                ? 'bg-green-100 text-green-800 dark:bg-emerald-900/30 dark:text-emerald-200'
-                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-            }`}
-          >
-            {event.published ? 'Published' : 'Draft'}
-          </span>
-        ),
+        renderCell: (event) => {
+          if (isArchivedAt(event.archivedAt)) {
+            return (
+              <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+                Archived
+              </span>
+            );
+          }
+
+          return (
+            <span
+              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                event.published
+                  ? 'bg-green-100 text-green-800 dark:bg-emerald-900/30 dark:text-emerald-200'
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+              }`}
+            >
+              {event.published ? 'Published' : 'Draft'}
+            </span>
+          );
+        },
       },
       {
         id: 'visibility',
@@ -191,15 +249,28 @@ export default function AdminEvents() {
           }
         />
 
+        {!loading && (
+          <AppPageControlsRow
+            right={(
+              <IncludeArchivedToggle
+                checked={includeArchived}
+                onChange={setIncludeArchived}
+              />
+            )}
+          />
+        )}
+
         {loading && <AppStateCard title="Loading events..." />}
 
         {!loading && events.length === 0 && (
           <AppStateCard
-            title="No events yet."
+            title={includeArchived ? 'No events match these filters.' : 'No events yet.'}
             action={
-              <Link to="/admin/events/new">
-                <Button type="button" variant="primary">Create event</Button>
-              </Link>
+              !includeArchived ? (
+                <Link to="/admin/events/new">
+                  <Button type="button" variant="primary">Create event</Button>
+                </Link>
+              ) : undefined
             }
           />
         )}
@@ -210,32 +281,40 @@ export default function AdminEvents() {
             rowKey={(event) => event.id}
             columns={columns}
             actions={{
-              widthClassName: 'w-[14rem]',
-              renderActions: (event) => (
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    onClick={() => handleTogglePublish(event)}
-                    className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                    title={event.published ? 'Unpublish' : 'Publish'}
-                  >
-                    {event.published ? 'Unpublish' : 'Publish'}
-                  </button>
-                  <button
-                    onClick={() => handleDuplicate(event)}
-                    className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                    title="Duplicate"
-                  >
-                    Duplicate
-                  </button>
-                  <button
-                    onClick={() => handleDelete(event)}
-                    className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-800 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
-                    title="Delete"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ),
+              widthClassName: 'w-[18rem]',
+              renderActions: (event) => {
+                const archived = isArchivedAt(event.archivedAt);
+
+                return (
+                  <div className="flex items-center justify-end gap-1">
+                    {!archived ? (
+                      <>
+                        <button
+                          onClick={() => handleTogglePublish(event)}
+                          className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                          title={event.published ? 'Unpublish' : 'Publish'}
+                        >
+                          {event.published ? 'Unpublish' : 'Publish'}
+                        </button>
+                        <button
+                          onClick={() => handleDuplicate(event)}
+                          className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                          title="Duplicate"
+                        >
+                          Duplicate
+                        </button>
+                      </>
+                    ) : null}
+                    <SoftDeleteRowActions
+                      archived={archived}
+                      isServerAdmin={isServerAdmin}
+                      onArchive={() => handleArchive(event)}
+                      onRestore={() => handleRestore(event)}
+                      onDeletePermanently={() => handleDeletePermanently(event)}
+                    />
+                  </div>
+                );
+              },
             }}
           />
         )}

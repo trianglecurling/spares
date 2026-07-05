@@ -602,6 +602,7 @@ th { font-weight: 600; background: #f3f4f6; }
                     dark={resolvedTheme === 'dark'}
                     fill
                     readMoreInToolbar
+                    includeHiddenContactRecipients
                     enableManagedFileImageEdit
                     onUploadImage={handleUploadMarkdownImage}
                   />

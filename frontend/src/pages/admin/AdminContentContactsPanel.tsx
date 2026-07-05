@@ -202,7 +202,7 @@ export default function AdminContentContactsPanel({
     <>
       <FormSection
         title="Public email contacts"
-        description="These options appear on the contact page and in article link dialogs. Drag to reorder. Inactive contacts stay hidden from the public site."
+        description="These options appear on the contact page and in article link dialogs. Drag to reorder. Hidden contacts stay out of public dropdowns unless linked directly."
         surface="plain"
       >
         <div className="mb-4 flex justify-end">
@@ -234,7 +234,7 @@ export default function AdminContentContactsPanel({
                         <div className="font-medium text-gray-900 dark:text-gray-100">{row.label}</div>
                         {!row.isActive ? (
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                            Inactive
+                            Hidden
                           </span>
                         ) : null}
                       </div>
@@ -323,9 +323,10 @@ export default function AdminContentContactsPanel({
             />
           </FormField>
           <FormCheckbox
-            label="Active on public site"
-            checked={form.isActive}
-            onChange={(isActive) => setForm((current) => ({ ...current, isActive }))}
+            label="Hidden"
+            checked={!form.isActive}
+            onChange={(isHidden) => setForm((current) => ({ ...current, isActive: !isHidden }))}
+            helperText="Hidden contacts will not appear in the public contact dropdown, but articles can still link to the contact page to auto-select a hidden contact."
           />
           <div className="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-700">
             <Button type="button" variant="secondary" onClick={closeModal}>

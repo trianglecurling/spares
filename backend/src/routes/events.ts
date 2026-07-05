@@ -1,7 +1,7 @@
 import { FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
-import { isEventsAdmin } from '../utils/auth.js';
+import { isEventsAdmin, isServerAdmin } from '../utils/auth.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import { issueEventRegistrationRefund } from '../services/eventRegistrationRefundService.js';
@@ -29,6 +29,8 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  archiveEvent,
+  restoreEvent,
   getEventById,
   getEventBySlug,
   listEvents,
@@ -100,6 +102,7 @@ import { PassThrough } from 'node:stream';
 const patchTournamentGameResultBodySchema = z.object({
   result: tournamentGameResultSchema.nullable(),
 });
+import { isArchivedAt } from '../utils/softDelete.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendApiError, sendValidationError } from '../api/errors.js';
@@ -138,6 +141,7 @@ interface EventFormattingSource {
   tournament_draw_published?: number;
   tournament_format?: string | null;
   created_by_member_id: number | null;
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
   timespans?: unknown[];
@@ -171,6 +175,7 @@ const registrationFieldTypeSchema = z.enum([
   'preset_team_four',
   'preset_team_doubles',
   'preset_dob',
+  'preset_bonspiel_comments',
 ]);
 
 const registrationFieldSchema = z.object({
@@ -1172,13 +1177,18 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
 // Protected routes (auth required)
 export async function protectedEventRoutes(fastify: FastifyInstance): Promise<void> {
   // List events visible to authenticated member
-  fastify.get('/events', { schema: { tags: ['events'] } }, async (request) => {
+  fastify.get('/events', { schema: { tags: ['events'] } }, async (request, reply) => {
     const member = (request as AuthenticatedRequest).member as Member;
-    const query = request.query as { category?: string; from?: string; to?: string };
+    const query = request.query as { category?: string; from?: string; to?: string; includeArchived?: string };
 
     const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public', 'active_members'];
     if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
       visibilityFilter.push('ice_members');
+    }
+
+    const includeArchived = query.includeArchived === '1' || query.includeArchived === 'true';
+    if (includeArchived && !isEventsAdmin(member)) {
+      return sendApiError(reply, 403, 'Forbidden');
     }
 
     const events = await listEvents({
@@ -1187,6 +1197,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       categorySlug: query.category,
       fromDate: query.from,
       toDate: query.to,
+      includeArchived: includeArchived && isEventsAdmin(member),
     });
     return events.map(summarizeEvent);
   });
@@ -1203,6 +1214,9 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
       const member = (request as AuthenticatedRequest).member as Member;
+      if (isArchivedAt(event.archived_at) && !(await canManageEvent(member, eventId))) {
+        return reply.code(404).send({ error: 'Event not found' });
+      }
       if (!event.published && !(await canManageEvent(member, eventId))) {
         return reply.code(404).send({ error: 'Event not found' });
       }
@@ -1507,7 +1521,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     }
   );
 
-  // Delete event
+  // Archive event (soft delete)
   fastify.delete<{ Params: { id: string } }>(
     '/events/:id',
     { schema: { tags: ['events'] } },
@@ -1520,8 +1534,65 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return sendApiError(reply, 403, 'Forbidden');
       }
 
-      await deleteEvent(eventId);
-      return { success: true };
+      try {
+        await archiveEvent(eventId);
+        return { success: true };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  // Restore archived event
+  fastify.post<{ Params: { id: string } }>(
+    '/events/:id/restore',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      try {
+        await restoreEvent(eventId);
+        return { success: true };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  // Permanently delete archived event (server admin only)
+  fastify.delete<{ Params: { id: string } }>(
+    '/events/:id/permanent',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!isServerAdmin(member)) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      try {
+        await deleteEvent(eventId);
+        return { success: true };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
     }
   );
 
@@ -2231,6 +2302,7 @@ function summarizeEvent(event: EventFormattingSource) {
     categoryIds: event.categoryIds || [],
     registrationStart: event.registration_start,
     registrationCutoff: event.registration_cutoff,
+    archivedAt: event.archived_at ?? null,
     createdAt: event.created_at,
   };
 }
@@ -2261,6 +2333,7 @@ function formatEventResponse(event: EventFormattingSource) {
     termsArticleId: event.terms_article_id,
     pointOfContact: event.point_of_contact,
     createdByMemberId: event.created_by_member_id,
+    archivedAt: event.archived_at ?? null,
     timespans: event.timespans || [],
     locations: event.locations || [],
     categoryIds: event.categoryIds || [],

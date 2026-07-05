@@ -85,6 +85,32 @@ export async function listPublicContactRecipients(options?: { activeOnly?: boole
   return mapped;
 }
 
+function sortPublicContactRecipients(rows: PublicContactRecipientRow[]): PublicContactRecipientRow[] {
+  return [...rows].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+}
+
+/** Visible contacts for public dropdowns, optionally including one hidden slug from a deep link. */
+export async function listPublicContactDropdownRecipients(
+  includeHiddenSlug?: string | null,
+): Promise<PublicContactRecipientRow[]> {
+  const visible = await listPublicContactRecipients({ activeOnly: true });
+  const slug = includeHiddenSlug?.trim();
+  if (!slug) {
+    return visible;
+  }
+
+  if (visible.some((row) => row.slug === slug)) {
+    return visible;
+  }
+
+  const hiddenRecipient = await getPublicContactRecipientBySlug(slug);
+  if (!hiddenRecipient || hiddenRecipient.isActive) {
+    return visible;
+  }
+
+  return sortPublicContactRecipients([...visible, hiddenRecipient]);
+}
+
 export async function getPublicContactRecipientBySlug(
   slug: string,
   options?: { activeOnly?: boolean },

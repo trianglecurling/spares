@@ -7,6 +7,7 @@ export const PRESET_FIELD_TYPES = [
   'preset_team_four',
   'preset_team_doubles',
   'preset_dob',
+  'preset_bonspiel_comments',
 ] as const;
 
 export type PresetFieldType = (typeof PRESET_FIELD_TYPES)[number];
@@ -19,6 +20,7 @@ export const PRESET_LABELS: Record<PresetFieldType | 'subheading', string> = {
   preset_team_four: 'Team information (4 players)',
   preset_team_doubles: 'Doubles team information (2 players)',
   preset_dob: 'Date of birth',
+  preset_bonspiel_comments: 'Questions/Comments?',
 };
 
 export function isPresetFieldType(ft: string): ft is PresetFieldType {
@@ -248,6 +250,7 @@ function validateValueForFieldType(field: RegistrationFieldRow, value: string): 
   switch (ft) {
     case 'preset_phone':
     case 'preset_team_name':
+    case 'preset_bonspiel_comments':
     case 'text':
     case 'number':
     case 'checkbox':

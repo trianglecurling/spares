@@ -521,7 +521,7 @@ export default function PublicEventDetailPage() {
     event.openSpots != null
       ? event.openSpots
       : event.capacity !== null
-        ? Math.max(0, event.capacity - event.confirmedCount)
+        ? Math.max(0, event.capacity - event.confirmedCount - (event.waitlistedCount ?? 0))
         : null;
   const isFull = spotsRemaining !== null && spotsRemaining <= 0;
   const waitlistedCount = event.waitlistedCount ?? 0;

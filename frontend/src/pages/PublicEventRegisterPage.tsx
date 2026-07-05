@@ -38,6 +38,8 @@ interface EventDetail {
   termsArticleId: number | null;
   registrationFields: EventField[];
   confirmedCount: number;
+  waitlistedCount?: number;
+  openSpots?: number | null;
   registrationStart: string | null;
   registrationCutoff: string | null;
   timespans?: Array<{ start_dt: string }>;
@@ -311,13 +313,15 @@ export default function PublicEventRegisterPage() {
   const totalPeople = 1 + groupMembers.length;
   const groupSize = groupMembers.length + 1;
 
-  /** Matches backend: waitlist when at capacity, waitlist enabled, and capacity not bypassed. */
+  /** Matches backend: waitlist when no direct registration capacity remains. */
   const registeringAsWaitlist =
     !!event &&
     event.capacity != null &&
     !(specialLink?.valid && specialLink?.bypassCapacity) &&
     event.enableWaitlist === 1 &&
-    event.confirmedCount + groupSize > event.capacity;
+    (event.openSpots != null
+      ? groupSize > event.openSpots
+      : event.confirmedCount + (event.waitlistedCount ?? 0) + groupSize > event.capacity);
 
   if (loading) {
     return (

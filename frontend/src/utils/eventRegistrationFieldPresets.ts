@@ -7,6 +7,7 @@ export const PRESET_FIELD_TYPES = [
   'preset_team_four',
   'preset_team_doubles',
   'preset_dob',
+  'preset_bonspiel_comments',
 ] as const;
 
 export type PresetFieldType = (typeof PRESET_FIELD_TYPES)[number];
@@ -18,7 +19,20 @@ export const PRESET_LABELS: Record<PresetFieldType, string> = {
   preset_team_four: 'Team information (4 players)',
   preset_team_doubles: 'Doubles team information (2 players)',
   preset_dob: 'Date of birth',
+  preset_bonspiel_comments: 'Questions/Comments?',
 };
+
+/** Admin menu label when it should differ from the public form label. */
+export const PRESET_MENU_LABELS: Partial<Record<PresetFieldType, string>> = {
+  preset_bonspiel_comments: 'Bonspiel comments',
+};
+
+export const PRESET_BONSPIEL_COMMENTS_HELPER_TEXT =
+  'While we try to honor requests for draw times, we can make no guarantees at this time. Any additional food allergies may be listed here.';
+
+export function presetMenuLabel(ft: PresetFieldType): string {
+  return PRESET_MENU_LABELS[ft] ?? PRESET_LABELS[ft];
+}
 
 /** Last name from a display name ("Jane Doe" → "Doe"; "Smith, John" → "Smith"). */
 export function lastNameFromDisplayName(name: string): string {

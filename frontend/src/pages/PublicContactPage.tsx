@@ -35,7 +35,10 @@ const facilityDetails: Array<{ title: string; body: string }> = [
 export default function PublicContactPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { recipients, loading: recipientsLoading, error: recipientsError } = usePublicContactRecipients();
+  const recipientParam = searchParams.get('recipient');
+  const { recipients, loading: recipientsLoading, error: recipientsError } = usePublicContactRecipients({
+    includeRecipient: recipientParam,
+  });
   const recipientOptions = useMemo(() => toContactRecipientChoiceOptions(recipients), [recipients]);
   const [recipient, setRecipient] = useState('');
   const [email, setEmail] = useState('');

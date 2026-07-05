@@ -76,9 +76,9 @@ import ChoiceInput from './ChoiceInput';
 import ContentFileEditModal, { type ManagedFile } from './ContentFileEditModal';
 import FormCheckbox from './FormCheckbox';
 import FormField from './FormField';
-import { toContactRecipientChoiceOptions } from '../constants/contactRecipients';
+import { toAdminContactRecipientChoiceOptions, toContactRecipientChoiceOptions } from '../constants/contactRecipients';
 import { PUBLIC_SYSTEM_PAGE_OPTIONS, type PublicSystemPagePath } from '../constants/publicSystemPages';
-import { usePublicContactRecipients } from '../hooks/usePublicContactRecipients';
+import { useAdminContactRecipients, usePublicContactRecipients } from '../hooks/usePublicContactRecipients';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import api from '../utils/api';
@@ -123,6 +123,8 @@ interface MarkdownDescriptionEditorProps {
   fill?: boolean;
   /** When true, adds "Read more" button to toolbar (for article editing) */
   readMoreInToolbar?: boolean;
+  /** When true, the email-contact link picker includes hidden contacts (content admin article editing). */
+  includeHiddenContactRecipients?: boolean;
   /** Optional async image upload handler used for clipboard paste/drop images */
   onUploadImage?: (blob: Blob) => Promise<{ url: string; altText?: string } | null>;
   /**
@@ -1103,6 +1105,7 @@ const MarkdownDescriptionEditor = forwardRef<
       dark = false,
       fill = false,
       readMoreInToolbar = false,
+      includeHiddenContactRecipients = false,
       onUploadImage,
       enableManagedFileImageEdit = false,
       onWysiwygReady,
@@ -1149,10 +1152,19 @@ const MarkdownDescriptionEditor = forwardRef<
     const [accordionInsertDraft, setAccordionInsertDraft] = useState<AccordionInsertDraft | null>(null);
     const [accordionEditDraft, setAccordionEditDraft] = useState<AccordionEditDraft | null>(null);
     const [selectedArticle, setSelectedArticle] = useState<ArticleOption | null>(null);
-    const { recipients: contactRecipients, loading: contactRecipientsLoading } = usePublicContactRecipients();
+    const { recipients: publicContactRecipients, loading: publicContactRecipientsLoading } =
+      usePublicContactRecipients({ enabled: !includeHiddenContactRecipients });
+    const { recipients: adminContactRecipients, loading: adminContactRecipientsLoading } =
+      useAdminContactRecipients({ enabled: includeHiddenContactRecipients });
+    const contactRecipientsLoading = includeHiddenContactRecipients
+      ? adminContactRecipientsLoading
+      : publicContactRecipientsLoading;
     const contactRecipientOptions = useMemo(
-      () => toContactRecipientChoiceOptions(contactRecipients),
-      [contactRecipients],
+      () =>
+        includeHiddenContactRecipients
+          ? toAdminContactRecipientChoiceOptions(adminContactRecipients)
+          : toContactRecipientChoiceOptions(publicContactRecipients),
+      [adminContactRecipients, includeHiddenContactRecipients, publicContactRecipients],
     );
     const { showAlert } = useAlert();
     const { confirm } = useConfirm();

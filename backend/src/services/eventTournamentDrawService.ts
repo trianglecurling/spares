@@ -282,3 +282,42 @@ export async function patchTournamentDrawGameResult(
     return coerced;
   });
 }
+
+/** Strip runtime tournament data when duplicating an event (keep bracket structure). */
+export function sanitizeTournamentDrawForDuplicate(draw: TournamentDrawState): TournamentDrawState {
+  const games: TournamentDrawState['games'] = {};
+  for (const [key, game] of Object.entries(draw.games)) {
+    const { result: _result, schedule, slots, ...rest } = game;
+    void _result;
+    const nextSlots = slots.map((slot) => (slot.sourceType === 'team' ? { sourceType: 'tbd' as const } : slot));
+    const nextSchedule =
+      schedule == null
+        ? undefined
+        : {
+            ...schedule,
+            startTime: null,
+          };
+    games[key] = {
+      ...rest,
+      slots: nextSlots,
+      ...(nextSchedule !== undefined ? { schedule: nextSchedule } : {}),
+    };
+  }
+
+  return {
+    ...draw,
+    games,
+    drawBlocks: draw.drawBlocks.map((block) => ({
+      ...block,
+      startTime: null,
+    })),
+  };
+}
+
+export function sanitizeTournamentDrawJsonForDuplicate(raw: string): string {
+  const draw = parseTournamentDrawJson(raw);
+  if (draw == null) {
+    throw new EventServiceError('Stored tournament draw is empty', 500);
+  }
+  return JSON.stringify(sanitizeTournamentDrawForDuplicate(draw));
+}

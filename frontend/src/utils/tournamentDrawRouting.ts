@@ -7,8 +7,9 @@ import type {
 import { ordinalPlaceLabel } from './tournamentDrawModel';
 import { multiScoreRanking, outcomeFromResult } from './tournamentDrawResult';
 import { formatTeamDisplayName } from './tournamentDisplay';
-import { migrateSheetsArray } from './tournamentDrawSchedule';
+import { ensureUniqueBracketEventIds } from './tournamentDrawBuilders';
 import { migrateTournamentDrawJson } from './tournamentDrawMigration';
+import { migrateSheetsArray } from './tournamentDrawSchedule';
 
 type TeamRow = { teamName: string | null; sortOrder: number };
 
@@ -139,7 +140,7 @@ export function normalizeDrawState(draw: TournamentDrawState): TournamentDrawSta
   };
   return stripLegacyToSlotPosition(
     normalizeIncomingWinnerSlots(
-      ensureConnectionsForSlots(ensureIncomingTargetsHaveEnoughSlots(withSheets)),
+      ensureConnectionsForSlots(ensureIncomingTargetsHaveEnoughSlots(ensureUniqueBracketEventIds(withSheets))),
     ),
   );
 }

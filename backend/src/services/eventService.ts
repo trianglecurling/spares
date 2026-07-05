@@ -8,17 +8,15 @@ import {
   normalizeRegistrationFieldRow,
   validateRegistrationFieldValues,
 } from './eventRegistrationFieldDefinitions.js';
-import {
-  copyTournamentTeamsBetweenEvents,
-  countTournamentTeams,
-  normalizeTournamentFormat,
-} from './eventTournamentTeamsService.js';
+import { countTournamentTeams, normalizeTournamentFormat } from './eventTournamentTeamsService.js';
+import { sanitizeTournamentDrawJsonForDuplicate } from './eventTournamentDrawService.js';
 import { syncTournamentTeamForRegistrationSafe } from './eventTournamentRegistrationSyncService.js';
 import { EventServiceError } from './eventServiceError.js';
 import { formatMemberDisplayName } from '../utils/memberName.js';
 import { generateEventRegistrationAccessToken } from '../utils/eventRegistrationAccessToken.js';
 import { getSeasonStartYearForUtcDate, parseFiscalYearStartMmdd, seasonStartYearsTouchingRangeUtc } from '../utils/fiscalSeason.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
+import { isArchivedAt, notArchivedCondition } from '../utils/softDelete.js';
 
 export { EventServiceError };
 
@@ -199,6 +197,60 @@ async function ensureUniqueSlug(baseSlug: string, excludeId?: number): Promise<s
     suffix++;
     slug = `${baseSlug}-${suffix}`;
   }
+}
+
+async function ensureUniqueArticleSlug(baseSlug: string): Promise<string> {
+  const { db, schema } = getDrizzleDb();
+  let slug = baseSlug;
+  let suffix = 0;
+  while (true) {
+    const [existing] = await db
+      .select({ id: schema.articles.id })
+      .from(schema.articles)
+      .where(eq(schema.articles.slug, slug))
+      .limit(1);
+    if (!existing) return slug;
+    suffix++;
+    slug = `${baseSlug}-${suffix}`;
+  }
+}
+
+/** Copy event details article content without version history (new article row). */
+async function cloneEventArticleWithoutVersionHistory(
+  sourceArticleId: number,
+  eventSlug: string,
+  title: string,
+  createdByMemberId: number,
+): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  const [source] = await db
+    .select()
+    .from(schema.articles)
+    .where(eq(schema.articles.id, sourceArticleId))
+    .limit(1);
+  if (!source) {
+    throw new EventServiceError('Event details article not found', 404);
+  }
+
+  const baseSlug = slugify(eventSlug) || slugify(title) || 'event-details';
+  const slug = await ensureUniqueArticleSlug(baseSlug);
+
+  const [created] = await db
+    .insert(schema.articles)
+    .values({
+      title,
+      slug,
+      content_type: source.content_type ?? 'markdown',
+      content: source.content,
+      snippet: source.snippet ?? null,
+      featured: 0,
+      featured_sort_order: 0,
+      published_at: null,
+      created_by_member_id: createdByMemberId,
+    })
+    .returning({ id: schema.articles.id });
+
+  return created.id;
 }
 
 export async function createEvent(input: CreateEventInput): Promise<{ id: number; slug: string }> {
@@ -478,7 +530,49 @@ export async function updateEvent(eventId: number, input: UpdateEventInput): Pro
   }
 }
 
+export async function archiveEvent(eventId: number): Promise<void> {
+  const event = await getEventById(eventId);
+  if (!event) throw new EventServiceError('Event not found', 404);
+  if (isArchivedAt(event.archived_at)) {
+    throw new EventServiceError('Event is already archived', 409);
+  }
+
+  const { db, schema } = getDrizzleDb();
+  const archivedAt = await getCurrentTimeAsync();
+  await db
+    .update(schema.events)
+    .set({
+      archived_at: archivedAt,
+      published: 0,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    } as Record<string, unknown>)
+    .where(eq(schema.events.id, eventId));
+}
+
+export async function restoreEvent(eventId: number): Promise<void> {
+  const event = await getEventById(eventId);
+  if (!event) throw new EventServiceError('Event not found', 404);
+  if (!isArchivedAt(event.archived_at)) {
+    throw new EventServiceError('Event is not archived', 409);
+  }
+
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.events)
+    .set({
+      archived_at: null,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    } as Record<string, unknown>)
+    .where(eq(schema.events.id, eventId));
+}
+
 export async function deleteEvent(eventId: number): Promise<void> {
+  const event = await getEventById(eventId);
+  if (!event) throw new EventServiceError('Event not found', 404);
+  if (!isArchivedAt(event.archived_at)) {
+    throw new EventServiceError('Event must be archived before it can be permanently deleted', 409);
+  }
+
   const { db, schema } = getDrizzleDb();
   await db.delete(schema.events).where(eq(schema.events.id, eventId));
 }
@@ -490,9 +584,13 @@ export async function getEventById(eventId: number) {
   return enrichEvent(event);
 }
 
-export async function getEventBySlug(slug: string) {
+export async function getEventBySlug(slug: string, options?: { includeArchived?: boolean }) {
   const { db, schema } = getDrizzleDb();
-  const [event] = await db.select().from(schema.events).where(eq(schema.events.slug, slug)).limit(1);
+  const conditions = [eq(schema.events.slug, slug)];
+  if (!options?.includeArchived) {
+    conditions.push(notArchivedCondition(schema.events.archived_at));
+  }
+  const [event] = await db.select().from(schema.events).where(and(...conditions)).limit(1);
   if (!event) return null;
   return enrichEvent(event);
 }
@@ -525,9 +623,14 @@ export async function listEvents(options: {
   categorySlug?: string;
   fromDate?: string;
   toDate?: string;
+  includeArchived?: boolean;
 }) {
   const { db, schema } = getDrizzleDb();
   const conditions: any[] = [];
+
+  if (!options.includeArchived) {
+    conditions.push(notArchivedCondition(schema.events.archived_at));
+  }
 
   if (options.publishedOnly) {
     conditions.push(eq(schema.events.published, 1));
@@ -619,7 +722,13 @@ export async function listPublicSeasonStartYearsWithEvents(): Promise<number[]> 
     })
     .from(schema.eventTimespans)
     .innerJoin(schema.events, eq(schema.eventTimespans.event_id, schema.events.id))
-    .where(and(eq(schema.events.published, 1), eq(schema.events.visibility, 'public')));
+    .where(
+      and(
+        eq(schema.events.published, 1),
+        eq(schema.events.visibility, 'public'),
+        notArchivedCondition(schema.events.archived_at),
+      ),
+    );
 
   const byEvent = new Map<number, Array<{ start_dt: string; end_dt: string }>>();
   for (const r of rows) {
@@ -667,6 +776,9 @@ export async function registerForEvent(input: RegisterForEventInput) {
 
   const event = await getEventById(input.eventId);
   if (!event) throw new EventServiceError('Event not found', 404);
+  if (isArchivedAt(event.archived_at)) {
+    throw new EventServiceError('Event not found', 404);
+  }
   if (!input.adminOverride && !event.published) throw new EventServiceError('Event is not published', 400);
 
   const nowMs = Date.now();
@@ -713,12 +825,13 @@ export async function registerForEvent(input: RegisterForEventInput) {
     throw new EventServiceError(`Maximum group size is ${effectiveMaxGroupSize}`, 400);
   }
 
-  const { getCapacityHoldCount } = await import('./eventWaitlistService.js');
-  const capacityHoldCount = await getCapacityHoldCount(input.eventId);
+  const { getRegistrationDemandCount } = await import('./eventWaitlistService.js');
+  const { hasDirectRegistrationCapacity } = await import('./eventCapacityLogic.js');
+  const registrationDemandCount = await getRegistrationDemandCount(input.eventId);
   const bypassCapacity = specialLink?.bypass_capacity === 1;
   const capacityAvailable = input.forceWaitlist
     ? false
-    : event.capacity === null || bypassCapacity || capacityHoldCount + groupSize <= event.capacity;
+    : bypassCapacity || hasDirectRegistrationCapacity(event.capacity, registrationDemandCount, groupSize);
 
   const effectiveFee = resolveEventRegistrationFeeMinor(event, {
     memberId: input.memberId,
@@ -900,14 +1013,15 @@ export async function confirmRegistrationPayment(
   }
 
   const groupSize = reg.group_size ?? 1;
-  const { getCapacityHoldCount, getWaitlistLength } = await import('./eventWaitlistService.js');
-  const capacityHoldCount = await getCapacityHoldCount(reg.event_id);
+  const { getRegistrationDemandCount, getWaitlistLength } = await import('./eventWaitlistService.js');
+  const { hasDirectRegistrationCapacity } = await import('./eventCapacityLogic.js');
+  const registrationDemandCount = await getRegistrationDemandCount(reg.event_id);
 
   let nextStatus: EventRegistrationStatus = 'confirmed';
   let waitlistPosition: number | null = null;
   let outcome: ConfirmRegistrationPaymentResult['outcome'] = 'confirmed';
 
-  if (event.capacity !== null && capacityHoldCount + groupSize > event.capacity) {
+  if (!hasDirectRegistrationCapacity(event.capacity, registrationDemandCount, groupSize)) {
     if (event.enable_waitlist) {
       nextStatus = 'waitlisted';
       outcome = 'waitlisted_with_refund';
@@ -1191,10 +1305,24 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
   const event = await getEventById(eventId);
   if (!event) throw new EventServiceError('Event not found', 404);
 
+  const newTitle = `${event.title} (Copy)`;
+  const newSlug = await ensureUniqueSlug(slugify(newTitle));
+
+  let articleId: number | null = null;
+  if (event.article_id != null) {
+    articleId = await cloneEventArticleWithoutVersionHistory(
+      event.article_id,
+      newSlug,
+      newTitle,
+      createdByMemberId,
+    );
+  }
+
   const created = await createEvent({
-    title: `${event.title} (Copy)`,
+    title: newTitle,
+    slug: newSlug,
     calendarTypeId: normalizeCalendarTypeId(event.calendar_type_id),
-    articleId: event.article_id,
+    articleId,
     imageFileId: event.image_file_id,
     visibility: event.visibility,
     capacity: event.capacity,
@@ -1205,8 +1333,8 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
     maxGroupSize: event.max_group_size,
     enableWaitlist: event.enable_waitlist === 1,
     termsArticleId: event.terms_article_id,
-    tournamentTeamsPublished: event.tournament_teams_published === 1,
-    tournamentDrawPublished: event.tournament_draw_published === 1,
+    tournamentTeamsPublished: false,
+    tournamentDrawPublished: false,
     tournamentFormat: normalizeTournamentFormat(event.tournament_format as string | null) ?? null,
     pointOfContact: event.point_of_contact,
     createdByMemberId,
@@ -1231,17 +1359,13 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
     })),
   });
 
-  if (normalizeCalendarTypeId(event.calendar_type_id) === 'bonspiel') {
-    await copyTournamentTeamsBetweenEvents(eventId, created.id);
-  }
-
   const drawJson = (event as { tournament_draw_json?: string | null }).tournament_draw_json;
   if (drawJson != null && drawJson !== '') {
     const { db, schema } = getDrizzleDb();
     await db
       .update(schema.events)
       .set({
-        tournament_draw_json: drawJson,
+        tournament_draw_json: sanitizeTournamentDrawJsonForDuplicate(drawJson),
         updated_at: sql`CURRENT_TIMESTAMP`,
       } as Record<string, unknown>)
       .where(eq(schema.events.id, created.id));
@@ -1336,7 +1460,10 @@ export async function deleteCategory(categoryId: number): Promise<void> {
 export async function getEventTimespansForCalendar(startDt: string, endDt: string, visibilityFilter?: EventVisibility[]) {
   const { db, schema } = getDrizzleDb();
 
-  const eventConditions: any[] = [eq(schema.events.published, 1)];
+  const eventConditions: any[] = [
+    eq(schema.events.published, 1),
+    notArchivedCondition(schema.events.archived_at),
+  ];
   if (visibilityFilter && visibilityFilter.length > 0) {
     eventConditions.push(inArray(schema.events.visibility, visibilityFilter));
   }

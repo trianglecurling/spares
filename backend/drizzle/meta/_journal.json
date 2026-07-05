@@ -141,6 +141,13 @@
       "when": 1780352498461,
       "tag": "0020_lengthen_event_registration_access_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780352498462,
+      "tag": "0021_add_events_archived_at",
+      "breakpoints": true
     }
   ]
 }

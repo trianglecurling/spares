@@ -35,6 +35,7 @@ import {
   isSubheadingFieldType,
   isTeamPresetFieldType,
   parseTeamFieldOptions,
+  presetMenuLabel,
   presetScopeLocked,
   serializeTeamFieldOptions,
   TEAM_POSITIONS_DOUBLES,
@@ -44,6 +45,10 @@ import {
   type PresetFieldType,
 } from '../../utils/eventRegistrationFieldPresets';
 import type { TournamentFormat } from '../../utils/tournamentDisplay';
+import {
+  editorRegistrationFieldsToPreviewFields,
+  storeEventRegistrationPreview,
+} from '../../utils/eventRegistrationPreviewSession';
 
 interface Timespan {
   startDt: string;
@@ -291,6 +296,7 @@ export default function AdminEventEditor() {
     'preset_team_name',
     'preset_team_four',
     'preset_team_doubles',
+    'preset_bonspiel_comments',
   ];
 
   useEffect(() => {
@@ -638,6 +644,33 @@ export default function AdminEventEditor() {
     },
     [eventId, savedEventSlug, slug],
   );
+
+  const handleRegistrationPreview = () => {
+    const previewFields = editorRegistrationFieldsToPreviewFields(
+      registrationFields.map((field, index) => ({
+        ...field,
+        options: (isTeamPresetFieldType(field.fieldType)
+          ? serializeTeamFieldOptions(parseTeamFieldOptions(field.options))
+          : field.options) ?? '',
+        sortOrder: index,
+      })),
+    );
+    const k = storeEventRegistrationPreview({
+      title: title.trim() || 'Untitled event',
+      feeMinor: toMinor(feeDollars),
+      memberFeeMinor: memberFeeDollars.trim() ? toMinor(memberFeeDollars) : null,
+      currency: 'usd',
+      allowGroupRegistration,
+      maxGroupSize: maxGroupSize.trim() ? Number.parseInt(maxGroupSize, 10) : null,
+      registrationFields: previewFields,
+    });
+    if (!k) {
+      showAlert('Could not open preview. Allow storage for this site or try again.', 'error');
+      return;
+    }
+    const url = `/admin/events/registration-preview?k=${encodeURIComponent(k)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const toggleRevealLink = (linkId: number) => {
     setRevealedLinks((prev) => {
@@ -1594,7 +1627,7 @@ export default function AdminEventEditor() {
                                     : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
                                 }`}
                               >
-                                <span>{PRESET_LABELS[preset]}</span>
+                                <span>{presetMenuLabel(preset)}</span>
                                 {alreadyAdded ? (
                                   <span className="text-xs text-gray-400 dark:text-gray-500">Added</span>
                                 ) : null}
@@ -1633,6 +1666,9 @@ export default function AdminEventEditor() {
                       </div>
                     ) : null}
                   </div>
+                  <Button type="button" variant="secondary" onClick={handleRegistrationPreview}>
+                    Preview
+                  </Button>
                 </div>
                 {showScopePrompt && allowGroupRegistration && registrationFields.length > 0 && (
                   <div className="rounded-md border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-3">
@@ -1655,7 +1691,7 @@ export default function AdminEventEditor() {
                     isSubheadingFieldType(field.fieldType)
                       ? 'subheading'
                       : isPresetFieldType(field.fieldType)
-                        ? PRESET_LABELS[field.fieldType]
+                        ? presetMenuLabel(field.fieldType)
                         : field.label.trim() || 'custom field'
                   }
                   itemNoun="registration field"
@@ -1673,7 +1709,7 @@ export default function AdminEventEditor() {
                             {isSubheadingFieldType(field.fieldType)
                               ? 'Subheading'
                               : isPresetFieldType(field.fieldType)
-                                ? PRESET_LABELS[field.fieldType]
+                                ? presetMenuLabel(field.fieldType)
                                 : `Field ${i + 1}`}
                           </span>
                           <button
@@ -1832,7 +1868,7 @@ export default function AdminEventEditor() {
                             isSubheadingFieldType(field.fieldType)
                               ? 'subheading'
                               : isPresetFieldType(field.fieldType)
-                                ? PRESET_LABELS[field.fieldType]
+                                ? presetMenuLabel(field.fieldType)
                                 : field.label.trim() || 'custom field'
                           }`}
                           disabled
@@ -1841,7 +1877,7 @@ export default function AdminEventEditor() {
                           {isSubheadingFieldType(field.fieldType)
                             ? 'Subheading'
                             : isPresetFieldType(field.fieldType)
-                              ? PRESET_LABELS[field.fieldType]
+                              ? presetMenuLabel(field.fieldType)
                               : field.label.trim() || 'Custom field'}
                         </div>
                       </div>

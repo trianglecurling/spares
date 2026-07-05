@@ -3,7 +3,7 @@ import { calculateRegistrationFees, type RegistrationFeePreview } from './regist
 import type { PriceConfigInput, RegistrationDiscountSettingsStored } from './registrationConfigValidation.js';
 import { league, selection, registrationContext } from './registrationTestFixtures.js';
 
-export type DuesSessionIceTime = 'none' | 'spare_only' | '1_league' | '2_leagues';
+export type DuesSessionIceTime = 'none' | 'spare_only' | '1_league' | '2_leagues' | '3_leagues';
 
 export type DuesSessionMembershipType = 'none' | 'regular' | 'social' | 'junior_recreational';
 
@@ -39,6 +39,7 @@ export type DuesEstimateResponse = {
 function leagueCountForIceTime(iceTime: DuesSessionIceTime): number {
   if (iceTime === '1_league') return 1;
   if (iceTime === '2_leagues') return 2;
+  if (iceTime === '3_leagues') return 3;
   return 0;
 }
 
@@ -70,14 +71,17 @@ function resolveMembershipOption(
   options: { fallPaidRegularMembership: boolean; isWinterSession: boolean },
 ): RegistrationMembershipOption {
   if (sessionSelection.membershipType === 'none') return 'none';
-  if (sessionSelection.membershipType === 'social') return 'social';
-  if (sessionSelection.membershipType === 'junior_recreational') return 'junior_recreational';
 
   if (options.fallPaidRegularMembership && options.isWinterSession) {
+    if (sessionSelection.membershipType === 'social') return 'none';
+    if (sessionSelection.membershipType === 'junior_recreational') return 'junior_recreational';
     if (sessionSelection.iceTime === 'spare_only') return 'regular_spare_only';
     if (sessionSelection.iceTime === 'none') return 'none';
     return 'none';
   }
+
+  if (sessionSelection.membershipType === 'social') return 'social';
+  if (sessionSelection.membershipType === 'junior_recreational') return 'junior_recreational';
 
   if (sessionSelection.iceTime === 'spare_only') return 'regular_spare_only';
   return 'regular';
@@ -85,7 +89,12 @@ function resolveMembershipOption(
 
 function sessionHasIcePrivileges(sessionSelection: DuesSessionSelection): boolean {
   if (sessionSelection.membershipType !== 'regular') return false;
-  return sessionSelection.iceTime === 'spare_only' || sessionSelection.iceTime === '1_league' || sessionSelection.iceTime === '2_leagues';
+  return (
+    sessionSelection.iceTime === 'spare_only' ||
+    sessionSelection.iceTime === '1_league' ||
+    sessionSelection.iceTime === '2_leagues' ||
+    sessionSelection.iceTime === '3_leagues'
+  );
 }
 
 function sessionLeagueCount(sessionSelection: DuesSessionSelection): number {
@@ -93,15 +102,32 @@ function sessionLeagueCount(sessionSelection: DuesSessionSelection): number {
   return leagueCountForIceTime(sessionSelection.iceTime);
 }
 
-const ANNUAL_BENEFITS = [
+const ANNUAL_BENEFITS_BASE = [
   'Inclusion on the official Triangle Curling Club roster of members',
   'Access to Triangle Curling membership online social groups',
   'Attendance at the Annual General Meeting and end-of-season celebration and board meetings',
   'Ability to volunteer as a bartender',
   'Dues paid on your behalf to USA Curling, GNCC, and USWCA (as applicable)',
   'Voting in elections to select board members, bylaws changes, and more (members 18+ only)',
-  'Ability to participate in the Triangle Club Bonspiel (usually in March/April)',
 ];
+
+const BONSPIEL_ANNUAL_BENEFIT =
+  'Ability to participate in the Triangle Club Bonspiel (usually in March/April)';
+
+function hasIceTimeSelection(input: Pick<DuesEstimateInput, 'fall' | 'winter'>): boolean {
+  return sessionHasIcePrivileges(input.fall) || sessionHasIcePrivileges(input.winter);
+}
+
+function buildAnnualBenefits(input: Pick<DuesEstimateInput, 'fall' | 'winter'>): string[] {
+  if (!hasMembershipSelection(input.fall) && !hasMembershipSelection(input.winter)) {
+    return [];
+  }
+  const benefits = [...ANNUAL_BENEFITS_BASE];
+  if (hasIceTimeSelection(input)) {
+    benefits.push(BONSPIEL_ANNUAL_BENEFIT);
+  }
+  return benefits;
+}
 
 const SESSION_ICE_BENEFITS = [
   'Building access (door and security codes)',
@@ -112,23 +138,29 @@ const SESSION_ICE_BENEFITS = [
   'Ability to register for clinics run by the Training Committee',
 ];
 
+function hasMembershipSelection(sessionSelection: DuesSessionSelection): boolean {
+  return sessionSelection.membershipType !== 'none';
+}
+
+function sessionBenefits(sessionSelection: DuesSessionSelection): string[] {
+  if (!sessionHasIcePrivileges(sessionSelection)) return [];
+
+  const leagueCount = sessionLeagueCount(sessionSelection);
+  const benefits = [...SESSION_ICE_BENEFITS];
+  if (leagueCount > 0) {
+    benefits.push(`Participate in ${leagueCount} league${leagueCount === 1 ? '' : 's'}`);
+  } else if (sessionSelection.iceTime === 'spare_only') {
+    benefits.push('Practice, sparing, and daytime league access');
+  }
+  return benefits;
+}
+
 export function buildBenefits(input: Pick<DuesEstimateInput, 'fall' | 'winter'>): DuesEstimateResponse['benefits'] {
-  const fallLeagues = sessionLeagueCount(input.fall);
-  const winterLeagues = sessionLeagueCount(input.winter);
-  const fallIce = sessionHasIcePrivileges(input.fall);
-  const winterIce = sessionHasIcePrivileges(input.winter);
-
-  const annual = fallLeagues >= 1 && winterLeagues >= 1 ? ANNUAL_BENEFITS : [];
-
-  const fall = fallIce
-    ? [...SESSION_ICE_BENEFITS, `Participate in ${fallLeagues > 0 ? fallLeagues : 0} league${fallLeagues === 1 ? '' : 's'}`]
-    : [];
-
-  const winter = winterIce
-    ? [...SESSION_ICE_BENEFITS, `Participate in ${winterLeagues > 0 ? winterLeagues : 0} league${winterLeagues === 1 ? '' : 's'}`]
-    : [];
-
-  return { annual, fall, winter };
+  return {
+    annual: buildAnnualBenefits(input),
+    fall: sessionBenefits(input.fall),
+    winter: sessionBenefits(input.winter),
+  };
 }
 
 function subtractRegularMembershipCharge(preview: RegistrationFeePreview): RegistrationFeePreview {
@@ -251,7 +283,7 @@ export function estimateAnnualDuesWithSettings(
   const { priceConfig, discountSettings, season, fallSession, winterSession } = settings;
   const fallPaidRegularMembership = input.fall.membershipType === 'regular';
   const winterOnlyDiscountEligible =
-    input.fall.membershipType === 'none' && input.winter.membershipType === 'regular';
+    input.winter.membershipType === 'regular' && input.fall.membershipType !== 'regular';
 
   const fallPreview = calculateSessionDues({
     sessionSelection: input.fall,
