@@ -203,7 +203,7 @@ export default function AdminContent() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const activeTab: Tab =
-    tabParam && VALID_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'site';
+    tabParam && VALID_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'articles';
   const [siteConfig, setSiteConfig] = useState<{
     clubName: string | null;
     logoUrl: string | null;
@@ -535,7 +535,7 @@ export default function AdminContent() {
 
   useEffect(() => {
     if (tabParam && !VALID_TABS.includes(tabParam as Tab)) {
-      navigate('/admin/content/site', { replace: true });
+      navigate('/admin/content/articles', { replace: true });
     }
   }, [tabParam, navigate]);
 

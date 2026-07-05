@@ -564,7 +564,7 @@ function App() {
                           </ProtectedRoute>
                         }
                       />
-                      <Route path="/admin/content" element={<Navigate to="/admin/content/site" replace />} />
+                      <Route path="/admin/content" element={<Navigate to="/admin/content/articles" replace />} />
                       <Route
                         path="/admin/content/articles/:id"
                         element={
