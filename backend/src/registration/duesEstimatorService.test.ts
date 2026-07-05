@@ -61,6 +61,36 @@ describe('duesEstimatorService', () => {
     expect(estimate.annualTotalMinor).toBe(27000);
   });
 
+  test('social membership in fall still allows winter-only discount on winter regular membership', () => {
+    const estimate = estimateAnnualDuesWithSettings(
+      {
+        ...baseInput,
+        fall: { membershipType: 'social', iceTime: 'none' },
+        winter: { membershipType: 'regular', iceTime: '1_league' },
+      },
+      testSettings,
+    );
+
+    expect(estimate.fall.totalMinor).toBe(5000);
+    expect(estimate.winter.totalMinor).toBe(27000);
+    expect(estimate.annualTotalMinor).toBe(32000);
+  });
+
+  test('regular membership in fall waives winter social membership fee', () => {
+    const estimate = estimateAnnualDuesWithSettings(
+      {
+        ...baseInput,
+        fall: { membershipType: 'regular', iceTime: '1_league' },
+        winter: { membershipType: 'social', iceTime: 'none' },
+      },
+      testSettings,
+    );
+
+    expect(estimate.fall.totalMinor).toBe(32000);
+    expect(estimate.winter.totalMinor).toBe(0);
+    expect(estimate.annualTotalMinor).toBe(32000);
+  });
+
   test('student discount applies to membership and leagues', () => {
     const estimate = estimateAnnualDuesWithSettings(
       {
@@ -77,14 +107,41 @@ describe('duesEstimatorService', () => {
     expect(estimate.annualTotalMinor).toBe(30800);
   });
 
-  test('benefits include annual list when curling in both sessions', () => {
-    const benefits = buildBenefits({
-      fall: { membershipType: 'regular', iceTime: '1_league' },
+  test('annual benefits apply when any session has a membership selection', () => {
+    const regularBothSessions = buildBenefits({
+      fall: { membershipType: 'regular', iceTime: 'spare_only' },
       winter: { membershipType: 'regular', iceTime: '1_league' },
     });
+    expect(regularBothSessions.annual.length).toBeGreaterThan(0);
+    expect(regularBothSessions.annual).toContain(
+      'Ability to participate in the Triangle Club Bonspiel (usually in March/April)',
+    );
 
-    expect(benefits.annual.length).toBeGreaterThan(0);
-    expect(benefits.fall.length).toBeGreaterThan(0);
-    expect(benefits.winter.length).toBeGreaterThan(0);
+    const socialFallOnly = buildBenefits({
+      fall: { membershipType: 'social', iceTime: 'none' },
+      winter: { membershipType: 'none', iceTime: 'none' },
+    });
+    expect(socialFallOnly.annual.length).toBeGreaterThan(0);
+    expect(socialFallOnly.annual).not.toContain(
+      'Ability to participate in the Triangle Club Bonspiel (usually in March/April)',
+    );
+
+    const noMembership = buildBenefits({
+      fall: { membershipType: 'none', iceTime: 'none' },
+      winter: { membershipType: 'none', iceTime: 'none' },
+    });
+    expect(noMembership.annual).toHaveLength(0);
+  });
+
+  test('three leagues are charged at the default league fee', () => {
+    const estimate = estimateAnnualDuesWithSettings(
+      {
+        ...baseInput,
+        fall: { membershipType: 'regular', iceTime: '3_leagues' },
+      },
+      testSettings,
+    );
+
+    expect(estimate.fall.totalMinor).toBe(56000);
   });
 });

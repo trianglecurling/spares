@@ -74,7 +74,7 @@ export async function contactRoutes(fastify: FastifyInstance) {
       return { ok: true };
     }
 
-    const recipientInfo = await getPublicContactRecipientBySlug(payload.recipient, { activeOnly: true });
+    const recipientInfo = await getPublicContactRecipientBySlug(payload.recipient);
     if (!recipientInfo) {
       return reply.code(400).send({ error: 'Invalid recipient' });
     }
@@ -147,7 +147,7 @@ export async function contactRoutes(fastify: FastifyInstance) {
 
     pendingMessages.delete(key);
 
-    const recipientInfo = await getPublicContactRecipientBySlug(pending.recipientSlug, { activeOnly: true });
+    const recipientInfo = await getPublicContactRecipientBySlug(pending.recipientSlug);
     if (!recipientInfo) {
       return reply.code(400).send({ error: 'This contact category is no longer available.' });
     }

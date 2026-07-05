@@ -25,7 +25,7 @@ const anyObjectSchema = {
 
 const sessionSelectionSchema = z.object({
   membershipType: z.enum(['none', 'regular', 'social', 'junior_recreational']),
-  iceTime: z.enum(['none', 'spare_only', '1_league', '2_leagues']),
+  iceTime: z.enum(['none', 'spare_only', '1_league', '2_leagues', '3_leagues']),
 });
 
 const estimateBodySchema = z.object({

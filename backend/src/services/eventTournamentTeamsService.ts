@@ -425,23 +425,3 @@ export async function deleteTournamentTeam(eventId: number, teamId: number): Pro
     .delete(schema.eventTournamentTeams)
     .where(and(eq(schema.eventTournamentTeams.id, teamId), eq(schema.eventTournamentTeams.event_id, eventId)));
 }
-
-/** Copy tournament teams from one event to another (same format / roster). Used when duplicating an event. */
-export async function copyTournamentTeamsBetweenEvents(sourceEventId: number, targetEventId: number): Promise<void> {
-  const teams = await listTournamentTeamsForEvent(sourceEventId);
-  for (const t of teams) {
-    await createTournamentTeam(targetEventId, {
-      teamName: t.teamName,
-      homeClub: t.homeClub,
-      viceSlotCode: t.viceSlotCode,
-      skipSlotCode: t.skipSlotCode,
-      roster: t.roster.map((r) => ({
-        slotCode: r.slotCode,
-        playerName: r.playerName,
-        email: r.email,
-        notes: r.notes,
-        homeClub: r.homeClub,
-      })),
-    });
-  }
-}

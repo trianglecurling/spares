@@ -19,7 +19,7 @@ import {
   getPublicBootstrapCacheEtag,
 } from '../services/publicBootstrapCache.js';
 import { getPublicLeaguesPage } from '../services/publicLeaguesService.js';
-import { listPublicContactRecipients } from '../domains/content/publicContactRecipients.js';
+import { listPublicContactDropdownRecipients } from '../domains/content/publicContactRecipients.js';
 import { resolveSpaDocumentHttpStatus } from '../services/spaDocumentStatus.js';
 
 export async function publicRoutes(fastify: FastifyInstance) {
@@ -330,8 +330,8 @@ Sitemap: ${frontendBaseUrl}/api/sitemap.xml
     return payload;
   });
 
-  fastify.get('/public/contact-recipients', async () => {
-    const rows = await listPublicContactRecipients({ activeOnly: true });
+  fastify.get<{ Querystring: { includeRecipient?: string } }>('/public/contact-recipients', async (request) => {
+    const rows = await listPublicContactDropdownRecipients(request.query.includeRecipient);
     return rows.map((row) => ({
       id: row.id,
       slug: row.slug,

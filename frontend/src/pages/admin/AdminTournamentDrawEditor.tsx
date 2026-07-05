@@ -27,7 +27,12 @@ import {
   HiTrash,
 } from 'react-icons/hi2';
 import api, { formatApiError } from '../../utils/api';
-import { emptyTournamentDraw } from '../../utils/tournamentDrawBuilders';
+import {
+  createAddedBracketEvent,
+  emptyTournamentDraw,
+  MAX_BRACKET_EVENT_COUNT,
+  nextAvailableBracketEventCode,
+} from '../../utils/tournamentDrawBuilders';
 import {
   decodeSlotSource,
   encodeSlotSource,
@@ -909,6 +914,59 @@ export default function AdminTournamentDrawEditor({
     setBracketEventsModalOpen(false);
   }, []);
 
+  const addBracketEvent = useCallback(() => {
+    if (!draw) return;
+    if (draw.setup.events.length >= MAX_BRACKET_EVENT_COUNT) {
+      showAlert(`You can add at most ${MAX_BRACKET_EVENT_COUNT} events.`, 'error');
+      return;
+    }
+    const code = nextAvailableBracketEventCode(draw.setup.events);
+    if (!code) {
+      showAlert(`You can add at most ${MAX_BRACKET_EVENT_COUNT} events.`, 'error');
+      return;
+    }
+    const order = draw.setup.events.length;
+    const nextEvent = createAddedBracketEvent(code, order);
+    updateDraw((d) => ({
+      ...d,
+      setup: {
+        ...d.setup,
+        eventCount: d.setup.events.length + 1,
+        events: [...d.setup.events, nextEvent],
+      },
+    }));
+  }, [draw, showAlert, updateDraw]);
+
+  const deleteBracketEvent = useCallback(
+    (eventId: string) => {
+      if (!draw) return;
+      if (draw.setup.events.length <= 1) {
+        showAlert('At least one event is required.', 'error');
+        return;
+      }
+      const hasGames = Object.values(draw.games).some((g) => g.eventId === eventId);
+      if (hasGames) {
+        showAlert(
+          'Cannot delete this event because it contains one or more games. Remove all games from this event before deleting it.',
+          'error',
+        );
+        return;
+      }
+      const nextEvents = sortedBracketEvents(draw.setup.events)
+        .filter((e) => e.id !== eventId)
+        .map((e, i) => ({ ...e, order: i }));
+      updateDraw((d) => ({
+        ...d,
+        setup: {
+          ...d.setup,
+          eventCount: nextEvents.length,
+          events: nextEvents,
+        },
+      }));
+    },
+    [draw, showAlert, updateDraw],
+  );
+
   const createBlankDraw = async () => {
     let club = clubSheets;
     if (club.length === 0) {
@@ -1030,7 +1088,7 @@ export default function AdminTournamentDrawEditor({
       anchorConnectionId: null,
       offsetX: 0,
       offsetY: 0,
-      showConnector: false,
+      showConnector: true,
       connectorLineStyle: 'solid',
       connectorColor: '#64748b',
     };
@@ -1544,8 +1602,18 @@ export default function AdminTournamentDrawEditor({
           verticalAlign="start"
         >
           <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-            Order is top to bottom on the canvas. The short code is used for new game labels (e.g. A1). Use the drag handle to reorder; you can also use the keyboard when the handle is focused.
+            Order is top to bottom on the canvas. The short code is used for new game labels (e.g. A1). Use the drag handle to reorder; you can also use the keyboard when the handle is focused. Remove all games from an event before you can delete it.
           </p>
+          <div className="mb-4 flex justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={addBracketEvent}
+              disabled={draw.setup.events.length >= MAX_BRACKET_EVENT_COUNT}
+            >
+              Add event
+            </Button>
+          </div>
           <SortableList
             items={sortedBracketEvents(draw.setup.events)}
             getId={(ev) => ev.id}
@@ -1624,6 +1692,16 @@ export default function AdminTournamentDrawEditor({
                       }}
                     />
                   </FormField>
+                  <Button
+                    type="button"
+                    variant="outline-danger"
+                    className="mb-0.5 h-10 w-10 shrink-0 !p-0"
+                    aria-label={`Delete ${ev.name}`}
+                    title="Delete event"
+                    onClick={() => deleteBracketEvent(ev.id)}
+                  >
+                    <HiTrash className="h-5 w-5" aria-hidden />
+                  </Button>
                 </div>
               </SortableRow>
             )}

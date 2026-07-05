@@ -838,6 +838,18 @@ function FieldInput({
       />
     );
   }
+  if (field.field_type === 'preset_bonspiel_comments') {
+    return (
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${className} min-h-[6rem] resize-y`}
+        rows={4}
+        required={field.required === 1}
+        aria-label={field.label}
+      />
+    );
+  }
   if (field.field_type === 'preset_team_four') {
     return (
       <TeamPlayersField

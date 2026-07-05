@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from 'crypto';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notExists, sql } from 'drizzle-orm';
+import { computeOpenSpotsFromDemand } from './eventCapacityLogic.js';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { EventWaitlistOfferDeclinedBy, EventWaitlistOfferStatus } from '../db/drizzle-schema.js';
@@ -94,10 +95,45 @@ export async function getWaitlistLength(eventId: number): Promise<number> {
   return Number(row?.count ?? 0);
 }
 
+/** Group sizes for waitlisted entries that do not already hold capacity via a pending offer. */
+export async function getWaitlistEarmarkedGroupSize(eventId: number): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  const pendingOfferForRegistration = db
+    .select({ one: sql<number>`1` })
+    .from(schema.eventWaitlistOffers)
+    .where(
+      and(
+        eq(schema.eventWaitlistOffers.registration_id, schema.eventRegistrations.id),
+        eq(schema.eventWaitlistOffers.status, 'pending' as any),
+      ),
+    );
+
+  const rows = await db
+    .select({ group_size: schema.eventRegistrations.group_size })
+    .from(schema.eventRegistrations)
+    .where(
+      and(
+        eq(schema.eventRegistrations.event_id, eventId),
+        eq(schema.eventRegistrations.status, 'waitlisted' as any),
+        notExists(pendingOfferForRegistration),
+      ),
+    );
+
+  return rows.reduce((sum, row) => sum + (row.group_size ?? 1), 0);
+}
+
+/** Confirmed/pending-offer holds plus waitlist demand not yet holding a spot. */
+export async function getRegistrationDemandCount(eventId: number): Promise<number> {
+  const [capacityHoldCount, waitlistEarmarkedGroupSize] = await Promise.all([
+    getCapacityHoldCount(eventId),
+    getWaitlistEarmarkedGroupSize(eventId),
+  ]);
+  return capacityHoldCount + waitlistEarmarkedGroupSize;
+}
+
 export async function getOpenSpots(eventId: number, capacity: number | null): Promise<number | null> {
-  if (capacity === null) return null;
-  const holds = await getCapacityHoldCount(eventId);
-  return Math.max(0, capacity - holds);
+  const demand = await getRegistrationDemandCount(eventId);
+  return computeOpenSpotsFromDemand(capacity, demand);
 }
 
 export async function getPendingOfferCount(eventId: number): Promise<number> {

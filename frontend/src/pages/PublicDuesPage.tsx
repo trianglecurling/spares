@@ -1,7 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
-import FormCheckbox from '../components/FormCheckbox';
 import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
@@ -9,6 +8,7 @@ import SeoMeta from '../components/SeoMeta';
 import {
   formatCurrency,
   formatRegistrationDiscountOffPhrase,
+  registrationDiscountLabel,
 } from '../components/registration/registrationViewEditShared';
 import api, { formatApiError } from '../utils/api';
 
@@ -36,7 +36,7 @@ type PublicDuesSchedule = {
 };
 
 type SessionMembershipType = 'none' | 'regular' | 'social' | 'junior_recreational';
-type SessionIceTime = 'none' | 'spare_only' | '1_league' | '2_leagues';
+type SessionIceTime = 'none' | 'spare_only' | '1_league' | '2_leagues' | '3_leagues';
 
 type SessionSelection = {
   membershipType: SessionMembershipType;
@@ -79,7 +79,10 @@ const iceTimeOptions: ChoiceOption<SessionIceTime>[] = [
   { value: 'spare_only', label: 'Daytime league or spare-only' },
   { value: '1_league', label: '1 league' },
   { value: '2_leagues', label: '2 leagues' },
+  { value: '3_leagues', label: '3 leagues' },
 ];
+
+type DiscountChoice = 'student' | 'reciprocal';
 
 function formatDollars(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -211,6 +214,7 @@ export default function PublicDuesPage() {
   const fallIceTimeId = useId();
   const winterMembershipId = useId();
   const winterIceTimeId = useId();
+  const discountsInputId = useId();
 
   const [schedule, setSchedule] = useState<PublicDuesSchedule | null>(null);
   const [loading, setLoading] = useState(true);
@@ -303,8 +307,32 @@ export default function PublicDuesPage() {
     ];
   }, [schedule]);
 
+  const discountChoiceOptions = useMemo((): ChoiceOption<DiscountChoice>[] => {
+    if (!schedule) return [];
+    return [
+      {
+        value: 'student',
+        label: registrationDiscountLabel('Student discount', schedule.discounts.student),
+        description: 'Available for K-12 students and full-time college or university students.',
+      },
+      {
+        value: 'reciprocal',
+        label: registrationDiscountLabel('Reciprocal discount', schedule.discounts.reciprocal),
+        description: 'Available to members of another dedicated ice or arena curling club.',
+      },
+    ];
+  }, [schedule]);
+
+  const selectedDiscounts = useMemo(
+    (): DiscountChoice[] => [
+      ...(studentDiscount ? (['student'] as const) : []),
+      ...(reciprocalDiscount ? (['reciprocal'] as const) : []),
+    ],
+    [studentDiscount, reciprocalDiscount],
+  );
+
   const winterOnlyNoteVisible =
-    fall.membershipType === 'none' && winter.membershipType === 'regular' && schedule != null;
+    fall.membershipType !== 'regular' && winter.membershipType === 'regular' && schedule != null;
 
   if (loading) {
     return (
@@ -347,7 +375,7 @@ export default function PublicDuesPage() {
       <div className="public-container public-section space-y-10">
         <section className="space-y-4">
           <p className="text-sm font-semibold text-emerald-800">
-            <Link to="/registration/start" className="hover:underline">
+            <Link to="/go/membership" className="hover:underline">
               « Back to membership overview
             </Link>
           </p>
@@ -451,27 +479,29 @@ export default function PublicDuesPage() {
 
           <section className="public-card space-y-4 p-5 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900">Discount</h2>
-            <div className="space-y-3">
-              <FormCheckbox
-                tone="public"
-                checked={studentDiscount}
-                onChange={setStudentDiscount}
-                label={`Student discount (${formatRegistrationDiscountOffPhrase(schedule.discounts.student)} membership and leagues)`}
-              />
-              <FormCheckbox
-                tone="public"
-                checked={reciprocalDiscount}
-                onChange={setReciprocalDiscount}
-                label={`Reciprocal discount (${formatRegistrationDiscountOffPhrase(schedule.discounts.reciprocal)} membership)`}
-              />
-              {winterOnlyNoteVisible ? (
-                <p className="text-sm text-gray-600">
-                  The winter-only discount ({formatRegistrationDiscountOffPhrase(schedule.discounts.winterOnly)}{' '}
-                  membership) applies automatically when you begin in {schedule.winterSession?.name ?? 'winter'} without
-                  registering in {schedule.fallSession.name}.
-                </p>
-              ) : null}
-            </div>
+            <ChoiceInput<DiscountChoice>
+              inputId={discountsInputId}
+              layout="block"
+              maxSelectedItems={null}
+              multiSelectionIndicatorStyle="checkboxes"
+              ariaLabel="Available discounts"
+              name="dues-estimator-discounts"
+              value={selectedDiscounts}
+              onChange={(nextValue) => {
+                const selected = Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [];
+                setStudentDiscount(selected.includes('student'));
+                setReciprocalDiscount(selected.includes('reciprocal'));
+              }}
+              options={discountChoiceOptions}
+            />
+            {winterOnlyNoteVisible ? (
+              <p className="text-sm text-gray-600">
+                The winter-only discount ({formatRegistrationDiscountOffPhrase(schedule.discounts.winterOnly)}{' '}
+                membership) applies automatically when you begin regular membership in{' '}
+                {schedule.winterSession?.name ?? 'winter'} without paying for regular membership in{' '}
+                {schedule.fallSession.name}.
+              </p>
+            ) : null}
           </section>
         </section>
 

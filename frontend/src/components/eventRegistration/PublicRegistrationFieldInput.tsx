@@ -7,6 +7,7 @@ import {
   teamFieldOptionsFromRegistrationField,
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
+  PRESET_BONSPIEL_COMMENTS_HELPER_TEXT,
 } from '../../utils/eventRegistrationFieldPresets';
 import { structuredPostalFromEventJson, structuredPostalToEventJson } from '../../utils/structuredPostalAddress';
 
@@ -86,6 +87,26 @@ export default function PublicRegistrationFieldInput({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className={publicEventRegistrationInput}
+          />
+        </FormField>
+      );
+    case 'preset_bonspiel_comments':
+      return (
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${gk}`}
+          required={field.required === 1}
+          labelClassName="font-bold"
+          helperText={PRESET_BONSPIEL_COMMENTS_HELPER_TEXT}
+        >
+          <textarea
+            id={`field-${gk}`}
+            required={field.required === 1}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            rows={4}
+            className={`${publicEventRegistrationInput} min-h-[6rem] resize-y`}
           />
         </FormField>
       );

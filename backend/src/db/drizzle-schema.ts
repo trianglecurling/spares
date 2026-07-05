@@ -1774,7 +1774,8 @@ export type EventFieldType =
   | 'preset_team_name'
   | 'preset_team_four'
   | 'preset_team_doubles'
-  | 'preset_dob';
+  | 'preset_dob'
+  | 'preset_bonspiel_comments';
 export type EventFieldScope = 'group' | 'individual';
 
 export const eventCategoriesSqlite = sqliteTable('event_categories', {
@@ -1823,12 +1824,15 @@ export const eventsSqlite = sqliteTable('events', {
   /** Email address for event inquiries and operational contact. */
   point_of_contact: text('point_of_contact').notNull(),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  /** When set, the event is archived (soft-deleted) and hidden from normal listings. */
+  archived_at: text('archived_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   slugIdx: uniqueIndex('events_slug_unique').on(table.slug),
   publishedIdx: index('idx_events_published').on(table.published),
   visibilityIdx: index('idx_events_visibility').on(table.visibility),
+  archivedAtIdx: index('idx_events_archived_at').on(table.archived_at),
 }));
 
 export const eventTimespansSqlite = sqliteTable('event_timespans', {
@@ -3572,12 +3576,15 @@ export const eventsPg = pgTable('events', {
   /** Email address for event inquiries and operational contact. */
   point_of_contact: textPg('point_of_contact').notNull(),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  /** When set, the event is archived (soft-deleted) and hidden from normal listings. */
+  archived_at: timestamp('archived_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   slugIdx: uniqueIndexPg('events_slug_unique_pg').on(table.slug),
   publishedIdx: indexPg('idx_events_published').on(table.published),
   visibilityIdx: indexPg('idx_events_visibility').on(table.visibility),
+  archivedAtIdx: indexPg('idx_events_archived_at').on(table.archived_at),
 }));
 
 export const eventTimespansPg = pgTable('event_timespans', {

@@ -174,7 +174,7 @@ function extractReferencedFileIds(content: string): number[] {
   return Array.from(ids.values());
 }
 
-const VALID_TABS: Tab[] = ['site', 'home', 'menus', 'articles', 'showcase', 'files', 'permalinks', 'contacts'];
+const VALID_TABS: Tab[] = ['articles', 'home', 'menus', 'site', 'showcase', 'files', 'permalinks', 'contacts'];
 
 /** ISO timestamp -> value for a `datetime-local` input in the admin's local time zone. */
 function isoToLocalDateTimeInput(value: string | null): string {
@@ -1046,10 +1046,10 @@ export default function AdminContent() {
   };
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'site', label: 'Site config' },
+    { id: 'articles', label: 'Articles' },
     { id: 'home', label: 'Home page' },
     { id: 'menus', label: 'Navigation' },
-    { id: 'articles', label: 'Articles' },
+    { id: 'site', label: 'Site config' },
     { id: 'showcase', label: 'Showcase images' },
     { id: 'files', label: 'Files' },
     { id: 'permalinks', label: 'Permalinks' },

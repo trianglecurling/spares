@@ -43,6 +43,7 @@ const Feedback = lazy(() => import('./pages/Feedback'));
 const AdminFeedback = lazy(() => import('./pages/admin/AdminFeedback'));
 const AdminContent = lazy(() => import('./pages/admin/AdminContent'));
 const AdminArticleDraftPreview = lazy(() => import('./pages/admin/AdminArticleDraftPreview'));
+const AdminEventRegistrationPreview = lazy(() => import('./pages/admin/AdminEventRegistrationPreview'));
 const AdminArticleEditor = lazy(() => import('./pages/admin/AdminArticleEditor'));
 const AdminArticleVersionPreview = lazy(() => import('./pages/admin/AdminArticleVersionPreview'));
 const AdminObservability = lazy(() => import('./pages/admin/AdminObservability'));
@@ -202,6 +203,16 @@ function App() {
                         element={
                           <ProtectedRoute contentAdminOnly>
                             <AdminArticleDraftPreview />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/events/registration-preview"
+                        element={
+                          <ProtectedRoute requiredScope="events.manage">
+                            <Suspense fallback={null}>
+                              <AdminEventRegistrationPreview />
+                            </Suspense>
                           </ProtectedRoute>
                         }
                       />

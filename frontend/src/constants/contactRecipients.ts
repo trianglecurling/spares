@@ -10,12 +10,25 @@ export type PublicContactRecipientOption = {
   sortOrder: number;
 };
 
+export type AdminContactRecipientOption = PublicContactRecipientOption & {
+  isActive: boolean;
+};
+
 export function toContactRecipientChoiceOptions(
   recipients: PublicContactRecipientOption[],
 ): ChoiceRenderableOption<string>[] {
   return recipients.map((recipient) => ({
     value: recipient.slug,
     label: recipient.label,
+  }));
+}
+
+export function toAdminContactRecipientChoiceOptions(
+  recipients: AdminContactRecipientOption[],
+): ChoiceRenderableOption<string>[] {
+  return recipients.map((recipient) => ({
+    value: recipient.slug,
+    label: recipient.isActive ? recipient.label : `${recipient.label} (Hidden)`,
   }));
 }
 

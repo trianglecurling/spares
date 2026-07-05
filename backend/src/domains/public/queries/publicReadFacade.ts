@@ -4,6 +4,7 @@ import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { getDefaultPaymentProvider } from '../../../services/paymentService.js';
 import { getUpcomingBonspiels } from '../../calendar/queries/calendarReadFacade.js';
 import { publicFileUrl } from '../../../utils/managedFiles.js';
+import { notArchivedCondition } from '../../../utils/softDelete.js';
 
 export type MenuItemNode = {
   id: number;
@@ -227,6 +228,7 @@ export async function getPublicHomeData() {
           eq(schema.events.article_id, schema.articles.id),
           eq(schema.events.published, 1),
           eq(schema.events.visibility, 'public'),
+          notArchivedCondition(schema.events.archived_at),
         ),
       ),
   );
@@ -294,7 +296,13 @@ export async function getPublicHomeData() {
         slug: schema.events.slug,
       })
       .from(schema.events)
-      .where(and(isNotNull(schema.events.article_id), inArray(schema.events.article_id, featuredIds)));
+      .where(
+        and(
+          isNotNull(schema.events.article_id),
+          inArray(schema.events.article_id, featuredIds),
+          notArchivedCondition(schema.events.archived_at),
+        ),
+      );
 
     for (const row of eventLinkRows) {
       if (row.articleId != null && !eventSlugByArticleId.has(row.articleId)) {
@@ -440,6 +448,7 @@ export async function getPublicArticleBodyByIdForPublishedPublicEvent(articleId:
         eq(schema.articles.id, articleId),
         eq(schema.events.published, 1),
         eq(schema.events.visibility, 'public'),
+        notArchivedCondition(schema.events.archived_at),
       ),
     )
     .limit(1);
@@ -473,6 +482,7 @@ export async function getPublishedPublicEventSlugForArticlePathAlias(slug: strin
       and(
         eq(schema.events.published, 1),
         eq(schema.events.visibility, 'public'),
+        notArchivedCondition(schema.events.archived_at),
         or(
           eq(schema.events.slug, slug),
           and(isNotNull(schema.events.article_id), eq(schema.articles.slug, slug)),
