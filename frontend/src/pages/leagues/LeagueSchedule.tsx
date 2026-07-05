@@ -637,7 +637,7 @@ export default function LeagueSchedule({
               className={`px-3 py-1 text-sm font-medium rounded-md ${
                 showMineOnly
                   ? 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  : 'bg-primary-teal text-white'
+                  : 'bg-primary-teal-solid text-white'
               }`}
             >
               Show all games
@@ -648,7 +648,7 @@ export default function LeagueSchedule({
               disabled={memberTeamIds.length === 0}
               className={`px-3 py-1 text-sm font-medium rounded-md ${
                 showMineOnly
-                  ? 'bg-primary-teal text-white'
+                  ? 'bg-primary-teal-solid text-white'
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               } ${memberTeamIds.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
             >

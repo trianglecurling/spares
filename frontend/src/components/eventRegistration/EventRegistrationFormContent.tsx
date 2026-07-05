@@ -407,7 +407,7 @@ export default function EventRegistrationFormContent({
           }
           aria-disabled={preview || undefined}
           title={preview ? 'Registration is disabled in preview mode' : undefined}
-          className="w-full py-3 bg-primary-teal text-white font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 tabular-nums"
+          className="w-full py-3 bg-primary-teal-solid text-white font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 tabular-nums"
           style={{ fontVariantNumeric: 'tabular-nums' }}
         >
           {preview ? submitLabel : submitting ? 'Processing...' : submitLabel}

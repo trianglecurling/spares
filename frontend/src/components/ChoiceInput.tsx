@@ -1379,7 +1379,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
               className={`mt-px flex h-5 w-5 shrink-0 items-start justify-center rounded border pt-px ${
                 context.multiple
                   ? context.selected
-                    ? 'border-primary-teal bg-primary-teal text-white'
+                    ? 'border-primary-teal bg-primary-teal-solid text-white'
                     : 'border-gray-300 bg-white text-transparent dark:border-gray-600 dark:bg-gray-900'
                   : 'border-transparent text-primary-teal'
               }`}

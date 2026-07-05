@@ -26,7 +26,7 @@ export default function Responding() {
                       to={section.path}
                       className={`block px-3 py-2 rounded-md text-sm transition-colors ${
                         currentPath === section.path
-                          ? 'bg-primary-teal text-white'
+                          ? 'bg-primary-teal-solid text-white'
                           : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                       }`}
                     >

@@ -880,7 +880,7 @@ export default function PublicEventDetailPage() {
                   {isRegistrationOpen && !isFull && (
                     <Link
                       to={`/events/${event.slug}/register`}
-                      className="block w-full text-center px-4 py-3 bg-primary-teal text-white font-medium rounded-lg hover:bg-teal-700 transition-colors"
+                      className="block w-full text-center px-4 py-3 bg-primary-teal-solid text-white font-medium rounded-lg hover:bg-teal-700 transition-colors"
                     >
                       Register Now
                     </Link>

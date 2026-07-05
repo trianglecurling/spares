@@ -4,7 +4,6 @@ import {
   HiArrowRight,
   HiChevronLeft,
   HiChevronRight,
-  HiOutlineCalendarDays,
   HiOutlineEnvelope,
   HiOutlineIdentification,
   HiOutlineMapPin,
@@ -244,9 +243,10 @@ function HeroCarousel({ images }: { images: Array<{ src: string; caption: string
                 <button
                   key={`${image.src}-dot-${i}`}
                   type="button"
+                  role="tab"
                   className="flex h-8 w-5 items-center justify-center"
                   aria-label={`Show photo ${i + 1} of ${images.length}`}
-                  aria-current={i === index}
+                  aria-selected={i === index}
                   onClick={() => goTo(i, true)}
                 >
                   <span
@@ -510,8 +510,8 @@ export default function PublicHomePage() {
           <section className="public-home-hero-bg relative overflow-hidden">
             <HouseRings className="pointer-events-none absolute -right-32 -top-36 h-[30rem] w-[30rem] text-primary-teal opacity-30 max-lg:hidden" />
             <HouseRings className="pointer-events-none absolute -bottom-44 -left-36 h-[26rem] w-[26rem] text-primary-teal opacity-30" />
-            <div className="public-container relative py-10 sm:py-14 lg:py-20">
-              <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_1fr]">
+            <div className="public-container relative py-10 sm:py-14 lg:py-16">
+              <div className="grid items-start gap-10 lg:grid-cols-[1.05fr_1fr]">
                 <div className="max-w-xl">
                   <p className="inline-flex items-center gap-2 rounded-full border border-primary-teal/25 bg-white/80 px-3.5 py-1.5 text-sm font-medium text-primary-teal-link shadow-sm backdrop-blur">
                     <HiOutlineMapPin className="h-4 w-4 shrink-0" aria-hidden />
@@ -520,68 +520,56 @@ export default function PublicHomePage() {
                   <h1 className="public-display mt-5 text-4xl font-semibold leading-[1.05] tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
                     {heroTitle}
                   </h1>
-                  <p className="public-body mt-5 text-lg sm:text-xl">{heroSubtitle}</p>
-                  <div className="mt-7 flex flex-wrap items-center gap-3">
-                    <Link
-                      to="/articles/try-curling"
-                      className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full bg-primary-teal px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-teal/25 transition hover:bg-primary-teal/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 focus-visible:ring-offset-2 motion-reduce:transition-none"
-                    >
-                      Try curling
-                      <HiArrowRight className="h-4 w-4" aria-hidden />
-                    </Link>
-                    <a
-                      href="#upcoming-bonspiels"
-                      className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-gray-300 bg-white px-6 py-2.5 text-sm font-semibold text-gray-800 shadow-sm transition hover:border-primary-teal/50 hover:text-primary-teal-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 focus-visible:ring-offset-2 motion-reduce:transition-none"
-                    >
-                      <HiOutlineCalendarDays className="h-4 w-4" aria-hidden />
-                      Upcoming bonspiels
-                    </a>
-                  </div>
-                  <p className="mt-6 text-sm text-gray-500">
+                  <p className="mt-4 text-sm text-gray-500">
                     A 501(c)(3) nonprofit, 100% volunteer-run since day one.
                   </p>
+                  <div className="mt-8" aria-labelledby="home-pathways-heading">
+                    <p id="home-pathways-heading" className="public-eyebrow">
+                      Start here
+                    </p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {pathways.map(({ key, eyebrow, title, cta, to, href, Icon }) => {
+                        const cardInner = (
+                          <>
+                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-teal/10 text-primary-teal transition group-hover:bg-primary-teal-solid group-hover:text-white motion-reduce:transition-none">
+                              <Icon className="h-6 w-6" aria-hidden />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                                {eyebrow}
+                              </span>
+                              <span className="public-display block text-base font-semibold text-gray-900">
+                                {title}
+                              </span>
+                              <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-primary-teal-link">
+                                {cta}
+                                <HiArrowRight
+                                  className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+                                  aria-hidden
+                                />
+                              </span>
+                            </span>
+                          </>
+                        );
+                        const cardClass =
+                          'group flex items-center gap-3.5 rounded-2xl border border-gray-200 bg-white/80 p-3.5 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none motion-reduce:hover:translate-y-0';
+                        return href ? (
+                          <a key={key} href={href} className={cardClass}>
+                            {cardInner}
+                          </a>
+                        ) : (
+                          <Link key={key} to={to!} className={cardClass}>
+                            {cardInner}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-                <HeroCarousel images={heroImages} />
-              </div>
-            </div>
-          </section>
-
-          <section aria-labelledby="home-pathways-heading">
-            <div className="public-container py-12 sm:py-16">
-              <SectionHeading eyebrow="Start here" title="Find your way onto the ice" id="home-pathways-heading" />
-              <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {pathways.map(({ key, eyebrow, title, description, cta, to, href, Icon }) => {
-                  const cardInner = (
-                    <>
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-teal/10 text-primary-teal-link transition group-hover:bg-primary-teal group-hover:text-white motion-reduce:transition-none">
-                        <Icon className="h-6 w-6" aria-hidden />
-                      </span>
-                      <span className="mt-4 block text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
-                        {eyebrow}
-                      </span>
-                      <span className="public-display mt-1 block text-xl font-semibold text-gray-900">{title}</span>
-                      <span className="mt-2 block text-sm leading-relaxed text-gray-600">{description}</span>
-                      <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-teal-link">
-                        {cta}
-                        <HiArrowRight
-                          className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
-                          aria-hidden
-                        />
-                      </span>
-                    </>
-                  );
-                  const cardClass =
-                    'group flex flex-col rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none motion-reduce:hover:translate-y-0';
-                  return href ? (
-                    <a key={key} href={href} className={cardClass}>
-                      {cardInner}
-                    </a>
-                  ) : (
-                    <Link key={key} to={to!} className={cardClass}>
-                      {cardInner}
-                    </Link>
-                  );
-                })}
+                <div>
+                  <HeroCarousel images={heroImages} />
+                  <p className="public-body mt-6 text-base sm:text-lg">{heroSubtitle}</p>
+                </div>
               </div>
             </div>
           </section>
@@ -671,7 +659,7 @@ export default function PublicHomePage() {
                     const rowInner = (
                       <>
                         <div
-                          className="flex w-20 shrink-0 flex-col items-center justify-center self-stretch rounded-xl bg-primary-teal/10 px-2 py-3 text-primary-teal-link"
+                          className="flex w-20 shrink-0 flex-col items-center justify-center self-stretch rounded-xl bg-primary-teal/10 px-2 py-3 text-primary-teal-on-tint"
                           aria-hidden
                         >
                           <span className="text-xs font-bold uppercase tracking-widest">{dates.monthLabel}</span>

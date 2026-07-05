@@ -1,6 +1,10 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useFlyoutList, type FlyoutListApi } from '../hooks/useFlyoutList';
+import {
+  MobileNavAccordionItem,
+  mobileNavItemClass,
+} from './MobileNavAccordion';
 
 export interface NavMenuItemNode {
   id: number;
@@ -225,28 +229,34 @@ function DesktopNavItem({
   if (!hasChildren) {
     if (link.kind === 'external' && link.href) {
       return (
-        <a
-          href={link.href}
-          className={navLinkClass}
-          onMouseEnter={onOpen}
-          onFocus={onCloseNow}
-          {...externalTargetProps(item)}
-        >
-          {item.label}
-        </a>
+        <li className="relative list-none">
+          <a
+            href={link.href}
+            className={navLinkClass}
+            onMouseEnter={onOpen}
+            onFocus={onCloseNow}
+            {...externalTargetProps(item)}
+          >
+            {item.label}
+          </a>
+        </li>
       );
     }
     if (link.kind === 'internal' && link.href) {
       return (
-        <Link to={link.href} className={navLinkClass} onMouseEnter={onOpen} onFocus={onCloseNow}>
-          {item.label}
-        </Link>
+        <li className="relative list-none">
+          <Link to={link.href} className={navLinkClass} onMouseEnter={onOpen} onFocus={onCloseNow}>
+            {item.label}
+          </Link>
+        </li>
       );
     }
     return (
-      <span className={`${navLinkClass} cursor-default`} onMouseEnter={onOpen}>
-        {item.label}
-      </span>
+      <li className="relative list-none">
+        <span className={`${navLinkClass} cursor-default`} onMouseEnter={onOpen}>
+          {item.label}
+        </span>
+      </li>
     );
   }
 
@@ -373,7 +383,7 @@ export function DesktopMenuBar({
   const resolveNavLinkClass = getNavLinkClass ?? (() => classes.navLink);
 
   return (
-    <>
+    <ul className="flex items-center gap-2 list-none lg:gap-3">
       {items.map((item) => (
         <DesktopNavItem
           key={item.id}
@@ -386,7 +396,7 @@ export function DesktopMenuBar({
           onCloseNow={closeTopNow}
         />
       ))}
-    </>
+    </ul>
   );
 }
 
@@ -399,59 +409,45 @@ export function MobileMenuItem({
   level?: number;
   onNavigate: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const link = linkForItem(item);
   const hasChildren = item.children.length > 0;
+  const rowStyle = { paddingLeft: `${0.75 + level * 0.8}rem` };
+
+  if (hasChildren) {
+    return (
+      <MobileNavAccordionItem id={`menu-${level}-${item.id}`} label={item.label} level={level}>
+        {item.children.map((child) => (
+          <MobileMenuItem key={child.id} item={child} level={level + 1} onNavigate={onNavigate} />
+        ))}
+      </MobileNavAccordionItem>
+    );
+  }
+
+  if (link.kind === 'external' && link.href) {
+    return (
+      <a
+        href={link.href}
+        className={mobileNavItemClass}
+        style={rowStyle}
+        onClick={onNavigate}
+        {...externalTargetProps(item)}
+      >
+        {item.label}
+      </a>
+    );
+  }
+
+  if (link.kind === 'internal' && link.href) {
+    return (
+      <Link to={link.href} className={mobileNavItemClass} style={rowStyle} onClick={onNavigate}>
+        {item.label}
+      </Link>
+    );
+  }
 
   return (
-    <li className="list-none">
-      <div className="flex items-center gap-2">
-        {link.kind === 'external' && link.href ? (
-          <a
-            href={link.href}
-            className="flex-1 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            style={{ paddingLeft: `${0.75 + level * 0.8}rem` }}
-            onClick={onNavigate}
-            {...externalTargetProps(item)}
-          >
-            {item.label}
-          </a>
-        ) : link.kind === 'internal' && link.href ? (
-          <Link
-            to={link.href}
-            className="flex-1 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            style={{ paddingLeft: `${0.75 + level * 0.8}rem` }}
-            onClick={onNavigate}
-          >
-            {item.label}
-          </Link>
-        ) : (
-          <span
-            className="flex-1 rounded-md px-3 py-2 text-sm text-gray-700"
-            style={{ paddingLeft: `${0.75 + level * 0.8}rem` }}
-          >
-            {item.label}
-          </span>
-        )}
-        {hasChildren && (
-          <button
-            type="button"
-            className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-            aria-expanded={expanded}
-            aria-label={`Toggle ${item.label}`}
-            onClick={() => setExpanded((v) => !v)}
-          >
-            <span aria-hidden>{expanded ? '−' : '+'}</span>
-          </button>
-        )}
-      </div>
-      {hasChildren && expanded && (
-        <ul className="mt-1 space-y-1">
-          {item.children.map((child) => (
-            <MobileMenuItem key={child.id} item={child} level={level + 1} onNavigate={onNavigate} />
-          ))}
-        </ul>
-      )}
-    </li>
+    <span className={`${mobileNavItemClass} cursor-default`} style={rowStyle}>
+      {item.label}
+    </span>
   );
 }

@@ -116,9 +116,11 @@ export default function SiteNavBar({
       </div>
 
       {mobileOpen ? (
-        <div id={mobileMenuId} className="border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 md:hidden">
+        <div
+          id={mobileMenuId}
+          className="max-h-[calc(100dvh-5.75rem)] overflow-y-auto overscroll-y-contain border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 md:hidden"
+        >
           <div className="public-container py-3">
-            {showPublicHomeLink ? <div className="mb-2">{publicHomeLink}</div> : null}
             {mobileNav}
           </div>
         </div>

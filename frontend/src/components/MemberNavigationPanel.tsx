@@ -1,18 +1,19 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
-import { HiChevronDown } from 'react-icons/hi2';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useMemberNavigation } from '../hooks/useMemberNavigation';
+import { memberDisplayInitials } from '../utils/memberDisplayCache';
 import { FlyoutMenuItem, FlyoutMenuLeaf, FlyoutMenuList } from './FlyoutMenuList';
+import {
+  MobileNavAccordionGroup,
+  MobileNavAccordionItem,
+  mobileNavItemClass,
+} from './MobileNavAccordion';
 
 const flyoutTriggerClass =
   'flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-300 dark:hover:bg-gray-700';
 const flyoutItemClass =
-  'block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-300 dark:hover:bg-gray-700';
-const accordionTriggerClass =
-  'flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-300 dark:hover:bg-gray-700';
-const accordionItemClass =
   'block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-300 dark:hover:bg-gray-700';
 
 /** Matches `min-w-[12rem]` on flyout panels. */
@@ -28,6 +29,8 @@ interface MemberNavigationPanelProps {
   showAccountFooter?: boolean;
   /** When false, only account actions (profile, switch account, logout) are shown. */
   showMainNav?: boolean;
+  /** When false, accordion items render without an outer `MobileNavAccordionGroup` (parent supplies the group). */
+  wrapAccordionGroup?: boolean;
 }
 
 function resolveFlyoutDirection(
@@ -123,25 +126,21 @@ function NavLink({
   );
 }
 
-function AccordionSection({
-  label,
-  expanded,
-  onToggle,
-  children,
-}: {
-  label: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
+export function MemberMobileNavLabel() {
+  const { member, memberDisplayName } = useAuth();
+  const name = memberDisplayName ?? member?.name ?? 'My account';
+  const initials = memberDisplayInitials(name);
+
   return (
-    <div>
-      <button type="button" onClick={onToggle} className={accordionTriggerClass} aria-expanded={expanded}>
-        {label}
-        <HiChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-      </button>
-      {expanded && <div className="mt-0.5 space-y-0.5 pl-2">{children}</div>}
-    </div>
+    <span className="flex min-w-0 items-center gap-2">
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-teal-solid text-xs font-semibold text-white"
+        aria-hidden
+      >
+        {initials}
+      </span>
+      <span className="truncate">{name}</span>
+    </span>
   );
 }
 
@@ -151,6 +150,7 @@ export default function MemberNavigationPanel({
   flyoutDirection = 'auto',
   showAccountFooter = true,
   showMainNav = true,
+  wrapAccordionGroup = true,
 }: MemberNavigationPanelProps) {
   const {
     member,
@@ -174,13 +174,6 @@ export default function MemberNavigationPanel({
     variant === 'flyout' && isNavigationReady,
     flyoutDirection,
   );
-
-  const [leaguesExpanded, setLeaguesExpanded] = useState(false);
-  const [sparesExpanded, setSparesExpanded] = useState(false);
-  const [directoryExpanded, setDirectoryExpanded] = useState(false);
-  const [calendarExpanded, setCalendarExpanded] = useState(false);
-  const [adminExpanded, setAdminExpanded] = useState(false);
-  const [accountExpanded, setAccountExpanded] = useState(false);
 
   const showAccountSwitcher = accountSwitchOptions.length > 1;
 
@@ -363,16 +356,12 @@ export default function MemberNavigationPanel({
           </FlyoutMenuLeaf>
         </FlyoutMenuList>
       ) : (
-        <div className="space-y-0.5">
-          <NavLink to="/profile" className={accordionItemClass} onNavigate={handleNavigate}>
+        <>
+          <NavLink to="/profile" className={mobileNavItemClass} onNavigate={handleNavigate}>
             My profile
           </NavLink>
           {showAccountSwitcher && (
-            <AccordionSection
-              label="Switch account"
-              expanded={accountExpanded}
-              onToggle={() => setAccountExpanded((value) => !value)}
-            >
+            <MobileNavAccordionItem id="switch-account" label="Switch account">
               {accountSwitchOptions.map((opt) => {
                 const isActive = opt.id === member?.id;
                 const isLoginSelf = actorMemberId !== null && opt.id === actorMemberId;
@@ -387,7 +376,7 @@ export default function MemberNavigationPanel({
                     onClick={() => {
                       void handleSelectAccount(opt.id);
                     }}
-                    className={`${accordionItemClass} w-full text-left disabled:cursor-default disabled:text-gray-500 dark:disabled:text-gray-400`}
+                    className={`${mobileNavItemClass} disabled:cursor-default disabled:text-gray-500 dark:disabled:text-gray-400`}
                   >
                     <span className="block truncate">
                       {opt.name}
@@ -396,7 +385,7 @@ export default function MemberNavigationPanel({
                   </button>
                 );
               })}
-            </AccordionSection>
+            </MobileNavAccordionItem>
           )}
           <button
             type="button"
@@ -404,35 +393,31 @@ export default function MemberNavigationPanel({
               handleNavigate();
               logout();
             }}
-            className={`${accordionItemClass} w-full text-left`}
+            className={mobileNavItemClass}
           >
             Logout
           </button>
-        </div>
+        </>
       )}
     </div>
   ) : null;
 
   if (variant === 'accordion' && !showMainNav) {
-    return <div className="space-y-1">{accountFooter}</div>;
+    return <MobileNavAccordionGroup>{accountFooter}</MobileNavAccordionGroup>;
   }
 
   if (variant === 'accordion') {
-    return (
-      <div className="space-y-1">
-        <NavLink to="/dashboard" className={accordionItemClass} onNavigate={handleNavigate}>
+    const accordionContent = (
+      <>
+        <NavLink to="/dashboard" className={mobileNavItemClass} onNavigate={handleNavigate}>
           Dashboard
         </NavLink>
 
-        <AccordionSection
-          label="Leagues"
-          expanded={leaguesExpanded}
-          onToggle={() => setLeaguesExpanded((value) => !value)}
-        >
-          <NavLink to="/leagues" className={accordionItemClass} onNavigate={handleNavigate}>
+        <MobileNavAccordionItem id="leagues" label="Leagues">
+          <NavLink to="/leagues" className={mobileNavItemClass} onNavigate={handleNavigate}>
             View all
           </NavLink>
-          <NavLink to="/waitlists" className={accordionItemClass} onNavigate={handleNavigate}>
+          <NavLink to="/waitlists" className={mobileNavItemClass} onNavigate={handleNavigate}>
             Waitlists
           </NavLink>
           {navMyLeaguesInCurrentSession.length > 0 ? (
@@ -442,7 +427,7 @@ export default function MemberNavigationPanel({
                 <NavLink
                   key={league.id}
                   to={`/leagues/${league.id}`}
-                  className={accordionItemClass}
+                  className={mobileNavItemClass}
                   onNavigate={handleNavigate}
                 >
                   {league.name}
@@ -450,76 +435,66 @@ export default function MemberNavigationPanel({
               ))}
             </>
           ) : null}
-        </AccordionSection>
+        </MobileNavAccordionItem>
 
-        <AccordionSection
-          label="Spares"
-          expanded={sparesExpanded}
-          onToggle={() => setSparesExpanded((value) => !value)}
-        >
+        <MobileNavAccordionItem id="spares" label="Spares">
           {isSocialMember ? (
             <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
               Social memberships do not include sparing or spare requests.
             </p>
           ) : (
             <>
-              <NavLink to="/availability" className={accordionItemClass} onNavigate={handleNavigate}>
+              <NavLink to="/availability" className={mobileNavItemClass} onNavigate={handleNavigate}>
                 My availability
               </NavLink>
-              <NavLink to="/my-requests" className={accordionItemClass} onNavigate={handleNavigate}>
+              <NavLink to="/my-requests" className={mobileNavItemClass} onNavigate={handleNavigate}>
                 My requests
               </NavLink>
-              <NavLink to="/request-spare" className={accordionItemClass} onNavigate={handleNavigate}>
+              <NavLink to="/request-spare" className={mobileNavItemClass} onNavigate={handleNavigate}>
                 Request a spare
               </NavLink>
             </>
           )}
-        </AccordionSection>
+        </MobileNavAccordionItem>
 
-        <AccordionSection
-          label="Directory"
-          expanded={directoryExpanded}
-          onToggle={() => setDirectoryExpanded((value) => !value)}
-        >
-          <NavLink to="/members" className={accordionItemClass} onNavigate={handleNavigate}>
+        <MobileNavAccordionItem id="directory" label="Directory">
+          <NavLink to="/members" className={mobileNavItemClass} onNavigate={handleNavigate}>
             Club membership
           </NavLink>
-          <NavLink to="/governance" className={accordionItemClass} onNavigate={handleNavigate}>
+          <NavLink to="/governance" className={mobileNavItemClass} onNavigate={handleNavigate}>
             Club governance
           </NavLink>
-        </AccordionSection>
+        </MobileNavAccordionItem>
 
-        <AccordionSection
-          label="Calendar"
-          expanded={calendarExpanded}
-          onToggle={() => setCalendarExpanded((value) => !value)}
-        >
-          <NavLink to="/calendar" className={accordionItemClass} onNavigate={handleNavigate}>
+        <MobileNavAccordionItem id="calendar" label="Calendar">
+          <NavLink to="/calendar" className={mobileNavItemClass} onNavigate={handleNavigate}>
             Full calendar
           </NavLink>
           {!isSocialMember && (
-            <NavLink to="/book-ice" className={accordionItemClass} onNavigate={handleNavigate}>
+            <NavLink to="/book-ice" className={mobileNavItemClass} onNavigate={handleNavigate}>
               Book ice time
             </NavLink>
           )}
-        </AccordionSection>
+        </MobileNavAccordionItem>
 
         {hasAdminLinks && (
-          <AccordionSection
-            label="Admin"
-            expanded={adminExpanded}
-            onToggle={() => setAdminExpanded((value) => !value)}
-          >
+          <MobileNavAccordionItem id="admin" label="Admin">
             {adminLinks.map((link) => (
-              <NavLink key={link.to} to={link.to} className={accordionItemClass} onNavigate={handleNavigate}>
+              <NavLink key={link.to} to={link.to} className={mobileNavItemClass} onNavigate={handleNavigate}>
                 {link.label}
               </NavLink>
             ))}
-          </AccordionSection>
+          </MobileNavAccordionItem>
         )}
 
         {accountFooter}
-      </div>
+      </>
+    );
+
+    return wrapAccordionGroup ? (
+      <MobileNavAccordionGroup>{accordionContent}</MobileNavAccordionGroup>
+    ) : (
+      accordionContent
     );
   }
 

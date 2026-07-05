@@ -11,7 +11,7 @@ import {
 } from '../utils/publicBootstrapClient';
 import { syncSiteBrandingFromBootstrap, syncSiteBrandingFromConfig, useSiteBranding } from '../hooks/useSiteBranding';
 import ObfuscatedEmailLink, { splitEmailAddress } from './ObfuscatedEmailLink';
-import MemberNavigationPanel from './MemberNavigationPanel';
+import MemberNavigationPanel, { MemberMobileNavLabel } from './MemberNavigationPanel';
 import SiteNavAccountControl, { SiteNavLoginLink } from './SiteNavAccountControl';
 import SiteNavBar from './SiteNavBar';
 import {
@@ -20,6 +20,7 @@ import {
   publicFlyoutNavClasses,
   type NavMenuItemNode,
 } from './DesktopFlyoutNav';
+import { MobileNavAccordionGroup, MobileNavAccordionItem } from './MobileNavAccordion';
 
 const DEFAULT_CONTACT_EMAIL_LOCAL = 'info';
 const DEFAULT_CONTACT_EMAIL_DOMAIN = 'trianglecurling.com';
@@ -214,38 +215,45 @@ export default function PublicLayout({
         mobileNav={
           <>
             {!backToHome && publicDataReady ? (
-              <ul className="space-y-1">
+              <MobileNavAccordionGroup>
                 {menuItems.length > 0 ? (
                   menuItems.map((item) => (
                     <MobileMenuItem key={item.id} item={item} onNavigate={() => setMobileOpen(false)} />
                   ))
                 ) : (
-                  <li>
-                    <Link
-                      to="/"
-                      className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      onClick={() => setMobileOpen(false)}
-                    >
-                      Home
-                    </Link>
-                  </li>
+                  <Link
+                    to="/"
+                    className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    Home
+                  </Link>
                 )}
-              </ul>
-            ) : null}
-            {!isLoading &&
-              (isLikelyAuthenticated ? (
-                <div className="mt-3 rounded-lg border border-gray-200 p-2">
+                {!isLoading && isLikelyAuthenticated ? (
+                  <MobileNavAccordionItem id="member-nav" label={<MemberMobileNavLabel />}>
+                    <MemberNavigationPanel
+                      variant="accordion"
+                      onNavigate={() => setMobileOpen(false)}
+                    />
+                  </MobileNavAccordionItem>
+                ) : null}
+              </MobileNavAccordionGroup>
+            ) : !isLoading && isLikelyAuthenticated ? (
+              <MobileNavAccordionGroup>
+                <MobileNavAccordionItem id="member-nav" label={<MemberMobileNavLabel />}>
                   <MemberNavigationPanel
                     variant="accordion"
                     onNavigate={() => setMobileOpen(false)}
                   />
-                </div>
-              ) : (
-                <SiteNavLoginLink
-                  className="mt-3 block text-center"
-                  onClick={() => setMobileOpen(false)}
-                />
-              ))}
+                </MobileNavAccordionItem>
+              </MobileNavAccordionGroup>
+            ) : null}
+            {!isLoading && !isLikelyAuthenticated ? (
+              <SiteNavLoginLink
+                className="mt-3 block text-center"
+                onClick={() => setMobileOpen(false)}
+              />
+            ) : null}
           </>
         }
       />

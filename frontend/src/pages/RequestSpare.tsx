@@ -1093,7 +1093,7 @@ export default function RequestSpare() {
                                 <button
                                   type="button"
                                   onClick={() => addMember(m.id)}
-                                  className="ml-3 rounded bg-primary-teal px-3 py-1 text-sm text-white transition-colors hover:bg-opacity-80"
+                                  className="ml-3 rounded bg-primary-teal-solid px-3 py-1 text-sm text-white transition-colors hover:bg-opacity-80"
                                 >
                                   +
                                 </button>

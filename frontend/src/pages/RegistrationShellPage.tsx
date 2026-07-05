@@ -5832,7 +5832,7 @@ export default function RegistrationShellPage() {
           </div>
         ) : null}
         {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-        <Link className="mt-6 inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white" to="/dashboard">
+        <Link className="mt-6 inline-flex rounded-lg bg-primary-teal-solid px-4 py-2 text-sm font-medium text-white" to="/dashboard">
           Return to dashboard
         </Link>
       </RegistrationCard>
@@ -5844,7 +5844,7 @@ export default function RegistrationShellPage() {
         <h1 className="text-3xl font-bold text-[#121033]">Payment was not completed</h1>
         <p className="mt-3 text-gray-600">Your registration is not confirmed yet. You can return to review and start checkout again.</p>
         <Link
-          className="mt-6 inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white"
+          className="mt-6 inline-flex rounded-lg bg-primary-teal-solid px-4 py-2 text-sm font-medium text-white"
           to={paymentRegistrationId ? `/registration/review` : '/registration/start'}
         >
           Return to review

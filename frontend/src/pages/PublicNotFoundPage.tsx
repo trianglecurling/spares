@@ -68,7 +68,7 @@ export default function PublicNotFoundPage({
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
                 to={primaryAction.to}
-                className="inline-flex min-h-[2.75rem] items-center justify-center rounded-full bg-primary-teal px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-teal/25 transition hover:bg-primary-teal/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 focus-visible:ring-offset-2 motion-reduce:transition-none"
+                className="inline-flex min-h-[2.75rem] items-center justify-center rounded-full bg-primary-teal-solid px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-teal/25 transition hover:bg-primary-teal-solid/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 focus-visible:ring-offset-2 motion-reduce:transition-none"
               >
                 {primaryAction.label}
               </Link>

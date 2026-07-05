@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useMemberNavigation } from '../hooks/useMemberNavigation';
 import { useSiteBranding } from '../hooks/useSiteBranding';
 import { buildMemberNavMenuItems, isMemberNavItemActive } from '../utils/memberNavMenuItems';
@@ -8,6 +8,7 @@ import { DesktopMenuBar, publicFlyoutNavClasses } from './DesktopFlyoutNav';
 import MemberNavigationPanel from './MemberNavigationPanel';
 import SiteNavAccountControl from './SiteNavAccountControl';
 import SiteNavBar from './SiteNavBar';
+import { MobileNavAccordionGroup, mobileNavItemClass } from './MobileNavAccordion';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,7 +19,7 @@ interface LayoutProps {
 const MOBILE_MENU_ID = 'member-mobile-menu';
 
 const memberActiveNavLinkClass =
-  'inline-flex items-center rounded-md px-2 py-1 text-sm font-medium bg-primary-teal text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40';
+  'inline-flex items-center rounded-md px-2 py-1 text-sm font-medium bg-primary-teal-solid text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40';
 
 export default function Layout({ children, fullWidth }: LayoutProps) {
   const location = useLocation();
@@ -115,9 +116,20 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
           />
         }
         mobileNav={
-          <div className="rounded-lg border border-gray-200 p-2 dark:border-gray-700">
-            <MemberNavigationPanel variant="accordion" onNavigate={() => setMobileOpen(false)} />
-          </div>
+          <MobileNavAccordionGroup>
+            <Link
+              to="/"
+              className={mobileNavItemClass}
+              onClick={() => setMobileOpen(false)}
+            >
+              Return to public homepage
+            </Link>
+            <MemberNavigationPanel
+              variant="accordion"
+              wrapAccordionGroup={false}
+              onNavigate={() => setMobileOpen(false)}
+            />
+          </MobileNavAccordionGroup>
         }
       />
 

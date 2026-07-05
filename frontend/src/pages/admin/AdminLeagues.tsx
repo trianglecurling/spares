@@ -560,7 +560,7 @@ export default function Leagues() {
                 </Button>
                 <button
                   type="button"
-                  className="box-border flex h-10 min-h-10 shrink-0 items-center justify-center rounded-l-none rounded-r-lg bg-primary-teal px-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal/40 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="box-border flex h-10 min-h-10 shrink-0 items-center justify-center rounded-l-none rounded-r-lg bg-primary-teal-solid px-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-teal-solid/90 focus:outline-none focus:ring-2 focus:ring-primary-teal/40 disabled:cursor-not-allowed disabled:opacity-50"
                   aria-haspopup="menu"
                   aria-expanded={addLeagueMenuOpen}
                   aria-label="More league actions"

@@ -154,7 +154,7 @@ export default function DashboardMembershipCard() {
       ) : null}
 
       <div className="relative flex items-start gap-4">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-teal text-lg font-semibold text-white shadow-sm ring-4 ring-white/80 dark:ring-gray-800/80">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-teal-solid text-lg font-semibold text-white shadow-sm ring-4 ring-white/80 dark:ring-gray-800/80">
           {initials || '?'}
         </span>
 

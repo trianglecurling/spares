@@ -303,7 +303,7 @@ export default function BookIceTime() {
             <div className="flex flex-wrap gap-3 mt-8">
               <Link
                 to="/dashboard"
-                className="px-4 py-2 rounded-md font-medium transition-colors inline-flex items-center justify-center bg-primary-teal text-white hover:bg-opacity-90"
+                className="px-4 py-2 rounded-md font-medium transition-colors inline-flex items-center justify-center bg-primary-teal-solid text-white hover:bg-opacity-90"
               >
                 Back to dashboard
               </Link>

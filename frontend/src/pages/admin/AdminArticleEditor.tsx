@@ -653,7 +653,7 @@ th { font-weight: 600; background: #f3f4f6; }
                   }
                   className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
                     form.contentType === 'markdown'
-                      ? 'bg-primary-teal text-white'
+                      ? 'bg-primary-teal-solid text-white'
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
                   }`}
                 >
@@ -673,7 +673,7 @@ th { font-weight: 600; background: #f3f4f6; }
                   }
                   className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
                     form.contentType === 'html'
-                      ? 'bg-primary-teal text-white'
+                      ? 'bg-primary-teal-solid text-white'
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
                   }`}
                 >

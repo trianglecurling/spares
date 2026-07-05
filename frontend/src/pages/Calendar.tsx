@@ -286,7 +286,7 @@ export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
     id: 'leagues',
     label: 'Leagues',
     color:
-      'bg-teal-100 text-teal-900 border-teal-900/50 dark:bg-primary-teal dark:text-white dark:border-white/25',
+      'bg-teal-100 text-teal-900 border-teal-900/50 dark:bg-primary-teal-solid dark:text-white dark:border-white/25',
     icon: HiCalendar,
   },
   {
@@ -793,7 +793,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
             </button>
             <button
               onClick={goToday}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-primary-teal text-white hover:opacity-90"
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-primary-teal-solid text-white hover:opacity-90"
             >
               Today
             </button>
@@ -851,7 +851,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                   onClick={() => onViewChange(v)}
                   className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium capitalize ${
                     view === v
-                      ? 'bg-primary-teal text-white'
+                      ? 'bg-primary-teal-solid text-white'
                       : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
                   }`}
                 >
@@ -1543,7 +1543,7 @@ function MonthView({
                   onClick={() => onDayClick?.(day)}
                   className={`text-sm font-medium shrink-0 p-0 border-0 cursor-pointer hover:opacity-80 text-left inline-flex items-center justify-center w-6 h-6 rounded-full min-w-6 min-h-6 ${
                     isToday
-                      ? 'bg-primary-teal text-white'
+                      ? 'bg-primary-teal-solid text-white'
                       : isCurrentMonth
                         ? 'text-gray-900 dark:text-gray-100 bg-transparent'
                         : 'text-gray-400 dark:text-gray-500 bg-transparent'

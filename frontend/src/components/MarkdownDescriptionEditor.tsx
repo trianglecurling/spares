@@ -3204,7 +3204,7 @@ const MarkdownDescriptionEditor = forwardRef<
               </button>
               <button
                 type="button"
-                className="rounded-md bg-primary-teal px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-primary-teal-solid px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal-solid/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={
                   !isMarkdownEditorLinkDraftReady({
                     linkType: linkDraft.linkType,
@@ -3297,7 +3297,7 @@ const MarkdownDescriptionEditor = forwardRef<
               </button>
               <button
                 type="button"
-                className="rounded-md bg-primary-teal px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-primary-teal-solid px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal-solid/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!youtubeDraft.videoIdOrUrl.trim()}
                 onClick={applyYoutubeDraft}
               >
@@ -3373,7 +3373,7 @@ const MarkdownDescriptionEditor = forwardRef<
               </button>
               <button
                 type="button"
-                className="rounded-md bg-primary-teal px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-primary-teal-solid px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal-solid/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={
                   !Number.isFinite(accordionInsertDraft.entryCount) ||
                   accordionInsertDraft.entryCount < TCC_ACCORDION_MIN_ENTRIES
@@ -3452,7 +3452,7 @@ const MarkdownDescriptionEditor = forwardRef<
               </button>
               <button
                 type="button"
-                className="rounded-md bg-primary-teal px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-primary-teal-solid px-3 py-2 text-sm font-medium text-white hover:bg-primary-teal-solid/90 focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={
                   !Number.isFinite(accordionEditDraft.entryCount) ||
                   accordionEditDraft.entryCount < TCC_ACCORDION_MIN_ENTRIES

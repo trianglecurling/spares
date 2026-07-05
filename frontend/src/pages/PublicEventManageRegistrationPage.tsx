@@ -482,7 +482,7 @@ export default function PublicEventManageRegistrationPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-3 bg-primary-teal text-white font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+                className="w-full py-3 bg-primary-teal-solid text-white font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
               >
                 {submitting ? 'Saving...' : 'Save changes'}
               </button>

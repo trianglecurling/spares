@@ -74,7 +74,7 @@ export default function DataTablePagination({
                 className={joinClasses(
                   'rounded-md border px-3 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40',
                   item === page
-                    ? 'border-primary-teal bg-primary-teal text-white'
+                    ? 'border-primary-teal bg-primary-teal-solid text-white'
                     : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700'
                 )}
                 aria-current={item === page ? 'page' : undefined}

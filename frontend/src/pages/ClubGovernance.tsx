@@ -165,7 +165,7 @@ export default function ClubGovernance() {
             (member?.isAdmin || member?.isServerAdmin) && (
               <Link
                 to="/admin/governance"
-                className="inline-flex rounded-lg bg-primary-teal px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-teal/90"
+                className="inline-flex rounded-lg bg-primary-teal-solid px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-teal-solid/90"
               >
                 Manage governance
               </Link>

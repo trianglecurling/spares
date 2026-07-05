@@ -20,7 +20,7 @@ export function SiteNavLoginLink({ className = '', onClick }: { className?: stri
     <Link
       to="/login"
       onClick={onClick}
-      className={`ml-1 rounded-md bg-primary-teal px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 ${className}`}
+      className={`ml-1 rounded-md bg-primary-teal-solid px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-teal-solid/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 ${className}`}
     >
       Member login
     </Link>
@@ -56,9 +56,9 @@ export default function SiteNavAccountControl({
         className="rounded-full border border-gray-200 bg-white p-0.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:border-gray-600 dark:bg-gray-800"
         aria-expanded={profileMenuOpen}
         aria-haspopup="true"
-        aria-label="Account menu"
+        aria-label={`${initials}, account menu`}
       >
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-teal text-sm font-semibold text-white">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-teal-solid text-sm font-semibold text-white" aria-hidden>
           {initials}
         </span>
       </button>

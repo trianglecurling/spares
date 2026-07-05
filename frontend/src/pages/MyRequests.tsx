@@ -442,7 +442,7 @@ export default function MyRequests() {
                       </h3>
                       {getStatusBadge(request.status)}
                       {request.position && (
-                        <span className="bg-primary-teal text-white px-2 py-1 rounded text-sm">
+                        <span className="bg-primary-teal-solid text-white px-2 py-1 rounded text-sm">
                           {request.position}
                         </span>
                       )}
@@ -712,7 +712,7 @@ export default function MyRequests() {
                           </span>
                           {getStatusBadge(request.status)}
                           {request.position && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-primary-teal text-white">
+                            <span className="text-xs px-2 py-0.5 rounded bg-primary-teal-solid text-white">
                               {request.position}
                             </span>
                           )}

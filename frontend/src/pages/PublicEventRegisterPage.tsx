@@ -715,7 +715,7 @@ export default function PublicEventRegisterPage() {
               (registrationTiming.isPrefillWindow && registrationTiming.msUntilOpen > 0) ||
               (!!event.termsArticleId && !acceptTerms)
             }
-            className="w-full py-3 bg-primary-teal text-white font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 tabular-nums"
+            className="w-full py-3 bg-primary-teal-solid text-white font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 tabular-nums"
             style={{ fontVariantNumeric: 'tabular-nums' }}
           >
             {submitting
