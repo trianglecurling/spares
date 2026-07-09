@@ -52,27 +52,6 @@ const STATIC_PAGES: StaticPageDefinition[] = [
     keywords: 'league play teams competitive recreational curling',
   },
   {
-    id: 'mailing-list-bonspiels',
-    title: 'Bonspiel mailing list',
-    url: '/mailing-list/bonspiels',
-    description: 'Sign up for bonspiel announcements and tournament updates.',
-    keywords: 'newsletter email subscribe bonspiel tournament mailing list',
-  },
-  {
-    id: 'mailing-list-membership',
-    title: 'Membership mailing list',
-    url: '/mailing-list/membership',
-    description: 'Sign up for membership news and club updates.',
-    keywords: 'newsletter email subscribe membership join mailing list',
-  },
-  {
-    id: 'mailing-list-learn-to-curl',
-    title: 'Learn to curl mailing list',
-    url: '/mailing-list/learn-to-curl',
-    description: 'Sign up for learn-to-curl program announcements and beginner events.',
-    keywords: 'newsletter email subscribe beginner learn to curl mailing list',
-  },
-  {
     id: 'feedback',
     title: 'Feedback',
     url: '/feedback',

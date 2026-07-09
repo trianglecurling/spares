@@ -7,8 +7,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { getEventBySlug, normalizeCalendarTypeId } from './eventService.js';
 import { listTournamentTeamsForEvent } from './eventTournamentTeamsService.js';
 import { getPaymentDetailByOrderToken } from './memberPaymentHistoryService.js';
-
-const MAILING_LIST_SLUGS = new Set(['bonspiels', 'membership', 'learn-to-curl']);
+import { mailingListSlugExists } from '../domains/content/mailingLists.js';
 
 type HttpStatus = 200 | 404;
 
@@ -91,7 +90,7 @@ const SPA_ROUTE_RULES: SpaRouteRule[] = [
   },
   {
     pattern: /^\/mailing-list\/([^/]+)$/,
-    resolve: async ([, slug]) => (MAILING_LIST_SLUGS.has(slug) ? 200 : 404),
+    resolve: async ([, slug]) => ((await mailingListSlugExists(slug.trim().toLowerCase())) ? 200 : 404),
   },
   {
     pattern: /^\/payments\/([^/]+)$/,

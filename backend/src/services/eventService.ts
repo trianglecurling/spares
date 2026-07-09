@@ -1467,70 +1467,63 @@ export async function deleteCategory(categoryId: number): Promise<void> {
 export async function getEventTimespansForCalendar(startDt: string, endDt: string, visibilityFilter?: EventVisibility[]) {
   const { db, schema } = getDrizzleDb();
 
-  const eventConditions: any[] = [
+  const conditions = [
     eq(schema.events.published, 1),
     notArchivedCondition(schema.events.archived_at),
+    lte(schema.eventTimespans.start_dt, endDt),
+    gte(schema.eventTimespans.end_dt, startDt),
   ];
   if (visibilityFilter && visibilityFilter.length > 0) {
-    eventConditions.push(inArray(schema.events.visibility, visibilityFilter));
+    conditions.push(inArray(schema.events.visibility, visibilityFilter));
   }
 
-  const events = await db
+  const rows = await db
     .select({
-      id: schema.events.id,
+      timespanId: schema.eventTimespans.id,
+      eventId: schema.events.id,
       title: schema.events.title,
       slug: schema.events.slug,
-      visibility: schema.events.visibility,
-      calendar_type_id: schema.events.calendar_type_id,
+      calendarTypeId: schema.events.calendar_type_id,
+      startDt: schema.eventTimespans.start_dt,
+      endDt: schema.eventTimespans.end_dt,
     })
-    .from(schema.events)
-    .where(and(...eventConditions));
-
-  if (events.length === 0) return [];
-
-  const eventIds = events.map((e: any) => e.id);
-
-  const timespans = await db
-    .select()
     .from(schema.eventTimespans)
-    .where(
-      and(
-        inArray(schema.eventTimespans.event_id, eventIds),
-        lte(schema.eventTimespans.start_dt, endDt),
-        gte(schema.eventTimespans.end_dt, startDt)
-      )
-    );
+    .innerJoin(schema.events, eq(schema.eventTimespans.event_id, schema.events.id))
+    .where(and(...conditions));
 
+  if (rows.length === 0) return [];
+
+  const eventIds = [...new Set(rows.map((row) => row.eventId))];
   const locations = await db
-    .select()
+    .select({
+      eventId: schema.eventLocations.event_id,
+      locationType: schema.eventLocations.location_type,
+      sheetId: schema.eventLocations.sheet_id,
+    })
     .from(schema.eventLocations)
     .where(inArray(schema.eventLocations.event_id, eventIds));
 
-  const eventMap = new Map(events.map((e: any) => [e.id, e]));
-  const locationsByEvent = new Map<number, any[]>();
+  const locationsByEvent = new Map<number, Array<{ type: string; sheetId?: number }>>();
   for (const loc of locations) {
-    const list = locationsByEvent.get(loc.event_id) || [];
+    const list = locationsByEvent.get(loc.eventId) || [];
     list.push({
-      type: loc.location_type,
-      ...(loc.location_type === 'sheet' && loc.sheet_id ? { sheetId: loc.sheet_id } : {}),
+      type: loc.locationType,
+      ...(loc.locationType === 'sheet' && loc.sheetId ? { sheetId: loc.sheetId } : {}),
     });
-    locationsByEvent.set(loc.event_id, list);
+    locationsByEvent.set(loc.eventId, list);
   }
 
-  return timespans.map((ts: any) => {
-    const event = eventMap.get(ts.event_id)!;
-    return {
-      id: `event:${ts.event_id}:${ts.id}`,
-      typeId: normalizeCalendarTypeId(event.calendar_type_id),
-      title: event.title,
-      start: ts.start_dt,
-      end: ts.end_dt,
-      allDay: false,
-      source: 'events',
-      slug: event.slug,
-      locations: locationsByEvent.get(ts.event_id) || [],
-    };
-  });
+  return rows.map((row) => ({
+    id: `event:${row.eventId}:${row.timespanId}`,
+    typeId: normalizeCalendarTypeId(row.calendarTypeId),
+    title: row.title,
+    start: row.startDt,
+    end: row.endDt,
+    allDay: false,
+    source: 'events',
+    slug: row.slug,
+    locations: locationsByEvent.get(row.eventId) || [],
+  }));
 }
 
 export async function isEventOwner(eventId: number, memberId: number): Promise<boolean> {

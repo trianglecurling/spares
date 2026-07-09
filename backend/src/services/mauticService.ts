@@ -1,7 +1,5 @@
 import { config } from '../config.js';
 
-export type MailingListKey = 'bonspiels' | 'membership' | 'learn-to-curl';
-
 let oauthTokenCache: { accessToken: string; expiresAtMs: number } | null = null;
 
 function mauticOrigin(): string {
@@ -12,17 +10,11 @@ function hasOAuthCredentials(): boolean {
   return Boolean(config.mautic.oauthClientId && config.mautic.oauthClientSecret);
 }
 
-/** True when the given list can be subscribed to (base URL, auth, and that segment’s numeric id are set). */
-export function isMauticSubscribeAvailableForList(list: MailingListKey): boolean {
+/** True when Mautic can subscribe contacts to a segment (base URL, auth, and segment id are set). */
+export function isMauticSubscribeAvailableForSegment(segmentId: number): boolean {
   if (!mauticOrigin()) return false;
   if (!hasOAuthCredentials()) return false;
-  return segmentIdForList(list) > 0;
-}
-
-function segmentIdForList(list: MailingListKey): number {
-  if (list === 'bonspiels') return config.mautic.segmentIds.bonspiels;
-  if (list === 'membership') return config.mautic.segmentIds.membership;
-  return config.mautic.segmentIds.learnToCurl;
+  return segmentId > 0;
 }
 
 function splitFirstLast(fullName: string): { firstname: string; lastname: string } {
@@ -220,17 +212,32 @@ async function addContactToSegment(segmentId: number, contactId: number): Promis
   });
 }
 
-export async function subscribeToMailingList(input: {
-  list: MailingListKey;
+export async function sendMauticEmailToContact(emailId: number, contactId: number): Promise<void> {
+  if (emailId <= 0) {
+    throw new Error('Mautic email id is not configured');
+  }
+  await mauticRequestJson(`/emails/${emailId}/contact/${contactId}/send`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export type MailingListSubscribeResult = {
+  contactId: number;
+  newlyAddedToSegment: boolean;
+};
+
+export async function subscribeToMailingListSegment(input: {
+  segmentId: number;
   fullName: string;
   email: string;
-}): Promise<void> {
+}): Promise<MailingListSubscribeResult> {
   const { firstname, lastname } = splitFirstLast(input.fullName);
   if (!firstname.trim() || !input.email.trim()) {
     throw new Error('Name and email are required');
   }
 
-  const segmentId = segmentIdForList(input.list);
+  const segmentId = input.segmentId;
   if (segmentId <= 0) {
     throw new Error('This mailing list is not configured');
   }
@@ -250,11 +257,12 @@ export async function subscribeToMailingList(input: {
 
   try {
     await addContactToSegment(segmentId, contactId);
+    return { contactId, newlyAddedToSegment: true };
   } catch (e) {
     if (e instanceof MauticRequestError && e.statusCode === 400) {
       const message = (e.message || '').toLowerCase();
       if (message.includes('already') || message.includes('member')) {
-        return;
+        return { contactId, newlyAddedToSegment: false };
       }
     }
     throw e;

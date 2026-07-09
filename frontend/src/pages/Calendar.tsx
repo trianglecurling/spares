@@ -3,8 +3,9 @@
  * Events support color-coding, icons, timed or all-day, and multi-day spanning.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import {
   addDays,
   addMonths,
@@ -31,6 +32,7 @@ import {
   HiChevronLeft,
   HiChevronRight,
   HiClipboardDocumentList,
+  HiFunnel,
   HiOutlineCalendar,
   HiOutlineCalendarDays,
   HiOutlineCalendarDays as HiOutlineDay,
@@ -48,9 +50,19 @@ import Button from '../components/Button';
 import PublicLayout from '../components/PublicLayout';
 import Modal from '../components/Modal';
 import PageTabs from '../components/PageTabs';
+import FormCheckbox from '../components/FormCheckbox';
+import FormField from '../components/FormField';
 import type { ArticleOption } from '../components/ArticleAutocomplete';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { useAuth } from '../contexts/AuthContext';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import {
+  calendarRangeCacheKey,
+  getCachedCalendarRange,
+  invalidateCalendarEventsCache,
+  isCalendarRangeFresh,
+  setCachedCalendarRange,
+} from '../utils/calendarEventsCache';
 
 export type CalendarView = 'day' | 'week' | 'month';
 
@@ -368,6 +380,27 @@ export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
   },
 ];
 
+/** Solid dot colors for compact mobile month cells (paired with DEFAULT_EVENT_TYPES). */
+const EVENT_TYPE_DOT_CLASS: Record<string, string> = {
+  maintenance: 'bg-slate-500 dark:bg-slate-400',
+  leagues: 'bg-teal-600 dark:bg-teal-400',
+  bonspiel: 'bg-violet-600 dark:bg-violet-400',
+  juniors: 'bg-fuchsia-600 dark:bg-fuchsia-400',
+  practice: 'bg-amber-500 dark:bg-amber-400',
+  'group-event': 'bg-emerald-600 dark:bg-emerald-400',
+  clinic: 'bg-sky-500 dark:bg-sky-400',
+  social: 'bg-rose-500 dark:bg-rose-400',
+  'board-committee': 'bg-indigo-600 dark:bg-indigo-400',
+  'learn-to-curl': 'bg-teal-600 dark:bg-teal-400',
+  'off-season': 'bg-orange-500 dark:bg-orange-400',
+  other: 'bg-gray-500 dark:bg-gray-400',
+  'member-ice': 'bg-cyan-600 dark:bg-cyan-400',
+};
+
+function eventTypeDotClass(typeId: string): string {
+  return EVENT_TYPE_DOT_CLASS[typeId] ?? EVENT_TYPE_DOT_CLASS.other;
+}
+
 /**
  * Subtle wash behind week-view time columns when that day has an all-day (or equivalent) event.
  * Used for both authenticated `/calendar` and public `/calendar/public` (same `WeekView`).
@@ -580,8 +613,13 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const [onIceOnly, setOnIceOnly] = useState(false);
   const [showLeagues, setShowLeagues] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [goToDateOpen, setGoToDateOpen] = useState(false);
   const [sheets, setSheets] = useState<Array<{ id: number; name: string }>>([]);
   const eventTypes = DEFAULT_EVENT_TYPES;
+  const isCompactLayout = useMediaQuery('(max-width: 767px)');
+  const jumpDateFieldId = useId();
+  const activeFilterCount = (!showLeagues ? 1 : 0) + (!showEvents ? 1 : 0) + (onIceOnly ? 1 : 0);
 
   const { rangeStart, rangeEnd, headerLabel } = useMemo(() => {
     if (view === 'day') {
@@ -621,7 +659,6 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   }, [publicMode]);
 
   useEffect(() => {
-    setEventsLoading(true);
     type EventPayload = {
       id: string;
       typeId: string;
@@ -641,44 +678,85 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       sheets: Array<{ id: number; name: string }>;
       leagueEvents: EventPayload[];
     };
+
+    const cacheKey = calendarRangeCacheKey(publicMode, rangeStart, rangeEnd);
+    const cached = getCachedCalendarRange<CalendarEvent>(cacheKey);
+    if (cached) {
+      setEvents(cached.events);
+      if (cached.sheets) setSheets(cached.sheets);
+      if (isCalendarRangeFresh(cached)) {
+        setEventsLoading(false);
+        return;
+      }
+      // Stale-while-revalidate: keep showing cached events without a blocking overlay.
+      setEventsLoading(false);
+    } else {
+      setEventsLoading(true);
+    }
+
+    const abortController = new AbortController();
+    const { signal } = abortController;
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+
+    const applyLoaded = (nextEvents: CalendarEvent[], nextSheets?: Array<{ id: number; name: string }>) => {
+      if (signal.aborted) return;
+      setCachedCalendarRange(cacheKey, { events: nextEvents, sheets: nextSheets });
+      setEvents(nextEvents);
+      if (nextSheets) setSheets(nextSheets);
+      setEventsLoading(false);
+    };
 
     if (publicMode) {
       api
-        .get<PublicCalendarBundle>(`/public/calendar/events?${rangeQuery}`)
+        .get<PublicCalendarBundle>(`/public/calendar/events?${rangeQuery}`, { signal })
         .then((res) => {
           const bundle = res.data;
           if (!bundle) {
-            setEvents([]);
+            applyLoaded([]);
             return;
           }
-          setSheets(bundle.sheets.map((s) => ({ id: s.id, name: s.name })));
+          const nextSheets = bundle.sheets.map((s) => ({ id: s.id, name: s.name }));
           const calendarEvents = bundle.events.map(apiEventToCalendar);
           const leagueEvents = (bundle.leagueEvents ?? []).map(apiEventToCalendar);
-          setEvents([...calendarEvents, ...leagueEvents]);
+          applyLoaded([...calendarEvents, ...leagueEvents], nextSheets);
         })
-        .catch(() => setEvents([]))
-        .finally(() => setEventsLoading(false));
-      return;
+        .catch((err) => {
+          if (signal.aborted || axios.isCancel(err)) return;
+          if (!cached) {
+            setEvents([]);
+            setEventsLoading(false);
+          }
+        });
+      return () => abortController.abort();
     }
 
     Promise.allSettled([
-      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`),
-      api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`),
+      api.get<EventPayload[]>(`/calendar/events?${rangeQuery}`, { signal }),
+      api.get<EventPayload[]>(`/calendar/league-events?${rangeQuery}`, { signal }),
     ])
       .then(([eventsRes, leagueRes]) => {
+        if (signal.aborted) return;
         const calendarEvents =
           eventsRes.status === 'fulfilled' ? (eventsRes.value.data ?? []).map(apiEventToCalendar) : [];
         const leagueEvents =
           leagueRes.status === 'fulfilled' ? (leagueRes.value.data ?? []).map(apiEventToCalendar) : [];
-        setEvents([...calendarEvents, ...leagueEvents]);
+        applyLoaded([...calendarEvents, ...leagueEvents]);
       })
-      .catch(() => setEvents([]))
-      .finally(() => setEventsLoading(false));
+      .catch((err) => {
+        if (signal.aborted || axios.isCancel(err)) return;
+        if (!cached) {
+          setEvents([]);
+          setEventsLoading(false);
+        }
+      });
+
+    return () => abortController.abort();
   }, [rangeStart, rangeEnd, publicMode]);
 
   const refreshEvents = () => {
+    invalidateCalendarEventsCache();
     const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+    const cacheKey = calendarRangeCacheKey(publicMode, rangeStart, rangeEnd);
     type EventPayload = Parameters<typeof apiEventToCalendar>[0];
     type PublicCalendarBundle = {
       events: EventPayload[];
@@ -692,10 +770,13 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
         .then((res) => {
           const bundle = res.data;
           if (!bundle) return;
-          setSheets(bundle.sheets.map((s) => ({ id: s.id, name: s.name })));
+          const nextSheets = bundle.sheets.map((s) => ({ id: s.id, name: s.name }));
           const calendarEvents = bundle.events.map(apiEventToCalendar);
           const leagueEvents = (bundle.leagueEvents ?? []).map(apiEventToCalendar);
-          setEvents([...calendarEvents, ...leagueEvents]);
+          const nextEvents = [...calendarEvents, ...leagueEvents];
+          setCachedCalendarRange(cacheKey, { events: nextEvents, sheets: nextSheets });
+          setSheets(nextSheets);
+          setEvents(nextEvents);
         })
         .catch(() => {});
       return;
@@ -710,7 +791,9 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
           eventsRes.status === 'fulfilled' ? (eventsRes.value.data ?? []).map(apiEventToCalendar) : [];
         const leagueEvents =
           leagueRes.status === 'fulfilled' ? (leagueRes.value.data ?? []).map(apiEventToCalendar) : [];
-        setEvents([...calendarEvents, ...leagueEvents]);
+        const nextEvents = [...calendarEvents, ...leagueEvents];
+        setCachedCalendarRange(cacheKey, { events: nextEvents });
+        setEvents(nextEvents);
       })
       .catch(() => {});
   };
@@ -723,6 +806,18 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     if (onIceOnly) list = list.filter(isOnIceEvent);
     return list;
   }, [events, showLeagues, showEvents, onIceOnly]);
+
+  const legendEventTypes = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ev of filteredEvents) {
+      counts.set(ev.typeId, (counts.get(ev.typeId) ?? 0) + 1);
+    }
+    return [...eventTypes].sort((a, b) => {
+      const diff = (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0);
+      if (diff !== 0) return diff;
+      return eventTypes.indexOf(a) - eventTypes.indexOf(b);
+    });
+  }, [filteredEvents, eventTypes]);
 
   const getEventType = (typeId: string) =>
     eventTypes.find((t) => t.id === typeId) ??
@@ -763,6 +858,8 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 
   const onViewChange = (v: CalendarView) => updateUrl(currentDate, v);
   const goToDayView = (date: Date) => updateUrl(date, 'day');
+  /** Stay in week view while changing the focused day (mobile week day-strip). */
+  const selectDayInWeek = (date: Date) => updateUrl(date, 'week');
   const openNewEventForDate = (date: Date) => {
     navigate(`/calendar/events/new?date=${format(date, 'yyyy-MM-dd')}`);
   };
@@ -773,114 +870,212 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 
   const calendarContent = (
     <>
-      <div className="flex flex-col flex-1 min-h-[400px] overflow-hidden bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-        {/* Toolbar */}
-        <div className="flex flex-col gap-4 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={goPrev}
-              className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-              aria-label="Previous"
-            >
-              <HiChevronLeft className="w-5 h-5" />
-            </button>
-            <button
-              onClick={goNext}
-              className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-              aria-label="Next"
-            >
-              <HiChevronRight className="w-5 h-5" />
-            </button>
-            <button
-              onClick={goToday}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-primary-teal-solid text-white hover:opacity-90"
-            >
-              Today
-            </button>
-            <span className="ml-2 text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {headerLabel}
-            </span>
-          </div>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        {/* Toolbar — compact on mobile, full controls from md up */}
+        <div className="shrink-0 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          {/* Mobile compact header */}
+          <div className="flex flex-col gap-3 px-3 py-3 md:hidden">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={goPrev}
+                className="p-2.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                aria-label="Previous"
+              >
+                <HiChevronLeft className="w-5 h-5" />
+              </button>
+              <div className="flex-1 min-w-0 text-center">
+                <div className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
+                  {headerLabel}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={goNext}
+                className="p-2.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                aria-label="Next"
+              >
+                <HiChevronRight className="w-5 h-5" />
+              </button>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
-            {/* Event source filters */}
-            <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showLeagues}
-                onChange={(e) => setShowLeagues(e.target.checked)}
-                className="rounded border-gray-300 dark:border-gray-600"
-              />
-              Leagues
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showEvents}
-                onChange={(e) => setShowEvents(e.target.checked)}
-                className="rounded border-gray-300 dark:border-gray-600"
-              />
-              Events
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={onIceOnly}
-                onChange={(e) => setOnIceOnly(e.target.checked)}
-                className="rounded border-gray-300 dark:border-gray-600"
-              />
-              On-ice only
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={goToday}
+                className="px-3 py-2 text-sm font-medium rounded-md bg-primary-teal-solid text-white hover:opacity-90"
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+                aria-haspopup="dialog"
+              >
+                <HiFunnel className="w-4 h-4 shrink-0" aria-hidden />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary-teal-solid px-1.5 text-xs font-semibold text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                onClick={() => setGoToDateOpen(true)}
+                className="px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+              >
+                Go to date
+              </button>
+              {canEditCalendar && (
+                <Button
+                  variant="primary"
+                  onClick={() => navigate(`/calendar/events/new?date=${format(currentDate, 'yyyy-MM-dd')}`)}
+                  className="ml-auto inline-flex items-center justify-center p-2.5"
+                  aria-label="New event"
+                >
+                  <HiPlus className="w-5 h-5" />
+                </Button>
+              )}
+            </div>
 
-            {/* Jump to date */}
-            <label className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-              Jump to:
-              <input
-                type="date"
-                value={jumpTarget}
-                onChange={onJumpDate}
-                className="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
-              />
-            </label>
-
-            {/* View switcher */}
             <div className="flex rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
               {(['day', 'week', 'month'] as const).map((v) => (
                 <button
                   key={v}
+                  type="button"
                   onClick={() => onViewChange(v)}
-                  className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium capitalize ${
+                  className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-2.5 text-sm font-medium capitalize ${
                     view === v
                       ? 'bg-primary-teal-solid text-white'
-                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                   }`}
                 >
-                  {v === 'day' && <HiOutlineDay className="w-4 h-4 shrink-0" />}
-                  {v === 'week' && <HiOutlineCalendarDays className="w-4 h-4 shrink-0" />}
-                  {v === 'month' && <HiCalendar className="w-4 h-4 shrink-0" />}
+                  {v === 'day' && <HiOutlineDay className="w-4 h-4 shrink-0" aria-hidden />}
+                  {v === 'week' && <HiOutlineCalendarDays className="w-4 h-4 shrink-0" aria-hidden />}
+                  {v === 'month' && <HiCalendar className="w-4 h-4 shrink-0" aria-hidden />}
                   {v}
                 </button>
               ))}
             </div>
+          </div>
 
-            {canEditCalendar && (
-              <>
-                <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden />
-                <Button
-                  variant="primary"
-                  onClick={() => navigate(`/calendar/events/new?date=${format(currentDate, 'yyyy-MM-dd')}`)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm"
-                >
-                  <HiPlus className="w-4 h-4" />
-                  New event
-                </Button>
-              </>
-            )}
+          {/* Desktop / tablet toolbar */}
+          <div className="hidden md:flex flex-col gap-4 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={goPrev}
+                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                aria-label="Previous"
+              >
+                <HiChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={goNext}
+                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                aria-label="Next"
+              >
+                <HiChevronRight className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={goToday}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-primary-teal-solid text-white hover:opacity-90"
+              >
+                Today
+              </button>
+              <span className="ml-2 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {headerLabel}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showLeagues}
+                  onChange={(e) => setShowLeagues(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-gray-600"
+                />
+                Leagues
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showEvents}
+                  onChange={(e) => setShowEvents(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-gray-600"
+                />
+                Events
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={onIceOnly}
+                  onChange={(e) => setOnIceOnly(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-gray-600"
+                />
+                On-ice only
+              </label>
+
+              <label className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                Jump to:
+                <input
+                  type="date"
+                  value={jumpTarget}
+                  onChange={onJumpDate}
+                  className="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                />
+              </label>
+
+              <div className="flex rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
+                {(['day', 'week', 'month'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => onViewChange(v)}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium capitalize ${
+                      view === v
+                        ? 'bg-primary-teal-solid text-white'
+                        : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {v === 'day' && <HiOutlineDay className="w-4 h-4 shrink-0" />}
+                    {v === 'week' && <HiOutlineCalendarDays className="w-4 h-4 shrink-0" />}
+                    {v === 'month' && <HiCalendar className="w-4 h-4 shrink-0" />}
+                    {v}
+                  </button>
+                ))}
+              </div>
+
+              {canEditCalendar && (
+                <>
+                  <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden />
+                  <Button
+                    variant="primary"
+                    onClick={() => navigate(`/calendar/events/new?date=${format(currentDate, 'yyyy-MM-dd')}`)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm"
+                  >
+                    <HiPlus className="w-4 h-4" />
+                    New event
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Calendar grid - single scroll container */}
-        <div className="flex-1 min-h-0 overflow-auto flex flex-col relative">
+        {/* Calendar grid — day/compact week scroll inside the view; month/desktop week may scroll here */}
+        <div
+          className={`flex-1 min-h-0 flex flex-col relative ${
+            view === 'day' || (view === 'week' && isCompactLayout)
+              ? 'overflow-hidden'
+              : 'overflow-auto'
+          }`}
+        >
           {eventsLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-gray-800/80">
               <span className="text-sm text-gray-600 dark:text-gray-400">Loading…</span>
@@ -894,6 +1089,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
               events={filteredEvents}
               getEventType={getEventType}
               sheetNameById={sheetNameById}
+              compact={isCompactLayout}
               onEventClick={setSelectedEvent}
               onDayClick={goToDayView}
               onEmptyCellClick={canEditCalendar ? openNewEventForDate : undefined}
@@ -902,11 +1098,14 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
           {view === 'week' && (
             <WeekView
               rangeStart={rangeStart}
+              selectedDate={currentDate}
               events={filteredEvents}
               getEventType={getEventType}
               sheetNameById={sheetNameById}
+              compact={isCompactLayout}
               onEventClick={setSelectedEvent}
               onDayClick={goToDayView}
+              onSelectDay={selectDayInWeek}
               onEmptySlotClick={canEditCalendar ? openNewEventForDate : undefined}
             />
           )}
@@ -923,18 +1122,22 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
         </div>
 
         {/* Event type legend */}
-        <div className="shrink-0 px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {eventTypes.map((t) => {
+        <div className="shrink-0 px-3 py-2 md:px-4 md:py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 md:gap-x-4 md:gap-y-2">
+            {legendEventTypes.map((t) => {
               const Icon = t.icon;
               return (
-                <div key={t.id} className="flex items-center gap-2">
+                <div key={t.id} className="flex items-center gap-1.5 md:gap-2">
                   <span
-                    className={`inline-flex items-center justify-center w-8 h-8 rounded ${t.color}`}
+                    className={`md:hidden block w-2 h-2 rounded-full shrink-0 ${eventTypeDotClass(t.id)}`}
+                    aria-hidden
+                  />
+                  <span
+                    className={`hidden md:inline-flex items-center justify-center w-8 h-8 rounded ${t.color}`}
                   >
                     <Icon className="w-5 h-5" />
                   </span>
-                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  <span className="text-xs md:text-sm font-medium text-gray-600 dark:text-gray-400">
                     {t.label}
                   </span>
                 </div>
@@ -944,6 +1147,52 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
         </div>
       </div>
 
+      <Modal
+        isOpen={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        title="Calendar filters"
+        size="sm"
+        verticalAlign="start"
+      >
+        <div className="space-y-4">
+          <FormCheckbox label="Leagues" checked={showLeagues} onChange={setShowLeagues} />
+          <FormCheckbox label="Events" checked={showEvents} onChange={setShowEvents} />
+          <FormCheckbox label="On-ice only" checked={onIceOnly} onChange={setOnIceOnly} />
+          <div className="pt-2 flex justify-end">
+            <Button variant="primary" onClick={() => setFiltersOpen(false)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={goToDateOpen}
+        onClose={() => setGoToDateOpen(false)}
+        title="Go to date"
+        size="sm"
+        verticalAlign="start"
+      >
+        <div className="space-y-4">
+          <FormField label="Date" htmlFor={jumpDateFieldId}>
+            <input
+              id={jumpDateFieldId}
+              type="date"
+              value={jumpTarget}
+              onChange={(e) => {
+                onJumpDate(e);
+                if (e.target.value) setGoToDateOpen(false);
+              }}
+              className="app-input w-full"
+            />
+          </FormField>
+          <div className="flex justify-end">
+            <Button variant="secondary" onClick={() => setGoToDateOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
       <Modal
         isOpen={!!selectedEvent}
         onClose={() => setSelectedEvent(null)}
@@ -1189,8 +1438,10 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   );
 
   return publicMode ? (
-    <PublicLayout>
-      <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">{calendarContent}</div>
+    <PublicLayout fillViewport>
+      <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-8 flex-1 min-h-0 flex flex-col overflow-hidden">
+        {calendarContent}
+      </div>
     </PublicLayout>
   ) : (
     calendarContent
@@ -1200,6 +1451,12 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 const ESTIMATED_EVENT_HEIGHT = 26;
 /** Slot height = event + space-y-0.5 gap, matches MonthDayEvents layout */
 const SLOT_HEIGHT = 28;
+/** Compact mobile month: thin multi-day bars under the date number */
+const COMPACT_DATE_OFFSET_PX = 36;
+const COMPACT_BAND_HEIGHT_PX = 4;
+const COMPACT_BAND_GAP_PX = 2;
+/** Room for ~2 wrapped rows of 6px dots + gaps under the date / multi-day bars */
+const COMPACT_DOTS_AREA_PX = 20;
 
 /** Multi-day event segment for one week row. */
 interface MultiDaySegment {
@@ -1410,6 +1667,7 @@ function MonthView({
   events,
   getEventType,
   sheetNameById,
+  compact = false,
   onEventClick,
   onDayClick,
   onEmptyCellClick,
@@ -1420,6 +1678,7 @@ function MonthView({
   events: CalendarEvent[];
   getEventType: (id: string) => CalendarEventType;
   sheetNameById: Map<number, string>;
+  compact?: boolean;
   onEventClick?: (ev: CalendarEvent) => void;
   onDayClick?: (day: Date) => void;
   onEmptyCellClick?: (day: Date) => void;
@@ -1474,6 +1733,7 @@ function MonthView({
   const measureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (compact) return;
     const el = measureRef.current;
     if (!el || maxBandsPerWeek === 0) return;
     const dateBtn = el.querySelector('button');
@@ -1483,7 +1743,7 @@ function MonthView({
     const firstSlot = eventsWrap.querySelector('[data-slot]') as HTMLElement | null;
     const slotHeight = firstSlot ? firstSlot.offsetHeight + 2 : SLOT_HEIGHT; // +space-y-0.5
     setSlotMetrics({ dateOffset, slotHeight });
-  }, [maxBandsPerWeek, weeks.length]);
+  }, [maxBandsPerWeek, weeks.length, compact]);
 
   const getReservedSlotCount = (day: Date) => {
     const dayStartD = new Date(day);
@@ -1501,6 +1761,25 @@ function MonthView({
     }).length;
   };
 
+  const weekdayLabels = compact ? ['S', 'M', 'T', 'W', 'T', 'F', 'S'] : WEEKDAYS;
+  const compactBandStackPx =
+    maxBandsPerWeek > 0
+      ? maxBandsPerWeek * COMPACT_BAND_HEIGHT_PX + Math.max(0, maxBandsPerWeek - 1) * COMPACT_BAND_GAP_PX
+      : 0;
+  const compactMinRowPx = Math.max(
+    72,
+    COMPACT_DATE_OFFSET_PX + compactBandStackPx + COMPACT_DOTS_AREA_PX
+  );
+  const compactHeaderRef = useRef<HTMLDivElement>(null);
+  const [compactHeaderHeight, setCompactHeaderHeight] = useState(28);
+
+  useEffect(() => {
+    if (!compact) return;
+    const el = compactHeaderRef.current;
+    if (!el) return;
+    setCompactHeaderHeight(el.offsetHeight);
+  }, [compact, weeks.length]);
+
   return (
     <div className="flex-1 min-h-0 flex flex-col relative">
       {/* Single grid: header row + week rows */}
@@ -1508,14 +1787,19 @@ function MonthView({
         className="flex-1 grid min-h-0 overflow-hidden"
         style={{
           gridTemplateColumns: 'repeat(7, 1fr)',
-          gridTemplateRows: `auto repeat(${weeks.length}, minmax(106px, 1fr))`,
+          gridTemplateRows: compact
+            ? `auto repeat(${weeks.length}, minmax(${compactMinRowPx}px, 1fr))`
+            : `auto repeat(${weeks.length}, minmax(106px, 1fr))`,
         }}
       >
         {/* Weekday headers */}
-        {WEEKDAYS.map((d) => (
+        {weekdayLabels.map((d, i) => (
           <div
-            key={d}
-            className="px-2 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-300 dark:border-gray-600"
+            key={`${d}-${i}`}
+            ref={compact && i === 0 ? compactHeaderRef : undefined}
+            className={`px-1 py-2 text-center font-semibold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-300 dark:border-gray-600 ${
+              compact ? 'text-[10px]' : 'px-2 text-xs'
+            }`}
           >
             {d}
           </div>
@@ -1523,13 +1807,64 @@ function MonthView({
         {/* Day cells */}
         {weeks.map((week, wi) =>
           week.map((day, di) => {
-            const dayEvents = getEventsForDay(day).filter((e) => !isMultiDay(e));
+            const allDayEvents = getEventsForDay(day);
+            const dayEvents = allDayEvents.filter((e) => !isMultiDay(e));
             const isCurrentMonth = isSameMonth(day, currentDate);
             const isToday = isSameDay(day, new Date());
             const sortedEvents = [...dayEvents].sort(
               (a, b) => a.start.getTime() - b.start.getTime()
             );
             const isFirstCell = wi === 0 && di === 0;
+
+            if (compact) {
+              const totalCount = allDayEvents.length;
+              const countLabel =
+                totalCount === 0 ? 'No events' : totalCount === 1 ? '1 event' : `${totalCount} events`;
+
+              return (
+                <button
+                  key={day.toISOString()}
+                  type="button"
+                  onClick={() => onDayClick?.(day)}
+                  aria-label={`${format(day, 'EEEE, MMMM d')}, ${countLabel}`}
+                  className={`border-r border-b border-gray-200 dark:border-gray-600/60 px-0.5 pt-1 pb-1.5 flex flex-col items-center min-h-0 ${
+                    !isCurrentMonth ? 'bg-gray-50 dark:bg-gray-900/50' : 'bg-white dark:bg-gray-800'
+                  } hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors`}
+                >
+                  <span
+                    className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium shrink-0 ${
+                      isToday
+                        ? 'bg-primary-teal-solid text-white'
+                        : isCurrentMonth
+                          ? 'text-gray-900 dark:text-gray-100'
+                          : 'text-gray-400 dark:text-gray-500'
+                    }`}
+                  >
+                    {format(day, 'd')}
+                  </span>
+                  <span
+                    className="flex w-full flex-col items-center justify-start"
+                    style={{
+                      paddingTop: compactBandStackPx > 0 ? compactBandStackPx + 2 : 2,
+                      minHeight: COMPACT_DOTS_AREA_PX,
+                    }}
+                    aria-hidden
+                  >
+                    {sortedEvents.length > 0 ? (
+                      <span className="flex flex-wrap content-start items-center justify-center gap-0.5 px-0.5">
+                        {sortedEvents.map((ev) => (
+                          <span
+                            key={ev.id}
+                            className={`block w-1.5 h-1.5 rounded-full ${eventTypeDotClass(ev.typeId)}`}
+                          />
+                        ))}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            }
+
             return (
               <div
                 key={day.toISOString()}
@@ -1566,8 +1901,58 @@ function MonthView({
           })
         )}
       </div>
+      {/* Compact multi-day bars — one row per week, bars span columns */}
+      {compact && multiDaySegments.length > 0 && maxBandsPerWeek > 0 && (
+        <div
+          className="absolute left-0 right-0 bottom-0 pointer-events-none"
+          style={{ top: compactHeaderHeight }}
+        >
+          <div
+            className="h-full grid"
+            style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(${compactMinRowPx}px, 1fr))` }}
+          >
+            {weeks.map((_, wi) => (
+              <div key={`compact-week-bands-${wi}`} className="relative min-h-0">
+                {multiDaySegments
+                  .filter((seg) => seg.weekIndex === wi)
+                  .map((seg) => {
+                    const roundClass =
+                      seg.roundLeft && seg.roundRight
+                        ? 'rounded-full'
+                        : seg.roundLeft
+                          ? 'rounded-l-full'
+                          : seg.roundRight
+                            ? 'rounded-r-full'
+                            : '';
+                    const spanDays = seg.endCol - seg.startCol + 1;
+                    return (
+                      <button
+                        key={`compact-${seg.ev.id}-${seg.weekIndex}-${seg.bandIndex}`}
+                        type="button"
+                        className={`pointer-events-auto absolute h-1 border-0 cursor-pointer hover:opacity-90 z-[1] ${eventTypeDotClass(seg.ev.typeId)} ${roundClass}`}
+                        style={{
+                          top:
+                            COMPACT_DATE_OFFSET_PX +
+                            seg.bandIndex * (COMPACT_BAND_HEIGHT_PX + COMPACT_BAND_GAP_PX),
+                          left: `calc(${(seg.startCol / 7) * 100}% + 2px)`,
+                          width: `calc(${(spanDays / 7) * 100}% - 4px)`,
+                        }}
+                        aria-label={seg.ev.title}
+                        title={seg.ev.title}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onEventClick?.(seg.ev);
+                        }}
+                      />
+                    );
+                  })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Multi-day event overlay - bands align with single-day event slots */}
-      {multiDaySegments.length > 0 && maxBandsPerWeek > 0 && (
+      {!compact && multiDaySegments.length > 0 && maxBandsPerWeek > 0 && (
         <div
           className="absolute left-0 right-0 top-[40px] bottom-0 grid pointer-events-none"
           style={{
@@ -1638,6 +2023,173 @@ function MonthView({
 const HOUR_HEIGHT = 60;
 
 function WeekView({
+  rangeStart,
+  selectedDate,
+  events,
+  getEventType,
+  sheetNameById,
+  compact = false,
+  onEventClick,
+  onDayClick,
+  onSelectDay,
+  onEmptySlotClick,
+}: {
+  rangeStart: Date;
+  selectedDate: Date;
+  events: CalendarEvent[];
+  getEventType: (id: string) => CalendarEventType;
+  sheetNameById: Map<number, string>;
+  compact?: boolean;
+  onEventClick?: (ev: CalendarEvent) => void;
+  onDayClick?: (day: Date) => void;
+  /** Mobile week: change focused day while remaining in week view */
+  onSelectDay?: (day: Date) => void;
+  onEmptySlotClick?: (date: Date) => void;
+}) {
+  if (compact) {
+    return (
+      <CompactWeekView
+        rangeStart={rangeStart}
+        selectedDate={selectedDate}
+        events={events}
+        getEventType={getEventType}
+        sheetNameById={sheetNameById}
+        onEventClick={onEventClick}
+        onSelectDay={onSelectDay}
+        onEmptySlotClick={onEmptySlotClick}
+      />
+    );
+  }
+
+  return (
+    <DesktopWeekView
+      rangeStart={rangeStart}
+      events={events}
+      getEventType={getEventType}
+      sheetNameById={sheetNameById}
+      onEventClick={onEventClick}
+      onDayClick={onDayClick}
+      onEmptySlotClick={onEmptySlotClick}
+    />
+  );
+}
+
+/** Mobile week: day strip + shared DayView body (no horizontal scroll). */
+function CompactWeekView({
+  rangeStart,
+  selectedDate,
+  events,
+  getEventType,
+  sheetNameById,
+  onEventClick,
+  onSelectDay,
+  onEmptySlotClick,
+}: {
+  rangeStart: Date;
+  selectedDate: Date;
+  events: CalendarEvent[];
+  getEventType: (id: string) => CalendarEventType;
+  sheetNameById: Map<number, string>;
+  onEventClick?: (ev: CalendarEvent) => void;
+  onSelectDay?: (day: Date) => void;
+  onEmptySlotClick?: (date: Date) => void;
+}) {
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(rangeStart, i)),
+    [rangeStart]
+  );
+
+  const getEventsForDay = useCallback(
+    (day: Date) =>
+      events.filter((e) => {
+        const start = new Date(e.start);
+        const end = new Date(e.end);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+        const dayStart = new Date(day);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(day);
+        dayEnd.setHours(23, 59, 59, 999);
+        return start <= dayEnd && end >= dayStart;
+      }),
+    [events]
+  );
+
+  const focusedDay = days.find((d) => isSameDay(d, selectedDate)) ?? days[0]!;
+
+  return (
+    <div className="flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden">
+      <div
+        className="shrink-0 grid grid-cols-7 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
+        role="tablist"
+        aria-label="Days of the week"
+      >
+        {days.map((day) => {
+          const isSelected = isSameDay(day, focusedDay);
+          const isToday = isSameDay(day, new Date());
+          const dayEventCount = getEventsForDay(day).length;
+          return (
+            <button
+              key={day.toISOString()}
+              type="button"
+              role="tab"
+              aria-selected={isSelected}
+              aria-label={`${format(day, 'EEEE, MMMM d')}${
+                dayEventCount === 0
+                  ? ', no events'
+                  : dayEventCount === 1
+                    ? ', 1 event'
+                    : `, ${dayEventCount} events`
+              }`}
+              onClick={() => onSelectDay?.(day)}
+              className={`flex flex-col items-center gap-0.5 px-1 py-2.5 min-w-0 border-r border-gray-200 dark:border-gray-600/60 last:border-r-0 transition-colors ${
+                isSelected
+                  ? 'bg-primary-teal/15 dark:bg-primary-teal/25'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-700/50'
+              }`}
+            >
+              <span
+                className={`text-[10px] font-semibold uppercase ${
+                  isSelected ? 'text-primary-teal' : 'text-gray-500 dark:text-gray-400'
+                }`}
+              >
+                {format(day, 'EEE')}
+              </span>
+              <span
+                className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${
+                  isToday
+                    ? 'bg-primary-teal-solid text-white'
+                    : isSelected
+                      ? 'text-primary-teal'
+                      : 'text-gray-900 dark:text-gray-100'
+                }`}
+              >
+                {format(day, 'd')}
+              </span>
+              <span className="flex items-center justify-center gap-0.5 min-h-1.5" aria-hidden>
+                {dayEventCount > 0 ? (
+                  <span className="block w-1 h-1 rounded-full bg-primary-teal-solid" />
+                ) : (
+                  <span className="block w-1 h-1" />
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <DayView
+        date={focusedDay}
+        events={events}
+        getEventType={getEventType}
+        sheetNameById={sheetNameById}
+        onEventClick={onEventClick}
+        onEmptySlotClick={onEmptySlotClick}
+      />
+    </div>
+  );
+}
+
+function DesktopWeekView({
   rangeStart,
   events,
   getEventType,

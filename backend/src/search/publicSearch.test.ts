@@ -26,7 +26,6 @@ describe('staticPages', () => {
     expect(urls).toContain('/calendar/public');
     expect(urls).toContain('/donate');
     expect(urls).toContain('/contact');
-    expect(urls).toContain('/mailing-list/bonspiels');
   });
 });
 

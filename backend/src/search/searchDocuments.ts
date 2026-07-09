@@ -3,6 +3,7 @@ import { articleToSearchableText } from '../content/articleContentSearch.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { notArchivedCondition } from '../utils/softDelete.js';
 import { buildStaticPageDocuments } from './staticPages.js';
+import { buildMailingListSearchDocuments } from '../domains/content/mailingLists.js';
 import type { SearchDocument, SearchFingerprint } from './types.js';
 
 export const SEARCH_INDEX_VERSION = 1;
@@ -161,13 +162,43 @@ async function loadPublishedEventDocuments(): Promise<SearchDocument[]> {
   });
 }
 
+function mailingListPagesToSearchDocuments(
+  pages: Awaited<ReturnType<typeof buildMailingListSearchDocuments>>,
+): SearchDocument[] {
+  const now = Date.now();
+  return pages.map((page) => {
+    const plainText = `${page.description} ${page.keywords}`.trim();
+    return {
+      id: `page:${page.id}`,
+      type: 'page',
+      title: page.title,
+      url: page.url,
+      content: page.description,
+      keywords: page.keywords,
+      snippet: page.description,
+      plainText,
+      recencyMs: now,
+    };
+  });
+}
+
+async function loadMailingListPageDocuments(): Promise<SearchDocument[]> {
+  try {
+    const pages = await buildMailingListSearchDocuments();
+    return mailingListPagesToSearchDocuments(pages);
+  } catch {
+    return [];
+  }
+}
+
 export async function buildAllSearchDocuments(): Promise<SearchDocument[]> {
-  const [articles, events, pages] = await Promise.all([
+  const [articles, events, staticPages, mailingListPages] = await Promise.all([
     loadPublishedArticleDocuments(),
     loadPublishedEventDocuments(),
     Promise.resolve(buildStaticPageDocuments()),
+    loadMailingListPageDocuments(),
   ]);
-  return [...articles, ...events, ...pages];
+  return [...articles, ...events, ...staticPages, ...mailingListPages];
 }
 
 export async function computeSearchFingerprint(): Promise<SearchFingerprint> {
@@ -208,11 +239,17 @@ export async function computeSearchFingerprint(): Promise<SearchFingerprint> {
       ),
     );
 
+  const [mailingListStats] = await db
+    .select({
+      count: sql<number>`count(*)`,
+    })
+    .from(schema.mailingLists);
+
   return {
     version: SEARCH_INDEX_VERSION,
     articleCount: Number(articleStats?.count ?? 0),
     eventCount: Number(eventStats?.count ?? 0),
-    pageCount: buildStaticPageDocuments().length,
+    pageCount: buildStaticPageDocuments().length + Number(mailingListStats?.count ?? 0),
     maxArticleUpdatedAt: normalizeTimestamp(articleStats?.maxUpdatedAt ?? null),
     maxEventUpdatedAt: normalizeTimestamp(eventStats?.maxUpdatedAt ?? null),
   };

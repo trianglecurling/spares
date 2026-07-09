@@ -2,6 +2,33 @@ import { useEffect, useRef } from 'react';
 
 let isRedirectingFocus = false;
 
+function isFocusableElement(el: HTMLElement, container: HTMLElement): boolean {
+  if (!container.contains(el)) return false;
+
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden') return false;
+
+  if (el.closest('[aria-hidden="true"], [inert]')) return false;
+
+  return true;
+}
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selector = [
+    'button:not([disabled])',
+    'a[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[contenteditable="true"]',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(', ');
+
+  return Array.from(container.querySelectorAll<HTMLElement>(selector)).filter((el) =>
+    isFocusableElement(el, container),
+  );
+}
+
 export function useFocusTrap(isOpen: boolean) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
@@ -17,53 +44,34 @@ export function useFocusTrap(isOpen: boolean) {
 
     container.setAttribute('data-focus-trap', '');
 
-    // Get all focusable elements within the modal
-    const getFocusableElements = (): HTMLElement[] => {
-      const selector = [
-        'button:not([disabled])',
-        'a[href]',
-        'input:not([disabled])',
-        'select:not([disabled])',
-        'textarea:not([disabled])',
-        '[tabindex]:not([tabindex="-1"])',
-      ].join(', ');
-
-      return Array.from(container.querySelectorAll<HTMLElement>(selector)).filter((el) => {
-        // Filter out elements that are not visible
-        const style = window.getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden';
-      });
+    const focusInitialElement = () => {
+      const focusableElements = getFocusableElements(container);
+      focusableElements[0]?.focus();
     };
 
-    const focusableElements = getFocusableElements();
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-
-    // Focus the first element when modal opens
-    if (firstElement) {
-      firstElement.focus();
-    }
+    // Defer initial focus so children that mount after open are included in tab order.
+    const focusFrame = requestAnimationFrame(focusInitialElement);
 
     const handleTabKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
 
+      const focusableElements = getFocusableElements(container);
       if (focusableElements.length === 0) {
         e.preventDefault();
         return;
       }
 
+      const activeElement = document.activeElement as HTMLElement | null;
+      const activeIndex = activeElement ? focusableElements.indexOf(activeElement) : -1;
+
       if (e.shiftKey) {
-        // Shift+Tab: if focused on first element, move to last
-        if (document.activeElement === firstElement) {
+        if (activeIndex <= 0) {
           e.preventDefault();
-          lastElement?.focus();
+          focusableElements[focusableElements.length - 1]?.focus();
         }
-      } else {
-        // Tab: if focused on last element, move to first
-        if (document.activeElement === lastElement) {
-          e.preventDefault();
-          firstElement?.focus();
-        }
+      } else if (activeIndex === focusableElements.length - 1) {
+        e.preventDefault();
+        focusableElements[0]?.focus();
       }
     };
 
@@ -78,7 +86,7 @@ export function useFocusTrap(isOpen: boolean) {
         }
         isRedirectingFocus = true;
         e.preventDefault();
-        firstElement?.focus();
+        getFocusableElements(container)[0]?.focus();
         setTimeout(() => {
           isRedirectingFocus = false;
         }, 0);
@@ -89,8 +97,10 @@ export function useFocusTrap(isOpen: boolean) {
     document.addEventListener('focusin', handleFocus);
 
     return () => {
+      cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', handleTabKey);
       document.removeEventListener('focusin', handleFocus);
+      container.removeAttribute('data-focus-trap');
 
       // Restore focus to the previously focused element
       if (previousActiveElementRef.current) {

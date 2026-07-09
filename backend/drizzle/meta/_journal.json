@@ -148,6 +148,27 @@
       "when": 1780352498462,
       "tag": "0021_add_events_archived_at",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1780352498463,
+      "tag": "0022_add_mailing_lists",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780352498464,
+      "tag": "0023_mailing_list_comments_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780352498465,
+      "tag": "0024_add_mailing_list_welcome_email",
+      "breakpoints": true
     }
   ]
 }

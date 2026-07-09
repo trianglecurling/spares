@@ -14,6 +14,11 @@ interface LayoutProps {
   children: React.ReactNode;
   /** When true, main content uses full width (no max-w constraint) - for Calendar etc. */
   fullWidth?: boolean;
+  /**
+   * Lock the shell to the viewport and scroll only inside main.
+   * Used by the calendar so day/week hour grids can keep a fixed toolbar under the nav.
+   */
+  fillViewport?: boolean;
 }
 
 const MOBILE_MENU_ID = 'member-mobile-menu';
@@ -21,7 +26,7 @@ const MOBILE_MENU_ID = 'member-mobile-menu';
 const memberActiveNavLinkClass =
   'inline-flex items-center rounded-md px-2 py-1 text-sm font-medium bg-primary-teal-solid text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40';
 
-export default function Layout({ children, fullWidth }: LayoutProps) {
+export default function Layout({ children, fullWidth, fillViewport = false }: LayoutProps) {
   const location = useLocation();
   const { branding, loading: brandingLoading } = useSiteBranding();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -85,7 +90,11 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
   }, [profileMenuOpen]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+    <div
+      className={`bg-gray-50 dark:bg-gray-900 flex flex-col ${
+        fillViewport ? 'h-dvh max-h-dvh overflow-hidden' : 'min-h-screen'
+      }`}
+    >
       <SiteNavBar
         headerRef={headerRef}
         clubName={clubName}
@@ -134,14 +143,18 @@ export default function Layout({ children, fullWidth }: LayoutProps) {
       />
 
       <main
-        className={`mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full min-h-0 ${
-          fullWidth ? 'max-w-full flex flex-col overflow-hidden' : 'max-w-6xl'
+        className={`mx-auto px-4 sm:px-6 lg:px-8 w-full min-h-0 ${
+          fillViewport ? 'flex-1 overflow-hidden py-4 sm:py-8' : 'flex-grow py-8'
+        } ${
+          fullWidth || fillViewport
+            ? 'max-w-full flex flex-col overflow-hidden'
+            : 'max-w-6xl'
         }`}
       >
         {children}
       </main>
 
-      <Footer />
+      {fillViewport ? null : <Footer />}
     </div>
   );
 }

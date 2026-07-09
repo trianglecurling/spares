@@ -18,6 +18,7 @@ import PageTabs from '../../components/PageTabs';
 import AdminEventDetailsArticlePanel from './AdminEventDetailsArticlePanel';
 import AdminEventTournamentPanel from './AdminEventTournamentPanel';
 import AdminEventWaitlistPanel from './AdminEventWaitlistPanel';
+import type { TournamentTeamApi } from './AdminEventTournamentTeamModal';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
@@ -49,6 +50,13 @@ import {
   editorRegistrationFieldsToPreviewFields,
   storeEventRegistrationPreview,
 } from '../../utils/eventRegistrationPreviewSession';
+
+/** Same shape used by tournament team import; skip values that would break mailto/BCC lists. */
+const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmailAddress(email: string): boolean {
+  return EMAIL_ADDRESS_RE.test(email);
+}
 
 interface Timespan {
   startDt: string;
@@ -247,6 +255,10 @@ export default function AdminEventEditor() {
   const [teamFieldView, setTeamFieldView] = useState<{ registration: Registration; field: RegistrationField } | null>(
     null,
   );
+  const [tournamentTeams, setTournamentTeams] = useState<TournamentTeamApi[]>([]);
+  const [tournamentTeamsLoaded, setTournamentTeamsLoaded] = useState(false);
+  const [copyEmailsMenuOpen, setCopyEmailsMenuOpen] = useState(false);
+  const copyEmailsMenuRef = useRef<HTMLDivElement>(null);
 
   // Special links
   const [specialLinks, setSpecialLinks] = useState<SpecialLink[]>([]);
@@ -411,6 +423,9 @@ export default function AdminEventEditor() {
     setRegistrationSearch('');
     setRegistrationSortKey('date');
     setRegistrationSortOrder('desc');
+    setTournamentTeams([]);
+    setTournamentTeamsLoaded(false);
+    setCopyEmailsMenuOpen(false);
   }, [eventId]);
 
   useEffect(() => {
@@ -441,6 +456,28 @@ export default function AdminEventEditor() {
   }, [activeTab, eventId]);
 
   useEffect(() => {
+    if (activeTab !== 'registrations' || !eventId || !isBonspielEvent) {
+      setCopyEmailsMenuOpen(false);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ teams: TournamentTeamApi[] }>(`/events/${eventId}/tournament-teams`)
+      .then((res) => {
+        if (!cancelled) setTournamentTeams(res.data?.teams ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setTournamentTeams([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTournamentTeamsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, eventId, isBonspielEvent]);
+
+  useEffect(() => {
     if (activeTab !== 'registrations' || registrationsLoaded) {
       setShowRegistrationsSlowLoader(false);
       return;
@@ -450,6 +487,17 @@ export default function AdminEventEditor() {
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [activeTab, registrationsLoaded]);
+
+  useEffect(() => {
+    if (!copyEmailsMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (copyEmailsMenuRef.current?.contains(t)) return;
+      setCopyEmailsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [copyEmailsMenuOpen]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -1018,40 +1066,92 @@ export default function AdminEventEditor() {
     [copiedLinkId, getLinkUrl, revealedLinks]
   );
 
-  const copyRegistrantEmails = async () => {
+  const appendEmailRecipient = (
+    entries: string[],
+    seenEmails: Set<string>,
+    name: string,
+    emailRaw: string | null | undefined,
+  ) => {
+    const email = emailRaw?.trim() ?? '';
+    if (!email || !isValidEmailAddress(email)) return;
+    const emailKey = email.toLowerCase();
+    if (seenEmails.has(emailKey)) return;
+    seenEmails.add(emailKey);
+    const displayName = name.trim() || email;
+    entries.push(`"${displayName}" <${email}>`);
+  };
+
+  const buildRegistrantEmailEntries = () => {
     const entries: string[] = [];
-    const seen = new Set<string>();
+    const seenEmails = new Set<string>();
     registrations.forEach((registration) => {
-      const contactEmail = registration.contact_email?.trim();
-      if (contactEmail) {
-        const entry = `${registration.contact_name.trim()} <${contactEmail}>`;
-        if (!seen.has(entry.toLowerCase())) {
-          seen.add(entry.toLowerCase());
-          entries.push(entry);
-        }
-      }
+      appendEmailRecipient(entries, seenEmails, registration.contact_name, registration.contact_email);
       registration.groupMembers.forEach((member, index) => {
-        const email = member.email?.trim();
-        if (!email) return;
-        const name = member.name?.trim() || `Group member ${index + 1}`;
-        const entry = `${name} <${email}>`;
-        if (!seen.has(entry.toLowerCase())) {
-          seen.add(entry.toLowerCase());
-          entries.push(entry);
-        }
+        appendEmailRecipient(
+          entries,
+          seenEmails,
+          member.name?.trim() || `Group member ${index + 1}`,
+          member.email,
+        );
       });
     });
+    return entries;
+  };
+
+  const buildAllTeamEmailEntries = () => {
+    const entries: string[] = [];
+    const seenEmails = new Set<string>();
+    // Registrants first (covers contacts not on any team), then roster; dedupe by email.
+    registrations.forEach((registration) => {
+      appendEmailRecipient(entries, seenEmails, registration.contact_name, registration.contact_email);
+      registration.groupMembers.forEach((member, index) => {
+        appendEmailRecipient(
+          entries,
+          seenEmails,
+          member.name?.trim() || `Group member ${index + 1}`,
+          member.email,
+        );
+      });
+    });
+    tournamentTeams.forEach((team) => {
+      team.roster.forEach((slot, index) => {
+        appendEmailRecipient(
+          entries,
+          seenEmails,
+          slot.playerName?.trim() || `Team member ${index + 1}`,
+          slot.email,
+        );
+      });
+    });
+    return entries;
+  };
+
+  const copyEmailEntries = async (
+    entries: string[],
+    emptyMessage: string,
+    successMessage: string,
+  ) => {
     if (entries.length === 0) {
-      showAlert('No registrant emails to copy', 'warning');
+      showAlert(emptyMessage, 'warning');
       return;
     }
     try {
       await navigator.clipboard.writeText(entries.join(', '));
-      showAlert('Registrant emails copied', 'success');
+      showAlert(successMessage, 'success');
     } catch {
       showAlert('Failed to copy emails', 'error');
     }
   };
+
+  const copyRegistrantEmails = async () => {
+    await copyEmailEntries(buildRegistrantEmailEntries(), 'No registrant emails to copy', 'Registrant emails copied');
+  };
+
+  const copyAllTeamEmails = async () => {
+    await copyEmailEntries(buildAllTeamEmailEntries(), 'No team member emails to copy', 'Team member emails copied');
+  };
+
+  const showCopyEmailsDropdown = isBonspielEvent && tournamentTeamsLoaded && tournamentTeams.length > 0;
 
   const buildRegistrationsTsv = () => {
     const exportRegistrations = [...registrations].sort(compareRegistrations);
@@ -1889,8 +1989,8 @@ export default function AdminEventEditor() {
                 )}
               </FormSection>
 
-              {/* Actions */}
-              <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-600">
+              {/* Sticky so Cancel/Save stay in view on long settings forms (custom fields). */}
+              <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 bg-white/95 px-4 py-4 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.08)] backdrop-blur dark:border-gray-600 dark:bg-gray-800/95 dark:shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.35)] sm:-mx-6 sm:-mb-6 sm:px-6">
                 <Button type="button" variant="secondary" onClick={() => navigate('/admin/events')}>
                   Cancel
                 </Button>
@@ -1945,9 +2045,55 @@ export default function AdminEventEditor() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={copyRegistrantEmails} disabled={!registrationsLoaded}>
-                  Copy registrant emails
-                </Button>
+                {showCopyEmailsDropdown ? (
+                  <div className="relative inline-block" ref={copyEmailsMenuRef}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!registrationsLoaded}
+                      aria-expanded={copyEmailsMenuOpen}
+                      aria-haspopup="menu"
+                      onClick={() => setCopyEmailsMenuOpen((open) => !open)}
+                      className="gap-1.5"
+                    >
+                      Copy emails
+                      <HiChevronDown className="h-4 w-4" aria-hidden />
+                    </Button>
+                    {copyEmailsMenuOpen ? (
+                      <div
+                        className="absolute right-0 z-50 mt-2 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+                        role="menu"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                          onClick={() => {
+                            setCopyEmailsMenuOpen(false);
+                            void copyRegistrantEmails();
+                          }}
+                        >
+                          Copy registrant emails
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                          onClick={() => {
+                            setCopyEmailsMenuOpen(false);
+                            void copyAllTeamEmails();
+                          }}
+                        >
+                          Copy all team emails
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={copyRegistrantEmails} disabled={!registrationsLoaded}>
+                    Copy registrant emails
+                  </Button>
+                )}
                 <Button type="button" variant="secondary" onClick={handleOpenExportTsv} disabled={!registrationsLoaded}>
                   Export TSV
                 </Button>

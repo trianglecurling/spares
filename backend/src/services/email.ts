@@ -934,6 +934,45 @@ export async function sendWelcomeEmail(
   );
 }
 
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export async function sendMailingListSignupCommentEmail(input: {
+  recipientEmail: string;
+  listName: string;
+  subscriberName: string;
+  subscriberEmail: string;
+  comments: string;
+}): Promise<void> {
+  const safeListName = escapeHtml(input.listName);
+  const safeSubscriberName = escapeHtml(input.subscriberName);
+  const safeSubscriberEmail = escapeHtml(input.subscriberEmail);
+  const safeComments = escapeHtml(input.comments);
+
+  const htmlContent = `
+    <h2>New mailing list sign-up comment</h2>
+    <p>Someone joined <strong>${safeListName}</strong> and left a question or comment.</p>
+    <p><strong>Name:</strong> ${safeSubscriberName}</p>
+    <p><strong>Email:</strong> ${safeSubscriberEmail}</p>
+    <p><strong>Comment:</strong></p>
+    <pre style="white-space: pre-wrap; padding: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px;">${safeComments}</pre>
+  `;
+
+  await sendEmail({
+    to: input.recipientEmail,
+    subject: `[Mailing list] New comment on ${input.listName}`,
+    htmlContent,
+    recipientName: input.recipientEmail,
+    replyTo: input.subscriberEmail,
+  });
+}
+
 export interface ByeRequestEntry {
   drawDate: string;
   priority: number;

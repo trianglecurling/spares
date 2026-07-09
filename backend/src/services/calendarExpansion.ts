@@ -1,7 +1,9 @@
-import { eq, and, or, sql, asc, isNotNull, gte, lte } from 'drizzle-orm';
+import { eq, and, or, sql, asc, isNotNull, gte, lte, inArray } from 'drizzle-orm';
 import rrule from 'rrule';
+import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { computeLeagueDrawDatesInRange } from '../utils/leagueSchedule.js';
+import { localDateTimeToUtcDate } from '../utils/timeZone.js';
 
 const { RRule } = rrule;
 
@@ -84,62 +86,90 @@ export async function fetchDirectCalendarEventsForRange(
 ): Promise<ExpandedDirectCalendarEvent[]> {
   const { db, schema } = getDrizzleDb();
 
-  const sheetRows = await db
-    .select({ id: schema.sheets.id, name: schema.sheets.name })
-    .from(schema.sheets)
-    .orderBy(schema.sheets.sort_order, schema.sheets.name);
-  const sheetNameById = new Map(sheetRows.map((s) => [s.id, s.name]));
+  const rangeStartIso = rangeStart.toISOString();
+  const rangeEndIso = rangeEnd.toISOString();
+  const rangeStartDate = rangeStartIso.slice(0, 10);
+  const rangeEndDate = rangeEndIso.slice(0, 10);
 
-  const events = await db
-    .select()
-    .from(schema.calendarEvents)
-    .where(
-      and(
-        eq(schema.calendarEvents.source, 'direct'),
-        sql`${schema.calendarEvents.parent_event_id} IS NULL`,
-        sql`${schema.calendarEvents.recurrence_date} IS NULL`,
-        sql`${schema.calendarEvents.start_dt} <= ${rangeEnd.toISOString()}`,
-        or(
-          sql`${schema.calendarEvents.recurrence_rule} IS NOT NULL`,
-          sql`${schema.calendarEvents.end_dt} >= ${rangeStart.toISOString()}`
+  const calendarEventColumns = {
+    id: schema.calendarEvents.id,
+    type_id: schema.calendarEvents.type_id,
+    title: schema.calendarEvents.title,
+    start_dt: schema.calendarEvents.start_dt,
+    end_dt: schema.calendarEvents.end_dt,
+    all_day: schema.calendarEvents.all_day,
+    recurrence_rule: schema.calendarEvents.recurrence_rule,
+    parent_event_id: schema.calendarEvents.parent_event_id,
+    recurrence_date: schema.calendarEvents.recurrence_date,
+    description: schema.calendarEvents.description,
+    article_id: schema.calendarEvents.article_id,
+    created_by_member_id: schema.calendarEvents.created_by_member_id,
+  };
+
+  const [sheetRows, events, overrides] = await Promise.all([
+    db
+      .select({ id: schema.sheets.id, name: schema.sheets.name })
+      .from(schema.sheets)
+      .orderBy(schema.sheets.sort_order, schema.sheets.name),
+    db
+      .select(calendarEventColumns)
+      .from(schema.calendarEvents)
+      .where(
+        and(
+          eq(schema.calendarEvents.source, 'direct'),
+          sql`${schema.calendarEvents.parent_event_id} IS NULL`,
+          sql`${schema.calendarEvents.recurrence_date} IS NULL`,
+          sql`${schema.calendarEvents.start_dt} <= ${rangeEndIso}`,
+          or(
+            sql`${schema.calendarEvents.recurrence_rule} IS NOT NULL`,
+            sql`${schema.calendarEvents.end_dt} >= ${rangeStartIso}`
+          )
         )
-      )
-    );
+      ),
+    db
+      .select(calendarEventColumns)
+      .from(schema.calendarEvents)
+      .where(
+        and(
+          eq(schema.calendarEvents.source, 'direct'),
+          sql`${schema.calendarEvents.parent_event_id} IS NOT NULL`,
+          sql`${schema.calendarEvents.recurrence_date} IS NOT NULL`,
+          gte(schema.calendarEvents.recurrence_date, rangeStartDate),
+          lte(schema.calendarEvents.recurrence_date, rangeEndDate)
+        )
+      ),
+  ]);
 
-  const overrides = await db
-    .select()
-    .from(schema.calendarEvents)
-    .where(
-      and(
-        eq(schema.calendarEvents.source, 'direct'),
-        sql`${schema.calendarEvents.parent_event_id} IS NOT NULL`,
-        sql`${schema.calendarEvents.recurrence_date} IS NOT NULL`
-      )
-    );
+  const sheetNameById = new Map(sheetRows.map((s) => [s.id, s.name]));
+  const parentIds = events.map((e) => e.id);
 
   let exceptions: { parent_event_id: number; exception_date: string }[] = [];
-  if (events.length > 0) {
+  if (parentIds.length > 0) {
     exceptions = await db
-      .select()
+      .select({
+        parent_event_id: schema.calendarEventExceptions.parent_event_id,
+        exception_date: schema.calendarEventExceptions.exception_date,
+      })
       .from(schema.calendarEventExceptions)
-      .where(
-        sql`${schema.calendarEventExceptions.parent_event_id} IN (${sql.join(
-          events.map((e) => sql`${e.id}`),
-          sql`, `
-        )})`
-      );
+      .where(inArray(schema.calendarEventExceptions.parent_event_id, parentIds));
   }
 
   const exceptionSet = new Set(exceptions.map((ex) => `${ex.parent_event_id}:${ex.exception_date}`));
+  const overridesByParentDate = new Map(overrides.map((o) => [`${o.parent_event_id}:${o.recurrence_date}`, o]));
+  const parentIdSet = new Set(parentIds);
 
   const locationsByEventId = new Map<number, Array<{ type: string; sheet_id: number | null }>>();
   const eventIds = [...events.map((e) => e.id), ...overrides.map((o) => o.id)];
   if (eventIds.length > 0) {
     const uniqueIds = [...new Set(eventIds)];
     const locRows = await db
-      .select()
+      .select({
+        event_id: schema.calendarEventLocations.event_id,
+        location_type: schema.calendarEventLocations.location_type,
+        sheet_id: schema.calendarEventLocations.sheet_id,
+      })
       .from(schema.calendarEventLocations)
-      .where(sql`${schema.calendarEventLocations.event_id} IN (${sql.join(uniqueIds.map((id) => sql`${id}`), sql`, `)})`);
+      .where(inArray(schema.calendarEventLocations.event_id, uniqueIds));
 
     for (const loc of locRows) {
       const arr = locationsByEventId.get(loc.event_id) ?? [];
@@ -159,7 +189,7 @@ export async function fetchDirectCalendarEventsForRange(
     const creatorRows = await db
       .select({ id: members.id, name: members.name })
       .from(members)
-      .where(sql`${members.id} IN (${sql.join(uniqueCreatorIds.map((id) => sql`${id}`), sql`, `)})`);
+      .where(inArray(members.id, uniqueCreatorIds));
     for (const m of creatorRows) {
       creatorNameById.set(m.id, m.name);
     }
@@ -175,21 +205,26 @@ export async function fetchDirectCalendarEventsForRange(
     const articleRows = await db
       .select({ id: schema.articles.id, title: schema.articles.title, slug: schema.articles.slug })
       .from(schema.articles)
-      .where(sql`${schema.articles.id} IN (${sql.join(uniqueArticleIds.map((id) => sql`${id}`), sql`, `)})`);
+      .where(inArray(schema.articles.id, uniqueArticleIds));
     for (const a of articleRows) {
       articleById.set(a.id, a);
     }
   }
 
-  const result: ExpandedDirectCalendarEvent[] = [];
-
-  for (const ev of events) {
-    const locs = (locationsByEventId.get(ev.id) ?? []).map((l) => {
+  const mapLocations = (eventId: number) => {
+    const locs = (locationsByEventId.get(eventId) ?? []).map((l) => {
       if (l.type === 'sheet' && l.sheet_id) {
         return { type: 'sheet' as const, sheetId: l.sheet_id, sheetName: sheetNameById.get(l.sheet_id) };
       }
       return { type: l.type as 'warm-room' | 'exterior' | 'offsite' | 'virtual' };
     });
+    return locs.length > 0 ? locs : undefined;
+  };
+
+  const result: ExpandedDirectCalendarEvent[] = [];
+
+  for (const ev of events) {
+    const locs = mapLocations(ev.id);
 
     if (ev.recurrence_rule) {
       const expanded = expandRecurrence(
@@ -202,7 +237,7 @@ export async function fetchDirectCalendarEventsForRange(
       );
       for (const inc of expanded) {
         const incDate = inc.start.slice(0, 10);
-        const override = overrides.find((o) => o.parent_event_id === ev.id && o.recurrence_date === incDate);
+        const override = overridesByParentDate.get(`${ev.id}:${incDate}`);
         if (exceptionSet.has(`${ev.id}:${incDate}`) && !override) continue;
         const instStart = new Date(inc.start);
         const instEnd = new Date(inc.end);
@@ -220,7 +255,7 @@ export async function fetchDirectCalendarEventsForRange(
           end: useEnd,
           allDay: useEv.all_day === 1,
           description: useEv.description ?? ev.description ?? undefined,
-          locations: locs.length > 0 ? locs : undefined,
+          locations: locs,
           source: 'direct',
           isRecurring: true,
           recurrenceDate: incDate,
@@ -241,7 +276,7 @@ export async function fetchDirectCalendarEventsForRange(
         end: ev.end_dt,
         allDay: ev.all_day === 1,
         description: ev.description ?? undefined,
-        locations: locs.length > 0 ? locs : undefined,
+        locations: locs,
         source: 'direct',
         createdBy: ev.created_by_member_id != null ? creatorNameById.get(ev.created_by_member_id) : undefined,
         article: ev.article_id != null ? articleById.get(ev.article_id) : undefined,
@@ -250,13 +285,7 @@ export async function fetchDirectCalendarEventsForRange(
   }
 
   for (const ov of overrides) {
-    if (ov.parent_event_id && !events.some((e) => e.id === ov.parent_event_id)) {
-      const locs = (locationsByEventId.get(ov.id) ?? []).map((l) => {
-        if (l.type === 'sheet' && l.sheet_id) {
-          return { type: 'sheet' as const, sheetId: l.sheet_id, sheetName: sheetNameById.get(l.sheet_id) };
-        }
-        return { type: l.type as 'warm-room' | 'exterior' | 'offsite' | 'virtual' };
-      });
+    if (ov.parent_event_id && !parentIdSet.has(ov.parent_event_id)) {
       result.push({
         id: toEventId(ov),
         typeId: ov.type_id,
@@ -265,7 +294,7 @@ export async function fetchDirectCalendarEventsForRange(
         end: ov.end_dt,
         allDay: ov.all_day === 1,
         description: ov.description ?? undefined,
-        locations: locs.length > 0 ? locs : undefined,
+        locations: mapLocations(ov.id),
         source: 'direct',
         isRecurring: true,
         recurrenceDate: ov.recurrence_date ?? undefined,
@@ -280,51 +309,101 @@ export async function fetchDirectCalendarEventsForRange(
 
 const LEAGUE_DRAW_DURATION_HOURS = 2;
 
+function toDateOnlyString(value: string | Date): string {
+  return typeof value === 'string' ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+}
+
+function toTimeOnlyString(value: string | Date): string {
+  if (typeof value === 'string') return value.slice(0, 5);
+  return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}`;
+}
+
 export async function fetchLeagueCalendarEventsForRange(
   rangeStart: Date,
   rangeEnd: Date
 ): Promise<ExpandedLeagueCalendarEvent[]> {
   const { db, schema } = getDrizzleDb();
 
-  const sheetRows = await db
-    .select({ id: schema.sheets.id, name: schema.sheets.name })
-    .from(schema.sheets)
-    .orderBy(schema.sheets.sort_order, schema.sheets.name);
-  const sheetNameById = new Map(sheetRows.map((s) => [s.id, s.name]));
-
-  const leagues = await db.select().from(schema.leagues).orderBy(schema.leagues.day_of_week, schema.leagues.name);
-
   const rangeStartStr = rangeStart.toISOString().slice(0, 10);
   const rangeEndStr = rangeEnd.toISOString().slice(0, 10);
-  const scheduledGamesInRange = await db
-    .select({
-      league_id: schema.games.league_id,
-      game_date: schema.games.game_date,
-      game_time: schema.games.game_time,
-      sheet_id: schema.games.sheet_id,
-      sheet_name: schema.sheets.name,
-    })
-    .from(schema.games)
-    .leftJoin(schema.sheets, eq(schema.games.sheet_id, schema.sheets.id))
-    .where(
-      and(
-        gte(schema.games.game_date, rangeStartStr),
-        lte(schema.games.game_date, rangeEndStr),
-        isNotNull(schema.games.sheet_id)
-      )
-    );
+
+  const [sheetRows, leagues, scheduledGamesInRange] = await Promise.all([
+    db
+      .select({ id: schema.sheets.id, name: schema.sheets.name })
+      .from(schema.sheets)
+      .orderBy(schema.sheets.sort_order, schema.sheets.name),
+    db
+      .select({
+        id: schema.leagues.id,
+        name: schema.leagues.name,
+        day_of_week: schema.leagues.day_of_week,
+        start_date: schema.leagues.start_date,
+        end_date: schema.leagues.end_date,
+      })
+      .from(schema.leagues)
+      .where(and(lte(schema.leagues.start_date, rangeEndStr), gte(schema.leagues.end_date, rangeStartStr)))
+      .orderBy(schema.leagues.day_of_week, schema.leagues.name),
+    db
+      .select({
+        league_id: schema.games.league_id,
+        game_date: schema.games.game_date,
+        game_time: schema.games.game_time,
+        sheet_id: schema.games.sheet_id,
+        sheet_name: schema.sheets.name,
+      })
+      .from(schema.games)
+      .leftJoin(schema.sheets, eq(schema.games.sheet_id, schema.sheets.id))
+      .where(
+        and(
+          gte(schema.games.game_date, rangeStartStr),
+          lte(schema.games.game_date, rangeEndStr),
+          isNotNull(schema.games.sheet_id)
+        )
+      ),
+  ]);
+
+  if (leagues.length === 0) return [];
+
+  const sheetNameById = new Map(sheetRows.map((s) => [s.id, s.name]));
+  const leagueIds = leagues.map((league) => league.id);
+
+  const [drawTimeRows, exceptionRows] = await Promise.all([
+    db
+      .select({
+        league_id: schema.leagueDrawTimes.league_id,
+        draw_time: schema.leagueDrawTimes.draw_time,
+      })
+      .from(schema.leagueDrawTimes)
+      .where(inArray(schema.leagueDrawTimes.league_id, leagueIds))
+      .orderBy(asc(schema.leagueDrawTimes.league_id), asc(schema.leagueDrawTimes.draw_time)),
+    db
+      .select({
+        league_id: schema.leagueExceptions.league_id,
+        exception_date: schema.leagueExceptions.exception_date,
+      })
+      .from(schema.leagueExceptions)
+      .where(inArray(schema.leagueExceptions.league_id, leagueIds)),
+  ]);
+
+  const drawTimesByLeagueId = new Map<number, Array<string | Date>>();
+  for (const row of drawTimeRows) {
+    const list = drawTimesByLeagueId.get(row.league_id) ?? [];
+    list.push(row.draw_time);
+    drawTimesByLeagueId.set(row.league_id, list);
+  }
+
+  const exceptionsByLeagueId = new Map<number, Set<string>>();
+  for (const row of exceptionRows) {
+    const set = exceptionsByLeagueId.get(row.league_id) ?? new Set<string>();
+    set.add(toDateOnlyString(row.exception_date));
+    exceptionsByLeagueId.set(row.league_id, set);
+  }
 
   const sheetsByDraw = new Map<string, Array<{ sheetId: number; sheetName?: string }>>();
   for (const row of scheduledGamesInRange) {
     if (row.sheet_id == null || row.game_date == null || row.game_time == null) continue;
-    const dateStr =
-      typeof row.game_date === 'string'
-        ? row.game_date.slice(0, 10)
-        : (row.game_date as Date).toISOString().slice(0, 10);
-    const timeStr =
-      typeof row.game_time === 'string'
-        ? row.game_time.slice(0, 5)
-        : `${String((row.game_time as Date).getUTCHours()).padStart(2, '0')}:${String((row.game_time as Date).getUTCMinutes()).padStart(2, '0')}`;
+    const dateStr = toDateOnlyString(row.game_date);
+    const timeStr = toTimeOnlyString(row.game_time);
     const key = `${row.league_id}:${dateStr}:${timeStr}`;
     const arr = sheetsByDraw.get(key) ?? [];
     if (!arr.some((s) => s.sheetId === row.sheet_id)) {
@@ -339,32 +418,10 @@ export async function fetchLeagueCalendarEventsForRange(
   const result: ExpandedLeagueCalendarEvent[] = [];
 
   for (const league of leagues) {
-    const drawTimes = await db
-      .select({ draw_time: schema.leagueDrawTimes.draw_time })
-      .from(schema.leagueDrawTimes)
-      .where(eq(schema.leagueDrawTimes.league_id, league.id))
-      .orderBy(asc(schema.leagueDrawTimes.draw_time));
-
-    const exceptionRows = await db
-      .select({ exception_date: schema.leagueExceptions.exception_date })
-      .from(schema.leagueExceptions)
-      .where(eq(schema.leagueExceptions.league_id, league.id));
-    const exceptions = new Set(
-      exceptionRows.map((ex) =>
-        typeof ex.exception_date === 'string'
-          ? ex.exception_date.slice(0, 10)
-          : (ex.exception_date as Date).toISOString().slice(0, 10)
-      )
-    );
-
-    const startDateStr =
-      typeof league.start_date === 'string'
-        ? league.start_date.slice(0, 10)
-        : (league.start_date as Date).toISOString().slice(0, 10);
-    const endDateStr =
-      typeof league.end_date === 'string'
-        ? league.end_date.slice(0, 10)
-        : (league.end_date as Date).toISOString().slice(0, 10);
+    const drawTimes = drawTimesByLeagueId.get(league.id) ?? [];
+    const exceptions = exceptionsByLeagueId.get(league.id) ?? new Set<string>();
+    const startDateStr = toDateOnlyString(league.start_date);
+    const endDateStr = toDateOnlyString(league.end_date);
 
     const drawDates = computeLeagueDrawDatesInRange(
       startDateStr,
@@ -376,14 +433,11 @@ export async function fetchLeagueCalendarEventsForRange(
     );
 
     for (const dateStr of drawDates) {
-      for (const row of drawTimes) {
-        const rawTime = row.draw_time;
-        const timeStr =
-          typeof rawTime === 'string'
-            ? rawTime.slice(0, 5)
-            : `${String((rawTime as Date).getUTCHours()).padStart(2, '0')}:${String((rawTime as Date).getUTCMinutes()).padStart(2, '0')}`;
-        const startIso = `${dateStr}T${timeStr}:00`;
-        const startDate = new Date(startIso);
+      for (const rawTime of drawTimes) {
+        const timeStr = toTimeOnlyString(rawTime);
+        // Draw times are club wall-clock values (config.timeZone), not UTC.
+        const startDate = localDateTimeToUtcDate(dateStr, timeStr, config.timeZone);
+        if (Number.isNaN(startDate.getTime())) continue;
         const endDate = new Date(startDate.getTime() + LEAGUE_DRAW_DURATION_HOURS * 60 * 60 * 1000);
 
         if (endDate <= rangeStart || startDate >= rangeEnd) continue;

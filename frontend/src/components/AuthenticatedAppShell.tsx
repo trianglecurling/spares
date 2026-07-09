@@ -17,6 +17,9 @@ const FULL_WIDTH_ROUTE_PATTERNS = [
   '/admin/events/:id/details',
 ] as const;
 
+/** Paths that lock the shell to the viewport (internal scroll only). */
+const FILL_VIEWPORT_ROUTE_PATTERNS = ['/calendar'] as const;
+
 function useAppShellLayoutOptions() {
   const { pathname } = useLocation();
 
@@ -28,11 +31,15 @@ function useAppShellLayoutOptions() {
     matchPath({ path: pattern, end: pattern !== '/calendar/*' }, pathname),
   );
 
-  return { bare, fullWidth };
+  const fillViewport = FILL_VIEWPORT_ROUTE_PATTERNS.some((pattern) =>
+    matchPath({ path: pattern, end: true }, pathname),
+  );
+
+  return { bare, fullWidth, fillViewport };
 }
 
 export default function AuthenticatedAppShell() {
-  const { bare, fullWidth } = useAppShellLayoutOptions();
+  const { bare, fullWidth, fillViewport } = useAppShellLayoutOptions();
 
   const outlet = (
     <Suspense fallback={<AppStateCard title="Loading..." />}>
@@ -40,5 +47,9 @@ export default function AuthenticatedAppShell() {
     </Suspense>
   );
 
-  return bare ? outlet : <Layout fullWidth={fullWidth}>{outlet}</Layout>;
+  return bare ? outlet : (
+    <Layout fullWidth={fullWidth} fillViewport={fillViewport}>
+      {outlet}
+    </Layout>
+  );
 }

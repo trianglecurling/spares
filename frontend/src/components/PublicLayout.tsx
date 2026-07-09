@@ -61,6 +61,11 @@ interface PublicLayoutProps {
   initialSiteConfig?: SiteConfig | null;
   initialMenuItems?: NavMenuItemNode[];
   deferPublicBootstrapLoad?: boolean;
+  /**
+   * Lock the shell to the viewport and scroll only inside main.
+   * Used by the public calendar so day/week hour grids keep a fixed toolbar.
+   */
+  fillViewport?: boolean;
 }
 
 let cachedMenuItems: NavMenuItemNode[] = [];
@@ -81,6 +86,7 @@ export default function PublicLayout({
   initialSiteConfig,
   initialMenuItems,
   deferPublicBootstrapLoad = false,
+  fillViewport = false,
 }: PublicLayoutProps) {
   const { isLoading, isLikelyAuthenticated } = useAuth();
   const { branding } = useSiteBranding();
@@ -183,7 +189,11 @@ export default function PublicLayout({
     };
 
   return (
-    <div className="public-shell min-h-screen flex flex-col">
+    <div
+      className={`public-shell flex flex-col ${
+        fillViewport ? 'h-dvh max-h-dvh overflow-hidden' : 'min-h-screen'
+      }`}
+    >
       <SiteNavBar
         clubName={clubName}
         logoUrl={siteConfig?.logoUrl ?? null}
@@ -270,8 +280,11 @@ export default function PublicLayout({
         }
       />
 
-      <main className="flex-1 min-h-0 flex flex-col">{children}</main>
+      <main className={`flex-1 min-h-0 flex flex-col ${fillViewport ? 'overflow-hidden' : ''}`}>
+        {children}
+      </main>
 
+      {fillViewport ? null : (
       <footer className="border-t border-gray-200 bg-gradient-to-b from-gray-50 to-white py-10">
         <div className="public-container grid gap-8 md:grid-cols-3">
           <div className="space-y-2">
@@ -359,6 +372,7 @@ export default function PublicLayout({
           Website powered by The Broom Stack
         </p>
       </footer>
+      )}
     </div>
   );
 }

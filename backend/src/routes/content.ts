@@ -11,6 +11,7 @@ import {
 import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
+import { listMailingLists, getMailingListById } from '../domains/content/mailingLists.js';
 
 async function ensureGeneratedCss(content: string, contentType: string): Promise<string> {
   if (contentType !== 'html') return content;
@@ -139,6 +140,47 @@ const contactRecipientUpdateSchema = z.object({
 const contactRecipientsReorderSchema = z.object({
   updates: z.array(z.object({ id: z.number(), sortOrder: z.number() })).min(1),
 });
+
+const mailingListSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
+
+const mailingListCreateSchema = z.object({
+  slug: mailingListSlugSchema,
+  mauticSegmentId: z.number().int().positive(),
+  mauticWelcomeEmailId: z.number().int().positive().optional().nullable(),
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().min(1).max(2000),
+  includeQuestionsComments: z.boolean().optional(),
+  commentsRecipientEmail: z.string().trim().email().max(320).optional().nullable(),
+});
+
+const mailingListUpdateSchema = z.object({
+  mauticSegmentId: z.number().int().positive().optional(),
+  mauticWelcomeEmailId: z.number().int().positive().optional().nullable(),
+  name: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().min(1).max(2000).optional(),
+  includeQuestionsComments: z.boolean().optional(),
+  commentsRecipientEmail: z.string().trim().email().max(320).optional().nullable(),
+});
+
+function normalizeMauticWelcomeEmailId(value: number | null | undefined): number | null {
+  if (value == null || value <= 0) return null;
+  return value;
+}
+
+function normalizeCommentsRecipientEmail(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function validateMailingListCommentsRecipient(input: {
+  includeQuestionsComments: boolean;
+  commentsRecipientEmail: string | null;
+}): string | null {
+  if (input.includeQuestionsComments && !input.commentsRecipientEmail) {
+    return 'Send comments to email is required when questions and comments are enabled.';
+  }
+  return null;
+}
 
 function mapContactRecipientRow(row: {
   id: number;
@@ -1418,6 +1460,132 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .where(eq(schema.publicContactRecipients.id, id))
       .returning({ id: schema.publicContactRecipients.id });
     if (deleted.length === 0) return reply.code(404).send({ error: 'Contact not found' });
+    return { success: true };
+  });
+
+  // Mailing lists (public sign-up pages connected to Mautic segments)
+  fastify.get('/content/mailing-lists', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    return listMailingLists();
+  });
+
+  fastify.post('/content/mailing-lists', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const parsed = mailingListCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+    const includeQuestionsComments = body.includeQuestionsComments === true;
+    const commentsRecipientEmail = includeQuestionsComments
+      ? normalizeCommentsRecipientEmail(body.commentsRecipientEmail)
+      : null;
+    const commentsError = validateMailingListCommentsRecipient({
+      includeQuestionsComments,
+      commentsRecipientEmail,
+    });
+    if (commentsError) {
+      return reply.code(400).send({ error: commentsError });
+    }
+    const { db, schema } = getDrizzleDb();
+    try {
+      const [row] = await db
+        .insert(schema.mailingLists)
+        .values({
+          slug: body.slug.trim().toLowerCase(),
+          mautic_segment_id: body.mauticSegmentId,
+          mautic_welcome_email_id: normalizeMauticWelcomeEmailId(body.mauticWelcomeEmailId),
+          comments_recipient_email: commentsRecipientEmail,
+          name: body.name,
+          description: body.description,
+          include_questions_comments: includeQuestionsComments ? 1 : 0,
+        })
+        .returning();
+      if (!row) return reply.code(500).send({ error: 'Failed to create mailing list' });
+      markSearchIndexDirty();
+      const allRows = await listMailingLists();
+      const createdRow = allRows.find((item) => item.id === row.id);
+      if (!createdRow) return reply.code(500).send({ error: 'Failed to load mailing list' });
+      return createdRow;
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        return reply.code(409).send({ error: 'A mailing list with this slug already exists' });
+      }
+      throw error;
+    }
+  });
+
+  fastify.patch<{ Params: { id: string } }>('/content/mailing-lists/:id', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const id = parseInt(request.params.id, 10);
+    if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    const parsed = mailingListUpdateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+    const existing = await getMailingListById(id);
+    if (!existing) return reply.code(404).send({ error: 'Mailing list not found' });
+
+    const includeQuestionsComments =
+      body.includeQuestionsComments !== undefined
+        ? body.includeQuestionsComments
+        : existing.includeQuestionsComments;
+    const commentsRecipientEmail =
+      body.commentsRecipientEmail !== undefined
+        ? normalizeCommentsRecipientEmail(body.commentsRecipientEmail)
+        : includeQuestionsComments
+          ? existing.commentsRecipientEmail
+          : null;
+    const commentsError = validateMailingListCommentsRecipient({
+      includeQuestionsComments,
+      commentsRecipientEmail,
+    });
+    if (commentsError) {
+      return reply.code(400).send({ error: commentsError });
+    }
+
+    const updates: Record<string, unknown> = { updated_at: new Date() };
+    if (body.mauticSegmentId !== undefined) updates.mautic_segment_id = body.mauticSegmentId;
+    if (body.mauticWelcomeEmailId !== undefined) {
+      updates.mautic_welcome_email_id = normalizeMauticWelcomeEmailId(body.mauticWelcomeEmailId);
+    }
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.includeQuestionsComments !== undefined) {
+      updates.include_questions_comments = body.includeQuestionsComments ? 1 : 0;
+    }
+    if (body.includeQuestionsComments !== undefined || body.commentsRecipientEmail !== undefined) {
+      updates.comments_recipient_email = includeQuestionsComments ? commentsRecipientEmail : null;
+    }
+    if (Object.keys(updates).length === 1) {
+      return reply.code(400).send({ error: 'No fields to update' });
+    }
+    const { db, schema } = getDrizzleDb();
+    const [row] = await db
+      .update(schema.mailingLists)
+      .set(updates)
+      .where(eq(schema.mailingLists.id, id))
+      .returning();
+    if (!row) return reply.code(404).send({ error: 'Mailing list not found' });
+    markSearchIndexDirty();
+    const allRows = await listMailingLists();
+    const updatedRow = allRows.find((item) => item.id === row.id);
+    if (!updatedRow) return reply.code(404).send({ error: 'Mailing list not found' });
+    return updatedRow;
+  });
+
+  fastify.delete<{ Params: { id: string } }>('/content/mailing-lists/:id', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const id = parseInt(request.params.id, 10);
+    if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    const { db, schema } = getDrizzleDb();
+    const deleted = await db
+      .delete(schema.mailingLists)
+      .where(eq(schema.mailingLists.id, id))
+      .returning({ id: schema.mailingLists.id });
+    if (deleted.length === 0) return reply.code(404).send({ error: 'Mailing list not found' });
+    markSearchIndexDirty();
     return { success: true };
   });
 }

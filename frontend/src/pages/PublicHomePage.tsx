@@ -669,15 +669,6 @@ export default function PublicHomePage() {
                           <p className="public-display truncate text-lg font-semibold text-gray-900">{ev.title}</p>
                           <p className="mt-0.5 text-sm text-gray-500">{dates.fullLabel}</p>
                         </div>
-                        {ev.eventSlug ? (
-                          <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-primary-teal-link max-sm:hidden">
-                            Details and registration
-                            <HiArrowRight
-                              className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
-                              aria-hidden
-                            />
-                          </span>
-                        ) : null}
                       </>
                     );
                     return (

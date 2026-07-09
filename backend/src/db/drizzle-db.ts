@@ -78,6 +78,7 @@ type PgSchema = {
   permalinkHits: typeof pgSchema.permalinkHitsPg;
   siteConfig: typeof pgSchema.siteConfigPg;
   publicContactRecipients: typeof pgSchema.publicContactRecipientsPg;
+  mailingLists: typeof pgSchema.mailingListsPg;
   showcaseImages: typeof pgSchema.showcaseImagesPg;
   menuItems: typeof pgSchema.menuItemsPg;
   files: typeof pgSchema.filesPg;
@@ -201,6 +202,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       permalinkHits: sqliteSchema.permalinkHitsSqlite,
       siteConfig: sqliteSchema.siteConfigSqlite,
       publicContactRecipients: sqliteSchema.publicContactRecipientsSqlite,
+      mailingLists: sqliteSchema.mailingListsSqlite,
       showcaseImages: sqliteSchema.showcaseImagesSqlite,
       menuItems: sqliteSchema.menuItemsSqlite,
       files: sqliteSchema.filesSqlite,
@@ -315,6 +317,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       permalinkHits: pgSchema.permalinkHitsPg,
       siteConfig: pgSchema.siteConfigPg,
       publicContactRecipients: pgSchema.publicContactRecipientsPg,
+      mailingLists: pgSchema.mailingListsPg,
       showcaseImages: pgSchema.showcaseImagesPg,
       menuItems: pgSchema.menuItemsPg,
       files: pgSchema.filesPg,

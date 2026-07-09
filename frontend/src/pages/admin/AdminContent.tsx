@@ -24,9 +24,10 @@ import FormSection from '../../components/FormSection';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import AdminContentPermalinksPanel, { type PermalinkAdminRow } from './AdminContentPermalinksPanel';
 import AdminContentContactsPanel, { type PublicContactRecipientAdminRow } from './AdminContentContactsPanel';
+import AdminContentMailingListsPanel, { type MailingListAdminRow } from './AdminContentMailingListsPanel';
 import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 
-type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks' | 'contacts';
+type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks' | 'contacts' | 'mailing-lists';
 type MenuItem = {
   id: number;
   menuType: string;
@@ -180,7 +181,7 @@ function extractReferencedFileIds(content: string): number[] {
   return Array.from(ids.values());
 }
 
-const VALID_TABS: Tab[] = ['articles', 'home', 'menus', 'site', 'showcase', 'files', 'permalinks', 'contacts'];
+const VALID_TABS: Tab[] = ['articles', 'home', 'menus', 'site', 'showcase', 'files', 'permalinks', 'contacts', 'mailing-lists'];
 
 /** ISO timestamp -> value for a `datetime-local` input in the admin's local time zone. */
 function isoToLocalDateTimeInput(value: string | null): string {
@@ -237,6 +238,9 @@ export default function AdminContent() {
   const [contactRecipients, setContactRecipients] = useState<PublicContactRecipientAdminRow[]>([]);
   const [contactsLoaded, setContactsLoaded] = useState(false);
   const [contactsLoading, setContactsLoading] = useState(false);
+  const [mailingLists, setMailingLists] = useState<MailingListAdminRow[]>([]);
+  const [mailingListsLoaded, setMailingListsLoaded] = useState(false);
+  const [mailingListsLoading, setMailingListsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -385,11 +389,31 @@ export default function AdminContent() {
     }
   }, [showAlert]);
 
+  const loadMailingLists = useCallback(async () => {
+    setMailingListsLoading(true);
+    try {
+      const res = await api.get<MailingListAdminRow[]>('/content/mailing-lists');
+      setMailingLists(res.data);
+      setMailingListsLoaded(true);
+    } catch {
+      showAlert('Failed to load mailing lists', 'error');
+      setMailingListsLoaded(true);
+    } finally {
+      setMailingListsLoading(false);
+    }
+  }, [showAlert]);
+
   useEffect(() => {
     if (activeTab !== 'contacts') return;
     if (contactsLoaded) return;
     void loadContactRecipients();
   }, [activeTab, contactsLoaded, loadContactRecipients]);
+
+  useEffect(() => {
+    if (activeTab !== 'mailing-lists') return;
+    if (mailingListsLoaded) return;
+    void loadMailingLists();
+  }, [activeTab, mailingListsLoaded, loadMailingLists]);
 
   const loadContentData = useCallback(async () => {
     const requestId = loadDataRequestIdRef.current + 1;
@@ -1083,6 +1107,7 @@ export default function AdminContent() {
     { id: 'files', label: 'Files' },
     { id: 'permalinks', label: 'Permalinks' },
     { id: 'contacts', label: 'Contacts' },
+    { id: 'mailing-lists', label: 'Mailing lists' },
   ];
 
   const handleBulkDeleteFiles = async () => {
@@ -1279,7 +1304,7 @@ export default function AdminContent() {
           }))}
         />
 
-        {activeTab !== 'files' && activeTab !== 'contacts' && loading ? (
+        {activeTab !== 'files' && activeTab !== 'contacts' && activeTab !== 'mailing-lists' && loading ? (
           <p className="text-gray-500">Loading...</p>
         ) : (
           <>
@@ -2404,6 +2429,16 @@ export default function AdminContent() {
                 saving={saving}
                 onSavingChange={setSaving}
                 onRefresh={loadContactRecipients}
+              />
+            )}
+
+            {activeTab === 'mailing-lists' && (
+              <AdminContentMailingListsPanel
+                rows={mailingLists}
+                loading={mailingListsLoading && !mailingListsLoaded}
+                saving={saving}
+                onSavingChange={setSaving}
+                onRefresh={loadMailingLists}
               />
             )}
           </>

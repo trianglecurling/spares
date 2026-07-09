@@ -1547,6 +1547,22 @@ export const publicContactRecipientsSqlite = sqliteTable('public_contact_recipie
   sortIdx: index('idx_public_contact_recipients_sort_order').on(table.sort_order),
 }));
 
+// Public mailing list sign-up pages (Mautic segment connections)
+export const mailingListsSqlite = sqliteTable('mailing_lists', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  slug: text('slug').notNull().unique(),
+  mautic_segment_id: integer('mautic_segment_id').notNull(),
+  mautic_welcome_email_id: integer('mautic_welcome_email_id'),
+  comments_recipient_email: text('comments_recipient_email'),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+  include_questions_comments: integer('include_questions_comments').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  slugIdx: index('idx_mailing_lists_slug').on(table.slug),
+}));
+
 // Showcase images for homepage (URLs only)
 export const showcaseImagesSqlite = sqliteTable('showcase_images', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -3328,6 +3344,21 @@ export const publicContactRecipientsPg = pgTable('public_contact_recipients', {
   sortIdx: indexPg('idx_public_contact_recipients_sort_order').on(table.sort_order),
 }));
 
+export const mailingListsPg = pgTable('mailing_lists', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  slug: textPg('slug').notNull().unique(),
+  mautic_segment_id: integerPg('mautic_segment_id').notNull(),
+  mautic_welcome_email_id: integerPg('mautic_welcome_email_id'),
+  comments_recipient_email: textPg('comments_recipient_email'),
+  name: textPg('name').notNull(),
+  description: textPg('description').notNull(),
+  include_questions_comments: integerPg('include_questions_comments').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  slugIdx: indexPg('idx_mailing_lists_slug').on(table.slug),
+}));
+
 export const showcaseImagesPg = pgTable('showcase_images', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   url: textPg('url').notNull(),
@@ -3825,6 +3856,7 @@ export const sqliteSchema = {
   permalinkHits: permalinkHitsSqlite,
   siteConfig: siteConfigSqlite,
   publicContactRecipients: publicContactRecipientsSqlite,
+  mailingLists: mailingListsSqlite,
   showcaseImages: showcaseImagesSqlite,
   menuItems: menuItemsSqlite,
   files: filesSqlite,
@@ -3925,6 +3957,7 @@ export const pgSchema = {
   permalinkHits: permalinkHitsPg,
   siteConfig: siteConfigPg,
   publicContactRecipients: publicContactRecipientsPg,
+  mailingLists: mailingListsPg,
   showcaseImages: showcaseImagesPg,
   menuItems: menuItemsPg,
   files: filesPg,

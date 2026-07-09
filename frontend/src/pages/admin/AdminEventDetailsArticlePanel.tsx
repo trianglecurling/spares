@@ -14,6 +14,7 @@ import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import InlineStateMessage from '../../components/InlineStateMessage';
+import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
 
 type UploadedFile = { id: number; publicUrl: string };
 type ArticleResponse = {
@@ -252,6 +253,23 @@ th { font-weight: 600; background: #f3f4f6; }
     form.contentType === 'markdown'
       ? (editorRef.current?.getMarkdown?.() ?? form.content)
       : JSON.stringify(htmlEditorRef.current?.getValue?.() ?? { html: '', css: '', js: '' });
+
+  const handleDraftPreview = () => {
+    const content = getCurrentEditorContent();
+    const k = storeArticleDraftPreview({
+      title: form.title,
+      slug: form.slug,
+      contentType: form.contentType,
+      content,
+      snippet: form.snippet.trim() || null,
+    });
+    if (!k) {
+      showAlert('Could not open preview. Allow storage for this site or try again.', 'error');
+      return;
+    }
+    const url = `/admin/content/articles/draft-preview?k=${encodeURIComponent(k)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const handleSave = async (options?: { settingsOnly?: boolean }) => {
     if (articleId == null) return;
@@ -587,6 +605,9 @@ th { font-weight: 600; background: #f3f4f6; }
             </div>
 
             <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:col-start-2 lg:row-start-2">
+              <Button type="button" variant="secondary" onClick={handleDraftPreview}>
+                Preview
+              </Button>
               <Button type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
               </Button>

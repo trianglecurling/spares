@@ -83,6 +83,7 @@ const PublicEventManageRegistrationPage = lazy(() => import('./pages/PublicEvent
 const PublicEventWaitlistOfferPage = lazy(() => import('./pages/PublicEventWaitlistOfferPage'));
 const PublicNotFoundPage = lazy(() => import('./pages/PublicNotFoundPage'));
 const PublicPermalinkInfo = lazy(() => import('./pages/PublicPermalinkInfo'));
+const PublicGoPermalinkRedirect = lazy(() => import('./pages/PublicGoPermalinkRedirect'));
 const RegistrationShellPage = lazy(() => import('./pages/RegistrationShellPage'));
 const PublicWaitlistOfferDeclinePage = lazy(() => import('./pages/PublicWaitlistOfferDeclinePage'));
 const RegistrationStatusDetailPage = lazy(() => import('./pages/RegistrationStatusDetailPage'));
@@ -189,6 +190,8 @@ function App() {
                       <Route path="/registration/:step" element={<RegistrationShellStepRoute />} />
 
                       <Route path="/go/:slug/info" element={<PublicPermalinkInfo />} />
+                      {/* Server redirect + hit tracking; force a document load for SPA Link/navigate. */}
+                      <Route path="/go/:slug" element={<PublicGoPermalinkRedirect />} />
 
                       <Route path="/calendar/public" element={<Calendar publicMode />} />
 

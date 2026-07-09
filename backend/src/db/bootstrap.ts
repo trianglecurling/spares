@@ -178,6 +178,11 @@ async function seedPublicContactRecipients(): Promise<void> {
   await seedPublicContactRecipientsIfNeeded();
 }
 
+async function seedMailingLists(): Promise<void> {
+  const { seedMailingListsIfNeeded } = await import('../domains/content/mailingLists.js');
+  await seedMailingListsIfNeeded();
+}
+
 async function seedCoreRows(isPostgres: boolean): Promise<void> {
   const { db } = getDrizzleDb();
 
@@ -234,6 +239,7 @@ export async function runDatabaseBootstrap(config: DatabaseConfig): Promise<void
   await seedMemberRoleAssignmentsFromLegacyFlags(isPostgres);
   await seedCoreRows(isPostgres);
   await seedPublicContactRecipients();
+  await seedMailingLists();
   await ensureRegistrationPriceDiscountSettingsTablesExist();
 
   if (config.type === 'sqlite') {
