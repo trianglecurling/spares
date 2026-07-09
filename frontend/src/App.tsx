@@ -88,6 +88,8 @@ const RegistrationShellPage = lazy(() => import('./pages/RegistrationShellPage')
 const PublicWaitlistOfferDeclinePage = lazy(() => import('./pages/PublicWaitlistOfferDeclinePage'));
 const RegistrationStatusDetailPage = lazy(() => import('./pages/RegistrationStatusDetailPage'));
 const WaitlistOfferAcceptPage = lazy(() => import('./pages/WaitlistOfferAcceptPage'));
+const SabbaticalsExplainerPage = lazy(() => import('./pages/explainers/SabbaticalsExplainerPage'));
+const WaitlistsExplainerPage = lazy(() => import('./pages/explainers/WaitlistsExplainerPage'));
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -192,6 +194,9 @@ function App() {
                       <Route path="/go/:slug/info" element={<PublicPermalinkInfo />} />
                       {/* Server redirect + hit tracking; force a document load for SPA Link/navigate. */}
                       <Route path="/go/:slug" element={<PublicGoPermalinkRedirect />} />
+
+                      <Route path="/explainers/sabbaticals" element={<SabbaticalsExplainerPage />} />
+                      <Route path="/explainers/waitlists" element={<WaitlistsExplainerPage />} />
 
                       <Route path="/calendar/public" element={<Calendar publicMode />} />
 

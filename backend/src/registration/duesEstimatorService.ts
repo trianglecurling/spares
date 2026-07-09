@@ -39,6 +39,7 @@ export type PublicDuesScheduleResponse = {
     spareOnlyIcePrivilegeDollars: number;
     socialMembershipDollars: number;
     juniorRecreationalDollars: number;
+    sabbaticalFeeDollars: number;
   };
   discounts: {
     student: PublicDiscountSlot;
@@ -147,6 +148,7 @@ export async function getPublicDuesSchedule(): Promise<PublicDuesScheduleRespons
       spareOnlyIcePrivilegeDollars: feeMinorToDollars(priceConfig.spareOnlyIcePrivilegeFeeMinor),
       socialMembershipDollars: feeMinorToDollars(priceConfig.socialMembershipFeeMinor),
       juniorRecreationalDollars: feeMinorToDollars(priceConfig.juniorRecreationalFeeMinor),
+      sabbaticalFeeDollars: feeMinorToDollars(priceConfig.sabbaticalFeeMinor),
     },
     discounts: {
       student: mapDiscountSlotForPublic(discountSettings.student),

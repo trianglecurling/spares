@@ -27,6 +27,7 @@ type PublicDuesSchedule = {
     spareOnlyIcePrivilegeDollars: number;
     socialMembershipDollars: number;
     juniorRecreationalDollars: number;
+    sabbaticalFeeDollars: number;
   };
   discounts: {
     student: PublicDiscountSlot;
