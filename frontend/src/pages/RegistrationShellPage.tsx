@@ -3430,7 +3430,7 @@ export default function RegistrationShellPage() {
     if (currentStep === 'start') return null;
 
     if (isPriorityEdit) {
-      return { label: 'Cancel', onClick: () => navigate(priorityEditReturnTo) };
+      return { label: 'Back', onClick: () => navigate(priorityEditReturnTo) };
     }
 
     if (currentStep === 'identity') {

@@ -229,8 +229,15 @@ export function resolveWaitlistDecline(input: {
   };
 }
 
-function responseDeadline(offeredAt: Date): Date {
-  return new Date(offeredAt.getTime() + 24 * 60 * 60 * 1000);
+function parseOfferExpiresAt(expiresAt: Date | string): Date {
+  const parsed = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new WaitlistStaffValidationError({ expiresAt: 'A valid response deadline is required.' });
+  }
+  if (parsed.getTime() <= Date.now()) {
+    throw new WaitlistStaffValidationError({ expiresAt: 'Response deadline must be in the future.' });
+  }
+  return parsed;
 }
 
 function generateResponseToken(): string {
@@ -1027,6 +1034,7 @@ export async function sendWaitlistOffers(input: {
   leagueId: number;
   offerType: WaitlistOfferKindSqlite;
   actorMemberId: number;
+  expiresAt: Date | string;
   reason?: string | null;
   entryIds?: number[];
   count?: number;
@@ -1035,6 +1043,7 @@ export async function sendWaitlistOffers(input: {
   alreadySelectedEntryIds?: Set<number>;
 }) {
   const reason = requireReason(input.reason ?? 'waitlist-offer-sent');
+  const expiresAt = parseOfferExpiresAt(input.expiresAt);
   const { db, schema } = getDrizzleDb();
   const league = await loadLeague(input.leagueId);
   const entries = await selectOfferEntries({
@@ -1043,7 +1052,6 @@ export async function sendWaitlistOffers(input: {
     alreadySelectedEntryIds: input.alreadySelectedEntryIds,
   });
   const offeredAt = new Date();
-  const expiresAt = responseDeadline(offeredAt);
   const createdOffers: Array<{ offer: any; preference: WaitlistOfferResponsePreferenceSqlite; entry: WaitlistEntryRow }> = [];
 
   await db.transaction(async (tx) => {
@@ -1147,6 +1155,7 @@ export async function processBatchVacancyOffers(input: {
   offerType: WaitlistOfferKindSqlite;
   actorMemberId: number;
   reason: string;
+  expiresAt: Date | string;
   override?: boolean;
 }) {
   const dashboard = await getWaitlistDashboard({ sessionId: input.sessionId });
@@ -1168,6 +1177,7 @@ export async function processBatchVacancyOffers(input: {
         offerType: input.offerType,
         count,
         reason: input.reason,
+        expiresAt: input.expiresAt,
         override: input.override,
         actorMemberId: input.actorMemberId,
         alreadySelectedEntryIds,
@@ -1337,13 +1347,22 @@ async function placeAcceptedOffer(
 async function respondToOffer(input: {
   offerId?: number;
   token?: string;
-  status: 'accepted' | 'declined' | 'expired_accepted';
+  status: 'accepted' | 'declined' | 'expired_accepted' | 'expired_declined';
   source: WaitlistAuditSourceSqlite;
   actorMemberId?: number | null;
   reason?: string | null;
 }) {
   const { db, schema } = getDrizzleDb();
-  const reason = input.reason?.trim() || (input.status === 'expired_accepted' ? 'waitlist-offer-auto-accepted' : 'waitlist-offer-response');
+  const isExpiredDecline = input.status === 'expired_declined';
+  const isDecline = input.status === 'declined' || isExpiredDecline;
+  const isExpiredAccept = input.status === 'expired_accepted';
+  const reason =
+    input.reason?.trim() ||
+    (isExpiredDecline
+      ? 'waitlist-offer-auto-declined'
+      : isExpiredAccept
+        ? 'waitlist-offer-auto-accepted'
+        : 'waitlist-offer-response');
   const [offer] = await db
     .select()
     .from(schema.waitlistOffers)
@@ -1355,6 +1374,14 @@ async function respondToOffer(input: {
   }
   const entry = await loadEntry(offer.waitlist_entry_id);
   const respondedAt = new Date();
+  const auditAction =
+    input.status === 'declined'
+      ? 'offer_declined'
+      : input.status === 'accepted'
+        ? 'offer_accepted'
+        : input.status === 'expired_declined'
+          ? 'offer_expired_declined'
+          : 'offer_expired_accepted';
 
   await db.transaction(async (tx) => {
     await tx
@@ -1372,7 +1399,7 @@ async function respondToOffer(input: {
       memberId: entry.member_id,
       actorMemberId: input.actorMemberId ?? null,
       source: input.source,
-      action: input.status === 'declined' ? 'offer_declined' : input.status === 'accepted' ? 'offer_accepted' : 'offer_expired_accepted',
+      action: auditAction,
       reason,
       before: offer,
       after: { ...offer, status: input.status },
@@ -1380,7 +1407,7 @@ async function respondToOffer(input: {
       offerType: offer.offer_type,
     });
 
-    if (input.status === 'declined') {
+    if (isDecline) {
       const declineResolution = resolveWaitlistDecline({
         declineCount: Number(entry.decline_count ?? 0),
         positionSortKey: entry.position_sort_key,
@@ -1455,7 +1482,7 @@ async function respondToOffer(input: {
   const [updatedEntry] = await db.select().from(schema.waitlistEntries).where(eq(schema.waitlistEntries.id, entry.id)).limit(1);
   if (member) {
     await safeSendWaitlistCommunication({
-      messageType: input.status === 'declined' ? 'waitlist_offer_declined' : 'waitlist_offer_accepted',
+      messageType: isDecline ? 'waitlist_offer_declined' : 'waitlist_offer_accepted',
       member,
       registrationId: offer.source_registration_id ?? entry.source_registration_id ?? null,
       waitlistOfferId: offer.id,
@@ -1463,7 +1490,7 @@ async function respondToOffer(input: {
       payload: {
         leagueName: league?.name,
         isTemporarySabbaticalFill: offer.offer_type === 'temporary_sabbatical_fill',
-        offerResponseSource: input.status === 'expired_accepted' ? 'automatic' : 'explicit',
+        offerResponseSource: isExpiredDecline || isExpiredAccept ? 'automatic' : 'explicit',
         declineCount: updatedEntry?.decline_count ?? entry.decline_count,
       },
     });
@@ -1520,7 +1547,7 @@ export async function acceptWaitlistOfferForMember(input: { offerId: number; act
   });
 }
 
-export async function autoAcceptExpiredWaitlistOffers(limit = 50): Promise<{ processed: number }> {
+export async function autoDeclineExpiredWaitlistOffers(limit = 50): Promise<{ processed: number }> {
   const { db, schema } = getDrizzleDb();
   const now = new Date();
   const offers = await db
@@ -1538,9 +1565,9 @@ export async function autoAcceptExpiredWaitlistOffers(limit = 50): Promise<{ pro
   for (const offer of offers) {
     const result = await respondToOffer({
       offerId: offer.id,
-      status: 'expired_accepted',
+      status: 'expired_declined',
       source: 'offer_expiration',
-      reason: 'waitlist-offer-auto-accepted',
+      reason: 'waitlist-offer-auto-declined',
     });
     if (result.changed) processed += 1;
   }
@@ -1836,7 +1863,7 @@ export async function triggerWaitlistDeferredPayment(input: { offerId: number; a
     throw new WaitlistStaffValidationError({ registration: 'This offer is not linked to a registration.' });
   }
   if (offer.status !== 'accepted' && offer.status !== 'expired_accepted') {
-    throw new WaitlistStaffValidationError({ offer: 'Payment can be triggered only after the offer has been accepted or auto-accepted.' });
+    throw new WaitlistStaffValidationError({ offer: 'Payment can be triggered only after the offer has been accepted.' });
   }
   const result = await triggerDeferredRegistrationPayment({
     registrationId: offer.source_registration_id,

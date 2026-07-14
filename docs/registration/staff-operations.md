@@ -138,15 +138,15 @@ If accepted or auto-accepted:
 
 ## Offer response rules
 
-The recipient has 24 hours to decline.
+Each offer includes a response deadline chosen by staff when the offer is sent.
 
-If they do not decline within 24 hours, the offer is treated as accepted.
+If the recipient does not accept by that deadline, the offer is treated as declined.
 
 Offer emails must clearly state:
 
-> If you do not decline this offer within 24 hours, we will treat the offer as
-> accepted and add you to the league. If payment is required, staff will follow
-> up with you.
+> If you do not accept this offer by the response deadline, we will treat it as
+> declined. If payment is required after acceptance, staff will follow up with
+> you.
 
 For temporary sabbatical-fill offers, emails must also clearly explain that the
 spot is temporary.

@@ -287,14 +287,6 @@ export default function AdminDatabaseConfig() {
             )}
 
             <div className="flex justify-end space-x-3">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => navigate('/admin/config')}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
               <Button type="submit" disabled={loading}>
                 {loading ? 'Saving...' : 'Save Configuration'}
               </Button>

@@ -237,7 +237,13 @@ export type WaitlistEntryStatusSqlite =
   | 'cancelled';
 
 export type WaitlistOfferKindSqlite = 'permanent' | 'temporary_sabbatical_fill';
-export type WaitlistOfferStatusSqlite = 'pending' | 'accepted' | 'declined' | 'expired_accepted' | 'cancelled';
+export type WaitlistOfferStatusSqlite =
+  | 'pending'
+  | 'accepted'
+  | 'declined'
+  | 'expired_accepted'
+  | 'expired_declined'
+  | 'cancelled';
 
 export type WaitlistAuditSourceSqlite =
   | 'registration_submission'
@@ -262,6 +268,7 @@ export type WaitlistAuditActionSqlite =
   | 'offer_declined'
   | 'offer_cancelled'
   | 'offer_expired_accepted'
+  | 'offer_expired_declined'
   | 'decline_count_changed'
   | 'entry_moved_to_bottom'
   | 'entry_placed'
@@ -1130,6 +1137,8 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   next_notification_at: text('next_notification_at'),
   notification_paused: integer('notification_paused').default(0).notNull(),
   all_invites_declined_notified: integer('all_invites_declined_notified').default(0).notNull(),
+  /** When public requests become visible on member dashboards (after bye priority window when applicable). */
+  public_listing_at: text('public_listing_at'),
 }, (table) => ({
   requesterIdIdx: index('idx_spare_requests_requester_id').on(table.requester_id),
   requestedForMemberIdIdx: index('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
@@ -1210,6 +1219,10 @@ export const spareRequestNotificationQueueSqlite = sqliteTable('spare_request_no
   spare_request_id: integer('spare_request_id').notNull().references(() => spareRequestsSqlite.id, { onDelete: 'cascade' }),
   member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
   queue_order: integer('queue_order').notNull(),
+  /** 1 = notified in the immediate bye-priority batch before the 1-hour wait. */
+  is_bye_priority: integer('is_bye_priority').default(0).notNull(),
+  /** 1 = at least one email/SMS delivery claim succeeded. */
+  was_delivered: integer('was_delivered').default(0).notNull(),
   claimed_at: text('claimed_at'),
   notified_at: text('notified_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
@@ -2929,6 +2942,8 @@ export const spareRequestsPg = pgTable('spare_requests', {
   next_notification_at: timestamp('next_notification_at', { withTimezone: false }),
   notification_paused: integerPg('notification_paused').default(0).notNull(),
   all_invites_declined_notified: integerPg('all_invites_declined_notified').default(0).notNull(),
+  /** When public requests become visible on member dashboards (after bye priority window when applicable). */
+  public_listing_at: timestamp('public_listing_at', { withTimezone: false }),
 }, (table) => ({
   requesterIdIdx: indexPg('idx_spare_requests_requester_id').on(table.requester_id),
   requestedForMemberIdIdx: indexPg('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
@@ -3009,6 +3024,10 @@ export const spareRequestNotificationQueuePg = pgTable('spare_request_notificati
   spare_request_id: integerPg('spare_request_id').notNull().references(() => spareRequestsPg.id, { onDelete: 'cascade' }),
   member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
   queue_order: integerPg('queue_order').notNull(),
+  /** 1 = notified in the immediate bye-priority batch before the 1-hour wait. */
+  is_bye_priority: integerPg('is_bye_priority').default(0).notNull(),
+  /** 1 = at least one email/SMS delivery claim succeeded. */
+  was_delivered: integerPg('was_delivered').default(0).notNull(),
   claimed_at: timestamp('claimed_at', { withTimezone: false }),
   notified_at: timestamp('notified_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),

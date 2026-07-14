@@ -1989,11 +1989,8 @@ export default function AdminEventEditor() {
                 )}
               </FormSection>
 
-              {/* Sticky so Cancel/Save stay in view on long settings forms (custom fields). */}
+              {/* Sticky so Save stays in view on long settings forms (custom fields). */}
               <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 bg-white/95 px-4 py-4 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.08)] backdrop-blur dark:border-gray-600 dark:bg-gray-800/95 dark:shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.35)] sm:-mx-6 sm:-mb-6 sm:px-6">
-                <Button type="button" variant="secondary" onClick={() => navigate('/admin/events')}>
-                  Cancel
-                </Button>
                 <Button type="submit" variant="primary" disabled={saving}>
                   {saving ? 'Saving...' : isNew ? 'Create event' : 'Save'}
                 </Button>

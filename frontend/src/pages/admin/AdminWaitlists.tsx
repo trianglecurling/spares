@@ -134,7 +134,8 @@ type ReasonDialogState = {
   description: string;
   confirmText: string;
   variant?: 'danger' | 'primary';
-  onSubmit: (reason: string) => Promise<void>;
+  requireExpiresAt?: boolean;
+  onSubmit: (reason: string, options?: { expiresAt?: string }) => Promise<void>;
 } | null;
 
 const ENTRY_TYPE_OPTIONS: ChoiceOption<'add' | 'replace'>[] = [
@@ -170,22 +171,40 @@ function formatStatus(value: string): string {
   return value.replace(/_/g, ' ');
 }
 
+function toDatetimeLocalValue(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function ReasonDialog({ state, onClose }: { state: ReasonDialogState; onClose: () => void }) {
   const reasonId = useId();
+  const expiresAtId = useId();
   const [reason, setReason] = useState('');
+  const [expiresAtLocal, setExpiresAtLocal] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (state) setReason('');
+    if (!state) return;
+    setReason('');
+    if (state.requireExpiresAt) {
+      const suggested = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      setExpiresAtLocal(toDatetimeLocalValue(suggested));
+    } else {
+      setExpiresAtLocal('');
+    }
   }, [state]);
 
   if (!state) return null;
 
+  const expiresAtIso = expiresAtLocal ? new Date(expiresAtLocal).toISOString() : '';
+  const expiresAtValid = !state.requireExpiresAt || (expiresAtLocal !== '' && !Number.isNaN(new Date(expiresAtLocal).getTime()) && new Date(expiresAtLocal).getTime() > Date.now());
+  const canSubmit = reason.trim().length > 0 && expiresAtValid && !submitting;
+
   const submit = async () => {
-    if (!reason.trim()) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await state.onSubmit(reason.trim());
+      await state.onSubmit(reason.trim(), state.requireExpiresAt ? { expiresAt: expiresAtIso } : undefined);
       onClose();
     } finally {
       setSubmitting(false);
@@ -195,6 +214,20 @@ function ReasonDialog({ state, onClose }: { state: ReasonDialogState; onClose: (
   return (
     <Modal isOpen onClose={onClose} title={state.title} size="md">
       <p className="text-sm text-gray-600 dark:text-gray-300">{state.description}</p>
+      {state.requireExpiresAt ? (
+        <FormField label="Response deadline" htmlFor={expiresAtId} required className="mt-5">
+          <input
+            id={expiresAtId}
+            type="datetime-local"
+            className="app-input"
+            value={expiresAtLocal}
+            onChange={(event) => setExpiresAtLocal(event.target.value)}
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            If the curler does not accept by this deadline, the offer is treated as declined.
+          </p>
+        </FormField>
+      ) : null}
       <FormField label="Reason" htmlFor={reasonId} required className="mt-5">
         <textarea
           id={reasonId}
@@ -211,7 +244,7 @@ function ReasonDialog({ state, onClose }: { state: ReasonDialogState; onClose: (
         <Button
           variant={state.variant === 'danger' ? 'danger' : 'primary'}
           onClick={() => void submit()}
-          disabled={submitting || !reason.trim()}
+          disabled={!canSubmit}
         >
           {state.confirmText}
         </Button>
@@ -346,9 +379,13 @@ function WaitlistListPage() {
   }, [load]);
 
   const runAction =
-    (action: (reason: string) => Promise<void>, successMessage: string) => async (reason: string) => {
+    (
+      action: (reason: string, options?: { expiresAt?: string }) => Promise<void>,
+      successMessage: string
+    ) =>
+    async (reason: string, options?: { expiresAt?: string }) => {
       try {
-        await action(reason);
+        await action(reason, options);
         await load();
         showAlert(successMessage, 'success');
       } catch (err) {
@@ -373,12 +410,14 @@ function WaitlistListPage() {
                         ? `Send permanent offers across all leagues with vacancies in ${sessionOptions[0].label}. Members with ranked ADD waitlist preferences will only receive offers up to their chosen limit.`
                         : 'Send permanent offers across all leagues with vacancies in the selected session. Members with ranked ADD waitlist preferences will only receive offers up to their chosen limit.',
                     confirmText: 'Process vacancies',
-                    onSubmit: runAction(async (reason) => {
+                    requireExpiresAt: true,
+                    onSubmit: runAction(async (reason, options) => {
                       const sessionId = sessionOptions.length === 1 ? sessionOptions[0].value : sessionOptions[0]?.value;
                       if (!sessionId) return;
                       await api.post(`/waitlists/sessions/${sessionId}/process-vacancies`, {
                         offerType: 'permanent',
                         reason,
+                        expiresAt: options?.expiresAt,
                       });
                     }, 'Session vacancies processed.'),
                   })
@@ -495,16 +534,20 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   }, [load]);
 
   const runAction = useCallback(
-    (action: (reason: string) => Promise<void>, successMessage: string) => async (reason: string) => {
-      try {
-        await action(reason);
-        showAlert(successMessage, 'success');
-        await load();
-      } catch (err) {
-        showAlert(getApiErrorMessage(err, 'Waitlist action failed.'), 'error');
-        throw err;
-      }
-    },
+    (
+      action: (reason: string, options?: { expiresAt?: string }) => Promise<void>,
+      successMessage: string
+    ) =>
+      async (reason: string, options?: { expiresAt?: string }) => {
+        try {
+          await action(reason, options);
+          showAlert(successMessage, 'success');
+          await load();
+        } catch (err) {
+          showAlert(getApiErrorMessage(err, 'Waitlist action failed.'), 'error');
+          throw err;
+        }
+      },
     [load, showAlert]
   );
 
@@ -1011,15 +1054,18 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                   onClick={() =>
                     setDialog({
                       title: 'Send permanent offer',
-                      description: 'Send one permanent spot offer to the top eligible active waitlist entry.',
+                      description:
+                        'Send one permanent spot offer to the top eligible active waitlist entry. Choose when the offer should expire if the curler does not respond.',
                       confirmText: 'Send offer',
+                      requireExpiresAt: true,
                       onSubmit: runAction(
-                        (reason) =>
+                        (reason, options) =>
                           api.post(`/waitlists/${waitlistId}/offers`, {
                             placementLeagueId: data.placementLeagueId,
                             offerType: 'permanent',
                             count: 1,
                             reason,
+                            expiresAt: options?.expiresAt,
                           }),
                         'Permanent offer sent.'
                       ),
@@ -1452,7 +1498,10 @@ function WaitlistEntryRow({
   canManage: boolean;
   onEdit?: () => void;
   onAction: (state: ReasonDialogState) => void;
-  runAction: (action: (reason: string) => Promise<void>, successMessage: string) => (reason: string) => Promise<void>;
+  runAction: (
+    action: (reason: string, options?: { expiresAt?: string }) => Promise<void>,
+    successMessage: string
+  ) => (reason: string, options?: { expiresAt?: string }) => Promise<void>;
 }) {
   const headline = waitlistEntryHeadline(entry);
 

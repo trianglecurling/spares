@@ -95,6 +95,10 @@ const createOfferSchema = z.object({
   entryIds: z.array(z.number().int().positive()).optional(),
   count: z.number().int().positive().max(50).optional(),
   reason: z.string().min(1),
+  expiresAt: z
+    .string()
+    .min(1)
+    .refine((value) => !Number.isNaN(Date.parse(value)), { message: 'A valid response deadline is required.' }),
   override: z.boolean().optional(),
   staffNotes: z.string().optional().nullable(),
 });
@@ -134,6 +138,10 @@ const processVacanciesSchema = z.object({
   offerType: z.enum(['permanent', 'temporary_sabbatical_fill']).default('permanent'),
   leagueIds: z.array(z.number().int().positive()).optional(),
   reason: z.string().min(1),
+  expiresAt: z
+    .string()
+    .min(1)
+    .refine((value) => !Number.isNaN(Date.parse(value)), { message: 'A valid response deadline is required.' }),
   override: z.boolean().optional(),
 });
 
@@ -257,6 +265,7 @@ export async function protectedRegistrationWaitlistStaffRoutes(fastify: FastifyI
         entryIds: body.entryIds,
         count: body.count,
         reason: body.reason,
+        expiresAt: body.expiresAt,
         override: body.override,
         staffNotes: body.staffNotes,
         actorMemberId: (request as AuthenticatedRequest).member.id,
@@ -277,6 +286,7 @@ export async function protectedRegistrationWaitlistStaffRoutes(fastify: FastifyI
         leagueIds: body.leagueIds,
         offerType: body.offerType,
         reason: body.reason,
+        expiresAt: body.expiresAt,
         override: body.override,
         actorMemberId: (request as AuthenticatedRequest).member.id,
       });

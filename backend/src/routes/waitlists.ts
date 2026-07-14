@@ -99,12 +99,18 @@ const updateEntrySchema = z.object({
   teamRosterPlacements: teamRosterPlacementsSchema,
   reason: z.string().min(1),
 });
+const expiresAtSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !Number.isNaN(Date.parse(value)), { message: 'A valid response deadline is required.' });
+
 const createOfferSchema = z.object({
   placementLeagueId: z.number().int().positive(),
   offerType: z.enum(['permanent', 'temporary_sabbatical_fill']),
   entryIds: z.array(z.number().int().positive()).optional(),
   count: z.number().int().positive().max(50).optional(),
   reason: z.string().min(1),
+  expiresAt: expiresAtSchema,
   override: z.boolean().optional(),
   staffNotes: z.string().optional().nullable(),
 });
@@ -120,6 +126,7 @@ const processVacanciesSchema = z.object({
   offerType: z.enum(['permanent', 'temporary_sabbatical_fill']).default('permanent'),
   leagueIds: z.array(z.number().int().positive()).optional(),
   reason: z.string().min(1),
+  expiresAt: expiresAtSchema,
   override: z.boolean().optional(),
 });
 const joinWaitlistSchema = z.object({
@@ -288,6 +295,7 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
         leagueIds: body.leagueIds,
         offerType: body.offerType,
         reason: body.reason,
+        expiresAt: body.expiresAt,
         override: body.override,
         actorMemberId: member.id,
       });
@@ -309,6 +317,7 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
         entryIds: body.entryIds,
         count: body.count,
         reason: body.reason,
+        expiresAt: body.expiresAt,
         override: body.override,
         staffNotes: body.staffNotes,
         actorMemberId: member.id,

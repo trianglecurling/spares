@@ -12715,6 +12715,151 @@
         }
       }
     },
+    "/spares/request-context": {
+      "get": {
+        "tags": [
+          "spares"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "leagues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "dayOfWeek": {
+                            "type": "number"
+                          },
+                          "format": {
+                            "type": "string"
+                          },
+                          "teamId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "teamName": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "players": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "memberId": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "role": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "sparePosition": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "lead",
+                                        "second",
+                                        "vice",
+                                        "skip"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "isSelf": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "memberId",
+                                "name",
+                                "role",
+                                "sparePosition",
+                                "isSelf"
+                              ]
+                            }
+                          },
+                          "games": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "date": {
+                                  "type": "string"
+                                },
+                                "time": {
+                                  "type": "string"
+                                },
+                                "opponentName": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "date",
+                                "time",
+                                "opponentName"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "dayOfWeek",
+                          "format",
+                          "teamId",
+                          "teamName",
+                          "players",
+                          "games"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "leagues"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spares/cc": {
       "get": {
         "tags": [

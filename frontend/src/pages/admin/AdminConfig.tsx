@@ -1076,9 +1076,6 @@ export default function AdminConfig() {
             )}
 
             <div className="flex justify-end space-x-3 pt-4 border-t dark:border-gray-700">
-              <Button type="button" variant="secondary" onClick={loadConfig} disabled={submitting}>
-                Cancel
-              </Button>
               <Button type="submit" disabled={submitting}>
                 {submitting ? 'Saving...' : 'Save configuration'}
               </Button>

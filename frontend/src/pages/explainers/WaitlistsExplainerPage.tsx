@@ -12,7 +12,7 @@ const faqItems: Array<{ question: string; answer: string; accent: string }> = [
   {
     question: 'What if I ignore an offer email?',
     answer:
-      'If you do not decline within 24 hours, the offer is treated as accepted and you are added to the league. Staff will follow up about payment if needed.',
+      'If you do not accept by the response deadline in the offer, it is treated as declined. Staff will move on to other waitlist entries. Declines still follow the normal first/second decline rules.',
     accent: 'border-t-teal-500 bg-gradient-to-b from-teal-50/80 to-white',
   },
   {
@@ -49,9 +49,9 @@ export default function WaitlistsExplainerPage() {
               <h1 className="public-heading text-balance">League waitlists</h1>
             </div>
             <p className="public-body max-w-3xl text-base sm:text-lg">
-              A league waitlist records your interest in joining a standard league when it is full. You join during
-              registration; when a spot opens, you may receive an offer. Vacancies and waitlists are processed after the
-              priority registration period each session.
+              A league waitlist records your interest in joining a league when it is full. You can join during
+              registration or at any time. When a spot is open after priority registration, the highest waitlist entry
+              will receive an offer to join the league.
             </p>
           </div>
         </section>
@@ -82,10 +82,16 @@ export default function WaitlistsExplainerPage() {
             <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-amber-500 to-orange-300" aria-hidden />
             <div className="space-y-3 pl-2">
               <h2 className="public-subheading text-amber-950">How offers work</h2>
-              <p className="text-sm text-amber-950/90 sm:text-base">
-                After priority registration closes, returning members and sabbaticals are resolved first. Then permanent
-                waitlist spots are offered, followed by temporary sabbatical-fill spots.
-              </p>
+              <div className="space-y-2 text-sm text-amber-950/90 sm:text-base">
+                <p>
+                  After priority registration closes, league rosters are filled by taking all eligible returning
+                  members and anyone coming back from sabbatical. Any remaining spots are filled by waitlist entries.
+                </p>
+                <p>
+                  Those vacancies are either permanent spots or temporary sabbatical-fill spots. The permanent spots
+                  are offered first to the highest waitlist entries, followed by the temporary spots.
+                </p>
+              </div>
               <div className="space-y-2 rounded-xl border border-amber-200/80 bg-white/80 px-4 py-3 text-sm text-amber-950">
                 <p>
                   <span className="font-semibold">Permanent spot:</span> You join the league for good (subject to normal
@@ -108,8 +114,8 @@ export default function WaitlistsExplainerPage() {
             <div className="space-y-2 pl-2">
               <h2 className="public-subheading text-sky-950">Declines and your position</h2>
               <p className="text-sm text-sky-950/90 sm:text-base">
-                You have <span className="font-semibold text-sky-900">24 hours</span> to decline an offer. If you do not
-                decline, it is treated as accepted. Your{' '}
+                Each offer includes a <span className="font-semibold text-sky-900">response deadline</span>. If you do
+                not accept by then, the offer is treated as declined. Your{' '}
                 <span className="font-semibold text-sky-900">first decline</span> keeps your waitlist position; a{' '}
                 <span className="font-semibold text-sky-900">second decline</span> moves you to the bottom. Declining a
                 temporary spot counts the same as declining a permanent one.

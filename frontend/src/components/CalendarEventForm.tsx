@@ -30,7 +30,6 @@ export interface CalendarEventFormProps {
   sheets: Array<{ id: number; name: string }>;
   eventTypes: CalendarEventType[];
   initialDate: Date;
-  onCancel: () => void;
   onSaved: () => void;
 }
 
@@ -39,7 +38,6 @@ export default function CalendarEventForm({
   sheets,
   eventTypes,
   initialDate,
-  onCancel,
   onSaved,
 }: CalendarEventFormProps) {
   const { showAlert } = useAlert();
@@ -646,9 +644,6 @@ export default function CalendarEventForm({
       </div>
 
       <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-600">
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
         <Button type="submit" variant="primary" disabled={saving}>
           {saving ? 'Saving...' : event ? 'Update' : 'Create'}
         </Button>

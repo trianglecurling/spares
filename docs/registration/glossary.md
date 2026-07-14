@@ -520,9 +520,9 @@ Rules:
 
 An offer sent to a person on a waitlist when a spot is available.
 
-The recipient has 24 hours to decline.
+The offer includes a response deadline chosen by staff.
 
-If the recipient does not decline within 24 hours, the offer is treated as accepted.
+If the recipient does not accept by that deadline, the offer is treated as declined.
 
 ## Winter-only discount
 

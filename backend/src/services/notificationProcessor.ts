@@ -4,6 +4,8 @@ import { sendSpareRequestSMS } from './sms.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 import { eq, and, or, sql, asc, isNull, lte, lt } from 'drizzle-orm';
 import { sendOnceWithDeliveryClaim } from './spareRequestDelivery.js';
+import { BYE_PRIORITY_WAIT_MS } from '../domains/spares/spareNotificationConstants.js';
+import { decideAfterQueueSend } from '../domains/spares/spareByePriorityLogic.js';
 
 let lastDbErrorLogAt = 0;
 const DB_ERROR_LOG_THROTTLE_MS = 30_000;
@@ -51,6 +53,253 @@ interface SpareRequest {
   notification_generation?: number | null;
 }
 
+type QueueMemberRow = {
+  queue_id: number;
+  spare_request_id: number;
+  member_id: number;
+  queue_order: number;
+  is_bye_priority: number;
+  claimed_at: string | Date | null;
+  notified_at: string | null;
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  opted_in_sms: number;
+};
+
+function toValidDate(value: Date | unknown, label: string): Date {
+  if (value instanceof Date && !isNaN(value.getTime()) && typeof value.toISOString === 'function') {
+    return value;
+  }
+  console.warn(`${label} did not return a valid Date, using current time`);
+  return new Date();
+}
+
+async function markRequestNotificationsCompleted(spareRequestId: number, nowDate: Date): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.spareRequests)
+    .set({
+      notifications_sent_at: nowDate,
+      notification_status: 'completed',
+      next_notification_at: null,
+      // Ensure completed requests are listable (e.g. bye-only queues).
+      public_listing_at: nowDate,
+    })
+    .where(eq(schema.spareRequests.id, spareRequestId));
+}
+
+async function sendQueueMemberNotification(params: {
+  spareRequest: SpareRequest;
+  nextInQueue: QueueMemberRow;
+  requesterName: string;
+  nowDate: Date;
+}): Promise<boolean> {
+  const { db, schema } = getDrizzleDb();
+  const { spareRequest, nextInQueue, requesterName, nowDate } = params;
+  const generation = Number(spareRequest.notification_generation ?? 0);
+
+  let leagueName: string | undefined;
+  if (spareRequest.league_id) {
+    const leagueRows = await db
+      .select({ name: schema.leagues.name })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, spareRequest.league_id))
+      .limit(1);
+    leagueName = leagueRows[0]?.name || undefined;
+  }
+
+  const canEmail = Boolean(nextInQueue.email);
+  const canSms = Boolean(nextInQueue.phone && nextInQueue.opted_in_sms === 1);
+  let delivered = false;
+
+  if (canEmail) {
+    const sent = await sendOnceWithDeliveryClaim(
+      {
+        spareRequestId: spareRequest.id,
+        memberId: nextInQueue.member_id,
+        notificationGeneration: generation,
+        channel: 'email',
+        kind: 'spare_request',
+      },
+      async () => {
+        console.log(
+          `[Notification Processor] Calling sendSpareRequestEmail for ${nextInQueue.email} (request ${spareRequest.id})`
+        );
+        await sendSpareRequestEmail(
+          nextInQueue.email!,
+          nextInQueue.name,
+          requesterName,
+          {
+            leagueName,
+            requestedForName: spareRequest.requested_for_name,
+            gameDate: spareRequest.game_date,
+            gameTime: spareRequest.game_time,
+            position: spareRequest.position || undefined,
+            message: spareRequest.message || undefined,
+          },
+          spareRequest.id
+        );
+        console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
+      }
+    );
+    if (sent) {
+      delivered = true;
+    } else {
+      console.log(
+        `[Notification Processor] Skipping duplicate email to ${nextInQueue.email} for request ${spareRequest.id}`
+      );
+    }
+  }
+
+  if (canSms) {
+    const sent = await sendOnceWithDeliveryClaim(
+      {
+        spareRequestId: spareRequest.id,
+        memberId: nextInQueue.member_id,
+        notificationGeneration: generation,
+        channel: 'sms',
+        kind: 'spare_request',
+      },
+      async () => {
+        await sendSpareRequestSMS(
+          nextInQueue.phone!,
+          requesterName,
+          spareRequest.game_date,
+          spareRequest.game_time
+        );
+        console.log(`[Notification Processor] SMS sent to ${nextInQueue.phone}`);
+      }
+    );
+    if (sent) {
+      delivered = true;
+    } else {
+      console.log(
+        `[Notification Processor] Skipping duplicate SMS to ${nextInQueue.phone} for request ${spareRequest.id}`
+      );
+    }
+  }
+
+  if (!canEmail && !canSms) {
+    console.log(
+      `[Notification Processor] Member ${nextInQueue.member_id} has no reachable email/SMS; advancing queue without counting as delivered`
+    );
+  }
+
+  // Always advance the queue so unreachable members do not block later recipients.
+  await db
+    .update(schema.spareRequestNotificationQueue)
+    .set({
+      notified_at: nowDate,
+      claimed_at: null,
+      was_delivered: delivered ? 1 : 0,
+    })
+    .where(eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id));
+
+  console.log(
+    `[Notification Processor] Marked queue item ${nextInQueue.queue_id} (member ${nextInQueue.member_id}) as processed (delivered=${delivered})`
+  );
+
+  return delivered;
+}
+
+async function scheduleAfterQueueSend(params: {
+  spareRequestId: number;
+  processedWasByePriority: boolean;
+  nowDate: Date;
+}): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const { spareRequestId, processedWasByePriority, nowDate } = params;
+
+  const currentStatusResults = await db
+    .select({ status: schema.spareRequests.status })
+    .from(schema.spareRequests)
+    .where(eq(schema.spareRequests.id, spareRequestId))
+    .limit(1);
+  const currentStatus = currentStatusResults[0] as { status: string } | undefined;
+
+  if (currentStatus?.status !== 'open') {
+    await db
+      .update(schema.spareRequests)
+      .set({
+        notification_status: 'completed',
+        next_notification_at: null,
+      })
+      .where(eq(schema.spareRequests.id, spareRequestId));
+    return;
+  }
+
+  const remainingRows = await db
+    .select({
+      is_bye_priority: schema.spareRequestNotificationQueue.is_bye_priority,
+    })
+    .from(schema.spareRequestNotificationQueue)
+    .where(
+      and(
+        eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequestId),
+        isNull(schema.spareRequestNotificationQueue.notified_at)
+      )
+    );
+
+  const configResults = await db
+    .select({ notification_delay_seconds: schema.serverConfig.notification_delay_seconds })
+    .from(schema.serverConfig)
+    .where(eq(schema.serverConfig.id, 1))
+    .limit(1);
+  const config = configResults[0] as { notification_delay_seconds: number | null } | undefined;
+  const delaySeconds = config?.notification_delay_seconds ?? 180;
+
+  const decision = decideAfterQueueSend({
+    requestStillOpen: currentStatus?.status === 'open',
+    remainingQueue: remainingRows.map((row) => ({ isByePriority: row.is_bye_priority === 1 })),
+    processedWasByePriority,
+    staggerDelaySeconds: delaySeconds,
+    byeWaitMs: BYE_PRIORITY_WAIT_MS,
+  });
+
+  if (decision.kind === 'stop_request_closed') {
+    await db
+      .update(schema.spareRequests)
+      .set({
+        notification_status: 'completed',
+        next_notification_at: null,
+      })
+      .where(eq(schema.spareRequests.id, spareRequestId));
+    return;
+  }
+
+  if (decision.kind === 'complete') {
+    await markRequestNotificationsCompleted(spareRequestId, nowDate);
+    return;
+  }
+
+  if (decision.kind === 'start_bye_wait') {
+    const listingAt = new Date(nowDate.getTime() + decision.waitMs);
+    await db
+      .update(schema.spareRequests)
+      .set({
+        next_notification_at: listingAt,
+        public_listing_at: listingAt,
+      })
+      .where(eq(schema.spareRequests.id, spareRequestId));
+    return;
+  }
+
+  let nextNotificationTime =
+    decision.kind === 'continue_bye_immediately'
+      ? nowDate
+      : new Date(nowDate.getTime() + decision.delaySeconds * 1000);
+
+  if (!(nextNotificationTime instanceof Date) || isNaN(nextNotificationTime.getTime())) {
+    nextNotificationTime = new Date();
+  }
+
+  await db
+    .update(schema.spareRequests)
+    .set({ next_notification_at: nextNotificationTime })
+    .where(eq(schema.spareRequests.id, spareRequestId));
+}
 
 /**
  * Processes the next notification in the queue for staggered notifications.
@@ -60,30 +309,8 @@ export async function processNextNotification(): Promise<void> {
   try {
     const { db, schema } = getDrizzleDb();
     const now = await getCurrentTimeAsync();
+    const nowDate = toValidDate(now, 'getCurrentTime()');
 
-    // Ensure now is a Date object - Drizzle PostgreSQL timestamp columns require Date objects
-    // getCurrentTime() should always return a Date, but we'll be defensive
-    let nowDate: Date;
-    if (now instanceof Date && !isNaN(now.getTime())) {
-      nowDate = now;
-    } else {
-      // Fallback: create a new Date
-      console.warn('getCurrentTime() did not return a valid Date, using current time');
-      nowDate = new Date();
-    }
-
-    // Double-check it's a valid Date object with toISOString method
-    if (typeof nowDate.toISOString !== 'function') {
-      console.error('nowDate is not a valid Date object, creating new Date');
-      nowDate = new Date();
-    }
-
-    // Find spare requests that need the next notification sent
-    // Conditions:
-    // 1. Status is 'open' (not request filled or canceled)
-    // 2. notification_status is 'in_progress' (staggered notifications active)
-    // 3. notification_paused is 0 (not paused)
-    // 4. next_notification_at is in the past or null
     const pendingRequests = await db
       .select()
       .from(schema.spareRequests)
@@ -98,21 +325,15 @@ export async function processNextNotification(): Promise<void> {
           )!
         )
       )
-      .orderBy(
-        sql`${schema.spareRequests.next_notification_at} ASC NULLS FIRST`
-      )
+      .orderBy(sql`${schema.spareRequests.next_notification_at} ASC NULLS FIRST`)
       .limit(1) as SpareRequest[];
 
     if (pendingRequests.length === 0) {
-      return; // Nothing to process
+      return;
     }
 
     const spareRequest = pendingRequests[0];
-
-    // Get the next member in the queue who hasn't been notified yet.
-    // Note: We also support "claimed_at" to avoid duplicate sends when multiple processors are running.
-    // If a process crashes after claiming, the claim expires and can be retried.
-    const claimTimeoutMs = 10 * 60 * 1000; // 10 minutes
+    const claimTimeoutMs = 10 * 60 * 1000;
     const claimExpiredBefore = new Date(nowDate.getTime() - claimTimeoutMs);
 
     const nextInQueueResults = await db
@@ -121,6 +342,7 @@ export async function processNextNotification(): Promise<void> {
         spare_request_id: schema.spareRequestNotificationQueue.spare_request_id,
         member_id: schema.spareRequestNotificationQueue.member_id,
         queue_order: schema.spareRequestNotificationQueue.queue_order,
+        is_bye_priority: schema.spareRequestNotificationQueue.is_bye_priority,
         claimed_at: schema.spareRequestNotificationQueue.claimed_at,
         notified_at: schema.spareRequestNotificationQueue.notified_at,
         id: schema.members.id,
@@ -147,33 +369,13 @@ export async function processNextNotification(): Promise<void> {
       .orderBy(asc(schema.spareRequestNotificationQueue.queue_order))
       .limit(1);
 
-    const nextInQueue = nextInQueueResults[0] as {
-      queue_id: number;
-      spare_request_id: number;
-      member_id: number;
-      queue_order: number;
-      claimed_at: string | Date | null;
-      notified_at: string | null;
-      id: number;
-      name: string;
-      email: string | null;
-      phone: string | null;
-      opted_in_sms: number;
-    } | undefined;
+    const nextInQueue = nextInQueueResults[0] as QueueMemberRow | undefined;
 
     if (!nextInQueue) {
-      // No more members to notify - mark as complete
-      await db
-        .update(schema.spareRequests)
-        .set({
-          notification_status: 'completed',
-          next_notification_at: null,
-        })
-        .where(eq(schema.spareRequests.id, spareRequest.id));
+      await markRequestNotificationsCompleted(spareRequest.id, nowDate);
       return;
     }
 
-    // Get requester details
     const requesters = await db
       .select({ name: schema.members.name })
       .from(schema.members)
@@ -181,13 +383,11 @@ export async function processNextNotification(): Promise<void> {
       .limit(1);
 
     const requester = requesters[0] as { name: string } | undefined;
-
     if (!requester) {
       console.error(`Requester not found for spare request ${spareRequest.id}`);
       return;
     }
 
-    // Claim the queue item BEFORE sending to prevent duplicate sends across multiple processors.
     const claimedRows = await db
       .update(schema.spareRequestNotificationQueue)
       .set({ claimed_at: nowDate })
@@ -204,98 +404,21 @@ export async function processNextNotification(): Promise<void> {
       .returning({ id: schema.spareRequestNotificationQueue.id });
 
     if (!claimedRows || claimedRows.length === 0) {
-      // Another processor claimed it first.
       return;
     }
 
-    // Send notification to this member
-    console.log(`[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`);
+    console.log(
+      `[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`
+    );
 
     try {
-      const generation = Number(spareRequest.notification_generation ?? 0);
-      // League name (optional; older requests may not have league_id)
-      let leagueName: string | undefined;
-      if (spareRequest.league_id) {
-        const leagueRows = await db
-          .select({ name: schema.leagues.name })
-          .from(schema.leagues)
-          .where(eq(schema.leagues.id, spareRequest.league_id))
-          .limit(1);
-        leagueName = leagueRows[0]?.name || undefined;
-      }
-
-      if (nextInQueue.email) {
-        const sent = await sendOnceWithDeliveryClaim(
-          {
-            spareRequestId: spareRequest.id,
-            memberId: nextInQueue.member_id,
-            notificationGeneration: generation,
-            channel: 'email',
-            kind: 'spare_request',
-          },
-          async () => {
-            console.log(
-              `[Notification Processor] Calling sendSpareRequestEmail for ${nextInQueue.email} (request ${spareRequest.id})`
-            );
-            await sendSpareRequestEmail(
-              nextInQueue.email!,
-              nextInQueue.name,
-              requester.name,
-              {
-                leagueName,
-                requestedForName: spareRequest.requested_for_name,
-                gameDate: spareRequest.game_date,
-                gameTime: spareRequest.game_time,
-                position: spareRequest.position || undefined,
-                message: spareRequest.message || undefined,
-              },
-              spareRequest.id
-            );
-            console.log(`[Notification Processor] Email function completed for ${nextInQueue.email}`);
-          }
-        );
-        if (!sent) {
-          console.log(
-            `[Notification Processor] Skipping duplicate email to ${nextInQueue.email} for request ${spareRequest.id}`
-          );
-        }
-      }
-
-      if (nextInQueue.phone && nextInQueue.opted_in_sms === 1) {
-        const sent = await sendOnceWithDeliveryClaim(
-          {
-            spareRequestId: spareRequest.id,
-            memberId: nextInQueue.member_id,
-            notificationGeneration: generation,
-            channel: 'sms',
-            kind: 'spare_request',
-          },
-          async () => {
-            await sendSpareRequestSMS(
-              nextInQueue.phone!,
-              requester.name,
-              spareRequest.game_date,
-              spareRequest.game_time
-            );
-            console.log(`[Notification Processor] SMS sent to ${nextInQueue.phone}`);
-          }
-        );
-        if (!sent) {
-          console.log(
-            `[Notification Processor] Skipping duplicate SMS to ${nextInQueue.phone} for request ${spareRequest.id}`
-          );
-        }
-      }
-
-      // Mark this member as notified (and clear claim)
-      await db
-        .update(schema.spareRequestNotificationQueue)
-        .set({ notified_at: nowDate, claimed_at: null })
-        .where(eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id));
-
-      console.log(`[Notification Processor] Marked queue item ${nextInQueue.queue_id} (member ${nextInQueue.member_id}) as notified`);
+      await sendQueueMemberNotification({
+        spareRequest,
+        nextInQueue,
+        requesterName: requester.name,
+        nowDate,
+      });
     } catch (error) {
-      // Clear claim so it can be retried later.
       await db
         .update(schema.spareRequestNotificationQueue)
         .set({ claimed_at: null })
@@ -303,56 +426,12 @@ export async function processNextNotification(): Promise<void> {
       throw error;
     }
 
-    // Check if request is still open (might have been filled while we were processing)
-    const currentStatusResults = await db
-      .select({ status: schema.spareRequests.status })
-      .from(schema.spareRequests)
-      .where(eq(schema.spareRequests.id, spareRequest.id))
-      .limit(1);
-    
-    const currentStatus = currentStatusResults[0] as { status: string } | undefined;
-
-    if (currentStatus?.status !== 'open') {
-      // Request was request filled or canceled - stop notifications
-      await db
-        .update(schema.spareRequests)
-        .set({
-          notification_status: 'completed',
-          next_notification_at: null,
-        })
-        .where(eq(schema.spareRequests.id, spareRequest.id));
-      return;
-    }
-
-    // Schedule next notification based on configured delay
-    const configResults = await db
-      .select({ notification_delay_seconds: schema.serverConfig.notification_delay_seconds })
-      .from(schema.serverConfig)
-      .where(eq(schema.serverConfig.id, 1))
-      .limit(1);
-    
-    const config = configResults[0] as { notification_delay_seconds: number | null } | undefined;
-    
-    const delaySeconds = config?.notification_delay_seconds ?? 180; // Default to 3 minutes (180 seconds)
-    let nextNotificationTime = new Date(nowDate.getTime() + delaySeconds * 1000);
-    // Ensure nextNotificationTime is a valid Date object
-    if (!(nextNotificationTime instanceof Date) || isNaN(nextNotificationTime.getTime())) {
-      console.error('Invalid nextNotificationTime, using current time');
-      nextNotificationTime = new Date();
-    }
-    // Drizzle PostgreSQL timestamp columns require Date objects (not strings)
-    // Ensure it has the toISOString method
-    if (typeof nextNotificationTime.toISOString !== 'function') {
-      console.error('nextNotificationTime missing toISOString method, creating new Date');
-      nextNotificationTime = new Date();
-    }
-    await db
-      .update(schema.spareRequests)
-      .set({ next_notification_at: nextNotificationTime })
-      .where(eq(schema.spareRequests.id, spareRequest.id));
+    await scheduleAfterQueueSend({
+      spareRequestId: spareRequest.id,
+      processedWasByePriority: nextInQueue.is_bye_priority === 1,
+      nowDate,
+    });
   } catch (error) {
-    // If the DB connection drops (restart / idle timeout), this interval will spam logs.
-    // Throttle these errors and just retry on the next interval.
     if (isTransientDbDisconnectError(error)) {
       const nowMs = Date.now();
       if (nowMs - lastDbErrorLogAt > DB_ERROR_LOG_THROTTLE_MS) {
@@ -362,7 +441,6 @@ export async function processNextNotification(): Promise<void> {
       return;
     }
 
-    // For non-transient errors, keep the original behavior (surface the error).
     throw error;
   }
 }
@@ -377,18 +455,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
 
     while (true) {
       const now = await getCurrentTimeAsync();
-
-      let nowDate: Date;
-      if (now instanceof Date && !isNaN(now.getTime())) {
-        nowDate = now;
-      } else {
-        console.warn('getCurrentTime() did not return a valid Date, using current time');
-        nowDate = new Date();
-      }
-      if (typeof nowDate.toISOString !== 'function') {
-        console.error('nowDate is not a valid Date object, creating new Date');
-        nowDate = new Date();
-      }
+      const nowDate = toValidDate(now, 'getCurrentTime()');
 
       const spareRequestRows = await db
         .select()
@@ -412,7 +479,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
         return;
       }
 
-      const claimTimeoutMs = 10 * 60 * 1000; // 10 minutes
+      const claimTimeoutMs = 10 * 60 * 1000;
       const claimExpiredBefore = new Date(nowDate.getTime() - claimTimeoutMs);
 
       const nextInQueueResults = await db
@@ -421,6 +488,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
           spare_request_id: schema.spareRequestNotificationQueue.spare_request_id,
           member_id: schema.spareRequestNotificationQueue.member_id,
           queue_order: schema.spareRequestNotificationQueue.queue_order,
+          is_bye_priority: schema.spareRequestNotificationQueue.is_bye_priority,
           claimed_at: schema.spareRequestNotificationQueue.claimed_at,
           notified_at: schema.spareRequestNotificationQueue.notified_at,
           id: schema.members.id,
@@ -447,29 +515,10 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
         .orderBy(asc(schema.spareRequestNotificationQueue.queue_order))
         .limit(1);
 
-      const nextInQueue = nextInQueueResults[0] as {
-        queue_id: number;
-        spare_request_id: number;
-        member_id: number;
-        queue_order: number;
-        claimed_at: string | Date | null;
-        notified_at: string | null;
-        id: number;
-        name: string;
-        email: string | null;
-        phone: string | null;
-        opted_in_sms: number;
-      } | undefined;
+      const nextInQueue = nextInQueueResults[0] as QueueMemberRow | undefined;
 
       if (!nextInQueue) {
-        await db
-          .update(schema.spareRequests)
-          .set({
-            notifications_sent_at: nowDate,
-            notification_status: 'completed',
-            next_notification_at: null,
-          })
-          .where(eq(schema.spareRequests.id, spareRequest.id));
+        await markRequestNotificationsCompleted(spareRequest.id, nowDate);
         return;
       }
 
@@ -505,69 +554,12 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
       }
 
       try {
-        const generation = Number(spareRequest.notification_generation ?? 0);
-        let leagueName: string | undefined;
-        if (spareRequest.league_id) {
-          const leagueRows = await db
-            .select({ name: schema.leagues.name })
-            .from(schema.leagues)
-            .where(eq(schema.leagues.id, spareRequest.league_id))
-            .limit(1);
-          leagueName = leagueRows[0]?.name || undefined;
-        }
-
-        if (nextInQueue.email) {
-          await sendOnceWithDeliveryClaim(
-            {
-              spareRequestId: spareRequest.id,
-              memberId: nextInQueue.member_id,
-              notificationGeneration: generation,
-              channel: 'email',
-              kind: 'spare_request',
-            },
-            async () => {
-              await sendSpareRequestEmail(
-                nextInQueue.email!,
-                nextInQueue.name,
-                requester.name,
-                {
-                  leagueName,
-                  requestedForName: spareRequest.requested_for_name,
-                  gameDate: spareRequest.game_date,
-                  gameTime: spareRequest.game_time,
-                  position: spareRequest.position || undefined,
-                  message: spareRequest.message || undefined,
-                },
-                spareRequest.id
-              );
-            }
-          );
-        }
-
-        if (nextInQueue.phone && nextInQueue.opted_in_sms === 1) {
-          await sendOnceWithDeliveryClaim(
-            {
-              spareRequestId: spareRequest.id,
-              memberId: nextInQueue.member_id,
-              notificationGeneration: generation,
-              channel: 'sms',
-              kind: 'spare_request',
-            },
-            async () => {
-              await sendSpareRequestSMS(
-                nextInQueue.phone!,
-                requester.name,
-                spareRequest.game_date,
-                spareRequest.game_time
-              );
-            }
-          );
-        }
-
-        await db
-          .update(schema.spareRequestNotificationQueue)
-          .set({ notified_at: nowDate, claimed_at: null })
-          .where(eq(schema.spareRequestNotificationQueue.id, nextInQueue.queue_id));
+        await sendQueueMemberNotification({
+          spareRequest,
+          nextInQueue,
+          requesterName: requester.name,
+          nowDate,
+        });
       } catch (error) {
         await db
           .update(schema.spareRequestNotificationQueue)
@@ -595,14 +587,11 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
  * Call this once when the server starts.
  */
 export function startNotificationProcessor(): void {
-  // Process notifications every 5 seconds to handle any configured delay
-  // This ensures we can process notifications even with very short delays (e.g., 10 seconds)
   setInterval(() => {
     processNextNotification().catch((error) => {
       console.error('Error in notification processor:', error);
     });
-  }, 5 * 1000); // Check every 5 seconds
+  }, 5 * 1000);
 
   console.log('Notification processor started (checking every 5 seconds)');
 }
-

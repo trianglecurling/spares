@@ -5,18 +5,17 @@ import {
   eq,
   gte,
   inArray,
-  isNotNull,
   isNull,
+  lte,
   ne,
   or,
   sql,
 } from 'drizzle-orm';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { getCurrentDateStringAsync, getCurrentTimeAsync } from '../../../utils/time.js';
-import {
-  memberIsNotSocialCondition,
-} from '../../../services/memberMembershipStatusService.js';
 import type { Member, SpareRequest } from '../../../types.js';
+import { getPublicSpareRecipients, getSpareRequestCcMemberIds } from './publicSpareRecipients.js';
+import { normalizeDateString, normalizeTimeString } from '../spareDateTime.js';
 
 type SpareRequestDb = SpareRequest & {
   league_id: number | null;
@@ -35,31 +34,6 @@ export class SpareQueryError extends Error {
     this.name = 'SpareQueryError';
     this.statusCode = statusCode;
   }
-}
-
-function normalizeDateString(value: unknown): string {
-  if (value instanceof Date) {
-    return value.toISOString().split('T')[0];
-  }
-  if (typeof value === 'string') {
-    return value.includes('T') ? value.split('T')[0] : value;
-  }
-  return String(value);
-}
-
-function normalizeTimeString(value: unknown): string {
-  if (value instanceof Date) {
-    const timePart = value.toISOString().split('T')[1];
-    return timePart ? timePart.slice(0, 5) : '';
-  }
-  if (typeof value === 'string') {
-    if (value.includes('T')) {
-      const timePart = value.split('T')[1] || '';
-      return timePart.slice(0, 5);
-    }
-    return value.length >= 5 ? value.slice(0, 5) : value;
-  }
-  return String(value);
 }
 
 async function loadMemberNameMap(memberIds: number[]) {
@@ -152,6 +126,7 @@ export async function listCcSpareRequestsForMember(memberId: number) {
 export async function listAvailableSpareRequestsForMember(member: Member) {
   const { db, schema } = getDrizzleDb();
   const today = await getCurrentDateStringAsync();
+  const now = await getCurrentTimeAsync();
 
   const memberAvailability = await db
     .select({ can_skip: schema.memberAvailability.can_skip })
@@ -169,6 +144,8 @@ export async function listAvailableSpareRequestsForMember(member: Member) {
       isNull(schema.spareRequests.requested_for_member_id),
       ne(schema.spareRequests.requested_for_member_id, member.id),
     )!,
+    // Hide during bye-priority window; null = legacy requests (treat as visible).
+    or(isNull(schema.spareRequests.public_listing_at), lte(schema.spareRequests.public_listing_at, now))!,
   ];
 
   if (!canSkip) {
@@ -636,7 +613,7 @@ export async function getNotificationStatusForRequester(requestId: number, reque
       .where(
         and(
           eq(schema.spareRequestNotificationQueue.spare_request_id, requestId),
-          isNotNull(schema.spareRequestNotificationQueue.notified_at),
+          eq(schema.spareRequestNotificationQueue.was_delivered, 1),
         ),
       ),
   ]);
@@ -655,48 +632,20 @@ export async function getNotificationStatusForRequester(requestId: number, reque
         totalMembers = invitationCount;
         notifiedMembers = invitationCount;
       }
-    } else if (spareRequest.request_type === 'public') {
-      const [year, month, day] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
-      const gameDateObj = new Date(year, month - 1, day);
-      const dayOfWeek = gameDateObj.getDay();
-
-      const matchingLeagues = await db
-        .select()
-        .from(schema.leagues)
-        .where(
-          and(
-            eq(schema.leagues.day_of_week, dayOfWeek),
-            sql`date(${schema.leagues.start_date}) <= date(${normalizeDateString(spareRequest.game_date)})`,
-            sql`date(${schema.leagues.end_date}) >= date(${normalizeDateString(spareRequest.game_date)})`,
-          ),
-        );
-
-      if (matchingLeagues.length > 0) {
-        const leagueIds = matchingLeagues.map((league) => league.id);
-        const today = await getCurrentDateStringAsync();
-        const conditions = [
-          inArray(schema.memberAvailability.league_id, leagueIds),
-          eq(schema.memberAvailability.available, 1),
-          eq(schema.members.email_subscribed, 1),
-          memberIsNotSocialCondition(schema, today),
-          ne(schema.members.id, spareRequest.requester_id),
-        ];
-
-        if (spareRequest.position === 'skip') {
-          conditions.push(eq(schema.memberAvailability.can_skip, 1));
-        }
-
-        const matchingCountRows = await db
-          .select({ count: sql<number>`COUNT(DISTINCT ${schema.members.id})` })
-          .from(schema.members)
-          .innerJoin(schema.memberAvailability, eq(schema.members.id, schema.memberAvailability.member_id))
-          .where(and(...conditions));
-
-        const matchingCount = Number(matchingCountRows[0]?.count || 0);
-        if (matchingCount > 0) {
-          totalMembers = matchingCount;
-          notifiedMembers = matchingCount;
-        }
+    } else if (spareRequest.request_type === 'public' && spareRequest.league_id) {
+      const ccIds = await getSpareRequestCcMemberIds(requestId);
+      const pools = await getPublicSpareRecipients({
+        leagueId: spareRequest.league_id,
+        gameDate: normalizeDateString(spareRequest.game_date),
+        gameTime: normalizeTimeString(spareRequest.game_time),
+        position: spareRequest.position,
+        requesterId: spareRequest.requester_id,
+        excludeMemberIds: ccIds,
+      });
+      const matchingCount = pools.orderedRecipients.length;
+      if (matchingCount > 0) {
+        totalMembers = matchingCount;
+        notifiedMembers = matchingCount;
       }
     }
   }
@@ -710,4 +659,4 @@ export async function getNotificationStatusForRequester(requestId: number, reque
   };
 }
 
-export { normalizeDateString, normalizeTimeString };
+export { normalizeDateString, normalizeTimeString } from '../spareDateTime.js';

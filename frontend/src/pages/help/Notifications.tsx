@@ -75,18 +75,26 @@ export default function Notifications() {
                       More Than 24 Hours Before Game Time
                     </h3>
                     <p className="mb-3">
-                      For requests with more time, the system uses a gradual notification process:
+                      For requests with more time, the system prioritizes members on bye, then
+                      notifies others gradually:
                     </p>
                     <ol className="list-decimal list-inside space-y-2">
-                      <li>The system creates a list of all matching members</li>
-                      <li>The list is randomly shuffled to ensure fairness</li>
-                      <li>Notifications are sent one member at a time</li>
                       <li>
-                        After each notification, the system waits a few minutes (configurable by
-                        administrators)
+                        League members on bye for that day are notified first (all at once)
+                      </li>
+                      <li>
+                        The request stays off other members&apos; dashboards for one hour so bye
+                        players get first chance
+                      </li>
+                      <li>
+                        After that hour, remaining available members are notified one at a time in
+                        random order
+                      </li>
+                      <li>
+                        After each of those notifications, the system waits a few minutes
+                        (configurable by administrators)
                       </li>
                       <li>If someone signs up, notifications stop automatically</li>
-                      <li>If no one signs up, the next member in the list is notified</li>
                       <li>
                         This continues until either someone signs up or all members have been
                         notified
@@ -121,9 +129,6 @@ export default function Notifications() {
                       <li>
                         <strong>"All notifications sent. X members notified":</strong> All
                         notifications have been sent
-                      </li>
-                      <li>
-                        <strong>"Notifications stopped":</strong> Request was request filled or canceled
                       </li>
                       <li>
                         <strong>"(Paused)":</strong> Notifications are temporarily paused

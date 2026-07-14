@@ -1060,6 +1060,64 @@ export const databaseConfigResponseSchema = {
   required: ['type'],
 } as const;
 
+export const spareRequestContextResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    leagues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'number' },
+          name: { type: 'string' },
+          dayOfWeek: { type: 'number' },
+          format: { type: 'string' },
+          teamId: { type: ['number', 'null'] },
+          teamName: { type: ['string', 'null'] },
+          players: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                memberId: { type: 'number' },
+                name: { type: 'string' },
+                role: { type: ['string', 'null'] },
+                sparePosition: {
+                  anyOf: [
+                    { type: 'string', enum: ['lead', 'second', 'vice', 'skip'] },
+                    { type: 'null' },
+                  ],
+                },
+                isSelf: { type: 'boolean' },
+              },
+              required: ['memberId', 'name', 'role', 'sparePosition', 'isSelf'],
+            },
+          },
+          games: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'number' },
+                date: { type: 'string' },
+                time: { type: 'string' },
+                opponentName: { type: ['string', 'null'] },
+              },
+              required: ['id', 'date', 'time', 'opponentName'],
+            },
+          },
+        },
+        required: ['id', 'name', 'dayOfWeek', 'format', 'teamId', 'teamName', 'players', 'games'],
+      },
+    },
+  },
+  required: ['leagues'],
+} as const;
+
 export const sparesCcResponseSchema = {
   type: 'array',
   items: {

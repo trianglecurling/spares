@@ -509,16 +509,10 @@ export default function BookIceTime() {
             )}
           </fieldset>
 
-          <div className="flex flex-wrap gap-3 pt-2">
+          <div className="flex justify-end pt-2">
             <Button type="submit" variant="primary" disabled={submitting || sheets.length === 0}>
               {submitting ? 'Booking…' : 'Book now'}
             </Button>
-            <Link
-              to="/calendar"
-              className="px-4 py-2 rounded-md font-medium transition-colors inline-flex items-center justify-center bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
-            >
-              Cancel
-            </Link>
           </div>
         </form>
 
@@ -569,7 +563,7 @@ export default function BookIceTime() {
                     disabled={cancelingId === b.id}
                     onClick={() => void handleCancelBooking(b.id)}
                   >
-                    {cancelingId === b.id ? 'Canceling…' : 'Cancel'}
+                    {cancelingId === b.id ? 'Canceling…' : 'Cancel booking'}
                   </Button>
                 </div>
               ))}

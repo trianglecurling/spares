@@ -1,4 +1,4 @@
-import { autoAcceptExpiredWaitlistOffers } from '../registration/waitlistStaffService.js';
+import { autoDeclineExpiredWaitlistOffers } from '../registration/waitlistStaffService.js';
 
 let processorStarted = false;
 
@@ -6,7 +6,7 @@ export function startWaitlistOfferProcessor(): void {
   if (processorStarted) return;
   processorStarted = true;
   setInterval(() => {
-    autoAcceptExpiredWaitlistOffers().catch((error) => {
+    autoDeclineExpiredWaitlistOffers().catch((error) => {
       console.error('Error in waitlist offer processor:', error);
     });
   }, 60 * 1000);

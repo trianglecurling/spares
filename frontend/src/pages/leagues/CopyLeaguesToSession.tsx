@@ -516,12 +516,9 @@ export default function CopyLeaguesToSession() {
               </div>
             )}
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap justify-end gap-3">
               <Button type="submit" disabled={submitDisabled}>
                 {submitting ? 'Copying…' : 'Copy leagues'}
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => navigate('/leagues')}>
-                Cancel
               </Button>
             </div>
           </form>

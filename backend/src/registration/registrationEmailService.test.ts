@@ -62,7 +62,7 @@ describe('Phase 9 registration email rendering', () => {
       declineUrl: 'https://example.test/decline',
     });
 
-    expect(rendered.textBody).toContain('If you do not decline this offer within 24 hours');
+    expect(rendered.textBody).toContain('If you do not accept this offer by the response deadline, we will treat it as declined');
     expect(rendered.textBody).toContain('temporary spot');
     expect(rendered.textBody).toContain('does not remove you from the waitlist for a permanent spot');
   });

@@ -187,7 +187,6 @@ export default function CalendarEventFormPage() {
               sheets={sheets}
               eventTypes={DEFAULT_EVENT_TYPES}
               initialDate={initialDate}
-              onCancel={() => goBackToCalendar(event?.start ?? initialDate)}
               onSaved={handleSaved}
             />
           </div>

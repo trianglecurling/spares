@@ -7511,6 +7511,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/spares/request-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            leagues: {
+                                id: number;
+                                name: string;
+                                dayOfWeek: number;
+                                format: string;
+                                teamId: null | number;
+                                teamName: null | string;
+                                players: {
+                                    memberId: number;
+                                    name: string;
+                                    role: null | string;
+                                    sparePosition: ("lead" | "second" | "vice" | "skip") | null;
+                                    isSelf: boolean;
+                                }[];
+                                games: {
+                                    id: number;
+                                    date: string;
+                                    time: string;
+                                    opponentName: null | string;
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/spares/cc": {
         parameters: {
             query?: never;

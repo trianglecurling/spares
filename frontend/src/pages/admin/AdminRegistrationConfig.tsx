@@ -1084,9 +1084,11 @@ function FormActions({
 }) {
   return (
     <div className="flex flex-wrap justify-end gap-2 pt-2">
-      <Button type="button" variant="secondary" onClick={onCancel}>
-        {isEditing ? 'Cancel' : 'Reset'}
-      </Button>
+      {isEditing ? (
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel edit
+        </Button>
+      ) : null}
       <Button type="submit" disabled={saving}>
         {saving ? 'Saving...' : isEditing ? 'Save changes' : 'Save'}
       </Button>

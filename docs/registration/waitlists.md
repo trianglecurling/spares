@@ -159,16 +159,19 @@ Permanent vacancies are filled before temporary sabbatical-fill vacancies.
 
 ## Offer response rule
 
-When a waitlist offer is sent, the curler has 24 hours to decline.
+When a waitlist offer is sent, it includes a response deadline chosen by staff.
 
-If the curler does not decline within 24 hours, the offer is treated as
-accepted.
+If the curler does not accept by that deadline, the offer is treated as
+declined.
+
+Most curlers pre-select auto-accept or auto-decline during priority
+registration, so staff usually know the intended response before sending.
 
 Suggested user-facing wording:
 
-"If you do not decline this offer within 24 hours, we will treat the offer as
-accepted and add you to the league. If payment is required, staff will follow up
-with you."
+"If you do not accept this offer by the response deadline, we will treat it as
+declined. If payment is required after acceptance, staff will follow up with
+you."
 
 Payment issues after acceptance are handled manually by staff.
 
@@ -248,7 +251,7 @@ Audit at least the following events:
 - Offer sent
 - Offer accepted
 - Offer declined
-- Offer treated as accepted after no decline
+- Offer treated as declined after no acceptance by the deadline
 - Entry marked inactive
 - Entry restored
 

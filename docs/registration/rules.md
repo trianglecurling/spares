@@ -747,16 +747,16 @@ If the entry preference is `auto_accept` or `auto_decline`, the system resolves
 the offer immediately using that preference instead of waiting for a member
 response.
 
-If the entry preference is `ask`, a waitlist offer gives the user 24 hours to
-decline.
+If the entry preference is `ask`, a waitlist offer includes a response deadline
+chosen by staff.
 
-If the user does not respond within 24 hours, the offer is treated as accepted.
+If the user does not accept by that deadline, the offer is treated as declined.
 
 User-facing offer language should clearly state:
 
-> If you do not decline this offer within 24 hours, we will treat the offer as
-> accepted and add you to the league. If payment is required, staff will follow
-> up with you.
+> If you do not accept this offer by the response deadline, we will treat it as
+> declined. If payment is required after acceptance, staff will follow up with
+> you.
 
 Payment issues after acceptance are handled manually by staff.
 

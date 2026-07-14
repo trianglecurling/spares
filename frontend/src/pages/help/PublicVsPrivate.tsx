@@ -59,33 +59,33 @@ export default function PublicVsPrivate() {
                     </div>
                     <ul className="list-disc list-inside space-y-2">
                       <li>
-                        <strong>Visibility:</strong> All members can see it on their dashboard
-                        immediately
+                        <strong>Visibility:</strong> Appears on member dashboards after any bye
+                        priority window (immediately when under 24 hours before the game)
                       </li>
                       <li>
                         <strong>Notifications:</strong>
                         <ul className="list-disc list-inside ml-6 mt-2 space-y-1">
                           <li>
+                            Members on bye for that league day are notified first
+                          </li>
+                          <li>
                             If less than 24 hours before game time: All matching members are
                             notified immediately
                           </li>
                           <li>
-                            If more than 24 hours before game time: Notifications are sent
-                            gradually, one member at a time, every few minutes
+                            If more than 24 hours before game time: After a one-hour bye window,
+                            remaining members are notified gradually, one at a time
                           </li>
                         </ul>
                       </li>
                       <li>
-                        <strong>Notifications:</strong> Only members who have set their availability
-                        for the relevant league will receive email/SMS notifications
+                        <strong>Audience:</strong> Email/SMS go to members available for that
+                        league, plus members on bye for the day (excluding people already playing
+                        or sparing that draw)
                       </li>
                       <li>
                         <strong>Skip position:</strong> If requesting a skip, only members
                         comfortable skipping will receive notifications
-                      </li>
-                      <li>
-                        <strong>Visibility:</strong> All members can see all public requests on
-                        their dashboard, regardless of availability
                       </li>
                       <li>
                         <strong>Control:</strong> You can pause notifications if needed, then

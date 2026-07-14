@@ -146,7 +146,9 @@ export function formatWaitlistAuditSummary(input: {
     case 'offer_declined':
       return `${memberName} declined a waitlist offer${teamSuffix}`;
     case 'offer_expired_accepted':
-      return `${memberName} auto-accepted a waitlist offer after 24 hours${teamSuffix}`;
+      return `${memberName} auto-accepted a waitlist offer after the response deadline${teamSuffix}`;
+    case 'offer_expired_declined':
+      return `${memberName} auto-declined a waitlist offer after the response deadline${teamSuffix}`;
     case 'offer_cancelled':
       return actorName
         ? `${actorName} canceled a waitlist offer to ${memberName}${teamSuffix}`

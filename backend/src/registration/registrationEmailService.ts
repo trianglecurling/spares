@@ -466,12 +466,12 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           <h2>${temporary ? 'Temporary league spot available' : 'League spot available'}</h2>
           <p>Triangle Curling Club has an offer for you in <strong>${escapeHtml(leagueName)}</strong>.</p>
           <p>${escapeHtml(temporaryText)}</p>
-          <p>If you do not decline this offer within 24 hours, we will treat the offer as accepted and add you to the league. If payment is required, staff will follow up with you.</p>
-          ${payload.deadlineText ? `<p><strong>Decline by:</strong> ${escapeHtml(payload.deadlineText)}</p>` : ''}
+          <p>If you do not accept this offer by the response deadline, we will treat it as declined. If payment is required after acceptance, staff will follow up with you.</p>
+          ${payload.deadlineText ? `<p><strong>Respond by:</strong> ${escapeHtml(payload.deadlineText)}</p>` : ''}
           ${actionLinksHtml(payload)}
           ${membershipContactHtml}
         `,
-        textBody: `${temporary ? 'Temporary league spot available' : 'League spot available'}: ${leagueName}\n\n${temporaryText}\n\nIf you do not decline this offer within 24 hours, we will treat the offer as accepted and add you to the league. If payment is required, staff will follow up with you.\n${payload.deadlineText ? `Decline by: ${payload.deadlineText}\n` : ''}${payload.acceptUrl ? `Accept: ${payload.acceptUrl}\n` : ''}${payload.declineUrl ? `Decline: ${payload.declineUrl}\n` : ''}\n${membershipContactText}`,
+        textBody: `${temporary ? 'Temporary league spot available' : 'League spot available'}: ${leagueName}\n\n${temporaryText}\n\nIf you do not accept this offer by the response deadline, we will treat it as declined. If payment is required after acceptance, staff will follow up with you.\n${payload.deadlineText ? `Respond by: ${payload.deadlineText}\n` : ''}${payload.acceptUrl ? `Accept: ${payload.acceptUrl}\n` : ''}${payload.declineUrl ? `Decline: ${payload.declineUrl}\n` : ''}\n${membershipContactText}`,
       };
     }
     case 'waitlist_offer_accepted':
@@ -479,26 +479,26 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         subject: `League offer accepted: ${leagueName}`,
         htmlBody: `
           <h2>League offer accepted</h2>
-          <p>Your offer for <strong>${escapeHtml(leagueName)}</strong> has been accepted${payload.offerResponseSource === 'automatic' ? ' automatically after the response window' : ''}.</p>
+          <p>Your offer for <strong>${escapeHtml(leagueName)}</strong> has been accepted.</p>
           <p>Spot type: ${payload.isTemporarySabbaticalFill ? 'temporary sabbatical-fill' : 'permanent'}.</p>
           <p>${payload.paymentUrl ? 'Payment is ready now.' : 'If payment is required, staff will follow up.'}</p>
           ${payload.paymentUrl ? paymentLinkHtml(payload) : ''}
           ${waitlistOfferAcceptedContactHtml}
         `,
-        textBody: `League offer accepted: ${leagueName}\n\nYour offer has been accepted${payload.offerResponseSource === 'automatic' ? ' automatically after the response window' : ''}.\nSpot type: ${payload.isTemporarySabbaticalFill ? 'temporary sabbatical-fill' : 'permanent'}.\n${payload.paymentUrl ? `Payment link: ${payload.paymentUrl}` : 'If payment is required, staff will follow up.'}\n\n${waitlistOfferAcceptedContactText}`,
+        textBody: `League offer accepted: ${leagueName}\n\nYour offer has been accepted.\nSpot type: ${payload.isTemporarySabbaticalFill ? 'temporary sabbatical-fill' : 'permanent'}.\n${payload.paymentUrl ? `Payment link: ${payload.paymentUrl}` : 'If payment is required, staff will follow up.'}\n\n${waitlistOfferAcceptedContactText}`,
       };
     case 'waitlist_offer_declined':
       return {
         subject: `League offer declined: ${leagueName}`,
         htmlBody: `
           <h2>League offer declined</h2>
-          <p>Your offer for <strong>${escapeHtml(leagueName)}</strong> has been declined.</p>
+          <p>Your offer for <strong>${escapeHtml(leagueName)}</strong> has been declined${payload.offerResponseSource === 'automatic' ? ' because the response deadline passed without an acceptance' : ''}.</p>
           <p>${(payload.declineCount ?? 0) >= 2 ? 'This was your second decline for this waitlist, so you have moved to the bottom of the waitlist.' : 'This was your first decline for this waitlist, so your position is retained.'}</p>
           <p>Updated position: ${payload.updatedPosition ?? payload.position ?? 'Not available'}</p>
           ${payload.dashboardUrl ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View waitlist status</a></p>` : ''}
           ${membershipContactHtml}
         `,
-        textBody: `League offer declined: ${leagueName}\n\n${(payload.declineCount ?? 0) >= 2 ? 'This was your second decline, so you have moved to the bottom of the waitlist.' : 'This was your first decline, so your position is retained.'}\nUpdated position: ${payload.updatedPosition ?? payload.position ?? 'Not available'}\n${payload.dashboardUrl ? `View status: ${payload.dashboardUrl}\n` : ''}\n${membershipContactText}`,
+        textBody: `League offer declined: ${leagueName}\n\nYour offer has been declined${payload.offerResponseSource === 'automatic' ? ' because the response deadline passed without an acceptance' : ''}.\n${(payload.declineCount ?? 0) >= 2 ? 'This was your second decline, so you have moved to the bottom of the waitlist.' : 'This was your first decline, so your position is retained.'}\nUpdated position: ${payload.updatedPosition ?? payload.position ?? 'Not available'}\n${payload.dashboardUrl ? `View status: ${payload.dashboardUrl}\n` : ''}\n${membershipContactText}`,
       };
     case 'deferred_registration_payment_link':
       return {

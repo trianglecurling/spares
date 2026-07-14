@@ -817,13 +817,16 @@ Recommended fields:
 - `accepted`
 - `declined`
 - `expired_accepted`
+- `expired_declined`
 - `cancelled`
 
 ### Notes
 
-No response within 24 hours is treated as acceptance.
+No response by the offer deadline is treated as a decline.
 
-That state should be distinguishable from explicit acceptance if practical.
+That state should be distinguishable from an explicit decline if practical.
+Historical `expired_accepted` values may still exist from earlier default-accept
+behavior.
 
 ## 6.3 WaitlistAuditEvent
 
@@ -879,6 +882,7 @@ Recommended values:
 - `offer_accepted`
 - `offer_declined`
 - `offer_expired_accepted`
+- `offer_expired_declined`
 - `decline_count_changed`
 - `entry_moved_to_bottom`
 - `entry_placed`

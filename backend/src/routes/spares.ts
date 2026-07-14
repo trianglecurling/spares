@@ -25,7 +25,7 @@ import {
 } from '../services/memberMembershipStatusService.js';
 import { logEvent } from '../services/observability.js';
 import { sendOnceWithDeliveryClaim } from '../services/spareRequestDelivery.js';
-import { processAllNotificationsForRequest } from '../services/notificationProcessor.js';
+import { startPublicSpareNotifications } from '../domains/spares/publicSpareNotifications.js';
 import {
   sparesCcResponseSchema,
   spareCreateResponseSchema,
@@ -37,6 +37,7 @@ import {
   spareMyRequestsResponseSchema,
   spareMySparingResponseSchema,
   spareNotificationStatusResponseSchema,
+  spareRequestContextResponseSchema,
   spareStatusResponseSchema,
   sparesListResponseSchema,
   successResponseSchema,
@@ -54,6 +55,11 @@ import {
   listUpcomingSparingAssignments,
   SpareQueryError,
 } from '../domains/spares/queries/spareRequestQueries.js';
+import {
+  getRequesterTeamContext,
+  getSpareRequestContextForMember,
+} from '../domains/spares/queries/spareRequestContext.js';
+import type { SparePosition } from '../utils/sparePositionFromTeamMember.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
@@ -223,6 +229,29 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     return rows;
   }
+
+  // Context for the simplified spare request form (my leagues + teammates)
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/spares/request-context',
+    {
+      schema: {
+        tags: ['spares'],
+        response: {
+          200: spareRequestContextResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+      if (memberIsSpareOnly(member) || memberIsSocialMember(member)) {
+        return { leagues: [] };
+      }
+      return getSpareRequestContextForMember(member.id);
+    }
+  );
 
   // Get spare requests the user was CC'd on (upcoming; includes private requests)
   fastify.get<{ Reply: ApiReply<unknown> }>(
@@ -695,14 +724,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
       })
       .where(eq(schema.spareRequests.id, requestId));
 
-    const genRows = await db
-      .select({ notification_generation: schema.spareRequests.notification_generation })
-      .from(schema.spareRequests)
-      .where(eq(schema.spareRequests.id, requestId))
-      .limit(1);
-    const notificationGeneration = Number(genRows[0]?.notification_generation ?? 0);
-
-    // Kick off public notification flow (same logic as create public request)
     const leagueId = spareRequest.league_id;
     if (!leagueId) {
       return reply.code(400).send({ error: 'Cannot make public without a league' });
@@ -713,9 +734,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .from(schema.leagues)
       .where(eq(schema.leagues.id, leagueId))
       .limit(1);
-    const league = leagueRows[0];
-    if (!league) return reply.code(400).send({ error: 'Invalid league' });
-    const leagueName = league.name;
+    if (!leagueRows[0]) return reply.code(400).send({ error: 'Invalid league' });
 
     // Parse date/time as local to avoid timezone issues
     const [gameYear, gameMonth, gameDay] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
@@ -725,122 +744,22 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
     const isLessThan24Hours = hoursUntilGame < 24;
 
-    // Clear any existing notification queue
-    await db.delete(schema.spareRequestNotificationQueue).where(eq(schema.spareRequestNotificationQueue.spare_request_id, requestId));
+    const publicResult = await startPublicSpareNotifications({
+      spareRequestId: requestId,
+      leagueId,
+      gameDate: normalizeDateString(spareRequest.game_date),
+      gameTime: String(spareRequest.game_time),
+      position: spareRequest.position,
+      requesterId: member.id,
+      includePersistedCcs: true,
+      isLessThan24Hours,
+    });
 
-    // Recipient selection (public)
-    const today = await getCurrentDateStringAsync();
-    const conditions: Array<ReturnType<typeof sql>> = [
-      eq(schema.memberAvailability.league_id, leagueId),
-      eq(schema.memberAvailability.available, 1),
-      eq(schema.members.email_subscribed, 1),
-      memberIsNotSocialCondition(schema, today),
-      ne(schema.members.id, member.id),
-    ];
-    if (spareRequest.position === 'skip') {
-      conditions.push(eq(schema.memberAvailability.can_skip, 1));
-    }
-    const recipientMembers = await db
-      .selectDistinct({
-        id: schema.members.id,
-        name: schema.members.name,
-        email: schema.members.email,
-        phone: schema.members.phone,
-        is_server_admin: schema.members.is_server_admin,
-        opted_in_sms: schema.members.opted_in_sms,
-        email_subscribed: schema.members.email_subscribed,
-        email_visible: schema.members.email_visible,
-        phone_visible: schema.members.phone_visible,
-        theme_preference: schema.members.theme_preference,
-        created_at: schema.members.created_at,
-        updated_at: schema.members.updated_at,
-      })
-      .from(schema.members)
-      .innerJoin(schema.memberAvailability, eq(schema.members.id, schema.memberAvailability.member_id))
-      .where(and(...conditions));
-
-    if (isLessThan24Hours) {
-      for (const recipient of recipientMembers) {
-        if (recipient.email) {
-          sendOnceWithDeliveryClaim(
-            {
-              spareRequestId: requestId,
-              memberId: recipient.id,
-              notificationGeneration,
-              channel: 'email',
-              kind: 'spare_request',
-            },
-            () =>
-              sendSpareRequestEmail(
-                recipient.email!,
-                recipient.name,
-                member.name,
-                {
-                  leagueName,
-                  requestedForName: spareRequest.requested_for_name,
-                  gameDate: normalizeDateString(spareRequest.game_date),
-                  gameTime: spareRequest.game_time,
-                  position: spareRequest.position || undefined,
-                  message: spareRequest.message || undefined,
-                },
-                requestId
-              )
-          ).catch((error: unknown) => console.error('Error sending public spare email:', error));
-        }
-        if (recipient.phone && recipient.opted_in_sms === 1) {
-          sendOnceWithDeliveryClaim(
-            {
-              spareRequestId: requestId,
-              memberId: recipient.id,
-              notificationGeneration,
-              channel: 'sms',
-              kind: 'spare_request',
-            },
-            () => sendSpareRequestSMS(recipient.phone!, member.name, normalizeDateString(spareRequest.game_date), spareRequest.game_time)
-          ).catch((error: unknown) => console.error('Error sending public spare SMS:', error));
-        }
-      }
-      if (recipientMembers.length > 0) {
-        await db
-          .update(schema.spareRequests)
-          .set({
-            notifications_sent_at: await getCurrentTimeAsync(),
-            notification_status: 'completed',
-          })
-          .where(eq(schema.spareRequests.id, requestId));
-      }
-      return { success: true, notificationsSent: recipientMembers.length };
-    }
-
-    if (recipientMembers.length === 0) {
-      await db
-        .update(schema.spareRequests)
-        .set({
-          notification_status: 'completed',
-          next_notification_at: null,
-        })
-        .where(eq(schema.spareRequests.id, requestId));
-      return { success: true, notificationsQueued: 0, notificationStatus: 'completed' };
-    }
-
-    const shuffled = [...recipientMembers].sort(() => Math.random() - 0.5);
-    await db.insert(schema.spareRequestNotificationQueue).values(
-      shuffled.map((recipient, index) => ({
-        spare_request_id: requestId,
-        member_id: recipient.id,
-        queue_order: index,
-      }))
-    );
-    await db
-      .update(schema.spareRequests)
-      .set({
-        notification_status: 'in_progress',
-        next_notification_at: await getCurrentTimeAsync(),
-        notification_paused: 0,
-      })
-      .where(eq(schema.spareRequests.id, requestId));
-
-    return { success: true, notificationsQueued: shuffled.length, notificationStatus: 'in_progress' };
+    return {
+      success: true,
+      notificationsQueued: publicResult.notificationsQueued,
+      notificationStatus: publicResult.notificationStatus,
+    };
     }
   );
 
@@ -971,12 +890,16 @@ export async function spareRoutes(fastify: FastifyInstance) {
     let gameIdValue: number | null = null;
     let gameDateValue = body.gameDate;
     let gameTimeValue = body.gameTime;
+    let selectedGameTeam1Id: number | null = null;
+    let selectedGameTeam2Id: number | null = null;
 
     if (body.gameId !== undefined) {
       const gameRows = await db
         .select({
           id: schema.games.id,
           league_id: schema.games.league_id,
+          team1_id: schema.games.team1_id,
+          team2_id: schema.games.team2_id,
           game_date: schema.games.game_date,
           game_time: schema.games.game_time,
           status: schema.games.status,
@@ -1008,6 +931,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
       gameIdValue = game.id;
       gameDateValue = normalizedGameDate;
       gameTimeValue = normalizedGameTime;
+      selectedGameTeam1Id = game.team1_id;
+      selectedGameTeam2Id = game.team2_id;
     }
 
     let recipientMembers: Member[] = [];
@@ -1018,6 +943,38 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const messageValue = body.message || null;
     let requestedForNameValue = body.requestedForName;
     let requestedForMemberId: number | null = null;
+    let resolvedPosition: SparePosition | null =
+      positionValue === 'lead' ||
+      positionValue === 'second' ||
+      positionValue === 'vice' ||
+      positionValue === 'skip'
+        ? positionValue
+        : null;
+
+    const teamContext = await getRequesterTeamContext(member.id, body.leagueId);
+    if (!teamContext) {
+      return reply.code(403).send({
+        error: 'You can only request a spare for a league you are actively rostered in.',
+      });
+    }
+    if (teamContext.teamId == null) {
+      return reply.code(400).send({
+        error: 'You must be assigned to a team in this league before requesting a spare.',
+      });
+    }
+    if (gameIdValue == null) {
+      return reply.code(400).send({
+        error: 'Select a scheduled game for your team.',
+      });
+    }
+    if (
+      selectedGameTeam1Id !== teamContext.teamId &&
+      selectedGameTeam2Id !== teamContext.teamId
+    ) {
+      return reply.code(400).send({
+        error: 'Selected game is not a scheduled game for your team.',
+      });
+    }
 
     if (body.requestedForMemberId !== undefined) {
       const requestedForRows = await db
@@ -1033,6 +990,25 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
       requestedForMemberId = requestedForMember.id;
       requestedForNameValue = requestedForMember.name;
+    } else {
+      requestedForMemberId = member.id;
+      requestedForNameValue = member.name;
+    }
+
+    const allowedPlayerIds = new Set<number>([member.id]);
+    for (const teammate of teamContext.teammates) {
+      allowedPlayerIds.add(teammate.memberId);
+    }
+    if (requestedForMemberId == null || !allowedPlayerIds.has(requestedForMemberId)) {
+      return reply.code(400).send({
+        error: 'You can only request a spare for yourself or a teammate on your team.',
+      });
+    }
+
+    const targetTeammate =
+      teamContext.teammates.find((row) => row.memberId === requestedForMemberId) ?? null;
+    if (resolvedPosition == null && targetTeammate?.sparePosition) {
+      resolvedPosition = targetTeammate.sparePosition;
     }
 
     // Warn about duplicates based on core fields only.
@@ -1127,7 +1103,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
         requested_for_member_id: requestedForMemberId,
         game_date: gameDateValue,
         game_time: gameTimeValue,
-        position: positionValue,
+        position: resolvedPosition,
         message: messageValue,
         request_type: body.requestType,
         status: 'open',
@@ -1148,19 +1124,19 @@ export async function spareRoutes(fastify: FastifyInstance) {
       meta: { requestType: body.requestType, leagueId: body.leagueId },
     }).catch(() => {});
 
-    // Store CCs (up to 4, members only, no self). Always include requested-for member when present.
-    const requestedForCcId =
-      requestedForMemberId && requestedForMemberId !== member.id ? requestedForMemberId : null;
-    const baseCcIds = (body.ccMemberIds || []).filter((id) => id !== member.id);
+    // Always CC teammates (and requested-for when different). Client ccMemberIds are ignored.
     const ccIds: number[] = [];
-    if (requestedForCcId) {
-      ccIds.push(requestedForCcId);
-    }
-    for (const id of baseCcIds) {
-      if (!ccIds.includes(id)) {
-        ccIds.push(id);
+    for (const teammate of teamContext.teammates) {
+      if (teammate.memberId !== member.id && !ccIds.includes(teammate.memberId)) {
+        ccIds.push(teammate.memberId);
       }
-      if (ccIds.length >= 4) break;
+    }
+    if (
+      requestedForMemberId &&
+      requestedForMemberId !== member.id &&
+      !ccIds.includes(requestedForMemberId)
+    ) {
+      ccIds.push(requestedForMemberId);
     }
     if (ccIds.length > 0) {
       const ccMembersExist = await db
@@ -1187,10 +1163,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
           member.name,
           {
             leagueName,
-            requestedForName: body.requestedForName,
+            requestedForName: requestedForNameValue,
             gameDate: gameDateValue,
             gameTime: gameTimeValue,
-            position: body.position,
+            position: resolvedPosition ?? undefined,
             message: body.message,
           }
         ).catch((error) => {
@@ -1212,10 +1188,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
             member.name,
             {
               leagueName,
-              requestedForName: body.requestedForName,
+              requestedForName: requestedForNameValue,
               gameDate: gameDateValue,
               gameTime: gameTimeValue,
-              position: body.position,
+              position: resolvedPosition ?? undefined,
               message: body.message,
             }
           ).catch((error) => {
@@ -1284,10 +1260,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
                 member.name,
                 {
                   leagueName,
-                  requestedForName: body.requestedForName,
+                  requestedForName: requestedForNameValue,
                   gameDate: gameDateValue,
                   gameTime: gameTimeValue,
-                  position: body.position,
+                  position: resolvedPosition ?? undefined,
                   message: body.message,
                   invitedMemberNames: invitedMemberNames,
                 },
@@ -1335,150 +1311,39 @@ export async function spareRoutes(fastify: FastifyInstance) {
       if (dayOfWeek === null) {
         return reply.code(400).send({ error: 'Invalid game date' });
       }
-      // Get members who are available for this league
-      const publicToday = await getCurrentDateStringAsync();
-      const conditions = [
-        eq(schema.memberAvailability.league_id, body.leagueId),
-        eq(schema.memberAvailability.available, 1),
-        eq(schema.members.email_subscribed, 1),
-        memberIsNotSocialCondition(schema, publicToday),
-        ne(schema.members.id, member.id),
-      ];
-      // If position is skip, only notify those who can skip
-      if (body.position === 'skip') {
-        conditions.push(eq(schema.memberAvailability.can_skip, 1));
-      }
 
-      recipientMembers = await db
-        .selectDistinct({
-          id: schema.members.id,
-          name: schema.members.name,
-          email: schema.members.email,
-          phone: schema.members.phone,
-          is_server_admin: schema.members.is_server_admin,
-          opted_in_sms: schema.members.opted_in_sms,
-          email_subscribed: schema.members.email_subscribed,
-          email_visible: schema.members.email_visible,
-          phone_visible: schema.members.phone_visible,
-          theme_preference: schema.members.theme_preference,
-          created_at: schema.members.created_at,
-          updated_at: schema.members.updated_at,
-        })
-        .from(schema.members)
-        .innerJoin(
-          schema.memberAvailability,
-          eq(schema.members.id, schema.memberAvailability.member_id)
-        )
-        .where(and(...conditions));
-      console.log(`[Spare Request] Found ${recipientMembers.length} matching members for league ${body.leagueId}`);
+      const publicResult = await startPublicSpareNotifications({
+        spareRequestId: requestId,
+        leagueId: body.leagueId,
+        gameDate: body.gameDate,
+        gameTime: body.gameTime,
+        position: resolvedPosition,
+        requesterId: member.id,
+        excludeMemberIds: ccIds,
+        isLessThan24Hours,
+      });
 
-      if (isLessThan24Hours) {
-        // Less than 24 hours: queue notifications for background processing
-        if (recipientMembers.length === 0) {
-          await db
-            .update(schema.spareRequests)
-            .set({
-              notification_status: 'completed',
-              next_notification_at: null,
-            })
-            .where(eq(schema.spareRequests.id, requestId));
+      console.log(
+        `[Spare Request] Queued ${publicResult.notificationsQueued} public recipients for league ${body.leagueId} (bye=${publicResult.byeRecipientCount})`,
+      );
 
-          return {
-            id: requestId,
-            success: true,
-            notificationsQueued: 0,
-            notificationStatus: 'completed',
-            message: 'No matching members found for this request',
-          };
-        }
-
-        const shuffled = [...recipientMembers].sort(() => Math.random() - 0.5);
-        await db.insert(schema.spareRequestNotificationQueue).values(
-          shuffled.map((recipient, index) => ({
-            spare_request_id: requestId,
-            member_id: recipient.id,
-            queue_order: index,
-          }))
-        );
-
-        await db
-          .update(schema.spareRequests)
-          .set({
-            notification_status: 'in_progress',
-            next_notification_at: await getCurrentTimeAsync(),
-            notification_paused: 0,
-          })
-          .where(eq(schema.spareRequests.id, requestId));
-
-        processAllNotificationsForRequest(requestId).catch((error) => {
-          console.error('[Spare Request] Error processing immediate notifications:', error);
-        });
-
+      if (publicResult.notificationsQueued === 0) {
         return {
           id: requestId,
           success: true,
-          notificationsQueued: shuffled.length,
-          notificationStatus: 'in_progress',
-          notificationMode: 'immediate',
-        };
-      } else {
-        // More than 24 hours: set up staggered notification queue
-        if (recipientMembers.length === 0) {
-          // No matching members found - mark as completed with 0 notifications
-          await db
-            .update(schema.spareRequests)
-            .set({
-              notification_status: 'completed',
-              next_notification_at: null,
-            })
-            .where(eq(schema.spareRequests.id, requestId));
-
-          return {
-            id: requestId,
-            success: true,
-            notificationsQueued: 0,
-            notificationStatus: 'completed',
-            message: 'No matching members found for this request',
-          };
-        }
-
-        // Shuffle the list randomly
-        const shuffled = [...recipientMembers].sort(() => Math.random() - 0.5);
-
-        // Create notification queue entries
-        if (shuffled.length > 0) {
-          await db.insert(schema.spareRequestNotificationQueue).values(
-            shuffled.map((recipient, index) => ({
-              spare_request_id: requestId,
-              member_id: recipient.id,
-              queue_order: index,
-            }))
-          );
-        }
-
-        console.log(`[Spare Request] Created notification queue with ${shuffled.length} members for request ${requestId}`);
-
-        // Mark notification status as 'in_progress' and set next_notification_at to now
-        // Clear paused flag when starting notifications
-        // This will trigger the notification processor to send the first notification immediately
-        // After the first notification, it will wait for the configured delay before sending the next one
-        await db
-          .update(schema.spareRequests)
-          .set({
-            notification_status: 'in_progress',
-            next_notification_at: await getCurrentTimeAsync(),
-            notification_paused: 0,
-          })
-          .where(eq(schema.spareRequests.id, requestId));
-
-        return {
-          id: requestId,
-          success: true,
-          notificationsQueued: shuffled.length,
-          notificationStatus: 'in_progress',
-          notificationMode: 'staggered',
+          notificationsQueued: 0,
+          notificationStatus: 'completed',
+          message: 'No matching members found for this request',
         };
       }
+
+      return {
+        id: requestId,
+        success: true,
+        notificationsQueued: publicResult.notificationsQueued,
+        notificationStatus: publicResult.notificationStatus,
+        notificationMode: publicResult.notificationMode === 'none' ? undefined : publicResult.notificationMode,
+      };
     }
     }
   );
@@ -1734,6 +1599,9 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .set({
         status: 'cancelled',
         cancelled_by_member_id: member.id,
+        notification_status: 'completed',
+        next_notification_at: null,
+        notification_paused: 0,
       })
       .where(eq(schema.spareRequests.id, requestId));
 
@@ -2059,11 +1927,16 @@ export async function spareRoutes(fastify: FastifyInstance) {
     console.log(`[Re-issue] Starting re-issue for request ${requestId}, type: ${spareRequest.request_type}`);
 
     if (spareRequest.request_type === 'private') {
-      // Private requests: send immediately to all invited members
+      // Private requests: re-notify invitees who have not declined
       const invitations = await db
         .select({ member_id: schema.spareRequestInvitations.member_id })
         .from(schema.spareRequestInvitations)
-        .where(eq(schema.spareRequestInvitations.spare_request_id, requestId));
+        .where(
+          and(
+            eq(schema.spareRequestInvitations.spare_request_id, requestId),
+            isNull(schema.spareRequestInvitations.declined_at),
+          ),
+        );
       
       const invitedIds = invitations.map((inv) => inv.member_id);
       
@@ -2157,193 +2030,39 @@ export async function spareRoutes(fastify: FastifyInstance) {
         notificationsSent: recipientMembers.length,
       };
     } else {
-      // Public requests: check if less than 24 hours before game time
-      // Parse date/time as local to avoid timezone issues
+      // Public requests: shared recipient + queue path (league-scoped, bye priority, CC exclusion)
+      if (!spareRequest.league_id) {
+        return reply.code(400).send({ error: 'Cannot re-issue a public request without a league' });
+      }
+
       const [reissueYear, reissueMonth, reissueDay] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
-      const [reissueHours, reissueMinutes] = spareRequest.game_time.split(':').map(Number);
+      const [reissueHours, reissueMinutes] = String(spareRequest.game_time).split(':').map(Number);
       const gameDateTime = new Date(reissueYear, reissueMonth - 1, reissueDay, reissueHours, reissueMinutes);
       const currentTime = await getCurrentTimeAsync();
       const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
       const isLessThan24Hours = hoursUntilGame < 24;
 
-      // Find matching available members for public requests
-      // Parse date string as local date to avoid timezone issues
-      const gameDateObj = new Date(reissueYear, reissueMonth - 1, reissueDay); // month is 0-indexed
-      const dayOfWeek = gameDateObj.getDay();
+      const publicResult = await startPublicSpareNotifications({
+        spareRequestId: requestId,
+        leagueId: spareRequest.league_id,
+        gameDate: normalizeDateString(spareRequest.game_date),
+        gameTime: String(spareRequest.game_time),
+        position: spareRequest.position,
+        requesterId: member.id,
+        includePersistedCcs: true,
+        isLessThan24Hours,
+        clearHadCancellation: true,
+      });
 
-      // Find leagues that match this day and are active on this date
-      const matchingLeagues = await db
-        .select()
-        .from(schema.leagues)
-        .where(
-          and(
-            eq(schema.leagues.day_of_week, dayOfWeek),
-            sql`date(${schema.leagues.start_date}) <= date(${normalizeDateString(spareRequest.game_date)})`,
-            sql`date(${schema.leagues.end_date}) >= date(${normalizeDateString(spareRequest.game_date)})`
-          )
-        );
+      console.log(
+        `[Re-issue] Public request queued ${publicResult.notificationsQueued} recipients (bye=${publicResult.byeRecipientCount}, mode=${publicResult.notificationMode})`,
+      );
 
-      if (matchingLeagues.length > 0) {
-        const leagueIds = matchingLeagues.map((l) => l.id);
-        
-        // Get members who are available for these leagues
-        const reissuePublicToday = await getCurrentDateStringAsync();
-        let conditions = [
-          inArray(schema.memberAvailability.league_id, leagueIds),
-          eq(schema.memberAvailability.available, 1),
-          eq(schema.members.email_subscribed, 1),
-          memberIsNotSocialCondition(schema, reissuePublicToday),
-          ne(schema.members.id, member.id),
-        ];
-        
-        // If position is skip, only notify those who can skip
-        if (spareRequest.position === 'skip') {
-          conditions.push(eq(schema.memberAvailability.can_skip, 1));
-        }
-
-        recipientMembers = await db
-          .selectDistinct({
-            id: schema.members.id,
-            name: schema.members.name,
-            email: schema.members.email,
-            phone: schema.members.phone,
-            is_server_admin: schema.members.is_server_admin,
-            opted_in_sms: schema.members.opted_in_sms,
-            email_subscribed: schema.members.email_subscribed,
-            email_visible: schema.members.email_visible,
-            phone_visible: schema.members.phone_visible,
-            theme_preference: schema.members.theme_preference,
-            created_at: schema.members.created_at,
-            updated_at: schema.members.updated_at,
-          })
-          .from(schema.members)
-          .innerJoin(
-            schema.memberAvailability,
-            eq(schema.members.id, schema.memberAvailability.member_id)
-          )
-        .where(and(...conditions));
-      }
-      
-      console.log(`[Re-issue] Public request: Found ${recipientMembers.length} recipient members, isLessThan24Hours: ${isLessThan24Hours}`);
-
-      if (isLessThan24Hours) {
-        // Less than 24 hours: send notifications asynchronously (fire-and-forget) to avoid blocking
-        console.log(`[Re-issue] Sending immediate notifications (<24h path)`);
-        for (const recipient of recipientMembers) {
-          if (recipient.email) {
-            console.log(`[Re-issue] Calling sendSpareRequestEmail for ${recipient.email} (request ${requestId})`);
-            // Don't await - send in background
-            sendOnceWithDeliveryClaim(
-              {
-                spareRequestId: requestId,
-                memberId: recipient.id,
-                notificationGeneration,
-                channel: 'email',
-                kind: 'spare_request',
-              },
-              () =>
-                sendSpareRequestEmail(
-                  recipient.email!,
-                  recipient.name,
-                  member.name,
-                  {
-                    requestedForName: spareRequest.requested_for_name,
-                    gameDate: normalizeDateString(spareRequest.game_date),
-                    gameTime: spareRequest.game_time,
-                    position: spareRequest.position || undefined,
-                    message: body.message !== undefined ? body.message : (spareRequest.message || undefined),
-                  },
-                  requestId
-                )
-            )
-              .then(() => {
-                console.log(`[Re-issue] Email function completed for ${recipient.email}`);
-              })
-              .catch((error) => {
-                console.error(`[Re-issue] Error sending spare request email to ${recipient.email}:`, error);
-              });
-          }
-
-          if (recipient.phone && recipient.opted_in_sms === 1) {
-            // Don't await - send in background
-            sendOnceWithDeliveryClaim(
-              {
-                spareRequestId: requestId,
-                memberId: recipient.id,
-                notificationGeneration,
-                channel: 'sms',
-                kind: 'spare_request',
-              },
-              () => sendSpareRequestSMS(recipient.phone!, member.name, normalizeDateString(spareRequest.game_date), spareRequest.game_time)
-            ).catch((error) => {
-              console.error('Error sending spare request SMS:', error);
-            });
-          }
-        }
-
-        // Update notifications_sent_at timestamp and clear cancellation flag
-        if (recipientMembers.length > 0) {
-          await db
-            .update(schema.spareRequests)
-            .set({
-              notifications_sent_at: await getCurrentTimeAsync(),
-              had_cancellation: 0,
-              notification_status: 'completed',
-            })
-            .where(eq(schema.spareRequests.id, requestId));
-        } else {
-          // Even if no members, mark as completed
-          await db
-            .update(schema.spareRequests)
-            .set({ notification_status: 'completed' })
-            .where(eq(schema.spareRequests.id, requestId));
-        }
-
-        console.log(`[Re-issue] Completed immediate notifications for ${recipientMembers.length} members`);
-        console.log(`[Re-issue] Completed immediate notifications for ${recipientMembers.length} members`);
-        return {
-          success: true,
-          notificationsSent: recipientMembers.length,
-        };
-      } else {
-        // More than 24 hours: set up staggered notification queue
-        console.log(`[Re-issue] Setting up staggered notification queue (>=24h path) for ${recipientMembers.length} members`);
-        // Shuffle the list randomly
-        const shuffled = [...recipientMembers].sort(() => Math.random() - 0.5);
-
-        // Create notification queue entries
-        if (shuffled.length > 0) {
-          await db.insert(schema.spareRequestNotificationQueue).values(
-            shuffled.map((recipient, index) => ({
-              spare_request_id: requestId,
-              member_id: recipient.id,
-              queue_order: index,
-            }))
-          );
-        }
-
-        // Mark notification status as 'in_progress' and set next_notification_at to now
-        // Clear paused flag when starting notifications
-        // This will trigger the notification processor to send the first notification immediately
-        // After the first notification, it will wait for the configured delay before sending the next one
-        const currentTime = await getCurrentTimeAsync();
-        await db
-          .update(schema.spareRequests)
-          .set({
-            notifications_sent_at: currentTime,
-            had_cancellation: 0,
-            notification_status: 'in_progress',
-            next_notification_at: currentTime,
-            notification_paused: 0,
-          })
-          .where(eq(schema.spareRequests.id, requestId));
-
-        return {
-          success: true,
-          notificationsQueued: shuffled.length,
-          notificationStatus: 'in_progress',
-        };
-      }
+      return {
+        success: true,
+        notificationsQueued: publicResult.notificationsQueued,
+        notificationStatus: publicResult.notificationStatus,
+      };
     }
     }
   );

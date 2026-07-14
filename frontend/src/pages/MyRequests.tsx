@@ -499,26 +499,27 @@ export default function MyRequests() {
                           <div
                             className={`mt-3 p-3 rounded-md border ${(() => {
                               const status = notificationStatuses[request.id];
-                              const allNotified = status.notifiedMembers === status.totalMembers;
+                              const allNotified =
+                                status.totalMembers > 0 &&
+                                status.notifiedMembers === status.totalMembers;
                               if (status.notificationStatus === 'completed' || allNotified) {
                                 return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-                              }
-                              if (status.notificationStatus === 'stopped') {
-                                return 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700';
                               }
                               return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
                             })()}`}
                           >
                             {(() => {
                               const status = notificationStatuses[request.id];
-                              const allNotified = status.notifiedMembers === status.totalMembers;
+                              const allNotified =
+                                status.totalMembers > 0 &&
+                                status.notifiedMembers === status.totalMembers;
 
                               // If all members are notified, show completed message even if status is 'in_progress'
                               if (status.notificationStatus === 'completed' || allNotified) {
                                 return (
                                   <p className="text-sm text-green-800 dark:text-green-300">
                                     <span className="font-medium">All notifications sent.</span>{' '}
-                                    {status.totalMembers} members notified.
+                                    {status.notifiedMembers} members notified.
                                   </p>
                                 );
                               }
@@ -536,14 +537,6 @@ export default function MyRequests() {
                                         (Paused)
                                       </span>
                                     )}
-                                  </p>
-                                );
-                              }
-
-                              if (status.notificationStatus === 'stopped') {
-                                return (
-                                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                                    Notifications stopped (request filled or canceled).
                                   </p>
                                 );
                               }
@@ -609,7 +602,7 @@ export default function MyRequests() {
                         {(request.requesterId === member?.id ||
                           request.requestedForMemberId === member?.id) && (
                           <Button variant="danger" onClick={() => handleCancel(request.id)}>
-                            Cancel
+                            Cancel request
                           </Button>
                         )}
                       </>

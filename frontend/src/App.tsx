@@ -15,7 +15,6 @@ import PublicHomePage from './pages/PublicHomePage';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const SetAvailability = lazy(() => import('./pages/SetAvailability'));
 const RequestSpare = lazy(() => import('./pages/RequestSpare'));
-const RequestSpareConfirm = lazy(() => import('./pages/RequestSpareConfirm'));
 const RespondToSpare = lazy(() => import('./pages/RespondToSpare'));
 const DeclineSpare = lazy(() => import('./pages/DeclineSpare'));
 const MyRequests = lazy(() => import('./pages/MyRequests'));
@@ -90,6 +89,7 @@ const RegistrationStatusDetailPage = lazy(() => import('./pages/RegistrationStat
 const WaitlistOfferAcceptPage = lazy(() => import('./pages/WaitlistOfferAcceptPage'));
 const SabbaticalsExplainerPage = lazy(() => import('./pages/explainers/SabbaticalsExplainerPage'));
 const WaitlistsExplainerPage = lazy(() => import('./pages/explainers/WaitlistsExplainerPage'));
+const SparingExplainerPage = lazy(() => import('./pages/explainers/SparingExplainerPage'));
 
 function LeagueSetupRedirect({ defaultTab }: { defaultTab: string }) {
   const { leagueId, tab } = useParams();
@@ -197,6 +197,7 @@ function App() {
 
                       <Route path="/explainers/sabbaticals" element={<SabbaticalsExplainerPage />} />
                       <Route path="/explainers/waitlists" element={<WaitlistsExplainerPage />} />
+                      <Route path="/explainers/sparing" element={<SparingExplainerPage />} />
 
                       <Route path="/calendar/public" element={<Calendar publicMode />} />
 
@@ -291,17 +292,13 @@ function App() {
                         path="/request-spare"
                         element={
                           <ProtectedRoute>
-                            <RequestSpareConfirm />
+                            <RequestSpare />
                           </ProtectedRoute>
                         }
                       />
                       <Route
                         path="/request-spare/new"
-                        element={
-                          <ProtectedRoute>
-                            <RequestSpare />
-                          </ProtectedRoute>
-                        }
+                        element={<Navigate to="/request-spare" replace />}
                       />
 
                       <Route

@@ -169,6 +169,13 @@
       "when": 1780352498465,
       "tag": "0024_add_mailing_list_welcome_email",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1780352498466,
+      "tag": "0025_spare_request_bye_priority",
+      "breakpoints": true
     }
   ]
 }
