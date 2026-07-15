@@ -30,6 +30,10 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPhone } from '../utils/phone';
 import { renderMe } from '../utils/me';
+import {
+  formatVolunteerRange,
+  type DashboardVolunteerOpportunity,
+} from '../utils/volunteering';
 
 interface SpareRequest {
   id: number;
@@ -151,6 +155,7 @@ export default function Dashboard() {
   const [myRequests, setMyRequests] = useState<MySpareRequest[]>([]);
   const [upcomingGames, setUpcomingGames] = useState<UpcomingGame[]>([]);
   const [iceBookings, setIceBookings] = useState<MyIceBooking[]>([]);
+  const [volunteerOpportunities, setVolunteerOpportunities] = useState<DashboardVolunteerOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilled, setShowFilled] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SpareRequest | null>(null);
@@ -356,8 +361,16 @@ export default function Dashboard() {
           ? Promise.resolve([] as MyIceBooking[])
           : api.get<MyIceBooking[]>('/ice-bookings').then((r) => r.data ?? []);
 
-      const [openRes, mySparingRes, filledRes, ccRes, myRequestsRes, upcomingGamesRes, iceRes] =
-        await Promise.all([
+      const [
+        openRes,
+        mySparingRes,
+        filledRes,
+        ccRes,
+        myRequestsRes,
+        upcomingGamesRes,
+        iceRes,
+        volunteerRes,
+      ] = await Promise.all([
           get('/spares'),
           get('/spares/my-sparing'),
           get('/spares/filled-upcoming'),
@@ -365,6 +378,7 @@ export default function Dashboard() {
           get('/spares/my-requests'),
           get('/members/me/upcoming-games').catch(() => []),
           icePromise.catch(() => [] as MyIceBooking[]),
+          get('/volunteering/dashboard-opportunities').catch(() => ({ opportunities: [] })),
         ]);
       setOpenRequests(openRes);
       setMySparing(mySparingRes);
@@ -374,6 +388,9 @@ export default function Dashboard() {
       setMyRequests(myRequestsRes.filter((r: MySpareRequest) => r.status !== 'cancelled'));
       setUpcomingGames(upcomingGamesRes || []);
       setIceBookings(iceRes);
+      setVolunteerOpportunities(
+        (volunteerRes as { opportunities?: DashboardVolunteerOpportunity[] })?.opportunities || []
+      );
     } catch (error) {
       console.error('Failed to load spare requests:', error);
     } finally {
@@ -894,6 +911,45 @@ export default function Dashboard() {
                         className="text-sm text-primary-teal hover:underline ml-auto"
                       >
                         {game.leagueName}
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </DashboardSection>
+            )}
+
+            {volunteerOpportunities.length > 0 && (
+              <DashboardSection
+                title="Upcoming volunteer opportunities"
+                action={
+                  <Link to="/volunteering" className="text-sm text-primary-teal hover:underline">
+                    View all →
+                  </Link>
+                }
+              >
+                <div className="space-y-3">
+                  {volunteerOpportunities.map((opp) => (
+                    <div
+                      key={opp.shiftRoleId}
+                      className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">
+                          {opp.programTitle} · {opp.roleName}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {formatVolunteerRange(opp.startDt, opp.endDt)}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {opp.volunteersRegistered}/{opp.volunteersNeeded} filled
+                          {opp.location ? ` · ${opp.location}` : ''}
+                        </div>
+                      </div>
+                      <Link
+                        to="/volunteering"
+                        className="text-sm text-primary-teal hover:underline ml-auto"
+                      >
+                        Sign up
                       </Link>
                     </div>
                   ))}

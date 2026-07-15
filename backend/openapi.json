@@ -473,6 +473,12 @@
                                 "type": "number"
                               }
                             },
+                            "ownedEventIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -555,6 +561,7 @@
                             "isContentAdmin",
                             "isSponsorAdmin",
                             "leagueManagerLeagueIds",
+                            "ownedEventIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -718,6 +725,12 @@
                                 "type": "number"
                               }
                             },
+                            "ownedEventIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -800,6 +813,7 @@
                             "isContentAdmin",
                             "isSponsorAdmin",
                             "leagueManagerLeagueIds",
+                            "ownedEventIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -960,6 +974,12 @@
                                 "type": "number"
                               }
                             },
+                            "ownedEventIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -1042,6 +1062,7 @@
                             "isContentAdmin",
                             "isSponsorAdmin",
                             "leagueManagerLeagueIds",
+                            "ownedEventIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -2815,6 +2836,12 @@
                             "type": "number"
                           }
                         },
+                        "ownedEventIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -2897,6 +2924,7 @@
                         "isContentAdmin",
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
+                        "ownedEventIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -3036,6 +3064,12 @@
                             "type": "number"
                           }
                         },
+                        "ownedEventIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -3118,6 +3152,7 @@
                         "isContentAdmin",
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
+                        "ownedEventIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -3240,6 +3275,12 @@
                             "type": "number"
                           }
                         },
+                        "ownedEventIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -3322,6 +3363,7 @@
                         "isContentAdmin",
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
+                        "ownedEventIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -20074,6 +20116,28 @@
         }
       }
     },
+    "/events/{id}/management-access": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/events/{id}/tournament-teams": {
       "get": {
         "tags": [
@@ -25240,6 +25304,492 @@
             },
             "in": "path",
             "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/programs": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/my-credentials": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/my-signups": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/dashboard-opportunities": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/shift-roles/{id}/signups": {
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/shift-roles/{id}/signups/me": {
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs/{id}": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs/{id}/archive": {
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs/{id}/restore": {
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs/{id}/roles": {
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/roles/{id}": {
+      "patch": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs/{id}/shifts/bulk": {
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/shifts/{id}": {
+      "patch": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/signups/{id}": {
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/credentials": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/credentials/{id}": {
+      "patch": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/credentials/{id}/grants": {
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/credentials/{id}/grants/{memberId}": {
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
             "required": true
           }
         ],

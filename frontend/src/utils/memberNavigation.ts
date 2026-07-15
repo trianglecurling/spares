@@ -12,6 +12,8 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
   const canManageGovernance = memberHasScope(member, 'governance.manage');
   const canManageSponsorship = memberHasScope(member, 'sponsorship.manage');
   const canManageEvents = memberHasScope(member, 'events.manage');
+  const canAccessEventsAdmin = canManageEvents || (member.ownedEventIds?.length ?? 0) > 0;
+  const canManageVolunteering = memberHasScope(member, 'volunteering.manage');
   const canManageRegistration = memberHasScope(member, 'admin.manage');
   const canManageRegistrations =
     memberHasScope(member, 'registrations.manage') || memberHasScope(member, 'admin.manage');
@@ -27,7 +29,8 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
     ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Manage sheets' }] : []),
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
-    ...(canManageEvents ? [{ to: '/admin/events', label: 'Manage events' }] : []),
+    ...(canAccessEventsAdmin ? [{ to: '/admin/events', label: 'Manage events' }] : []),
+    ...(canManageVolunteering ? [{ to: '/admin/volunteering', label: 'Manage volunteering' }] : []),
     ...(canManageRegistrations || canManageRegistration
       ? [{ to: '/admin/registrations', label: 'Manage registration' }]
       : []),

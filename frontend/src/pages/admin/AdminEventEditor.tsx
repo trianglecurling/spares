@@ -22,6 +22,7 @@ import type { TournamentTeamApi } from './AdminEventTournamentTeamModal';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
@@ -201,8 +202,10 @@ export default function AdminEventEditor() {
   const isNew = id === 'new';
   const eventId = isNew ? null : parseInt(id || '', 10);
   const navigate = useNavigate();
+  const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const currentMemberId = member?.id ?? null;
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -591,6 +594,7 @@ export default function AdminEventEditor() {
     setAddingOwner('');
   };
   const removeOwner = (memberId: number) => {
+    if (currentMemberId != null && memberId === currentMemberId) return;
     setOwnerMemberIds(ownerMemberIds.filter((id) => id !== memberId));
   };
 
@@ -1638,26 +1642,32 @@ export default function AdminEventEditor() {
               {/* Owners */}
               <FormSection
                 title="Owners"
-                description="Owners can manage the event and registration settings."
+                description="Owners can manage the event and registration settings. You cannot remove yourself."
                 surface="panel"
               >
                 {ownerMemberIds.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {ownerMemberIds.map((mid) => {
                       const m = memberOptions.find((mem) => mem.id === mid);
+                      const isSelf = currentMemberId != null && mid === currentMemberId;
                       return (
                         <span
                           key={mid}
                           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
                         >
                           {m ? m.name : `Member #${mid}`}
-                          <button
-                            type="button"
-                            onClick={() => removeOwner(mid)}
-                            className="text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-                          >
-                            ×
-                          </button>
+                          {isSelf ? (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">(you)</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => removeOwner(mid)}
+                              className="text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                              aria-label={`Remove ${m ? m.name : `member ${mid}`} as owner`}
+                            >
+                              ×
+                            </button>
+                          )}
                         </span>
                       );
                     })}

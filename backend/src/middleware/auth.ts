@@ -48,9 +48,10 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   member.membershipStatus = await getMemberMembershipStatus(member.id, {
     isLifetimeMember: (member.lifetime_member ?? 0) === 1,
   });
+  // Always rebuild from DB so role/scope changes take effect without waiting for token refresh.
   member.authz = isImpersonating
     ? await buildAuthzClaimsForImpersonatedMember(member)
-    : payload.authz ?? (await buildAuthzClaimsForMember(member));
+    : await buildAuthzClaimsForMember(member);
   request.authz = member.authz;
   request.actorMemberId = actorMemberId;
   request.isImpersonating = isImpersonating;
@@ -97,9 +98,10 @@ export async function optionalAuthMiddleware(request: FastifyRequest, _reply: Fa
   member.membershipStatus = await getMemberMembershipStatus(member.id, {
     isLifetimeMember: (member.lifetime_member ?? 0) === 1,
   });
+  // Always rebuild from DB so role/scope changes take effect without waiting for token refresh.
   member.authz = isImpersonating
     ? await buildAuthzClaimsForImpersonatedMember(member)
-    : payload.authz ?? (await buildAuthzClaimsForMember(member));
+    : await buildAuthzClaimsForMember(member);
   request.authz = member.authz;
   request.actorMemberId = actorMemberId;
   request.isImpersonating = isImpersonating;

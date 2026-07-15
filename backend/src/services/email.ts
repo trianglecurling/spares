@@ -1837,3 +1837,145 @@ export async function sendEventReminderEmail(
   );
 }
 
+function formatVolunteerWhen(startDt: string, endDt: string): string {
+  const start = new Date(startDt);
+  const end = new Date(endDt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return `${startDt} – ${endDt}`;
+  }
+  const y = start.getFullYear();
+  const m = String(start.getMonth() + 1).padStart(2, '0');
+  const d = String(start.getDate()).padStart(2, '0');
+  const startH = String(start.getHours()).padStart(2, '0');
+  const startMin = String(start.getMinutes()).padStart(2, '0');
+  const endH = String(end.getHours()).padStart(2, '0');
+  const endMin = String(end.getMinutes()).padStart(2, '0');
+  const datePart = formatDateForEmail(`${y}-${m}-${d}`);
+  const startTime = formatTimeForEmail(`${startH}:${startMin}`);
+  const endTime = formatTimeForEmail(`${endH}:${endMin}`);
+  return `${datePart}, ${startTime} – ${endTime}`;
+}
+
+export async function sendVolunteerSignupConfirmationEmail(input: {
+  to: string;
+  recipientName: string;
+  programTitle: string;
+  roleName: string;
+  startDt: string;
+  endDt: string;
+  location: string | null;
+}): Promise<void> {
+  const when = formatVolunteerWhen(input.startDt, input.endDt);
+  const locationLine = input.location
+    ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
+    : '';
+  const htmlContent = `
+    <h2>Volunteer signup confirmed</h2>
+    <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
+    <p>You are signed up to volunteer for <strong>${escapeHtmlEmail(input.programTitle)}</strong>.</p>
+    <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+    <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
+    ${locationLine}
+    <p><a href="${config.frontendUrl}/volunteering?tab=shifts">View your volunteer shifts</a></p>
+  `;
+
+  await sendEmail({
+    to: input.to,
+    subject: `Volunteer signup: ${input.programTitle} – ${input.roleName}`,
+    htmlContent,
+    recipientName: input.recipientName,
+  });
+}
+
+export async function sendVolunteerCancellationEmails(input: {
+  memberEmail: string | null;
+  memberName: string;
+  managerEmails: Array<{ email: string; name: string }>;
+  programTitle: string;
+  roleName: string;
+  startDt: string;
+  endDt: string;
+  location: string | null;
+  cancelledByManager?: boolean;
+}): Promise<void> {
+  const when = formatVolunteerWhen(input.startDt, input.endDt);
+  const locationLine = input.location
+    ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
+    : '';
+
+  if (input.memberEmail) {
+    const memberNote = input.cancelledByManager
+      ? 'A volunteer manager has cancelled your signup.'
+      : 'Your volunteer signup has been cancelled.';
+    await sendEmail({
+      to: input.memberEmail,
+      subject: `Volunteer cancellation: ${input.programTitle} – ${input.roleName}`,
+      htmlContent: `
+        <h2>Volunteer signup cancelled</h2>
+        <p>Hi ${escapeHtmlEmail(input.memberName)},</p>
+        <p>${memberNote}</p>
+        <p><strong>Program:</strong> ${escapeHtmlEmail(input.programTitle)}</p>
+        <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+        <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
+        ${locationLine}
+        <p><a href="${config.frontendUrl}/volunteering">Browse volunteering opportunities</a></p>
+      `,
+      recipientName: input.memberName,
+    });
+  }
+
+  const seen = new Set<string>();
+  for (const manager of input.managerEmails) {
+    const key = manager.email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await sendEmail({
+      to: manager.email,
+      subject: `Volunteer cancelled: ${input.programTitle} – ${input.roleName}`,
+      htmlContent: `
+        <h2>Volunteer cancellation notice</h2>
+        <p>Hi ${escapeHtmlEmail(manager.name)},</p>
+        <p><strong>${escapeHtmlEmail(input.memberName)}</strong> is no longer signed up for a volunteer shift.</p>
+        <p><strong>Program:</strong> ${escapeHtmlEmail(input.programTitle)}</p>
+        <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+        <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
+        ${locationLine}
+        <p><a href="${config.frontendUrl}/admin/volunteering">Manage volunteering</a></p>
+      `,
+      recipientName: manager.name,
+    });
+  }
+}
+
+export async function sendVolunteerReminderEmail(input: {
+  to: string;
+  recipientName: string;
+  programTitle: string;
+  roleName: string;
+  startDt: string;
+  endDt: string;
+  location: string | null;
+}): Promise<void> {
+  const when = formatVolunteerWhen(input.startDt, input.endDt);
+  const locationLine = input.location
+    ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
+    : '';
+  const htmlContent = `
+    <h2>Volunteer shift reminder</h2>
+    <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
+    <p>This is a reminder that you are signed up to volunteer soon.</p>
+    <p><strong>Program:</strong> ${escapeHtmlEmail(input.programTitle)}</p>
+    <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+    <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
+    ${locationLine}
+    <p><a href="${config.frontendUrl}/volunteering?tab=shifts">View your volunteer shifts</a></p>
+  `;
+
+  await sendEmail({
+    to: input.to,
+    subject: `Reminder: volunteering for ${input.programTitle}`,
+    htmlContent,
+    recipientName: input.recipientName,
+  });
+}
+

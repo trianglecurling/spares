@@ -86,6 +86,14 @@ export function isEventsAdmin(member: Member): boolean {
   return isServerAdmin(member);
 }
 
+export function isVolunteerManager(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'volunteering.manage') || isServerAdmin(member);
+  }
+  if (member.authz) return hasScope(member.authz, 'volunteering.manage') || isServerAdmin(member);
+  return isServerAdmin(member);
+}
+
 export function isServerAdmin(member: Member): boolean {
   if (member.impersonationSession) {
     return member.authz?.isServerAdmin === true;

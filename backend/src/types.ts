@@ -282,6 +282,8 @@ export interface AuthenticatedMember {
   isContentAdmin: boolean;
   isSponsorAdmin: boolean;
   leagueManagerLeagueIds: number[];
+  /** Event ids this member is listed as an owner for (separate from events.manage). */
+  ownedEventIds: number[];
   isLeagueAdministrator: boolean;
   isLeagueAdministratorGlobal: boolean;
   roleCodes: string[];

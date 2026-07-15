@@ -271,7 +271,7 @@ export default function AdminRoles() {
     setSaving(true);
     setMessage(null);
     try {
-      await api.put(`/rbac/roles/${editingRole.id}`, {
+      await api.patch(`/rbac/roles/${editingRole.id}`, {
         name: editName.trim() || editingRole.name,
         description: editDescription.trim() || null,
       });

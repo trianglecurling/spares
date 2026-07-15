@@ -13,6 +13,7 @@ export const MEMBER_NAV_IDS = {
   spares: 3,
   directory: 4,
   calendar: 5,
+  volunteering: 7,
   admin: 6,
 } as const;
 
@@ -74,6 +75,10 @@ export function buildMemberNavMenuItems({
       internalLink(51, 'Full calendar', '/calendar'),
       ...(isSocialMember ? [] : [internalLink(52, 'Book ice time', '/book-ice')]),
     ]),
+    section(MEMBER_NAV_IDS.volunteering, 'Volunteering', [
+      internalLink(71, 'Volunteering hub', '/volunteering'),
+      internalLink(72, 'My shifts', '/volunteering?tab=shifts'),
+    ]),
   ];
 
   if (hasAdminLinks) {
@@ -105,6 +110,8 @@ export function isMemberNavItemActive(item: NavMenuItemNode, pathname: string): 
       return pathname === '/members' || pathname === '/governance';
     case MEMBER_NAV_IDS.calendar:
       return pathname === '/calendar' || pathname === '/book-ice';
+    case MEMBER_NAV_IDS.volunteering:
+      return pathname === '/volunteering' || pathname.startsWith('/volunteering/');
     case MEMBER_NAV_IDS.admin:
       return pathname.startsWith('/admin');
     default:

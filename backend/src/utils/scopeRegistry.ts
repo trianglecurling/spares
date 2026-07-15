@@ -62,6 +62,12 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
   { scope: 'events.read', category: 'Events', description: 'View events and event registration data.' },
   { scope: 'events.manage', category: 'Events', description: 'Create, edit, delete events and manage registrations.' },
 
+  {
+    scope: 'volunteering.manage',
+    category: 'Volunteering',
+    description: 'Create and manage volunteer programs, roles, shifts, credentials, and related signups.',
+  },
+
   { scope: 'waitlists.manage', category: 'Registration', description: 'Add, remove, reorder waitlist entries and run waitlist staff actions.' },
   {
     scope: 'registrations.manage',

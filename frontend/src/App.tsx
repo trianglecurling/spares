@@ -9,6 +9,7 @@ import { LeagueOptionsProvider } from './contexts/LeagueOptionsContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
 import AuthenticatedAppShell from './components/AuthenticatedAppShell';
+import EventManageRoute from './pages/admin/EventManageRoute';
 import Login from './pages/Login';
 import PublicHomePage from './pages/PublicHomePage';
 
@@ -68,6 +69,14 @@ const AdminPaymentsRoute = lazy(() => import('./pages/admin/AdminPaymentsRoute')
 const AdminWebhooks = lazy(() => import('./pages/admin/AdminWebhooks'));
 const AdminEvents = lazy(() => import('./pages/admin/AdminEvents'));
 const AdminEventEditor = lazy(() => import('./pages/admin/AdminEventEditor'));
+const AdminVolunteering = lazy(() => import('./pages/admin/AdminVolunteering'));
+const AdminVolunteeringPrograms = lazy(() =>
+  import('./pages/admin/AdminVolunteering').then((m) => ({ default: m.AdminVolunteeringPrograms }))
+);
+const AdminVolunteerProgramEditor = lazy(() => import('./pages/admin/AdminVolunteerProgramEditor'));
+const AdminVolunteerCredentials = lazy(() => import('./pages/admin/AdminVolunteerCredentials'));
+const VolunteeringHub = lazy(() => import('./pages/VolunteeringHub'));
+const MyVolunteerShifts = lazy(() => import('./pages/MyVolunteerShifts'));
 const AdminEventRegistrationEditor = lazy(() => import('./pages/admin/AdminEventRegistrationEditor'));
 const AdminRegistrationRoute = lazy(() => import('./pages/admin/AdminRegistrationRoute'));
 const AdminWaitlists = lazy(() => import('./pages/admin/AdminWaitlists'));
@@ -220,11 +229,11 @@ function App() {
                       <Route
                         path="/admin/events/registration-preview"
                         element={
-                          <ProtectedRoute requiredScope="events.manage">
+                          <EventManageRoute access="preview">
                             <Suspense fallback={null}>
                               <AdminEventRegistrationPreview />
                             </Suspense>
-                          </ProtectedRoute>
+                          </EventManageRoute>
                         }
                       />
 
@@ -324,6 +333,22 @@ function App() {
                         element={
                           <ProtectedRoute>
                             <MyRequests />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/volunteering"
+                        element={
+                          <ProtectedRoute>
+                            <VolunteeringHub />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/volunteering/my-shifts"
+                        element={
+                          <ProtectedRoute>
+                            <MyVolunteerShifts />
                           </ProtectedRoute>
                         }
                       />
@@ -492,32 +517,51 @@ function App() {
                       <Route
                         path="/admin/events"
                         element={
-                          <ProtectedRoute requiredScope="events.manage">
+                          <EventManageRoute access="list">
                             <AdminEvents />
-                          </ProtectedRoute>
+                          </EventManageRoute>
                         }
                       />
                       <Route
                         path="/admin/events/:id"
                         element={
-                          <ProtectedRoute requiredScope="events.manage">
+                          <EventManageRoute access="event">
                             <AdminEventEditor />
-                          </ProtectedRoute>
+                          </EventManageRoute>
                         }
                       />
                       <Route
                         path="/admin/events/:id/:tab"
                         element={
-                          <ProtectedRoute requiredScope="events.manage">
+                          <EventManageRoute access="event">
                             <AdminEventEditor />
-                          </ProtectedRoute>
+                          </EventManageRoute>
                         }
                       />
                       <Route
                         path="/admin/events/:id/registrations/:registrationId"
                         element={
-                          <ProtectedRoute requiredScope="events.manage">
+                          <EventManageRoute access="event">
                             <AdminEventRegistrationEditor />
+                          </EventManageRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/volunteering"
+                        element={
+                          <ProtectedRoute>
+                            <AdminVolunteering />
+                          </ProtectedRoute>
+                        }
+                      >
+                        <Route index element={<AdminVolunteeringPrograms />} />
+                        <Route path="credentials" element={<AdminVolunteerCredentials />} />
+                      </Route>
+                      <Route
+                        path="/admin/volunteering/:id/:tab?"
+                        element={
+                          <ProtectedRoute>
+                            <AdminVolunteerProgramEditor />
                           </ProtectedRoute>
                         }
                       />

@@ -105,6 +105,16 @@ type PgSchema = {
   eventSpecialLinks: typeof pgSchema.eventSpecialLinksPg;
   eventTournamentTeams: typeof pgSchema.eventTournamentTeamsPg;
   eventTournamentRosterSlots: typeof pgSchema.eventTournamentRosterSlotsPg;
+  volunteerPrograms: typeof pgSchema.volunteerProgramsPg;
+  volunteerProgramManagers: typeof pgSchema.volunteerProgramManagersPg;
+  volunteerCredentials: typeof pgSchema.volunteerCredentialsPg;
+  volunteerCredentialManagers: typeof pgSchema.volunteerCredentialManagersPg;
+  volunteerRoles: typeof pgSchema.volunteerRolesPg;
+  volunteerRoleCredentials: typeof pgSchema.volunteerRoleCredentialsPg;
+  memberVolunteerCredentials: typeof pgSchema.memberVolunteerCredentialsPg;
+  volunteerShifts: typeof pgSchema.volunteerShiftsPg;
+  volunteerShiftRoles: typeof pgSchema.volunteerShiftRolesPg;
+  volunteerSignups: typeof pgSchema.volunteerSignupsPg;
 };
 
 type DrizzleDb = NodePgDatabase<PgSchema>;
@@ -229,6 +239,16 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventSpecialLinks: sqliteSchema.eventSpecialLinksSqlite,
       eventTournamentTeams: sqliteSchema.eventTournamentTeamsSqlite,
       eventTournamentRosterSlots: sqliteSchema.eventTournamentRosterSlotsSqlite,
+      volunteerPrograms: sqliteSchema.volunteerProgramsSqlite,
+      volunteerProgramManagers: sqliteSchema.volunteerProgramManagersSqlite,
+      volunteerCredentials: sqliteSchema.volunteerCredentialsSqlite,
+      volunteerCredentialManagers: sqliteSchema.volunteerCredentialManagersSqlite,
+      volunteerRoles: sqliteSchema.volunteerRolesSqlite,
+      volunteerRoleCredentials: sqliteSchema.volunteerRoleCredentialsSqlite,
+      memberVolunteerCredentials: sqliteSchema.memberVolunteerCredentialsSqlite,
+      volunteerShifts: sqliteSchema.volunteerShiftsSqlite,
+      volunteerShiftRoles: sqliteSchema.volunteerShiftRolesSqlite,
+      volunteerSignups: sqliteSchema.volunteerSignupsSqlite,
     } as unknown as DrizzleSchema;
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
@@ -344,6 +364,16 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventSpecialLinks: pgSchema.eventSpecialLinksPg,
       eventTournamentTeams: pgSchema.eventTournamentTeamsPg,
       eventTournamentRosterSlots: pgSchema.eventTournamentRosterSlotsPg,
+      volunteerPrograms: pgSchema.volunteerProgramsPg,
+      volunteerProgramManagers: pgSchema.volunteerProgramManagersPg,
+      volunteerCredentials: pgSchema.volunteerCredentialsPg,
+      volunteerCredentialManagers: pgSchema.volunteerCredentialManagersPg,
+      volunteerRoles: pgSchema.volunteerRolesPg,
+      volunteerRoleCredentials: pgSchema.volunteerRoleCredentialsPg,
+      memberVolunteerCredentials: pgSchema.memberVolunteerCredentialsPg,
+      volunteerShifts: pgSchema.volunteerShiftsPg,
+      volunteerShiftRoles: pgSchema.volunteerShiftRolesPg,
+      volunteerSignups: pgSchema.volunteerSignupsPg,
     } as DrizzleSchema;
   } else {
     throw new Error(`Unsupported database type: ${config.type}`);

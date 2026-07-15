@@ -65,6 +65,7 @@ This repo has explicit consistency rules. Follow existing product patterns befor
 - Keep live API registration and OpenAPI generation aligned through `backend/src/registerRoutes.ts`.
 - Use `ApiErrorResponse` from `backend/src/api/types.ts` as the standard error envelope.
 - Prefer shared helpers in `backend/src/api/errors.ts` for common API errors.
+- For Drizzle writes to Postgres `timestamp` columns, pass a `Date` (`new Date()`) or `sql\`CURRENT_TIMESTAMP\`` — never `new Date().toISOString()` (that 500s on Pg; SQLite text columns can hide the bug locally). See `docs/api-conventions.md` (Timestamps and dates).
 - Use consistent status semantics:
   - `400` validation or malformed input
   - `401` authentication failure

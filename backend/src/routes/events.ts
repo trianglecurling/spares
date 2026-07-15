@@ -48,6 +48,7 @@ import {
   updateCategory,
   deleteCategory,
   isEventOwner,
+  listOwnedEventIds,
   getRegistrationById,
   getSpecialLinkByToken,
   getRegistrationForEvent,
@@ -1176,28 +1177,71 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
 
 // Protected routes (auth required)
 export async function protectedEventRoutes(fastify: FastifyInstance): Promise<void> {
-  // List events visible to authenticated member
+  // List events visible to authenticated member (or manageable events when requested)
   fastify.get('/events', { schema: { tags: ['events'] } }, async (request, reply) => {
     const member = (request as AuthenticatedRequest).member as Member;
-    const query = request.query as { category?: string; from?: string; to?: string; includeArchived?: string };
+    const query = request.query as {
+      category?: string;
+      from?: string;
+      to?: string;
+      includeArchived?: string;
+      manageable?: string;
+    };
+
+    const includeArchived = query.includeArchived === '1' || query.includeArchived === 'true';
+    const manageable = query.manageable === '1' || query.manageable === 'true';
+
+    if (manageable || includeArchived) {
+      if (isEventsAdmin(member)) {
+        const events = await listEvents({
+          publishedOnly: false,
+          categorySlug: query.category,
+          fromDate: query.from,
+          toDate: query.to,
+          includeArchived,
+        });
+        return events.map(summarizeEvent);
+      }
+
+      const ownedEventIds = await listOwnedEventIds(member.id);
+      if (ownedEventIds.length === 0) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const events = await listEvents({
+        publishedOnly: false,
+        categorySlug: query.category,
+        fromDate: query.from,
+        toDate: query.to,
+        includeArchived,
+        eventIds: ownedEventIds,
+      });
+      return events.map(summarizeEvent);
+    }
 
     const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public', 'active_members'];
     if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
       visibilityFilter.push('ice_members');
     }
 
-    const includeArchived = query.includeArchived === '1' || query.includeArchived === 'true';
-    if (includeArchived && !isEventsAdmin(member)) {
-      return sendApiError(reply, 403, 'Forbidden');
+    if (isEventsAdmin(member)) {
+      const events = await listEvents({
+        publishedOnly: false,
+        categorySlug: query.category,
+        fromDate: query.from,
+        toDate: query.to,
+        includeArchived: false,
+      });
+      return events.map(summarizeEvent);
     }
 
     const events = await listEvents({
-      publishedOnly: !isEventsAdmin(member),
-      visibility: isEventsAdmin(member) ? undefined : visibilityFilter,
+      publishedOnly: true,
+      visibility: visibilityFilter,
       categorySlug: query.category,
       fromDate: query.from,
       toDate: query.to,
-      includeArchived: includeArchived && isEventsAdmin(member),
+      includeArchived: false,
     });
     return events.map(summarizeEvent);
   });
@@ -1223,6 +1267,22 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
 
       const confirmedCount = await getConfirmedRegistrationCount(eventId);
       return { ...formatEventResponse(event), confirmedCount };
+    }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/events/:id/management-access',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      return { allowed: true };
     }
   );
 
@@ -1503,13 +1563,17 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       }
 
       try {
-        await updateEvent(eventId, {
-          ...parsed.data,
-          locations: parsed.data.locations?.map((l) => ({
-            locationType: 'locationType' in l ? l.locationType : 'sheet',
-            sheetId: 'sheetId' in l ? l.sheetId : null,
-          })),
-        });
+        await updateEvent(
+          eventId,
+          {
+            ...parsed.data,
+            locations: parsed.data.locations?.map((l) => ({
+              locationType: 'locationType' in l ? l.locationType : 'sheet',
+              sheetId: 'sheetId' in l ? l.sheetId : null,
+            })),
+          },
+          { actorMemberId: member.id },
+        );
         const updated = await getEventById(eventId);
         return formatEventResponse(updated!);
       } catch (err) {

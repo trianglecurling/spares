@@ -292,6 +292,21 @@ export default function MemberNavigationPanel({
     </>
   );
 
+  const volunteeringItems = (
+    <>
+      <li className="list-none">
+        <NavLink to="/volunteering" className={flyoutItemClass} onNavigate={handleNavigate}>
+          Volunteering hub
+        </NavLink>
+      </li>
+      <li className="list-none">
+        <NavLink to="/volunteering?tab=shifts" className={flyoutItemClass} onNavigate={handleNavigate}>
+          My shifts
+        </NavLink>
+      </li>
+    </>
+  );
+
   const adminItems = adminLinks.map((link) => (
     <li key={link.to} className="list-none">
       <NavLink to={link.to} className={flyoutItemClass} onNavigate={handleNavigate}>
@@ -477,6 +492,15 @@ export default function MemberNavigationPanel({
           )}
         </MobileNavAccordionItem>
 
+        <MobileNavAccordionItem id="volunteering" label="Volunteering">
+          <NavLink to="/volunteering" className={mobileNavItemClass} onNavigate={handleNavigate}>
+            Volunteering hub
+          </NavLink>
+          <NavLink to="/volunteering?tab=shifts" className={mobileNavItemClass} onNavigate={handleNavigate}>
+            My shifts
+          </NavLink>
+        </MobileNavAccordionItem>
+
         {hasAdminLinks && (
           <MobileNavAccordionItem id="admin" label="Admin">
             {adminLinks.map((link) => (
@@ -541,6 +565,14 @@ export default function MemberNavigationPanel({
           triggerClassName={flyoutTriggerClass}
         >
           {calendarItems}
+        </FlyoutMenuItem>
+        <FlyoutMenuItem
+          id="volunteering"
+          label="Volunteering"
+          direction={resolvedDirection}
+          triggerClassName={flyoutTriggerClass}
+        >
+          {volunteeringItems}
         </FlyoutMenuItem>
         {hasAdminLinks && (
           <FlyoutMenuItem

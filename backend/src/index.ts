@@ -15,6 +15,7 @@ import { goRedirectRoutes } from './routes/goRedirect.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
 import { startWaitlistOfferProcessor } from './services/waitlistOfferProcessor.js';
+import { startVolunteerReminderProcessor } from './services/volunteerReminderProcessor.js';
 import { isDatabaseConfigured } from './db/config.js';
 import { warmPublicBootstrapCache } from './services/publicBootstrapCache.js';
 import { warmSearchIndex } from './search/searchIndexService.js';
@@ -78,6 +79,7 @@ function startBackgroundProcessorsIfReady(): void {
   startNotificationProcessor();
   startPaymentReconciliationProcessor();
   startWaitlistOfferProcessor();
+  startVolunteerReminderProcessor();
   backgroundProcessorsStarted = true;
 }
 

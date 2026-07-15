@@ -59,6 +59,7 @@ These conventions exist to keep the frontend, backend, and generated API types a
 - Use ISO timestamps for backend-to-frontend transport.
 - If a value is date-only, make that clear and handle local formatting in the frontend.
 - Do not introduce alternate timestamp formats for new routes.
+- **Drizzle writes:** Postgres `timestamp` columns expect a `Date` (e.g. `updated_at: new Date()` or `sql\`CURRENT_TIMESTAMP\``). Do **not** write `new Date().toISOString()` into those columns — Drizzle calls `.toISOString()` on the value and strings 500 with `value.toISOString is not a function`. SQLite often stores the same fields as `text`, so ISO strings can appear to work locally and only fail on Postgres. Prefer `new Date()` (or `sql\`CURRENT_TIMESTAMP\``) for any column typed as `timestamp` in the Pg schema. ISO strings remain correct for `text` datetime columns and for query comparisons against those text columns.
 
 ## Route author checklist
 

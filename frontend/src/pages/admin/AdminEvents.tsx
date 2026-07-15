@@ -13,6 +13,7 @@ import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { isArchivedAt } from '../../utils/softDelete';
+import { memberHasEventsManageScope } from '../../utils/eventManagementAccess';
 
 interface EventSummary {
   id: number;
@@ -72,10 +73,12 @@ export default function AdminEvents() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const isServerAdmin = Boolean(member?.isServerAdmin);
+  const canManageAllEvents = memberHasEventsManageScope(member);
 
   const loadEvents = () => {
     setLoading(true);
-    const params = includeArchived ? { includeArchived: '1' } : undefined;
+    const params: Record<string, string> = { manageable: '1' };
+    if (includeArchived) params.includeArchived = '1';
     api.get('/events', { params })
       .then((res) => setEvents(res.data || []))
       .catch((err) => showAlert(formatApiError(err, 'Failed to load events'), 'error'))
@@ -241,11 +244,17 @@ export default function AdminEvents() {
       <AppPage>
         <AppPageHeader
           title="Events"
-          description="Manage club events and registrations."
+          description={
+            canManageAllEvents
+              ? 'Manage club events and registrations.'
+              : 'Manage events you own and their registrations.'
+          }
           actions={
-            <Link to="/admin/events/new">
-              <Button type="button" variant="primary">Create event</Button>
-            </Link>
+            canManageAllEvents ? (
+              <Link to="/admin/events/new">
+                <Button type="button" variant="primary">Create event</Button>
+              </Link>
+            ) : undefined
           }
         />
 
@@ -264,9 +273,15 @@ export default function AdminEvents() {
 
         {!loading && events.length === 0 && (
           <AppStateCard
-            title={includeArchived ? 'No events match these filters.' : 'No events yet.'}
+            title={
+              includeArchived
+                ? 'No events match these filters.'
+                : canManageAllEvents
+                  ? 'No events yet.'
+                  : 'You are not listed as an owner on any events.'
+            }
             action={
-              !includeArchived ? (
+              !includeArchived && canManageAllEvents ? (
                 <Link to="/admin/events/new">
                   <Button type="button" variant="primary">Create event</Button>
                 </Link>
@@ -296,13 +311,15 @@ export default function AdminEvents() {
                         >
                           {event.published ? 'Unpublish' : 'Publish'}
                         </button>
-                        <button
-                          onClick={() => handleDuplicate(event)}
-                          className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                          title="Duplicate"
-                        >
-                          Duplicate
-                        </button>
+                        {canManageAllEvents ? (
+                          <button
+                            onClick={() => handleDuplicate(event)}
+                            className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                            title="Duplicate"
+                          >
+                            Duplicate
+                          </button>
+                        ) : null}
                       </>
                     ) : null}
                     <SoftDeleteRowActions

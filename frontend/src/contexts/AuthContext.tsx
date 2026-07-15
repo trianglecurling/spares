@@ -81,6 +81,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     roleCodes: value.roleCodes ?? [],
     roleNames: value.roleNames ?? [],
     scopeRules: value.scopeRules ?? [],
+    leagueManagerLeagueIds: value.leagueManagerLeagueIds ?? [],
+    ownedEventIds: value.ownedEventIds ?? [],
   });
 
   const applySessionPayload = useCallback((data: SessionPayload) => {

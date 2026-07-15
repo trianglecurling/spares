@@ -2029,6 +2029,147 @@ export const eventTournamentRosterSlotsSqlite = sqliteTable('event_tournament_ro
   uniqueSlot: uniqueIndex('event_tournament_roster_team_slot_unique').on(table.team_id, table.slot_code),
 }));
 
+export type VolunteerSignupStatus = 'confirmed' | 'cancelled';
+
+export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  description: text('description'),
+  point_of_contact: text('point_of_contact').notNull(),
+  location: text('location'),
+  start_date: text('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  archived_at: text('archived_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  createdByIdx: index('idx_volunteer_programs_created_by').on(table.created_by_member_id),
+  archivedAtIdx: index('idx_volunteer_programs_archived_at').on(table.archived_at),
+}));
+
+export const volunteerProgramManagersSqlite = sqliteTable('volunteer_program_managers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  program_id: integer('program_id').notNull().references(() => volunteerProgramsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  programIdx: index('idx_volunteer_program_managers_program_id').on(table.program_id),
+  memberIdx: index('idx_volunteer_program_managers_member_id').on(table.member_id),
+  uniqueManager: uniqueIndex('volunteer_program_managers_program_member_unique').on(table.program_id, table.member_id),
+}));
+
+export const volunteerCredentialsSqlite = sqliteTable('volunteer_credentials', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'),
+  point_of_contact_email: text('point_of_contact_email').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
+export const volunteerCredentialManagersSqlite = sqliteTable('volunteer_credential_managers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  credential_id: integer('credential_id').notNull().references(() => volunteerCredentialsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  credentialIdx: index('idx_volunteer_credential_managers_credential_id').on(table.credential_id),
+  memberIdx: index('idx_volunteer_credential_managers_member_id').on(table.member_id),
+  uniqueManager: uniqueIndex('volunteer_credential_managers_credential_member_unique').on(
+    table.credential_id,
+    table.member_id
+  ),
+}));
+
+export const volunteerRolesSqlite = sqliteTable('volunteer_roles', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  program_id: integer('program_id').notNull().references(() => volunteerProgramsSqlite.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  default_duration_minutes: integer('default_duration_minutes').default(180).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  programIdx: index('idx_volunteer_roles_program_id').on(table.program_id),
+}));
+
+export const volunteerRoleCredentialsSqlite = sqliteTable('volunteer_role_credentials', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  role_id: integer('role_id').notNull().references(() => volunteerRolesSqlite.id, { onDelete: 'cascade' }),
+  credential_id: integer('credential_id').notNull().references(() => volunteerCredentialsSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  roleIdx: index('idx_volunteer_role_credentials_role_id').on(table.role_id),
+  credentialIdx: index('idx_volunteer_role_credentials_credential_id').on(table.credential_id),
+  uniqueRoleCredential: uniqueIndex('volunteer_role_credentials_role_credential_unique').on(
+    table.role_id,
+    table.credential_id
+  ),
+}));
+
+export const memberVolunteerCredentialsSqlite = sqliteTable('member_volunteer_credentials', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  credential_id: integer('credential_id').notNull().references(() => volunteerCredentialsSqlite.id, { onDelete: 'cascade' }),
+  granted_by_member_id: integer('granted_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  granted_at: text('granted_at').default(sql`datetime('now')`).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_member_volunteer_credentials_member_id').on(table.member_id),
+  credentialIdx: index('idx_member_volunteer_credentials_credential_id').on(table.credential_id),
+  uniqueMemberCredential: uniqueIndex('member_volunteer_credentials_member_credential_unique').on(
+    table.member_id,
+    table.credential_id
+  ),
+}));
+
+export const volunteerShiftsSqlite = sqliteTable('volunteer_shifts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  program_id: integer('program_id').notNull().references(() => volunteerProgramsSqlite.id, { onDelete: 'cascade' }),
+  start_dt: text('start_dt').notNull(),
+  end_dt: text('end_dt').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  programIdx: index('idx_volunteer_shifts_program_id').on(table.program_id),
+  startDtIdx: index('idx_volunteer_shifts_start_dt').on(table.start_dt),
+}));
+
+export const volunteerShiftRolesSqlite = sqliteTable('volunteer_shift_roles', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  shift_id: integer('shift_id').notNull().references(() => volunteerShiftsSqlite.id, { onDelete: 'cascade' }),
+  role_id: integer('role_id').notNull().references(() => volunteerRolesSqlite.id, { onDelete: 'cascade' }),
+  volunteers_needed: integer('volunteers_needed').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  shiftIdx: index('idx_volunteer_shift_roles_shift_id').on(table.shift_id),
+  roleIdx: index('idx_volunteer_shift_roles_role_id').on(table.role_id),
+  uniqueShiftRole: uniqueIndex('volunteer_shift_roles_shift_role_unique').on(table.shift_id, table.role_id),
+}));
+
+export const volunteerSignupsSqlite = sqliteTable('volunteer_signups', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  shift_role_id: integer('shift_role_id').notNull().references(() => volunteerShiftRolesSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  guest_name: text('guest_name'),
+  comments: text('comments'),
+  signed_up_by_member_id: integer('signed_up_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  status: text('status').default('confirmed').notNull().$type<VolunteerSignupStatus>(),
+  cancelled_at: text('cancelled_at'),
+  reminder_sent_at: text('reminder_sent_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  shiftRoleIdx: index('idx_volunteer_signups_shift_role_id').on(table.shift_role_id),
+  memberIdx: index('idx_volunteer_signups_member_id').on(table.member_id),
+  statusIdx: index('idx_volunteer_signups_status').on(table.status),
+  uniqueShiftRoleMember: uniqueIndex('volunteer_signups_shift_role_member_unique').on(
+    table.shift_role_id,
+    table.member_id
+  ),
+}));
+
 // ========== PostgreSQL Schema ==========
 export const membersPg = pgTable('members', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -3802,6 +3943,158 @@ export const eventTournamentRosterSlotsPg = pgTable('event_tournament_roster_slo
   uniqueSlot: uniqueIndexPg('event_tournament_roster_team_slot_unique_pg').on(table.team_id, table.slot_code),
 }));
 
+export const volunteerProgramsPg = pgTable('volunteer_programs', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  title: textPg('title').notNull(),
+  description: textPg('description'),
+  point_of_contact: textPg('point_of_contact').notNull(),
+  location: textPg('location'),
+  start_date: date('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  archived_at: timestamp('archived_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  createdByIdx: indexPg('idx_volunteer_programs_created_by').on(table.created_by_member_id),
+  archivedAtIdx: indexPg('idx_volunteer_programs_archived_at').on(table.archived_at),
+}));
+
+export const volunteerProgramManagersPg = pgTable('volunteer_program_managers', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  program_id: integerPg('program_id').notNull().references(() => volunteerProgramsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  programIdx: indexPg('idx_volunteer_program_managers_program_id').on(table.program_id),
+  memberIdx: indexPg('idx_volunteer_program_managers_member_id').on(table.member_id),
+  uniqueManager: uniqueIndexPg('volunteer_program_managers_program_member_unique_pg').on(
+    table.program_id,
+    table.member_id
+  ),
+}));
+
+export const volunteerCredentialsPg = pgTable('volunteer_credentials', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  description: textPg('description'),
+  point_of_contact_email: textPg('point_of_contact_email').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
+export const volunteerCredentialManagersPg = pgTable('volunteer_credential_managers', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  credential_id: integerPg('credential_id').notNull().references(() => volunteerCredentialsPg.id, {
+    onDelete: 'cascade',
+  }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  credentialIdx: indexPg('idx_volunteer_credential_managers_credential_id').on(table.credential_id),
+  memberIdx: indexPg('idx_volunteer_credential_managers_member_id').on(table.member_id),
+  uniqueManager: uniqueIndexPg('volunteer_credential_managers_credential_member_unique_pg').on(
+    table.credential_id,
+    table.member_id
+  ),
+}));
+
+export const volunteerRolesPg = pgTable('volunteer_roles', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  program_id: integerPg('program_id').notNull().references(() => volunteerProgramsPg.id, { onDelete: 'cascade' }),
+  name: textPg('name').notNull(),
+  description: textPg('description'),
+  default_duration_minutes: integerPg('default_duration_minutes').default(180).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  programIdx: indexPg('idx_volunteer_roles_program_id').on(table.program_id),
+}));
+
+export const volunteerRoleCredentialsPg = pgTable('volunteer_role_credentials', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  role_id: integerPg('role_id').notNull().references(() => volunteerRolesPg.id, { onDelete: 'cascade' }),
+  credential_id: integerPg('credential_id').notNull().references(() => volunteerCredentialsPg.id, {
+    onDelete: 'cascade',
+  }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  roleIdx: indexPg('idx_volunteer_role_credentials_role_id').on(table.role_id),
+  credentialIdx: indexPg('idx_volunteer_role_credentials_credential_id').on(table.credential_id),
+  uniqueRoleCredential: uniqueIndexPg('volunteer_role_credentials_role_credential_unique_pg').on(
+    table.role_id,
+    table.credential_id
+  ),
+}));
+
+export const memberVolunteerCredentialsPg = pgTable('member_volunteer_credentials', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  credential_id: integerPg('credential_id').notNull().references(() => volunteerCredentialsPg.id, {
+    onDelete: 'cascade',
+  }),
+  granted_by_member_id: integerPg('granted_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  granted_at: timestamp('granted_at', { withTimezone: false }).defaultNow().notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_member_volunteer_credentials_member_id').on(table.member_id),
+  credentialIdx: indexPg('idx_member_volunteer_credentials_credential_id').on(table.credential_id),
+  uniqueMemberCredential: uniqueIndexPg('member_volunteer_credentials_member_credential_unique_pg').on(
+    table.member_id,
+    table.credential_id
+  ),
+}));
+
+export const volunteerShiftsPg = pgTable('volunteer_shifts', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  program_id: integerPg('program_id').notNull().references(() => volunteerProgramsPg.id, { onDelete: 'cascade' }),
+  start_dt: textPg('start_dt').notNull(),
+  end_dt: textPg('end_dt').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  programIdx: indexPg('idx_volunteer_shifts_program_id').on(table.program_id),
+  startDtIdx: indexPg('idx_volunteer_shifts_start_dt').on(table.start_dt),
+}));
+
+export const volunteerShiftRolesPg = pgTable('volunteer_shift_roles', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  shift_id: integerPg('shift_id').notNull().references(() => volunteerShiftsPg.id, { onDelete: 'cascade' }),
+  role_id: integerPg('role_id').notNull().references(() => volunteerRolesPg.id, { onDelete: 'cascade' }),
+  volunteers_needed: integerPg('volunteers_needed').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  shiftIdx: indexPg('idx_volunteer_shift_roles_shift_id').on(table.shift_id),
+  roleIdx: indexPg('idx_volunteer_shift_roles_role_id').on(table.role_id),
+  uniqueShiftRole: uniqueIndexPg('volunteer_shift_roles_shift_role_unique_pg').on(table.shift_id, table.role_id),
+}));
+
+export const volunteerSignupsPg = pgTable('volunteer_signups', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  shift_role_id: integerPg('shift_role_id').notNull().references(() => volunteerShiftRolesPg.id, {
+    onDelete: 'cascade',
+  }),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'cascade' }),
+  guest_name: textPg('guest_name'),
+  comments: textPg('comments'),
+  signed_up_by_member_id: integerPg('signed_up_by_member_id').references(() => membersPg.id, {
+    onDelete: 'set null',
+  }),
+  status: textPg('status').default('confirmed').notNull().$type<VolunteerSignupStatus>(),
+  cancelled_at: timestamp('cancelled_at', { withTimezone: false }),
+  reminder_sent_at: timestamp('reminder_sent_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  shiftRoleIdx: indexPg('idx_volunteer_signups_shift_role_id').on(table.shift_role_id),
+  memberIdx: indexPg('idx_volunteer_signups_member_id').on(table.member_id),
+  statusIdx: indexPg('idx_volunteer_signups_status').on(table.status),
+  uniqueShiftRoleMember: uniqueIndexPg('volunteer_signups_shift_role_member_unique_pg').on(
+    table.shift_role_id,
+    table.member_id
+  ),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -3902,6 +4195,16 @@ export const sqliteSchema = {
   eventSpecialLinks: eventSpecialLinksSqlite,
   eventTournamentTeams: eventTournamentTeamsSqlite,
   eventTournamentRosterSlots: eventTournamentRosterSlotsSqlite,
+  volunteerPrograms: volunteerProgramsSqlite,
+  volunteerProgramManagers: volunteerProgramManagersSqlite,
+  volunteerCredentials: volunteerCredentialsSqlite,
+  volunteerCredentialManagers: volunteerCredentialManagersSqlite,
+  volunteerRoles: volunteerRolesSqlite,
+  volunteerRoleCredentials: volunteerRoleCredentialsSqlite,
+  memberVolunteerCredentials: memberVolunteerCredentialsSqlite,
+  volunteerShifts: volunteerShiftsSqlite,
+  volunteerShiftRoles: volunteerShiftRolesSqlite,
+  volunteerSignups: volunteerSignupsSqlite,
 };
 
 export const pgSchema = {
@@ -4003,4 +4306,14 @@ export const pgSchema = {
   eventSpecialLinks: eventSpecialLinksPg,
   eventTournamentTeams: eventTournamentTeamsPg,
   eventTournamentRosterSlots: eventTournamentRosterSlotsPg,
+  volunteerPrograms: volunteerProgramsPg,
+  volunteerProgramManagers: volunteerProgramManagersPg,
+  volunteerCredentials: volunteerCredentialsPg,
+  volunteerCredentialManagers: volunteerCredentialManagersPg,
+  volunteerRoles: volunteerRolesPg,
+  volunteerRoleCredentials: volunteerRoleCredentialsPg,
+  memberVolunteerCredentials: memberVolunteerCredentialsPg,
+  volunteerShifts: volunteerShiftsPg,
+  volunteerShiftRoles: volunteerShiftRolesPg,
+  volunteerSignups: volunteerSignupsPg,
 };

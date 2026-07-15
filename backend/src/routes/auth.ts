@@ -35,6 +35,7 @@ import type {
 import { logEvent } from '../services/observability.js';
 import { issueAuthSession, refreshAuthSession, revokeRefreshToken } from '../services/authSessionService.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
+import { listOwnedEventIds } from '../services/eventService.js';
 
 function normalizePhoneDigits10(input: string): string | null {
   const digits = input.replace(/\D/g, '');
@@ -90,6 +91,7 @@ const authMemberResponseSchema = {
     isContentAdmin: { type: 'boolean' },
     isSponsorAdmin: { type: 'boolean' },
     leagueManagerLeagueIds: { type: 'array', items: { type: 'number' } },
+    ownedEventIds: { type: 'array', items: { type: 'number' } },
     isLeagueAdministrator: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
     roleCodes: { type: 'array', items: { type: 'string' } },
@@ -127,6 +129,7 @@ const authMemberResponseSchema = {
     'isContentAdmin',
     'isSponsorAdmin',
     'leagueManagerLeagueIds',
+    'ownedEventIds',
     'isLeagueAdministrator',
     'isLeagueAdministratorGlobal',
     'roleCodes',
@@ -155,10 +158,14 @@ function getLeagueManagerLeagueIdsFromRules(
 }
 
 async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMember> {
-  const authz = member.authz ?? (await buildAuthzClaimsForMember(member));
+  // Prefer live DB claims over any authz already attached (e.g. from a JWT).
+  const authz = member.impersonationSession
+    ? await buildAuthzClaimsForImpersonatedMember(member)
+    : await buildAuthzClaimsForMember(member);
   member.authz = authz;
   const leagueManagerLeagueIds = getLeagueManagerLeagueIdsFromRules(authz.scopeRules);
   const isLeagueAdministratorGlobal = hasScope(authz, 'leagues.manage');
+  const ownedEventIds = await listOwnedEventIds(member.id);
 
   return {
     id: member.id,
@@ -173,6 +180,7 @@ async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMe
     isContentAdmin: isContentAdmin(member),
     isSponsorAdmin: isSponsorAdmin(member),
     leagueManagerLeagueIds,
+    ownedEventIds,
     isLeagueAdministrator: isLeagueAdministratorGlobal,
     isLeagueAdministratorGlobal,
     roleCodes: authz.roleCodes,

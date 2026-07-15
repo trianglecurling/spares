@@ -40,7 +40,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
         ('content_admin', 'Content admin', 'Content and file administration permissions', 1, 0, 1),
         ('sponsor_admin', 'Sponsor admin', 'Sponsorship administration permissions', 1, 0, 1),
         ('league_admin', 'League admin', 'League administration permissions', 1, 0, 1),
-        ('league_manager', 'League manager', 'League management permissions', 1, 0, 1)
+        ('league_manager', 'League manager', 'League management permissions', 1, 0, 1),
+        ('volunteer_manager', 'Volunteer manager', 'Volunteer program and credential administration', 1, 0, 1)
       ON CONFLICT (code) DO NOTHING
     `));
 
@@ -78,7 +79,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
           ('content_admin', 'files.manage', 'allow'),
           ('sponsor_admin', 'sponsorship.manage', 'allow'),
           ('league_admin', 'leagues.manage', 'allow'),
-          ('league_manager', 'leagues.manage', 'allow')
+          ('league_manager', 'leagues.manage', 'allow'),
+          ('volunteer_manager', 'volunteering.manage', 'allow')
       ) AS v(role_code, scope, effect)
         ON r.code = v.role_code
       ON CONFLICT (role_id, scope) DO NOTHING
@@ -105,6 +107,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
     VALUES ('league_admin', 'League admin', 'League administration permissions', 1, 0, 1);
     INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
     VALUES ('league_manager', 'League manager', 'League management permissions', 1, 0, 1);
+    INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
+    VALUES ('volunteer_manager', 'Volunteer manager', 'Volunteer program and credential administration', 1, 0, 1);
   `));
 }
 

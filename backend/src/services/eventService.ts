@@ -369,7 +369,11 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
   return { id: eventId, slug };
 }
 
-export async function updateEvent(eventId: number, input: UpdateEventInput): Promise<void> {
+export async function updateEvent(
+  eventId: number,
+  input: UpdateEventInput,
+  options?: { actorMemberId?: number | null },
+): Promise<void> {
   const { db, schema } = getDrizzleDb();
 
   const updateValues: Record<string, any> = {};
@@ -468,6 +472,13 @@ export async function updateEvent(eventId: number, input: UpdateEventInput): Pro
   }
 
   if (input.ownerMemberIds !== undefined) {
+    const actorId = options?.actorMemberId;
+    if (actorId != null) {
+      const wasOwner = await isEventOwner(eventId, actorId);
+      if (wasOwner && !input.ownerMemberIds.includes(actorId)) {
+        throw new EventServiceError('You cannot remove yourself as an event owner.', 400);
+      }
+    }
     await db.delete(schema.eventOwners).where(eq(schema.eventOwners.event_id, eventId));
     if (input.ownerMemberIds.length > 0) {
       await db.insert(schema.eventOwners).values(
@@ -631,9 +642,15 @@ export async function listEvents(options: {
   fromDate?: string;
   toDate?: string;
   includeArchived?: boolean;
+  eventIds?: number[];
 }) {
   const { db, schema } = getDrizzleDb();
   const conditions: any[] = [];
+
+  if (options.eventIds) {
+    if (options.eventIds.length === 0) return [];
+    conditions.push(inArray(schema.events.id, options.eventIds));
+  }
 
   if (!options.includeArchived) {
     conditions.push(notArchivedCondition(schema.events.archived_at));
@@ -1534,6 +1551,15 @@ export async function isEventOwner(eventId: number, memberId: number): Promise<b
     .where(and(eq(schema.eventOwners.event_id, eventId), eq(schema.eventOwners.member_id, memberId)))
     .limit(1);
   return !!row;
+}
+
+export async function listOwnedEventIds(memberId: number): Promise<number[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ event_id: schema.eventOwners.event_id })
+    .from(schema.eventOwners)
+    .where(eq(schema.eventOwners.member_id, memberId));
+  return rows.map((row) => row.event_id);
 }
 
 export function isBeforeCancellationCutoff(

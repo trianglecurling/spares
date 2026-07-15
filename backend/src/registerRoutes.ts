@@ -38,6 +38,7 @@ import { protectedRegistrationWaitlistStaffRoutes, publicRegistrationWaitlistOff
 import { waitlistRoutes } from './routes/waitlists.js';
 import { publicSearchRoutes } from './routes/publicSearch.js';
 import { webhookRoutes } from './routes/webhooks.js';
+import { volunteeringRoutes } from './routes/volunteering.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(installRoutes, { prefix: '/api' });
@@ -87,4 +88,5 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(protectedRegistrationWaitlistStaffRoutes, { prefix: '/api' });
   await fastify.register(waitlistRoutes, { prefix: '/api' });
   await fastify.register(webhookRoutes, { prefix: '/api' });
+  await fastify.register(volunteeringRoutes, { prefix: '/api' });
 }
