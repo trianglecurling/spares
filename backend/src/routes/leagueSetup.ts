@@ -102,17 +102,50 @@ async function isMemberExpired(
   );
 }
 
+const SHEET_STONE_COLOR_PRESETS = ['red', 'yellow', 'dark_blue', 'blue', 'green'] as const;
+const sheetStoneColorHexRegex = /^#[0-9a-fA-F]{6}$/;
+const sheetStoneColorSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .refine(
+    (value) =>
+      (SHEET_STONE_COLOR_PRESETS as readonly string[]).includes(value) ||
+      sheetStoneColorHexRegex.test(value),
+    {
+      message:
+        'Stone color must be red, yellow, dark_blue, blue, green, or a #RRGGBB hex value',
+    },
+  );
+
 const sheetCreateSchema = z.object({
   name: z.string().min(1),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
+  stoneColor1: sheetStoneColorSchema.optional(),
+  stoneColor2: sheetStoneColorSchema.optional(),
 });
 
 const sheetUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
+  stoneColor1: sheetStoneColorSchema.optional(),
+  stoneColor2: sheetStoneColorSchema.optional(),
 });
+
+function mapSheetRow(sheet: SheetRow) {
+  return {
+    id: sheet.id,
+    name: sheet.name,
+    sortOrder: sheet.sort_order,
+    isActive: sheet.is_active === 1,
+    stoneColor1: sheet.stone_color_1,
+    stoneColor2: sheet.stone_color_2,
+    createdAt: sheet.created_at,
+    updatedAt: sheet.updated_at,
+  };
+}
 
 const divisionCreateSchema = z.object({
   name: z.string().min(1),
@@ -403,14 +436,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       .from(schema.sheets)
       .orderBy(schema.sheets.sort_order, schema.sheets.name);
 
-    return sheets.map((sheet: SheetRow) => ({
-      id: sheet.id,
-      name: sheet.name,
-      sortOrder: sheet.sort_order,
-      isActive: sheet.is_active === 1,
-      createdAt: sheet.created_at,
-      updatedAt: sheet.updated_at,
-    }));
+    return sheets.map((sheet: SheetRow) => mapSheetRow(sheet));
     }
   );
 
@@ -440,18 +466,12 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         name: body.name.trim(),
         sort_order: body.sortOrder ?? 0,
         is_active: body.isActive === false ? 0 : 1,
+        stone_color_1: body.stoneColor1 ?? 'red',
+        stone_color_2: body.stoneColor2 ?? 'yellow',
       })
       .returning();
 
-    const sheet = result[0];
-    return {
-      id: sheet.id,
-      name: sheet.name,
-      sortOrder: sheet.sort_order,
-      isActive: sheet.is_active === 1,
-      createdAt: sheet.created_at,
-      updatedAt: sheet.updated_at,
-    };
+    return mapSheetRow(result[0]);
     }
   );
 
@@ -482,6 +502,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     if (body.name !== undefined) updateData.name = body.name.trim();
     if (body.sortOrder !== undefined) updateData.sort_order = body.sortOrder;
     if (body.isActive !== undefined) updateData.is_active = body.isActive ? 1 : 0;
+    if (body.stoneColor1 !== undefined) updateData.stone_color_1 = body.stoneColor1;
+    if (body.stoneColor2 !== undefined) updateData.stone_color_2 = body.stoneColor2;
 
     if (Object.keys(updateData).length === 0) {
       return reply.code(400).send({ error: 'No updates provided' });
@@ -495,15 +517,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Sheet not found' });
     }
 
-    const sheet = sheets[0];
-    return {
-      id: sheet.id,
-      name: sheet.name,
-      sortOrder: sheet.sort_order,
-      isActive: sheet.is_active === 1,
-      createdAt: sheet.created_at,
-      updatedAt: sheet.updated_at,
-    };
+    return mapSheetRow(sheets[0]);
     }
   );
 

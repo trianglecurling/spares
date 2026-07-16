@@ -130,6 +130,8 @@ export interface Sheet {
   name: string;
   sort_order: number;
   is_active: number;
+  stone_color_1: string;
+  stone_color_2: string;
   created_at: string;
   updated_at: string;
 }

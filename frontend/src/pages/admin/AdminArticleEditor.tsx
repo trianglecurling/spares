@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
-import { marked } from 'marked';
 import api from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -10,13 +9,17 @@ import MarkdownDescriptionEditor, {
   READ_MORE_MARKER,
 } from '../../components/MarkdownDescriptionEditor';
 import BackButton from '../../components/BackButton';
+import ContentFormatToggle, { type ContentFormat } from '../../components/ContentFormatToggle';
 import HtmlCodeEditor, { type HtmlCodeEditorRef } from '../../components/HtmlCodeEditor';
 import Button from '../../components/Button';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
-import { htmlReplaceYoutubeMarkdownImagesWithEmbeds } from '../../utils/youtubeMarkdown';
+import {
+  buildArticleHtmlContentFromMarkdown,
+  isArticleHtmlContentEmpty,
+} from '../../utils/articleHtmlContent';
 
 type UploadedFile = { id: number; publicUrl: string };
 type ArticleResponse = {
@@ -120,11 +123,13 @@ export default function AdminArticleEditor() {
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
   const [articleUrlCopied, setArticleUrlCopied] = useState(false);
+  const [hasReadMoreMarker, setHasReadMoreMarker] = useState(false);
   const savedSnapshotRef = useRef<string | null>(null);
   const articleUrlCopiedTimeoutRef = useRef<number | null>(null);
 
   const isNew = id === 'new';
   const articlePublicPath = form.slug.trim() ? `/articles/${form.slug.trim()}` : null;
+  const hasCustomSnippet = form.snippet.trim().length > 0;
 
   useEffect(() => {
     return () => {
@@ -147,6 +152,7 @@ export default function AdminArticleEditor() {
       snippet: article.snippet ?? '',
       publishedAt: article.publishedAt ? isoToDatetimeLocal(article.publishedAt) : '',
     });
+    setHasReadMoreMarker(content.includes(READ_MORE_MARKER));
     setEditorRevision((v) => v + 1);
     savedSnapshotRef.current = JSON.stringify({
       title: article.title,
@@ -185,6 +191,7 @@ export default function AdminArticleEditor() {
         snippet: '',
         publishedAt: '',
       });
+      setHasReadMoreMarker(false);
       setSlugManuallyEdited(false);
       setSaveRevisionNote('Initial version');
       setSaveSmallEdit(false);
@@ -228,45 +235,43 @@ export default function AdminArticleEditor() {
     });
   };
 
-  const handleConvertToHtml = async () => {
-    const ok = await confirm({
-      title: 'Convert Markdown to HTML',
-      message:
-        'This will convert your Markdown content to HTML and switch to HTML/CSS/JS mode. Any existing HTML, CSS, or JavaScript will be overwritten. Continue?',
-      variant: 'warning',
-      confirmText: 'Convert',
-    });
-    if (!ok) return;
+  const handleContentFormatChange = async (next: ContentFormat) => {
+    if (next === form.contentType) return;
+
+    if (next === 'markdown') {
+      setForm((f) => ({
+        ...f,
+        contentType: 'markdown',
+        htmlContent:
+          form.contentType === 'html' && htmlEditorRef.current
+            ? JSON.stringify(htmlEditorRef.current.getValue())
+            : f.htmlContent,
+      }));
+      return;
+    }
+
     const markdown = editorRef.current?.getMarkdown?.() ?? form.content;
-    let html = (await marked.parse(markdown)) as string;
-    html = htmlReplaceYoutubeMarkdownImagesWithEmbeds(html);
-    const defaultCss = `/* Basic typography - edit as needed */
-.content { max-width: 42rem; margin: 0 auto; }
-h1 { font-size: 1.5rem; font-weight: 700; margin: 1em 0 0.5em; }
-h2 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.5em; }
-h3 { font-size: 1.125rem; font-weight: 600; margin: 0.75em 0 0.5em; }
-p { line-height: 1.6; margin: 0.5em 0; }
-ul, ol { margin: 0.5em 0; padding-left: 1.5rem; }
-ul { list-style-type: disc; }
-ol { list-style-type: decimal; }
-a { color: #0d9488; text-decoration: underline; }
-table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-th, td { border: 1px solid #d1d5db; padding: 0.5rem 1rem; text-align: left; }
-th { font-weight: 600; background: #f3f4f6; }
-.markdown-youtube-embed { display: block; width: 100%; max-width: 560px; margin: 1rem 0; min-width: 0; }
-.markdown-youtube-inner { position: relative; width: 100%; height: 0; padding-bottom: 56.25%; overflow: hidden; border-radius: 0.5rem; background: #111827; }
-.markdown-youtube-inner iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
-`;
+    let htmlContent = form.htmlContent;
+    if (isArticleHtmlContentEmpty(htmlContent) && markdown.trim()) {
+      const shouldConvert = await confirm({
+        title: 'Convert markdown to HTML?',
+        message: 'Would you like to convert the existing markdown content to HTML?',
+        confirmText: 'Yes, convert',
+        cancelText: 'No',
+        variant: 'info',
+      });
+      if (shouldConvert) {
+        htmlContent = await buildArticleHtmlContentFromMarkdown(markdown);
+      }
+    }
+
     setForm((f) => ({
       ...f,
       contentType: 'html',
       content: markdown,
-      htmlContent: JSON.stringify({
-        html: `<div class="content">\n${html}\n</div>`,
-        css: defaultCss,
-        js: '// Optional JavaScript\n',
-      }),
+      htmlContent,
     }));
+    setEditorRevision((v) => v + 1);
   };
 
   const getCurrentEditorContent = () =>
@@ -634,60 +639,13 @@ th { font-weight: 600; background: #f3f4f6; }
         >
           <div className="flex-1 min-h-0 max-w-[1600px] mx-auto w-full px-4 py-4">
             <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-x-4 gap-y-2 lg:grid-rows-[auto_minmax(0,1fr)]">
-              <div
-                role="group"
-                aria-label="Content format"
-                className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2"
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((f) => ({
-                      ...f,
-                      contentType: 'markdown',
-                      htmlContent:
-                        form.contentType === 'html' && htmlEditorRef.current
-                          ? JSON.stringify(htmlEditorRef.current.getValue())
-                          : f.htmlContent,
-                    }))
-                  }
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
-                    form.contentType === 'markdown'
-                      ? 'bg-primary-teal-solid text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
-                  }`}
-                >
-                  Markdown
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((f) => ({
-                      ...f,
-                      contentType: 'html',
-                      content:
-                        form.contentType === 'markdown'
-                          ? (editorRef.current?.getMarkdown?.() ?? f.content)
-                          : f.content,
-                    }))
-                  }
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
-                    form.contentType === 'html'
-                      ? 'bg-primary-teal-solid text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
-                  }`}
-                >
-                  HTML/CSS/JS
-                </button>
-                {form.contentType === 'markdown' && (
-                  <button
-                    type="button"
-                    onClick={handleConvertToHtml}
-                    className="rounded-lg bg-amber-100 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-primary-teal/40 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
-                  >
-                    Convert to HTML
-                  </button>
-                )}
+              <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
+                <ContentFormatToggle
+                  value={form.contentType}
+                  onChange={(next) => {
+                    void handleContentFormatChange(next);
+                  }}
+                />
               </div>
 
               <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
@@ -709,6 +667,8 @@ th { font-weight: 600; background: #f3f4f6; }
                       dark={resolvedTheme === 'dark'}
                       fill
                       readMoreInToolbar
+                      readMoreDisabled={hasCustomSnippet}
+                      onReadMoreMarkerChange={setHasReadMoreMarker}
                       includeHiddenContactRecipients
                       enableManagedFileImageEdit
                       onUploadImage={handleUploadMarkdownImage}
@@ -775,15 +735,25 @@ th { font-weight: 600; background: #f3f4f6; }
                     }
                     optional
                     htmlFor={`${articleFieldId}-snippet`}
+                    state={hasReadMoreMarker ? 'disabled' : 'default'}
+                    stateMessage={
+                      hasReadMoreMarker
+                        ? `Remove the read more marker (${READ_MORE_MARKER}) from the article to use a custom snippet.`
+                        : undefined
+                    }
                   >
-                    <textarea
-                      id={`${articleFieldId}-snippet`}
-                      value={form.snippet}
-                      onChange={(e) => setForm((f) => ({ ...f, snippet: e.target.value }))}
-                      rows={5}
-                      placeholder="Overrides content above the read-more marker"
-                      className="app-input min-h-[7.5rem] text-sm"
-                    />
+                    {({ describedBy }) => (
+                      <textarea
+                        id={`${articleFieldId}-snippet`}
+                        value={form.snippet}
+                        onChange={(e) => setForm((f) => ({ ...f, snippet: e.target.value }))}
+                        rows={5}
+                        placeholder="Overrides content above the read-more marker"
+                        disabled={hasReadMoreMarker}
+                        aria-describedby={describedBy}
+                        className="app-input min-h-[7.5rem] text-sm"
+                      />
+                    )}
                   </FormField>
                   {!isNew && (
                     <div className="pt-2 border-t border-gray-200 dark:border-gray-700">

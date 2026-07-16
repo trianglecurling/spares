@@ -1,14 +1,16 @@
 ---
-description: Run the app DB migration after schema-affecting changes
+description: Run the preview DB migration after schema-affecting changes
 alwaysApply: true
 ---
 
 # Database Migration Workflow
 
 - Do not assume `bun run dev` will migrate the database. It should not.
-- After any change that can require a schema or built-in migration update, run `bun run db:migrate` before finishing.
+- After any change that can require a schema or built-in migration update, run `bun run db:migrate:preview` before finishing.
+- Do **not** run `bun run db:migrate` from agent workflows. That targets the production/`db-config.json` database. Humans migrate production after testing on preview.
+- `db:migrate:preview` uses `DB_CONFIG_PROFILE=preview` (`data/db-config.preview.json`).
 - Treat these as migration-requiring changes:
 - edits to `backend/src/db/drizzle-schema.ts`
 - changes that add, remove, rename, or repurpose stored columns, tables, indexes, constraints, or seed rows expected by startup/runtime code
 - changes to DB initialization or installation flows that rely on new schema state
-- If `bun run db:migrate` cannot be run because local DB config or credentials are missing, say that explicitly in the final response.
+- If `bun run db:migrate:preview` cannot be run because local DB config or credentials are missing, say that explicitly in the final response.

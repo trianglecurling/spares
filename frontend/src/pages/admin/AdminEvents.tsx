@@ -14,6 +14,7 @@ import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { isArchivedAt } from '../../utils/softDelete';
 import { memberHasEventsManageScope } from '../../utils/eventManagementAccess';
+import { isBonspielCalendarType } from '../../utils/eventCalendarTypes';
 
 interface EventSummary {
   id: number;
@@ -21,6 +22,8 @@ interface EventSummary {
   slug: string;
   visibility: string;
   published: number;
+  calendarTypeId?: string | null;
+  hasTournamentDraw?: boolean;
   capacity: number | null;
   feeMinor: number;
   memberFeeMinor?: number | null;
@@ -28,6 +31,42 @@ interface EventSummary {
   timespans: Array<{ start_dt: string; end_dt: string }>;
   archivedAt?: string | null;
   createdAt: string;
+}
+
+/** Local calendar YYYY-MM-DD (date only). */
+function localDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function dateKeyFromIso(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return localDateKey(date);
+}
+
+function eventStartEndDateKeys(event: EventSummary): { start: string | null; end: string | null } {
+  const spans = event.timespans ?? [];
+  let start: string | null = null;
+  let end: string | null = null;
+  for (const span of spans) {
+    const spanStart = dateKeyFromIso(span.start_dt);
+    const spanEnd = dateKeyFromIso(span.end_dt);
+    if (spanStart && (start == null || spanStart < start)) start = spanStart;
+    if (spanEnd && (end == null || spanEnd > end)) end = spanEnd;
+  }
+  return { start, end };
+}
+
+/** Sort key: start if upcoming, today if in progress; null if past (hidden). */
+function eventListSortKey(event: EventSummary, todayKey: string): string | null {
+  const { start, end } = eventStartEndDateKeys(event);
+  if (start == null) return '9999-99-99';
+  if (todayKey < start) return start;
+  if (end == null || todayKey <= end) return todayKey;
+  return null;
 }
 
 function formatDate(dateStr: string): string {
@@ -86,6 +125,27 @@ export default function AdminEvents() {
   };
 
   useEffect(() => { loadEvents(); }, [includeArchived]);
+
+  const visibleEvents = useMemo(() => {
+    const todayKey = localDateKey(new Date());
+    const rows = events.filter((event) => {
+      const sortKey = eventListSortKey(event, todayKey);
+      if (sortKey != null) return true;
+      // Past by calendar end date: show when "Include archived items" is on
+      // (same control also loads soft-archived rows from the API).
+      return includeArchived;
+    });
+    rows.sort((a, b) => {
+      const keyA = eventListSortKey(a, todayKey) ?? eventStartEndDateKeys(a).end ?? '0000-00-00';
+      const keyB = eventListSortKey(b, todayKey) ?? eventStartEndDateKeys(b).end ?? '0000-00-00';
+      if (keyA !== keyB) return keyA.localeCompare(keyB);
+      const startA = eventStartEndDateKeys(a).start ?? '';
+      const startB = eventStartEndDateKeys(b).start ?? '';
+      if (startA !== startB) return startA.localeCompare(startB);
+      return a.title.localeCompare(b.title);
+    });
+    return rows;
+  }, [events, includeArchived]);
 
   const handleArchive = async (event: EventSummary) => {
     const confirmed = await confirm({
@@ -271,14 +331,14 @@ export default function AdminEvents() {
 
         {loading && <AppStateCard title="Loading events..." />}
 
-        {!loading && events.length === 0 && (
+        {!loading && visibleEvents.length === 0 && (
           <AppStateCard
             title={
               includeArchived
                 ? 'No events match these filters.'
                 : canManageAllEvents
-                  ? 'No events yet.'
-                  : 'You are not listed as an owner on any events.'
+                  ? 'No upcoming or in-progress events.'
+                  : 'You have no upcoming or in-progress events to manage.'
             }
             action={
               !includeArchived && canManageAllEvents ? (
@@ -290,20 +350,33 @@ export default function AdminEvents() {
           />
         )}
 
-        {!loading && events.length > 0 && (
+        {!loading && visibleEvents.length > 0 && (
           <DataTable
-            rows={events}
+            rows={visibleEvents}
             rowKey={(event) => event.id}
             columns={columns}
             actions={{
-              widthClassName: 'w-[18rem]',
+              widthClassName: 'w-[22rem]',
               renderActions: (event) => {
                 const archived = isArchivedAt(event.archivedAt);
+                const showScorekeeper =
+                  !archived &&
+                  isBonspielCalendarType(event.calendarTypeId) &&
+                  Boolean(event.hasTournamentDraw);
 
                 return (
                   <div className="flex items-center justify-end gap-1">
                     {!archived ? (
                       <>
+                        {showScorekeeper ? (
+                          <Link
+                            to={`/admin/events/${event.id}/scorekeeper`}
+                            className="rounded px-2 py-1 text-xs font-medium text-primary-teal hover:bg-primary-teal/10"
+                            title="Open scorekeeper"
+                          >
+                            Scorekeeper
+                          </Link>
+                        ) : null}
                         <button
                           onClick={() => handleTogglePublish(event)}
                           className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"

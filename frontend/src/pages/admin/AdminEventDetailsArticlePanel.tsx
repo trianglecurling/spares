@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { marked } from 'marked';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -8,6 +7,7 @@ import MarkdownDescriptionEditor, {
   type MarkdownDescriptionEditorRef,
   READ_MORE_MARKER,
 } from '../../components/MarkdownDescriptionEditor';
+import ContentFormatToggle, { type ContentFormat } from '../../components/ContentFormatToggle';
 import HtmlCodeEditor, { type HtmlCodeEditorRef } from '../../components/HtmlCodeEditor';
 import Button from '../../components/Button';
 import FormCheckbox from '../../components/FormCheckbox';
@@ -15,6 +15,10 @@ import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
+import {
+  buildArticleHtmlContentFromMarkdown,
+  isArticleHtmlContentEmpty,
+} from '../../utils/articleHtmlContent';
 
 type UploadedFile = { id: number; publicUrl: string };
 type ArticleResponse = {
@@ -113,18 +117,17 @@ export default function AdminEventDetailsArticlePanel({
   const [saveSmallEdit, setSaveSmallEdit] = useState(false);
   const [form, setForm] = useState({
     title: '',
-    slug: '',
     contentType: 'markdown' as 'markdown' | 'html',
     content: '',
     htmlContent: '',
     snippet: '',
-    featured: false,
   });
   const editorRef = useRef<MarkdownDescriptionEditorRef>(null);
   const htmlEditorRef = useRef<HtmlCodeEditorRef>(null);
-  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
+  const [hasReadMoreMarker, setHasReadMoreMarker] = useState(false);
   const savedSnapshotRef = useRef<string | null>(null);
+  const hasCustomSnippet = form.snippet.trim().length > 0;
 
   const applyArticleToForm = useCallback((article: ArticleResponse) => {
     const contentType = article.contentType ?? 'markdown';
@@ -134,22 +137,19 @@ export default function AdminEventDetailsArticlePanel({
     }
     setForm({
       title: article.title,
-      slug: article.slug,
       contentType,
       content: contentType === 'markdown' ? content : '',
       htmlContent: contentType === 'html' ? content : '',
       snippet: article.snippet ?? '',
-      featured: article.featured ?? false,
     });
+    setHasReadMoreMarker(content.includes(READ_MORE_MARKER));
     setEditorRevision((v) => v + 1);
     savedSnapshotRef.current = JSON.stringify({
       title: article.title,
-      slug: article.slug,
       contentType,
       content,
       htmlContent: contentType === 'html' ? (article.content ?? '') : '',
       snippet: article.snippet ?? '',
-      featured: article.featured ?? false,
     });
   }, []);
 
@@ -174,14 +174,12 @@ export default function AdminEventDetailsArticlePanel({
     setVersions([]);
     setForm({
       title: eventTitle,
-      slug: eventSlug.trim() || slugFromName(eventTitle),
       contentType: 'markdown',
       content: '',
       htmlContent: '',
       snippet: '',
-      featured: false,
     });
-    setSlugManuallyEdited(false);
+    setHasReadMoreMarker(false);
     setSaveRevisionNote('Initial version');
     setSaveSmallEdit(false);
     savedSnapshotRef.current = null;
@@ -205,48 +203,46 @@ export default function AdminEventDetailsArticlePanel({
   }, [articleId, applyArticleToForm, showAlert]);
 
   const handleTitleChange = (title: string) => {
-    setForm((f) => {
-      const newSlug =
-        !slugManuallyEdited && articleId == null ? slugFromName(title) || f.slug : f.slug;
-      return { ...f, title, slug: newSlug };
-    });
+    setForm((f) => ({ ...f, title }));
   };
 
-  const handleConvertToHtml = async () => {
-    const ok = await confirm({
-      title: 'Convert Markdown to HTML',
-      message:
-        'This will convert your Markdown content to HTML and switch to HTML/CSS/JS mode. Any existing HTML, CSS, or JavaScript will be overwritten. Continue?',
-      variant: 'warning',
-      confirmText: 'Convert',
-    });
-    if (!ok) return;
+  const handleContentFormatChange = async (next: ContentFormat) => {
+    if (next === form.contentType) return;
+
+    if (next === 'markdown') {
+      setForm((f) => ({
+        ...f,
+        contentType: 'markdown',
+        htmlContent:
+          form.contentType === 'html' && htmlEditorRef.current
+            ? JSON.stringify(htmlEditorRef.current.getValue())
+            : f.htmlContent,
+      }));
+      return;
+    }
+
     const markdown = editorRef.current?.getMarkdown?.() ?? form.content;
-    const html = (await marked.parse(markdown)) as string;
-    const defaultCss = `/* Basic typography - edit as needed */
-.content { max-width: 42rem; margin: 0 auto; }
-h1 { font-size: 1.5rem; font-weight: 700; margin: 1em 0 0.5em; }
-h2 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.5em; }
-h3 { font-size: 1.125rem; font-weight: 600; margin: 0.75em 0 0.5em; }
-p { line-height: 1.6; margin: 0.5em 0; }
-ul, ol { margin: 0.5em 0; padding-left: 1.5rem; }
-ul { list-style-type: disc; }
-ol { list-style-type: decimal; }
-a { color: #0d9488; text-decoration: underline; }
-table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-th, td { border: 1px solid #d1d5db; padding: 0.5rem 1rem; text-align: left; }
-th { font-weight: 600; background: #f3f4f6; }
-`;
+    let htmlContent = form.htmlContent;
+    if (isArticleHtmlContentEmpty(htmlContent) && markdown.trim()) {
+      const shouldConvert = await confirm({
+        title: 'Convert markdown to HTML?',
+        message: 'Would you like to convert the existing markdown content to HTML?',
+        confirmText: 'Yes, convert',
+        cancelText: 'No',
+        variant: 'info',
+      });
+      if (shouldConvert) {
+        htmlContent = await buildArticleHtmlContentFromMarkdown(markdown);
+      }
+    }
+
     setForm((f) => ({
       ...f,
       contentType: 'html',
       content: markdown,
-      htmlContent: JSON.stringify({
-        html: `<div class="content">\n${html}\n</div>`,
-        css: defaultCss,
-        js: '// Optional JavaScript\n',
-      }),
+      htmlContent,
     }));
+    setEditorRevision((v) => v + 1);
   };
 
   const getCurrentEditorContent = () =>
@@ -258,7 +254,7 @@ th { font-weight: 600; background: #f3f4f6; }
     const content = getCurrentEditorContent();
     const k = storeArticleDraftPreview({
       title: form.title,
-      slug: form.slug,
+      slug: eventSlug.trim() || slugFromName(form.title) || `event-${eventId}`,
       contentType: form.contentType,
       content,
       snippet: form.snippet.trim() || null,
@@ -274,8 +270,8 @@ th { font-weight: 600; background: #f3f4f6; }
   const handleSave = async (options?: { settingsOnly?: boolean }) => {
     if (articleId == null) return;
     const settingsOnly = options?.settingsOnly === true;
-    if (!settingsOnly && (!form.title.trim() || !form.slug.trim())) {
-      showAlert('Title and slug are required', 'error');
+    if (!settingsOnly && !form.title.trim()) {
+      showAlert('Title is required', 'error');
       return;
     }
     const content = getCurrentEditorContent();
@@ -287,20 +283,16 @@ th { font-weight: 600; background: #f3f4f6; }
     try {
       const payload = settingsOnly
         ? {
-            slug: form.slug.trim(),
             snippet: form.snippet.trim() || null,
-            featured: form.featured,
             publishedAt: null,
           }
         : {
             title: form.title.trim(),
-            slug: form.slug.trim(),
             contentType: form.contentType,
             content,
             revisionNote: saveSmallEdit ? null : saveRevisionNote.trim() || null,
             smallEdit: saveSmallEdit,
             snippet: form.snippet.trim() || null,
-            featured: form.featured,
             publishedAt: null,
           };
       await api.patch(`/content/articles/${articleId}`, payload);
@@ -308,12 +300,10 @@ th { font-weight: 600; background: #f3f4f6; }
       await loadVersions(articleId);
       savedSnapshotRef.current = JSON.stringify({
         title: form.title,
-        slug: form.slug,
         contentType: form.contentType,
         content,
         htmlContent: form.htmlContent,
         snippet: form.snippet,
-        featured: form.featured,
       });
       if (!settingsOnly) {
         setSaveRevisionNote('');
@@ -401,7 +391,8 @@ th { font-weight: 600; background: #f3f4f6; }
       return null;
     }
     const currentMarkdown = editorRef.current?.getMarkdown?.() ?? form.content ?? '';
-    const currentSlug = form.slug.trim() || slugFromName(form.title.trim()) || 'article';
+    const currentSlug =
+      eventSlug.trim() || slugFromName(form.title.trim()) || `event-${eventId}` || 'article';
     const filename = nextArticleImageFilename(currentSlug, currentMarkdown, mimeType);
     const file = new File([blob], filename, { type: mimeType });
 
@@ -437,6 +428,7 @@ th { font-weight: 600; background: #f3f4f6; }
       snippet: null,
       featured: false,
       publishedAt: null,
+      eventId,
     });
   };
 
@@ -464,7 +456,6 @@ th { font-weight: 600; background: #f3f4f6; }
             showAlert('Created article but id was missing', 'error');
             return;
           }
-          await api.patch(`/events/${eventId}`, { articleId: newId });
           onArticleIdChange(newId);
           showAlert('Event page content created', 'success');
           return;
@@ -490,8 +481,7 @@ th { font-weight: 600; background: #f3f4f6; }
           <span className="font-mono text-xs">
             /events/{eventSlug.trim() || '…'}
           </span>{' '}
-          below the registration summary. You can feature this content on the homepage using the article settings after it
-          is created.
+          below the registration summary. Publish the event from the Settings tab when you are ready for it to go live.
         </p>
         <InlineStateMessage
           tone="neutral"
@@ -532,9 +522,8 @@ th { font-weight: 600; background: #f3f4f6; }
       >
         <div className="p-4 sm:p-6 max-h-[min(85vh,1200px)] flex flex-col min-h-[480px]">
           <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 shrink-0">
-            Shown on{' '}
-            <span className="font-mono text-xs">/events/{eventSlug.trim() || '…'}</span>. Turn on &quot;Featured on
-            homepage&quot; below to highlight this event like other articles.
+            Shown on <span className="font-mono text-xs">/events/{eventSlug.trim() || '…'}</span>. Visibility follows
+            the event publish setting on the Settings tab.
           </p>
           <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-x-4 gap-y-3 lg:grid-rows-[auto_auto_minmax(0,1fr)]">
             <FormField label="Title" htmlFor={`${fieldId}-title`} className="shrink-0 lg:col-span-1">
@@ -548,60 +537,13 @@ th { font-weight: 600; background: #f3f4f6; }
               />
             </FormField>
 
-            <div
-              role="group"
-              aria-label="Content format"
-              className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:col-start-1 lg:row-start-2"
-            >
-              <button
-                type="button"
-                onClick={() =>
-                  setForm((f) => ({
-                    ...f,
-                    contentType: 'markdown',
-                    htmlContent:
-                      form.contentType === 'html' && htmlEditorRef.current
-                        ? JSON.stringify(htmlEditorRef.current.getValue())
-                        : f.htmlContent,
-                  }))
-                }
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
-                  form.contentType === 'markdown'
-                    ? 'bg-primary-teal-solid text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
-                }`}
-              >
-                Markdown
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setForm((f) => ({
-                    ...f,
-                    contentType: 'html',
-                    content:
-                      form.contentType === 'markdown'
-                        ? (editorRef.current?.getMarkdown?.() ?? f.content)
-                        : f.content,
-                  }))
-                }
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/40 ${
-                  form.contentType === 'html'
-                    ? 'bg-primary-teal-solid text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'
-                }`}
-              >
-                HTML/CSS/JS
-              </button>
-              {form.contentType === 'markdown' && (
-                <button
-                  type="button"
-                  onClick={() => void handleConvertToHtml()}
-                  className="rounded-lg bg-amber-100 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-primary-teal/40 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
-                >
-                  Convert to HTML
-                </button>
-              )}
+            <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:col-start-1 lg:row-start-2">
+              <ContentFormatToggle
+                value={form.contentType}
+                onChange={(next) => {
+                  void handleContentFormatChange(next);
+                }}
+              />
             </div>
 
             <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:col-start-2 lg:row-start-2">
@@ -623,6 +565,8 @@ th { font-weight: 600; background: #f3f4f6; }
                     dark={resolvedTheme === 'dark'}
                     fill
                     readMoreInToolbar
+                    readMoreDisabled={hasCustomSnippet}
+                    onReadMoreMarkerChange={setHasReadMoreMarker}
                     includeHiddenContactRecipients
                     enableManagedFileImageEdit
                     onUploadImage={handleUploadMarkdownImage}
@@ -640,31 +584,8 @@ th { font-weight: 600; background: #f3f4f6; }
             </div>
 
             <aside className="h-fit min-h-0 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40 lg:col-start-2 lg:row-start-3 lg:max-h-full lg:overflow-auto">
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">Article settings</h2>
+              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">Page settings</h2>
               <div className="space-y-4">
-                <FormField label="Slug (URL)" htmlFor={`${fieldId}-slug`}>
-                  <input
-                    id={`${fieldId}-slug`}
-                    type="text"
-                    value={form.slug}
-                    onChange={(e) => {
-                      setSlugManuallyEdited(true);
-                      setForm((f) => ({ ...f, slug: e.target.value }));
-                    }}
-                    className="app-input font-mono text-sm"
-                    pattern="[-a-z0-9]+"
-                    required
-                  />
-                </FormField>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  The public event page uses the event slug. This slug is only for admin links; event page content is
-                  shown whenever the event is published (see Settings tab), not from a separate publish date.
-                </p>
-                <FormCheckbox
-                  label="Featured on homepage"
-                  checked={form.featured}
-                  onChange={(checked) => setForm((f) => ({ ...f, featured: checked }))}
-                />
                 <FormField
                   label={
                     <>
@@ -673,15 +594,25 @@ th { font-weight: 600; background: #f3f4f6; }
                   }
                   optional
                   htmlFor={`${fieldId}-snippet`}
+                  state={hasReadMoreMarker ? 'disabled' : 'default'}
+                  stateMessage={
+                    hasReadMoreMarker
+                      ? `Remove the read more marker (${READ_MORE_MARKER}) from the article to use a custom snippet.`
+                      : undefined
+                  }
                 >
-                  <textarea
-                    id={`${fieldId}-snippet`}
-                    value={form.snippet}
-                    onChange={(e) => setForm((f) => ({ ...f, snippet: e.target.value }))}
-                    rows={5}
-                    placeholder="Overrides content above the read-more marker"
-                    className="app-input min-h-[7.5rem] text-sm"
-                  />
+                  {({ describedBy }) => (
+                    <textarea
+                      id={`${fieldId}-snippet`}
+                      value={form.snippet}
+                      onChange={(e) => setForm((f) => ({ ...f, snippet: e.target.value }))}
+                      rows={5}
+                      placeholder="Overrides content above the read-more marker"
+                      disabled={hasReadMoreMarker}
+                      aria-describedby={describedBy}
+                      className="app-input min-h-[7.5rem] text-sm"
+                    />
+                  )}
                 </FormField>
                 <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                   <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">Version history</h3>

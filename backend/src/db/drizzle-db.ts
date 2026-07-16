@@ -103,8 +103,6 @@ type PgSchema = {
   eventRegistrationMembers: typeof pgSchema.eventRegistrationMembersPg;
   eventRegistrationFieldValues: typeof pgSchema.eventRegistrationFieldValuesPg;
   eventSpecialLinks: typeof pgSchema.eventSpecialLinksPg;
-  eventTournamentTeams: typeof pgSchema.eventTournamentTeamsPg;
-  eventTournamentRosterSlots: typeof pgSchema.eventTournamentRosterSlotsPg;
   volunteerPrograms: typeof pgSchema.volunteerProgramsPg;
   volunteerProgramManagers: typeof pgSchema.volunteerProgramManagersPg;
   volunteerCredentials: typeof pgSchema.volunteerCredentialsPg;
@@ -237,8 +235,6 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventRegistrationMembers: sqliteSchema.eventRegistrationMembersSqlite,
       eventRegistrationFieldValues: sqliteSchema.eventRegistrationFieldValuesSqlite,
       eventSpecialLinks: sqliteSchema.eventSpecialLinksSqlite,
-      eventTournamentTeams: sqliteSchema.eventTournamentTeamsSqlite,
-      eventTournamentRosterSlots: sqliteSchema.eventTournamentRosterSlotsSqlite,
       volunteerPrograms: sqliteSchema.volunteerProgramsSqlite,
       volunteerProgramManagers: sqliteSchema.volunteerProgramManagersSqlite,
       volunteerCredentials: sqliteSchema.volunteerCredentialsSqlite,
@@ -362,8 +358,6 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventRegistrationMembers: pgSchema.eventRegistrationMembersPg,
       eventRegistrationFieldValues: pgSchema.eventRegistrationFieldValuesPg,
       eventSpecialLinks: pgSchema.eventSpecialLinksPg,
-      eventTournamentTeams: pgSchema.eventTournamentTeamsPg,
-      eventTournamentRosterSlots: pgSchema.eventTournamentRosterSlotsPg,
       volunteerPrograms: pgSchema.volunteerProgramsPg,
       volunteerProgramManagers: pgSchema.volunteerProgramManagersPg,
       volunteerCredentials: pgSchema.volunteerCredentialsPg,

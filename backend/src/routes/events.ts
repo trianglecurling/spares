@@ -58,6 +58,8 @@ import {
   isBeforeCancellationCutoff,
   EventServiceError,
   normalizeCalendarTypeId,
+  isBonspielCalendarType,
+  tournamentFormatFromCalendarType,
   resolveEventRegistrationFeeMinor,
   confirmRegistrationPayment,
 } from '../services/eventService.js';
@@ -78,12 +80,8 @@ import {
   resolveWaitlistOfferPaymentByToken,
 } from '../services/eventWaitlistService.js';
 import {
-  createTournamentTeam,
-  deleteTournamentTeam,
   listTournamentTeamsForEvent,
-  normalizeTournamentFormat,
-  updateTournamentTeam,
-  type RosterSlotPayload,
+  listConfirmedRegistrationIdsForEvent,
   type TournamentTeamRow,
 } from '../services/eventTournamentTeamsService.js';
 import { tournamentDrawStateSchema, tournamentGameResultSchema } from '../services/eventTournamentDrawSchema.js';
@@ -101,7 +99,11 @@ import {
 import { PassThrough } from 'node:stream';
 
 const patchTournamentGameResultBodySchema = z.object({
-  result: tournamentGameResultSchema.nullable(),
+  result: tournamentGameResultSchema.nullable().optional(),
+  /** Set which slot gets sheet stoneColor1; null clears the assignment. */
+  rockColor1Slot: z.union([z.literal(0), z.literal(1), z.null()]).optional(),
+}).refine((body) => body.result !== undefined || body.rockColor1Slot !== undefined, {
+  message: 'Provide result and/or rockColor1Slot',
 });
 import { isArchivedAt } from '../utils/softDelete.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
@@ -140,7 +142,7 @@ interface EventFormattingSource {
   point_of_contact: string;
   tournament_teams_published?: number;
   tournament_draw_published?: number;
-  tournament_format?: string | null;
+  tournament_draw_json?: string | null;
   created_by_member_id: number | null;
   archived_at?: string | null;
   created_at: string;
@@ -208,10 +210,9 @@ const createEventSchema = z.object({
   maxGroupSize: z.number().int().positive().nullable().optional(),
   enableWaitlist: z.boolean().optional(),
   termsArticleId: z.number().int().nullable().optional(),
-  calendarTypeId: z.enum(['bonspiel', 'learn-to-curl', 'juniors', 'other']).optional(),
+  calendarTypeId: z.enum(['bonspiel-fours', 'bonspiel-doubles', 'learn-to-curl', 'juniors', 'other']).optional(),
   tournamentTeamsPublished: z.boolean().optional(),
   tournamentDrawPublished: z.boolean().optional(),
-  tournamentFormat: z.enum(['fours', 'doubles']).nullable().optional(),
   pointOfContact: eventPointOfContactSchema,
   timespans: z.array(timespanSchema).min(1),
   locations: z.array(locationSchema).optional(),
@@ -303,24 +304,6 @@ const categorySchema = z.object({
   description: z.string().max(500).optional(),
   sortOrder: z.number().int().optional(),
 });
-
-const tournamentRosterSlotSchema = z.object({
-  slotCode: z.string().min(1).max(32),
-  playerName: z.string().max(200).nullable().optional(),
-  email: z.union([z.literal(''), z.string().email().max(320)]).nullable().optional(),
-  notes: z.string().max(2000).nullable().optional(),
-  homeClub: z.string().max(200).nullable().optional(),
-});
-
-const createTournamentTeamBodySchema = z.object({
-  teamName: z.string().max(200).nullable().optional(),
-  homeClub: z.string().max(200).nullable().optional(),
-  viceSlotCode: z.string().min(1).max(32).optional(),
-  skipSlotCode: z.string().min(1).max(32).optional(),
-  roster: z.array(tournamentRosterSlotSchema).optional(),
-});
-
-const updateTournamentTeamBodySchema = createTournamentTeamBodySchema.partial();
 
 function canonicalFrontendBaseUrl(): string {
   return normalizeFrontendBaseUrl(config.frontendUrl);
@@ -562,7 +545,7 @@ async function getPublicPublishedTournamentDrawEventId(
     return null;
   }
 
-  if (normalizeCalendarTypeId(event.calendar_type_id) !== 'bonspiel') {
+  if (!isBonspielCalendarType(event.calendar_type_id)) {
     return null;
   }
 
@@ -670,7 +653,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         return sendApiError(reply, 404, 'Event not found');
       }
 
-      if (normalizeCalendarTypeId(event.calendar_type_id) !== 'bonspiel') {
+      if (!isBonspielCalendarType(event.calendar_type_id)) {
         return sendApiError(reply, 404, 'Event not found');
       }
 
@@ -681,7 +664,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       try {
         const teams = await listTournamentTeamsForEvent(event.id);
         return {
-          tournamentFormat: normalizeTournamentFormat(event.tournament_format as string | null),
+          tournamentFormat: tournamentFormatFromCalendarType(event.calendar_type_id),
           teams: teams.map(formatPublicTournamentTeamResponse),
         };
       } catch (err) {
@@ -1310,99 +1293,6 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     }
   );
 
-  fastify.post<{ Params: { id: string }; Body: unknown }>(
-    '/events/:id/tournament-teams',
-    { schema: { tags: ['events'] } },
-    async (request, reply) => {
-      const eventId = parseInt(request.params.id, 10);
-      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
-
-      const member = (request as AuthenticatedRequest).member as Member;
-      if (!(await canManageEvent(member, eventId))) {
-        return sendApiError(reply, 403, 'Forbidden');
-      }
-
-      const parsed = createTournamentTeamBodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return sendValidationError(reply, 'Invalid team data', parsed.error.flatten());
-      }
-
-      try {
-        const team = await createTournamentTeam(eventId, {
-          teamName: parsed.data.teamName,
-          homeClub: parsed.data.homeClub,
-          viceSlotCode: parsed.data.viceSlotCode,
-          skipSlotCode: parsed.data.skipSlotCode,
-          roster: parsed.data.roster as RosterSlotPayload[] | undefined,
-        });
-        return reply.code(201).send(formatTournamentTeamResponse(team));
-      } catch (err) {
-        if (err instanceof EventServiceError) {
-          return sendApiError(reply, err.statusCode, err.message);
-        }
-        throw err;
-      }
-    }
-  );
-
-  fastify.patch<{ Params: { id: string; teamId: string }; Body: unknown }>(
-    '/events/:id/tournament-teams/:teamId',
-    { schema: { tags: ['events'] } },
-    async (request, reply) => {
-      const eventId = parseInt(request.params.id, 10);
-      const teamId = parseInt(request.params.teamId, 10);
-      if (isNaN(eventId) || isNaN(teamId)) return sendApiError(reply, 400, 'Invalid id');
-
-      const member = (request as AuthenticatedRequest).member as Member;
-      if (!(await canManageEvent(member, eventId))) {
-        return sendApiError(reply, 403, 'Forbidden');
-      }
-
-      const parsed = updateTournamentTeamBodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return sendValidationError(reply, 'Invalid team data', parsed.error.flatten());
-      }
-
-      try {
-        const team = await updateTournamentTeam(eventId, teamId, {
-          ...parsed.data,
-          roster: parsed.data.roster as RosterSlotPayload[] | undefined,
-        });
-        return formatTournamentTeamResponse(team);
-      } catch (err) {
-        if (err instanceof EventServiceError) {
-          return sendApiError(reply, err.statusCode, err.message);
-        }
-        throw err;
-      }
-    }
-  );
-
-  fastify.delete<{ Params: { id: string; teamId: string } }>(
-    '/events/:id/tournament-teams/:teamId',
-    { schema: { tags: ['events'] } },
-    async (request, reply) => {
-      const eventId = parseInt(request.params.id, 10);
-      const teamId = parseInt(request.params.teamId, 10);
-      if (isNaN(eventId) || isNaN(teamId)) return sendApiError(reply, 400, 'Invalid id');
-
-      const member = (request as AuthenticatedRequest).member as Member;
-      if (!(await canManageEvent(member, eventId))) {
-        return sendApiError(reply, 403, 'Forbidden');
-      }
-
-      try {
-        await deleteTournamentTeam(eventId, teamId);
-        return { success: true };
-      } catch (err) {
-        if (err instanceof EventServiceError) {
-          return sendApiError(reply, err.statusCode, err.message);
-        }
-        throw err;
-      }
-    }
-  );
-
   fastify.get<{ Params: { id: string } }>(
     '/events/:id/tournament-draw',
     { schema: { tags: ['events'] } },
@@ -1446,7 +1336,8 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
 
       try {
         const coerced = coerceTournamentDrawIncomingSlots(parsed.data);
-        validateTournamentDrawSemantics(coerced);
+        const confirmedIds = await listConfirmedRegistrationIdsForEvent(eventId);
+        validateTournamentDrawSemantics(coerced, { confirmedRegistrationIds: confirmedIds });
         await saveTournamentDrawForEvent(eventId, coerced);
         broadcastTournamentDrawUpdated(eventId);
         return { draw: coerced };
@@ -1480,7 +1371,10 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       if (!gameId) return sendApiError(reply, 400, 'Invalid game id');
 
       try {
-        const draw = await patchTournamentDrawGameResult(eventId, gameId, parsedBody.data.result);
+        const draw = await patchTournamentDrawGameResult(eventId, gameId, {
+          result: parsedBody.data.result,
+          rockColor1Slot: parsedBody.data.rockColor1Slot,
+        });
         broadcastTournamentDrawUpdated(eventId);
         return { draw };
       } catch (err) {
@@ -2343,6 +2237,18 @@ function formatPublicTournamentTeamResponse(t: TournamentTeamRow) {
   };
 }
 
+/** True when stored draw JSON includes at least one game (for scorekeeper entry gating). */
+function eventHasTournamentDraw(event: EventFormattingSource): boolean {
+  const raw = event.tournament_draw_json;
+  if (raw == null || !String(raw).trim()) return false;
+  try {
+    const parsed = JSON.parse(String(raw)) as { games?: Record<string, unknown> };
+    return Boolean(parsed.games && Object.keys(parsed.games).length > 0);
+  } catch {
+    return false;
+  }
+}
+
 function summarizeEvent(event: EventFormattingSource) {
   return {
     id: event.id,
@@ -2353,7 +2259,8 @@ function summarizeEvent(event: EventFormattingSource) {
     published: event.published,
     tournamentTeamsPublished: event.tournament_teams_published ?? 0,
     tournamentDrawPublished: event.tournament_draw_published ?? 0,
-    tournamentFormat: normalizeTournamentFormat(event.tournament_format as string | null),
+    hasTournamentDraw: eventHasTournamentDraw(event),
+    tournamentFormat: tournamentFormatFromCalendarType(event.calendar_type_id),
     capacity: event.capacity,
     feeMinor: event.fee_minor,
     memberFeeMinor: event.member_fee_minor ?? null,
@@ -2383,7 +2290,7 @@ function formatEventResponse(event: EventFormattingSource) {
     published: event.published,
     tournamentTeamsPublished: event.tournament_teams_published ?? 0,
     tournamentDrawPublished: event.tournament_draw_published ?? 0,
-    tournamentFormat: normalizeTournamentFormat(event.tournament_format as string | null),
+    tournamentFormat: tournamentFormatFromCalendarType(event.calendar_type_id),
     capacity: event.capacity,
     feeMinor: event.fee_minor,
     memberFeeMinor: event.member_fee_minor ?? null,

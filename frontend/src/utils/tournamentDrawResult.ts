@@ -16,6 +16,7 @@ export function outcomeFromResult(game: TournamentGameNode): ResolvedGameOutcome
     return 'tie';
   }
   if (r.entryKind === 'ends') {
+    if (r.complete === false) return null;
     const s0 = r.ends.side0.reduce((x, y) => x + y, 0);
     const s1 = r.ends.side1.reduce((x, y) => x + y, 0);
     if (s0 > s1) return 'slot0';
@@ -39,11 +40,8 @@ export function multiScoreRanking(game: TournamentGameNode): Array<{ slotIndex: 
 /** Table radios are disabled when the result is score- or ends-based (winner is derived). */
 export function resultLocksTableRadios(result: TournamentGameResult | undefined): boolean {
   if (!result) return false;
-  return (
-    result.entryKind === 'final_score' ||
-    result.entryKind === 'ends' ||
-    result.entryKind === 'multi_score'
-  );
+  if (result.entryKind === 'ends') return result.complete !== false;
+  return result.entryKind === 'final_score' || result.entryKind === 'multi_score';
 }
 
 export function sumEnds(side: number[]): number {

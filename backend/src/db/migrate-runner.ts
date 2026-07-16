@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { sql } from 'drizzle-orm';
 import type { DatabaseConfig } from './config.js';
 import { getDrizzleDb } from './drizzle-db.js';
+import { migrateTournamentTeamsToRegistrationsSqlite } from './tournamentTeamsToRegistrationsMigration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const drizzleDir = path.join(__dirname, '../../drizzle');
@@ -220,6 +221,7 @@ async function spawnDrizzleKit(args: string[]): Promise<void> {
 export async function runDrizzleMigrations(config: DatabaseConfig): Promise<void> {
   if (config.type === 'sqlite') {
     await ensureSqliteEventsPointOfContactColumn();
+    await migrateTournamentTeamsToRegistrationsSqlite();
     await spawnDrizzleKit(['push', '--force']);
     return;
   }

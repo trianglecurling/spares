@@ -5,6 +5,8 @@ export type ClubSheet = {
   name: string;
   sortOrder: number;
   isActive?: boolean;
+  stoneColor1?: string;
+  stoneColor2?: string;
 };
 
 /** Build tournament sheet list from club “Manage sheets” data (active sheets only). */
@@ -12,7 +14,13 @@ export function sheetsFromClubSheets(club: ClubSheet[]): TournamentSheet[] {
   return [...club]
     .filter((s) => s.isActive !== false)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
-    .map((s, order) => ({ clubSheetId: s.id, name: s.name, order }));
+    .map((s, order) => ({
+      clubSheetId: s.id,
+      name: s.name,
+      order,
+      ...(s.stoneColor1 ? { stoneColor1: s.stoneColor1 } : {}),
+      ...(s.stoneColor2 ? { stoneColor2: s.stoneColor2 } : {}),
+    }));
 }
 
 /**
@@ -40,6 +48,12 @@ export function migrateSheetsArray(raw: unknown): TournamentSheet[] {
         clubSheetId: s.clubSheetId,
         name: typeof s.name === 'string' && s.name.trim() ? s.name : 'Sheet',
         order: typeof s.order === 'number' ? s.order : i,
+        ...(typeof s.stoneColor1 === 'string' && s.stoneColor1.trim()
+          ? { stoneColor1: s.stoneColor1.trim() }
+          : {}),
+        ...(typeof s.stoneColor2 === 'string' && s.stoneColor2.trim()
+          ? { stoneColor2: s.stoneColor2.trim() }
+          : {}),
       });
       continue;
     }
@@ -50,6 +64,12 @@ export function migrateSheetsArray(raw: unknown): TournamentSheet[] {
         clubSheetId: n,
         name: typeof s.name === 'string' && s.name.trim() ? s.name : `Sheet ${n}`,
         order: typeof s.order === 'number' ? s.order : i,
+        ...(typeof s.stoneColor1 === 'string' && s.stoneColor1.trim()
+          ? { stoneColor1: s.stoneColor1.trim() }
+          : {}),
+        ...(typeof s.stoneColor2 === 'string' && s.stoneColor2.trim()
+          ? { stoneColor2: s.stoneColor2.trim() }
+          : {}),
       });
     }
   }

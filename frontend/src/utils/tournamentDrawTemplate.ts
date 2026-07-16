@@ -2,7 +2,7 @@
  * Portable JSON template for bracket structure (export/import from Structure tab).
  * Team slots store team ids; importing onto another event may need slot fixes if team ids differ.
  */
-import type { TournamentTeamApi } from '../pages/admin/AdminEventTournamentTeamModal';
+import type { TournamentTeamApi } from '../types/tournamentTeam';
 import type {
   TournamentConnectionEdge,
   TournamentDrawState,

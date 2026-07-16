@@ -39,10 +39,63 @@ export async function getTournamentDrawJsonString(eventId: number): Promise<stri
   return raw;
 }
 
+/**
+ * Merge live club sheet stone colors onto draw.sheets (by clubSheetId).
+ * Scorekeeper does this client-side from GET /sheets; public/admin draw GETs need it
+ * server-side so rock-color swatches render when rockColor1Slot is set but colors were
+ * never copied into stored draw JSON.
+ */
+export function mergeClubSheetStoneColorsOntoDraw(
+  draw: TournamentDrawState,
+  clubSheets: Array<{ id: number; stoneColor1: string; stoneColor2: string }>,
+): TournamentDrawState {
+  if (clubSheets.length === 0 || draw.sheets.length === 0) return draw;
+  const byId = new Map(clubSheets.map((s) => [s.id, s]));
+  let changed = false;
+  const sheets = draw.sheets.map((sheet) => {
+    if (sheet.clubSheetId <= 0) return sheet;
+    const club = byId.get(sheet.clubSheetId);
+    if (!club) return sheet;
+    const stoneColor1 = club.stoneColor1 || sheet.stoneColor1;
+    const stoneColor2 = club.stoneColor2 || sheet.stoneColor2;
+    if (stoneColor1 === sheet.stoneColor1 && stoneColor2 === sheet.stoneColor2) {
+      return sheet;
+    }
+    changed = true;
+    return {
+      ...sheet,
+      ...(stoneColor1 ? { stoneColor1 } : {}),
+      ...(stoneColor2 ? { stoneColor2 } : {}),
+    };
+  });
+  return changed ? { ...draw, sheets } : draw;
+}
+
+async function loadClubSheetStoneColors(
+  queryDb: Pick<ReturnType<typeof getDrizzleDb>['db'], 'select'> = getDrizzleDb().db,
+): Promise<Array<{ id: number; stoneColor1: string; stoneColor2: string }>> {
+  const { schema } = getDrizzleDb();
+  const rows = await queryDb
+    .select({
+      id: schema.sheets.id,
+      stoneColor1: schema.sheets.stone_color_1,
+      stoneColor2: schema.sheets.stone_color_2,
+    })
+    .from(schema.sheets);
+  return rows.map((r) => ({
+    id: r.id,
+    stoneColor1: r.stoneColor1 ?? 'red',
+    stoneColor2: r.stoneColor2 ?? 'yellow',
+  }));
+}
+
 export async function getTournamentDrawForEvent(eventId: number): Promise<TournamentDrawState | null> {
   const raw = await getTournamentDrawJsonString(eventId);
   if (raw == null) return null;
-  return parseTournamentDrawJson(raw);
+  const draw = parseTournamentDrawJson(raw);
+  if (!draw) return null;
+  const clubSheets = await loadClubSheetStoneColors();
+  return mergeClubSheetStoneColorsOntoDraw(draw, clubSheets);
 }
 
 /**
@@ -77,9 +130,13 @@ export function coerceTournamentDrawIncomingSlots(draw: TournamentDrawState): To
 }
 
 /** Semantic checks after Zod parse (call from route after safeParse). */
-export function validateTournamentDrawSemantics(draw: TournamentDrawState): void {
+export function validateTournamentDrawSemantics(
+  draw: TournamentDrawState,
+  options?: { confirmedRegistrationIds?: Set<number> },
+): void {
   assertDrawStateLimits(draw);
   const gameIds = new Set(Object.keys(draw.games));
+  const confirmedIds = options?.confirmedRegistrationIds;
 
   for (const g of Object.values(draw.games)) {
     if (!draw.setup.events.some((e) => e.id === g.eventId)) {
@@ -100,6 +157,14 @@ export function validateTournamentDrawSemantics(draw: TournamentDrawState): void
         const feeder = draw.games[slot.gameId];
         if (!feeder || slot.place < 1 || slot.place > feeder.slots.length) {
           throw new EventServiceError(`Game ${g.label} references an invalid place from a feeder game`, 400);
+        }
+      }
+      if (slot.sourceType === 'registration' && slot.registrationId != null && confirmedIds) {
+        if (!confirmedIds.has(slot.registrationId)) {
+          throw new EventServiceError(
+            `Game ${g.label} references registration ${slot.registrationId} which is not a confirmed team for this event`,
+            400,
+          );
         }
       }
     }
@@ -217,13 +282,16 @@ export async function saveTournamentDrawForEvent(eventId: number, draw: Tourname
 }
 
 /**
- * Update a single game's `result` in stored draw JSON. Runs in a transaction so concurrent
- * patches serialize and do not drop each other's updates.
+ * Update a single game's `result` and/or `rockColor1Slot` in stored draw JSON.
+ * Runs in a transaction so concurrent patches serialize and do not drop each other's updates.
  */
 export async function patchTournamentDrawGameResult(
   eventId: number,
   gameId: string,
-  result: TournamentGameResultPayload | null,
+  patch: {
+    result?: TournamentGameResultPayload | null;
+    rockColor1Slot?: 0 | 1 | null;
+  },
 ): Promise<TournamentDrawState> {
   const { db, schema } = getDrizzleDb();
 
@@ -253,19 +321,39 @@ export async function patchTournamentDrawGameResult(
       throw new EventServiceError('Game not found in this draw', 404);
     }
 
-    const nextGame =
-      result == null
-        ? (() => {
-            const { result: _drop, ...rest } = g;
-            void _drop;
-            return rest;
-          })()
-        : { ...g, result };
+    let nextGame = { ...g };
 
-    const nextDraw: TournamentDrawState = {
+    if (patch.result !== undefined) {
+      if (patch.result == null) {
+        const { result: _drop, ...rest } = nextGame;
+        void _drop;
+        nextGame = rest;
+      } else {
+        nextGame = { ...nextGame, result: patch.result };
+      }
+    }
+
+    if (patch.rockColor1Slot !== undefined) {
+      if (patch.rockColor1Slot == null) {
+        const { rockColor1Slot: _drop, ...rest } = nextGame;
+        void _drop;
+        nextGame = rest;
+      } else {
+        nextGame = { ...nextGame, rockColor1Slot: patch.rockColor1Slot };
+      }
+    }
+
+    let nextDraw: TournamentDrawState = {
       ...draw,
       games: { ...draw.games, [gameId]: nextGame },
     };
+
+    // Keep sheet stone colors on the stored draw so public/bracket clients can render
+    // swatches without a separate sheets fetch (same merge as GET).
+    if (patch.rockColor1Slot !== undefined && patch.rockColor1Slot != null) {
+      const clubSheets = await loadClubSheetStoneColors(tx);
+      nextDraw = mergeClubSheetStoneColorsOntoDraw(nextDraw, clubSheets);
+    }
 
     const coerced = coerceTournamentDrawIncomingSlots(nextDraw);
     validateTournamentDrawSemantics(coerced);
@@ -287,9 +375,12 @@ export async function patchTournamentDrawGameResult(
 export function sanitizeTournamentDrawForDuplicate(draw: TournamentDrawState): TournamentDrawState {
   const games: TournamentDrawState['games'] = {};
   for (const [key, game] of Object.entries(draw.games)) {
-    const { result: _result, schedule, slots, ...rest } = game;
+    const { result: _result, rockColor1Slot: _rock, schedule, slots, ...rest } = game;
     void _result;
-    const nextSlots = slots.map((slot) => (slot.sourceType === 'team' ? { sourceType: 'tbd' as const } : slot));
+    void _rock;
+    const nextSlots = slots.map((slot) =>
+      slot.sourceType === 'registration' ? { sourceType: 'tbd' as const } : slot,
+    );
     const nextSchedule =
       schedule == null
         ? undefined

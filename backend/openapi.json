@@ -7748,6 +7748,18 @@
                       "isActive": {
                         "type": "boolean"
                       },
+                      "stoneColor1": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32,
+                        "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                      },
+                      "stoneColor2": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32,
+                        "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                      },
                       "createdAt": {
                         "type": [
                           "null",
@@ -7766,6 +7778,8 @@
                       "name",
                       "sortOrder",
                       "isActive",
+                      "stoneColor1",
+                      "stoneColor2",
                       "createdAt",
                       "updatedAt"
                     ]
@@ -7797,6 +7811,18 @@
                   },
                   "isActive": {
                     "type": "boolean"
+                  },
+                  "stoneColor1": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                  },
+                  "stoneColor2": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
                   }
                 },
                 "required": [
@@ -7827,6 +7853,18 @@
                     "isActive": {
                       "type": "boolean"
                     },
+                    "stoneColor1": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32,
+                      "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                    },
+                    "stoneColor2": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32,
+                      "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                    },
                     "createdAt": {
                       "type": [
                         "null",
@@ -7845,6 +7883,8 @@
                     "name",
                     "sortOrder",
                     "isActive",
+                    "stoneColor1",
+                    "stoneColor2",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -7877,6 +7917,18 @@
                   },
                   "isActive": {
                     "type": "boolean"
+                  },
+                  "stoneColor1": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                  },
+                  "stoneColor2": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
                   }
                 }
               }
@@ -7914,6 +7966,18 @@
                     "isActive": {
                       "type": "boolean"
                     },
+                    "stoneColor1": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32,
+                      "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                    },
+                    "stoneColor2": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32,
+                      "description": "Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value."
+                    },
                     "createdAt": {
                       "type": [
                         "null",
@@ -7932,6 +7996,8 @@
                     "name",
                     "sortOrder",
                     "isActive",
+                    "stoneColor1",
+                    "stoneColor2",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -20158,84 +20224,6 @@
             "description": "Default Response"
           }
         }
-      },
-      "post": {
-        "tags": [
-          "events"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/events/{id}/tournament-teams/{teamId}": {
-      "patch": {
-        "tags": [
-          "events"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "teamId",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "events"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "teamId",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
       }
     },
     "/events/{id}/tournament-draw": {
@@ -25386,6 +25374,26 @@
     },
     "/volunteering/shift-roles/{id}/signups/me": {
       "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
         "tags": [
           "volunteering"
         ],

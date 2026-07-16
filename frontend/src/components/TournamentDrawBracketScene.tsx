@@ -6,6 +6,7 @@ import {
 } from '../utils/tournamentDrawRouting';
 import { outcomeFromResult } from '../utils/tournamentDrawResult';
 import { formatGameScheduleSummary } from '../utils/tournamentDrawSchedule';
+import { resolveSheetStoneColorHex } from '../utils/sheetStoneColors';
 import type {
   BracketEdgePath,
   BracketLayout,
@@ -264,6 +265,13 @@ export default function TournamentDrawBracketScene({
                               : 'text-gray-600 dark:text-gray-400'
                       }
                     >
+                      {seg.rockColor ? (
+                        <span
+                          className="mr-0.5 inline-block h-1.5 w-1.5 translate-y-[-1px] rounded-full border border-black/20 align-middle dark:border-white/25"
+                          style={{ backgroundColor: resolveSheetStoneColorHex(seg.rockColor) }}
+                          aria-hidden
+                        />
+                      ) : null}
                       {seg.text}
                     </span>
                   </Fragment>

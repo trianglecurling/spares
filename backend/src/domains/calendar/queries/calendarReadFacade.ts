@@ -2,6 +2,7 @@ import { asc, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { fetchDirectCalendarEventsForRange, fetchLeagueCalendarEventsForRange } from '../../../services/calendarExpansion.js';
 import { getEventTimespansForCalendar } from '../../../services/eventService.js';
+import { isBonspielCalendarType } from '../../../services/eventCalendarTypes.js';
 import { fetchIceBookingsAsCalendarEvents } from '../../../services/iceBookingsCalendar.js';
 import type { Member } from '../../../types.js';
 import { isCalendarAdmin } from '../../../utils/auth.js';
@@ -109,7 +110,7 @@ export async function getUpcomingBonspiels(now = new Date()) {
   const bonspiels: PublicUpcomingBonspiel[] = [];
 
   for (const item of directEvents) {
-    if (item.typeId === 'bonspiel' && item.start >= nowIso) {
+    if (isBonspielCalendarType(item.typeId) && item.start >= nowIso) {
       bonspiels.push({
         id: item.id,
         title: item.title,
@@ -125,7 +126,7 @@ export async function getUpcomingBonspiels(now = new Date()) {
   // single homepage entry per event spanning the earliest start to latest end.
   const byEventSlug = new Map<string, PublicUpcomingBonspiel>();
   for (const item of eventItems) {
-    if (item.typeId !== 'bonspiel' || item.start < nowIso) continue;
+    if (!isBonspielCalendarType(item.typeId) || item.start < nowIso) continue;
     const existing = item.slug ? byEventSlug.get(item.slug) : undefined;
     if (!existing) {
       const entry: PublicUpcomingBonspiel = {

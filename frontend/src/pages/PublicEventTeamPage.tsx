@@ -9,6 +9,7 @@ import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
 import type { TournamentDrawState } from '../utils/tournamentDrawModel';
 import { formatTeamDisplayName, type TournamentFormat } from '../utils/tournamentDisplay';
+import { isBonspielCalendarType } from '../utils/eventCalendarTypes';
 
 interface EventDetail {
   id: number;
@@ -68,9 +69,9 @@ export default function PublicEventTeamPage() {
   }, [slug]);
 
   const showPublicTeams =
-    !!event && (event.calendarTypeId ?? 'other') === 'bonspiel' && (event.tournamentTeamsPublished ?? 0) === 1;
+    !!event && isBonspielCalendarType(event.calendarTypeId) && (event.tournamentTeamsPublished ?? 0) === 1;
   const showPublicDraw =
-    !!event && (event.calendarTypeId ?? 'other') === 'bonspiel' && (event.tournamentDrawPublished ?? 0) === 1;
+    !!event && isBonspielCalendarType(event.calendarTypeId) && (event.tournamentDrawPublished ?? 0) === 1;
 
   useEffect(() => {
     if (!slug || !showPublicTeams) {

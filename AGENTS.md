@@ -17,6 +17,7 @@ This repo has explicit consistency rules. Follow existing product patterns befor
 - Reuse existing components, layouts, and interaction patterns before creating a new one.
 - If nearby examples conflict, prefer the documented canon in the docs above.
 - Call out any intentional deviation from existing UX, API, accessibility, or terminology patterns before implementing it.
+- After schema-affecting changes, run `bun run db:migrate:preview` only. Do not run `bun run db:migrate` from agent workflows (see `backend/MIGRATIONS.md` and `.cursor/rules/database-migration-workflow.mdc`).
 
 ## Frontend Defaults
 

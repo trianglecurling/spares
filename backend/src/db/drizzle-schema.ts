@@ -896,6 +896,10 @@ export const sheetsSqlite = sqliteTable('sheets', {
   name: text('name').notNull(),
   sort_order: integer('sort_order').default(0).notNull(),
   is_active: integer('is_active').default(1).notNull(),
+  /** Preset key (`red`, `yellow`, `dark_blue`, `blue`, `green`) or `#RRGGBB`. */
+  stone_color_1: text('stone_color_1').default('red').notNull(),
+  /** Preset key (`red`, `yellow`, `dark_blue`, `blue`, `green`) or `#RRGGBB`. */
+  stone_color_2: text('stone_color_2').default('yellow').notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -1843,8 +1847,6 @@ export const eventsSqlite = sqliteTable('events', {
   tournament_teams_published: integer('tournament_teams_published').default(0).notNull(),
   /** When 1, bonspiel draw is shown on the public event page (when type is bonspiel). */
   tournament_draw_published: integer('tournament_draw_published').default(0).notNull(),
-  /** Bonspiel roster shape: fours (5 positions) or doubles (2). */
-  tournament_format: text('tournament_format').$type<'fours' | 'doubles' | null>(),
   /** Versioned bonspiel bracket/draw graph JSON (see eventTournamentDrawSchema). */
   tournament_draw_json: text('tournament_draw_json'),
   terms_article_id: integer('terms_article_id').references(() => articlesSqlite.id, { onDelete: 'set null' }),
@@ -1999,34 +2001,6 @@ export const eventSpecialLinksSqlite = sqliteTable('event_special_links', {
 }, (table) => ({
   eventIdx: index('idx_event_special_links_event_id').on(table.event_id),
   tokenIdx: uniqueIndex('event_special_links_token_unique').on(table.token),
-}));
-
-export const eventTournamentTeamsSqlite = sqliteTable('event_tournament_teams', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
-  sort_order: integer('sort_order').default(0).notNull(),
-  team_name: text('team_name'),
-  home_club: text('home_club'),
-  vice_slot_code: text('vice_slot_code').notNull(),
-  skip_slot_code: text('skip_slot_code').notNull(),
-  registration_id: integer('registration_id').references(() => eventRegistrationsSqlite.id, { onDelete: 'cascade' }),
-  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
-  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
-}, (table) => ({
-  eventIdx: index('idx_event_tournament_teams_event_id').on(table.event_id),
-}));
-
-export const eventTournamentRosterSlotsSqlite = sqliteTable('event_tournament_roster_slots', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  team_id: integer('team_id').notNull().references(() => eventTournamentTeamsSqlite.id, { onDelete: 'cascade' }),
-  slot_code: text('slot_code').notNull(),
-  player_name: text('player_name'),
-  email: text('email'),
-  notes: text('notes'),
-  home_club: text('home_club'),
-}, (table) => ({
-  teamIdx: index('idx_event_tournament_roster_team_id').on(table.team_id),
-  uniqueSlot: uniqueIndex('event_tournament_roster_team_slot_unique').on(table.team_id, table.slot_code),
 }));
 
 export type VolunteerSignupStatus = 'confirmed' | 'cancelled';
@@ -2842,6 +2816,10 @@ export const sheetsPg = pgTable('sheets', {
   name: textPg('name').notNull(),
   sort_order: integerPg('sort_order').default(0).notNull(),
   is_active: integerPg('is_active').default(1).notNull(),
+  /** Preset key (`red`, `yellow`, `dark_blue`, `blue`, `green`) or `#RRGGBB`. */
+  stone_color_1: textPg('stone_color_1').default('red').notNull(),
+  /** Preset key (`red`, `yellow`, `dark_blue`, `blue`, `green`) or `#RRGGBB`. */
+  stone_color_2: textPg('stone_color_2').default('yellow').notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -3759,7 +3737,6 @@ export const eventsPg = pgTable('events', {
   calendar_type_id: textPg('calendar_type_id').default('other').notNull(),
   tournament_teams_published: integerPg('tournament_teams_published').default(0).notNull(),
   tournament_draw_published: integerPg('tournament_draw_published').default(0).notNull(),
-  tournament_format: textPg('tournament_format').$type<'fours' | 'doubles' | null>(),
   tournament_draw_json: textPg('tournament_draw_json'),
   terms_article_id: integerPg('terms_article_id').references(() => articlesPg.id, { onDelete: 'set null' }),
   /** Square/QuickBooks line item name for event registration checkout; falls back to a generated label when unset. */
@@ -3913,34 +3890,6 @@ export const eventSpecialLinksPg = pgTable('event_special_links', {
 }, (table) => ({
   eventIdx: indexPg('idx_event_special_links_event_id').on(table.event_id),
   tokenIdx: uniqueIndexPg('event_special_links_token_unique_pg').on(table.token),
-}));
-
-export const eventTournamentTeamsPg = pgTable('event_tournament_teams', {
-  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
-  event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
-  sort_order: integerPg('sort_order').default(0).notNull(),
-  team_name: textPg('team_name'),
-  home_club: textPg('home_club'),
-  vice_slot_code: textPg('vice_slot_code').notNull(),
-  skip_slot_code: textPg('skip_slot_code').notNull(),
-  registration_id: integerPg('registration_id').references(() => eventRegistrationsPg.id, { onDelete: 'cascade' }),
-  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
-  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
-}, (table) => ({
-  eventIdx: indexPg('idx_event_tournament_teams_event_id').on(table.event_id),
-}));
-
-export const eventTournamentRosterSlotsPg = pgTable('event_tournament_roster_slots', {
-  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
-  team_id: integerPg('team_id').notNull().references(() => eventTournamentTeamsPg.id, { onDelete: 'cascade' }),
-  slot_code: textPg('slot_code').notNull(),
-  player_name: textPg('player_name'),
-  email: textPg('email'),
-  notes: textPg('notes'),
-  home_club: textPg('home_club'),
-}, (table) => ({
-  teamIdx: indexPg('idx_event_tournament_roster_team_id').on(table.team_id),
-  uniqueSlot: uniqueIndexPg('event_tournament_roster_team_slot_unique_pg').on(table.team_id, table.slot_code),
 }));
 
 export const volunteerProgramsPg = pgTable('volunteer_programs', {
@@ -4193,8 +4142,6 @@ export const sqliteSchema = {
   eventRegistrationMembers: eventRegistrationMembersSqlite,
   eventRegistrationFieldValues: eventRegistrationFieldValuesSqlite,
   eventSpecialLinks: eventSpecialLinksSqlite,
-  eventTournamentTeams: eventTournamentTeamsSqlite,
-  eventTournamentRosterSlots: eventTournamentRosterSlotsSqlite,
   volunteerPrograms: volunteerProgramsSqlite,
   volunteerProgramManagers: volunteerProgramManagersSqlite,
   volunteerCredentials: volunteerCredentialsSqlite,
@@ -4304,8 +4251,6 @@ export const pgSchema = {
   eventRegistrationMembers: eventRegistrationMembersPg,
   eventRegistrationFieldValues: eventRegistrationFieldValuesPg,
   eventSpecialLinks: eventSpecialLinksPg,
-  eventTournamentTeams: eventTournamentTeamsPg,
-  eventTournamentRosterSlots: eventTournamentRosterSlotsPg,
   volunteerPrograms: volunteerProgramsPg,
   volunteerProgramManagers: volunteerProgramManagersPg,
   volunteerCredentials: volunteerCredentialsPg,

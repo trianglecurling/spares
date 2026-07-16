@@ -9,7 +9,6 @@ import {
   getEventById,
   resolveEventRegistrationFeeMinor,
 } from './eventService.js';
-import { syncTournamentTeamForRegistrationSafe } from './eventTournamentRegistrationSyncService.js';
 import { issueEventRegistrationRefund } from './eventRegistrationRefundService.js';
 
 export class EventWaitlistServiceError extends Error {
@@ -401,7 +400,6 @@ export async function removeFromEventWaitlist(eventId: number, registrationId: n
     .set({ status: 'cancelled' as any, cancelled_at: dbValue(new Date()) as any, waitlist_position: null })
     .where(eq(schema.eventRegistrations.id, registrationId));
 
-  await syncTournamentTeamForRegistrationSafe(registrationId);
 }
 
 export async function promoteWaitlistRegistration(input: {
@@ -594,7 +592,6 @@ export async function declineWaitlistOfferByToken(responseToken: string): Promis
     })
     .where(eq(schema.eventRegistrations.id, registration.id));
 
-  await syncTournamentTeamForRegistrationSafe(registration.id);
 }
 
 export async function acceptWaitlistOfferByToken(
@@ -754,7 +751,6 @@ export async function confirmWaitlistOfferAcceptance(offerId: number, paymentOrd
       ),
     );
 
-  await syncTournamentTeamForRegistrationSafe(offer.registration_id);
 }
 
 export async function confirmWaitlistOfferPayment(orderId: number, offerId: number): Promise<void> {

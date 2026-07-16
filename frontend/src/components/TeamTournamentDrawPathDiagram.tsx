@@ -13,10 +13,14 @@ import {
   layoutTournamentTeamPathTree,
   routeTeamPathEdge,
 } from '../utils/tournamentTeamPathLayout';
-import { competitorLabelsLineSegments } from '../utils/tournamentDrawRouting';
+import {
+  competitorLabelsLineSegments,
+  orderCompetitorSegmentsFocusedTeamFirst,
+} from '../utils/tournamentDrawRouting';
 import { outcomeFromResult } from '../utils/tournamentDrawResult';
 import { formatGameScheduleSummary } from '../utils/tournamentDrawSchedule';
 import { formatTeamDisplayName } from '../utils/tournamentDisplay';
+import { resolveSheetStoneColorHex } from '../utils/sheetStoneColors';
 import type { PublicTournamentDrawTeamRef } from './PublicTournamentDrawBracket';
 
 type Props = {
@@ -40,7 +44,7 @@ function collectSeedGameIds(draw: TournamentDrawState, teamId: number): Set<stri
   const seeds = new Set<string>();
   for (const [id, g] of Object.entries(draw.games)) {
     for (const s of g.slots) {
-      if (s.sourceType === 'team' && s.teamId === teamId) {
+      if (s.sourceType === 'registration' && s.registrationId === teamId) {
         seeds.add(id);
       }
     }
@@ -251,15 +255,24 @@ function TeamPathGameCard({
   draw,
   g,
   teamsById,
+  teamId,
   muted,
 }: {
   draw: TournamentDrawState;
   g: TournamentGameNode;
   teamsById: Map<number, PublicTournamentDrawTeamRef>;
+  teamId: number;
   muted: boolean;
 }) {
   const routingLines = placeRoutingLinesOnCard(draw, g);
-  const competitorSegments = competitorLabelsLineSegments(draw, g, teamsById);
+  // Keep focused team first; attach rock colors without sheet color1→color2 reorder.
+  const competitorSegments = orderCompetitorSegmentsFocusedTeamFirst(
+    draw,
+    g,
+    competitorLabelsLineSegments(draw, g, teamsById, { rockColorOrder: 'slot' }),
+    teamId,
+    teamsById,
+  );
   const schedLine = formatGameScheduleSummary(draw, g);
   const outcome = outcomeFromResult(g);
   const twoSlot = g.slots.length === 2;
@@ -301,6 +314,13 @@ function TeamPathGameCard({
                         : 'text-gray-600 dark:text-gray-400'
                 }
               >
+                {seg.rockColor ? (
+                  <span
+                    className="mr-0.5 inline-block h-1.5 w-1.5 translate-y-[-1px] rounded-full border border-black/20 align-middle dark:border-white/25"
+                    style={{ backgroundColor: resolveSheetStoneColorHex(seg.rockColor) }}
+                    aria-hidden
+                  />
+                ) : null}
                 {seg.text}
               </span>
             </Fragment>
@@ -603,6 +623,7 @@ export default function TeamTournamentDrawPathDiagram({
                       draw={labelingDraw}
                       g={g}
                       teamsById={teamsById}
+                      teamId={teamId}
                       muted={!viableTreeNodeIds.has(node.id)}
                     />
                   ) : (

@@ -8,9 +8,13 @@ import {
   normalizeRegistrationFieldRow,
   validateRegistrationFieldValues,
 } from './eventRegistrationFieldDefinitions.js';
-import { countTournamentTeams, normalizeTournamentFormat } from './eventTournamentTeamsService.js';
+import { listConfirmedRegistrationIdsForEvent } from './eventTournamentTeamsService.js';
 import { sanitizeTournamentDrawJsonForDuplicate } from './eventTournamentDrawService.js';
-import { syncTournamentTeamForRegistrationSafe } from './eventTournamentRegistrationSyncService.js';
+import {
+  isBonspielCalendarType,
+  normalizeCalendarTypeId,
+  tournamentFormatFromCalendarType,
+} from './eventCalendarTypes.js';
 import { EventServiceError } from './eventServiceError.js';
 import { formatMemberDisplayName } from '../utils/memberName.js';
 import { generateEventRegistrationAccessToken } from '../utils/eventRegistrationAccessToken.js';
@@ -20,6 +24,7 @@ import { isArchivedAt, notArchivedCondition } from '../utils/softDelete.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
 
 export { EventServiceError };
+export { normalizeCalendarTypeId, isBonspielCalendarType, tournamentFormatFromCalendarType };
 
 function toDateOrNull(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -35,23 +40,6 @@ function eventTimeMs(value: string | Date | null | undefined): number | null {
   if (value == null || value === '') return null;
   const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
   return Number.isNaN(ms) ? null : ms;
-}
-
-const CALENDAR_EVENT_TYPE_IDS = new Set(['bonspiel', 'learn-to-curl', 'juniors', 'other']);
-
-const LEGACY_CALENDAR_TYPE_ID: Record<string, string> = {
-  clinic: 'learn-to-curl',
-  social: 'other',
-  maintenance: 'other',
-  learn_to_curl: 'learn-to-curl',
-};
-
-export function normalizeCalendarTypeId(raw: string | null | undefined): string {
-  if (raw == null || raw === '') return 'other';
-  if (CALENDAR_EVENT_TYPE_IDS.has(raw)) return raw;
-  const mapped = LEGACY_CALENDAR_TYPE_ID[raw];
-  if (mapped) return mapped;
-  return 'other';
 }
 
 function slugify(text: string): string {
@@ -104,8 +92,6 @@ export interface CreateEventInput {
   calendarTypeId?: string;
   tournamentTeamsPublished?: boolean;
   tournamentDrawPublished?: boolean;
-  /** Bonspiel: fours vs doubles roster shape. */
-  tournamentFormat?: 'fours' | 'doubles' | null;
   /** Email address for event inquiries and operational contact. */
   pointOfContact: string;
   createdByMemberId?: number | null;
@@ -144,7 +130,6 @@ export interface UpdateEventInput {
   calendarTypeId?: string;
   tournamentTeamsPublished?: boolean;
   tournamentDrawPublished?: boolean;
-  tournamentFormat?: 'fours' | 'doubles' | null;
   pointOfContact?: string;
   timespans?: Array<{ startDt: string; endDt: string; sortOrder?: number }>;
   locations?: Array<{ locationType: string; sheetId?: number | null }>;
@@ -291,10 +276,6 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
       calendar_type_id: normalizeCalendarTypeId(input.calendarTypeId),
       tournament_teams_published: input.tournamentTeamsPublished ? 1 : 0,
       tournament_draw_published: input.tournamentDrawPublished ? 1 : 0,
-      tournament_format:
-        input.tournamentFormat === undefined
-          ? null
-          : normalizeTournamentFormat(input.tournamentFormat as string),
       terms_article_id: input.termsArticleId ?? null,
       point_of_contact: pointOfContact,
       created_by_member_id: input.createdByMemberId ?? null,
@@ -396,29 +377,41 @@ export async function updateEvent(
   if (input.maxGroupSize !== undefined) updateValues.max_group_size = input.maxGroupSize;
   if (input.enableWaitlist !== undefined) updateValues.enable_waitlist = input.enableWaitlist ? 1 : 0;
   if (input.termsArticleId !== undefined) updateValues.terms_article_id = input.termsArticleId;
-  if (input.calendarTypeId !== undefined) updateValues.calendar_type_id = normalizeCalendarTypeId(input.calendarTypeId);
+  if (input.calendarTypeId !== undefined) {
+    const [row] = await db
+      .select({
+        calendar_type_id: schema.events.calendar_type_id,
+        tournament_draw_json: schema.events.tournament_draw_json,
+      })
+      .from(schema.events)
+      .where(eq(schema.events.id, eventId))
+      .limit(1);
+    const prevFormat = tournamentFormatFromCalendarType(row?.calendar_type_id);
+    const nextType = normalizeCalendarTypeId(input.calendarTypeId);
+    const nextFormat = tournamentFormatFromCalendarType(nextType);
+    if (prevFormat != null && nextFormat != null && prevFormat !== nextFormat) {
+      const confirmedIds = await listConfirmedRegistrationIdsForEvent(eventId);
+      if (confirmedIds.size > 0) {
+        throw new EventServiceError(
+          'Cancel or remove confirmed registrations before changing between Bonspiel - Fours and Bonspiel - Doubles',
+          409,
+        );
+      }
+      const drawJson = row?.tournament_draw_json;
+      if (drawJson && drawJson.trim() && drawJson.includes('"sourceType":"registration"')) {
+        throw new EventServiceError(
+          'Clear registration seeds from the tournament draw before changing between Bonspiel - Fours and Bonspiel - Doubles',
+          409,
+        );
+      }
+    }
+    updateValues.calendar_type_id = nextType;
+  }
   if (input.tournamentTeamsPublished !== undefined) {
     updateValues.tournament_teams_published = input.tournamentTeamsPublished ? 1 : 0;
   }
   if (input.tournamentDrawPublished !== undefined) {
     updateValues.tournament_draw_published = input.tournamentDrawPublished ? 1 : 0;
-  }
-  if (input.tournamentFormat !== undefined) {
-    const [row] = await db
-      .select({ tournament_format: schema.events.tournament_format })
-      .from(schema.events)
-      .where(eq(schema.events.id, eventId))
-      .limit(1);
-    const prev = normalizeTournamentFormat(row?.tournament_format as string | null);
-    const next =
-      input.tournamentFormat === null ? null : normalizeTournamentFormat(input.tournamentFormat as string);
-    if (prev !== next) {
-      const n = await countTournamentTeams(eventId);
-      if (n > 0) {
-        throw new EventServiceError('Remove all tournament teams before changing the tournament format', 409);
-      }
-    }
-    updateValues.tournament_format = next;
   }
   if (input.pointOfContact !== undefined) {
     const pointOfContact = normalizePointOfContact(input.pointOfContact);
@@ -973,8 +966,6 @@ export async function registerForEvent(input: RegisterForEventInput) {
     }
   }
 
-  await syncTournamentTeamForRegistrationSafe(registrationId);
-
   return {
     registrationId,
     accessToken: registration.access_token ?? accessToken,
@@ -1101,7 +1092,6 @@ export async function confirmRegistrationPayment(
     };
   }
 
-  await syncTournamentTeamForRegistrationSafe(registrationId);
 
   let refundIssued = false;
   if (outcome === 'waitlisted_with_refund' || outcome === 'cancelled_with_refund') {
@@ -1188,7 +1178,6 @@ export async function cancelRegistration(registrationId: number): Promise<{ refu
     await resolvePendingOfferForRegistration(registrationId, 'manager').catch(() => {});
   }
 
-  await syncTournamentTeamForRegistrationSafe(registrationId);
 
   return { refundEligible, event };
 }
@@ -1320,7 +1309,6 @@ export async function updateRegistrationForEvent(
     );
   }
 
-  await syncTournamentTeamForRegistrationSafe(registrationId);
 
   return getRegistrationForEvent(eventId, registrationId);
 }
@@ -1359,7 +1347,6 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
     termsArticleId: event.terms_article_id,
     tournamentTeamsPublished: false,
     tournamentDrawPublished: false,
-    tournamentFormat: normalizeTournamentFormat(event.tournament_format as string | null) ?? null,
     pointOfContact: event.point_of_contact,
     createdByMemberId,
     timespans: (event.timespans || []).map((ts: any) => ({

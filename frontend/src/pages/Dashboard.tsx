@@ -28,6 +28,9 @@ import DashboardMembershipCard from '../components/DashboardMembershipCard';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
+import { memberCanAccessEventsAdmin } from '../utils/eventManagementAccess';
+import { isBonspielCalendarType } from '../utils/eventCalendarTypes';
+import { isArchivedAt } from '../utils/softDelete';
 import { formatPhone } from '../utils/phone';
 import { renderMe } from '../utils/me';
 import {
@@ -156,6 +159,9 @@ export default function Dashboard() {
   const [upcomingGames, setUpcomingGames] = useState<UpcomingGame[]>([]);
   const [iceBookings, setIceBookings] = useState<MyIceBooking[]>([]);
   const [volunteerOpportunities, setVolunteerOpportunities] = useState<DashboardVolunteerOpportunity[]>([]);
+  const [scorekeeperEvents, setScorekeeperEvents] = useState<
+    Array<{ id: number; title: string }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [showFilled, setShowFilled] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SpareRequest | null>(null);
@@ -397,6 +403,49 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!memberCanAccessEventsAdmin(member)) {
+      setScorekeeperEvents([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<
+        Array<{
+          id: number;
+          title: string;
+          calendarTypeId?: string | null;
+          hasTournamentDraw?: boolean;
+          archivedAt?: string | null;
+          timespans?: Array<{ start_dt: string; end_dt: string }>;
+        }>
+      >('/events', { params: { manageable: '1' } })
+      .then((res) => {
+        if (cancelled) return;
+        const now = Date.now();
+        const rows = (res.data ?? []).filter((event) => {
+          if (isArchivedAt(event.archivedAt)) return false;
+          if (!isBonspielCalendarType(event.calendarTypeId)) return false;
+          if (!event.hasTournamentDraw) return false;
+          const spans = event.timespans ?? [];
+          if (spans.length === 0) return true;
+          let latestEnd = 0;
+          for (const span of spans) {
+            const end = new Date(span.end_dt).getTime();
+            if (Number.isFinite(end) && end > latestEnd) latestEnd = end;
+          }
+          return latestEnd === 0 || latestEnd >= now;
+        });
+        setScorekeeperEvents(rows.map((e) => ({ id: e.id, title: e.title })));
+      })
+      .catch(() => {
+        if (!cancelled) setScorekeeperEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [member]);
 
   const handleDeleteIceBooking = async (id: number) => {
     const go = await confirm({
@@ -743,6 +792,28 @@ export default function Dashboard() {
               </div>
             );
           })()}
+
+        {!loading && scorekeeperEvents.length > 0 ? (
+          <DashboardSection title="Enter results">
+            <div className="space-y-2">
+              {scorekeeperEvents.map((event) => (
+                <Link
+                  key={event.id}
+                  to={`/admin/events/${event.id}/scorekeeper`}
+                  className="group flex items-center gap-3 rounded-lg border border-gray-200 px-3.5 py-2.5 transition-colors hover:border-primary-teal/40 hover:bg-primary-teal/5 dark:border-gray-700 dark:hover:border-primary-teal/40 dark:hover:bg-primary-teal/10"
+                >
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                    Enter results: {event.title}
+                  </span>
+                  <HiChevronRight
+                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal"
+                    aria-hidden="true"
+                  />
+                </Link>
+              ))}
+            </div>
+          </DashboardSection>
+        ) : null}
 
         <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
           <DashboardMembershipCard />

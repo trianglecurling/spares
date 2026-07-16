@@ -78,6 +78,7 @@ const AdminVolunteerCredentials = lazy(() => import('./pages/admin/AdminVoluntee
 const VolunteeringHub = lazy(() => import('./pages/VolunteeringHub'));
 const MyVolunteerShifts = lazy(() => import('./pages/MyVolunteerShifts'));
 const AdminEventRegistrationEditor = lazy(() => import('./pages/admin/AdminEventRegistrationEditor'));
+const AdminEventScorekeeper = lazy(() => import('./pages/admin/AdminEventScorekeeper'));
 const AdminRegistrationRoute = lazy(() => import('./pages/admin/AdminRegistrationRoute'));
 const AdminWaitlists = lazy(() => import('./pages/admin/AdminWaitlists'));
 const PublicLeaguesPage = lazy(() => import('./pages/PublicLeaguesPage'));
@@ -213,7 +214,7 @@ function App() {
                       <Route
                         path="/admin/content/articles/:id/versions/:versionId/preview"
                         element={
-                          <ProtectedRoute contentAdminOnly>
+                          <ProtectedRoute>
                             <AdminArticleVersionPreview />
                           </ProtectedRoute>
                         }
@@ -221,7 +222,7 @@ function App() {
                       <Route
                         path="/admin/content/articles/draft-preview"
                         element={
-                          <ProtectedRoute contentAdminOnly>
+                          <ProtectedRoute>
                             <AdminArticleDraftPreview />
                           </ProtectedRoute>
                         }
@@ -531,10 +532,10 @@ function App() {
                         }
                       />
                       <Route
-                        path="/admin/events/:id/:tab"
+                        path="/admin/events/:id/scorekeeper"
                         element={
                           <EventManageRoute access="event">
-                            <AdminEventEditor />
+                            <AdminEventScorekeeper />
                           </EventManageRoute>
                         }
                       />
@@ -543,6 +544,14 @@ function App() {
                         element={
                           <EventManageRoute access="event">
                             <AdminEventRegistrationEditor />
+                          </EventManageRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/events/:id/:tab"
+                        element={
+                          <EventManageRoute access="event">
+                            <AdminEventEditor />
                           </EventManageRoute>
                         }
                       />

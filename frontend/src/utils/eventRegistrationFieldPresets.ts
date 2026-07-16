@@ -80,6 +80,43 @@ export const DIETARY_RESTRICTION_LABELS: Record<DietaryRestrictionKey, string> =
   dairyFree: 'Dairy free',
 };
 
+/** Meal-combo buckets for admin summary (one count per player with restrictions). */
+export const DIETARY_COMBINATION_KEYS = [
+  'vegetarian',
+  'dairyFree',
+  'glutenFree',
+  'vegetarianDairyFree',
+  'vegetarianGlutenFree',
+  'dairyFreeGlutenFree',
+  'vegetarianDairyFreeGlutenFree',
+] as const;
+export type DietaryCombinationKey = (typeof DIETARY_COMBINATION_KEYS)[number];
+
+export const DIETARY_COMBINATION_LABELS: Record<DietaryCombinationKey, string> = {
+  vegetarian: 'Vegetarian',
+  dairyFree: 'Dairy free',
+  glutenFree: 'Gluten free',
+  vegetarianDairyFree: 'Veg + DF',
+  vegetarianGlutenFree: 'Veg + GF',
+  dairyFreeGlutenFree: 'DF + GF',
+  vegetarianDairyFreeGlutenFree: 'Veg + DF + GF',
+};
+
+export function dietaryCombinationKeyFromFlags(
+  vegetarian: boolean,
+  dairyFree: boolean,
+  glutenFree: boolean,
+): DietaryCombinationKey | null {
+  if (!vegetarian && !dairyFree && !glutenFree) return null;
+  if (vegetarian && dairyFree && glutenFree) return 'vegetarianDairyFreeGlutenFree';
+  if (vegetarian && dairyFree) return 'vegetarianDairyFree';
+  if (vegetarian && glutenFree) return 'vegetarianGlutenFree';
+  if (dairyFree && glutenFree) return 'dairyFreeGlutenFree';
+  if (vegetarian) return 'vegetarian';
+  if (dairyFree) return 'dairyFree';
+  return 'glutenFree';
+}
+
 export type TeamPlayerRow = {
   name: string;
   email: string;
@@ -151,21 +188,33 @@ export function parseTeamPlayersJson(value: string, rowCount: number): TeamPlaye
   }
 }
 
-export function countDietaryRestrictionsFromTeamValue(value: string): Record<DietaryRestrictionKey, number> {
-  const counts: Record<DietaryRestrictionKey, number> = {
+export function emptyDietaryCombinationCounts(): Record<DietaryCombinationKey, number> {
+  return {
     vegetarian: 0,
-    glutenFree: 0,
     dairyFree: 0,
+    glutenFree: 0,
+    vegetarianDairyFree: 0,
+    vegetarianGlutenFree: 0,
+    dairyFreeGlutenFree: 0,
+    vegetarianDairyFreeGlutenFree: 0,
   };
+}
+
+/** Counts each player once into the meal-combination bucket matching their selected restrictions. */
+export function countDietaryCombinationsFromTeamValue(value: string): Record<DietaryCombinationKey, number> {
+  const counts = emptyDietaryCombinationCounts();
   if (!value.trim()) return counts;
   try {
     const parsed = JSON.parse(value) as unknown;
     if (!Array.isArray(parsed)) return counts;
     for (const row of parsed) {
       const o = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
-      for (const key of DIETARY_RESTRICTION_KEYS) {
-        if (o[key] === true) counts[key] += 1;
-      }
+      const combo = dietaryCombinationKeyFromFlags(
+        o.vegetarian === true,
+        o.dairyFree === true,
+        o.glutenFree === true,
+      );
+      if (combo) counts[combo] += 1;
     }
   } catch {
     // ignore malformed values
@@ -173,16 +222,12 @@ export function countDietaryRestrictionsFromTeamValue(value: string): Record<Die
   return counts;
 }
 
-export function emptyDietaryRestrictionCounts(): Record<DietaryRestrictionKey, number> {
-  return { vegetarian: 0, glutenFree: 0, dairyFree: 0 };
-}
-
-export function addDietaryCounts(
-  left: Record<DietaryRestrictionKey, number>,
-  right: Record<DietaryRestrictionKey, number>,
-): Record<DietaryRestrictionKey, number> {
+export function addDietaryCombinationCounts(
+  left: Record<DietaryCombinationKey, number>,
+  right: Record<DietaryCombinationKey, number>,
+): Record<DietaryCombinationKey, number> {
   const next = { ...left };
-  for (const key of DIETARY_RESTRICTION_KEYS) {
+  for (const key of DIETARY_COMBINATION_KEYS) {
     next[key] += right[key];
   }
   return next;

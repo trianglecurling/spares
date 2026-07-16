@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { eq, and, asc, desc, inArray, notExists, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isUniqueConstraintViolation } from '../api/errors.js';
-import { isContentAdmin } from '../utils/auth.js';
+import { isContentAdmin, isEventsAdmin } from '../utils/auth.js';
 import {
   articleMatchesContentSearch,
   type ArticleContentSearchMode,
@@ -12,6 +12,7 @@ import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
 import { listMailingLists, getMailingListById } from '../domains/content/mailingLists.js';
+import { isEventOwner } from '../services/eventService.js';
 
 async function ensureGeneratedCss(content: string, contentType: string): Promise<string> {
   if (contentType !== 'html') return content;
@@ -38,6 +39,8 @@ const articleBodySchema = z.object({
   featured: z.boolean().optional(),
   featuredSortOrder: z.number().int().nonnegative().optional(),
   publishedAt: z.string().nullable().optional(),
+  /** When set, create as event details content (authorized via event manage/owner, not content.manage). */
+  eventId: z.number().int().positive().optional(),
 });
 
 function isAbsoluteOrRootRelativeUrl(value: string): boolean {
@@ -214,6 +217,42 @@ function requireContentAdmin(
     return false;
   }
   return true;
+}
+
+async function findEventIdForArticle(articleId: number): Promise<number | null> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({ id: schema.events.id })
+    .from(schema.events)
+    .where(eq(schema.events.article_id, articleId))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+async function canManageEvent(member: Member, eventId: number): Promise<boolean> {
+  if (isEventsAdmin(member)) return true;
+  return isEventOwner(eventId, member.id);
+}
+
+/**
+ * Content admins manage all articles. Event managers/owners may manage articles
+ * linked as event details pages without content.manage.
+ */
+async function requireContentAdminOrEventArticleAccess(
+  request: { member?: Member },
+  reply: { code: (n: number) => { send: (o: object) => unknown } },
+  articleId: number,
+): Promise<boolean> {
+  const member = request.member;
+  if (!member) {
+    reply.code(403).send({ error: 'Forbidden' });
+    return false;
+  }
+  if (isContentAdmin(member)) return true;
+  const eventId = await findEventIdForArticle(articleId);
+  if (eventId != null && (await canManageEvent(member, eventId))) return true;
+  reply.code(403).send({ error: 'Forbidden' });
+  return false;
 }
 
 type ArticleSnapshot = {
@@ -579,19 +618,40 @@ export async function contentRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/content/articles', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
-    const member = request.member!;
+    const member = request.member;
+    if (!member) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
     const parsed = articleBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
     }
     const body = parsed.data;
+    const linkEventId = body.eventId;
+    if (linkEventId != null) {
+      if (!(await canManageEvent(member, linkEventId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+    } else if (!isContentAdmin(member)) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
     if (!body.revisionNote?.trim()) {
       return reply.code(400).send({ error: 'Revision note is required' });
     }
     const contentType = body.contentType ?? 'markdown';
     const content = await ensureGeneratedCss(body.content, contentType);
     const { db, schema } = getDrizzleDb();
+    if (linkEventId != null) {
+      const [eventRow] = await db
+        .select({ id: schema.events.id, article_id: schema.events.article_id })
+        .from(schema.events)
+        .where(eq(schema.events.id, linkEventId))
+        .limit(1);
+      if (!eventRow) return reply.code(404).send({ error: 'Event not found' });
+      if (eventRow.article_id != null) {
+        return reply.code(409).send({ error: 'This event already has page content' });
+      }
+    }
     let featuredSortOrder = body.featuredSortOrder ?? 0;
     if (body.featured && body.featuredSortOrder === undefined) {
       const [maxFeaturedRow] = await db
@@ -642,6 +702,12 @@ export async function contentRoutes(fastify: FastifyInstance) {
         member.id,
         body.revisionNote ?? null
       );
+      if (linkEventId != null) {
+        await db
+          .update(schema.events)
+          .set({ article_id: row.id, updated_at: new Date() })
+          .where(eq(schema.events.id, linkEventId));
+      }
     }
     markSearchIndexDirty();
     return {
@@ -658,9 +724,9 @@ export async function contentRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get<{ Params: { id: string } }>('/content/articles/:id', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
     const id = parseInt(request.params.id, 10);
     if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    if (!(await requireContentAdminOrEventArticleAccess(request, reply, id))) return;
     const { db, schema } = getDrizzleDb();
     const rows = await db
       .select({
@@ -697,9 +763,9 @@ export async function contentRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get<{ Params: { id: string } }>('/content/articles/:id/versions', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
     const id = parseInt(request.params.id, 10);
     if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    if (!(await requireContentAdminOrEventArticleAccess(request, reply, id))) return;
     const { db, schema } = getDrizzleDb();
     const [article] = await db
       .select({ id: schema.articles.id })
@@ -748,10 +814,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
   fastify.get<{ Params: { id: string; versionId: string } }>(
     '/content/articles/:id/versions/:versionId',
     async (request, reply) => {
-      if (!requireContentAdmin(request, reply)) return;
       const id = parseInt(request.params.id, 10);
       const versionId = parseInt(request.params.versionId, 10);
       if (isNaN(id) || isNaN(versionId)) return reply.code(400).send({ error: 'Invalid id' });
+      if (!(await requireContentAdminOrEventArticleAccess(request, reply, id))) return;
       const { db, schema } = getDrizzleDb();
       const [row] = await db
         .select({
@@ -799,10 +865,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
   fastify.post<{ Params: { id: string; versionId: string } }>(
     '/content/articles/:id/versions/:versionId/restore',
     async (request, reply) => {
-      if (!requireContentAdmin(request, reply)) return;
       const id = parseInt(request.params.id, 10);
       const versionId = parseInt(request.params.versionId, 10);
       if (isNaN(id) || isNaN(versionId)) return reply.code(400).send({ error: 'Invalid id' });
+      if (!(await requireContentAdminOrEventArticleAccess(request, reply, id))) return;
       const { db, schema } = getDrizzleDb();
 
       const [article] = await db.select({ id: schema.articles.id }).from(schema.articles).where(eq(schema.articles.id, id)).limit(1);
@@ -882,10 +948,10 @@ export async function contentRoutes(fastify: FastifyInstance) {
   );
 
   fastify.patch<{ Params: { id: string } }>('/content/articles/:id', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
-    const member = request.member!;
     const id = parseInt(request.params.id, 10);
     if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    if (!(await requireContentAdminOrEventArticleAccess(request, reply, id))) return;
+    const member = request.member!;
     const parsed = articleBodySchema.partial().safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
@@ -1031,9 +1097,9 @@ export async function contentRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete<{ Params: { id: string } }>('/content/articles/:id', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
     const id = parseInt(request.params.id, 10);
     if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    if (!(await requireContentAdminOrEventArticleAccess(request, reply, id))) return;
     const { db, schema } = getDrizzleDb();
     const deleted = await db
       .delete(schema.articles)

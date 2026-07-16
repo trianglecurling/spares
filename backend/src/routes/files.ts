@@ -4,7 +4,8 @@ import { and, asc, desc, eq, like, sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
-import { isContentAdmin } from '../utils/auth.js';
+import { isContentAdmin, isEventsAdmin } from '../utils/auth.js';
+import { listOwnedEventIds } from '../services/eventService.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
 import {
   authFileUrl,
@@ -79,6 +80,23 @@ function requireContentAdmin(
     return false;
   }
   return true;
+}
+
+/** Content admins, events admins, or event owners may upload files (e.g. event details images). */
+async function requireContentAdminOrEventManagerUpload(
+  request: { member?: Member },
+  reply: { code: (n: number) => { send: (o: object) => unknown } },
+): Promise<boolean> {
+  const member = request.member;
+  if (!member) {
+    reply.code(403).send({ error: 'Forbidden' });
+    return false;
+  }
+  if (isContentAdmin(member) || isEventsAdmin(member)) return true;
+  const owned = await listOwnedEventIds(member.id);
+  if (owned.length > 0) return true;
+  reply.code(403).send({ error: 'Forbidden' });
+  return false;
 }
 
 type FileRow = {
@@ -448,7 +466,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/content/files', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
+    if (!(await requireContentAdminOrEventManagerUpload(request, reply))) return;
     const { db, schema } = getDrizzleDb();
     const storage = getFileStorageAdapter();
     const filesToUpload: Array<{ originalFilename: string; mimeType: string; buffer: Buffer }> = [];

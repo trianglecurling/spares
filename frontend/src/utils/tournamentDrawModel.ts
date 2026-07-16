@@ -3,7 +3,7 @@
 export type TournamentSlotSource =
   | { sourceType: 'tbd' }
   | { sourceType: 'bye' }
-  | { sourceType: 'team'; teamId?: number | null }
+  | { sourceType: 'registration'; registrationId?: number | null }
   | { sourceType: 'game_place'; gameId?: string | null; place: number };
 
 export type TournamentBracketEvent = {
@@ -21,6 +21,18 @@ export type TournamentGameResult =
   | {
       entryKind: 'ends';
       ends: { side0: number[]; side1: number[] };
+      /** When false, end scores are in progress. Omitted or true = game finished. */
+      complete?: boolean;
+      /** Side (0 or 1) with last stone (hammer) in the first end. */
+      firstEndHammerSlot?: 0 | 1;
+      /**
+       * Doubles only: 1-based end number where each side used their power play.
+       * Null / omitted = not used.
+       */
+      powerPlayEndBySlot?: {
+        side0?: number | null;
+        side1?: number | null;
+      };
     }
   /** 3+ competitors: total score per slot; highest score is 1st place (tie-break: lower slot index). */
   | { entryKind: 'multi_score'; scores: number[] };
@@ -43,6 +55,11 @@ export type TournamentGameNode = {
   };
   /** Optional recorded result (Results tab). */
   result?: TournamentGameResult;
+  /**
+   * Which competitor slot throws the sheet’s first stone color (`stoneColor1`).
+   * The other two-sided slot gets `stoneColor2`. Omitted = unset.
+   */
+  rockColor1Slot?: 0 | 1;
   layout?: { x?: number; y?: number };
 };
 
@@ -64,7 +81,16 @@ export type TournamentSheet = {
   clubSheetId: number;
   name: string;
   order: number;
+  /** Club sheet stone colors (copied for public/bracket display). */
+  stoneColor1?: string;
+  stoneColor2?: string;
 };
+
+/** Preferred way to record two-sided game results (scorekeeper). */
+export type TournamentResultType = 'pick' | 'score' | 'ends';
+
+/** How rock colors are assigned in the scorekeeper. Omitted → `manual`. */
+export type TournamentRockColorMode = 'manual' | 'randomized';
 
 export type TournamentDrawState = {
   version: 1;
@@ -89,6 +115,16 @@ export type TournamentDrawState = {
   sheets: TournamentSheet[];
   /** Free-form labels/notes on the bracket canvas. */
   textNodes: TournamentTextNode[];
+  /**
+   * How two-sided games are scored in the scorekeeper.
+   * Omitted on legacy draws → treat as `pick`.
+   */
+  resultType?: TournamentResultType;
+  /**
+   * How rock colors are assigned for two-sided games.
+   * Omitted on legacy draws → treat as `manual`.
+   */
+  rockColorMode?: TournamentRockColorMode;
 };
 
 /** `anchorKind: 'none'` uses `x`/`y` in layout space; anchored kinds use offsets from the target node’s top-left. */
@@ -116,8 +152,8 @@ export function encodeSlotSource(s: TournamentSlotSource): string {
       return 'tbd';
     case 'bye':
       return 'bye';
-    case 'team':
-      return `team:${s.teamId ?? ''}`;
+    case 'registration':
+      return `reg:${s.registrationId ?? ''}`;
     case 'game_place': {
       const gid = s.gameId ?? '';
       const p = s.place;
@@ -131,11 +167,18 @@ export function encodeSlotSource(s: TournamentSlotSource): string {
 export function decodeSlotSource(v: string): TournamentSlotSource {
   if (v === 'tbd') return { sourceType: 'tbd' };
   if (v === 'bye') return { sourceType: 'bye' };
+  if (v.startsWith('reg:')) {
+    const rest = v.slice(4);
+    if (rest === '') return { sourceType: 'registration', registrationId: null };
+    const n = Number.parseInt(rest, 10);
+    return { sourceType: 'registration', registrationId: Number.isFinite(n) ? n : null };
+  }
+  // Legacy encode form before registrations-as-teams.
   if (v.startsWith('team:')) {
     const rest = v.slice(5);
-    if (rest === '') return { sourceType: 'team', teamId: null };
+    if (rest === '') return { sourceType: 'registration', registrationId: null };
     const n = Number.parseInt(rest, 10);
-    return { sourceType: 'team', teamId: Number.isFinite(n) ? n : null };
+    return { sourceType: 'registration', registrationId: Number.isFinite(n) ? n : null };
   }
   if (v.startsWith('gp:')) {
     const rest = v.slice(3);
@@ -179,13 +222,13 @@ export function outputRoutingLabel(place: number, competitorCount: number): stri
   return `${ordinalPlaceLabel(place)} place goes to`;
 }
 
-/** Team ids placed directly on a draw game slot (seed positions for bracket path). */
+/** Registration ids (teams) placed directly on a draw game slot. */
 export function teamIdsAssignedOnDraw(draw: TournamentDrawState): Set<number> {
   const ids = new Set<number>();
   for (const g of Object.values(draw.games)) {
     for (const slot of g.slots) {
-      if (slot.sourceType === 'team' && slot.teamId != null) {
-        ids.add(slot.teamId);
+      if (slot.sourceType === 'registration' && slot.registrationId != null) {
+        ids.add(slot.registrationId);
       }
     }
   }

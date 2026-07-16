@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { HiEye, HiEyeSlash, HiClipboardDocument, HiArrowPath, HiChevronDown, HiTrash } from 'react-icons/hi2';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
@@ -18,7 +18,7 @@ import PageTabs from '../../components/PageTabs';
 import AdminEventDetailsArticlePanel from './AdminEventDetailsArticlePanel';
 import AdminEventTournamentPanel from './AdminEventTournamentPanel';
 import AdminEventWaitlistPanel from './AdminEventWaitlistPanel';
-import type { TournamentTeamApi } from './AdminEventTournamentTeamModal';
+import { isBonspielCalendarType, tournamentFormatFromCalendarType } from '../../utils/eventCalendarTypes';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
@@ -30,29 +30,29 @@ import { LOCATION_OPTIONS } from '../calendarEventFormShared';
 import {
   CUSTOM_FIELD_TYPES,
   PRESET_LABELS,
-  addDietaryCounts,
-  countDietaryRestrictionsFromTeamValue,
-  emptyDietaryRestrictionCounts,
+  addDietaryCombinationCounts,
+  countDietaryCombinationsFromTeamValue,
+  emptyDietaryCombinationCounts,
   isPresetFieldType,
   isSubheadingFieldType,
   isTeamPresetFieldType,
   parseTeamFieldOptions,
+  parseTeamPlayersJson,
   presetMenuLabel,
   presetScopeLocked,
   serializeTeamFieldOptions,
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
-  DIETARY_RESTRICTION_KEYS,
-  DIETARY_RESTRICTION_LABELS,
+  DIETARY_COMBINATION_KEYS,
+  DIETARY_COMBINATION_LABELS,
   type PresetFieldType,
 } from '../../utils/eventRegistrationFieldPresets';
-import type { TournamentFormat } from '../../utils/tournamentDisplay';
 import {
   editorRegistrationFieldsToPreviewFields,
   storeEventRegistrationPreview,
 } from '../../utils/eventRegistrationPreviewSession';
 
-/** Same shape used by tournament team import; skip values that would break mailto/BCC lists. */
+/** Skip values that would break mailto/BCC lists. */
 const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function isValidEmailAddress(email: string): boolean {
@@ -159,7 +159,8 @@ type EventEditorSavePayload = {
 };
 
 const EVENT_CALENDAR_TYPE_OPTIONS: { id: string; label: string }[] = [
-  { id: 'bonspiel', label: 'Bonspiel' },
+  { id: 'bonspiel-fours', label: 'Bonspiel - Fours' },
+  { id: 'bonspiel-doubles', label: 'Bonspiel - Doubles' },
   { id: 'learn-to-curl', label: 'Learn to Curl' },
   { id: 'juniors', label: 'Juniors' },
   { id: 'other', label: 'Other' },
@@ -174,6 +175,19 @@ const EVENT_VISIBILITY_OPTIONS: ChoiceOption<string>[] = [
   { value: 'public', label: 'Public' },
   { value: 'active_members', label: 'Active members' },
   { value: 'ice_members', label: 'Ice members' },
+];
+
+const REGISTRATION_STATUS_OPTIONS: ChoiceOption<string>[] = [
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'waitlisted', label: 'Waitlisted' },
+];
+
+type CopyEmailRecipientMode = 'registrants' | 'fourths' | 'all_players';
+
+const COPY_EMAIL_RECIPIENT_OPTIONS: ChoiceOption<CopyEmailRecipientMode>[] = [
+  { value: 'all_players', label: 'All players' },
+  { value: 'registrants', label: 'Registrants only' },
+  { value: 'fourths', label: 'Fourths only' },
 ];
 
 const REGISTRATION_SCOPE_OPTIONS: ChoiceOption<string>[] = [
@@ -221,7 +235,6 @@ export default function AdminEventEditor() {
   const [calendarTypeId, setCalendarTypeId] = useState('other');
   const [tournamentTeamsPublished, setTournamentTeamsPublished] = useState(false);
   const [tournamentDrawPublished, setTournamentDrawPublished] = useState(false);
-  const [tournamentFormat, setTournamentFormat] = useState<TournamentFormat | null>(null);
   const [published, setPublished] = useState(false);
   const [capacity, setCapacity] = useState('');
   const [feeDollars, setFeeDollars] = useState('');
@@ -258,10 +271,11 @@ export default function AdminEventEditor() {
   const [teamFieldView, setTeamFieldView] = useState<{ registration: Registration; field: RegistrationField } | null>(
     null,
   );
-  const [tournamentTeams, setTournamentTeams] = useState<TournamentTeamApi[]>([]);
-  const [tournamentTeamsLoaded, setTournamentTeamsLoaded] = useState(false);
-  const [copyEmailsMenuOpen, setCopyEmailsMenuOpen] = useState(false);
-  const copyEmailsMenuRef = useRef<HTMLDivElement>(null);
+  const [copyEmailsDialogOpen, setCopyEmailsDialogOpen] = useState(false);
+  const [copyEmailStatuses, setCopyEmailStatuses] = useState<string[]>(['confirmed']);
+  const [copyEmailRecipientMode, setCopyEmailRecipientMode] = useState<CopyEmailRecipientMode>('all_players');
+  const copyEmailStatusesInputId = useId();
+  const copyEmailRecipientsInputId = useId();
 
   // Special links
   const [specialLinks, setSpecialLinks] = useState<SpecialLink[]>([]);
@@ -276,7 +290,8 @@ export default function AdminEventEditor() {
   const [detailLink, setDetailLink] = useState<SpecialLink | null>(null);
   const [linkedArticleId, setLinkedArticleId] = useState<number | null>(null);
 
-  const isBonspielEvent = calendarTypeId === 'bonspiel';
+  const isBonspielEvent = isBonspielCalendarType(calendarTypeId);
+  const tournamentFormat = tournamentFormatFromCalendarType(calendarTypeId);
   const showWaitlistTab = enableWaitlist || hasWaitlistEntries;
   const secondaryTabKeys = useMemo(() => {
     if (isNew) return [] as const;
@@ -354,9 +369,6 @@ export default function AdminEventEditor() {
         );
         setTournamentTeamsPublished((e.tournamentTeamsPublished ?? 0) === 1);
         setTournamentDrawPublished((e.tournamentDrawPublished ?? 0) === 1);
-        setTournamentFormat(
-          e.tournamentFormat === 'fours' || e.tournamentFormat === 'doubles' ? e.tournamentFormat : null,
-        );
         setPublished(!!e.published);
         setCapacity(e.capacity !== null ? String(e.capacity) : '');
         setFeeDollars(toDollars(e.feeMinor ?? 0));
@@ -426,9 +438,9 @@ export default function AdminEventEditor() {
     setRegistrationSearch('');
     setRegistrationSortKey('date');
     setRegistrationSortOrder('desc');
-    setTournamentTeams([]);
-    setTournamentTeamsLoaded(false);
-    setCopyEmailsMenuOpen(false);
+    setCopyEmailsDialogOpen(false);
+    setCopyEmailStatuses(['confirmed']);
+    setCopyEmailRecipientMode('all_players');
   }, [eventId]);
 
   useEffect(() => {
@@ -459,28 +471,6 @@ export default function AdminEventEditor() {
   }, [activeTab, eventId]);
 
   useEffect(() => {
-    if (activeTab !== 'registrations' || !eventId || !isBonspielEvent) {
-      setCopyEmailsMenuOpen(false);
-      return;
-    }
-    let cancelled = false;
-    api
-      .get<{ teams: TournamentTeamApi[] }>(`/events/${eventId}/tournament-teams`)
-      .then((res) => {
-        if (!cancelled) setTournamentTeams(res.data?.teams ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setTournamentTeams([]);
-      })
-      .finally(() => {
-        if (!cancelled) setTournamentTeamsLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, eventId, isBonspielEvent]);
-
-  useEffect(() => {
     if (activeTab !== 'registrations' || registrationsLoaded) {
       setShowRegistrationsSlowLoader(false);
       return;
@@ -490,17 +480,6 @@ export default function AdminEventEditor() {
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [activeTab, registrationsLoaded]);
-
-  useEffect(() => {
-    if (!copyEmailsMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (copyEmailsMenuRef.current?.contains(t)) return;
-      setCopyEmailsMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [copyEmailsMenuOpen]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -892,22 +871,32 @@ export default function AdminEventEditor() {
   );
 
   const dietaryRestrictionSummary = useMemo(() => {
-    if (!collectDietaryRestrictionsEnabled) return emptyDietaryRestrictionCounts();
+    if (!collectDietaryRestrictionsEnabled) return emptyDietaryCombinationCounts();
     const teamFieldsWithDietary = registrationFields.filter(
       (field) =>
         isTeamPresetFieldType(field.fieldType) &&
         parseTeamFieldOptions(field.options).collectDietaryRestrictions,
     );
-    let totals = emptyDietaryRestrictionCounts();
+    let totals = emptyDietaryCombinationCounts();
     for (const registration of registrations) {
       if (registration.status === 'cancelled') continue;
       for (const field of teamFieldsWithDietary) {
         const raw = getRegistrationFieldGroupRawValue(registration, field);
-        totals = addDietaryCounts(totals, countDietaryRestrictionsFromTeamValue(raw));
+        totals = addDietaryCombinationCounts(totals, countDietaryCombinationsFromTeamValue(raw));
       }
     }
     return totals;
   }, [collectDietaryRestrictionsEnabled, registrationFields, registrations]);
+
+  const dietaryCombinationRows = useMemo(
+    () =>
+      DIETARY_COMBINATION_KEYS.filter((key) => dietaryRestrictionSummary[key] > 0).map((key) => ({
+        key,
+        label: DIETARY_COMBINATION_LABELS[key],
+        count: dietaryRestrictionSummary[key],
+      })),
+    [dietaryRestrictionSummary],
+  );
 
   const registrationColumns: Array<DataTableColumn<Registration, string>> = useMemo(() => {
     const baseColumns: Array<DataTableColumn<Registration, string>> = [
@@ -1085,49 +1074,86 @@ export default function AdminEventEditor() {
     entries.push(`"${displayName}" <${email}>`);
   };
 
-  const buildRegistrantEmailEntries = () => {
+  const teamFieldsForCopyEmails = useMemo(
+    () => registrationFields.filter((field) => isTeamPresetFieldType(field.fieldType)),
+    [registrationFields],
+  );
+
+  const copyEmailRecipientOptions = useMemo((): ChoiceOption<CopyEmailRecipientMode>[] => {
+    if (isBonspielEvent || teamFieldsForCopyEmails.length > 0) {
+      return COPY_EMAIL_RECIPIENT_OPTIONS;
+    }
+    return COPY_EMAIL_RECIPIENT_OPTIONS.filter(
+      (option): option is { value: CopyEmailRecipientMode; label: string } =>
+        option.type !== 'divider' && option.value === 'registrants',
+    );
+  }, [isBonspielEvent, teamFieldsForCopyEmails.length]);
+
+  const buildCopyEmailEntries = (
+    statuses: string[],
+    recipientMode: CopyEmailRecipientMode,
+  ): string[] => {
+    const statusSet = new Set(statuses);
+    const selected = registrations.filter((registration) => statusSet.has(registration.status));
     const entries: string[] = [];
     const seenEmails = new Set<string>();
-    registrations.forEach((registration) => {
-      appendEmailRecipient(entries, seenEmails, registration.contact_name, registration.contact_email);
-      registration.groupMembers.forEach((member, index) => {
-        appendEmailRecipient(
-          entries,
-          seenEmails,
-          member.name?.trim() || `Group member ${index + 1}`,
-          member.email,
-        );
+
+    if (recipientMode === 'registrants') {
+      selected.forEach((registration) => {
+        appendEmailRecipient(entries, seenEmails, registration.contact_name, registration.contact_email);
+        registration.groupMembers.forEach((member, index) => {
+          appendEmailRecipient(
+            entries,
+            seenEmails,
+            member.name?.trim() || `Group member ${index + 1}`,
+            member.email,
+          );
+        });
       });
+      return entries;
+    }
+
+    const preferDoubles = tournamentFormat === 'doubles';
+    selected.forEach((registration) => {
+      for (const field of teamFieldsForCopyEmails) {
+        const isDoublesField = field.fieldType === 'preset_team_doubles';
+        const isFoursField = field.fieldType === 'preset_team_four';
+        if (preferDoubles && !isDoublesField && teamFieldsForCopyEmails.some((f) => f.fieldType === 'preset_team_doubles')) {
+          continue;
+        }
+        if (!preferDoubles && !isFoursField && teamFieldsForCopyEmails.some((f) => f.fieldType === 'preset_team_four')) {
+          continue;
+        }
+        const rowCount = isDoublesField ? TEAM_POSITIONS_DOUBLES.length : TEAM_POSITIONS_FOUR.length;
+        const players = parseTeamPlayersJson(getRegistrationFieldGroupRawValue(registration, field), rowCount);
+        if (recipientMode === 'fourths') {
+          const fourthIndex = isDoublesField ? 1 : 3;
+          const player = players[fourthIndex];
+          if (player) {
+            appendEmailRecipient(
+              entries,
+              seenEmails,
+              player.name?.trim() || (isDoublesField ? 'Player 2' : 'Fourth'),
+              player.email,
+            );
+          }
+        } else {
+          players.forEach((player, index) => {
+            const fallback =
+              (isDoublesField ? TEAM_POSITIONS_DOUBLES[index] : TEAM_POSITIONS_FOUR[index]) ?? `Player ${index + 1}`;
+            appendEmailRecipient(entries, seenEmails, player.name?.trim() || fallback, player.email);
+          });
+        }
+      }
     });
     return entries;
   };
 
-  const buildAllTeamEmailEntries = () => {
-    const entries: string[] = [];
-    const seenEmails = new Set<string>();
-    // Registrants first (covers contacts not on any team), then roster; dedupe by email.
-    registrations.forEach((registration) => {
-      appendEmailRecipient(entries, seenEmails, registration.contact_name, registration.contact_email);
-      registration.groupMembers.forEach((member, index) => {
-        appendEmailRecipient(
-          entries,
-          seenEmails,
-          member.name?.trim() || `Group member ${index + 1}`,
-          member.email,
-        );
-      });
-    });
-    tournamentTeams.forEach((team) => {
-      team.roster.forEach((slot, index) => {
-        appendEmailRecipient(
-          entries,
-          seenEmails,
-          slot.playerName?.trim() || `Team member ${index + 1}`,
-          slot.email,
-        );
-      });
-    });
-    return entries;
+  const openCopyEmailsDialog = () => {
+    setCopyEmailStatuses(['confirmed']);
+    const hasPlayerOptions = isBonspielEvent || teamFieldsForCopyEmails.length > 0;
+    setCopyEmailRecipientMode(hasPlayerOptions ? 'all_players' : 'registrants');
+    setCopyEmailsDialogOpen(true);
   };
 
   const copyEmailEntries = async (
@@ -1147,15 +1173,27 @@ export default function AdminEventEditor() {
     }
   };
 
-  const copyRegistrantEmails = async () => {
-    await copyEmailEntries(buildRegistrantEmailEntries(), 'No registrant emails to copy', 'Registrant emails copied');
+  const handleCopyEmailsFromDialog = async () => {
+    if (copyEmailStatuses.length === 0) {
+      showAlert('Select at least one registration status', 'warning');
+      return;
+    }
+    const entries = buildCopyEmailEntries(copyEmailStatuses, copyEmailRecipientMode);
+    const emptyMessage =
+      copyEmailRecipientMode === 'registrants'
+        ? 'No registrant emails to copy'
+        : copyEmailRecipientMode === 'fourths'
+          ? 'No fourth emails to copy'
+          : 'No player emails to copy';
+    const successMessage =
+      copyEmailRecipientMode === 'registrants'
+        ? 'Registrant emails copied'
+        : copyEmailRecipientMode === 'fourths'
+          ? 'Fourth emails copied'
+          : 'Player emails copied';
+    await copyEmailEntries(entries, emptyMessage, successMessage);
+    setCopyEmailsDialogOpen(false);
   };
-
-  const copyAllTeamEmails = async () => {
-    await copyEmailEntries(buildAllTeamEmailEntries(), 'No team member emails to copy', 'Team member emails copied');
-  };
-
-  const showCopyEmailsDropdown = isBonspielEvent && tournamentTeamsLoaded && tournamentTeams.length > 0;
 
   const buildRegistrationsTsv = () => {
     const exportRegistrations = [...registrations].sort(compareRegistrations);
@@ -2024,8 +2062,7 @@ export default function AdminEventEditor() {
             <AdminEventTournamentPanel
               eventId={eventId}
               eventTitle={title}
-              initialTournamentFormat={tournamentFormat}
-              onTournamentFormatChange={setTournamentFormat}
+              tournamentFormat={tournamentFormat ?? 'fours'}
               initialTeamsPublished={tournamentTeamsPublished}
               initialDrawPublished={tournamentDrawPublished}
               onSaved={(teams, draw) => {
@@ -2052,55 +2089,9 @@ export default function AdminEventEditor() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {showCopyEmailsDropdown ? (
-                  <div className="relative inline-block" ref={copyEmailsMenuRef}>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={!registrationsLoaded}
-                      aria-expanded={copyEmailsMenuOpen}
-                      aria-haspopup="menu"
-                      onClick={() => setCopyEmailsMenuOpen((open) => !open)}
-                      className="gap-1.5"
-                    >
-                      Copy emails
-                      <HiChevronDown className="h-4 w-4" aria-hidden />
-                    </Button>
-                    {copyEmailsMenuOpen ? (
-                      <div
-                        className="absolute right-0 z-50 mt-2 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
-                        role="menu"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                          onClick={() => {
-                            setCopyEmailsMenuOpen(false);
-                            void copyRegistrantEmails();
-                          }}
-                        >
-                          Copy registrant emails
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                          onClick={() => {
-                            setCopyEmailsMenuOpen(false);
-                            void copyAllTeamEmails();
-                          }}
-                        >
-                          Copy all team emails
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <Button type="button" variant="secondary" onClick={copyRegistrantEmails} disabled={!registrationsLoaded}>
-                    Copy registrant emails
-                  </Button>
-                )}
+                <Button type="button" variant="secondary" onClick={openCopyEmailsDialog} disabled={!registrationsLoaded}>
+                  Copy emails
+                </Button>
                 <Button type="button" variant="secondary" onClick={handleOpenExportTsv} disabled={!registrationsLoaded}>
                   Export TSV
                 </Button>
@@ -2180,18 +2171,26 @@ export default function AdminEventEditor() {
             {registrationsLoaded && collectDietaryRestrictionsEnabled ? (
               <div className="app-card-subtle space-y-3">
                 <h3 className="app-section-title">Dietary restrictions summary</h3>
-                <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {DIETARY_RESTRICTION_KEYS.map((key) => (
-                    <div key={key} className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-                      <dt className="text-sm text-gray-600 dark:text-gray-400">{DIETARY_RESTRICTION_LABELS[key]}</dt>
-                      <dd className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
-                        {dietaryRestrictionSummary[key]}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
+                {dietaryCombinationRows.length === 0 ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    No dietary restrictions reported on active registrations.
+                  </p>
+                ) : (
+                  <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {dietaryCombinationRows.map((row) => (
+                      <div
+                        key={row.key}
+                        className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
+                      >
+                        <dt className="text-sm text-gray-600 dark:text-gray-400">{row.label}</dt>
+                        <dd className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">{row.count}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Counts include active registrations only and reflect each player who selected a restriction.
+                  Counts include active registrations only. Each player is counted once in the combination that matches
+                  all of their selected restrictions.
                 </p>
               </div>
             ) : null}
@@ -2360,6 +2359,51 @@ export default function AdminEventEditor() {
             </Modal>
           </div>
         )}
+
+        <Modal
+          isOpen={copyEmailsDialogOpen}
+          onClose={() => setCopyEmailsDialogOpen(false)}
+          title="Copy emails"
+          size="md"
+        >
+          <div className="space-y-5">
+            <FormField label="Registration status" htmlFor={copyEmailStatusesInputId}>
+              <ChoiceInput<string>
+                inputId={copyEmailStatusesInputId}
+                options={REGISTRATION_STATUS_OPTIONS}
+                value={copyEmailStatuses}
+                onChange={(next) => setCopyEmailStatuses(Array.isArray(next) ? next : next ? [next] : [])}
+                layout="block"
+                maxSelectedItems={null}
+                multiSelectionIndicatorStyle="checkboxes"
+                listboxLabel="Registration status"
+                name="copy-email-statuses"
+              />
+            </FormField>
+            <FormField label="Recipients" htmlFor={copyEmailRecipientsInputId}>
+              <ChoiceInput<CopyEmailRecipientMode>
+                inputId={copyEmailRecipientsInputId}
+                options={copyEmailRecipientOptions}
+                value={copyEmailRecipientMode}
+                onChange={(next) => {
+                  if (next == null || Array.isArray(next)) return;
+                  setCopyEmailRecipientMode(next);
+                }}
+                layout="block"
+                listboxLabel="Recipients"
+                name="copy-email-recipients"
+              />
+            </FormField>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setCopyEmailsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleCopyEmailsFromDialog()}>
+                Copy
+              </Button>
+            </div>
+          </div>
+        </Modal>
 
         <Modal
           isOpen={isExportModalOpen}

@@ -11,6 +11,7 @@ import {
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import PublicTournamentDrawBracket from '../components/PublicTournamentDrawBracket';
+import PublicEventLiveScores from '../components/PublicEventLiveScores';
 import PageTabs from '../components/PageTabs';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import SeoMeta from '../components/SeoMeta';
@@ -19,6 +20,9 @@ import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
 import { waitlistEntryCountLabel } from '../components/registration/registrationViewEditShared';
 import { teamIdsAssignedOnDraw, type TournamentDrawState } from '../utils/tournamentDrawModel';
+import { drawHasScoreActivity } from '../utils/tournamentDrawResultsRows';
+import { isBonspielCalendarType } from '../utils/eventCalendarTypes';
+import type { TournamentTeamApi } from '../types/tournamentTeam';
 import {
   formatPositionCell,
   formatTeamDisplayName,
@@ -299,24 +303,51 @@ export default function PublicEventDetailPage() {
   useEffect(() => {
     if (!event || loading) return;
     const cal = event.calendarTypeId ?? 'other';
-    const showT = cal === 'bonspiel' && (event.tournamentTeamsPublished ?? 0) === 1;
-    const showD = cal === 'bonspiel' && (event.tournamentDrawPublished ?? 0) === 1;
+    const showT = isBonspielCalendarType(cal) && (event.tournamentTeamsPublished ?? 0) === 1;
+    const showD = isBonspielCalendarType(cal) && (event.tournamentDrawPublished ?? 0) === 1;
+    const showScores =
+      showD &&
+      publicDraw != null &&
+      !publicDrawLoading &&
+      drawHasScoreActivity(publicDraw);
     const showBar = showT || showD;
     const t = searchParams.get('tab');
-    if (t && t !== 'teams' && t !== 'draw') {
-      setSearchParams({}, { replace: true });
+    const clearTab = () => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams();
+          const slk = prev.get('slk');
+          if (slk) next.set('slk', slk);
+          return next;
+        },
+        { replace: true },
+      );
+    };
+    if (t && t !== 'teams' && t !== 'draw' && t !== 'scores') {
+      clearTab();
       return;
     }
     if (!showBar && t) {
-      setSearchParams({}, { replace: true });
+      clearTab();
       return;
     }
     if (t === 'teams' && !showT) {
-      setSearchParams({}, { replace: true });
+      clearTab();
     } else if (t === 'draw' && !showD) {
-      setSearchParams({}, { replace: true });
+      clearTab();
+    } else if (t === 'scores') {
+      // Wait until draw load settles before deciding the Live scores tab is unavailable.
+      if (!showD) clearTab();
+      else if (publicDraw !== undefined && !publicDrawLoading && !showScores) clearTab();
     }
-  }, [event, loading, searchParams, setSearchParams]);
+  }, [
+    event,
+    loading,
+    searchParams,
+    setSearchParams,
+    publicDraw,
+    publicDrawLoading,
+  ]);
 
   const serverNowMs = useMemo(() => Date.now() + serverOffsetMs, [serverOffsetMs, tick]);
 
@@ -350,12 +381,15 @@ export default function PublicEventDetailPage() {
 
   const tabParam = searchParams.get('tab');
   const specialLinkQuery = searchParams.get('slk');
-  /** Load roster when either tab needs it so the draw view can resolve team names on cards. */
+  /** Load roster for Teams / Draw / Live scores team labels. */
   const shouldLoadTournamentTeams =
     !!slug &&
     !!event &&
-    (tabParam === 'teams' || tabParam === 'draw') &&
-    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    (tabParam === 'teams' ||
+      tabParam === 'draw' ||
+      tabParam === 'scores' ||
+      (event.tournamentDrawPublished ?? 0) === 1) &&
+    isBonspielCalendarType(event.calendarTypeId) &&
     (event.tournamentTeamsPublished ?? 0) === 1;
 
   useEffect(() => {
@@ -387,11 +421,11 @@ export default function PublicEventDetailPage() {
       .finally(() => setPublicTeamsLoading(false));
   }, [slug, shouldLoadTournamentTeams]);
 
+  /** Load whenever the draw is published so Live scores tab visibility can update via SSE. */
   const shouldLoadPublicDraw =
     !!slug &&
     !!event &&
-    (tabParam === 'draw' || tabParam === 'teams') &&
-    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    isBonspielCalendarType(event.calendarTypeId) &&
     (event.tournamentDrawPublished ?? 0) === 1;
 
   useEffect(() => {
@@ -476,19 +510,27 @@ export default function PublicEventDetailPage() {
     !!event &&
     !loading &&
     tabParam === 'draw' &&
-    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    isBonspielCalendarType(event.calendarTypeId) &&
     (event.tournamentDrawPublished ?? 0) === 1 &&
     (publicDrawLoading || publicDraw === undefined);
+  const scoresLoadPending =
+    !!event &&
+    !loading &&
+    tabParam === 'scores' &&
+    isBonspielCalendarType(event.calendarTypeId) &&
+    (event.tournamentDrawPublished ?? 0) === 1 &&
+    (publicDrawLoading || publicDraw === undefined || publicTeamsLoading);
   const teamsLoadPending =
     !!event &&
     !loading &&
     tabParam === 'teams' &&
-    (event.calendarTypeId ?? 'other') === 'bonspiel' &&
+    isBonspielCalendarType(event.calendarTypeId) &&
     (event.tournamentTeamsPublished ?? 0) === 1 &&
     publicTeamsLoading;
 
   const showInitialLoadingCard = useDelayedTrueWhile(loading, loadingDelayMs);
   const showDrawLoadingCard = useDelayedTrueWhile(drawLoadPending, loadingDelayMs);
+  const showScoresLoadingCard = useDelayedTrueWhile(scoresLoadPending, loadingDelayMs);
   const showTeamsLoadingCard = useDelayedTrueWhile(teamsLoadPending, loadingDelayMs);
 
   if (loading) {
@@ -537,17 +579,46 @@ export default function PublicEventDetailPage() {
       : null;
 
   const calendarTypeId = event.calendarTypeId ?? 'other';
-  const showPublicTeams = calendarTypeId === 'bonspiel' && (event.tournamentTeamsPublished ?? 0) === 1;
-  const showPublicDraw = calendarTypeId === 'bonspiel' && (event.tournamentDrawPublished ?? 0) === 1;
+  const showPublicTeams = isBonspielCalendarType(calendarTypeId) && (event.tournamentTeamsPublished ?? 0) === 1;
+  const showPublicDraw = isBonspielCalendarType(calendarTypeId) && (event.tournamentDrawPublished ?? 0) === 1;
+  const showLiveScores =
+    showPublicDraw && publicDraw != null && drawHasScoreActivity(publicDraw);
   const showEventTabs = showPublicTeams || showPublicDraw;
-  const publicView: 'details' | 'teams' | 'draw' =
+  // Allow scores while draw is loading; tab chrome only appears once score activity exists.
+  const publicView: 'details' | 'teams' | 'draw' | 'scores' =
     tabParam === 'teams' && showPublicTeams
       ? 'teams'
       : tabParam === 'draw' && showPublicDraw
         ? 'draw'
-        : 'details';
+        : tabParam === 'scores' && showPublicDraw
+          ? 'scores'
+          : 'details';
 
-  /** Sidebar competes with wide tournament tables; full-width main on Teams and Draw. */
+  const liveScoresTeams: TournamentTeamApi[] = publicTeams.map((t) => ({
+    id: t.id,
+    sortOrder: t.sortOrder,
+    teamName: t.teamName,
+    homeClub: t.homeClub,
+    viceSlotCode: t.viceSlotCode,
+    skipSlotCode: t.skipSlotCode,
+    roster: t.roster.map((r) => ({
+      slotCode: r.slotCode,
+      playerName: r.playerName,
+      email: null,
+      notes: null,
+      homeClub: null,
+    })),
+  }));
+
+  const eventTabHref = (tab?: 'teams' | 'draw' | 'scores') => {
+    const qs = new URLSearchParams();
+    if (tab) qs.set('tab', tab);
+    if (specialLinkQuery) qs.set('slk', specialLinkQuery);
+    const q = qs.toString();
+    return q ? `/events/${event.slug}?${q}` : `/events/${event.slug}`;
+  };
+
+  /** Sidebar competes with wide tournament tables; full-width main on Teams, Draw, and Live scores. */
   const showEventInfoSidebar = publicView === 'details';
   /** Public page heading uses the Details tab article title when present. */
   const displayTitle = article?.title?.trim() || event.title;
@@ -581,7 +652,7 @@ export default function PublicEventDetailPage() {
               {
                 key: 'details',
                 label: 'Details',
-                to: `/events/${event.slug}`,
+                to: eventTabHref(),
                 isActive: publicView === 'details',
               },
               ...(showPublicTeams
@@ -589,7 +660,7 @@ export default function PublicEventDetailPage() {
                     {
                       key: 'teams',
                       label: 'Teams',
-                      to: `/events/${event.slug}?tab=teams`,
+                      to: eventTabHref('teams'),
                       isActive: publicView === 'teams',
                     },
                   ]
@@ -599,8 +670,18 @@ export default function PublicEventDetailPage() {
                     {
                       key: 'draw',
                       label: 'Draw',
-                      to: `/events/${event.slug}?tab=draw`,
+                      to: eventTabHref('draw'),
                       isActive: publicView === 'draw',
+                    },
+                  ]
+                : []),
+              ...(showLiveScores
+                ? [
+                    {
+                      key: 'scores',
+                      label: 'Live scores',
+                      to: eventTabHref('scores'),
+                      isActive: publicView === 'scores',
                     },
                   ]
                 : []),
@@ -609,7 +690,32 @@ export default function PublicEventDetailPage() {
           ) : null}
         </div>
 
-        {publicView === 'draw' ? (
+        {publicView === 'scores' ? (
+          scoresLoadPending ? (
+            showScoresLoadingCard ? (
+              <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 shrink-0 text-gray-700 dark:text-gray-300">
+                <div className="max-w-4xl mx-auto">
+                  <PublicStateCard title="Loading…" description="Please wait." />
+                </div>
+              </div>
+            ) : (
+              <div className="min-h-[min(40vh,24rem)] shrink-0" aria-hidden />
+            )
+          ) : publicDrawError ? (
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 shrink-0 text-gray-700 dark:text-gray-300">
+              <p className="text-sm text-red-700 dark:text-red-300">{publicDrawError}</p>
+            </div>
+          ) : publicDraw != null ? (
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 w-full min-w-0 text-gray-700 dark:text-gray-300">
+              <PublicEventLiveScores
+                draw={publicDraw}
+                teams={liveScoresTeams}
+                tournamentFormat={publicTeamsFormat ?? 'fours'}
+                serverOffsetMs={serverOffsetMs}
+              />
+            </div>
+          ) : null
+        ) : publicView === 'draw' ? (
           publicDrawLoading || publicDraw === undefined ? (
             showDrawLoadingCard ? (
               <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 shrink-0 text-gray-700 dark:text-gray-300">

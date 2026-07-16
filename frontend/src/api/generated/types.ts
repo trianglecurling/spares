@@ -4745,6 +4745,10 @@ export interface paths {
                             name: string;
                             sortOrder: number;
                             isActive: boolean;
+                            /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                            stoneColor1: string;
+                            /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                            stoneColor2: string;
                             createdAt: null | string;
                             updatedAt: null | string;
                         }[];
@@ -4766,6 +4770,10 @@ export interface paths {
                         name: string;
                         sortOrder?: number;
                         isActive?: boolean;
+                        /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                        stoneColor1?: string;
+                        /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                        stoneColor2?: string;
                     };
                 };
             };
@@ -4781,6 +4789,10 @@ export interface paths {
                             name: string;
                             sortOrder: number;
                             isActive: boolean;
+                            /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                            stoneColor1: string;
+                            /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                            stoneColor2: string;
                             createdAt: null | string;
                             updatedAt: null | string;
                         };
@@ -4845,6 +4857,10 @@ export interface paths {
                         name?: string;
                         sortOrder?: number;
                         isActive?: boolean;
+                        /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                        stoneColor1?: string;
+                        /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                        stoneColor2?: string;
                     };
                 };
             };
@@ -4860,6 +4876,10 @@ export interface paths {
                             name: string;
                             sortOrder: number;
                             isActive: boolean;
+                            /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                            stoneColor1: string;
+                            /** @description Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value. */
+                            stoneColor2: string;
                             createdAt: null | string;
                             updatedAt: null | string;
                         };
@@ -12672,86 +12692,11 @@ export interface paths {
             };
         };
         put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/events/{id}/tournament-teams/{teamId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    teamId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    teamId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
         trace?: never;
     };
     "/events/{id}/tournament-draw": {
@@ -18120,7 +18065,26 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         trace?: never;
     };
     "/volunteering/admin/programs": {

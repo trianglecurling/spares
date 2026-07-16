@@ -1,3 +1,12 @@
+/** Preset key or custom `#RRGGBB` hex for a sheet stone color. */
+export const sheetStoneColorSchema = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 32,
+  description:
+    'Stone color as a preset key (red, yellow, dark_blue, blue, green) or a custom #RRGGBB hex value.',
+} as const;
+
 export const sheetSchema = {
   type: 'object',
   additionalProperties: false,
@@ -6,10 +15,21 @@ export const sheetSchema = {
     name: { type: 'string' },
     sortOrder: { type: 'number' },
     isActive: { type: 'boolean' },
+    stoneColor1: sheetStoneColorSchema,
+    stoneColor2: sheetStoneColorSchema,
     createdAt: { type: ['string', 'null'] },
     updatedAt: { type: ['string', 'null'] },
   },
-  required: ['id', 'name', 'sortOrder', 'isActive', 'createdAt', 'updatedAt'],
+  required: [
+    'id',
+    'name',
+    'sortOrder',
+    'isActive',
+    'stoneColor1',
+    'stoneColor2',
+    'createdAt',
+    'updatedAt',
+  ],
 } as const;
 
 export const sheetListResponseSchema = {
@@ -24,6 +44,8 @@ export const sheetCreateBodySchema = {
     name: { type: 'string', minLength: 1 },
     sortOrder: { type: 'number' },
     isActive: { type: 'boolean' },
+    stoneColor1: sheetStoneColorSchema,
+    stoneColor2: sheetStoneColorSchema,
   },
   required: ['name'],
 } as const;
@@ -35,6 +57,8 @@ export const sheetUpdateBodySchema = {
     name: { type: 'string', minLength: 1 },
     sortOrder: { type: 'number' },
     isActive: { type: 'boolean' },
+    stoneColor1: sheetStoneColorSchema,
+    stoneColor2: sheetStoneColorSchema,
   },
 } as const;
 

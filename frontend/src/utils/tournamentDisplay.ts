@@ -2,7 +2,7 @@ import type { ChoiceOption } from '../components/ChoiceInput';
 
 export type TournamentFormat = 'fours' | 'doubles';
 
-export const FOURS_SLOTS = ['lead', 'second', 'third', 'fourth', 'alternate'] as const;
+export const FOURS_SLOTS = ['lead', 'second', 'third', 'fourth'] as const;
 export const DOUBLES_SLOTS = ['player1', 'player2'] as const;
 
 /** Positions shown as columns on team tables (alternate excluded for fours). */
@@ -43,7 +43,7 @@ export function slotLabel(format: TournamentFormat, slotCode: string): string {
 
 export function viceSkipSlotOptions(format: TournamentFormat): ChoiceOption<string>[] {
   if (format === 'fours') {
-    return FOURS_SLOTS.filter((s) => s !== 'alternate').map((s) => ({
+    return FOURS_SLOTS.map((s) => ({
       value: s,
       label: slotLabel('fours', s),
     }));

@@ -14,6 +14,13 @@ function migrateSlotSourceRow(s: unknown): unknown {
     const p = typeof x.place === 'number' && Number.isFinite(x.place) ? x.place : 1;
     return { sourceType: 'game_place', gameId: x.gameId ?? null, place: p };
   }
+  // Legacy team slots (pre registrations-as-teams). Prefer DB migration; fall back to TBD.
+  if (st === 'team') {
+    if (typeof x.registrationId === 'number' && Number.isFinite(x.registrationId) && x.registrationId > 0) {
+      return { sourceType: 'registration', registrationId: x.registrationId };
+    }
+    return { sourceType: 'tbd' };
+  }
   return s;
 }
 
@@ -69,6 +76,12 @@ function normalizeSheetsInDrawInput(data: unknown): unknown {
           clubSheetId: s.clubSheetId,
           name: typeof s.name === 'string' && s.name.trim() ? s.name : 'Sheet',
           order: typeof s.order === 'number' ? s.order : index,
+          ...(typeof s.stoneColor1 === 'string' && s.stoneColor1.trim()
+            ? { stoneColor1: s.stoneColor1.trim() }
+            : {}),
+          ...(typeof s.stoneColor2 === 'string' && s.stoneColor2.trim()
+            ? { stoneColor2: s.stoneColor2.trim() }
+            : {}),
         };
       }
       const idRaw = s.id;
@@ -79,6 +92,12 @@ function normalizeSheetsInDrawInput(data: unknown): unknown {
           clubSheetId: n,
           name: typeof s.name === 'string' && s.name.trim() ? s.name : `Sheet ${n}`,
           order: typeof s.order === 'number' ? s.order : index,
+          ...(typeof s.stoneColor1 === 'string' && s.stoneColor1.trim()
+            ? { stoneColor1: s.stoneColor1.trim() }
+            : {}),
+          ...(typeof s.stoneColor2 === 'string' && s.stoneColor2.trim()
+            ? { stoneColor2: s.stoneColor2.trim() }
+            : {}),
         };
       }
       return null;
@@ -134,8 +153,8 @@ export const tournamentSlotSourceSchema = z.union([
   z.object({ sourceType: z.literal('tbd') }),
   z.object({ sourceType: z.literal('bye') }),
   z.object({
-    sourceType: z.literal('team'),
-    teamId: z.number().int().positive().nullable().optional(),
+    sourceType: z.literal('registration'),
+    registrationId: z.number().int().positive().nullable().optional(),
   }),
   z.object({
     sourceType: z.literal('game_place'),
@@ -171,6 +190,20 @@ export const tournamentGameResultSchema = z.discriminatedUnion('entryKind', [
       .refine((e) => e.side0.length === e.side1.length, {
         message: 'ends.side0 and ends.side1 must have the same length',
       }),
+    /** When false, end scores are in progress. Omitted or true = game finished. */
+    complete: z.boolean().optional(),
+    /** Side (0 or 1) with last stone (hammer) in the first end. */
+    firstEndHammerSlot: z.union([z.literal(0), z.literal(1)]).optional(),
+    /**
+     * Doubles only: 1-based end number where each side used their power play.
+     * Null / omitted = not used. Extra ends (after regulation) are not allowed.
+     */
+    powerPlayEndBySlot: z
+      .object({
+        side0: z.number().int().min(1).max(8).nullable().optional(),
+        side1: z.number().int().min(1).max(8).nullable().optional(),
+      })
+      .optional(),
   }),
   /** One total score per competitor slot; 1st place = highest (ties break by lower slot index). */
   z.object({
@@ -203,6 +236,11 @@ export const tournamentGameSchema = z.object({
     })
     .optional(),
   result: tournamentGameResultSchema.optional(),
+  /**
+   * Which competitor slot throws the sheet’s first stone color (`stoneColor1`).
+   * The other two-sided slot gets `stoneColor2`. Omitted = unset.
+   */
+  rockColor1Slot: z.union([z.literal(0), z.literal(1)]).optional(),
 });
 
 export const tournamentConnectionSchema = z.object({
@@ -222,11 +260,16 @@ export const tournamentDrawBlockSchema = z.object({
   order: z.number().int().min(0).max(9999),
 });
 
+const tournamentSheetStoneColorSchema = z.string().min(1).max(32);
+
 export const tournamentSheetSchema = z.object({
   /** Positive = club sheet id; negative = ad-hoc sheet for this tournament only. */
   clubSheetId: z.number().int(),
   name: z.string().min(1).max(80),
   order: z.number().int().min(0).max(9999),
+  /** Copied from club sheet for public/bracket display. */
+  stoneColor1: tournamentSheetStoneColorSchema.optional(),
+  stoneColor2: tournamentSheetStoneColorSchema.optional(),
 });
 
 export const tournamentTextNodeSchema = z
@@ -267,6 +310,10 @@ export const tournamentDrawStateSchema = z.preprocess(
       drawBlocks: z.array(tournamentDrawBlockSchema).max(500),
       sheets: z.array(tournamentSheetSchema).max(200),
       textNodes: z.array(tournamentTextNodeSchema).max(500),
+      /** How two-sided games are scored in the scorekeeper. Omitted → pick. */
+      resultType: z.enum(['pick', 'score', 'ends']).optional(),
+      /** How rock colors are assigned. Omitted → manual. */
+      rockColorMode: z.enum(['manual', 'randomized']).optional(),
     })
     .strict()
     .superRefine((data, ctx) => {

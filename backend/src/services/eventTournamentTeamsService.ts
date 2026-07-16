@@ -1,21 +1,24 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { formatTeamHomeClubFromRoster } from '../utils/tournamentTeamHomeClub.js';
+import { splitMemberDisplayName } from '../utils/memberName.js';
 import { EventServiceError } from './eventServiceError.js';
+import {
+  isBonspielCalendarType,
+  tournamentFormatFromCalendarType,
+} from './eventCalendarTypes.js';
 
 export type TournamentFormat = 'fours' | 'doubles';
 
-export const FOURS_SLOTS = ['lead', 'second', 'third', 'fourth', 'alternate'] as const;
+/** Lineup slots for fours (no alternate — registration presets only have four players). */
+export const FOURS_SLOTS = ['lead', 'second', 'third', 'fourth'] as const;
 export const DOUBLES_SLOTS = ['player1', 'player2'] as const;
 
-const EMAIL_MAX = 320;
-const TEXT_MAX = 200;
-const NOTES_MAX = 2000;
+type TeamPlayerRow = { name: string; email: string; homeClub: string };
 
 type EventTournamentContext = {
   id: number;
   calendar_type_id: string | null;
-  tournament_format: string | null;
 };
 
 async function getEventTournamentContext(eventId: number): Promise<EventTournamentContext | null> {
@@ -24,7 +27,6 @@ async function getEventTournamentContext(eventId: number): Promise<EventTourname
     .select({
       id: schema.events.id,
       calendar_type_id: schema.events.calendar_type_id,
-      tournament_format: schema.events.tournament_format,
     })
     .from(schema.events)
     .where(eq(schema.events.id, eventId))
@@ -33,8 +35,7 @@ async function getEventTournamentContext(eventId: number): Promise<EventTourname
 }
 
 function assertBonspiel(event: { calendar_type_id: string | null }): void {
-  const t = event.calendar_type_id ?? 'other';
-  if (t !== 'bonspiel') {
+  if (!isBonspielCalendarType(event.calendar_type_id)) {
     throw new EventServiceError('Tournament teams are only available for bonspiel events', 400);
   }
 }
@@ -54,48 +55,86 @@ export function normalizeTournamentFormat(raw: string | null | undefined): Tourn
   return null;
 }
 
-function validateViceSkip(format: TournamentFormat, vice: string, skip: string): void {
-  const slots = rosterSlotsForFormat(format) as readonly string[];
-  const nonAlt = format === 'fours' ? slots.filter((s) => s !== 'alternate') : [...slots];
-  if (vice === skip) {
-    throw new EventServiceError('Vice and skip must be different players', 400);
-  }
-  if (!nonAlt.includes(vice)) {
-    throw new EventServiceError('Vice must be a non-alternate lineup position for this format', 400);
-  }
-  if (!nonAlt.includes(skip)) {
-    throw new EventServiceError('Skip must be a non-alternate lineup position for this format', 400);
-  }
-}
-
-function validateOptionalEmail(email: string | null | undefined): void {
-  if (email == null || email === '') return;
-  if (email.length > EMAIL_MAX) {
-    throw new EventServiceError(`Email must be at most ${EMAIL_MAX} characters`, 400);
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new EventServiceError('Invalid email address', 400);
+function parseTeamPlayers(value: string, fieldType: string): TeamPlayerRow[] | null {
+  if (!value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const want = fieldType === 'preset_team_doubles' ? 2 : 4;
+    if (parsed.length !== want) return null;
+    return parsed.map((row) => {
+      const r = row as Record<string, unknown>;
+      return {
+        name: typeof r.name === 'string' ? r.name : '',
+        email: typeof r.email === 'string' ? r.email : '',
+        homeClub: typeof r.homeClub === 'string' ? r.homeClub : '',
+      };
+    });
+  } catch {
+    return null;
   }
 }
 
-export async function countTournamentTeams(eventId: number): Promise<number> {
-  const { db, schema } = getDrizzleDb();
-  const rows = await db
-    .select({ id: schema.eventTournamentTeams.id })
-    .from(schema.eventTournamentTeams)
-    .where(eq(schema.eventTournamentTeams.event_id, eventId));
-  return rows.length;
+function resolveTeamName(
+  fieldValues: Array<{ field_id: number; value: string | null }>,
+  fields: Array<{ id: number; field_type: string }>,
+  contactName: string,
+): string {
+  const teamNameField = fields.find((f) => f.field_type === 'preset_team_name');
+  if (teamNameField) {
+    const value = fieldValues.find((fv) => fv.field_id === teamNameField.id)?.value?.trim();
+    if (value) return value;
+  }
+
+  const { lastName, firstName } = splitMemberDisplayName(contactName);
+  if (lastName.trim()) return `Team ${lastName.trim()}`;
+  if (firstName.trim()) return `Team ${firstName.trim()}`;
+  return 'Team';
 }
 
-export type RosterSlotPayload = {
-  slotCode: string;
-  playerName?: string | null;
-  email?: string | null;
-  notes?: string | null;
-  homeClub?: string | null;
-};
+function buildRosterFromRegistration(
+  format: TournamentFormat,
+  teamFieldType: string | null,
+  players: TeamPlayerRow[] | null,
+): TournamentTeamRow['roster'] {
+  const lineupSlots =
+    teamFieldType === 'preset_team_doubles'
+      ? DOUBLES_SLOTS
+      : teamFieldType === 'preset_team_four'
+        ? FOURS_SLOTS
+        : format === 'doubles'
+          ? DOUBLES_SLOTS
+          : FOURS_SLOTS;
+
+  const roster: TournamentTeamRow['roster'] = rosterSlotsForFormat(format).map((slotCode) => ({
+    slotCode,
+    playerName: null,
+    email: null,
+    notes: null,
+    homeClub: null,
+  }));
+
+  if (!players) return roster;
+
+  for (let i = 0; i < players.length && i < lineupSlots.length; i += 1) {
+    const slotCode = lineupSlots[i]!;
+    const player = players[i]!;
+    const idx = roster.findIndex((r) => r.slotCode === slotCode);
+    if (idx === -1) continue;
+    roster[idx] = {
+      slotCode,
+      playerName: player.name.trim() || null,
+      email: player.email.trim() || null,
+      notes: null,
+      homeClub: player.homeClub.trim() || null,
+    };
+  }
+
+  return roster;
+}
 
 export type TournamentTeamRow = {
+  /** Registration id (confirmed registrations are teams). */
   id: number;
   eventId: number;
   sortOrder: number;
@@ -112,78 +151,112 @@ export type TournamentTeamRow = {
   }>;
 };
 
-type NormalizedRosterSlot = {
-  playerName: string | null;
-  email: string | null;
-  notes: string | null;
-  homeClub: string | null;
-};
-
-function mapTeamRow(team: Record<string, unknown>, roster: TournamentTeamRow['roster']): TournamentTeamRow {
-  const legacyHomeClub = (team.home_club as string | null) ?? null;
-  return {
-    id: team.id as number,
-    eventId: team.event_id as number,
-    sortOrder: team.sort_order as number,
-    teamName: (team.team_name as string | null) ?? null,
-    homeClub: formatTeamHomeClubFromRoster(roster, legacyHomeClub),
-    viceSlotCode: team.vice_slot_code as string,
-    skipSlotCode: team.skip_slot_code as string,
-    roster,
-  };
+export async function countConfirmedTournamentTeams(eventId: number): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ id: schema.eventRegistrations.id })
+    .from(schema.eventRegistrations)
+    .where(
+      and(
+        eq(schema.eventRegistrations.event_id, eventId),
+        eq(schema.eventRegistrations.status, 'confirmed'),
+      ),
+    );
+  return rows.length;
 }
 
+/** @deprecated Use countConfirmedTournamentTeams */
+export async function countTournamentTeams(eventId: number): Promise<number> {
+  return countConfirmedTournamentTeams(eventId);
+}
+
+/**
+ * Confirmed registrations for a bonspiel, shaped as tournament teams.
+ * `id` is the registration id.
+ */
 export async function listTournamentTeamsForEvent(eventId: number): Promise<TournamentTeamRow[]> {
   const { db, schema } = getDrizzleDb();
   const event = await getEventTournamentContext(eventId);
   if (!event) throw new EventServiceError('Event not found', 404);
   assertBonspiel(event);
 
-  const teams = await db
-    .select()
-    .from(schema.eventTournamentTeams)
-    .where(eq(schema.eventTournamentTeams.event_id, eventId))
-    .orderBy(asc(schema.eventTournamentTeams.sort_order), asc(schema.eventTournamentTeams.id));
+  const format = tournamentFormatFromCalendarType(event.calendar_type_id);
+  if (!format) {
+    throw new EventServiceError('Bonspiel event is missing fours/doubles type', 400);
+  }
 
-  if (teams.length === 0) return [];
+  const registrations = await db
+    .select({
+      id: schema.eventRegistrations.id,
+      contact_name: schema.eventRegistrations.contact_name,
+      created_at: schema.eventRegistrations.created_at,
+    })
+    .from(schema.eventRegistrations)
+    .where(
+      and(
+        eq(schema.eventRegistrations.event_id, eventId),
+        eq(schema.eventRegistrations.status, 'confirmed'),
+      ),
+    )
+    .orderBy(asc(schema.eventRegistrations.id));
 
-  const teamIds = teams.map((t) => t.id);
-  const slots =
-    teamIds.length > 0
+  if (registrations.length === 0) return [];
+
+  const fields = await db
+    .select({
+      id: schema.eventRegistrationFields.id,
+      field_type: schema.eventRegistrationFields.field_type,
+    })
+    .from(schema.eventRegistrationFields)
+    .where(eq(schema.eventRegistrationFields.event_id, eventId));
+
+  const registrationIds = registrations.map((r) => r.id);
+  const fieldValues =
+    registrationIds.length > 0
       ? await db
-          .select()
-          .from(schema.eventTournamentRosterSlots)
-          .where(inArray(schema.eventTournamentRosterSlots.team_id, teamIds))
+          .select({
+            registration_id: schema.eventRegistrationFieldValues.registration_id,
+            field_id: schema.eventRegistrationFieldValues.field_id,
+            value: schema.eventRegistrationFieldValues.value,
+          })
+          .from(schema.eventRegistrationFieldValues)
+          .where(inArray(schema.eventRegistrationFieldValues.registration_id, registrationIds))
       : [];
 
-  const byTeam = new Map<number, TournamentTeamRow['roster']>();
-  for (const tid of teamIds) {
-    byTeam.set(tid, []);
-  }
-  for (const s of slots) {
-    const list = byTeam.get(s.team_id);
-    if (list) {
-      list.push({
-        slotCode: s.slot_code,
-        playerName: s.player_name ?? null,
-        email: s.email ?? null,
-        notes: s.notes ?? null,
-        homeClub: s.home_club ?? null,
-      });
-    }
+  const valuesByRegistration = new Map<number, Array<{ field_id: number; value: string | null }>>();
+  for (const fv of fieldValues) {
+    const list = valuesByRegistration.get(fv.registration_id) ?? [];
+    list.push({ field_id: fv.field_id, value: fv.value });
+    valuesByRegistration.set(fv.registration_id, list);
   }
 
-  const format = normalizeTournamentFormat(event.tournament_format);
-  const slotOrder = format ? [...rosterSlotsForFormat(format)] : [];
-  const orderIdx = (code: string) => {
-    const i = slotOrder.indexOf(code);
-    return i === -1 ? 999 : i;
-  };
+  const fourField = fields.find((f) => f.field_type === 'preset_team_four');
+  const doublesField = fields.find((f) => f.field_type === 'preset_team_doubles');
+  const preferredTeamField =
+    format === 'doubles' ? (doublesField ?? fourField) : (fourField ?? doublesField);
+  const teamFieldType = preferredTeamField?.field_type ?? null;
+  const defs = defaultViceSkip(format);
 
-  return teams.map((t) => {
-    const roster = byTeam.get(t.id) ?? [];
-    roster.sort((a, b) => orderIdx(a.slotCode) - orderIdx(b.slotCode));
-    return mapTeamRow(t as unknown as Record<string, unknown>, roster);
+  return registrations.map((reg, index) => {
+    const regValues = valuesByRegistration.get(reg.id) ?? [];
+    const teamFieldValue =
+      preferredTeamField != null
+        ? regValues.find((fv) => fv.field_id === preferredTeamField.id)?.value ?? ''
+        : '';
+    const players =
+      teamFieldType != null ? parseTeamPlayers(teamFieldValue, teamFieldType) : null;
+    const roster = buildRosterFromRegistration(format, teamFieldType, players);
+    const teamName = resolveTeamName(regValues, fields, reg.contact_name);
+    return {
+      id: reg.id,
+      eventId,
+      sortOrder: index,
+      teamName,
+      homeClub: formatTeamHomeClubFromRoster(roster),
+      viceSlotCode: defs.vice,
+      skipSlotCode: defs.skip,
+      roster,
+    };
   });
 }
 
@@ -192,236 +265,17 @@ export async function getTournamentTeamById(eventId: number, teamId: number): Pr
   return rows.find((r) => r.id === teamId) ?? null;
 }
 
-function normalizeRosterPayload(
-  format: TournamentFormat,
-  roster: RosterSlotPayload[] | undefined,
-  defaultsForSlots: readonly string[],
-  teamHomeClubFallback?: string | null,
-): Map<string, NormalizedRosterSlot> {
-  const map = new Map<string, NormalizedRosterSlot>();
-  const fallback = teamHomeClubFallback?.trim() || null;
-  for (const code of defaultsForSlots) {
-    map.set(code, { playerName: null, email: null, notes: null, homeClub: fallback });
-  }
-  if (roster) {
-    for (const row of roster) {
-      if (!defaultsForSlots.includes(row.slotCode)) {
-        throw new EventServiceError(`Invalid roster slot: ${row.slotCode}`, 400);
-      }
-      const name = row.playerName?.trim() || null;
-      const emailRaw = row.email?.trim() || null;
-      const notes = row.notes?.trim() || null;
-      const homeClub = row.homeClub?.trim() || fallback;
-      if (name != null && name.length > TEXT_MAX) {
-        throw new EventServiceError(`Player name must be at most ${TEXT_MAX} characters`, 400);
-      }
-      if (notes != null && notes.length > NOTES_MAX) {
-        throw new EventServiceError(`Notes must be at most ${NOTES_MAX} characters`, 400);
-      }
-      if (homeClub != null && homeClub.length > TEXT_MAX) {
-        throw new EventServiceError(`Home club must be at most ${TEXT_MAX} characters`, 400);
-      }
-      validateOptionalEmail(emailRaw);
-      map.set(row.slotCode, { playerName: name, email: emailRaw, notes, homeClub });
-    }
-  }
-  return map;
-}
-
-function computedTeamHomeClub(rosterMap: Map<string, NormalizedRosterSlot>): string | null {
-  return formatTeamHomeClubFromRoster([...rosterMap.values()]);
-}
-
-export type CreateTournamentTeamInput = {
-  teamName?: string | null;
-  homeClub?: string | null;
-  viceSlotCode?: string;
-  skipSlotCode?: string;
-  roster?: RosterSlotPayload[];
-  registrationId?: number | null;
-  /** Used when auto-creating from registration before the event format is set. */
-  formatOverride?: TournamentFormat;
-};
-
-export async function createTournamentTeam(eventId: number, input: CreateTournamentTeamInput): Promise<TournamentTeamRow> {
+/** Confirmed registration ids referenced by draw slots for an event. */
+export async function listConfirmedRegistrationIdsForEvent(eventId: number): Promise<Set<number>> {
   const { db, schema } = getDrizzleDb();
-  const event = await getEventTournamentContext(eventId);
-  if (!event) throw new EventServiceError('Event not found', 404);
-  assertBonspiel(event);
-
-   const format = input.formatOverride ?? normalizeTournamentFormat(event.tournament_format);
-  if (!format) {
-    throw new EventServiceError('Choose fours or doubles for this tournament before adding teams', 400);
-  }
-
-  const defs = defaultViceSkip(format);
-  const vice = input.viceSlotCode ?? defs.vice;
-  const skip = input.skipSlotCode ?? defs.skip;
-  validateViceSkip(format, vice, skip);
-
-  const slotCodes = rosterSlotsForFormat(format);
-  const teamHomeClubFallback = input.homeClub?.trim() || null;
-  const rosterMap = normalizeRosterPayload(format, input.roster, slotCodes, teamHomeClubFallback);
-
-  const teamName = input.teamName?.trim() || null;
-  const homeClub = computedTeamHomeClub(rosterMap);
-  if (teamName != null && teamName.length > TEXT_MAX) {
-    throw new EventServiceError(`Team name must be at most ${TEXT_MAX} characters`, 400);
-  }
-
-  const existingOrders = await db
-    .select({ sort_order: schema.eventTournamentTeams.sort_order })
-    .from(schema.eventTournamentTeams)
-    .where(eq(schema.eventTournamentTeams.event_id, eventId));
-  const nextOrder =
-    existingOrders.length === 0 ? 0 : Math.max(...existingOrders.map((r) => r.sort_order ?? 0)) + 1;
-
-  const [team] = await db
-    .insert(schema.eventTournamentTeams)
-    .values({
-      event_id: eventId,
-      sort_order: nextOrder,
-      team_name: teamName,
-      home_club: homeClub,
-      vice_slot_code: vice,
-      skip_slot_code: skip,
-      registration_id: input.registrationId ?? null,
-    } as any)
-    .returning();
-
-  if (!team) throw new EventServiceError('Failed to create team', 500);
-
-  const rosterInsert = slotCodes.map((code) => {
-    const r = rosterMap.get(code)!;
-    return {
-      team_id: team.id,
-      slot_code: code,
-      player_name: r.playerName,
-      email: r.email,
-      notes: r.notes,
-      home_club: r.homeClub,
-    };
-  });
-
-  await db.insert(schema.eventTournamentRosterSlots).values(rosterInsert as any);
-
-  const full = await getTournamentTeamById(eventId, team.id);
-  if (!full) throw new EventServiceError('Failed to load new team', 500);
-  return full;
-}
-
-export type UpdateTournamentTeamInput = {
-  teamName?: string | null;
-  homeClub?: string | null;
-  viceSlotCode?: string;
-  skipSlotCode?: string;
-  roster?: RosterSlotPayload[];
-  formatOverride?: TournamentFormat;
-};
-
-export async function updateTournamentTeam(
-  eventId: number,
-  teamId: number,
-  input: UpdateTournamentTeamInput,
-): Promise<TournamentTeamRow> {
-  const { db, schema } = getDrizzleDb();
-  const event = await getEventTournamentContext(eventId);
-  if (!event) throw new EventServiceError('Event not found', 404);
-  assertBonspiel(event);
-
-  const format = input.formatOverride ?? normalizeTournamentFormat(event.tournament_format);
-  if (!format) {
-    throw new EventServiceError('Choose fours or doubles for this tournament before editing teams', 400);
-  }
-
-  const [existing] = await db
-    .select()
-    .from(schema.eventTournamentTeams)
-    .where(and(eq(schema.eventTournamentTeams.id, teamId), eq(schema.eventTournamentTeams.event_id, eventId)))
-    .limit(1);
-
-  if (!existing) throw new EventServiceError('Team not found', 404);
-
-  const vice = input.viceSlotCode ?? existing.vice_slot_code;
-  const skip = input.skipSlotCode ?? existing.skip_slot_code;
-  validateViceSkip(format, vice, skip);
-
-  const slotCodes = rosterSlotsForFormat(format);
-
-  const teamName =
-    input.teamName !== undefined ? (input.teamName?.trim() || null) : existing.team_name;
-
-  if (teamName != null && teamName.length > TEXT_MAX) {
-    throw new EventServiceError(`Team name must be at most ${TEXT_MAX} characters`, 400);
-  }
-
-  let rosterMap: Map<string, NormalizedRosterSlot> | null = null;
-  if (input.roster !== undefined) {
-    const teamHomeClubFallback =
-      input.homeClub !== undefined ? (input.homeClub?.trim() || null) : (existing.home_club ?? null);
-    rosterMap = normalizeRosterPayload(format, input.roster, slotCodes, teamHomeClubFallback);
-  } else if (input.homeClub !== undefined) {
-    const slots = await db
-      .select()
-      .from(schema.eventTournamentRosterSlots)
-      .where(eq(schema.eventTournamentRosterSlots.team_id, teamId));
-    rosterMap = new Map<string, NormalizedRosterSlot>();
-    const fallback = input.homeClub?.trim() || null;
-    for (const code of slotCodes) {
-      const slot = slots.find((s) => s.slot_code === code);
-      rosterMap.set(code, {
-        playerName: slot?.player_name ?? null,
-        email: slot?.email ?? null,
-        notes: slot?.notes ?? null,
-        homeClub: fallback,
-      });
-    }
-  }
-
-  const homeClub =
-    rosterMap != null ? computedTeamHomeClub(rosterMap) : existing.home_club;
-
-  await db
-    .update(schema.eventTournamentTeams)
-    .set({
-      team_name: teamName,
-      home_club: homeClub,
-      vice_slot_code: vice,
-      skip_slot_code: skip,
-    } as any)
-    .where(eq(schema.eventTournamentTeams.id, teamId));
-
-  if (rosterMap != null) {
-    await db.delete(schema.eventTournamentRosterSlots).where(eq(schema.eventTournamentRosterSlots.team_id, teamId));
-    const rosterInsert = slotCodes.map((code) => {
-      const r = rosterMap!.get(code)!;
-      return {
-        team_id: teamId,
-        slot_code: code,
-        player_name: r.playerName,
-        email: r.email,
-        notes: r.notes,
-        home_club: r.homeClub,
-      };
-    });
-    await db.insert(schema.eventTournamentRosterSlots).values(rosterInsert as any);
-  }
-
-  const full = await getTournamentTeamById(eventId, teamId);
-  if (!full) throw new EventServiceError('Failed to load team', 500);
-  return full;
-}
-
-export async function deleteTournamentTeam(eventId: number, teamId: number): Promise<void> {
-  const { db, schema } = getDrizzleDb();
-  const event = await getEventTournamentContext(eventId);
-  if (!event) throw new EventServiceError('Event not found', 404);
-  assertBonspiel(event);
-
-  const existing = await getTournamentTeamById(eventId, teamId);
-  if (!existing) throw new EventServiceError('Team not found', 404);
-
-  await db
-    .delete(schema.eventTournamentTeams)
-    .where(and(eq(schema.eventTournamentTeams.id, teamId), eq(schema.eventTournamentTeams.event_id, eventId)));
+  const rows = await db
+    .select({ id: schema.eventRegistrations.id })
+    .from(schema.eventRegistrations)
+    .where(
+      and(
+        eq(schema.eventRegistrations.event_id, eventId),
+        eq(schema.eventRegistrations.status, 'confirmed'),
+      ),
+    );
+  return new Set(rows.map((r) => r.id));
 }

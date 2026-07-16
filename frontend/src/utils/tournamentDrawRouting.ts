@@ -257,7 +257,7 @@ export function resolveSlotSourceForBracketDisplay(
       return 'TBD';
     case 'bye':
       return 'Bye';
-    case 'team':
+    case 'registration':
       return formatSlotSourceLabel(slot, teamsById, draw.games);
     case 'game_place': {
       const gid = slot.gameId;
@@ -329,10 +329,10 @@ export function formatSlotSourceLabel(
       return 'TBD';
     case 'bye':
       return 'Bye';
-    case 'team': {
-      if (slot.teamId == null) return 'Team…';
-      const t = teamsById.get(slot.teamId);
-      return t ? formatTeamDisplayName(t.teamName, t.sortOrder) : `Team #${slot.teamId}`;
+    case 'registration': {
+      if (slot.registrationId == null) return 'Team…';
+      const t = teamsById.get(slot.registrationId);
+      return t ? formatTeamDisplayName(t.teamName, t.sortOrder) : `Team #${slot.registrationId}`;
     }
     case 'game_place': {
       const og = slot.gameId ? games[slot.gameId] : undefined;
@@ -345,21 +345,37 @@ export function formatSlotSourceLabel(
 
 export type CompetitorLineSegment = {
   text: string;
+  /** Bracket event lane color (when feeder is from another event). */
   color?: string;
+  /** Sheet rock color key/hex when rock colors are assigned for this game. */
+  rockColor?: string;
   /** Which `g.slots` index this line represents, when it maps to a single slot. */
   slotIndex?: number | null;
+};
+
+export type CompetitorLabelsOptions = {
+  /**
+   * When rock colors are assigned on a two-sided game:
+   * - `sheet` (default): order segments sheet color1 then color2 (bracket cards).
+   * - `slot`: keep feeder/slot order and attach colors to each side (path cards may then
+   *   reorder for a focused team, so swatches can appear “out of sheet order”).
+   */
+  rockColorOrder?: 'sheet' | 'slot';
 };
 
 /**
  * Competitor labels for a game card, one segment per slot. When a feeder comes from another
  * bracket event, `color` is that event’s lane color.
+ * When rock colors are set on a two-sided game, segments default to color1 then color2 order.
  */
 export function competitorLabelsLineSegments(
   draw: TournamentDrawState,
   g: TournamentGameNode,
   teamsById: Map<number, TeamRow>,
+  options?: CompetitorLabelsOptions,
 ): CompetitorLineSegment[] {
   const n = g.slots.length;
+  const rockColorOrder = options?.rockColorOrder ?? 'sheet';
   const incomingConns = draw.connections
     .filter((c) => c.terminalType === 'game' && c.toGameId === g.id)
     .sort((a, b) => compareIncomingConnections(draw, a, b));
@@ -408,7 +424,80 @@ export function competitorLabelsLineSegments(
     parts.push(seg);
   }
   while (parts.length < n) parts.push({ text: 'TBD' });
-  return parts.slice(0, n);
+  const ordered = parts.slice(0, n);
+
+  if (n === 2 && (g.rockColor1Slot === 0 || g.rockColor1Slot === 1)) {
+    const sheet = draw.sheets.find((s) => s.clubSheetId === g.schedule?.sheetId);
+    const c1 = sheet?.stoneColor1;
+    const c2 = sheet?.stoneColor2;
+    if (c1 && c2) {
+      const colorForSlot = (slot: 0 | 1) => (g.rockColor1Slot === slot ? c1 : c2);
+      if (rockColorOrder === 'slot') {
+        return ordered.map((seg) => {
+          if (seg.slotIndex !== 0 && seg.slotIndex !== 1) return seg;
+          return { ...seg, rockColor: colorForSlot(seg.slotIndex) };
+        });
+      }
+      const bySlot = new Map<number, CompetitorLineSegment>();
+      for (const seg of ordered) {
+        if (seg.slotIndex != null) bySlot.set(seg.slotIndex, seg);
+      }
+      const firstLogical = g.rockColor1Slot;
+      const secondLogical = firstLogical === 0 ? 1 : 0;
+      const first = bySlot.get(firstLogical) ?? ordered[0]!;
+      const second = bySlot.get(secondLogical) ?? ordered[1]!;
+      return [
+        { ...first, rockColor: c1, slotIndex: firstLogical },
+        { ...second, rockColor: c2, slotIndex: secondLogical },
+      ];
+    }
+  }
+
+  return ordered;
+}
+
+/** True when a competitor segment is (or resolves to) the given registration. */
+export function competitorSegmentMatchesTeam(
+  draw: TournamentDrawState,
+  g: TournamentGameNode,
+  seg: CompetitorLineSegment,
+  teamId: number,
+  teamsById: Map<number, TeamRow>,
+): boolean {
+  if (seg.slotIndex == null || seg.slotIndex < 0 || seg.slotIndex >= g.slots.length) {
+    return false;
+  }
+  const slot = g.slots[seg.slotIndex]!;
+  if (slot.sourceType === 'registration' && slot.registrationId === teamId) {
+    return true;
+  }
+  const label = formatTeamDisplayName(
+    teamsById.get(teamId)?.teamName ?? null,
+    teamsById.get(teamId)?.sortOrder ?? 0,
+  );
+  if (seg.text === label) return true;
+  return resolveResultsTableSideLabel(draw, g, seg.slotIndex, teamsById) === label;
+}
+
+/**
+ * Put the focused team’s segment first when identifiable; otherwise leave order unchanged.
+ * Preserves attached rock colors (may appear out of sheet color1→color2 order).
+ */
+export function orderCompetitorSegmentsFocusedTeamFirst(
+  draw: TournamentDrawState,
+  g: TournamentGameNode,
+  segments: CompetitorLineSegment[],
+  teamId: number,
+  teamsById: Map<number, TeamRow>,
+): CompetitorLineSegment[] {
+  if (segments.length < 2) return segments;
+  const focusIdx = segments.findIndex((seg) =>
+    competitorSegmentMatchesTeam(draw, g, seg, teamId, teamsById),
+  );
+  if (focusIdx <= 0) return segments;
+  const next = [...segments];
+  const [focused] = next.splice(focusIdx, 1);
+  return [focused!, ...next];
 }
 
 /**

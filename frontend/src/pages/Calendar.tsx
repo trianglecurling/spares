@@ -385,6 +385,8 @@ const EVENT_TYPE_DOT_CLASS: Record<string, string> = {
   maintenance: 'bg-slate-500 dark:bg-slate-400',
   leagues: 'bg-teal-600 dark:bg-teal-400',
   bonspiel: 'bg-violet-600 dark:bg-violet-400',
+  'bonspiel-fours': 'bg-violet-600 dark:bg-violet-400',
+  'bonspiel-doubles': 'bg-violet-600 dark:bg-violet-400',
   juniors: 'bg-fuchsia-600 dark:bg-fuchsia-400',
   practice: 'bg-amber-500 dark:bg-amber-400',
   'group-event': 'bg-emerald-600 dark:bg-emerald-400',
@@ -410,6 +412,8 @@ const WEEK_ALL_DAY_COLUMN_TINT: Record<string, string> = {
   maintenance: 'bg-slate-100/40 dark:bg-slate-900/35',
   leagues: 'bg-teal-50/50 dark:bg-teal-950/35',
   bonspiel: 'bg-violet-50/50 dark:bg-violet-950/35',
+  'bonspiel-fours': 'bg-violet-50/50 dark:bg-violet-950/35',
+  'bonspiel-doubles': 'bg-violet-50/50 dark:bg-violet-950/35',
   juniors: 'bg-fuchsia-50/50 dark:bg-fuchsia-950/35',
   practice: 'bg-amber-50/50 dark:bg-amber-950/35',
   'group-event': 'bg-emerald-50/50 dark:bg-emerald-950/35',
@@ -819,10 +823,15 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     });
   }, [filteredEvents, eventTypes]);
 
-  const getEventType = (typeId: string) =>
-    eventTypes.find((t) => t.id === typeId) ??
-    eventTypes.find((t) => t.id === 'other') ??
-    eventTypes[0];
+  const getEventType = (typeId: string) => {
+    const resolved =
+      typeId === 'bonspiel-fours' || typeId === 'bonspiel-doubles' ? 'bonspiel' : typeId;
+    return (
+      eventTypes.find((t) => t.id === resolved) ??
+      eventTypes.find((t) => t.id === 'other') ??
+      eventTypes[0]
+    );
+  };
 
   const updateUrl = (date: Date, v: CalendarView) => {
     setSearchParams({ date: format(date, 'yyyy-MM-dd'), view: v });

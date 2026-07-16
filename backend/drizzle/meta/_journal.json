@@ -211,6 +211,20 @@
       "when": 1780352498471,
       "tag": "0030_volunteer_signup_guests_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1780352498472,
+      "tag": "0031_registrations_as_tournament_teams",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1780352498473,
+      "tag": "0032_add_sheet_stone_colors",
+      "breakpoints": true
     }
   ]
 }

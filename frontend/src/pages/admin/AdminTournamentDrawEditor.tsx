@@ -42,7 +42,6 @@ import {
   type TournamentConnectionEdge,
   type TournamentDrawState,
   type TournamentGameNode,
-  type TournamentGameResult,
   type TournamentSlotSource,
   type TournamentTextNode,
 } from '../../utils/tournamentDrawModel';
@@ -65,8 +64,7 @@ import {
   sheetsFromClubSheets,
   type ClubSheet,
 } from '../../utils/tournamentDrawSchedule';
-import type { TournamentTeamApi } from './AdminEventTournamentTeamModal';
-import AdminTournamentDrawResultsTab from './AdminTournamentDrawResultsTab';
+import type { TournamentTeamApi } from '../../types/tournamentTeam';
 import TournamentDrawBracketScene from '../../components/TournamentDrawBracketScene';
 import { useBracketCanvasView } from '../../hooks/useBracketCanvasView';
 import {
@@ -83,11 +81,11 @@ import {
   LANE_INNER_PAD_BOTTOM,
 } from '../../utils/tournamentDrawBracketLayout';
 
-type DrawWorkspaceTab = 'setup' | 'structure' | 'results';
+type DrawWorkspaceTab = 'setup' | 'structure';
 
 function drawWorkspaceTabFromHash(hash: string): DrawWorkspaceTab | null {
   const raw = hash.startsWith('#') ? hash.slice(1) : hash;
-  if (raw === 'setup' || raw === 'structure' || raw === 'results') return raw;
+  if (raw === 'setup' || raw === 'structure') return raw;
   return null;
 }
 
@@ -497,8 +495,6 @@ export default function AdminTournamentDrawEditor({
   const lastInteractedGameEventIdRef = useRef<string | null>(null);
   const [clubSheets, setClubSheets] = useState<ClubSheet[]>([]);
   const drawRef = useRef<TournamentDrawState | null>(null);
-  /** Debounced PATCH per game id (results tab). */
-  const resultPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const bracketEventsListId = useId();
   const importTemplateInputId = useId();
@@ -654,16 +650,6 @@ export default function AdminTournamentDrawEditor({
   useEffect(() => {
     drawRef.current = draw;
   }, [draw]);
-
-  useEffect(
-    () => () => {
-      for (const t of Object.values(resultPatchTimersRef.current)) {
-        clearTimeout(t);
-      }
-      resultPatchTimersRef.current = {};
-    },
-    [],
-  );
 
   useEffect(() => {
     if (!structureFullWindow) return;
@@ -839,46 +825,6 @@ export default function AdminTournamentDrawEditor({
     [],
   );
 
-  const flushGameResultPatch = useCallback(
-    async (gameId: string, result: TournamentGameResult | null) => {
-      try {
-        await api.patch(`/events/${eventId}/tournament-draw/games/${encodeURIComponent(gameId)}/result`, {
-          result,
-        });
-      } catch (err) {
-        setDirty(true);
-        window.alert(formatApiError(err, 'Failed to save game result'));
-      }
-    },
-    [eventId],
-  );
-
-  const updateDrawForResults = useCallback(
-    (
-      fn: (d: TournamentDrawState) => TournamentDrawState,
-      opts?: { persistGameResult?: { gameId: string; result: TournamentGameResult | null } },
-    ) => {
-      setDraw((d) => {
-        if (!d) return d;
-        const next = fn(d);
-        drawRef.current = next;
-        return next;
-      });
-      const patch = opts?.persistGameResult;
-      if (!patch) return;
-      const { gameId, result } = patch;
-      const timers = resultPatchTimersRef.current;
-      if (timers[gameId]) {
-        clearTimeout(timers[gameId]);
-      }
-      timers[gameId] = setTimeout(() => {
-        delete timers[gameId];
-        void flushGameResultPatch(gameId, result);
-      }, 350);
-    },
-    [flushGameResultPatch],
-  );
-
   const openBracketEventsModal = useCallback(() => {
     if (!draw) return;
     bracketEventsModalSessionRef.current = {
@@ -999,7 +945,7 @@ export default function AdminTournamentDrawEditor({
     ];
     for (const t of [...teams].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)) {
       opts.push({
-        value: encodeSlotSource({ sourceType: 'team', teamId: t.id }),
+        value: encodeSlotSource({ sourceType: 'registration', registrationId: t.id }),
         label: formatTeamDisplayName(t.teamName, t.sortOrder),
       });
     }
@@ -1222,18 +1168,12 @@ export default function AdminTournamentDrawEditor({
             isActive: workspaceTab === 'structure',
             onClick: () => selectWorkspaceTabFromUserClick('structure'),
           },
-          {
-            key: 'results',
-            label: 'Results',
-            isActive: workspaceTab === 'results',
-            onClick: () => selectWorkspaceTabFromUserClick('results'),
-          },
         ]}
       />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          {workspaceTab !== 'results' && (dirty || saving) ? (
+          {dirty || saving ? (
             <p className="text-sm text-gray-600 dark:text-gray-400">
               {dirty ? 'Unsaved changes' : ''}
               {dirty && saving ? ' · ' : ''}
@@ -1242,11 +1182,9 @@ export default function AdminTournamentDrawEditor({
           ) : null}
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          {workspaceTab !== 'results' ? (
-            <Button type="button" variant="primary" onClick={() => void save()} disabled={!dirty || saving}>
-              Save draw
-            </Button>
-          ) : null}
+          <Button type="button" variant="primary" onClick={() => void save()} disabled={!dirty || saving}>
+            Save draw
+          </Button>
         </div>
       </div>
 
@@ -1587,10 +1525,6 @@ export default function AdminTournamentDrawEditor({
           </FormSection>
           </div>
         </div>
-      )}
-
-      {workspaceTab === 'results' && (
-        <AdminTournamentDrawResultsTab draw={draw} teams={teams} updateDraw={updateDrawForResults} />
       )}
 
       {draw ? (

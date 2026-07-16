@@ -105,6 +105,9 @@ import {
 /** Read-more marker: asterism (⁂) for snippet cutoff. */
 export const READ_MORE_MARKER = '⁂';
 
+const READ_MORE_TOOLTIP = 'Insert read more';
+const READ_MORE_DISABLED_TOOLTIP = 'Remove the custom snippet to enable the read more marker.';
+
 export interface MarkdownDescriptionEditorRef {
   /** Undefined when the Toast UI instance is not ready yet (caller should fall back to form state). */
   getMarkdown: () => string | undefined;
@@ -123,6 +126,10 @@ interface MarkdownDescriptionEditorProps {
   fill?: boolean;
   /** When true, adds "Read more" button to toolbar (for article editing) */
   readMoreInToolbar?: boolean;
+  /** When true, disables the Insert read more toolbar button (e.g. custom snippet is set). */
+  readMoreDisabled?: boolean;
+  /** Fires when the article gains or loses a read-more marker. */
+  onReadMoreMarkerChange?: (present: boolean) => void;
   /** When true, the email-contact link picker includes hidden contacts (content admin article editing). */
   includeHiddenContactRecipients?: boolean;
   /** Optional async image upload handler used for clipboard paste/drop images */
@@ -134,6 +141,27 @@ interface MarkdownDescriptionEditorProps {
   enableManagedFileImageEdit?: boolean;
   /** Fires once after the WYSIWYG instance is initialized (initial markdown is loaded). */
   onWysiwygReady?: () => void;
+}
+
+type ReadMoreToolbarItem = {
+  name: string;
+  tooltip: string;
+  el: HTMLElement;
+};
+
+function applyReadMoreToolbarState(
+  button: HTMLButtonElement | null,
+  item: ReadMoreToolbarItem | null,
+  disabled: boolean
+) {
+  if (!button) return;
+  const tooltip = disabled ? READ_MORE_DISABLED_TOOLTIP : READ_MORE_TOOLTIP;
+  // Prefer aria-disabled over the native disabled attribute so Toast UI's hover
+  // tooltip still appears and can explain why the control is unavailable.
+  button.classList.toggle('tcc-editor-icon-button--disabled', disabled);
+  button.setAttribute('aria-disabled', String(disabled));
+  button.setAttribute('aria-label', tooltip);
+  if (item) item.tooltip = tooltip;
 }
 
 /** Workaround for ToastUI bug: empty initialValue shows "Write\nPreview". Pass a space when empty. */
@@ -320,7 +348,10 @@ type EditorInstance = {
   insertText?: (text: string) => void;
   exec?: (name: string, payload?: Record<string, unknown>) => void;
   focus?: () => void;
-  insertToolbarItem?: (position: { groupIndex: number; itemIndex: number }, item: { name: string; tooltip: string; el: HTMLElement }) => void;
+  insertToolbarItem?: (
+    position: { groupIndex: number; itemIndex: number },
+    item: { name: string; tooltip: string; el: HTMLElement }
+  ) => void;
   addHook?: (type: string, handler: (blob: Blob, callback: (url: string, text?: string) => void) => Promise<boolean>) => void;
   on?: (type: string, handler: (value?: unknown) => void) => void;
   off?: (type: string, handler?: (value?: unknown) => void) => void;
@@ -1105,6 +1136,8 @@ const MarkdownDescriptionEditor = forwardRef<
       dark = false,
       fill = false,
       readMoreInToolbar = false,
+      readMoreDisabled = false,
+      onReadMoreMarkerChange,
       includeHiddenContactRecipients = false,
       onUploadImage,
       enableManagedFileImageEdit = false,
@@ -1140,6 +1173,13 @@ const MarkdownDescriptionEditor = forwardRef<
     const unlinkButtonRef = useRef<HTMLButtonElement | null>(null);
     const indentButtonRef = useRef<HTMLButtonElement | null>(null);
     const outdentButtonRef = useRef<HTMLButtonElement | null>(null);
+    const readMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+    const readMoreToolbarItemRef = useRef<ReadMoreToolbarItem | null>(null);
+    const readMoreDisabledRef = useRef(readMoreDisabled);
+    readMoreDisabledRef.current = readMoreDisabled;
+    const onReadMoreMarkerChangeRef = useRef(onReadMoreMarkerChange);
+    onReadMoreMarkerChangeRef.current = onReadMoreMarkerChange;
+    const lastReadMoreMarkerPresentRef = useRef<boolean | null>(null);
     const headingBtnRef = useRef<HTMLButtonElement | null>(null);
     const stylesToolbarContainerRef = useRef<HTMLDivElement | null>(null);
     const lastToolbarActiveStylesRef = useRef<CannedStyle[]>([]);
@@ -1942,23 +1982,49 @@ const MarkdownDescriptionEditor = forwardRef<
         }
 
         if (readMoreInToolbar) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'toastui-editor-toolbar-icons';
-          btn.style.cssText = 'width:28px;height:28px;font-size:14px;line-height:1;color:#01B9BC;';
-          btn.textContent = READ_MORE_MARKER;
-          btn.addEventListener('click', () => {
+          const readMoreBtn = createToolbarIconButton(
+            READ_MORE_TOOLTIP,
+            <span aria-hidden="true" className="tcc-editor-read-more-icon">
+              {READ_MORE_MARKER}
+            </span>
+          );
+          const readMoreItem: ReadMoreToolbarItem = {
+            name: 'readmore',
+            tooltip: READ_MORE_TOOLTIP,
+            el: readMoreBtn,
+          };
+          readMoreButtonRef.current = readMoreBtn;
+          readMoreToolbarItemRef.current = readMoreItem;
+          applyReadMoreToolbarState(readMoreBtn, readMoreItem, readMoreDisabledRef.current);
+          readMoreBtn.addEventListener('click', () => {
+            if (readMoreDisabledRef.current) return;
             instance.insertText?.('\n\n' + READ_MORE_MARKER + '\n\n');
           });
           try {
-            instance.insertToolbarItem({ groupIndex: 3, itemIndex: 1 }, {
-              name: 'readmore',
-              tooltip: 'Insert read more',
-              el: btn,
-            });
+            instance.insertToolbarItem({ groupIndex: 3, itemIndex: 1 }, readMoreItem);
           } catch {
             /* ignore */
           }
+        }
+
+        if (onReadMoreMarkerChangeRef.current) {
+          const notifyReadMoreMarkerPresence = () => {
+            const callback = onReadMoreMarkerChangeRef.current;
+            if (!callback) return;
+            const markdown = instance.getMarkdown?.() ?? '';
+            const present = markdown.includes(READ_MORE_MARKER);
+            if (lastReadMoreMarkerPresentRef.current === present) return;
+            lastReadMoreMarkerPresentRef.current = present;
+            callback(present);
+          };
+          notifyReadMoreMarkerPresence();
+          const onEditorChange = () => {
+            notifyReadMoreMarkerPresence();
+          };
+          instance.on?.('change', onEditorChange);
+          toolbarCleanupRef.current.push(() => {
+            instance.off?.('change', onEditorChange);
+          });
         }
 
         const stylesContainer = document.createElement('div');
@@ -2243,8 +2309,19 @@ const MarkdownDescriptionEditor = forwardRef<
         for (const cleanup of toolbarCleanupRef.current) cleanup();
         toolbarCleanupRef.current = [];
         stylesToolbarContainerRef.current = null;
+        readMoreButtonRef.current = null;
+        readMoreToolbarItemRef.current = null;
+        lastReadMoreMarkerPresentRef.current = null;
       };
     }, []);
+
+    useEffect(() => {
+      applyReadMoreToolbarState(
+        readMoreButtonRef.current,
+        readMoreToolbarItemRef.current,
+        readMoreDisabled
+      );
+    }, [readMoreDisabled]);
 
     useEffect(() => {
       const open = linkDraft != null;
@@ -2472,6 +2549,16 @@ const MarkdownDescriptionEditor = forwardRef<
             height: 21px;
             stroke-width: 1.8;
           }
+          .markdown-description-editor .tcc-editor-icon-button .tcc-editor-read-more-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 21px;
+            height: 21px;
+            font-size: 15px;
+            line-height: 1;
+            font-weight: 600;
+          }
           .markdown-description-editor .tcc-editor-icon-button:hover {
             background-color: rgba(31, 41, 55, 0.08) !important;
             border: 0 !important;
@@ -2489,11 +2576,13 @@ const MarkdownDescriptionEditor = forwardRef<
             outline: 2px solid #01B9BC !important;
             outline-offset: 2px;
           }
-          .markdown-description-editor .tcc-editor-icon-button:disabled {
+          .markdown-description-editor .tcc-editor-icon-button:disabled,
+          .markdown-description-editor .tcc-editor-icon-button.tcc-editor-icon-button--disabled {
             cursor: default;
             opacity: 0.3;
           }
-          .markdown-description-editor .tcc-editor-icon-button:disabled:hover {
+          .markdown-description-editor .tcc-editor-icon-button:disabled:hover,
+          .markdown-description-editor .tcc-editor-icon-button.tcc-editor-icon-button--disabled:hover {
             background-color: transparent !important;
           }
           .markdown-description-editor .toastui-editor-dark .tcc-editor-icon-button {
@@ -2505,7 +2594,8 @@ const MarkdownDescriptionEditor = forwardRef<
             outline: none !important;
             box-shadow: none !important;
           }
-          .markdown-description-editor .toastui-editor-dark .tcc-editor-icon-button:disabled:hover {
+          .markdown-description-editor .toastui-editor-dark .tcc-editor-icon-button:disabled:hover,
+          .markdown-description-editor .toastui-editor-dark .tcc-editor-icon-button.tcc-editor-icon-button--disabled:hover {
             background-color: transparent !important;
           }
           .markdown-description-editor .tcc-editor-styles-toolbar-item {

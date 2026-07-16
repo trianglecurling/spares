@@ -4,7 +4,7 @@ import {
   getPublishedPublicEventSlugForArticlePathAlias,
 } from '../domains/public/queries/publicReadFacade.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { getEventBySlug, normalizeCalendarTypeId } from './eventService.js';
+import { getEventBySlug, isBonspielCalendarType } from './eventService.js';
 import { listTournamentTeamsForEvent } from './eventTournamentTeamsService.js';
 import { getPaymentDetailByOrderToken } from './memberPaymentHistoryService.js';
 import { mailingListSlugExists } from '../domains/content/mailingLists.js';
@@ -41,7 +41,7 @@ async function isPublicEventTeamPath(slug: string, teamIdRaw: string): Promise<b
   const event = await getEventBySlug(slug);
   if (!event || event.published !== 1 || event.visibility !== 'public') return false;
   if (event.tournament_teams_published !== 1) return false;
-  if (normalizeCalendarTypeId(event.calendar_type_id) !== 'bonspiel') return false;
+  if (!isBonspielCalendarType(event.calendar_type_id)) return false;
 
   try {
     const teams = await listTournamentTeamsForEvent(event.id);
