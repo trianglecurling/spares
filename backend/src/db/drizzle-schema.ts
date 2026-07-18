@@ -1841,8 +1841,10 @@ export const eventsSqlite = sqliteTable('events', {
   allow_group_registration: integer('allow_group_registration').default(0).notNull(),
   max_group_size: integer('max_group_size'),
   enable_waitlist: integer('enable_waitlist').default(1).notNull(),
-  /** Matches calendar DEFAULT_EVENT_TYPES ids shown on the club calendar. */
-  calendar_type_id: text('calendar_type_id').default('other').notNull(),
+  /** JSON array of event type ids (e.g. no-experience-necessary, juniors, bonspiel). Empty allowed. */
+  calendar_type_ids: text('calendar_type_ids').default('[]').notNull(),
+  /** Fours/doubles when bonspiel is among calendar_type_ids; otherwise null. */
+  tournament_format: text('tournament_format'),
   /** When 1, bonspiel team list is shown on the public event page (when type is bonspiel). */
   tournament_teams_published: integer('tournament_teams_published').default(0).notNull(),
   /** When 1, bonspiel draw is shown on the public event page (when type is bonspiel). */
@@ -3734,7 +3736,8 @@ export const eventsPg = pgTable('events', {
   allow_group_registration: integerPg('allow_group_registration').default(0).notNull(),
   max_group_size: integerPg('max_group_size'),
   enable_waitlist: integerPg('enable_waitlist').default(1).notNull(),
-  calendar_type_id: textPg('calendar_type_id').default('other').notNull(),
+  calendar_type_ids: textPg('calendar_type_ids').default('[]').notNull(),
+  tournament_format: textPg('tournament_format'),
   tournament_teams_published: integerPg('tournament_teams_published').default(0).notNull(),
   tournament_draw_published: integerPg('tournament_draw_published').default(0).notNull(),
   tournament_draw_json: textPg('tournament_draw_json'),

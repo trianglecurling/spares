@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { localDateTimeToIso, localDateTimeToUtcDate } from './timeZone.js';
+import {
+  calendarDaysBetween,
+  formatDateInTimeZone,
+  localDateTimeToIso,
+  localDateTimeToUtcDate,
+  shiftInstantByCalendarDays,
+} from './timeZone.js';
 
 const EASTERN = 'America/New_York';
 
@@ -23,5 +29,22 @@ describe('localDateTimeToUtcDate', () => {
   test('returns an invalid Date for malformed input', () => {
     expect(Number.isNaN(localDateTimeToUtcDate('not-a-date', '18:15', EASTERN).getTime())).toBe(true);
     expect(Number.isNaN(localDateTimeToUtcDate('2026-07-09', 'bad', EASTERN).getTime())).toBe(true);
+  });
+});
+
+describe('shiftInstantByCalendarDays', () => {
+  test('preserves Eastern wall-clock time when shifting across months', () => {
+    // 2025-09-25 20:30 EDT → 2025-09-26T00:30:00.000Z
+    const source = localDateTimeToIso('2025-09-25', '20:30', EASTERN);
+    const days = calendarDaysBetween('2025-09-25', '2026-08-02');
+    const shifted = shiftInstantByCalendarDays(source, days, EASTERN);
+    expect(shifted).toBe(localDateTimeToIso('2026-08-02', '20:30', EASTERN));
+    expect(formatDateInTimeZone(new Date(shifted), EASTERN)).toBe('2026-08-02');
+  });
+
+  test('preserves wall-clock time across a DST spring-forward boundary', () => {
+    const source = localDateTimeToIso('2026-03-07', '10:00', EASTERN);
+    const shifted = shiftInstantByCalendarDays(source, 1, EASTERN);
+    expect(shifted).toBe(localDateTimeToIso('2026-03-08', '10:00', EASTERN));
   });
 });

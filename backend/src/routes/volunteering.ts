@@ -16,6 +16,7 @@ import {
   deleteProgram,
   deleteRole,
   deleteShift,
+  duplicateProgram,
   getAdminProgram,
   grantCredential,
   listAdminPrograms,
@@ -66,6 +67,17 @@ const programBodySchema = z.object({
 });
 
 const programPatchSchema = programBodySchema.partial();
+
+const duplicateProgramSchema = z.object({
+  title: z.string().min(1),
+  pointOfContact: z.string().min(1),
+  location: z.string().nullable().optional(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD')
+    .nullable(),
+  managerIds: z.array(z.number().int().positive()).optional(),
+});
 
 const roleBodySchema = z.object({
   name: z.string().min(1),
@@ -275,6 +287,59 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       return handleServiceError(reply, err);
     }
   });
+
+  fastify.post<{ Params: { id: string } }>(
+    '/volunteering/admin/programs/:id/duplicate',
+    {
+      schema: {
+        tags: ['volunteering'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            title: { type: 'string', minLength: 1 },
+            pointOfContact: { type: 'string', minLength: 1 },
+            location: { type: ['string', 'null'] },
+            startDate: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+            managerIds: {
+              type: 'array',
+              items: { type: 'integer' },
+            },
+          },
+          required: ['title', 'pointOfContact', 'startDate'],
+        },
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+            },
+            required: ['id'],
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      if (!isVolunteerManager(member)) return sendApiError(reply, 403, 'Forbidden');
+      const programId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(programId)) return sendApiError(reply, 400, 'Invalid program id');
+      const parsed = duplicateProgramSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid program duplicate data', parsed.error.flatten());
+      }
+      try {
+        const result = await duplicateProgram(programId, {
+          ...parsed.data,
+          createdByMemberId: member.id,
+        });
+        return reply.code(201).send(result);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
 
   fastify.patch<{ Params: { id: string } }>(
     '/volunteering/admin/programs/:id',

@@ -1,10 +1,11 @@
-import { EVENT_CALENDAR_TYPE_OPTIONS } from './fiscalSeason';
+import { EVENT_CALENDAR_TYPE_OPTIONS } from './eventCalendarTypes';
+import { waitlistEntryCountLabel } from '../components/registration/registrationViewEditShared';
 
 const TYPE_BADGE_CLASS: Record<string, string> = {
   bonspiel: 'bg-violet-100 text-violet-900 border border-violet-200/80 dark:border-violet-500/30',
-  'learn-to-curl': 'bg-teal-100 text-teal-900 border border-teal-200/80 dark:border-teal-500/30',
+  'no-experience-necessary':
+    'bg-teal-100 text-teal-900 border border-teal-200/80 dark:border-teal-500/30',
   juniors: 'bg-amber-100 text-amber-900 border border-amber-200/80 dark:border-amber-500/30',
-  other: 'bg-gray-200 text-gray-900 border border-gray-300/80 dark:border-gray-500/30',
 };
 
 const CATEGORY_BADGE_CLASSES = [
@@ -127,15 +128,138 @@ export function formatEventScheduleBlock(timespans: Array<{ start_dt: string; en
 }
 
 export function publicEventTypeLabel(calendarTypeId: string | undefined): string {
-  const id = calendarTypeId ?? 'other';
-  return EVENT_CALENDAR_TYPE_OPTIONS.find((o) => o.id === id)?.label ?? 'Other';
+  if (!calendarTypeId) return '';
+  return EVENT_CALENDAR_TYPE_OPTIONS.find((o) => o.id === calendarTypeId)?.label ?? calendarTypeId;
 }
 
 export function publicEventTypeBadgeClass(calendarTypeId: string | undefined): string {
-  return TYPE_BADGE_CLASS[calendarTypeId ?? 'other'] ?? TYPE_BADGE_CLASS.other;
+  if (!calendarTypeId) return '';
+  return TYPE_BADGE_CLASS[calendarTypeId] ?? 'bg-gray-200 text-gray-900 border border-gray-300/80 dark:border-gray-500/30';
 }
 
 export function publicCategoryBadgeClass(categoryId: number): string {
   const i = ((categoryId % CATEGORY_BADGE_CLASSES.length) + CATEGORY_BADGE_CLASSES.length) % CATEGORY_BADGE_CLASSES.length;
   return CATEGORY_BADGE_CLASSES[i]!;
+}
+
+/** Effective registration cutoff: explicit cutoff, else earliest event start. */
+export function effectivePublicRegistrationCutoff(event: {
+  registrationCutoff: string | null;
+  timespans: Array<{ start_dt: string; end_dt: string }>;
+}): string | null {
+  if (event.registrationCutoff) return event.registrationCutoff;
+  if (!event.timespans?.length) return null;
+  let minMs = Number.POSITIVE_INFINITY;
+  let minIso: string | null = null;
+  for (const t of event.timespans) {
+    const ms = new Date(t.start_dt).getTime();
+    if (Number.isFinite(ms) && ms < minMs) {
+      minMs = ms;
+      minIso = t.start_dt;
+    }
+  }
+  return minIso;
+}
+
+/** Compact list-card copy for when registration opens (static date/time, no countdown). */
+export function formatRegistrationOpensAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Registration opens soon';
+  const datePart = d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+  const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `Opens ${datePart} at ${timePart}`;
+}
+
+/**
+ * Month + day labels for the event list date rail (home-page bonspiel style).
+ */
+export function getEventDateRailLabels(timespans: Array<{ start_dt: string; end_dt: string }>): {
+  monthLabel: string;
+  dayLabel: string;
+} | null {
+  if (!timespans.length) return null;
+  let minMs = Number.POSITIVE_INFINITY;
+  let maxMs = Number.NEGATIVE_INFINITY;
+  for (const t of timespans) {
+    const s = new Date(t.start_dt).getTime();
+    const e = new Date(t.end_dt).getTime();
+    if (Number.isFinite(s)) minMs = Math.min(minMs, s);
+    if (Number.isFinite(e)) maxMs = Math.max(maxMs, e);
+  }
+  if (minMs === Number.POSITIVE_INFINITY) return null;
+  if (maxMs === Number.NEGATIVE_INFINITY) maxMs = minMs;
+  const start = new Date(minMs);
+  const end = new Date(maxMs);
+  const monthLabel = start.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  if (sameLocalCalendarDay(start, end)) {
+    return { monthLabel, dayLabel: String(start.getDate()) };
+  }
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    return { monthLabel, dayLabel: `${start.getDate()}${EN_DASH}${end.getDate()}` };
+  }
+  return { monthLabel, dayLabel: String(start.getDate()) };
+}
+
+/**
+ * Public event list registration status lines (open date + capacity/waitlist).
+ * Matches event detail semantics in a compact card form.
+ */
+export function getPublicEventRegistrationStatusLines(event: {
+  capacity: number | null;
+  enableWaitlist: number;
+  registrationStart: string | null;
+  registrationCutoff: string | null;
+  timespans: Array<{ start_dt: string; end_dt: string }>;
+  confirmedCount?: number;
+  waitlistedCount?: number;
+  openSpots?: number | null;
+  serverNow?: string;
+}): { timingLine: string | null; capacityLines: string[] } {
+  const nowMs = event.serverNow ? new Date(event.serverNow).getTime() : Date.now();
+  const startMs = event.registrationStart ? new Date(event.registrationStart).getTime() : null;
+  const cutoffIso = effectivePublicRegistrationCutoff(event);
+  const cutoffMs = cutoffIso ? new Date(cutoffIso).getTime() : null;
+
+  const hasNotOpenedYet = startMs !== null && Number.isFinite(startMs) && nowMs < startMs;
+  const isPastCutoff = cutoffMs !== null && Number.isFinite(cutoffMs) && nowMs > cutoffMs;
+  const isRegistrationOpen = !hasNotOpenedYet && !isPastCutoff;
+
+  let timingLine: string | null = null;
+  if (hasNotOpenedYet && event.registrationStart) {
+    timingLine = formatRegistrationOpensAt(event.registrationStart);
+  } else if (isPastCutoff) {
+    timingLine = 'Registration closed';
+  }
+
+  const capacityLines: string[] = [];
+  if (event.capacity !== null) {
+    const confirmedCount = event.confirmedCount ?? 0;
+    const waitlistedCount = event.waitlistedCount ?? 0;
+    const spotsRemaining =
+      event.openSpots != null
+        ? event.openSpots
+        : Math.max(0, event.capacity - confirmedCount - waitlistedCount);
+    const isFull = spotsRemaining <= 0;
+
+    if (isFull) {
+      if (isRegistrationOpen && event.enableWaitlist === 1) {
+        capacityLines.push('Full – waitlist available');
+      } else if (!hasNotOpenedYet) {
+        capacityLines.push('Event is full');
+      } else {
+        capacityLines.push(`${confirmedCount} of ${event.capacity} registered`);
+      }
+    } else {
+      capacityLines.push(`${confirmedCount} of ${event.capacity} registered`);
+    }
+
+    if (event.enableWaitlist === 1 && waitlistedCount > 0) {
+      capacityLines.push(waitlistEntryCountLabel(waitlistedCount));
+    }
+  }
+
+  return { timingLine, capacityLines };
 }

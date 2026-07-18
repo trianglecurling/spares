@@ -18,7 +18,14 @@ import PageTabs from '../../components/PageTabs';
 import AdminEventDetailsArticlePanel from './AdminEventDetailsArticlePanel';
 import AdminEventTournamentPanel from './AdminEventTournamentPanel';
 import AdminEventWaitlistPanel from './AdminEventWaitlistPanel';
-import { isBonspielCalendarType, tournamentFormatFromCalendarType } from '../../utils/eventCalendarTypes';
+import {
+  EVENT_CALENDAR_TYPE_OPTIONS,
+  hasBonspielCalendarType,
+  normalizeCalendarTypeIds,
+  normalizeTournamentFormat,
+  type EventCalendarTypeId,
+} from '../../utils/eventCalendarTypes';
+import type { TournamentFormat } from '../../utils/tournamentDisplay';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
@@ -128,7 +135,8 @@ type EventEditorSavePayload = {
   title: string;
   slug: string | undefined;
   visibility: string;
-  calendarTypeId: string;
+  calendarTypeIds: string[];
+  tournamentFormat: TournamentFormat | null;
   published: boolean;
   capacity: number | null;
   feeMinor: number;
@@ -158,18 +166,15 @@ type EventEditorSavePayload = {
   }>;
 };
 
-const EVENT_CALENDAR_TYPE_OPTIONS: { id: string; label: string }[] = [
-  { id: 'bonspiel-fours', label: 'Bonspiel - Fours' },
-  { id: 'bonspiel-doubles', label: 'Bonspiel - Doubles' },
-  { id: 'learn-to-curl', label: 'Learn to Curl' },
-  { id: 'juniors', label: 'Juniors' },
-  { id: 'other', label: 'Other' },
-];
-
 const EVENT_CALENDAR_CHOICE_OPTIONS: ChoiceOption<string>[] = EVENT_CALENDAR_TYPE_OPTIONS.map((o) => ({
   value: o.id,
   label: o.label,
 }));
+
+const TOURNAMENT_FORMAT_OPTIONS: ChoiceOption<TournamentFormat>[] = [
+  { value: 'fours', label: 'Fours' },
+  { value: 'doubles', label: 'Doubles' },
+];
 
 const EVENT_VISIBILITY_OPTIONS: ChoiceOption<string>[] = [
   { value: 'public', label: 'Public' },
@@ -232,7 +237,8 @@ export default function AdminEventEditor() {
   /** Slug persisted in the database — used for special link URLs, not the editable slug field. */
   const [savedEventSlug, setSavedEventSlug] = useState('');
   const [visibility, setVisibility] = useState('public');
-  const [calendarTypeId, setCalendarTypeId] = useState('other');
+  const [calendarTypeIds, setCalendarTypeIds] = useState<EventCalendarTypeId[]>([]);
+  const [tournamentFormat, setTournamentFormat] = useState<TournamentFormat | null>(null);
   const [tournamentTeamsPublished, setTournamentTeamsPublished] = useState(false);
   const [tournamentDrawPublished, setTournamentDrawPublished] = useState(false);
   const [published, setPublished] = useState(false);
@@ -290,8 +296,7 @@ export default function AdminEventEditor() {
   const [detailLink, setDetailLink] = useState<SpecialLink | null>(null);
   const [linkedArticleId, setLinkedArticleId] = useState<number | null>(null);
 
-  const isBonspielEvent = isBonspielCalendarType(calendarTypeId);
-  const tournamentFormat = tournamentFormatFromCalendarType(calendarTypeId);
+  const isBonspielEvent = hasBonspielCalendarType(calendarTypeIds);
   const showWaitlistTab = enableWaitlist || hasWaitlistEntries;
   const secondaryTabKeys = useMemo(() => {
     if (isNew) return [] as const;
@@ -362,11 +367,8 @@ export default function AdminEventEditor() {
         setSlug(loadedSlug);
         setSavedEventSlug(loadedSlug);
         setVisibility(e.visibility || 'public');
-        setCalendarTypeId(
-          typeof e.calendarTypeId === 'string' && EVENT_CALENDAR_TYPE_OPTIONS.some((o) => o.id === e.calendarTypeId)
-            ? e.calendarTypeId
-            : 'other',
-        );
+        setCalendarTypeIds(normalizeCalendarTypeIds(e.calendarTypeIds));
+        setTournamentFormat(normalizeTournamentFormat(e.tournamentFormat));
         setTournamentTeamsPublished((e.tournamentTeamsPublished ?? 0) === 1);
         setTournamentDrawPublished((e.tournamentDrawPublished ?? 0) === 1);
         setPublished(!!e.published);
@@ -483,6 +485,10 @@ export default function AdminEventEditor() {
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
+    if (hasBonspielCalendarType(calendarTypeIds) && tournamentFormat == null) {
+      showAlert('Select a bonspiel format (fours or doubles).', 'error');
+      return;
+    }
     setSaving(true);
 
     const locations = [
@@ -494,7 +500,8 @@ export default function AdminEventEditor() {
       title,
       slug: slug || undefined,
       visibility,
-      calendarTypeId,
+      calendarTypeIds,
+      tournamentFormat: hasBonspielCalendarType(calendarTypeIds) ? tournamentFormat : null,
       published,
       capacity: capacity ? parseInt(capacity, 10) : null,
       feeMinor: toMinor(feeDollars),
@@ -1385,18 +1392,44 @@ export default function AdminEventEditor() {
                     />
                   </FormField>
                 </div>
-                <div className="max-w-md">
-                  <FormField label="Event type" htmlFor="event-calendar-type" required>
+                <div className="max-w-md space-y-4">
+                  <FormField
+                    label="Type"
+                    htmlFor="event-calendar-type"
+                    helperText="Optional. Select all that apply."
+                  >
                     <ChoiceInput<string>
                       inputId="event-calendar-type"
                       options={EVENT_CALENDAR_CHOICE_OPTIONS}
-                      value={calendarTypeId}
+                      maxSelectedItems={null}
+                      multiSelectionIndicatorStyle="checkboxes"
+                      value={calendarTypeIds}
                       onChange={(next) => {
-                        if (next != null && !Array.isArray(next)) setCalendarTypeId(next);
+                        const ids = normalizeCalendarTypeIds(Array.isArray(next) ? next : []);
+                        setCalendarTypeIds(ids);
+                        if (!hasBonspielCalendarType(ids)) {
+                          setTournamentFormat(null);
+                        } else if (tournamentFormat == null) {
+                          setTournamentFormat('fours');
+                        }
                       }}
                       listboxLabel="Event type"
+                      placeholder="No types selected"
                     />
                   </FormField>
+                  {isBonspielEvent && (
+                    <FormField label="Bonspiel format" htmlFor="event-tournament-format" required>
+                      <ChoiceInput<TournamentFormat>
+                        inputId="event-tournament-format"
+                        options={TOURNAMENT_FORMAT_OPTIONS}
+                        value={tournamentFormat}
+                        onChange={(next) => {
+                          if (next === 'fours' || next === 'doubles') setTournamentFormat(next);
+                        }}
+                        listboxLabel="Bonspiel format"
+                      />
+                    </FormField>
+                  )}
                 </div>
                 <FormCheckbox
                   label="Published"

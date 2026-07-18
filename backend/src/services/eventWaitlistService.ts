@@ -135,6 +135,138 @@ export async function getOpenSpots(eventId: number, capacity: number | null): Pr
   return computeOpenSpotsFromDemand(capacity, demand);
 }
 
+export type PublicEventRegistrationStats = {
+  confirmedCount: number;
+  waitlistedCount: number;
+  openSpots: number | null;
+};
+
+/**
+ * Batch registration stats for public event list cards (same semantics as the
+ * single-event public detail fields: confirmedCount, waitlistedCount, openSpots).
+ */
+export async function getPublicEventRegistrationStats(
+  events: Array<{ id: number; capacity: number | null }>,
+): Promise<Map<number, PublicEventRegistrationStats>> {
+  const result = new Map<number, PublicEventRegistrationStats>();
+  for (const event of events) {
+    result.set(event.id, {
+      confirmedCount: 0,
+      waitlistedCount: 0,
+      openSpots: computeOpenSpotsFromDemand(event.capacity, 0),
+    });
+  }
+  if (events.length === 0) return result;
+
+  const eventIds = events.map((e) => e.id);
+  const capacityById = new Map(events.map((e) => [e.id, e.capacity]));
+  const { db, schema } = getDrizzleDb();
+
+  const pendingOfferForRegistration = db
+    .select({ one: sql<number>`1` })
+    .from(schema.eventWaitlistOffers)
+    .where(
+      and(
+        eq(schema.eventWaitlistOffers.registration_id, schema.eventRegistrations.id),
+        eq(schema.eventWaitlistOffers.status, 'pending' as any),
+      ),
+    );
+
+  const [confirmedRows, waitlistedRows, pendingOfferRows, earmarkedRows] = await Promise.all([
+    db
+      .select({
+        event_id: schema.eventRegistrations.event_id,
+        group_size: schema.eventRegistrations.group_size,
+      })
+      .from(schema.eventRegistrations)
+      .where(
+        and(
+          inArray(schema.eventRegistrations.event_id, eventIds),
+          eq(schema.eventRegistrations.status, 'confirmed' as any),
+        ),
+      ),
+    db
+      .select({
+        event_id: schema.eventRegistrations.event_id,
+      })
+      .from(schema.eventRegistrations)
+      .where(
+        and(
+          inArray(schema.eventRegistrations.event_id, eventIds),
+          eq(schema.eventRegistrations.status, 'waitlisted' as any),
+        ),
+      ),
+    db
+      .select({
+        event_id: schema.eventWaitlistOffers.event_id,
+        group_size: schema.eventRegistrations.group_size,
+      })
+      .from(schema.eventWaitlistOffers)
+      .innerJoin(
+        schema.eventRegistrations,
+        eq(schema.eventWaitlistOffers.registration_id, schema.eventRegistrations.id),
+      )
+      .where(
+        and(
+          inArray(schema.eventWaitlistOffers.event_id, eventIds),
+          eq(schema.eventWaitlistOffers.status, 'pending' as any),
+        ),
+      ),
+    db
+      .select({
+        event_id: schema.eventRegistrations.event_id,
+        group_size: schema.eventRegistrations.group_size,
+      })
+      .from(schema.eventRegistrations)
+      .where(
+        and(
+          inArray(schema.eventRegistrations.event_id, eventIds),
+          eq(schema.eventRegistrations.status, 'waitlisted' as any),
+          notExists(pendingOfferForRegistration),
+        ),
+      ),
+  ]);
+
+  const confirmedByEvent = new Map<number, number>();
+  for (const row of confirmedRows) {
+    const id = row.event_id;
+    confirmedByEvent.set(id, (confirmedByEvent.get(id) ?? 0) + (row.group_size ?? 1));
+  }
+
+  const waitlistedByEvent = new Map<number, number>();
+  for (const row of waitlistedRows) {
+    const id = row.event_id;
+    waitlistedByEvent.set(id, (waitlistedByEvent.get(id) ?? 0) + 1);
+  }
+
+  const demandByEvent = new Map<number, number>();
+  for (const row of confirmedRows) {
+    const id = row.event_id;
+    demandByEvent.set(id, (demandByEvent.get(id) ?? 0) + (row.group_size ?? 1));
+  }
+  for (const row of pendingOfferRows) {
+    const id = row.event_id;
+    demandByEvent.set(id, (demandByEvent.get(id) ?? 0) + (row.group_size ?? 1));
+  }
+  for (const row of earmarkedRows) {
+    const id = row.event_id;
+    demandByEvent.set(id, (demandByEvent.get(id) ?? 0) + (row.group_size ?? 1));
+  }
+
+  for (const eventId of eventIds) {
+    const confirmedCount = confirmedByEvent.get(eventId) ?? 0;
+    const waitlistedCount = waitlistedByEvent.get(eventId) ?? 0;
+    const demand = demandByEvent.get(eventId) ?? 0;
+    result.set(eventId, {
+      confirmedCount,
+      waitlistedCount,
+      openSpots: computeOpenSpotsFromDemand(capacityById.get(eventId) ?? null, demand),
+    });
+  }
+
+  return result;
+}
+
 export async function getPendingOfferCount(eventId: number): Promise<number> {
   const { db, schema } = getDrizzleDb();
   const [row] = await db

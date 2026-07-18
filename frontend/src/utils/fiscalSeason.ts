@@ -3,12 +3,7 @@
  * Season "2025-26" runs from fiscal start in 2025 through the instant before fiscal start in 2026.
  */
 
-export const EVENT_CALENDAR_TYPE_OPTIONS: { id: string; label: string }[] = [
-  { id: 'bonspiel', label: 'Bonspiel' },
-  { id: 'learn-to-curl', label: 'Learn to Curl' },
-  { id: 'juniors', label: 'Juniors' },
-  { id: 'other', label: 'Other' },
-];
+export { EVENT_CALENDAR_TYPE_OPTIONS } from './eventCalendarTypes';
 
 export function parseFiscalYearStartMmdd(mmdd: string | undefined | null): { month: number; day: number } {
   const s = (mmdd ?? '09-01').trim();

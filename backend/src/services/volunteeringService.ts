@@ -3,6 +3,12 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 import { isVolunteerManager } from '../utils/auth.js';
 import type { Member } from '../types.js';
+import { config } from '../config.js';
+import {
+  calendarDaysBetween,
+  formatDateInTimeZone,
+  shiftInstantByCalendarDays,
+} from '../utils/timeZone.js';
 import { VolunteeringServiceError } from './volunteeringServiceError.js';
 import {
   sendVolunteerSignupConfirmationEmail,
@@ -446,6 +452,136 @@ export async function deleteProgram(programId: number): Promise<void> {
     .limit(1);
   if (!existing[0]) throw new VolunteeringServiceError('Program not found', 404);
   await db.delete(schema.volunteerPrograms).where(eq(schema.volunteerPrograms.id, programId));
+}
+
+export type DuplicateProgramInput = {
+  title: string;
+  pointOfContact: string;
+  location?: string | null;
+  startDate: string | null;
+  managerIds?: number[];
+  createdByMemberId: number;
+};
+
+/**
+ * Copy a program with its roles and shifts. Sign-ups are not copied.
+ * Shift datetimes move by the calendar-day delta between the source program
+ * start date (or earliest shift day) and the new start date, keeping wall-clock
+ * times in the club timezone.
+ */
+export async function duplicateProgram(
+  sourceProgramId: number,
+  input: DuplicateProgramInput
+): Promise<{ id: number }> {
+  const { db, schema } = getDrizzleDb();
+  const sourceRows = await db
+    .select()
+    .from(schema.volunteerPrograms)
+    .where(eq(schema.volunteerPrograms.id, sourceProgramId))
+    .limit(1);
+  const source = sourceRows[0];
+  if (!source) throw new VolunteeringServiceError('Program not found', 404);
+
+  const title = input.title.trim();
+  const pointOfContact = input.pointOfContact.trim();
+  if (!title) throw new VolunteeringServiceError('Title is required');
+  if (!pointOfContact) throw new VolunteeringServiceError('Point of contact is required');
+  const newStartDate = parseOptionalDateOnly(input.startDate, 'start date');
+
+  const sourceShifts = await db
+    .select()
+    .from(schema.volunteerShifts)
+    .where(eq(schema.volunteerShifts.program_id, sourceProgramId))
+    .orderBy(asc(schema.volunteerShifts.start_dt));
+
+  if (sourceShifts.length > 0 && !newStartDate) {
+    throw new VolunteeringServiceError('Start date is required when the program has shifts');
+  }
+
+  const timeZone = config.timeZone;
+  let dayDelta = 0;
+  if (sourceShifts.length > 0 && newStartDate) {
+    const sourceStartDate =
+      normalizeDateOnly(source.start_date) ??
+      formatDateInTimeZone(new Date(requireIso(sourceShifts[0].start_dt as any, 'start datetime')), timeZone);
+    if (!sourceStartDate) {
+      throw new VolunteeringServiceError('Could not determine source program start date for shift shifting');
+    }
+    dayDelta = calendarDaysBetween(sourceStartDate, newStartDate);
+    if (!Number.isFinite(dayDelta)) {
+      throw new VolunteeringServiceError('Invalid start date for shift shifting');
+    }
+  }
+
+  const created = await createProgram({
+    title,
+    description: source.description,
+    pointOfContact,
+    location: input.location !== undefined ? input.location : source.location,
+    startDate: newStartDate,
+    managerIds: input.managerIds,
+    createdByMemberId: input.createdByMemberId,
+  });
+
+  const sourceRoles = await db
+    .select()
+    .from(schema.volunteerRoles)
+    .where(eq(schema.volunteerRoles.program_id, sourceProgramId))
+    .orderBy(asc(schema.volunteerRoles.id));
+
+  const roleIdMap = new Map<number, number>();
+  for (const role of sourceRoles) {
+    const creds = await db
+      .select({ credentialId: schema.volunteerRoleCredentials.credential_id })
+      .from(schema.volunteerRoleCredentials)
+      .where(eq(schema.volunteerRoleCredentials.role_id, role.id));
+    const createdRole = await createRole({
+      programId: created.id,
+      name: role.name,
+      description: role.description,
+      defaultDurationMinutes: role.default_duration_minutes ?? 180,
+      requiredCredentialIds: creds.map((c) => c.credentialId),
+    });
+    roleIdMap.set(role.id, createdRole.id);
+  }
+
+  if (sourceShifts.length > 0) {
+    const sourceShiftIds = sourceShifts.map((s) => s.id);
+    const sourceShiftRoles = await db
+      .select()
+      .from(schema.volunteerShiftRoles)
+      .where(inArray(schema.volunteerShiftRoles.shift_id, sourceShiftIds));
+
+    const shiftsPayload = sourceShifts.map((shift) => {
+      const startDt = shiftInstantByCalendarDays(
+        requireIso(shift.start_dt as any, 'start datetime'),
+        dayDelta,
+        timeZone
+      );
+      const endDt = shiftInstantByCalendarDays(
+        requireIso(shift.end_dt as any, 'end datetime'),
+        dayDelta,
+        timeZone
+      );
+      const roles = sourceShiftRoles
+        .filter((sr) => sr.shift_id === shift.id)
+        .map((sr) => {
+          const newRoleId = roleIdMap.get(sr.role_id);
+          if (newRoleId == null) {
+            throw new VolunteeringServiceError(`Missing mapped role for shift role ${sr.id}`);
+          }
+          return { roleId: newRoleId, volunteersNeeded: sr.volunteers_needed };
+        });
+      if (roles.length === 0) {
+        throw new VolunteeringServiceError('Each shift needs at least one role');
+      }
+      return { startDt, endDt, roles };
+    });
+
+    await createShiftsBulk({ programId: created.id, shifts: shiftsPayload });
+  }
+
+  return created;
 }
 
 export async function createRole(input: {

@@ -15,6 +15,7 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { isArchivedAt } from '../../utils/softDelete';
 import { memberHasEventsManageScope } from '../../utils/eventManagementAccess';
 import { isBonspielCalendarType } from '../../utils/eventCalendarTypes';
+import AdminEventDuplicateModal from './AdminEventDuplicateModal';
 
 interface EventSummary {
   id: number;
@@ -22,7 +23,8 @@ interface EventSummary {
   slug: string;
   visibility: string;
   published: number;
-  calendarTypeId?: string | null;
+  calendarTypeIds?: string[];
+  tournamentFormat?: 'fours' | 'doubles' | null;
   hasTournamentDraw?: boolean;
   capacity: number | null;
   feeMinor: number;
@@ -107,6 +109,7 @@ export default function AdminEvents() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [duplicateSourceEvent, setDuplicateSourceEvent] = useState<EventSummary | null>(null);
   const navigate = useNavigate();
   const { member } = useAuth();
   const { showAlert } = useAlert();
@@ -195,16 +198,6 @@ export default function AdminEvents() {
       loadEvents();
     } catch (err) {
       showAlert(formatApiError(err, 'Failed to delete event'), 'error');
-    }
-  };
-
-  const handleDuplicate = async (event: EventSummary) => {
-    try {
-      const res = await api.post(`/events/${event.id}/duplicate`);
-      showAlert('Event duplicated', 'success');
-      navigate(`/admin/events/${res.data.id}`);
-    } catch (err) {
-      showAlert(formatApiError(err, 'Failed to duplicate event'), 'error');
     }
   };
 
@@ -361,7 +354,7 @@ export default function AdminEvents() {
                 const archived = isArchivedAt(event.archivedAt);
                 const showScorekeeper =
                   !archived &&
-                  isBonspielCalendarType(event.calendarTypeId) &&
+                  isBonspielCalendarType(event.calendarTypeIds) &&
                   Boolean(event.hasTournamentDraw);
 
                 return (
@@ -386,7 +379,7 @@ export default function AdminEvents() {
                         </button>
                         {canManageAllEvents ? (
                           <button
-                            onClick={() => handleDuplicate(event)}
+                            onClick={() => setDuplicateSourceEvent(event)}
                             className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
                             title="Duplicate"
                           >
@@ -409,6 +402,15 @@ export default function AdminEvents() {
           />
         )}
       </AppPage>
+      <AdminEventDuplicateModal
+        sourceEvent={duplicateSourceEvent}
+        onClose={() => setDuplicateSourceEvent(null)}
+        onDuplicated={(eventId) => {
+          setDuplicateSourceEvent(null);
+          showAlert('Event duplicated', 'success');
+          navigate(`/admin/events/${eventId}`);
+        }}
+      />
     </>
   );
 }

@@ -16,6 +16,7 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { isArchivedAt } from '../../utils/softDelete';
 import { memberHasScope } from '../../utils/permissions';
 import type { VolunteerProgramView } from '../../utils/volunteering';
+import AdminVolunteerProgramDuplicateModal from './AdminVolunteerProgramDuplicateModal';
 
 type VolunteeringTab = 'programs' | 'credentials';
 
@@ -72,9 +73,13 @@ export default function AdminVolunteering() {
 }
 
 export function AdminVolunteeringPrograms() {
+  const navigate = useNavigate();
   const [programs, setPrograms] = useState<VolunteerProgramView[]>([]);
   const [loading, setLoading] = useState(true);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [duplicateSourceProgram, setDuplicateSourceProgram] = useState<VolunteerProgramView | null>(
+    null
+  );
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
@@ -236,21 +241,41 @@ export function AdminVolunteeringPrograms() {
           actions={
             canCreate
               ? {
-                  widthClassName: 'w-[14rem]',
+                  widthClassName: 'w-[16rem]',
                   renderActions: (row) => (
-                    <SoftDeleteRowActions
-                      archived={isArchivedAt(row.archivedAt)}
-                      isServerAdmin={isServerAdmin}
-                      onArchive={() => handleArchive(row)}
-                      onRestore={() => handleRestore(row)}
-                      onDeletePermanently={() => handlePermanentDelete(row)}
-                    />
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setDuplicateSourceProgram(row)}
+                        className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                        title="Duplicate"
+                      >
+                        Duplicate
+                      </button>
+                      <SoftDeleteRowActions
+                        archived={isArchivedAt(row.archivedAt)}
+                        isServerAdmin={isServerAdmin}
+                        onArchive={() => handleArchive(row)}
+                        onRestore={() => handleRestore(row)}
+                        onDeletePermanently={() => handlePermanentDelete(row)}
+                      />
+                    </div>
                   ),
                 }
               : undefined
           }
         />
       )}
+
+      <AdminVolunteerProgramDuplicateModal
+        sourceProgram={duplicateSourceProgram}
+        onClose={() => setDuplicateSourceProgram(null)}
+        onDuplicated={(programId) => {
+          setDuplicateSourceProgram(null);
+          showAlert('Program duplicated', 'success');
+          navigate(`/admin/volunteering/${programId}`);
+        }}
+      />
     </>
   );
 }

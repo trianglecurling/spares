@@ -57,12 +57,15 @@ import {
   getRegistrationByAccessToken,
   isBeforeCancellationCutoff,
   EventServiceError,
-  normalizeCalendarTypeId,
   isBonspielCalendarType,
-  tournamentFormatFromCalendarType,
+  normalizeTournamentFormat,
+  parseCalendarTypeIds,
   resolveEventRegistrationFeeMinor,
   confirmRegistrationPayment,
 } from '../services/eventService.js';
+import {
+  EVENT_CALENDAR_TYPE_IDS,
+} from '../services/eventCalendarTypes.js';
 import {
   EventWaitlistServiceError,
   acceptWaitlistOfferByToken,
@@ -70,6 +73,7 @@ import {
   declineWaitlistOfferByToken,
   forceDeclineWaitlistOffer,
   getOpenSpots,
+  getPublicEventRegistrationStats,
   getPublicWaitlistOffer,
   getWaitlistLength,
   getWaitlistedCount,
@@ -125,7 +129,8 @@ interface EventFormattingSource {
   article_id: number | null;
   image_file_id: number | null;
   visibility: string;
-  calendar_type_id: string | null;
+  calendar_type_ids: string | null;
+  tournament_format?: string | null;
   published: number;
   capacity: number | null;
   fee_minor: number;
@@ -193,12 +198,19 @@ const registrationFieldSchema = z.object({
 
 const eventPointOfContactSchema = z.string().trim().min(1).email().max(320);
 
+const eventCalendarTypeIdSchema = z.enum(
+  EVENT_CALENDAR_TYPE_IDS as unknown as [string, ...string[]],
+);
+
+const tournamentFormatSchema = z.enum(['fours', 'doubles']);
+
 const createEventSchema = z.object({
   title: z.string().min(1).max(300),
   slug: z.string().max(200).optional(),
   articleId: z.number().int().nullable().optional(),
   imageFileId: z.number().int().nullable().optional(),
   visibility: z.enum(['public', 'active_members', 'ice_members']).optional(),
+  published: z.boolean().optional(),
   capacity: z.number().int().positive().nullable().optional(),
   feeMinor: z.number().int().min(0).optional(),
   memberFeeMinor: z.number().int().min(0).nullable().optional(),
@@ -210,7 +222,8 @@ const createEventSchema = z.object({
   maxGroupSize: z.number().int().positive().nullable().optional(),
   enableWaitlist: z.boolean().optional(),
   termsArticleId: z.number().int().nullable().optional(),
-  calendarTypeId: z.enum(['bonspiel-fours', 'bonspiel-doubles', 'learn-to-curl', 'juniors', 'other']).optional(),
+  calendarTypeIds: z.array(eventCalendarTypeIdSchema).optional(),
+  tournamentFormat: tournamentFormatSchema.nullable().optional(),
   tournamentTeamsPublished: z.boolean().optional(),
   tournamentDrawPublished: z.boolean().optional(),
   pointOfContact: eventPointOfContactSchema,
@@ -226,6 +239,44 @@ const updateEventSchema = createEventSchema.partial().extend({
   timespans: z.array(timespanSchema).optional(),
   pointOfContact: eventPointOfContactSchema.optional(),
 });
+
+const duplicateEventSchema = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    slug: z.string().trim().min(1).max(200).optional(),
+    published: z.boolean(),
+    registrationStart: z.string().datetime({ offset: true }).nullable().optional(),
+    registrationCutoff: z.string().datetime({ offset: true }).nullable().optional(),
+    cancellationCutoff: z.string().datetime({ offset: true }).nullable().optional(),
+    pointOfContact: eventPointOfContactSchema,
+    ownerMemberIds: z.array(z.number().int()),
+    timespans: z.array(timespanSchema).min(1),
+  })
+  .superRefine((value, context) => {
+    value.timespans.forEach((timespan, index) => {
+      const start = new Date(timespan.startDt).getTime();
+      const end = new Date(timespan.endDt).getTime();
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Event end must be after event start',
+          path: ['timespans', index, 'endDt'],
+        });
+      }
+    });
+
+    if (
+      value.registrationStart &&
+      value.registrationCutoff &&
+      new Date(value.registrationCutoff).getTime() < new Date(value.registrationStart).getTime()
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Registration cutoff must be after registration opens',
+        path: ['registrationCutoff'],
+      });
+    }
+  });
 
 const registrationContactSchema = z.object({
   contactFirstName: z.string().trim().min(1).max(100),
@@ -545,7 +596,7 @@ async function getPublicPublishedTournamentDrawEventId(
     return null;
   }
 
-  if (!isBonspielCalendarType(event.calendar_type_id)) {
+  if (!isBonspielCalendarType(parseCalendarTypeIds(event.calendar_type_ids))) {
     return null;
   }
 
@@ -568,7 +619,24 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       fromDate: query.from,
       toDate: query.to,
     });
-    return events.map(summarizeEvent);
+    const serverNow = new Date().toISOString();
+    const statsByEventId = await getPublicEventRegistrationStats(
+      events.map((event) => ({ id: event.id, capacity: event.capacity })),
+    );
+    return events.map((event) => {
+      const stats = statsByEventId.get(event.id) ?? {
+        confirmedCount: 0,
+        waitlistedCount: 0,
+        openSpots: event.capacity,
+      };
+      return {
+        ...summarizeEvent(event),
+        confirmedCount: stats.confirmedCount,
+        waitlistedCount: stats.waitlistedCount,
+        openSpots: stats.openSpots,
+        serverNow,
+      };
+    });
   });
 
   /** Season start years (e.g. 2025 for 2025-26) that have ≥1 published public event in that season. */
@@ -653,7 +721,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         return sendApiError(reply, 404, 'Event not found');
       }
 
-      if (!isBonspielCalendarType(event.calendar_type_id)) {
+      if (!isBonspielCalendarType(parseCalendarTypeIds(event.calendar_type_ids))) {
         return sendApiError(reply, 404, 'Event not found');
       }
 
@@ -664,7 +732,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       try {
         const teams = await listTournamentTeamsForEvent(event.id);
         return {
-          tournamentFormat: tournamentFormatFromCalendarType(event.calendar_type_id),
+          tournamentFormat: normalizeTournamentFormat(event.tournament_format),
           teams: teams.map(formatPublicTournamentTeamResponse),
         };
       } catch (err) {
@@ -1555,9 +1623,55 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
   );
 
   // Duplicate event
-  fastify.post<{ Params: { id: string } }>(
+  fastify.post<{ Params: { id: string }; Body: unknown }>(
     '/events/:id/duplicate',
-    { schema: { tags: ['events'] } },
+    {
+      schema: {
+        tags: ['events'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            title: { type: 'string', minLength: 1, maxLength: 300 },
+            slug: { type: 'string', minLength: 1, maxLength: 200 },
+            published: { type: 'boolean' },
+            registrationStart: { type: ['string', 'null'], format: 'date-time' },
+            registrationCutoff: { type: ['string', 'null'], format: 'date-time' },
+            cancellationCutoff: { type: ['string', 'null'], format: 'date-time' },
+            pointOfContact: { type: 'string', format: 'email', minLength: 1, maxLength: 320 },
+            ownerMemberIds: {
+              type: 'array',
+              items: { type: 'integer' },
+            },
+            timespans: {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  startDt: { type: 'string', format: 'date-time' },
+                  endDt: { type: 'string', format: 'date-time' },
+                  sortOrder: { type: 'integer' },
+                },
+                required: ['startDt', 'endDt'],
+              },
+            },
+          },
+          required: ['title', 'published', 'pointOfContact', 'ownerMemberIds', 'timespans'],
+        },
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              slug: { type: 'string' },
+            },
+            required: ['id', 'slug'],
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const eventId = parseInt(request.params.id, 10);
       if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
@@ -1567,8 +1681,13 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         return sendApiError(reply, 403, 'Forbidden');
       }
 
+      const parsed = duplicateEventSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid event duplicate data', parsed.error.flatten());
+      }
+
       try {
-        const result = await duplicateEvent(eventId, member.id);
+        const result = await duplicateEvent(eventId, member.id, parsed.data);
         return reply.code(201).send(result);
       } catch (err) {
         if (err instanceof EventServiceError) {
@@ -2250,17 +2369,18 @@ function eventHasTournamentDraw(event: EventFormattingSource): boolean {
 }
 
 function summarizeEvent(event: EventFormattingSource) {
+  const calendarTypeIds = parseCalendarTypeIds(event.calendar_type_ids);
   return {
     id: event.id,
     title: event.title,
     slug: event.slug,
     visibility: event.visibility,
-    calendarTypeId: normalizeCalendarTypeId(event.calendar_type_id),
+    calendarTypeIds,
     published: event.published,
     tournamentTeamsPublished: event.tournament_teams_published ?? 0,
     tournamentDrawPublished: event.tournament_draw_published ?? 0,
     hasTournamentDraw: eventHasTournamentDraw(event),
-    tournamentFormat: tournamentFormatFromCalendarType(event.calendar_type_id),
+    tournamentFormat: normalizeTournamentFormat(event.tournament_format),
     capacity: event.capacity,
     feeMinor: event.fee_minor,
     memberFeeMinor: event.member_fee_minor ?? null,
@@ -2279,6 +2399,7 @@ function summarizeEvent(event: EventFormattingSource) {
 }
 
 function formatEventResponse(event: EventFormattingSource) {
+  const calendarTypeIds = parseCalendarTypeIds(event.calendar_type_ids);
   return {
     id: event.id,
     title: event.title,
@@ -2286,11 +2407,11 @@ function formatEventResponse(event: EventFormattingSource) {
     articleId: event.article_id,
     imageFileId: event.image_file_id,
     visibility: event.visibility,
-    calendarTypeId: normalizeCalendarTypeId(event.calendar_type_id),
+    calendarTypeIds,
     published: event.published,
     tournamentTeamsPublished: event.tournament_teams_published ?? 0,
     tournamentDrawPublished: event.tournament_draw_published ?? 0,
-    tournamentFormat: tournamentFormatFromCalendarType(event.calendar_type_id),
+    tournamentFormat: normalizeTournamentFormat(event.tournament_format),
     capacity: event.capacity,
     feeMinor: event.fee_minor,
     memberFeeMinor: event.member_fee_minor ?? null,

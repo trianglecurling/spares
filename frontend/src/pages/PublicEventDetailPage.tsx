@@ -40,7 +40,8 @@ interface EventDetail {
   imageFileId: number | null;
   visibility: string;
   published: number;
-  calendarTypeId?: string;
+  calendarTypeIds?: string[];
+  tournamentFormat?: 'fours' | 'doubles' | null;
   tournamentTeamsPublished?: number;
   tournamentDrawPublished?: number;
   capacity: number | null;
@@ -302,7 +303,7 @@ export default function PublicEventDetailPage() {
 
   useEffect(() => {
     if (!event || loading) return;
-    const cal = event.calendarTypeId ?? 'other';
+    const cal = event.calendarTypeIds ?? [];
     const showT = isBonspielCalendarType(cal) && (event.tournamentTeamsPublished ?? 0) === 1;
     const showD = isBonspielCalendarType(cal) && (event.tournamentDrawPublished ?? 0) === 1;
     const showScores =
@@ -389,7 +390,7 @@ export default function PublicEventDetailPage() {
       tabParam === 'draw' ||
       tabParam === 'scores' ||
       (event.tournamentDrawPublished ?? 0) === 1) &&
-    isBonspielCalendarType(event.calendarTypeId) &&
+    isBonspielCalendarType(event.calendarTypeIds) &&
     (event.tournamentTeamsPublished ?? 0) === 1;
 
   useEffect(() => {
@@ -425,7 +426,7 @@ export default function PublicEventDetailPage() {
   const shouldLoadPublicDraw =
     !!slug &&
     !!event &&
-    isBonspielCalendarType(event.calendarTypeId) &&
+    isBonspielCalendarType(event.calendarTypeIds) &&
     (event.tournamentDrawPublished ?? 0) === 1;
 
   useEffect(() => {
@@ -510,21 +511,21 @@ export default function PublicEventDetailPage() {
     !!event &&
     !loading &&
     tabParam === 'draw' &&
-    isBonspielCalendarType(event.calendarTypeId) &&
+    isBonspielCalendarType(event.calendarTypeIds) &&
     (event.tournamentDrawPublished ?? 0) === 1 &&
     (publicDrawLoading || publicDraw === undefined);
   const scoresLoadPending =
     !!event &&
     !loading &&
     tabParam === 'scores' &&
-    isBonspielCalendarType(event.calendarTypeId) &&
+    isBonspielCalendarType(event.calendarTypeIds) &&
     (event.tournamentDrawPublished ?? 0) === 1 &&
     (publicDrawLoading || publicDraw === undefined || publicTeamsLoading);
   const teamsLoadPending =
     !!event &&
     !loading &&
     tabParam === 'teams' &&
-    isBonspielCalendarType(event.calendarTypeId) &&
+    isBonspielCalendarType(event.calendarTypeIds) &&
     (event.tournamentTeamsPublished ?? 0) === 1 &&
     publicTeamsLoading;
 
@@ -578,9 +579,9 @@ export default function PublicEventDetailPage() {
       ? formatRegistrationClosedAt(closedAtIso)
       : null;
 
-  const calendarTypeId = event.calendarTypeId ?? 'other';
-  const showPublicTeams = isBonspielCalendarType(calendarTypeId) && (event.tournamentTeamsPublished ?? 0) === 1;
-  const showPublicDraw = isBonspielCalendarType(calendarTypeId) && (event.tournamentDrawPublished ?? 0) === 1;
+  const calendarTypeIds = event.calendarTypeIds ?? [];
+  const showPublicTeams = isBonspielCalendarType(calendarTypeIds) && (event.tournamentTeamsPublished ?? 0) === 1;
+  const showPublicDraw = isBonspielCalendarType(calendarTypeIds) && (event.tournamentDrawPublished ?? 0) === 1;
   const showLiveScores =
     showPublicDraw && publicDraw != null && drawHasScoreActivity(publicDraw);
   const showEventTabs = showPublicTeams || showPublicDraw;

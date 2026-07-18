@@ -115,7 +115,7 @@ export default function ScorekeeperEndsEditor({
   const nextUnplayedEndIndex =
     !gameComplete && xColumnIndex !== filled ? filled : null;
   const nextEndHammerSlot =
-    nextUnplayedEndIndex != null && firstEndHammerSlot != null
+    nextUnplayedEndIndex != null
       ? hammerSlotForEnd(nextUnplayedEndIndex, firstEndHammerSlot, entries, tournamentFormat)
       : null;
   const [openEndIndex, setOpenEndIndex] = useState<number | null>(null);

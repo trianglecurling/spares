@@ -88,3 +88,54 @@ export function localDateTimeToUtcDate(dateStr: string, timeStr: string, timeZon
 export function localDateTimeToIso(dateStr: string, timeStr: string, timeZone: string): string {
   return localDateTimeToUtcDate(dateStr, timeStr, timeZone).toISOString();
 }
+
+/** Calendar date (YYYY-MM-DD) of an instant in `timeZone`. */
+export function formatDateInTimeZone(date: Date, timeZone: string): string | null {
+  const parts = extractDateTimeParts(date, timeZone);
+  if (!parts) return null;
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+/** Wall-clock time (HH:MM:SS) of an instant in `timeZone`. */
+export function formatTimeInTimeZone(date: Date, timeZone: string): string | null {
+  const parts = extractDateTimeParts(date, timeZone, true);
+  if (!parts || !parts.second) return null;
+  return `${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+/** Number of calendar days from `fromYmd` to `toYmd` (YYYY-MM-DD). */
+export function calendarDaysBetween(fromYmd: string, toYmd: string): number {
+  const fromMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fromYmd);
+  const toMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(toYmd);
+  if (!fromMatch || !toMatch) return NaN;
+  const fromUtc = Date.UTC(
+    Number(fromMatch[1]),
+    Number(fromMatch[2]) - 1,
+    Number(fromMatch[3])
+  );
+  const toUtc = Date.UTC(Number(toMatch[1]), Number(toMatch[2]) - 1, Number(toMatch[3]));
+  return Math.round((toUtc - fromUtc) / 86_400_000);
+}
+
+function addCalendarDays(ymd: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return ymd;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + days);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+/**
+ * Shift an ISO instant by `days` calendar days while preserving wall-clock time
+ * in `timeZone` (handles DST transitions).
+ */
+export function shiftInstantByCalendarDays(iso: string, days: number, timeZone: string): string {
+  if (days === 0) return new Date(iso).toISOString();
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const dateStr = formatDateInTimeZone(date, timeZone);
+  const timeStr = formatTimeInTimeZone(date, timeZone);
+  if (!dateStr || !timeStr) return iso;
+  return localDateTimeToIso(addCalendarDays(dateStr, days), timeStr, timeZone);
+}

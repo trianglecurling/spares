@@ -5,7 +5,8 @@ import { splitMemberDisplayName } from '../utils/memberName.js';
 import { EventServiceError } from './eventServiceError.js';
 import {
   isBonspielCalendarType,
-  tournamentFormatFromCalendarType,
+  normalizeTournamentFormat,
+  parseCalendarTypeIds,
 } from './eventCalendarTypes.js';
 
 export type TournamentFormat = 'fours' | 'doubles';
@@ -18,7 +19,8 @@ type TeamPlayerRow = { name: string; email: string; homeClub: string };
 
 type EventTournamentContext = {
   id: number;
-  calendar_type_id: string | null;
+  calendar_type_ids: string | null;
+  tournament_format: string | null;
 };
 
 async function getEventTournamentContext(eventId: number): Promise<EventTournamentContext | null> {
@@ -26,7 +28,8 @@ async function getEventTournamentContext(eventId: number): Promise<EventTourname
   const [row] = await db
     .select({
       id: schema.events.id,
-      calendar_type_id: schema.events.calendar_type_id,
+      calendar_type_ids: schema.events.calendar_type_ids,
+      tournament_format: schema.events.tournament_format,
     })
     .from(schema.events)
     .where(eq(schema.events.id, eventId))
@@ -34,8 +37,8 @@ async function getEventTournamentContext(eventId: number): Promise<EventTourname
   return row ?? null;
 }
 
-function assertBonspiel(event: { calendar_type_id: string | null }): void {
-  if (!isBonspielCalendarType(event.calendar_type_id)) {
+function assertBonspiel(event: { calendar_type_ids: string | null }): void {
+  if (!isBonspielCalendarType(parseCalendarTypeIds(event.calendar_type_ids))) {
     throw new EventServiceError('Tournament teams are only available for bonspiel events', 400);
   }
 }
@@ -50,10 +53,7 @@ export function defaultViceSkip(format: TournamentFormat): { vice: string; skip:
     : { vice: 'player1', skip: 'player2' };
 }
 
-export function normalizeTournamentFormat(raw: string | null | undefined): TournamentFormat | null {
-  if (raw === 'fours' || raw === 'doubles') return raw;
-  return null;
-}
+export { normalizeTournamentFormat };
 
 function parseTeamPlayers(value: string, fieldType: string): TeamPlayerRow[] | null {
   if (!value.trim()) return null;
@@ -180,9 +180,9 @@ export async function listTournamentTeamsForEvent(eventId: number): Promise<Tour
   if (!event) throw new EventServiceError('Event not found', 404);
   assertBonspiel(event);
 
-  const format = tournamentFormatFromCalendarType(event.calendar_type_id);
+  const format = normalizeTournamentFormat(event.tournament_format);
   if (!format) {
-    throw new EventServiceError('Bonspiel event is missing fours/doubles type', 400);
+    throw new EventServiceError('Bonspiel event is missing fours/doubles format', 400);
   }
 
   const registrations = await db

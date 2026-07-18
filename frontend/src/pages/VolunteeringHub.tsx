@@ -71,8 +71,15 @@ export default function VolunteeringHub() {
         programs: VolunteerProgramView[];
         credentials?: VolunteerHubCredential[];
       };
-      setPrograms(data.programs || []);
+      const nextPrograms = data.programs || [];
+      setPrograms(nextPrograms);
       setCredentials(data.credentials || []);
+      // Expand the first program with shifts so Group by is visible without an extra click.
+      const firstWithShifts = nextPrograms.find((p) => p.shifts.some((s) => s.roles.length > 0));
+      setExpandedPrograms((prev) => {
+        if (prev.size > 0 || !firstWithShifts) return prev;
+        return new Set([firstWithShifts.id]);
+      });
     } catch (err) {
       showAlert(formatApiError(err, 'Failed to load volunteering opportunities'), 'error');
     } finally {

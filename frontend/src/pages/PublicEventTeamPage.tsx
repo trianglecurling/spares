@@ -15,7 +15,8 @@ interface EventDetail {
   id: number;
   title: string;
   slug: string;
-  calendarTypeId?: string;
+  calendarTypeIds?: string[];
+  tournamentFormat?: 'fours' | 'doubles' | null;
   tournamentTeamsPublished?: number;
   tournamentDrawPublished?: number;
 }
@@ -69,9 +70,9 @@ export default function PublicEventTeamPage() {
   }, [slug]);
 
   const showPublicTeams =
-    !!event && isBonspielCalendarType(event.calendarTypeId) && (event.tournamentTeamsPublished ?? 0) === 1;
+    !!event && isBonspielCalendarType(event.calendarTypeIds) && (event.tournamentTeamsPublished ?? 0) === 1;
   const showPublicDraw =
-    !!event && isBonspielCalendarType(event.calendarTypeId) && (event.tournamentDrawPublished ?? 0) === 1;
+    !!event && isBonspielCalendarType(event.calendarTypeIds) && (event.tournamentDrawPublished ?? 0) === 1;
 
   useEffect(() => {
     if (!slug || !showPublicTeams) {

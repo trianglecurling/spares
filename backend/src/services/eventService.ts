@@ -11,9 +11,14 @@ import {
 import { listConfirmedRegistrationIdsForEvent } from './eventTournamentTeamsService.js';
 import { sanitizeTournamentDrawJsonForDuplicate } from './eventTournamentDrawService.js';
 import {
+  calendarColorTypeId,
+  hasBonspielCalendarType,
   isBonspielCalendarType,
-  normalizeCalendarTypeId,
-  tournamentFormatFromCalendarType,
+  normalizeCalendarTypeIds,
+  normalizeTournamentFormat,
+  parseCalendarTypeIds,
+  serializeCalendarTypeIds,
+  type TournamentFormat,
 } from './eventCalendarTypes.js';
 import { EventServiceError } from './eventServiceError.js';
 import { formatMemberDisplayName } from '../utils/memberName.js';
@@ -24,7 +29,26 @@ import { isArchivedAt, notArchivedCondition } from '../utils/softDelete.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
 
 export { EventServiceError };
-export { normalizeCalendarTypeId, isBonspielCalendarType, tournamentFormatFromCalendarType };
+export {
+  isBonspielCalendarType,
+  normalizeCalendarTypeIds,
+  normalizeTournamentFormat,
+  parseCalendarTypeIds,
+};
+
+function resolveTournamentFormatForTypes(
+  typeIds: readonly string[],
+  format: TournamentFormat | null,
+): TournamentFormat | null {
+  if (!hasBonspielCalendarType(typeIds)) return null;
+  return format;
+}
+
+function assertBonspielFormat(typeIds: readonly string[], format: TournamentFormat | null): void {
+  if (hasBonspielCalendarType(typeIds) && format == null) {
+    throw new EventServiceError('Bonspiel events require a fours or doubles format', 400);
+  }
+}
 
 function toDateOrNull(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -76,6 +100,7 @@ export interface CreateEventInput {
   articleId?: number | null;
   imageFileId?: number | null;
   visibility?: EventVisibility;
+  published?: boolean;
   capacity?: number | null;
   feeMinor?: number;
   /** When set, authenticated registrants pay this per-person amount instead of feeMinor. */
@@ -88,8 +113,10 @@ export interface CreateEventInput {
   maxGroupSize?: number | null;
   enableWaitlist?: boolean;
   termsArticleId?: number | null;
-  /** Calendar color category (club calendar `typeId`). */
-  calendarTypeId?: string;
+  /** Multi-select event type ids (empty allowed). */
+  calendarTypeIds?: string[];
+  /** Required when calendarTypeIds includes bonspiel. */
+  tournamentFormat?: TournamentFormat | null;
   tournamentTeamsPublished?: boolean;
   tournamentDrawPublished?: boolean;
   /** Email address for event inquiries and operational contact. */
@@ -107,6 +134,18 @@ export interface CreateEventInput {
     options?: string | null;
     sortOrder?: number;
   }>;
+}
+
+export interface DuplicateEventInput {
+  title: string;
+  slug?: string;
+  published: boolean;
+  registrationStart?: string | null;
+  registrationCutoff?: string | null;
+  cancellationCutoff?: string | null;
+  pointOfContact: string;
+  ownerMemberIds: number[];
+  timespans: Array<{ startDt: string; endDt: string; sortOrder?: number }>;
 }
 
 export interface UpdateEventInput {
@@ -127,7 +166,8 @@ export interface UpdateEventInput {
   maxGroupSize?: number | null;
   enableWaitlist?: boolean;
   termsArticleId?: number | null;
-  calendarTypeId?: string;
+  calendarTypeIds?: string[];
+  tournamentFormat?: TournamentFormat | null;
   tournamentTeamsPublished?: boolean;
   tournamentDrawPublished?: boolean;
   pointOfContact?: string;
@@ -254,6 +294,13 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
   const baseSlug = input.slug ? slugify(input.slug) : slugify(input.title);
   const slug = await ensureUniqueSlug(baseSlug);
 
+  const calendarTypeIds = normalizeCalendarTypeIds(input.calendarTypeIds ?? []);
+  const tournamentFormat = resolveTournamentFormatForTypes(
+    calendarTypeIds,
+    normalizeTournamentFormat(input.tournamentFormat),
+  );
+  assertBonspielFormat(calendarTypeIds, tournamentFormat);
+
   const [event] = await db
     .insert(schema.events)
     .values({
@@ -262,7 +309,7 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
       article_id: input.articleId ?? null,
       image_file_id: input.imageFileId ?? null,
       visibility: input.visibility ?? 'public',
-      published: 0,
+      published: input.published ? 1 : 0,
       capacity: input.capacity ?? null,
       fee_minor: input.feeMinor ?? 0,
       member_fee_minor: input.memberFeeMinor ?? null,
@@ -273,7 +320,8 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
       allow_group_registration: input.allowGroupRegistration ? 1 : 0,
       max_group_size: input.maxGroupSize ?? null,
       enable_waitlist: input.enableWaitlist !== false ? 1 : 0,
-      calendar_type_id: normalizeCalendarTypeId(input.calendarTypeId),
+      calendar_type_ids: serializeCalendarTypeIds(calendarTypeIds),
+      tournament_format: tournamentFormat,
       tournament_teams_published: input.tournamentTeamsPublished ? 1 : 0,
       tournament_draw_published: input.tournamentDrawPublished ? 1 : 0,
       terms_article_id: input.termsArticleId ?? null,
@@ -377,18 +425,28 @@ export async function updateEvent(
   if (input.maxGroupSize !== undefined) updateValues.max_group_size = input.maxGroupSize;
   if (input.enableWaitlist !== undefined) updateValues.enable_waitlist = input.enableWaitlist ? 1 : 0;
   if (input.termsArticleId !== undefined) updateValues.terms_article_id = input.termsArticleId;
-  if (input.calendarTypeId !== undefined) {
+  if (input.calendarTypeIds !== undefined || input.tournamentFormat !== undefined) {
     const [row] = await db
       .select({
-        calendar_type_id: schema.events.calendar_type_id,
+        calendar_type_ids: schema.events.calendar_type_ids,
+        tournament_format: schema.events.tournament_format,
         tournament_draw_json: schema.events.tournament_draw_json,
       })
       .from(schema.events)
       .where(eq(schema.events.id, eventId))
       .limit(1);
-    const prevFormat = tournamentFormatFromCalendarType(row?.calendar_type_id);
-    const nextType = normalizeCalendarTypeId(input.calendarTypeId);
-    const nextFormat = tournamentFormatFromCalendarType(nextType);
+    const prevFormat = normalizeTournamentFormat(row?.tournament_format);
+    const nextTypeIds =
+      input.calendarTypeIds !== undefined
+        ? normalizeCalendarTypeIds(input.calendarTypeIds)
+        : parseCalendarTypeIds(row?.calendar_type_ids);
+    const nextFormat = resolveTournamentFormatForTypes(
+      nextTypeIds,
+      input.tournamentFormat !== undefined
+        ? normalizeTournamentFormat(input.tournamentFormat)
+        : prevFormat,
+    );
+    assertBonspielFormat(nextTypeIds, nextFormat);
     if (prevFormat != null && nextFormat != null && prevFormat !== nextFormat) {
       const confirmedIds = await listConfirmedRegistrationIdsForEvent(eventId);
       if (confirmedIds.size > 0) {
@@ -405,7 +463,8 @@ export async function updateEvent(
         );
       }
     }
-    updateValues.calendar_type_id = nextType;
+    updateValues.calendar_type_ids = serializeCalendarTypeIds(nextTypeIds);
+    updateValues.tournament_format = nextFormat;
   }
   if (input.tournamentTeamsPublished !== undefined) {
     updateValues.tournament_teams_published = input.tournamentTeamsPublished ? 1 : 0;
@@ -1313,12 +1372,16 @@ export async function updateRegistrationForEvent(
   return getRegistrationForEvent(eventId, registrationId);
 }
 
-export async function duplicateEvent(eventId: number, createdByMemberId: number): Promise<{ id: number; slug: string }> {
+export async function duplicateEvent(
+  eventId: number,
+  createdByMemberId: number,
+  input: DuplicateEventInput,
+): Promise<{ id: number; slug: string }> {
   const event = await getEventById(eventId);
   if (!event) throw new EventServiceError('Event not found', 404);
 
-  const newTitle = `${event.title} (Copy)`;
-  const newSlug = await ensureUniqueSlug(slugify(newTitle));
+  const newTitle = input.title.trim();
+  const newSlug = await ensureUniqueSlug(slugify(input.slug || newTitle));
 
   let articleId: number | null = null;
   if (event.article_id != null) {
@@ -1333,33 +1396,34 @@ export async function duplicateEvent(eventId: number, createdByMemberId: number)
   const created = await createEvent({
     title: newTitle,
     slug: newSlug,
-    calendarTypeId: normalizeCalendarTypeId(event.calendar_type_id),
+    calendarTypeIds: parseCalendarTypeIds(event.calendar_type_ids),
+    tournamentFormat: normalizeTournamentFormat(event.tournament_format),
     articleId,
     imageFileId: event.image_file_id,
     visibility: event.visibility,
+    published: input.published,
     capacity: event.capacity,
     feeMinor: event.fee_minor,
     memberFeeMinor: event.member_fee_minor ?? null,
     currency: event.currency,
+    registrationStart: input.registrationStart ?? null,
+    registrationCutoff: input.registrationCutoff ?? null,
+    cancellationCutoff: input.cancellationCutoff ?? null,
     allowGroupRegistration: event.allow_group_registration === 1,
     maxGroupSize: event.max_group_size,
     enableWaitlist: event.enable_waitlist === 1,
     termsArticleId: event.terms_article_id,
     tournamentTeamsPublished: false,
     tournamentDrawPublished: false,
-    pointOfContact: event.point_of_contact,
+    pointOfContact: input.pointOfContact,
     createdByMemberId,
-    timespans: (event.timespans || []).map((ts: any) => ({
-      startDt: ts.start_dt,
-      endDt: ts.end_dt,
-      sortOrder: ts.sort_order,
-    })),
+    timespans: input.timespans,
     locations: (event.locations || []).map((loc: any) => ({
       locationType: loc.location_type,
       sheetId: loc.sheet_id,
     })),
     categoryIds: event.categoryIds || [],
-    ownerMemberIds: event.ownerMemberIds || [],
+    ownerMemberIds: input.ownerMemberIds,
     registrationFields: (event.registrationFields || []).map((f: any) => ({
       label: f.label,
       fieldType: f.field_type,
@@ -1487,7 +1551,7 @@ export async function getEventTimespansForCalendar(startDt: string, endDt: strin
       eventId: schema.events.id,
       title: schema.events.title,
       slug: schema.events.slug,
-      calendarTypeId: schema.events.calendar_type_id,
+      calendarTypeIds: schema.events.calendar_type_ids,
       startDt: schema.eventTimespans.start_dt,
       endDt: schema.eventTimespans.end_dt,
     })
@@ -1519,7 +1583,7 @@ export async function getEventTimespansForCalendar(startDt: string, endDt: strin
 
   return rows.map((row) => ({
     id: `event:${row.eventId}:${row.timespanId}`,
-    typeId: normalizeCalendarTypeId(row.calendarTypeId),
+    typeId: calendarColorTypeId(parseCalendarTypeIds(row.calendarTypeIds)),
     title: row.title,
     start: row.startDt,
     end: row.endDt,

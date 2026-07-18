@@ -41,7 +41,7 @@ async function isPublicEventTeamPath(slug: string, teamIdRaw: string): Promise<b
   const event = await getEventBySlug(slug);
   if (!event || event.published !== 1 || event.visibility !== 'public') return false;
   if (event.tournament_teams_published !== 1) return false;
-  if (!isBonspielCalendarType(event.calendar_type_id)) return false;
+  if (!isBonspielCalendarType(event.calendar_type_ids)) return false;
 
   try {
     const teams = await listTournamentTeamsForEvent(event.id);

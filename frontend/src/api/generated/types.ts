@@ -12912,14 +12912,43 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": {
+                        title: string;
+                        slug?: string;
+                        published: boolean;
+                        /** Format: date-time */
+                        registrationStart?: string | null;
+                        /** Format: date-time */
+                        registrationCutoff?: string | null;
+                        /** Format: date-time */
+                        cancellationCutoff?: string | null;
+                        /** Format: email */
+                        pointOfContact: string;
+                        ownerMemberIds: number[];
+                        timespans: {
+                            /** Format: date-time */
+                            startDt: string;
+                            /** Format: date-time */
+                            endDt: string;
+                            sortOrder?: number;
+                        }[];
+                    };
+                };
+            };
             responses: {
                 /** @description Default Response */
-                200: {
+                201: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            id: number;
+                            slug: string;
+                        };
+                    };
                 };
             };
         };
@@ -18208,6 +18237,55 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/volunteering/admin/programs/{id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        title: string;
+                        pointOfContact: string;
+                        location?: string | null;
+                        startDate: string | null;
+                        managerIds?: number[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/volunteering/admin/programs/{id}/archive": {

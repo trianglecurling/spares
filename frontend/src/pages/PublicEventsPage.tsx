@@ -16,6 +16,8 @@ import {
 } from '../utils/fiscalSeason';
 import {
   formatEventScheduleBlock,
+  getEventDateRailLabels,
+  getPublicEventRegistrationStatusLines,
   publicCategoryBadgeClass,
   publicEventTypeBadgeClass,
   publicEventTypeLabel,
@@ -52,7 +54,11 @@ interface EventSummary {
   categoryIds: number[];
   registrationStart: string | null;
   registrationCutoff: string | null;
-  calendarTypeId?: string;
+  calendarTypeIds?: string[];
+  confirmedCount?: number;
+  waitlistedCount?: number;
+  openSpots?: number | null;
+  serverNow?: string;
 }
 
 type PastSeasonValue = `s-${number}`;
@@ -106,13 +112,16 @@ export default function PublicEventsPage() {
   const [categoryById, setCategoryById] = useState<Map<number, string>>(new Map());
   /** `null` = all upcoming events in chronological order (any season). */
   const [pastSeasonStartYear, setPastSeasonStartYear] = useState<number | null>(null);
-  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState('');
   const pastEventsId = useId();
   const typesId = useId();
   const fiscal = useMemo(() => parseFiscalYearStartMmdd(fiscalYearStartMmdd), [fiscalYearStartMmdd]);
 
   const typeOptions: ChoiceOption<string>[] = useMemo(
-    () => EVENT_CALENDAR_TYPE_OPTIONS.map((o) => ({ type: 'option' as const, value: o.id, label: o.label })),
+    () => [
+      { type: 'option' as const, value: '', label: 'All events' },
+      ...EVENT_CALENDAR_TYPE_OPTIONS.map((o) => ({ type: 'option' as const, value: o.id, label: o.label })),
+    ],
     [],
   );
 
@@ -166,13 +175,11 @@ export default function PublicEventsPage() {
 
   const sortedDisplayEvents = useMemo(() => {
     const asOf = Date.now();
-    const typeSet = typeFilter.length > 0 ? new Set(typeFilter) : null;
 
     const list = events
       .filter((e) => {
-        const tid = e.calendarTypeId ?? 'other';
-        if (typeSet && !typeSet.has(tid)) return false;
-        return true;
+        if (!typeFilter) return true;
+        return (e.calendarTypeIds ?? []).includes(typeFilter);
       })
       .filter((e) => {
         if (pastSeasonStartYear === null) {
@@ -205,7 +212,7 @@ export default function PublicEventsPage() {
         title="Events"
         description="Upcoming and past public events, bonspiels, and programs at the club"
       />
-      <div className="public-container">
+      <div className="public-container public-section">
         <div className="public-page-title-rule">
           <h1 className="public-heading">Events</h1>
         </div>
@@ -245,24 +252,16 @@ export default function PublicEventsPage() {
               />
             </FormField>
           </div>
-          <div className="w-full max-w-[12rem]">
+          <div className="w-full max-w-[16rem]">
             <FormField label="Event type" htmlFor={typesId} className="w-full" tone="public">
               <ChoiceInput<string>
                 inputId={typesId}
                 layout="popover"
-                maxSelectedItems={null}
-                multiSelectionIndicatorStyle="checkboxes"
                 options={typeOptions}
                 value={typeFilter}
                 onChange={(v) => {
-                  const next = Array.isArray(v) ? v : [];
-                  if (next.length === EVENT_CALENDAR_TYPE_OPTIONS.length) {
-                    setTypeFilter([]);
-                  } else {
-                    setTypeFilter(next);
-                  }
+                  setTypeFilter(typeof v === 'string' ? v : '');
                 }}
-                placeholder="All event types"
                 listboxLabel="Event type"
               />
             </FormField>
@@ -284,30 +283,54 @@ export default function PublicEventsPage() {
           {!loading &&
             sortedDisplayEvents.map((event) => {
               const { dateLine, timeLine } = formatEventScheduleBlock(event.timespans);
-              const typeId = event.calendarTypeId ?? 'other';
+              const typeIds = event.calendarTypeIds ?? [];
+              const dateRail = getEventDateRailLabels(event.timespans);
+              const { timingLine, capacityLines } = getPublicEventRegistrationStatusLines(event);
+              const feeLabel =
+                event.memberFeeMinor != null && event.memberFeeMinor !== event.feeMinor
+                  ? `${formatFee(event.feeMinor, event.currency)} / ${formatFee(event.memberFeeMinor, event.currency)} members`
+                  : formatFee(event.feeMinor, event.currency);
               return (
                 <Link
                   key={event.id}
                   to={`/events/${event.slug}`}
-                  className="flex w-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:items-stretch"
+                  className="group flex w-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none md:flex-row md:items-stretch"
                 >
                   {event.imageFileId ? (
-                    <div className="h-44 shrink-0 bg-gray-100 sm:h-auto sm:w-56 sm:min-w-[14rem]">
+                    <div className="h-40 shrink-0 bg-gray-100 sm:h-44 md:h-auto md:w-40 lg:w-48">
                       <img
                         src={`/api/public/files/${event.imageFileId}`}
-                        alt={event.title}
-                        className="h-full w-full object-cover"
+                        alt=""
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                       />
                     </div>
-                  ) : null}
-                  <div className="flex min-w-0 flex-1 flex-col p-5">
-                    <h2 className="mb-2 line-clamp-2 text-lg font-semibold text-gray-900">{event.title}</h2>
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <span
-                        className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-medium ${publicEventTypeBadgeClass(typeId)}`}
-                      >
-                        {publicEventTypeLabel(typeId)}
+                  ) : dateRail ? (
+                    <div
+                      className="flex shrink-0 flex-row items-center justify-center gap-3 bg-primary-teal/10 px-5 py-4 text-primary-teal-on-tint md:w-24 md:flex-col md:gap-0 md:px-2 md:py-5"
+                      aria-hidden
+                    >
+                      <span className="text-xs font-bold uppercase tracking-widest">{dateRail.monthLabel}</span>
+                      <span className="public-display whitespace-nowrap text-xl font-semibold leading-none md:mt-1 md:text-xl">
+                        {dateRail.dayLabel}
                       </span>
+                    </div>
+                  ) : (
+                    <div
+                      className="hidden shrink-0 bg-primary-teal/10 md:block md:w-3"
+                      aria-hidden
+                    />
+                  )}
+
+                  <div className="flex min-w-0 flex-1 flex-col justify-center gap-2 px-5 py-4 sm:py-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {typeIds.map((typeId) => (
+                        <span
+                          key={typeId}
+                          className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-medium ${publicEventTypeBadgeClass(typeId)}`}
+                        >
+                          {publicEventTypeLabel(typeId)}
+                        </span>
+                      ))}
                       {(event.categoryIds ?? []).map((cid) => {
                         const name = categoryById.get(cid);
                         if (!name) return null;
@@ -321,21 +344,23 @@ export default function PublicEventsPage() {
                         );
                       })}
                     </div>
-                    <p className={`text-sm text-gray-600 ${timeLine ? 'mb-0.5' : 'mb-3'}`}>{dateLine}</p>
-                    {timeLine ? <p className="mb-3 text-sm text-gray-500">{timeLine}</p> : null}
-                    <div className="mt-auto flex items-center justify-between">
-                      <span className="text-sm font-medium text-primary-teal-link">
-                        {event.memberFeeMinor != null && event.memberFeeMinor !== event.feeMinor ? (
-                          <>
-                            {formatFee(event.feeMinor, event.currency)}{' '}
-                            <span className="font-normal text-gray-500">/ {formatFee(event.memberFeeMinor, event.currency)} members</span>
-                          </>
-                        ) : (
-                          formatFee(event.feeMinor, event.currency)
-                        )}
-                      </span>
-                      {event.capacity ? <span className="text-xs text-gray-400">{event.capacity} spots</span> : null}
-                    </div>
+                    <h2 className="public-display line-clamp-2 text-xl font-semibold text-gray-900 group-hover:text-primary-teal-link">
+                      {event.title}
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      {dateLine}
+                      {timeLine ? <span className="text-gray-500"> · {timeLine}</span> : null}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col justify-center gap-1.5 border-t border-gray-100 bg-gray-50/70 px-5 py-4 md:w-52 md:border-l md:border-t-0 lg:w-60 md:py-5">
+                    <p className="text-sm font-semibold text-primary-teal-link">{feeLabel}</p>
+                    {timingLine ? <p className="text-sm text-gray-700">{timingLine}</p> : null}
+                    {capacityLines.map((line) => (
+                      <p key={line} className="text-sm text-gray-600">
+                        {line}
+                      </p>
+                    ))}
                   </div>
                 </Link>
               );

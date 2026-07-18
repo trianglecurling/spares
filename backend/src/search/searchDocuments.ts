@@ -94,7 +94,7 @@ async function loadPublishedEventDocuments(): Promise<SearchDocument[]> {
       id: schema.events.id,
       title: schema.events.title,
       slug: schema.events.slug,
-      calendarTypeId: schema.events.calendar_type_id,
+      calendarTypeIds: schema.events.calendar_type_ids,
       updatedAt: schema.events.updated_at,
       articleContent: schema.articles.content,
       articleContentType: schema.articles.content_type,
@@ -140,7 +140,7 @@ async function loadPublishedEventDocuments(): Promise<SearchDocument[]> {
         ? articleToSearchableText(row.articleContent, contentType)
         : '';
     const scheduleText = (timespansByEvent.get(row.id) ?? []).join(' ');
-    const calendarType = row.calendarTypeId?.trim() ?? '';
+    const calendarType = row.calendarTypeIds?.trim() ?? '';
     const plainText = [articlePlainText, scheduleText, calendarType].filter(Boolean).join(' ').trim();
     const snippet = buildPreviewSnippet(plainText, row.articleSnippet);
     const recencyMs = Math.max(

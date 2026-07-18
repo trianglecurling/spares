@@ -415,7 +415,8 @@ export default function Dashboard() {
         Array<{
           id: number;
           title: string;
-          calendarTypeId?: string | null;
+          calendarTypeIds?: string[] | null;
+          tournamentFormat?: 'fours' | 'doubles' | null;
           hasTournamentDraw?: boolean;
           archivedAt?: string | null;
           timespans?: Array<{ start_dt: string; end_dt: string }>;
@@ -426,7 +427,7 @@ export default function Dashboard() {
         const now = Date.now();
         const rows = (res.data ?? []).filter((event) => {
           if (isArchivedAt(event.archivedAt)) return false;
-          if (!isBonspielCalendarType(event.calendarTypeId)) return false;
+          if (!isBonspielCalendarType(event.calendarTypeIds)) return false;
           if (!event.hasTournamentDraw) return false;
           const spans = event.timespans ?? [];
           if (spans.length === 0) return true;

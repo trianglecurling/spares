@@ -34,7 +34,11 @@ type ResponseBodyFor<T> = T extends {
   responses: { 200: { content: { 'application/json': infer Body } } };
 }
   ? Body
-  : never;
+  : T extends {
+        responses: { 201: { content: { 'application/json': infer Body } } };
+      }
+    ? Body
+    : never;
 
 type QueryFor<T> = T extends { parameters: { query: infer Query } }
   ? Query
