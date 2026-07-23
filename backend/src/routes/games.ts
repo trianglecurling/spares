@@ -357,6 +357,9 @@ async function computeDrawSlots(
 
   const startDate = startDateOverride ?? formatDateValue(league.start_date);
   const endDate = endDateOverride ?? formatDateValue(league.end_date);
+  // When callers pass an explicit window, clip one-off draws to it. Otherwise include all
+  // one-off draws (they are intentionally allowed outside the regular season bounds).
+  const clipExtraDrawsToRange = startDateOverride != null || endDateOverride != null;
 
   const regularSlots: Array<{ date: string; time: string; isExtra: boolean; extraDrawId: number | null }> = [];
   if (drawTimes.length > 0) {
@@ -388,7 +391,7 @@ async function computeDrawSlots(
   for (const extra of extraDrawRows) {
     const date = formatDateValue(extra.draw_date);
     const time = formatTimeValue(extra.draw_time);
-    if (date < startDate || date > endDate) continue;
+    if (clipExtraDrawsToRange && (date < startDate || date > endDate)) continue;
     const key = `${date}|${time}`;
     if (!slotMap.has(key)) {
       slotMap.set(key, { date, time, isExtra: true, extraDrawId: extra.id });
