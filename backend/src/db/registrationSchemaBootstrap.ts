@@ -599,6 +599,10 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
     name: 'team_formation',
     ddl: "team_formation TEXT NOT NULL DEFAULT 'coordinator' CHECK(team_formation IN ('coordinator','skips_draft'))",
   },
+  {
+    name: 'draw_duration_minutes',
+    ddl: 'draw_duration_minutes INTEGER NOT NULL DEFAULT 120',
+  },
 ];
 
 const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[] = [
@@ -686,6 +690,10 @@ async function sqliteEnsureLeaguesRegistrationColumns(
   for (const col of leagueBootstrapColumnsSQLite) {
     await ensureSQLiteColumn(db, 'leagues', col.name, col.ddl, execSQL);
   }
+  await execSQL(
+    db,
+    `UPDATE leagues SET draw_duration_minutes = 90 WHERE format = 'doubles' AND draw_duration_minutes = 120`
+  );
   await seedLeagueFeeOverridesIfNeeded(db, execSQL);
   await execSQL(
     db,
@@ -760,6 +768,7 @@ const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS successor_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS public_notes TEXT',
   "ALTER TABLE leagues ADD COLUMN IF NOT EXISTS team_formation TEXT NOT NULL DEFAULT 'coordinator'",
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS draw_duration_minutes INTEGER NOT NULL DEFAULT 120',
 ];
 
 const registrationMembershipPaymentColumnsPg: string[] = [
@@ -812,6 +821,10 @@ async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: D
   } catch {
     /* column may already be double precision or absent on fresh installs */
   }
+  await execSQL(
+    db,
+    `UPDATE leagues SET draw_duration_minutes = 90 WHERE format = 'doubles' AND draw_duration_minutes = 120`
+  );
   await seedLeagueFeeOverridesIfNeeded(db, execSQL);
   await execSQL(
     db,
@@ -916,6 +929,10 @@ export function ensureCurlingRegistrationBootstrapSync(
       execSQLSync(db, `ALTER TABLE leagues ADD COLUMN ${col.ddl}`);
     }
   }
+  execSQLSync(
+    db,
+    `UPDATE leagues SET draw_duration_minutes = 90 WHERE format = 'doubles' AND draw_duration_minutes = 120`
+  );
   seedLeagueFeeOverridesIfNeededSync(db, execSQLSync);
   execSQLSync(
     db,

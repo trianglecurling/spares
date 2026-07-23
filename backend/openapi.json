@@ -6077,6 +6077,9 @@
                           "skips_draft"
                         ]
                       },
+                      "drawDurationMinutes": {
+                        "type": "number"
+                      },
                       "drawTimes": {
                         "type": "array",
                         "items": {
@@ -6087,6 +6090,25 @@
                         "type": "array",
                         "items": {
                           "type": "string"
+                        }
+                      },
+                      "extraDraws": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "date": {
+                              "type": "string"
+                            },
+                            "time": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "date",
+                            "time"
+                          ]
                         }
                       }
                     },
@@ -6120,8 +6142,10 @@
                       "successorLeagueId",
                       "publicNotes",
                       "teamFormation",
+                      "drawDurationMinutes",
                       "drawTimes",
-                      "exceptions"
+                      "exceptions",
+                      "extraDraws"
                     ]
                   }
                 }
@@ -6255,6 +6279,9 @@
                       "null"
                     ]
                   },
+                  "drawDurationMinutes": {
+                    "type": "number"
+                  },
                   "drawTimes": {
                     "type": "array",
                     "items": {
@@ -6265,6 +6292,25 @@
                     "type": "array",
                     "items": {
                       "type": "string"
+                    }
+                  },
+                  "extraDraws": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "date": {
+                          "type": "string"
+                        },
+                        "time": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "date",
+                        "time"
+                      ]
                     }
                   }
                 },
@@ -6432,6 +6478,9 @@
                         "skips_draft"
                       ]
                     },
+                    "drawDurationMinutes": {
+                      "type": "number"
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -6442,6 +6491,25 @@
                       "type": "array",
                       "items": {
                         "type": "string"
+                      }
+                    },
+                    "extraDraws": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "date": {
+                            "type": "string"
+                          },
+                          "time": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "time"
+                        ]
                       }
                     }
                   },
@@ -6475,8 +6543,10 @@
                     "successorLeagueId",
                     "publicNotes",
                     "teamFormation",
+                    "drawDurationMinutes",
                     "drawTimes",
-                    "exceptions"
+                    "exceptions",
+                    "extraDraws"
                   ]
                 }
               }
@@ -6732,6 +6802,9 @@
                               "skips_draft"
                             ]
                           },
+                          "drawDurationMinutes": {
+                            "type": "number"
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -6742,6 +6815,25 @@
                             "type": "array",
                             "items": {
                               "type": "string"
+                            }
+                          },
+                          "extraDraws": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "date": {
+                                  "type": "string"
+                                },
+                                "time": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "date",
+                                "time"
+                              ]
                             }
                           }
                         },
@@ -6775,8 +6867,10 @@
                           "successorLeagueId",
                           "publicNotes",
                           "teamFormation",
+                          "drawDurationMinutes",
                           "drawTimes",
-                          "exceptions"
+                          "exceptions",
+                          "extraDraws"
                         ]
                       }
                     }
@@ -6939,6 +7033,9 @@
                       "skips_draft"
                     ]
                   },
+                  "drawDurationMinutes": {
+                    "type": "number"
+                  },
                   "drawTimes": {
                     "type": "array",
                     "items": {
@@ -6949,6 +7046,25 @@
                     "type": "array",
                     "items": {
                       "type": "string"
+                    }
+                  },
+                  "extraDraws": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "date": {
+                          "type": "string"
+                        },
+                        "time": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "date",
+                        "time"
+                      ]
                     }
                   }
                 }
@@ -7118,6 +7234,9 @@
                         "skips_draft"
                       ]
                     },
+                    "drawDurationMinutes": {
+                      "type": "number"
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -7128,6 +7247,25 @@
                       "type": "array",
                       "items": {
                         "type": "string"
+                      }
+                    },
+                    "extraDraws": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "date": {
+                            "type": "string"
+                          },
+                          "time": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "time"
+                        ]
                       }
                     }
                   },
@@ -7161,8 +7299,10 @@
                     "successorLeagueId",
                     "publicNotes",
                     "teamFormation",
+                    "drawDurationMinutes",
                     "drawTimes",
-                    "exceptions"
+                    "exceptions",
+                    "extraDraws"
                   ]
                 }
               }
@@ -7267,6 +7407,9 @@
                           "endDate": {
                             "type": "string"
                           },
+                          "drawDurationMinutes": {
+                            "type": "number"
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -7278,6 +7421,25 @@
                             "items": {
                               "type": "string"
                             }
+                          },
+                          "extraDraws": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "date": {
+                                  "type": "string"
+                                },
+                                "time": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "date",
+                                "time"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -7286,8 +7448,10 @@
                           "format",
                           "startDate",
                           "endDate",
+                          "drawDurationMinutes",
                           "drawTimes",
-                          "exceptions"
+                          "exceptions",
+                          "extraDraws"
                         ]
                       }
                     }
@@ -7342,6 +7506,9 @@
                         "endDate": {
                           "type": "string"
                         },
+                        "drawDurationMinutes": {
+                          "type": "number"
+                        },
                         "drawTimes": {
                           "type": "array",
                           "items": {
@@ -7352,6 +7519,25 @@
                           "type": "array",
                           "items": {
                             "type": "string"
+                          }
+                        },
+                        "extraDraws": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "date": {
+                                "type": "string"
+                              },
+                              "time": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "date",
+                              "time"
+                            ]
                           }
                         }
                       },
@@ -7537,6 +7723,9 @@
                               "skips_draft"
                             ]
                           },
+                          "drawDurationMinutes": {
+                            "type": "number"
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -7547,6 +7736,25 @@
                             "type": "array",
                             "items": {
                               "type": "string"
+                            }
+                          },
+                          "extraDraws": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "date": {
+                                  "type": "string"
+                                },
+                                "time": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "date",
+                                "time"
+                              ]
                             }
                           }
                         },
@@ -7580,8 +7788,10 @@
                           "successorLeagueId",
                           "publicNotes",
                           "teamFormation",
+                          "drawDurationMinutes",
                           "drawTimes",
-                          "exceptions"
+                          "exceptions",
+                          "extraDraws"
                         ]
                       }
                     }

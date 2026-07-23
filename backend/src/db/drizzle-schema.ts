@@ -362,6 +362,8 @@ export const leaguesSqlite = sqliteTable('leagues', {
   format: text('format').notNull().$type<'teams' | 'doubles' | 'instructional'>(),
   start_date: text('start_date').notNull(),
   end_date: text('end_date').notNull(),
+  /** Length of each draw slot in minutes (calendar + ice conflict windows). */
+  draw_duration_minutes: integer('draw_duration_minutes').notNull().default(120),
   league_type: text('league_type').notNull().default('standard').$type<'standard' | 'bring_your_own_team'>(),
   capacity_type: text('capacity_type').notNull().default('individual').$type<'individual' | 'team'>(),
   capacity_value: integer('capacity_value').default(0).notNull(),
@@ -2303,6 +2305,8 @@ export const leaguesPg = pgTable('leagues', {
   format: textPg('format').notNull().$type<'teams' | 'doubles' | 'instructional'>(),
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
+  /** Length of each draw slot in minutes (calendar + ice conflict windows). */
+  draw_duration_minutes: integerPg('draw_duration_minutes').notNull().default(120),
   league_type: textPg('league_type').notNull().default('standard').$type<'standard' | 'bring_your_own_team'>(),
   capacity_type: textPg('capacity_type').notNull().default('individual').$type<'individual' | 'team'>(),
   capacity_value: integerPg('capacity_value').default(0).notNull(),

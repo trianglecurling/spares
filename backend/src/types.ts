@@ -88,6 +88,7 @@ export interface League {
   format: 'teams' | 'doubles' | 'instructional';
   start_date: DbDate;
   end_date: DbDate;
+  draw_duration_minutes?: number;
   league_type: 'standard' | 'bring_your_own_team';
   capacity_type: 'individual' | 'team';
   capacity_value: number;

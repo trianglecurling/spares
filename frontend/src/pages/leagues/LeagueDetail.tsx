@@ -22,6 +22,12 @@ import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import { memberHasScope } from '../../utils/permissions';
+import {
+  defaultDrawDurationMinutes,
+  extraDrawKey,
+  type LeagueExtraDraw,
+  type LeaguePlayFormat,
+} from '../../utils/leagueSchedule';
 
 const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Sunday',
@@ -32,8 +38,6 @@ const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Friday',
   'Saturday',
 ].map((label, index) => ({ value: index, label }));
-
-type LeaguePlayFormat = 'teams' | 'doubles' | 'instructional';
 
 const LEAGUE_FORMAT_SELECT_OPTIONS: ChoiceOption<LeaguePlayFormat>[] = [
   { value: 'teams', label: 'Teams (4 players)' },
@@ -129,8 +133,10 @@ interface League {
   successorLeagueId: number | null;
   publicNotes?: string | null;
   teamFormation?: 'coordinator' | 'skips_draft';
+  drawDurationMinutes: number;
   drawTimes: string[];
   exceptions: string[];
+  extraDraws: LeagueExtraDraw[];
 }
 
 interface RegistrationSession {
@@ -336,8 +342,10 @@ export default function LeagueDetail() {
     format: 'teams' as LeaguePlayFormat,
     startDate: '',
     endDate: '',
+    drawDurationMinutes: defaultDrawDurationMinutes('teams'),
     drawTimes: [''],
     exceptions: [] as string[],
+    extraDraws: [] as LeagueExtraDraw[],
     sessionId: 0,
     leagueType: 'standard' as 'standard' | 'bring_your_own_team',
     capacityType: 'individual' as 'individual' | 'team',
@@ -359,6 +367,7 @@ export default function LeagueDetail() {
   });
   const [showExceptionPicker, setShowExceptionPicker] = useState(false);
   const [exceptionToAdd, setExceptionToAdd] = useState('');
+  const [extraDrawToAdd, setExtraDrawToAdd] = useState<LeagueExtraDraw>({ date: '', time: '' });
   const [leagueSubmitting, setLeagueSubmitting] = useState(false);
   const [clubDefaultLeagueFeeDollars, setClubDefaultLeagueFeeDollars] = useState<number | null>(null);
   const [waitlistModalOpen, setWaitlistModalOpen] = useState(false);
@@ -848,8 +857,14 @@ export default function LeagueDetail() {
       format: league.format,
       startDate: league.startDate,
       endDate: league.endDate,
+      drawDurationMinutes:
+        league.drawDurationMinutes ?? defaultDrawDurationMinutes(league.format),
       drawTimes: league.drawTimes.length ? league.drawTimes : [''],
       exceptions: league.exceptions || [],
+      extraDraws: (league.extraDraws || []).map((d) => ({
+        date: d.date,
+        time: d.time.slice(0, 5),
+      })),
       sessionId: league.sessionId ?? 0,
       leagueType: league.leagueType,
       capacityType: league.capacityType,
@@ -878,6 +893,7 @@ export default function LeagueDetail() {
     });
     setShowExceptionPicker(false);
     setExceptionToAdd('');
+    setExtraDrawToAdd({ date: '', time: '' });
   }, [normalizedTab, league]);
 
   const addDrawTime = () => {
@@ -1044,14 +1060,23 @@ export default function LeagueDetail() {
       }
 
       const uniqueExceptions = Array.from(new Set(leagueForm.exceptions)).sort();
+      const uniqueExtraDraws = Array.from(
+        new Map(
+          leagueForm.extraDraws
+            .filter((d) => d.date && d.time)
+            .map((d) => [extraDrawKey(d), { date: d.date, time: d.time.slice(0, 5) }])
+        ).values()
+      ).sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
       const payload = {
         name: leagueForm.name,
         dayOfWeek: leagueForm.dayOfWeek,
         format: leagueForm.format,
         startDate: leagueForm.startDate,
         endDate: leagueForm.endDate,
+        drawDurationMinutes: leagueForm.drawDurationMinutes,
         drawTimes: leagueForm.drawTimes.filter((t) => t.trim() !== ''),
         exceptions: uniqueExceptions,
+        extraDraws: uniqueExtraDraws,
       };
       const registrationPayload = {
         ...payload,
@@ -1621,6 +1646,10 @@ export default function LeagueDetail() {
                   {league.drawTimes.map(formatTime).join(', ')}
                 </div>
                 <div>
+                  <span className="font-medium dark:text-gray-300">Draw duration:</span>{' '}
+                  {league.drawDurationMinutes ?? defaultDrawDurationMinutes(league.format)} minutes
+                </div>
+                <div>
                   <span className="font-medium dark:text-gray-300">Format:</span>{' '}
                   {leagueFormatDisplayLabel(league.format)}
                 </div>
@@ -1633,6 +1662,16 @@ export default function LeagueDetail() {
                     <span className="font-medium dark:text-gray-300">Exceptions:</span>{' '}
                     <span className="text-gray-600 dark:text-gray-400">
                       {league.exceptions.map((d) => formatDateDisplay(d)).join(', ')}
+                    </span>
+                  </div>
+                )}
+                {league.extraDraws?.length > 0 && (
+                  <div>
+                    <span className="font-medium dark:text-gray-300">One-off draws:</span>{' '}
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {league.extraDraws
+                        .map((d) => `${formatDateDisplay(d.date)} · ${formatTime(d.time)}`)
+                        .join(', ')}
                     </span>
                   </div>
                 )}
@@ -1806,6 +1845,30 @@ export default function LeagueDetail() {
                 </div>
 
                 <div>
+                  <label htmlFor="leagueDrawDurationMinutes" className="app-label">
+                    Draw duration (minutes) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="leagueDrawDurationMinutes"
+                    min={15}
+                    max={1440}
+                    step={15}
+                    value={leagueForm.drawDurationMinutes}
+                    onChange={(e) =>
+                      setLeagueForm({
+                        ...leagueForm,
+                        drawDurationMinutes:
+                          Number.parseInt(e.target.value, 10) ||
+                          defaultDrawDurationMinutes(leagueForm.format),
+                      })
+                    }
+                    className="app-input"
+                    required
+                  />
+                </div>
+
+                <div>
                   <label htmlFor="leagueStartDate" className="app-label">
                     Season start date <span className="text-red-500">*</span>
                   </label>
@@ -1914,6 +1977,90 @@ export default function LeagueDetail() {
                 </div>
 
                 <div>
+                  <label className="app-label">One-off draws (additional date and time)</label>
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                    <div className="flex-1">
+                      <label htmlFor="leagueExtraDrawDate" className="sr-only">
+                        One-off draw date
+                      </label>
+                      <input
+                        type="date"
+                        id="leagueExtraDrawDate"
+                        value={extraDrawToAdd.date}
+                        onChange={(e) =>
+                          setExtraDrawToAdd((prev) => ({ ...prev, date: e.target.value }))
+                        }
+                        className="app-input"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label htmlFor="leagueExtraDrawTime" className="sr-only">
+                        One-off draw time
+                      </label>
+                      <input
+                        type="time"
+                        id="leagueExtraDrawTime"
+                        value={extraDrawToAdd.time}
+                        onChange={(e) =>
+                          setExtraDrawToAdd((prev) => ({ ...prev, time: e.target.value }))
+                        }
+                        className="app-input"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!extraDrawToAdd.date || !extraDrawToAdd.time}
+                      onClick={() => {
+                        const date = extraDrawToAdd.date;
+                        const time = extraDrawToAdd.time.slice(0, 5);
+                        if (!date || !time) return;
+                        const key = extraDrawKey({ date, time });
+                        setLeagueForm((prev) => {
+                          if (prev.extraDraws.some((d) => extraDrawKey(d) === key)) return prev;
+                          return {
+                            ...prev,
+                            extraDraws: [...prev.extraDraws, { date, time }].sort(
+                              (a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)
+                            ),
+                          };
+                        });
+                        setExtraDrawToAdd({ date: '', time: '' });
+                      }}
+                    >
+                      Add one-off draw
+                    </Button>
+                  </div>
+                  {leagueForm.extraDraws.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {leagueForm.extraDraws.map((draw) => (
+                        <div
+                          key={extraDrawKey(draw)}
+                          className="flex items-center justify-between text-sm"
+                        >
+                          <span className="text-gray-700 dark:text-gray-300">
+                            {formatDateDisplay(draw.date)} · {formatTime(draw.time)}
+                          </span>
+                          <button
+                            type="button"
+                            className="text-red-600 hover:text-red-800"
+                            onClick={() => {
+                              const key = extraDrawKey(draw);
+                              setLeagueForm((prev) => ({
+                                ...prev,
+                                extraDraws: prev.extraDraws.filter((d) => extraDrawKey(d) !== key),
+                              }));
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
                   <label htmlFor="leagueFormat" className="app-label">
                     Format <span className="text-red-500">*</span>
                   </label>
@@ -1922,13 +2069,20 @@ export default function LeagueDetail() {
                     options={LEAGUE_FORMAT_SELECT_OPTIONS}
                     value={leagueForm.format}
                     onChange={(next) => {
-                      if (next != null && !Array.isArray(next)) {
-                        setLeagueForm({
-                          ...leagueForm,
+                      if (next == null || Array.isArray(next)) return;
+                      setLeagueForm((prev) => {
+                        const prevDefault = defaultDrawDurationMinutes(prev.format);
+                        const nextDefault = defaultDrawDurationMinutes(next);
+                        return {
+                          ...prev,
                           format: next,
-                          isPlayInBased: next === 'instructional' ? false : leagueForm.isPlayInBased,
-                        });
-                      }
+                          isPlayInBased: next === 'instructional' ? false : prev.isPlayInBased,
+                          drawDurationMinutes:
+                            prev.drawDurationMinutes === prevDefault
+                              ? nextDefault
+                              : prev.drawDurationMinutes,
+                        };
+                      });
                     }}
                     listboxLabel="League format"
                     required

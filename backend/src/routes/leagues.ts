@@ -43,6 +43,13 @@ import {
   detachWaitlistFromLeague,
   listLeagueWaitlistsForAttach,
 } from '../registration/waitlistEntityService.js';
+import {
+  defaultDrawDurationMinutes,
+  filterNonRegularExtraDraws,
+  normalizeDrawTimeString,
+  normalizeExtraDrawInputs,
+  type LeagueExtraDrawInput,
+} from '../utils/leagueSchedule.js';
 
 
 const leaguesListQuerySchemaJson = {
@@ -55,14 +62,9 @@ const leaguesListQuerySchemaJson = {
   },
 } as const;
 
-const createLeagueSchema = z.object({
-  name: z.string().min(1),
-  dayOfWeek: z.number().min(0).max(6),
-  format: z.enum(['teams', 'doubles', 'instructional']),
-  startDate: z.string(),
-  endDate: z.string(),
-  drawTimes: z.array(z.string()),
-  exceptions: z.array(z.string()).optional(),
+const extraDrawInputSchema = z.object({
+  date: z.string().min(1),
+  time: z.string().min(1),
 });
 
 /** Clients often send whole numeric fields as floats (HTML inputs, JSON); DB columns are integers. */
@@ -85,6 +87,23 @@ function preprocessOptionalNullableNumber(val: unknown): unknown {
   }
   return val;
 }
+
+const drawDurationMinutesSchema = z.preprocess(
+  preprocessRoundFiniteInt,
+  z.number().int().min(15).max(24 * 60)
+);
+
+const createLeagueSchema = z.object({
+  name: z.string().min(1),
+  dayOfWeek: z.number().min(0).max(6),
+  format: z.enum(['teams', 'doubles', 'instructional']),
+  startDate: z.string(),
+  endDate: z.string(),
+  drawDurationMinutes: drawDurationMinutesSchema.optional(),
+  drawTimes: z.array(z.string()),
+  exceptions: z.array(z.string()).optional(),
+  extraDraws: z.array(extraDrawInputSchema).optional(),
+});
 
 const halfYearExperienceYearsSchema = z
   .preprocess(preprocessOptionalNullableNumber, z.number().nullable().optional())
@@ -153,8 +172,10 @@ const updateLeagueSchema = z.object({
   successorLeagueId: z.preprocess(preprocessRoundFiniteInt, z.number().int().positive().nullable().optional()),
   publicNotes: z.string().nullable().optional(),
   teamFormation: z.enum(['coordinator', 'skips_draft']).optional(),
+  drawDurationMinutes: drawDurationMinutesSchema.optional(),
   drawTimes: z.array(z.string()).optional(),
   exceptions: z.array(z.string()).optional(),
+  extraDraws: z.array(extraDrawInputSchema).optional(),
 });
 
 function normalizeDateString(value: string | Date | number): string {
@@ -312,10 +333,104 @@ async function loadExceptionsByLeagueIds(
   return byLeagueId;
 }
 
+async function loadExtraDrawsByLeagueIds(
+  leagueIds: number[],
+): Promise<Map<number, LeagueExtraDrawInput[]>> {
+  if (leagueIds.length === 0) return new Map();
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      leagueId: schema.leagueExtraDraws.league_id,
+      drawDate: schema.leagueExtraDraws.draw_date,
+      drawTime: schema.leagueExtraDraws.draw_time,
+    })
+    .from(schema.leagueExtraDraws)
+    .where(inArray(schema.leagueExtraDraws.league_id, leagueIds))
+    .orderBy(
+      asc(schema.leagueExtraDraws.league_id),
+      asc(schema.leagueExtraDraws.draw_date),
+      asc(schema.leagueExtraDraws.draw_time)
+    );
+
+  const byLeagueId = new Map<number, LeagueExtraDrawInput[]>();
+  for (const row of rows) {
+    const existing = byLeagueId.get(row.leagueId) ?? [];
+    existing.push({
+      date: normalizeDateString(row.drawDate),
+      time: normalizeDrawTimeString(String(row.drawTime)),
+    });
+    byLeagueId.set(row.leagueId, existing);
+  }
+  return byLeagueId;
+}
+
+async function replaceLeagueExtraDraws(
+  leagueId: number,
+  extraDraws: LeagueExtraDrawInput[]
+): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const normalized = normalizeExtraDrawInputs(extraDraws);
+  const existingRows = await db
+    .select({
+      id: schema.leagueExtraDraws.id,
+      draw_date: schema.leagueExtraDraws.draw_date,
+      draw_time: schema.leagueExtraDraws.draw_time,
+    })
+    .from(schema.leagueExtraDraws)
+    .where(eq(schema.leagueExtraDraws.league_id, leagueId));
+
+  const nextKeys = new Set(normalized.map((d) => `${d.date}|${d.time}`));
+  for (const row of existingRows) {
+    const date = normalizeDateString(row.draw_date);
+    const time = normalizeDrawTimeString(String(row.draw_time));
+    const key = `${date}|${time}`;
+    if (nextKeys.has(key)) continue;
+
+    await db
+      .update(schema.games)
+      .set({
+        game_date: null,
+        game_time: null,
+        sheet_id: null,
+        status: 'unscheduled',
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(
+        and(
+          eq(schema.games.league_id, leagueId),
+          eq(schema.games.game_date, date),
+          eq(schema.games.game_time, time)
+        )
+      );
+
+    await db
+      .delete(schema.leagueExtraDraws)
+      .where(and(eq(schema.leagueExtraDraws.id, row.id), eq(schema.leagueExtraDraws.league_id, leagueId)));
+  }
+
+  const existingKeys = new Set(
+    existingRows.map(
+      (row) =>
+        `${normalizeDateString(row.draw_date)}|${normalizeDrawTimeString(String(row.draw_time))}`
+    )
+  );
+  const toInsert = normalized.filter((d) => !existingKeys.has(`${d.date}|${d.time}`));
+  if (toInsert.length > 0) {
+    await db.insert(schema.leagueExtraDraws).values(
+      toInsert.map((d) => ({
+        league_id: leagueId,
+        draw_date: d.date,
+        draw_time: d.time,
+      }))
+    );
+  }
+}
+
 function mapLeagueResponse(
   league: League,
   drawTimes: string[],
   exceptions: string[],
+  extraDraws: LeagueExtraDrawInput[],
   defaultLeagueFeeMinor: number,
   canManage?: boolean
 ) {
@@ -343,6 +458,7 @@ function mapLeagueResponse(
     successor_league_id?: number | null;
     public_notes?: string | null;
     team_formation?: 'coordinator' | 'skips_draft';
+    draw_duration_minutes?: number | null;
   };
 
   return {
@@ -378,8 +494,11 @@ function mapLeagueResponse(
     successorLeagueId: row.successor_league_id ?? null,
     publicNotes: row.public_notes?.trim() || null,
     teamFormation: row.team_formation ?? 'coordinator',
+    drawDurationMinutes:
+      row.draw_duration_minutes ?? defaultDrawDurationMinutes(row.format),
     drawTimes,
     exceptions,
+    extraDraws,
     ...(canManage === undefined ? {} : { canManage }),
   };
 }
@@ -491,12 +610,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const defaultLeagueFeeMinor = summary ? 0 : await loadDefaultLeagueFeeMinor();
     const drawTimesByLeagueId = summary ? new Map<number, string[]>() : await loadDrawTimesByLeagueIds(leagueIds);
     const exceptionsByLeagueId = summary ? new Map<number, string[]>() : await loadExceptionsByLeagueIds(leagueIds);
+    const extraDrawsByLeagueId = summary
+      ? new Map<number, LeagueExtraDrawInput[]>()
+      : await loadExtraDrawsByLeagueIds(leagueIds);
 
     const result = leagues.map((league) =>
       mapLeagueResponse(
         league,
         drawTimesByLeagueId.get(league.id) ?? [],
         exceptionsByLeagueId.get(league.id) ?? [],
+        extraDrawsByLeagueId.get(league.id) ?? [],
         defaultLeagueFeeMinor,
         canManageAll ||
           leagueAdminInfo.isGlobal ||
@@ -637,8 +760,21 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             dropInFeeMinor: { type: ['number', 'null'] },
             predecessorLeagueId: { type: ['number', 'null'] },
             successorLeagueId: { type: ['number', 'null'] },
+            drawDurationMinutes: { type: 'number' },
             drawTimes: { type: 'array', items: { type: 'string' } },
             exceptions: { type: 'array', items: { type: 'string' } },
+            extraDraws: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  date: { type: 'string' },
+                  time: { type: 'string' },
+                },
+                required: ['date', 'time'],
+              },
+            },
           },
           required: ['name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes'],
         },
@@ -656,6 +792,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const body = createLeagueSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
     const exceptions = uniqueStrings(body.exceptions ?? []);
+    const drawTimes = body.drawTimes.map((t) => t.trim()).filter(Boolean);
+    const extraDraws = filterNonRegularExtraDraws(body.extraDraws ?? [], {
+      dayOfWeek: body.dayOfWeek,
+      drawTimes,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      exceptions,
+    });
+    const drawDurationMinutes =
+      body.drawDurationMinutes ?? defaultDrawDurationMinutes(body.format);
 
     const result = await db
       .insert(schema.leagues)
@@ -665,6 +811,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: body.format,
         start_date: body.startDate,
         end_date: body.endDate,
+        draw_duration_minutes: drawDurationMinutes,
       })
       .returning();
 
@@ -690,9 +837,9 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     });
 
     // Insert draw times
-    if (body.drawTimes.length > 0) {
+    if (drawTimes.length > 0) {
       await db.insert(schema.leagueDrawTimes).values(
-        body.drawTimes.map(drawTime => ({
+        drawTimes.map((drawTime) => ({
           league_id: leagueId,
           draw_time: drawTime,
         }))
@@ -709,6 +856,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       );
     }
 
+    if (extraDraws.length > 0) {
+      await db.insert(schema.leagueExtraDraws).values(
+        extraDraws.map((d) => ({
+          league_id: leagueId,
+          draw_date: d.date,
+          draw_time: d.time,
+        }))
+      );
+    }
+
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -717,7 +874,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     
     const league = leagues[0] as League;
     
-    const drawTimes = await db
+    const drawTimeRows = await db
       .select({ draw_time: schema.leagueDrawTimes.draw_time })
       .from(schema.leagueDrawTimes)
       .where(eq(schema.leagueDrawTimes.league_id, leagueId))
@@ -731,8 +888,9 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
     return mapLeagueResponse(
       league,
-      drawTimes.map((dt) => dt.draw_time),
+      drawTimeRows.map((dt) => dt.draw_time),
       exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
+      extraDraws,
       defaultLeagueFeeMinor
     );
     }
@@ -888,6 +1046,8 @@ export async function leagueRoutes(fastify: FastifyInstance) {
                 format: src.format,
                 start_date: computedStart,
                 end_date: computedEnd,
+                draw_duration_minutes:
+                  src.draw_duration_minutes ?? defaultDrawDurationMinutes(src.format),
                 league_type: src.league_type ?? 'standard',
                 capacity_type: src.capacity_type ?? 'individual',
                 capacity_value: src.capacity_value ?? 0,
@@ -1037,6 +1197,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             league as League,
             drawTimes.map((dt) => dt.draw_time),
             [],
+            [],
             defaultLeagueFeeMinor,
             true
           );
@@ -1092,8 +1253,21 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             successorLeagueId: { type: ['number', 'null'] },
             publicNotes: { type: ['string', 'null'] },
             teamFormation: { type: 'string', enum: ['coordinator', 'skips_draft'] },
+            drawDurationMinutes: { type: 'number' },
             drawTimes: { type: 'array', items: { type: 'string' } },
             exceptions: { type: 'array', items: { type: 'string' } },
+            extraDraws: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  date: { type: 'string' },
+                  time: { type: 'string' },
+                },
+                required: ['date', 'time'],
+              },
+            },
           },
         },
         response: {
@@ -1238,6 +1412,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: 'teams' | 'doubles' | 'instructional';
       start_date: string;
       end_date: string;
+      draw_duration_minutes: number;
       session_id: number | null;
       league_type: 'standard' | 'bring_your_own_team';
       capacity_type: 'individual' | 'team';
@@ -1351,6 +1526,17 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     if (body.teamFormation !== undefined) {
       updateData.team_formation = body.teamFormation;
     }
+    if (body.drawDurationMinutes !== undefined) {
+      updateData.draw_duration_minutes = body.drawDurationMinutes;
+    } else if (
+      body.format !== undefined &&
+      body.format !== existingLeague.format &&
+      (existingLeague.draw_duration_minutes == null ||
+        existingLeague.draw_duration_minutes === defaultDrawDurationMinutes(existingLeague.format))
+    ) {
+      // When format changes and duration was still the previous format default, follow the new default.
+      updateData.draw_duration_minutes = defaultDrawDurationMinutes(body.format);
+    }
 
     if (Object.keys(updateData).length > 0) {
       updateData.updated_at = sql`CURRENT_TIMESTAMP`;
@@ -1454,6 +1640,39 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       }
     }
 
+    if (body.extraDraws !== undefined) {
+      const nextDayOfWeek = body.dayOfWeek ?? existingLeague.day_of_week;
+      const nextStartDate = normalizeDateString(body.startDate ?? existingLeague.start_date);
+      const nextEndDate = normalizeDateString(body.endDate ?? existingLeague.end_date);
+      const nextDrawTimes =
+        body.drawTimes ??
+        (
+          await db
+            .select({ draw_time: schema.leagueDrawTimes.draw_time })
+            .from(schema.leagueDrawTimes)
+            .where(eq(schema.leagueDrawTimes.league_id, leagueId))
+        ).map((row) => row.draw_time);
+      const nextExceptions =
+        body.exceptions !== undefined
+          ? uniqueStrings(body.exceptions)
+          : (
+              await db
+                .select({ exception_date: schema.leagueExceptions.exception_date })
+                .from(schema.leagueExceptions)
+                .where(eq(schema.leagueExceptions.league_id, leagueId))
+            ).map((row) => normalizeDateString(row.exception_date));
+      await replaceLeagueExtraDraws(
+        leagueId,
+        filterNonRegularExtraDraws(body.extraDraws, {
+          dayOfWeek: nextDayOfWeek,
+          drawTimes: nextDrawTimes,
+          startDate: nextStartDate,
+          endDate: nextEndDate,
+          exceptions: nextExceptions,
+        })
+      );
+    }
+
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -1474,10 +1693,13 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       .where(eq(schema.leagueExceptions.league_id, leagueId))
       .orderBy(asc(schema.leagueExceptions.exception_date));
 
+    const extraDrawsByLeagueId = await loadExtraDrawsByLeagueIds([leagueId]);
+
     return mapLeagueResponse(
       league,
       drawTimes.map((dt) => dt.draw_time),
       exceptionRows.map((ex) => normalizeDateString(ex.exception_date)),
+      extraDrawsByLeagueId.get(leagueId) ?? [],
       defaultLeagueFeeMinor
     );
     }
@@ -1568,6 +1790,9 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     const leaguesUnsorted = (await db.select().from(schema.leagues)) as League[];
     const leagues = await sortLeaguesByDayOfWeekThenFirstDrawTime(db, schema, leaguesUnsorted);
 
+    const leagueIds = leagues.map((league) => league.id);
+    const extraDrawsByLeagueId = await loadExtraDrawsByLeagueIds(leagueIds);
+
     const result = await Promise.all(leagues.map(async (league) => {
       const drawTimes = await db
         .select({ draw_time: schema.leagueDrawTimes.draw_time })
@@ -1587,8 +1812,11 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: league.format,
         startDate: league.start_date,
         endDate: league.end_date,
+        drawDurationMinutes:
+          league.draw_duration_minutes ?? defaultDrawDurationMinutes(league.format),
         drawTimes: drawTimes.map((dt) => dt.draw_time),
         exceptions: exceptions.map((ex) => normalizeDateString(ex.exception_date)),
+        extraDraws: extraDrawsByLeagueId.get(league.id) ?? [],
       };
     }));
 
@@ -1604,8 +1832,10 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       format: z.enum(['teams', 'doubles', 'instructional']),
       startDate: z.string(),
       endDate: z.string(),
+      drawDurationMinutes: drawDurationMinutesSchema.optional(),
       drawTimes: z.array(z.string()),
       exceptions: z.array(z.string()).optional(),
+      extraDraws: z.array(extraDrawInputSchema).optional(),
     })),
   });
 
@@ -1629,8 +1859,21 @@ export async function leagueRoutes(fastify: FastifyInstance) {
                   format: { type: 'string', enum: ['teams', 'doubles', 'instructional'] },
                   startDate: { type: 'string' },
                   endDate: { type: 'string' },
+                  drawDurationMinutes: { type: 'number' },
                   drawTimes: { type: 'array', items: { type: 'string' } },
                   exceptions: { type: 'array', items: { type: 'string' } },
+                  extraDraws: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      additionalProperties: false,
+                      properties: {
+                        date: { type: 'string' },
+                        time: { type: 'string' },
+                      },
+                      required: ['date', 'time'],
+                    },
+                  },
                 },
                 required: ['name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes'],
               },
@@ -1663,6 +1906,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         .limit(1);
 
       let leagueId: number;
+      const drawDurationMinutes =
+        leagueData.drawDurationMinutes ?? defaultDrawDurationMinutes(leagueData.format);
+      const exceptions = uniqueStrings(leagueData.exceptions ?? []);
+      const extraDraws = filterNonRegularExtraDraws(leagueData.extraDraws ?? [], {
+        dayOfWeek: leagueData.dayOfWeek,
+        drawTimes: leagueData.drawTimes,
+        startDate: leagueData.startDate,
+        endDate: leagueData.endDate,
+        exceptions,
+      });
 
       if (existingLeagues.length > 0) {
         // Update existing league
@@ -1676,6 +1929,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             format: leagueData.format,
             start_date: leagueData.startDate,
             end_date: leagueData.endDate,
+            draw_duration_minutes: drawDurationMinutes,
             updated_at: sql`CURRENT_TIMESTAMP`,
           })
           .where(eq(schema.leagues.id, leagueId));
@@ -1688,6 +1942,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         await db
           .delete(schema.leagueExceptions)
           .where(eq(schema.leagueExceptions.league_id, leagueId));
+        await replaceLeagueExtraDraws(leagueId, extraDraws);
       } else {
         // Create new league
         const result = await db
@@ -1698,6 +1953,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             format: leagueData.format,
             start_date: leagueData.startDate,
             end_date: leagueData.endDate,
+            draw_duration_minutes: drawDurationMinutes,
           })
           .returning();
 
@@ -1709,6 +1965,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
           sort_order: 0,
           is_default: 1,
         });
+
+        if (extraDraws.length > 0) {
+          await db.insert(schema.leagueExtraDraws).values(
+            extraDraws.map((d) => ({
+              league_id: leagueId,
+              draw_date: d.date,
+              draw_time: d.time,
+            }))
+          );
+        }
       }
 
       // Insert draw times
@@ -1722,7 +1988,6 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       }
 
       // Insert exceptions
-      const exceptions = uniqueStrings(leagueData.exceptions ?? []);
       if (exceptions.length > 0) {
         await db.insert(schema.leagueExceptions).values(
           exceptions.map((d) => ({
@@ -1739,8 +2004,10 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         format: leagueData.format,
         startDate: leagueData.startDate,
         endDate: leagueData.endDate,
+        drawDurationMinutes,
         drawTimes: leagueData.drawTimes,
         exceptions,
+        extraDraws,
       });
     }
 

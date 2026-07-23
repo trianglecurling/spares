@@ -11,6 +11,12 @@ import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+import {
+  defaultDrawDurationMinutes,
+  extraDrawKey,
+  type LeagueExtraDraw,
+  type LeaguePlayFormat,
+} from '../../utils/leagueSchedule';
 
 const WEEKDAY_CHOICES: ChoiceOption<number>[] = [
   'Sunday',
@@ -22,7 +28,7 @@ const WEEKDAY_CHOICES: ChoiceOption<number>[] = [
   'Saturday',
 ].map((label, index) => ({ value: index, label }));
 
-type LeagueListPlayFormat = 'teams' | 'doubles' | 'instructional';
+type LeagueListPlayFormat = LeaguePlayFormat;
 
 const LEAGUE_FORMAT_CHOICES: ChoiceOption<LeagueListPlayFormat>[] = [
   { value: 'teams', label: 'Teams' },
@@ -61,8 +67,10 @@ interface League {
   allowsSabbatical: boolean;
   predecessorLeagueId: number | null;
   successorLeagueId: number | null;
+  drawDurationMinutes: number;
   drawTimes: string[];
   exceptions: string[];
+  extraDraws: LeagueExtraDraw[];
   canManage?: boolean;
 }
 
@@ -113,11 +121,14 @@ export default function Leagues() {
     format: 'teams' as LeagueListPlayFormat,
     startDate: '',
     endDate: '',
+    drawDurationMinutes: defaultDrawDurationMinutes('teams'),
     drawTimes: [''],
     exceptions: [] as string[],
+    extraDraws: [] as LeagueExtraDraw[],
   });
   const [showExceptionPicker, setShowExceptionPicker] = useState(false);
   const [exceptionToAdd, setExceptionToAdd] = useState('');
+  const [extraDrawToAdd, setExtraDrawToAdd] = useState<LeagueExtraDraw>({ date: '', time: '' });
   const [submitting, setSubmitting] = useState(false);
   const [addLeagueMenuOpen, setAddLeagueMenuOpen] = useState(false);
   const addLeagueMenuRef = useRef<HTMLDivElement>(null);
@@ -193,11 +204,14 @@ export default function Leagues() {
       format: 'teams',
       startDate: '',
       endDate: '',
+      drawDurationMinutes: defaultDrawDurationMinutes('teams'),
       drawTimes: [''],
       exceptions: [],
+      extraDraws: [],
     });
     setShowExceptionPicker(false);
     setExceptionToAdd('');
+    setExtraDrawToAdd({ date: '', time: '' });
     setIsModalOpen(true);
   };
 
@@ -205,6 +219,7 @@ export default function Leagues() {
     setIsModalOpen(false);
     setShowExceptionPicker(false);
     setExceptionToAdd('');
+    setExtraDrawToAdd({ date: '', time: '' });
   };
 
   const computeLeagueDates = (
@@ -257,14 +272,23 @@ export default function Leagues() {
 
     try {
       const uniqueExceptions = Array.from(new Set(formData.exceptions)).sort();
+      const uniqueExtraDraws = Array.from(
+        new Map(
+          formData.extraDraws
+            .filter((d) => d.date && d.time)
+            .map((d) => [extraDrawKey(d), { date: d.date, time: d.time.slice(0, 5) }])
+        ).values()
+      ).sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
       const payload = {
         name: formData.name,
         dayOfWeek: formData.dayOfWeek,
         format: formData.format,
         startDate: formData.startDate,
         endDate: formData.endDate,
+        drawDurationMinutes: formData.drawDurationMinutes,
         drawTimes: formData.drawTimes.filter((t) => t.trim() !== ''),
         exceptions: uniqueExceptions,
+        extraDraws: uniqueExtraDraws,
       };
 
       await post('/leagues', payload);
@@ -332,6 +356,31 @@ export default function Leagues() {
     setFormData((prev) => ({
       ...prev,
       exceptions: prev.exceptions.filter((d) => d !== dateStr),
+    }));
+  };
+
+  const addExtraDraw = () => {
+    const date = extraDrawToAdd.date;
+    const time = extraDrawToAdd.time.slice(0, 5);
+    if (!date || !time) return;
+    const key = extraDrawKey({ date, time });
+    setFormData((prev) => {
+      if (prev.extraDraws.some((d) => extraDrawKey(d) === key)) return prev;
+      return {
+        ...prev,
+        extraDraws: [...prev.extraDraws, { date, time }].sort(
+          (a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)
+        ),
+      };
+    });
+    setExtraDrawToAdd({ date: '', time: '' });
+  };
+
+  const removeExtraDraw = (draw: LeagueExtraDraw) => {
+    const key = extraDrawKey(draw);
+    setFormData((prev) => ({
+      ...prev,
+      extraDraws: prev.extraDraws.filter((d) => extraDrawKey(d) !== key),
     }));
   };
 
@@ -510,6 +559,10 @@ export default function Leagues() {
                   {league.drawTimes.map(formatTime).join(', ')}
                 </p>
                 <p>
+                  <span className="font-medium dark:text-gray-300">Draw duration:</span>{' '}
+                  {league.drawDurationMinutes ?? defaultDrawDurationMinutes(league.format)} minutes
+                </p>
+                <p>
                   <span className="font-medium dark:text-gray-300">Format:</span>{' '}
                   {leagueFormatCardLabel(league.format)}
                 </p>
@@ -532,6 +585,12 @@ export default function Leagues() {
                   <p>
                     <span className="font-medium dark:text-gray-300">Exceptions:</span>{' '}
                     {league.exceptions.length} date(s)
+                  </p>
+                )}
+                {league.extraDraws?.length > 0 && (
+                  <p>
+                    <span className="font-medium dark:text-gray-300">One-off draws:</span>{' '}
+                    {league.extraDraws.length}
                   </p>
                 )}
               </div>
@@ -722,10 +781,43 @@ export default function Leagues() {
               options={LEAGUE_FORMAT_CHOICES}
               value={formData.format}
               onChange={(next) => {
-                if (next != null && !Array.isArray(next))
-                  setFormData({ ...formData, format: next });
+                if (next == null || Array.isArray(next)) return;
+                setFormData((prev) => {
+                  const prevDefault = defaultDrawDurationMinutes(prev.format);
+                  const nextDefault = defaultDrawDurationMinutes(next);
+                  return {
+                    ...prev,
+                    format: next,
+                    drawDurationMinutes:
+                      prev.drawDurationMinutes === prevDefault
+                        ? nextDefault
+                        : prev.drawDurationMinutes,
+                  };
+                });
               }}
               listboxLabel="League format"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="drawDurationMinutes" className="app-label">
+              Draw duration (minutes) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              id="drawDurationMinutes"
+              min={15}
+              max={1440}
+              step={15}
+              value={formData.drawDurationMinutes}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  drawDurationMinutes: Number.parseInt(e.target.value, 10) || defaultDrawDurationMinutes(formData.format),
+                })
+              }
+              className="app-input"
               required
             />
           </div>
@@ -825,6 +917,66 @@ export default function Leagues() {
                     <button
                       type="button"
                       onClick={() => removeException(d)}
+                      className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="app-label">One-off draws (additional date and time)</label>
+            <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+              <div className="flex-1">
+                <label htmlFor="extraDrawDate" className="sr-only">
+                  One-off draw date
+                </label>
+                <input
+                  type="date"
+                  id="extraDrawDate"
+                  value={extraDrawToAdd.date}
+                  onChange={(e) => setExtraDrawToAdd((prev) => ({ ...prev, date: e.target.value }))}
+                  className="app-input"
+                />
+              </div>
+              <div className="flex-1">
+                <label htmlFor="extraDrawTime" className="sr-only">
+                  One-off draw time
+                </label>
+                <input
+                  type="time"
+                  id="extraDrawTime"
+                  value={extraDrawToAdd.time}
+                  onChange={(e) => setExtraDrawToAdd((prev) => ({ ...prev, time: e.target.value }))}
+                  className="app-input"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={addExtraDraw}
+                disabled={!extraDrawToAdd.date || !extraDrawToAdd.time}
+              >
+                Add one-off draw
+              </Button>
+            </div>
+
+            {formData.extraDraws.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {formData.extraDraws.map((draw) => (
+                  <div
+                    key={extraDrawKey(draw)}
+                    className="flex items-center justify-between px-3 py-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40"
+                  >
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      {formatDateDisplay(draw.date)} · {formatTime(draw.time)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeExtraDraw(draw)}
                       className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                     >
                       Remove

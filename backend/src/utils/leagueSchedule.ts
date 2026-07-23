@@ -2,6 +2,86 @@
  * Shared utilities for computing league draw schedules.
  */
 
+export type LeaguePlayFormat = 'teams' | 'doubles' | 'instructional';
+
+/** Default draw length by play format (teams/instructional: 120, doubles: 90). */
+export function defaultDrawDurationMinutes(format: LeaguePlayFormat): number {
+  return format === 'doubles' ? 90 : 120;
+}
+
+export function normalizeDrawTimeString(value: string): string {
+  const trimmed = value.trim();
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(trimmed);
+  if (!match) return trimmed.slice(0, 5);
+  const hours = String(Number.parseInt(match[1]!, 10)).padStart(2, '0');
+  const minutes = match[2]!;
+  return `${hours}:${minutes}`;
+}
+
+export type LeagueExtraDrawInput = { date: string; time: string };
+
+/** Deduplicate and normalize extra draw date+time pairs. */
+export function normalizeExtraDrawInputs(values: LeagueExtraDrawInput[]): LeagueExtraDrawInput[] {
+  const seen = new Set<string>();
+  const out: LeagueExtraDrawInput[] = [];
+  for (const value of values) {
+    const date = value.date?.trim().slice(0, 10) ?? '';
+    const time = normalizeDrawTimeString(value.time ?? '');
+    if (!date || !time) continue;
+    const key = `${date}|${time}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ date, time });
+  }
+  out.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  return out;
+}
+
+/** True when date+time already falls on the league's recurring schedule (not an exception). */
+export function isRegularLeagueDrawSlot(input: {
+  date: string;
+  time: string;
+  dayOfWeek: number;
+  drawTimes: string[];
+  startDate: string;
+  endDate: string;
+  exceptions: Set<string>;
+}): boolean {
+  const date = input.date.slice(0, 10);
+  const time = normalizeDrawTimeString(input.time);
+  if (!date || !time) return false;
+  if (date < input.startDate || date > input.endDate) return false;
+  if (input.exceptions.has(date)) return false;
+  if (getDayOfWeek(date) !== input.dayOfWeek) return false;
+  const times = new Set(input.drawTimes.map((t) => normalizeDrawTimeString(t)));
+  return times.has(time);
+}
+
+export function filterNonRegularExtraDraws(
+  extraDraws: LeagueExtraDrawInput[],
+  schedule: {
+    dayOfWeek: number;
+    drawTimes: string[];
+    startDate: string;
+    endDate: string;
+    exceptions: string[];
+  }
+): LeagueExtraDrawInput[] {
+  const exceptions = new Set(schedule.exceptions);
+  return normalizeExtraDrawInputs(extraDraws).filter(
+    (draw) =>
+      !isRegularLeagueDrawSlot({
+        date: draw.date,
+        time: draw.time,
+        dayOfWeek: schedule.dayOfWeek,
+        drawTimes: schedule.drawTimes,
+        startDate: schedule.startDate,
+        endDate: schedule.endDate,
+        exceptions,
+      })
+  );
+}
+
 function toDateParts(value: string) {
   const [year, month, day] = value.split('-').map((part) => parseInt(part, 10));
   return { year, month, day };

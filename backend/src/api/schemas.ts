@@ -566,8 +566,21 @@ export const leagueResponseSchema = {
     successorLeagueId: { type: ['number', 'null'] },
     publicNotes: { type: ['string', 'null'] },
     teamFormation: { type: 'string', enum: ['coordinator', 'skips_draft'] },
+    drawDurationMinutes: { type: 'number' },
     drawTimes: { type: 'array', items: { type: 'string' } },
     exceptions: { type: 'array', items: { type: 'string' } },
+    extraDraws: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          date: { type: 'string' },
+          time: { type: 'string' },
+        },
+        required: ['date', 'time'],
+      },
+    },
   },
   required: [
     'id',
@@ -599,8 +612,10 @@ export const leagueResponseSchema = {
     'successorLeagueId',
     'publicNotes',
     'teamFormation',
+    'drawDurationMinutes',
     'drawTimes',
     'exceptions',
+    'extraDraws',
   ],
 } as const;
 
@@ -633,10 +648,33 @@ export const leagueExportResponseSchema = {
           format: { type: 'string', enum: ['teams', 'doubles', 'instructional'] },
           startDate: { type: 'string' },
           endDate: { type: 'string' },
+          drawDurationMinutes: { type: 'number' },
           drawTimes: { type: 'array', items: { type: 'string' } },
           exceptions: { type: 'array', items: { type: 'string' } },
+          extraDraws: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                date: { type: 'string' },
+                time: { type: 'string' },
+              },
+              required: ['date', 'time'],
+            },
+          },
         },
-        required: ['name', 'dayOfWeek', 'format', 'startDate', 'endDate', 'drawTimes', 'exceptions'],
+        required: [
+          'name',
+          'dayOfWeek',
+          'format',
+          'startDate',
+          'endDate',
+          'drawDurationMinutes',
+          'drawTimes',
+          'exceptions',
+          'extraDraws',
+        ],
       },
     },
   },

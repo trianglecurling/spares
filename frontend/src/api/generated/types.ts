@@ -4082,8 +4082,13 @@ export interface paths {
                             publicNotes: null | string;
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
+                            drawDurationMinutes: number;
                             drawTimes: string[];
                             exceptions: string[];
+                            extraDraws: {
+                                date: string;
+                                time: string;
+                            }[];
                         }[];
                     };
                 };
@@ -4126,8 +4131,13 @@ export interface paths {
                         dropInFeeMinor?: number | null;
                         predecessorLeagueId?: number | null;
                         successorLeagueId?: number | null;
+                        drawDurationMinutes?: number;
                         drawTimes: string[];
                         exceptions?: string[];
+                        extraDraws?: {
+                            date: string;
+                            time: string;
+                        }[];
                     };
                 };
             };
@@ -4172,8 +4182,13 @@ export interface paths {
                             publicNotes: null | string;
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
+                            drawDurationMinutes: number;
                             drawTimes: string[];
                             exceptions: string[];
+                            extraDraws: {
+                                date: string;
+                                time: string;
+                            }[];
                         };
                     };
                 };
@@ -4294,8 +4309,13 @@ export interface paths {
                                 publicNotes: null | string;
                                 /** @enum {string} */
                                 teamFormation: "coordinator" | "skips_draft";
+                                drawDurationMinutes: number;
                                 drawTimes: string[];
                                 exceptions: string[];
+                                extraDraws: {
+                                    date: string;
+                                    time: string;
+                                }[];
                             }[];
                         };
                     };
@@ -4393,8 +4413,13 @@ export interface paths {
                         publicNotes?: string | null;
                         /** @enum {string} */
                         teamFormation?: "coordinator" | "skips_draft";
+                        drawDurationMinutes?: number;
                         drawTimes?: string[];
                         exceptions?: string[];
+                        extraDraws?: {
+                            date: string;
+                            time: string;
+                        }[];
                     };
                 };
             };
@@ -4439,8 +4464,13 @@ export interface paths {
                             publicNotes: null | string;
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
+                            drawDurationMinutes: number;
                             drawTimes: string[];
                             exceptions: string[];
+                            extraDraws: {
+                                date: string;
+                                time: string;
+                            }[];
                         };
                     };
                 };
@@ -4478,8 +4508,13 @@ export interface paths {
                                 format: "teams" | "doubles" | "instructional";
                                 startDate: string;
                                 endDate: string;
+                                drawDurationMinutes: number;
                                 drawTimes: string[];
                                 exceptions: string[];
+                                extraDraws: {
+                                    date: string;
+                                    time: string;
+                                }[];
                             }[];
                         };
                     };
@@ -4520,8 +4555,13 @@ export interface paths {
                             format: "teams" | "doubles" | "instructional";
                             startDate: string;
                             endDate: string;
+                            drawDurationMinutes?: number;
                             drawTimes: string[];
                             exceptions?: string[];
+                            extraDraws?: {
+                                date: string;
+                                time: string;
+                            }[];
                         }[];
                     };
                 };
@@ -4570,8 +4610,13 @@ export interface paths {
                                 publicNotes: null | string;
                                 /** @enum {string} */
                                 teamFormation: "coordinator" | "skips_draft";
+                                drawDurationMinutes: number;
                                 drawTimes: string[];
                                 exceptions: string[];
+                                extraDraws: {
+                                    date: string;
+                                    time: string;
+                                }[];
                             }[];
                         };
                     };
