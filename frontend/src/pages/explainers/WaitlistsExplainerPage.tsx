@@ -18,17 +18,17 @@ const faqItems: Array<{ question: string; answer: string; accent: string }> = [
   {
     question: "What's the difference between ADD and REPLACE?",
     answer:
-      'ADD means you want the league as your first or second league. REPLACE means you would give up a league you already hold to take this one. You can have at most two REPLACE waitlists.',
+      'ADD means you want the league as your first or second league. REPLACE means you would give up a league you already hold to take this one. You can be on at most two REPLACE waitlists.',
     accent: 'border-t-cyan-500 bg-gradient-to-b from-cyan-50/70 to-white',
   },
 ];
 
 const alsoKnowItems: string[] = [
-  'Waitlists are first-come, first-served and can carry forward across sessions when leagues have successor relationships.',
   'You may remove yourself from a waitlist at any time, but you lose your position; re-joining starts at the back with a fresh decline count.',
   'Permanent spots are offered before temporary sabbatical-fill spots.',
   'Joining a waitlist defers payment until placement is known.',
-  'Not available for build-your-own-team leagues (Tuesday and doubles), Junior Recreational, or third-league interest (those use different paths).',
+  'Not available for build-your-own-team leagues (Tuesday and doubles) or third-league interest.',
+  'Waitlists for doubles leagues are team-based. You must join the waitlist as a pair.'
 ];
 
 export default function WaitlistsExplainerPage() {
