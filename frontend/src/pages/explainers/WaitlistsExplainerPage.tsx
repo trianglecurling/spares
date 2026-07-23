@@ -27,7 +27,7 @@ const alsoKnowItems: string[] = [
   'You may remove yourself from a waitlist at any time, but you lose your position; re-joining starts at the back with a fresh decline count.',
   'Permanent spots are offered before temporary sabbatical-fill spots.',
   'Joining a waitlist defers payment until placement is known.',
-  'Not available for build-your-own-team leagues (Tuesday and doubles) or third-league interest.',
+  'Not available for the Tuesday competitive league (which uses a play-in system) or third-league interest.',
   'Waitlists for doubles leagues are team-based. You must join the waitlist as a pair.'
 ];
 
