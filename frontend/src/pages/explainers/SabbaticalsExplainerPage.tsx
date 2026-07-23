@@ -18,7 +18,7 @@ const faqItems: Array<{ question: string; answer: string; accent: string }> = [
   {
     question: 'Am I guaranteed to return to my spot?',
     answer:
-      'Yes. Taking a sabbatical preserves your right to return to that league in a later session, as long as you stay within the duration limit and do not release the spot.',
+      'Yes. Taking a sabbatical preserves your right to return to that league in a later session, as long as you stay within the duration limit, register each session, and do not release the spot.',
     accent: 'border-t-teal-500 bg-gradient-to-b from-teal-50/80 to-white',
   },
   {
@@ -33,7 +33,7 @@ const alsoKnowItems: string[] = [
   'Your spot will be temporarily filled during your sabbatical. You cannot return mid-session.',
   'Each session you must choose to return, extend (and pay again), or permanently release the spot.',
   'Sabbaticals count toward the two protected claims you may hold (guaranteed returns and sabbaticals combined).',
-  'Only returning members with a guaranteed return can take a sabbatical, and only during priority registration. Not available for build-your-own-team leagues (Tuesday and doubles).',
+  'Only returning members with a guaranteed return can take a sabbatical, which must be done during priority registration. Not available for build-your-own-team leagues (Tuesday and doubles).',
   'Failing to renew your sabbatical each session can mean losing your guaranteed return.',
 ];
 
@@ -96,7 +96,7 @@ export default function SabbaticalsExplainerPage() {
               <h1 className="public-heading text-balance">League sabbaticals</h1>
             </div>
             <p className="public-body max-w-3xl text-base sm:text-lg">
-              A sabbatical lets an eligible returning member step away from a standard league for a session while
+              A sabbatical lets an eligible returning league member step away from that league for a session while
               preserving the right to return later.
             </p>
           </div>
