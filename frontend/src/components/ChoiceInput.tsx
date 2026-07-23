@@ -1783,7 +1783,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
             <button
               ref={toolbarUnselectAllRef}
               type="button"
-              className="text-xs font-medium text-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/20 disabled:cursor-not-allowed disabled:opacity-60 enabled:cursor-pointer enabled:hover:underline"
+              className="text-xs font-medium text-primary-teal-link focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/20 disabled:cursor-not-allowed disabled:opacity-60 enabled:cursor-pointer enabled:hover:underline"
               disabled={disabled || readOnly}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
@@ -1810,7 +1810,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
             <button
               ref={toolbarSelectAllRef}
               type="button"
-              className="text-xs font-medium text-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/20 disabled:cursor-not-allowed disabled:opacity-60 enabled:cursor-pointer enabled:hover:underline"
+              className="text-xs font-medium text-primary-teal-link focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/20 disabled:cursor-not-allowed disabled:opacity-60 enabled:cursor-pointer enabled:hover:underline"
               disabled={disabled || readOnly || unselectedToggleableValues.length === 0 || selectionSlotsRemaining <= 0}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {

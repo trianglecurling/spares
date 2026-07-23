@@ -1706,7 +1706,7 @@ export default function LeagueDetail() {
                   <button
                     type="button"
                     onClick={() => navigate(`/leagues/${leagueId}/teams`)}
-                    className="text-left text-lg font-semibold text-primary-teal hover:underline"
+                    className="text-left text-lg font-semibold text-primary-teal-link hover:underline"
                   >
                     Teams
                   </button>
@@ -1716,7 +1716,7 @@ export default function LeagueDetail() {
               {leagueAllowsDropIns ? (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   This drop-in league keeps permanent members on the{' '}
-                  <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal hover:underline">
+                  <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal-link hover:underline">
                     league roster
                   </Link>{' '}
                   and does not use teams.
@@ -1741,7 +1741,7 @@ export default function LeagueDetail() {
                               <button
                                 type="button"
                                 onClick={() => setSelectedTeam(team)}
-                                className="text-left text-primary-teal hover:underline"
+                                className="text-left text-primary-teal-link hover:underline"
                               >
                                 {team.name || 'Unnamed team'}
                               </button>
@@ -1759,7 +1759,7 @@ export default function LeagueDetail() {
                       <button
                         type="button"
                         onClick={() => setSelectedTeam(team)}
-                        className="text-left text-primary-teal hover:underline"
+                        className="text-left text-primary-teal-link hover:underline"
                       >
                         {team.name || 'Unnamed team'}
                       </button>
@@ -2373,7 +2373,7 @@ export default function LeagueDetail() {
                         <p className="text-sm text-gray-600 dark:text-gray-400">
                           <Link
                             to={`/waitlists/${league.waitlistId}`}
-                            className="font-medium text-primary-teal hover:underline"
+                            className="font-medium text-primary-teal-link hover:underline"
                           >
                             View {attachedWaitlistSummary ?? `waitlist #${league.waitlistId}`}
                           </Link>
@@ -2484,7 +2484,7 @@ export default function LeagueDetail() {
                 description={
                   <>
                     Manage permanent members on the{' '}
-                    <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal hover:underline">
+                    <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal-link hover:underline">
                       roster tab
                     </Link>
                     .
@@ -2554,7 +2554,7 @@ export default function LeagueDetail() {
                 description={
                   <>
                     Manage permanent members on the{' '}
-                    <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal hover:underline">
+                    <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal-link hover:underline">
                       roster tab
                     </Link>
                     .

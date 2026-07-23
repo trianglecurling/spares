@@ -158,7 +158,7 @@ export function AdminVolunteeringPrograms() {
           <div>
             <Link
               to={`/admin/volunteering/${row.id}`}
-              className="font-medium text-primary-teal hover:underline"
+              className="font-medium text-primary-teal-link hover:underline"
             >
               {row.title}
             </Link>

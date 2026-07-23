@@ -23,6 +23,7 @@ import {
   RRULE_DAY_LABELS,
   getWeekdayFromDate,
   matchRecurrencePreset,
+  parseRecurrenceLimits,
 } from '../pages/calendarEventFormShared';
 
 export interface CalendarEventFormProps {
@@ -77,6 +78,7 @@ export default function CalendarEventForm({
         .map((l) => l.type) ?? []
   );
   const initialRecurrence = matchRecurrencePreset(event?.recurrenceRrule ?? '');
+  const initialRecurrenceLimits = parseRecurrenceLimits(event?.recurrenceRrule ?? '');
   const defaultWeeklyDays =
     initialRecurrence.preset === 'weekly' && initialRecurrence.weeklyDays
       ? initialRecurrence.weeklyDays
@@ -86,14 +88,19 @@ export default function CalendarEventForm({
   const [selectedWeekdays, setSelectedWeekdays] = useState<(typeof RRULE_DAYS)[number][]>(
     initialRecurrence.preset === 'weekly' ? defaultWeeklyDays : []
   );
-  const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
-  const [recurrenceCount, setRecurrenceCount] = useState<number | ''>('');
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState(
+    initialRecurrence.preset === 'custom' ? '' : initialRecurrenceLimits.endDate
+  );
+  const [recurrenceCount, setRecurrenceCount] = useState<number | ''>(
+    initialRecurrence.preset === 'custom' ? '' : initialRecurrenceLimits.count
+  );
   const [editScope, setEditScope] = useState<'this' | 'all'>('this');
   const [linkedArticle, setLinkedArticle] = useState<ArticleOption | null>(event?.article ?? null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'description'>('details');
   const descriptionEditorRef = useRef<MarkdownDescriptionEditorRef>(null);
   const lastEditedRecurrenceLimitRef = useRef<'endDate' | 'count' | null>(null);
+  const previousRecurrencePresetRef = useRef(initialRecurrence.preset);
   const { resolvedTheme } = useTheme();
 
   const isRecurringEdit = Boolean(event?.id && event.id.split(':').length === 3);
@@ -107,6 +114,8 @@ export default function CalendarEventForm({
   }, [recurrencePreset, startDate, selectedWeekdays.length]);
 
   useEffect(() => {
+    if (previousRecurrencePresetRef.current === recurrencePreset) return;
+    previousRecurrencePresetRef.current = recurrencePreset;
     setRecurrenceEndDate('');
     setRecurrenceCount('');
     lastEditedRecurrenceLimitRef.current = null;
@@ -493,7 +502,7 @@ export default function CalendarEventForm({
                         ? setSelectedSheets([])
                         : setSelectedSheets(sheets.map((s) => s.id))
                     }
-                    className="text-xs text-primary-teal hover:underline shrink-0"
+                    className="text-xs text-primary-teal-link hover:underline shrink-0"
                   >
                     {selectedSheets.length === sheets.length ? 'Unselect all' : 'Select all'}
                   </button>

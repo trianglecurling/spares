@@ -351,7 +351,7 @@ export default function TournamentScorekeeperView({
         action={
           <Link
             to={`/admin/events/${eventId}/tournament#structure`}
-            className="text-sm font-medium text-primary-teal hover:underline"
+            className="text-sm font-medium text-primary-teal-link hover:underline"
           >
             Open tournament structure
           </Link>

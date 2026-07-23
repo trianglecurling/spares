@@ -238,7 +238,7 @@ export default function BookIceTime() {
             <p className="app-page-subtitle">
               Social memberships do not include ice booking. Upgrade to a full membership to reserve practice ice.
             </p>
-            <Link to="/calendar" className="mt-5 inline-flex text-sm font-medium text-primary-teal hover:underline">
+            <Link to="/calendar" className="mt-5 inline-flex text-sm font-medium text-primary-teal-link hover:underline">
               View full calendar
             </Link>
           </div>
@@ -325,7 +325,7 @@ export default function BookIceTime() {
           description={
             <>
               Reserve 1 or 2 hours on one sheet, up to 7 days ahead. Your sheet must be available according to the{' '}
-              <Link to="/calendar" className="text-primary-teal hover:underline">
+              <Link to="/calendar" className="text-primary-teal-link hover:underline">
                 club calendar
               </Link>
               .
@@ -427,7 +427,7 @@ export default function BookIceTime() {
                     href="https://links.tccnc.club/guests"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary-teal font-medium hover:underline"
+                    className="text-primary-teal-link font-medium hover:underline"
                   >
                     guest policy
                   </a>{' '}
@@ -437,7 +437,7 @@ export default function BookIceTime() {
                     href="https://links.tccnc.club/waiver"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary-teal font-medium hover:underline"
+                    className="text-primary-teal-link font-medium hover:underline"
                   >
                     sign a waiver
                   </a>{' '}
@@ -453,7 +453,7 @@ export default function BookIceTime() {
                     href="https://links.tccnc.club/guests"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary-teal font-medium hover:underline"
+                    className="text-primary-teal-link font-medium hover:underline"
                   >
                     guest policy
                   </a>{' '}
@@ -463,7 +463,7 @@ export default function BookIceTime() {
                     href="https://links.tccnc.club/waiver"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary-teal font-medium hover:underline"
+                    className="text-primary-teal-link font-medium hover:underline"
                   >
                     sign a waiver
                   </a>{' '}

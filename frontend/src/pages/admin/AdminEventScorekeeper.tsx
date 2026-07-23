@@ -36,7 +36,7 @@ export default function AdminEventScorekeeper() {
           title="Could not load draw"
           description={loadError}
           action={
-            <Link to={`/admin/events/${eventId}/tournament`} className="text-sm font-medium text-primary-teal hover:underline">
+            <Link to={`/admin/events/${eventId}/tournament`} className="text-sm font-medium text-primary-teal-link hover:underline">
               Back to tournament
             </Link>
           }
@@ -48,7 +48,7 @@ export default function AdminEventScorekeeper() {
           action={
             <Link
               to={`/admin/events/${eventId}/tournament#structure`}
-              className="text-sm font-medium text-primary-teal hover:underline"
+              className="text-sm font-medium text-primary-teal-link hover:underline"
             >
               Open tournament
             </Link>

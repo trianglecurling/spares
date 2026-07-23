@@ -924,7 +924,7 @@ export default function AdminEventEditor() {
         defaultSortDirection: 'asc',
         cellClassName: 'font-medium text-gray-900 dark:text-gray-100',
         renderCell: (registration) => (
-          <Link to={`/admin/events/${id}/registrations/${registration.id}`} className="text-primary-teal hover:underline">
+          <Link to={`/admin/events/${id}/registrations/${registration.id}`} className="text-primary-teal-link hover:underline">
             {registration.contact_name}
           </Link>
         ),
@@ -982,7 +982,7 @@ export default function AdminEventEditor() {
                 <button
                   type="button"
                   onClick={() => setTeamFieldView({ registration, field })}
-                  className="text-sm font-medium text-primary-teal hover:underline"
+                  className="text-sm font-medium text-primary-teal-link hover:underline"
                 >
                   View
                 </button>
@@ -1007,7 +1007,7 @@ export default function AdminEventEditor() {
           <button
             type="button"
             onClick={() => setDetailLink(link)}
-            className="text-left font-medium text-primary-teal hover:underline"
+            className="text-left font-medium text-primary-teal-link hover:underline"
           >
             {link.label || '(no label)'}
           </button>
@@ -1466,7 +1466,7 @@ export default function AdminEventEditor() {
                   <div className="text-sm text-gray-500 dark:text-gray-400">
                     Enter at least one start and end time.
                   </div>
-                  <button type="button" onClick={addTimespan} className="text-sm text-primary-teal hover:underline">
+                  <button type="button" onClick={addTimespan} className="text-sm text-primary-teal-link hover:underline">
                     + Add timespan
                   </button>
                 </div>
@@ -1559,7 +1559,7 @@ export default function AdminEventEditor() {
                             ? setSelectedSheets([])
                             : setSelectedSheets(sheets.map((s) => s.id))
                         }
-                        className="text-xs text-primary-teal hover:underline shrink-0"
+                        className="text-xs text-primary-teal-link hover:underline shrink-0"
                       >
                         {selectedSheets.length === sheets.length ? 'Unselect all' : 'Select all'}
                       </button>
@@ -2493,7 +2493,7 @@ export default function AdminEventEditor() {
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <Link
                   to={`/admin/events/${id}/registrations/${teamFieldView.registration.id}`}
-                  className="text-sm text-primary-teal hover:underline"
+                  className="text-sm text-primary-teal-link hover:underline"
                   onClick={() => setTeamFieldView(null)}
                 >
                   Open full registration

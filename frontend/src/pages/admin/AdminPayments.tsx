@@ -274,7 +274,7 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
           <button
             type="button"
             onClick={() => setSelectedOrderId(order.id)}
-            className="text-left font-medium text-gray-900 hover:text-primary-teal dark:text-gray-100"
+            className="text-left font-medium text-gray-900 hover:text-primary-teal-link dark:text-gray-100"
           >
             #{order.id}{' '}
             <span className="text-xs text-gray-500 dark:text-gray-400">({order.provider})</span>

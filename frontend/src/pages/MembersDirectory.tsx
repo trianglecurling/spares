@@ -306,7 +306,7 @@ export default function MembersDirectory() {
           <button
             type="button"
             onClick={() => handleMemberClick(member)}
-            className="cursor-pointer text-left font-medium text-gray-900 hover:text-primary-teal dark:text-gray-100"
+            className="cursor-pointer text-left font-medium text-gray-900 hover:text-primary-teal-link dark:text-gray-100"
           >
             {member.name}
           </button>
@@ -318,7 +318,7 @@ export default function MembersDirectory() {
         cellClassName: 'whitespace-nowrap',
         renderCell: (member) =>
           member.email ? (
-            <a href={`mailto:${member.email}`} className="text-primary-teal hover:underline">
+            <a href={`mailto:${member.email}`} className="text-primary-teal-link hover:underline">
               {member.email}
             </a>
           ) : (
@@ -511,7 +511,7 @@ export default function MembersDirectory() {
                           </span>{' '}
                           <a
                             href={`mailto:${selectedMember.email}`}
-                            className="text-primary-teal hover:underline"
+                            className="text-primary-teal-link hover:underline"
                           >
                             {selectedMember.email}
                           </a>
@@ -697,7 +697,7 @@ export default function MembersDirectory() {
                                     teamName: entry.teamName,
                                   })
                                 }
-                                className="text-sm text-primary-teal dark:text-primary-teal/90 mt-1 hover:underline text-left"
+                                className="text-sm text-primary-teal-link dark:text-primary-teal-link/90 mt-1 hover:underline text-left"
                               >
                                 Team: {entry.teamName}
                               </button>

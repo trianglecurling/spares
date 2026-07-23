@@ -555,7 +555,7 @@ export default function AdminGovernance() {
                       type="button"
                       onClick={() => openBoardMemberEditor(bm)}
                       disabled={saving}
-                      className="shrink-0 text-sm text-primary-teal hover:underline disabled:opacity-50"
+                      className="shrink-0 text-sm text-primary-teal-link hover:underline disabled:opacity-50"
                     >
                       Edit
                     </button>
@@ -565,7 +565,7 @@ export default function AdminGovernance() {
                   <button
                     type="button"
                     onClick={() => setShowInactiveBoardMembers((prev) => !prev)}
-                    className="mt-1 text-sm text-primary-teal hover:underline"
+                    className="mt-1 text-sm text-primary-teal-link hover:underline"
                   >
                     {showInactiveBoardMembers
                       ? 'Hide inactive members'
@@ -748,7 +748,7 @@ export default function AdminGovernance() {
                                   })
                                 }
                                 disabled={saving}
-                                className="text-sm text-primary-teal hover:underline"
+                                className="text-sm text-primary-teal-link hover:underline"
                               >
                                 Edit email
                               </button>
@@ -780,7 +780,7 @@ export default function AdminGovernance() {
               <button
                 type="button"
                 onClick={() => setIsSettingsDialogOpen(true)}
-                className="text-sm text-primary-teal underline underline-offset-2 hover:text-primary-teal/80"
+                className="text-sm text-primary-teal-link underline underline-offset-2 hover:opacity-90"
               >
                 Edit global settings
               </button>

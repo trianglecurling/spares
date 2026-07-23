@@ -112,7 +112,7 @@ export default function ClubGovernance() {
         renderCell: (officer) => (
           <a
             href={`mailto:${OFFICER_EMAILS[officer.position]}`}
-            className="text-primary-teal hover:underline"
+            className="text-primary-teal-link hover:underline"
           >
             {OFFICER_EMAILS[officer.position]}
           </a>

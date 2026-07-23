@@ -384,7 +384,7 @@ export default function AdminRegistrationDetail() {
               </div>
               {detail.payment.paymentLink ? (
                 <p className="text-sm">
-                  <a href={detail.payment.paymentLink} className="text-primary-teal hover:underline">
+                  <a href={detail.payment.paymentLink} className="text-primary-teal-link hover:underline">
                     Open payment link
                   </a>
                 </p>
@@ -422,7 +422,7 @@ export default function AdminRegistrationDetail() {
                                     href={stripeUrl}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="text-primary-teal hover:underline"
+                                    className="text-primary-teal-link hover:underline"
                                   >
                                     {entry.providerReference}
                                   </a>
@@ -582,7 +582,7 @@ export default function AdminRegistrationDetail() {
                   </div>
                 ))}
               </div>
-              <Link to="/admin/registrations/communications" className="text-sm text-primary-teal hover:underline">
+              <Link to="/admin/registrations/communications" className="text-sm text-primary-teal-link hover:underline">
                 Open registration communications
               </Link>
             </Section>

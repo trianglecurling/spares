@@ -469,7 +469,7 @@ html.dark body {
   }
 
   .markdown-content a {
-    @apply text-primary-teal-link underline underline-offset-2 hover:opacity-90 dark:text-primary-teal dark:hover:opacity-90;
+    @apply text-primary-teal-link underline underline-offset-2 hover:opacity-90 dark:text-primary-teal-link dark:hover:opacity-90;
   }
 
   .markdown-content strong {

@@ -183,7 +183,7 @@ export default function PhysicalAddressCollect({
   );
 
   const linkBtnClass =
-    'text-sm font-medium text-primary-teal underline decoration-primary-teal/40 underline-offset-2 hover:decoration-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/30 rounded-sm';
+    'text-sm font-medium text-primary-teal-link underline decoration-primary-teal/40 underline-offset-2 hover:decoration-primary-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/30 rounded-sm';
 
   const subdivisions = useMemo(() => [...postalSubdivisionNamesForCountry(value.country)], [value.country]);
   const useStateProvinceDropdown = subdivisions.length > 0;

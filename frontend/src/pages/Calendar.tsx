@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
   addDays,
@@ -28,7 +28,6 @@ import type { IconType } from 'react-icons';
 import {
   HiAcademicCap,
   HiCalendar,
-  HiCalendarDays,
   HiChevronLeft,
   HiChevronRight,
   HiClipboardDocumentList,
@@ -38,6 +37,7 @@ import {
   HiOutlineCalendarDays as HiOutlineDay,
   HiPencil,
   HiPlus,
+  HiRectangleGroup,
   HiSparkles,
   HiStar,
   HiSun,
@@ -45,6 +45,7 @@ import {
   HiUserGroup,
   HiWrench,
 } from 'react-icons/hi2';
+import { IoTrophyOutline } from 'react-icons/io5';
 import api from '../utils/api';
 import Button from '../components/Button';
 import PublicLayout from '../components/PublicLayout';
@@ -103,8 +104,10 @@ export interface CalendarEvent {
   createdBy?: string;
   /** Optional linked article for "More info" */
   article?: ArticleOption;
-  /** Event source: 'direct' | 'leagues' | 'ice-booking' (read-only for leagues & ice) */
+  /** Event source: 'direct' | 'leagues' | 'ice-booking' | 'events' (read-only for leagues, ice & events) */
   source?: string;
+  /** Public event slug when source is 'events' */
+  slug?: string;
 }
 
 /** True if event is from the leagues schedule (read-only) */
@@ -291,22 +294,22 @@ export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
     id: 'maintenance',
     label: 'Maintenance',
     color:
-      'bg-slate-200 text-gray-900 border-gray-900/50 dark:bg-slate-600 dark:text-white dark:border-white/25',
+      'bg-red-100 text-red-900 border-red-900/50 dark:bg-red-600 dark:text-white dark:border-white/25',
     icon: HiWrench,
   },
   {
     id: 'leagues',
     label: 'Leagues',
     color:
-      'bg-teal-100 text-teal-900 border-teal-900/50 dark:bg-primary-teal-solid dark:text-white dark:border-white/25',
-    icon: HiCalendar,
+      'bg-cyan-100 text-cyan-950 border-cyan-900/40 dark:bg-cyan-700 dark:text-white dark:border-white/25',
+    icon: HiRectangleGroup,
   },
   {
     id: 'bonspiel',
     label: 'Bonspiel',
     color:
       'bg-violet-200 text-violet-900 border-violet-900/50 dark:bg-violet-500 dark:text-white dark:border-white/25',
-    icon: HiCalendarDays,
+    icon: IoTrophyOutline,
   },
   {
     id: 'juniors',
@@ -326,7 +329,7 @@ export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
     id: 'group-event',
     label: 'Group Event',
     color:
-      'bg-emerald-100 text-emerald-900 border-emerald-900/50 dark:bg-emerald-600 dark:text-white dark:border-white/25',
+      'bg-orange-100 text-orange-900 border-orange-900/50 dark:bg-orange-500 dark:text-white dark:border-white/25',
     icon: HiUserGroup,
   },
   {
@@ -375,28 +378,28 @@ export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
     id: 'member-ice',
     label: 'Member booking',
     color:
-      'bg-cyan-100 text-cyan-950 border-cyan-900/40 dark:bg-cyan-700 dark:text-white dark:border-white/25',
+      'bg-teal-100 text-teal-900 border-teal-900/50 dark:bg-primary-teal-solid dark:text-white dark:border-white/25',
     icon: HiStar,
   },
 ];
 
 /** Solid dot colors for compact mobile month cells (paired with DEFAULT_EVENT_TYPES). */
 const EVENT_TYPE_DOT_CLASS: Record<string, string> = {
-  maintenance: 'bg-slate-500 dark:bg-slate-400',
-  leagues: 'bg-teal-600 dark:bg-teal-400',
+  maintenance: 'bg-red-500 dark:bg-red-400',
+  leagues: 'bg-cyan-600 dark:bg-cyan-400',
   bonspiel: 'bg-violet-600 dark:bg-violet-400',
   'bonspiel-fours': 'bg-violet-600 dark:bg-violet-400',
   'bonspiel-doubles': 'bg-violet-600 dark:bg-violet-400',
   juniors: 'bg-fuchsia-600 dark:bg-fuchsia-400',
   practice: 'bg-amber-500 dark:bg-amber-400',
-  'group-event': 'bg-emerald-600 dark:bg-emerald-400',
+  'group-event': 'bg-orange-500 dark:bg-orange-400',
   clinic: 'bg-sky-500 dark:bg-sky-400',
   social: 'bg-rose-500 dark:bg-rose-400',
   'board-committee': 'bg-indigo-600 dark:bg-indigo-400',
   'learn-to-curl': 'bg-teal-600 dark:bg-teal-400',
   'off-season': 'bg-orange-500 dark:bg-orange-400',
   other: 'bg-gray-500 dark:bg-gray-400',
-  'member-ice': 'bg-cyan-600 dark:bg-cyan-400',
+  'member-ice': 'bg-teal-600 dark:bg-teal-400',
 };
 
 function eventTypeDotClass(typeId: string): string {
@@ -409,21 +412,21 @@ function eventTypeDotClass(typeId: string): string {
  * Light + `dark:` variants so the tint reads on `bg-white dark:bg-gray-800` calendar cards.
  */
 const WEEK_ALL_DAY_COLUMN_TINT: Record<string, string> = {
-  maintenance: 'bg-slate-100/40 dark:bg-slate-900/35',
-  leagues: 'bg-teal-50/50 dark:bg-teal-950/35',
+  maintenance: 'bg-red-50/50 dark:bg-red-950/35',
+  leagues: 'bg-cyan-50/50 dark:bg-cyan-950/35',
   bonspiel: 'bg-violet-50/50 dark:bg-violet-950/35',
   'bonspiel-fours': 'bg-violet-50/50 dark:bg-violet-950/35',
   'bonspiel-doubles': 'bg-violet-50/50 dark:bg-violet-950/35',
   juniors: 'bg-fuchsia-50/50 dark:bg-fuchsia-950/35',
   practice: 'bg-amber-50/50 dark:bg-amber-950/35',
-  'group-event': 'bg-emerald-50/50 dark:bg-emerald-950/35',
+  'group-event': 'bg-orange-50/50 dark:bg-orange-950/35',
   clinic: 'bg-sky-50/50 dark:bg-sky-950/35',
   social: 'bg-rose-50/50 dark:bg-rose-950/35',
   'board-committee': 'bg-indigo-50/50 dark:bg-indigo-950/35',
   'learn-to-curl': 'bg-teal-50/50 dark:bg-teal-950/35',
   'off-season': 'bg-orange-50/50 dark:bg-orange-950/35',
   other: 'bg-gray-100/45 dark:bg-gray-900/35',
-  'member-ice': 'bg-cyan-50/50 dark:bg-cyan-950/35',
+  'member-ice': 'bg-teal-50/50 dark:bg-teal-950/35',
 };
 
 function getWeekAllDayColumnTintClass(typeId: string): string {
@@ -443,6 +446,7 @@ export function apiEventToCalendar(ev: {
   createdBy?: string;
   article?: ArticleOption;
   source?: string;
+  slug?: string;
 }): CalendarEvent {
   const locs: EventLocation[] = (ev.locations ?? []).map((l) => {
     if (l.type === 'sheet' && l.sheetId != null) {
@@ -461,6 +465,7 @@ export function apiEventToCalendar(ev: {
     locations: locs.length > 0 ? locs : undefined,
     recurrenceRrule: ev.recurrenceRrule,
     source: ev.source,
+    slug: ev.slug,
     createdBy: ev.createdBy,
     article: ev.article,
   };
@@ -676,6 +681,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       createdBy?: string;
       article?: ArticleOption;
       source?: string;
+      slug?: string;
     };
     type PublicCalendarBundle = {
       events: EventPayload[];
@@ -1300,13 +1306,27 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                               </dd>
                             </>
                           )}
+                          {isRegistrableEvent(selectedEvent) && selectedEvent.slug && (
+                            <>
+                              <dt className="text-gray-500 dark:text-gray-400">Event page</dt>
+                              <dd>
+                                <Link
+                                  to={`/events/${selectedEvent.slug}`}
+                                  className="text-primary-teal-link underline hover:opacity-80"
+                                  onClick={() => setSelectedEvent(null)}
+                                >
+                                  View event
+                                </Link>
+                              </dd>
+                            </>
+                          )}
                           {selectedEvent.article && (
                             <>
                               <dt className="text-gray-500 dark:text-gray-400">More info</dt>
                               <dd>
                                 <a
                                   href={`/articles/${selectedEvent.article.slug}`}
-                                  className="text-primary-teal underline hover:opacity-80"
+                                  className="text-primary-teal-link underline hover:opacity-80"
                                 >
                                   {selectedEvent.article.title}
                                 </a>
@@ -1325,7 +1345,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                             <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
                               Booking details
                             </div>
-                            <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal [&_a]:underline hover:[&_a]:opacity-80">
+                            <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal-link [&_a]:underline hover:[&_a]:opacity-80">
                               <ArticleMarkdown markdown={descriptionText} className="markdown-content max-w-none" />
                             </div>
                           </div>
@@ -1359,7 +1379,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                   </>
                 )}
                 {showDescriptionTab && viewEventActiveTab === 'description' && (
-                  <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal [&_a]:underline hover:[&_a]:opacity-80 min-h-[120px] flex-1">
+                  <div className="text-sm text-gray-800 dark:text-gray-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_strong]:font-semibold [&_a]:text-primary-teal-link [&_a]:underline hover:[&_a]:opacity-80 min-h-[120px] flex-1">
                     <ArticleMarkdown markdown={descriptionText} className="markdown-content max-w-none" />
                   </div>
                 )}
@@ -1659,7 +1679,7 @@ function MonthDayEvents({
             e.preventDefault();
             onDayClick?.(day);
           }}
-          className="shrink-0 text-xs text-gray-500 dark:text-gray-400 py-0.5 hover:text-primary-teal dark:hover:text-primary-teal/80 cursor-pointer underline-offset-2 hover:underline text-left w-full"
+          className="shrink-0 text-xs text-gray-500 dark:text-gray-400 py-0.5 hover:text-primary-teal-link dark:hover:opacity-90 cursor-pointer underline-offset-2 hover:underline text-left w-full"
         >
           +{overflowCount} more
         </button>

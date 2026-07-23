@@ -580,7 +580,7 @@ export default function AdminVolunteerProgramEditor() {
                   <InlineStateMessage
                     title="No credentials defined yet."
                     description={
-                      <Link to="/admin/volunteering/credentials" className="text-primary-teal hover:underline">
+                      <Link to="/admin/volunteering/credentials" className="text-primary-teal-link hover:underline">
                         Manage credentials
                       </Link>
                     }
@@ -763,7 +763,7 @@ export default function AdminVolunteerProgramEditor() {
                             <div className="flex min-h-10 items-center">
                               <button
                                 type="button"
-                                className="text-sm text-primary-teal hover:underline"
+                                className="text-sm text-primary-teal-link hover:underline"
                                 onClick={() =>
                                   setNewShiftTimes((prev) =>
                                     prev.filter((r) => r.key !== row.key)
@@ -782,7 +782,7 @@ export default function AdminVolunteerProgramEditor() {
                   <div className="pt-1">
                     <button
                       type="button"
-                      className="text-sm font-medium text-primary-teal hover:underline"
+                      className="text-sm font-medium text-primary-teal-link hover:underline"
                       onClick={addAdditionalShiftTime}
                     >
                       Add additional shift
@@ -1019,7 +1019,7 @@ function ExistingShiftEditor({
                 />
                 <button
                   type="button"
-                  className="text-sm text-primary-teal hover:underline"
+                  className="text-sm text-primary-teal-link hover:underline"
                   onClick={() =>
                     setShiftRoles((prev) => prev.filter((r) => r.roleId !== role.roleId))
                   }
@@ -1052,7 +1052,7 @@ function ExistingShiftEditor({
         ) : (
           <button
             type="button"
-            className="text-sm font-medium text-primary-teal hover:underline"
+            className="text-sm font-medium text-primary-teal-link hover:underline"
             onClick={() => setShowAddRole(true)}
           >
             Add another role

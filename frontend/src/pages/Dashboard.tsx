@@ -697,7 +697,7 @@ export default function Dashboard() {
                 <p className="text-sm ml-4">
                   <a
                     href={`mailto:${request.requesterEmail}`}
-                    className="text-primary-teal hover:underline"
+                    className="text-primary-teal-link hover:underline"
                   >
                     {request.requesterEmail}
                   </a>
@@ -807,7 +807,7 @@ export default function Dashboard() {
                     Enter results: {event.title}
                   </span>
                   <HiChevronRight
-                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal"
+                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal-link"
                     aria-hidden="true"
                   />
                 </Link>
@@ -821,7 +821,7 @@ export default function Dashboard() {
 
           {!member?.socialMember ? (
             <div className="app-card flex flex-col">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal/80 dark:text-primary-teal">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal-link/80 dark:text-primary-teal-link">
                 Quick actions
               </p>
               <div className="mt-4 flex flex-1 flex-col justify-center gap-2.5">
@@ -847,14 +847,14 @@ export default function Dashboard() {
                   to="/availability"
                   className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-teal/40 hover:bg-primary-teal/5 dark:hover:border-primary-teal/40 dark:hover:bg-primary-teal/10"
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-teal/10 text-primary-teal dark:bg-primary-teal/20">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-teal/10 text-primary-teal-link dark:bg-primary-teal/20">
                     <HiOutlineCalendar className="h-5 w-5" />
                   </span>
                   <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
                     Set availability
                   </span>
                   <HiChevronRight
-                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal"
+                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal-link"
                     aria-hidden="true"
                   />
                 </Link>
@@ -892,7 +892,7 @@ export default function Dashboard() {
                 action={
                   <Link
                     to="/book-ice"
-                    className="text-sm font-medium text-primary-teal hover:underline"
+                    className="text-sm font-medium text-primary-teal-link hover:underline"
                   >
                     Book ice time →
                   </Link>
@@ -948,7 +948,7 @@ export default function Dashboard() {
                       className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
                     >
                       <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
-                        <HiOutlineCalendarDays className="w-5 h-5 text-primary-teal shrinking-0" />
+                        <HiOutlineCalendarDays className="w-5 h-5 text-primary-teal-link shrinking-0" />
                         <span className="font-medium">
                           {game.gameDate ? formatDayOfWeek(game.gameDate) : '—'}
                         </span>
@@ -970,7 +970,7 @@ export default function Dashboard() {
                                 teamName: game.opponentName!,
                               })
                             }
-                            className="text-primary-teal hover:underline font-medium"
+                            className="text-primary-teal-link hover:underline font-medium"
                           >
                             {game.opponentName}
                           </button>
@@ -980,7 +980,7 @@ export default function Dashboard() {
                       </span>
                       <Link
                         to={`/leagues/${game.leagueId}/schedule`}
-                        className="text-sm text-primary-teal hover:underline ml-auto"
+                        className="text-sm text-primary-teal-link hover:underline ml-auto"
                       >
                         {game.leagueName}
                       </Link>
@@ -994,7 +994,7 @@ export default function Dashboard() {
               <DashboardSection
                 title="Upcoming volunteer opportunities"
                 action={
-                  <Link to="/volunteering" className="text-sm text-primary-teal hover:underline">
+                  <Link to="/volunteering" className="text-sm text-primary-teal-link hover:underline">
                     View all →
                   </Link>
                 }
@@ -1019,7 +1019,7 @@ export default function Dashboard() {
                       </div>
                       <Link
                         to="/volunteering"
-                        className="text-sm text-primary-teal hover:underline ml-auto"
+                        className="text-sm text-primary-teal-link hover:underline ml-auto"
                       >
                         Sign up
                       </Link>
@@ -1045,7 +1045,7 @@ export default function Dashboard() {
                 action={
                   <Link
                     to="/my-requests"
-                    className="text-sm font-medium text-primary-teal hover:underline"
+                    className="text-sm font-medium text-primary-teal-link hover:underline"
                   >
                     Manage requests →
                   </Link>
@@ -1107,7 +1107,7 @@ export default function Dashboard() {
                                   <p className="text-sm ml-4 mt-1">
                                     <a
                                       href={`mailto:${request.filledByEmail}`}
-                                      className="text-primary-teal hover:underline"
+                                      className="text-primary-teal-link hover:underline"
                                     >
                                       {request.filledByEmail}
                                     </a>

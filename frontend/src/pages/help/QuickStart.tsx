@@ -101,20 +101,20 @@ export default function QuickStart() {
                       <li>
                         <Link
                           to="/help/requesting-spare"
-                          className="text-primary-teal hover:underline"
+                          className="text-primary-teal-link hover:underline"
                         >
                           Requesting a Spare
                         </Link>
                       </li>
                       <li>
-                        <Link to="/help/responding" className="text-primary-teal hover:underline">
+                        <Link to="/help/responding" className="text-primary-teal-link hover:underline">
                           Responding to Requests
                         </Link>
                       </li>
                       <li>
                         <Link
                           to="/help/public-vs-private"
-                          className="text-primary-teal hover:underline"
+                          className="text-primary-teal-link hover:underline"
                         >
                           Public vs Private Requests
                         </Link>
@@ -122,7 +122,7 @@ export default function QuickStart() {
                       <li>
                         <Link
                           to="/help/notifications"
-                          className="text-primary-teal hover:underline"
+                          className="text-primary-teal-link hover:underline"
                         >
                           Notification Process
                         </Link>
@@ -132,7 +132,7 @@ export default function QuickStart() {
                 </div>
 
                 <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                  <Link to="/help" className="text-primary-teal hover:underline">
+                  <Link to="/help" className="text-primary-teal-link hover:underline">
                     ← Back to Help Index
                   </Link>
                 </div>

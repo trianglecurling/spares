@@ -1162,7 +1162,7 @@ export default function AdminContent() {
             <button
               type="button"
               onClick={() => openFileModal(file)}
-              className="block max-w-full truncate text-left font-medium text-gray-900 transition-colors hover:text-primary-teal hover:underline dark:text-gray-100"
+              className="block max-w-full truncate text-left font-medium text-gray-900 transition-colors hover:text-primary-teal-link hover:underline dark:text-gray-100"
             >
               {file.displayName || file.originalFilename}
             </button>
@@ -1239,7 +1239,7 @@ export default function AdminContent() {
             href={`/articles/${article.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary-teal hover:underline"
+            className="text-primary-teal-link hover:underline"
           >
             /articles/{article.slug}
           </a>
@@ -1539,7 +1539,7 @@ export default function AdminContent() {
                                 <button
                                   type="button"
                                   onClick={() => openMenuModal(item)}
-                                  className="text-sm text-primary-teal hover:underline"
+                                  className="text-sm text-primary-teal-link hover:underline"
                                 >
                                   Edit
                                 </button>
@@ -2022,7 +2022,7 @@ export default function AdminContent() {
                         <button
                           type="button"
                           onClick={() => openShowcaseModal(img)}
-                          className="text-sm text-primary-teal hover:underline"
+                          className="text-sm text-primary-teal-link hover:underline"
                         >
                           Edit
                         </button>

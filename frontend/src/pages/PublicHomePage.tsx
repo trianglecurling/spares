@@ -508,8 +508,8 @@ export default function PublicHomePage() {
           )}
 
           <section className="public-home-hero-bg relative overflow-hidden">
-            <HouseRings className="pointer-events-none absolute -right-32 -top-36 h-[30rem] w-[30rem] text-primary-teal opacity-30 max-lg:hidden" />
-            <HouseRings className="pointer-events-none absolute -bottom-44 -left-36 h-[26rem] w-[26rem] text-primary-teal opacity-30" />
+            <HouseRings className="pointer-events-none absolute -right-32 -top-36 h-[30rem] w-[30rem] text-primary-teal-link opacity-30 max-lg:hidden" />
+            <HouseRings className="pointer-events-none absolute -bottom-44 -left-36 h-[26rem] w-[26rem] text-primary-teal-link opacity-30" />
             <div className="public-container relative py-10 sm:py-14 lg:py-16">
               <div className="grid items-start gap-10 lg:grid-cols-[1.05fr_1fr]">
                 <div className="max-w-xl">
@@ -531,7 +531,7 @@ export default function PublicHomePage() {
                       {pathways.map(({ key, eyebrow, title, cta, to, href, Icon }) => {
                         const cardInner = (
                           <>
-                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-teal/10 text-primary-teal transition group-hover:bg-primary-teal-solid group-hover:text-white motion-reduce:transition-none">
+                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-teal/10 text-primary-teal-link transition group-hover:bg-primary-teal-solid group-hover:text-white motion-reduce:transition-none">
                               <Icon className="h-6 w-6" aria-hidden />
                             </span>
                             <span className="min-w-0 flex-1">

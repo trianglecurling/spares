@@ -2120,7 +2120,7 @@ function InspectorPanel({
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <button
             type="button"
-            className="text-sm font-medium text-primary-teal hover:underline dark:text-teal-400"
+            className="text-sm font-medium text-primary-teal-link hover:underline dark:text-teal-400"
             onClick={addCompetitor}
             disabled={k >= 32}
           >

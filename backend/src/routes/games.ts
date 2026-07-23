@@ -409,21 +409,26 @@ async function computeDrawSlots(
     .orderBy(schema.sheets.sort_order, schema.sheets.name);
   const activeSheets = sheetRows.filter((sheet) => sheet.is_active === 1);
 
-  const availabilityRows = await db
-    .select({
-      draw_date: schema.drawSheetAvailability.draw_date,
-      draw_time: schema.drawSheetAvailability.draw_time,
-      sheet_id: schema.drawSheetAvailability.sheet_id,
-      is_available: schema.drawSheetAvailability.is_available,
-    })
-    .from(schema.drawSheetAvailability)
-    .where(
-      and(
-        eq(schema.drawSheetAvailability.league_id, leagueId),
-        gte(schema.drawSheetAvailability.draw_date, startDate),
-        lte(schema.drawSheetAvailability.draw_date, endDate)
-      )
-    );
+  // Load availability for every computed slot date (including one-off draws outside the
+  // regular season window). Filtering only by league season would drop those overrides.
+  const slotDates = Array.from(new Set(slots.map((slot) => slot.date)));
+  const availabilityRows =
+    slotDates.length === 0
+      ? []
+      : await db
+          .select({
+            draw_date: schema.drawSheetAvailability.draw_date,
+            draw_time: schema.drawSheetAvailability.draw_time,
+            sheet_id: schema.drawSheetAvailability.sheet_id,
+            is_available: schema.drawSheetAvailability.is_available,
+          })
+          .from(schema.drawSheetAvailability)
+          .where(
+            and(
+              eq(schema.drawSheetAvailability.league_id, leagueId),
+              inArray(schema.drawSheetAvailability.draw_date, slotDates)
+            )
+          );
 
   const availabilityMap = new Map<string, Map<number, boolean>>();
   for (const row of availabilityRows) {
@@ -1223,9 +1228,11 @@ export async function gameRoutes(fastify: FastifyInstance) {
       }
 
       const body = drawAvailabilityUpdateSchema.parse(request.body);
+      const drawDate = formatDateValue(body.date);
+      const drawTime = formatTimeValue(body.time);
       const { db, schema } = getDrizzleDb();
 
-      const isValid = await isValidDrawSlot(db, schema, leagueId, body.date, body.time);
+      const isValid = await isValidDrawSlot(db, schema, leagueId, drawDate, drawTime);
       if (!isValid) {
         return reply.code(400).send({ error: 'Draw slot not found for this league.' });
       }
@@ -1252,8 +1259,8 @@ export async function gameRoutes(fastify: FastifyInstance) {
           .from(schema.games)
           .where(
             and(
-              eq(schema.games.game_date, body.date),
-              eq(schema.games.game_time, body.time),
+              eq(schema.games.game_date, drawDate),
+              eq(schema.games.game_time, drawTime),
               inArray(schema.games.sheet_id, blockedSheetIds)
             )
           )
@@ -1264,22 +1271,34 @@ export async function gameRoutes(fastify: FastifyInstance) {
         }
       }
 
-      await db
-        .delete(schema.drawSheetAvailability)
+      // Delete by league+date, then match times in app code so "18:00" and "18:00:00" both clear.
+      const existingAvailability = await db
+        .select({
+          id: schema.drawSheetAvailability.id,
+          draw_time: schema.drawSheetAvailability.draw_time,
+        })
+        .from(schema.drawSheetAvailability)
         .where(
           and(
             eq(schema.drawSheetAvailability.league_id, leagueId),
-            eq(schema.drawSheetAvailability.draw_date, body.date),
-            eq(schema.drawSheetAvailability.draw_time, body.time)
+            eq(schema.drawSheetAvailability.draw_date, drawDate)
           )
         );
+      const idsToDelete = existingAvailability
+        .filter((row) => formatTimeValue(row.draw_time) === drawTime)
+        .map((row) => row.id);
+      if (idsToDelete.length > 0) {
+        await db
+          .delete(schema.drawSheetAvailability)
+          .where(inArray(schema.drawSheetAvailability.id, idsToDelete));
+      }
 
       if (body.sheets.length > 0) {
         await db.insert(schema.drawSheetAvailability).values(
           body.sheets.map((sheet) => ({
             league_id: leagueId,
-            draw_date: body.date,
-            draw_time: body.time,
+            draw_date: drawDate,
+            draw_time: drawTime,
             sheet_id: sheet.sheetId,
             is_available: sheet.isAvailable ? 1 : 0,
           }))

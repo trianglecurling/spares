@@ -642,7 +642,7 @@ export default function AdminEventDetailsArticlePanel({
                                   href={`/admin/content/articles/${articleId}/versions/${version.id}/preview`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-xs text-primary-teal hover:underline"
+                                  className="text-xs text-primary-teal-link hover:underline"
                                 >
                                   Preview
                                 </a>
@@ -650,7 +650,7 @@ export default function AdminEventDetailsArticlePanel({
                                   type="button"
                                   onClick={() => void handleRestoreVersion(version)}
                                   disabled={restoringVersionId === version.id}
-                                  className="text-xs text-primary-teal hover:underline disabled:opacity-50"
+                                  className="text-xs text-primary-teal-link hover:underline disabled:opacity-50"
                                 >
                                   {restoringVersionId === version.id ? 'Restoring…' : 'Restore this version'}
                                 </button>

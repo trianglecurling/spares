@@ -17,7 +17,7 @@ export default function HelpHeader() {
             </Link>
             <Link
               to="/help"
-              className="text-gray-700 dark:text-gray-300 hover:text-primary-teal transition-colors"
+              className="text-gray-700 dark:text-gray-300 hover:text-primary-teal-link transition-colors"
             >
               Help
             </Link>
@@ -26,14 +26,14 @@ export default function HelpHeader() {
             {member ? (
               <Link
                 to="/"
-                className="text-gray-700 dark:text-gray-300 hover:text-primary-teal transition-colors"
+                className="text-gray-700 dark:text-gray-300 hover:text-primary-teal-link transition-colors"
               >
                 Dashboard
               </Link>
             ) : (
               <Link
                 to="/login"
-                className="text-gray-700 dark:text-gray-300 hover:text-primary-teal transition-colors"
+                className="text-gray-700 dark:text-gray-300 hover:text-primary-teal-link transition-colors"
               >
                 Login
               </Link>

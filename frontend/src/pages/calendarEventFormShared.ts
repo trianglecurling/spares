@@ -1,3 +1,6 @@
+import { format } from 'date-fns';
+import { RRule } from 'rrule';
+
 export const LOCATION_OPTIONS = [
   { type: 'warm-room' as const, label: 'Warm room' },
   { type: 'exterior' as const, label: 'Exterior' },
@@ -46,13 +49,41 @@ export function parseByDayFromRrule(rrule: string): (typeof RRULE_DAYS)[number][
   );
 }
 
+/** Strip UNTIL/COUNT so preset matching still works for stored rules with limits. */
+export function stripRecurrenceLimits(rrule: string): string {
+  return rrule
+    .trim()
+    .replace(/;?UNTIL=\d{8}(T\d{6}Z?)?/gi, '')
+    .replace(/;?COUNT=\d+/gi, '')
+    .replace(/;;+/g, ';')
+    .replace(/^;|;$/g, '')
+    .trim();
+}
+
+export function parseRecurrenceLimits(rrule: string): {
+  endDate: string;
+  count: number | '';
+} {
+  if (!rrule?.trim()) return { endDate: '', count: '' };
+  try {
+    const options = RRule.parseString(rrule.trim()) as { until?: Date; count?: number };
+    const endDate = options.until ? format(options.until, 'yyyy-MM-dd') : '';
+    const count =
+      typeof options.count === 'number' && options.count > 0 ? options.count : ('' as const);
+    return { endDate, count };
+  } catch {
+    return { endDate: '', count: '' };
+  }
+}
+
 export function matchRecurrencePreset(rrule: string): {
   preset: string;
   custom: string;
   weeklyDays?: (typeof RRULE_DAYS)[number][];
 } {
   if (!rrule || !rrule.trim()) return { preset: 'none', custom: '' };
-  const normalized = rrule.trim();
+  const normalized = stripRecurrenceLimits(rrule);
+  if (!normalized) return { preset: 'none', custom: '' };
   const exact = RECURRENCE_PRESETS.find((p) => p.rrule && normalized === p.rrule);
   if (exact) return { preset: exact.value, custom: '' };
   if (normalized.startsWith('FREQ=WEEKLY')) {
@@ -65,5 +96,6 @@ export function matchRecurrencePreset(rrule: string): {
       weeklyDays: byDay && byDay.length > 0 ? byDay : undefined,
     };
   }
-  return { preset: 'custom', custom: normalized };
+  // Keep UNTIL/COUNT in custom text; preset modes use separate end/count fields.
+  return { preset: 'custom', custom: rrule.trim() };
 }

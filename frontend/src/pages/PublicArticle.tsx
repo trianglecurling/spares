@@ -49,7 +49,7 @@ function ArticleHtmlContent({ content }: { content: string }) {
   }, [parsed.js]);
 
   return (
-    <div ref={containerRef} className="article-html-content [&_a]:text-primary-teal-link [&_a]:underline dark:[&_a]:text-primary-teal">
+    <div ref={containerRef} className="article-html-content [&_a]:text-primary-teal-link [&_a]:underline dark:[&_a]:text-primary-teal-link">
       <div dangerouslySetInnerHTML={{ __html: parsed.html }} />
     </div>
   );

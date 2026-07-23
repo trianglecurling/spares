@@ -360,7 +360,7 @@ export default function RequestSpare() {
           title="No leagues available for spare requests"
           description="You need an active roster spot on a team league this session. Instructional and drop-in leagues are not eligible for spare requests."
           action={
-            <Link to="/dashboard" className="text-sm font-semibold text-primary-teal hover:underline">
+            <Link to="/dashboard" className="text-sm font-semibold text-primary-teal-link hover:underline">
               Back to dashboard
             </Link>
           }

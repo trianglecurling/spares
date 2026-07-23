@@ -703,7 +703,7 @@ export default function AdminContentPermalinksPanel({
                   <span>This slug is already in use.</span>
                   <button
                     type="button"
-                    className="font-medium text-primary-teal underline hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
+                    className="font-medium text-primary-teal-link underline hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
                     onClick={() => switchToEditExisting(slugConflictRow)}
                   >
                     Edit that permalink instead?

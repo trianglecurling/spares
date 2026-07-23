@@ -419,19 +419,19 @@ export default function AdminConfig() {
             <div className="flex flex-wrap items-center gap-4">
               <Link
                 to="/admin/observability"
-                className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+                className="text-primary-teal-link hover:opacity-90 text-sm font-medium"
               >
                 Observability →
               </Link>
               <Link
                 to="/admin/feedback"
-                className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+                className="text-primary-teal-link hover:opacity-90 text-sm font-medium"
               >
                 View feedback →
               </Link>
               <Link
                 to="/admin/database-config"
-                className="text-primary-teal hover:text-opacity-80 text-sm font-medium"
+                className="text-primary-teal-link hover:opacity-90 text-sm font-medium"
               >
                 Configure database →
               </Link>

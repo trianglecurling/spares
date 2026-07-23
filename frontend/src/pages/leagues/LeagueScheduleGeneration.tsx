@@ -1641,7 +1641,7 @@ export default function LeagueScheduleGeneration({
                       drawSlotKeys: allSelected ? [] : selectableKeys,
                     }));
                   }}
-                  className="text-xs text-primary-teal hover:underline"
+                  className="text-xs text-primary-teal-link hover:underline"
                 >
                   {drawSlots
                     .map((s) => `${s.date}|${s.time}`)

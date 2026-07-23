@@ -231,7 +231,7 @@ export default function Availability() {
                 </div>
 
                 <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                  <Link to="/help" className="text-primary-teal hover:underline">
+                  <Link to="/help" className="text-primary-teal-link hover:underline">
                     ← Back to Help Index
                   </Link>
                 </div>

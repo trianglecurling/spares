@@ -1,14 +1,12 @@
-import { eq, and, or, sql, asc, isNotNull, gte, lte, inArray } from 'drizzle-orm';
-import rrule from 'rrule';
+import { eq, and, or, sql, asc, gte, lte, inArray } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { expandRecurrenceInTimeZone } from '../utils/calendarRecurrence.js';
 import {
   computeLeagueDrawDatesInRange,
   defaultDrawDurationMinutes,
 } from '../utils/leagueSchedule.js';
 import { localDateTimeToUtcDate } from '../utils/timeZone.js';
-
-const { RRule } = rrule;
 
 export type ExpandedDirectCalendarEvent = {
   id: string;
@@ -43,43 +41,6 @@ function toEventId(event: { id: number; parent_event_id: number | null; recurren
     return `direct:${event.parent_event_id}:${event.recurrence_date}`;
   }
   return `direct:${event.id}`;
-}
-
-function expandRecurrence(
-  startDt: string,
-  endDt: string,
-  _allDay: number,
-  recurrenceRule: string,
-  rangeStart: Date,
-  rangeEnd: Date,
-  endDate?: string,
-  count?: number
-): Array<{ start: string; end: string }> {
-  try {
-    const start = new Date(startDt);
-    const end = new Date(endDt);
-    const durationMs = end.getTime() - start.getTime();
-
-    const options = RRule.parseString(recurrenceRule);
-    if (endDate) {
-      options.until = new Date(endDate + 'T23:59:59');
-    }
-    if (count) {
-      options.count = count;
-    }
-    (options as { dtstart?: Date }).dtstart = start;
-
-    const rule = new RRule(options);
-    const dates = rule.between(rangeStart, rangeEnd, true);
-
-    return dates.map((dt) => {
-      const instanceStart = dt.toISOString();
-      const instanceEnd = new Date(dt.getTime() + durationMs).toISOString();
-      return { start: instanceStart, end: instanceEnd };
-    });
-  } catch {
-    return [];
-  }
 }
 
 /** Calendar + league events that appear on the member calendar, expanded into concrete intervals. */
@@ -230,21 +191,18 @@ export async function fetchDirectCalendarEventsForRange(
     const locs = mapLocations(ev.id);
 
     if (ev.recurrence_rule) {
-      const expanded = expandRecurrence(
+      const expanded = expandRecurrenceInTimeZone(
         ev.start_dt,
         ev.end_dt,
-        ev.all_day,
         ev.recurrence_rule,
         rangeStart,
-        rangeEnd
+        rangeEnd,
+        config.timeZone
       );
       for (const inc of expanded) {
-        const incDate = inc.start.slice(0, 10);
+        const incDate = inc.recurrenceDate;
         const override = overridesByParentDate.get(`${ev.id}:${incDate}`);
         if (exceptionSet.has(`${ev.id}:${incDate}`) && !override) continue;
-        const instStart = new Date(inc.start);
-        const instEnd = new Date(inc.end);
-        if (instEnd <= rangeStart || instStart >= rangeEnd) continue;
 
         const useEv = override ?? ev;
         const useStart = override ? override.start_dt : inc.start;
@@ -328,10 +286,11 @@ export async function fetchLeagueCalendarEventsForRange(
   const rangeStartStr = rangeStart.toISOString().slice(0, 10);
   const rangeEndStr = rangeEnd.toISOString().slice(0, 10);
 
-  const [sheetRows, seasonLeagues, scheduledGamesInRange, extraDrawLeagueIdRows] = await Promise.all([
+  const [sheetRows, seasonLeagues, extraDrawLeagueIdRows] = await Promise.all([
     db
       .select({ id: schema.sheets.id, name: schema.sheets.name })
       .from(schema.sheets)
+      .where(eq(schema.sheets.is_active, 1))
       .orderBy(schema.sheets.sort_order, schema.sheets.name),
     db
       .select({
@@ -346,23 +305,6 @@ export async function fetchLeagueCalendarEventsForRange(
       .from(schema.leagues)
       .where(and(lte(schema.leagues.start_date, rangeEndStr), gte(schema.leagues.end_date, rangeStartStr)))
       .orderBy(schema.leagues.day_of_week, schema.leagues.name),
-    db
-      .select({
-        league_id: schema.games.league_id,
-        game_date: schema.games.game_date,
-        game_time: schema.games.game_time,
-        sheet_id: schema.games.sheet_id,
-        sheet_name: schema.sheets.name,
-      })
-      .from(schema.games)
-      .leftJoin(schema.sheets, eq(schema.games.sheet_id, schema.sheets.id))
-      .where(
-        and(
-          gte(schema.games.game_date, rangeStartStr),
-          lte(schema.games.game_date, rangeEndStr),
-          isNotNull(schema.games.sheet_id)
-        )
-      ),
     db
       .select({ league_id: schema.leagueExtraDraws.league_id })
       .from(schema.leagueExtraDraws)
@@ -402,10 +344,9 @@ export async function fetchLeagueCalendarEventsForRange(
 
   if (leagues.length === 0) return [];
 
-  const sheetNameById = new Map(sheetRows.map((s) => [s.id, s.name]));
   const leagueIds = leagues.map((league) => league.id);
 
-  const [drawTimeRows, exceptionRows, extraDrawRows] = await Promise.all([
+  const [drawTimeRows, exceptionRows, extraDrawRows, availabilityRows] = await Promise.all([
     db
       .select({
         league_id: schema.leagueDrawTimes.league_id,
@@ -435,6 +376,24 @@ export async function fetchLeagueCalendarEventsForRange(
           lte(schema.leagueExtraDraws.draw_date, rangeEndStr)
         )
       ),
+    // Per-draw sheet availability overrides (same semantics as computeDrawSlots):
+    // missing row ⇒ available; is_available === 0 ⇒ unavailable.
+    db
+      .select({
+        league_id: schema.drawSheetAvailability.league_id,
+        draw_date: schema.drawSheetAvailability.draw_date,
+        draw_time: schema.drawSheetAvailability.draw_time,
+        sheet_id: schema.drawSheetAvailability.sheet_id,
+        is_available: schema.drawSheetAvailability.is_available,
+      })
+      .from(schema.drawSheetAvailability)
+      .where(
+        and(
+          inArray(schema.drawSheetAvailability.league_id, leagueIds),
+          gte(schema.drawSheetAvailability.draw_date, rangeStartStr),
+          lte(schema.drawSheetAvailability.draw_date, rangeEndStr)
+        )
+      ),
   ]);
 
   const drawTimesByLeagueId = new Map<number, Array<string | Date>>();
@@ -461,20 +420,12 @@ export async function fetchLeagueCalendarEventsForRange(
     extraDrawsByLeagueId.set(row.league_id, list);
   }
 
-  const sheetsByDraw = new Map<string, Array<{ sheetId: number; sheetName?: string }>>();
-  for (const row of scheduledGamesInRange) {
-    if (row.sheet_id == null || row.game_date == null || row.game_time == null) continue;
-    const dateStr = toDateOnlyString(row.game_date);
-    const timeStr = toTimeOnlyString(row.game_time);
-    const key = `${row.league_id}:${dateStr}:${timeStr}`;
-    const arr = sheetsByDraw.get(key) ?? [];
-    if (!arr.some((s) => s.sheetId === row.sheet_id)) {
-      arr.push({
-        sheetId: row.sheet_id,
-        sheetName: row.sheet_name ?? sheetNameById.get(row.sheet_id),
-      });
-    }
-    sheetsByDraw.set(key, arr);
+  const availabilityByDraw = new Map<string, Map<number, boolean>>();
+  for (const row of availabilityRows) {
+    const key = `${row.league_id}:${toDateOnlyString(row.draw_date)}:${toTimeOnlyString(row.draw_time)}`;
+    const sheetMap = availabilityByDraw.get(key) ?? new Map<number, boolean>();
+    sheetMap.set(row.sheet_id, row.is_available === 1);
+    availabilityByDraw.set(key, sheetMap);
   }
 
   const result: ExpandedLeagueCalendarEvent[] = [];
@@ -493,12 +444,16 @@ export async function fetchLeagueCalendarEventsForRange(
     if (endDate <= rangeStart || startDate >= rangeEnd) return;
 
     const drawKey = `${league.id}:${dateStr}:${timeStr}`;
-    const sheetRowsForDraw = sheetsByDraw.get(drawKey) ?? [];
-    const locations: Array<{ type: 'sheet'; sheetId: number; sheetName?: string }> = sheetRowsForDraw.map((s) => ({
-      type: 'sheet' as const,
-      sheetId: s.sheetId,
-      sheetName: s.sheetName,
-    }));
+    const sheetAvailability = availabilityByDraw.get(drawKey) ?? new Map<number, boolean>();
+    // Configured sheets for the draw slot: active sheets that are available
+    // (default all active sheets when no availability override exists).
+    const locations: Array<{ type: 'sheet'; sheetId: number; sheetName?: string }> = sheetRows
+      .filter((sheet) => sheetAvailability.get(sheet.id) ?? true)
+      .map((sheet) => ({
+        type: 'sheet' as const,
+        sheetId: sheet.id,
+        sheetName: sheet.name,
+      }));
 
     result.push({
       id: `league:${league.id}:${dateStr}:${timeStr}`,

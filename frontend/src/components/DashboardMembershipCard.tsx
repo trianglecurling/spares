@@ -187,7 +187,7 @@ export default function DashboardMembershipCard() {
                     <li key={league.leagueId} className="flex items-center gap-2 text-sm">
                       <Link
                         to={`/leagues/${league.leagueId}`}
-                        className="truncate font-medium text-primary-teal hover:underline"
+                        className="truncate font-medium text-primary-teal-link hover:underline"
                       >
                         {league.leagueName}
                       </Link>

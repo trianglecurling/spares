@@ -785,12 +785,12 @@ export default function LeagueSchedule({
                                           <button
                                             type="button"
                                             onClick={() => openGameDetails(game)}
-                                            className="font-medium text-gray-800 dark:text-gray-100 hover:text-primary-teal hover:underline"
+                                            className="font-medium text-gray-800 dark:text-gray-100 hover:text-primary-teal-link hover:underline"
                                           >
                                             <span
                                               className={
                                                 winnerId === game.team1Id
-                                                  ? 'font-semibold text-primary-teal'
+                                                  ? 'font-semibold text-primary-teal-link'
                                                   : ''
                                               }
                                             >
@@ -800,7 +800,7 @@ export default function LeagueSchedule({
                                             <span
                                               className={
                                                 winnerId === game.team2Id
-                                                  ? 'font-semibold text-primary-teal'
+                                                  ? 'font-semibold text-primary-teal-link'
                                                   : ''
                                               }
                                             >
@@ -885,11 +885,11 @@ export default function LeagueSchedule({
                       <button
                         type="button"
                         onClick={() => openGameDetails(game)}
-                        className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-teal hover:underline"
+                        className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary-teal-link hover:underline"
                       >
                         <span
                           className={
-                            winnerId === game.team1Id ? 'font-semibold text-primary-teal' : ''
+                            winnerId === game.team1Id ? 'font-semibold text-primary-teal-link' : ''
                           }
                         >
                           {t1Label}
@@ -897,7 +897,7 @@ export default function LeagueSchedule({
                         {' vs '}
                         <span
                           className={
-                            winnerId === game.team2Id ? 'font-semibold text-primary-teal' : ''
+                            winnerId === game.team2Id ? 'font-semibold text-primary-teal-link' : ''
                           }
                         >
                           {t2Label}
@@ -1049,7 +1049,7 @@ export default function LeagueSchedule({
                       ...(event.target.checked ? { gameDate: '', gameTime: '', sheetId: '' } : {}),
                     }))
                   }
-                  className="rounded border-gray-300 text-primary-teal focus:ring-primary-teal"
+                  className="rounded border-gray-300 text-primary-teal-link focus:ring-primary-teal"
                 />
                 <label htmlFor="unscheduled" className="text-sm text-gray-700 dark:text-gray-300">
                   Unscheduled game
@@ -1356,7 +1356,7 @@ export default function LeagueSchedule({
                         team2Values: [...prev.team2Values, 0],
                       }))
                     }
-                    className="text-sm text-primary-teal hover:underline"
+                    className="text-sm text-primary-teal-link hover:underline"
                   >
                     {resultForm.team1Values.length === 1
                       ? 'Add first tiebreaker'

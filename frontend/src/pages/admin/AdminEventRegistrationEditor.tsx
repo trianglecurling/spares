@@ -478,7 +478,7 @@ export default function AdminEventRegistrationEditor() {
                     {primaryTransactionId ? (
                       <p className="text-sm mt-0.5">
                         {primaryStripeUrl ? (
-                          <a href={primaryStripeUrl} target="_blank" rel="noreferrer" className="text-primary-teal hover:underline break-all">
+                          <a href={primaryStripeUrl} target="_blank" rel="noreferrer" className="text-primary-teal-link hover:underline break-all">
                             {primaryTransactionId}
                           </a>
                         ) : (
@@ -494,7 +494,7 @@ export default function AdminEventRegistrationEditor() {
                     {checkoutSessionId ? (
                       <p className="text-sm mt-0.5">
                         {checkoutStripeUrl ? (
-                          <a href={checkoutStripeUrl} target="_blank" rel="noreferrer" className="text-primary-teal hover:underline break-all">
+                          <a href={checkoutStripeUrl} target="_blank" rel="noreferrer" className="text-primary-teal-link hover:underline break-all">
                             {checkoutSessionId}
                           </a>
                         ) : (
@@ -515,7 +515,7 @@ export default function AdminEventRegistrationEditor() {
                             <>
                               {' - '}
                               {refundStripeUrl ? (
-                                <a href={refundStripeUrl} target="_blank" rel="noreferrer" className="text-primary-teal hover:underline break-all">
+                                <a href={refundStripeUrl} target="_blank" rel="noreferrer" className="text-primary-teal-link hover:underline break-all">
                                   {payment.latest_refund.provider_refund_id}
                                 </a>
                               ) : (
@@ -749,7 +749,7 @@ export default function AdminEventRegistrationEditor() {
         )}
 
         <div className="text-sm text-gray-500 dark:text-gray-400">
-          <Link to={`/admin/events/${event.id}/registrations`} className="text-primary-teal hover:underline">
+          <Link to={`/admin/events/${event.id}/registrations`} className="text-primary-teal-link hover:underline">
             Back to registrations
           </Link>
         </div>

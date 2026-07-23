@@ -392,7 +392,7 @@ export default function AdminWaivers() {
             CleverWaiver API (
             <a
               href="https://app.cleverwaiver.com/developer/document"
-              className="text-primary-teal hover:underline"
+              className="text-primary-teal-link hover:underline"
               target="_blank"
               rel="noreferrer"
             >

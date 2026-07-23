@@ -105,10 +105,10 @@ export function TeamPlayersField({
   const fieldRowClass = 'grid grid-cols-[6.75rem_minmax(0,1fr)_7.5rem] items-start gap-x-3';
   const copyPreviousButtonClass = lightOnly
     ? 'shrink-0 pt-2 text-sm text-primary-teal-link hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline'
-    : 'shrink-0 pt-2 text-sm text-primary-teal hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline dark:text-primary-teal';
+    : 'shrink-0 pt-2 text-sm text-primary-teal-link hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline dark:text-primary-teal-link';
   const dietaryButtonClass = lightOnly
     ? 'text-sm text-primary-teal-link hover:underline'
-    : 'text-sm text-primary-teal hover:underline dark:text-primary-teal';
+    : 'text-sm text-primary-teal-link hover:underline dark:text-primary-teal-link';
 
   return (
     <fieldset>

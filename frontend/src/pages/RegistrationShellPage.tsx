@@ -3838,7 +3838,7 @@ export default function RegistrationShellPage() {
     const startScreenPending = !windowState || authLoading || !resumeCheckComplete;
     content = (
       <RegistrationCard>
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary-teal">Registration</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary-teal-link">Registration</p>
         {startScreenPending ? (
           <>
             <h1 className="mt-3 text-3xl font-bold text-[#121033]">Start registration</h1>
@@ -4075,7 +4075,7 @@ export default function RegistrationShellPage() {
             <div className="mt-8 space-y-6">
               <p className="text-gray-700">
                 Please try a different email address. If you still can't access registration, please contact{' '}
-                <a href="mailto:membership@trianglecurling.com" className="font-medium text-primary-teal underline">
+                <a href="mailto:membership@trianglecurling.com" className="font-medium text-primary-teal-link underline">
                   membership@trianglecurling.com
                 </a>
                 .
@@ -4323,14 +4323,14 @@ export default function RegistrationShellPage() {
             ['Privacy Policy', '/go/privacy'],
           ].map(([label, href]) => (
             <label key={href} className="flex gap-3 rounded-2xl border border-gray-200 p-4 text-gray-800">
-              <input type="checkbox" required className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-teal focus:ring-primary-teal" />
+              <input type="checkbox" required className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-teal-link focus:ring-primary-teal" />
               <span>
                 I agree to the{' '}
                 <a
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium text-primary-teal underline"
+                  className="font-medium text-primary-teal-link underline"
                   onClick={(event) => {
                     event.stopPropagation();
                   }}

@@ -327,7 +327,7 @@ function CredentialsTab({ credentials }: { credentials: VolunteerHubCredential[]
             ) : null}
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Point of contact:{' '}
-              <a className="text-primary-teal hover:underline" href={`mailto:${cred.pointOfContactEmail}`}>
+              <a className="text-primary-teal-link hover:underline" href={`mailto:${cred.pointOfContactEmail}`}>
                 {cred.pointOfContactEmail}
               </a>
             </p>

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { eq, and, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isCalendarAdmin } from '../utils/auth.js';
+import { composeRecurrenceRule } from '../utils/calendarRecurrence.js';
 import { getCalendarFeed, getLeagueCalendarFeed } from '../domains/calendar/queries/calendarReadFacade.js';
 import type { Member } from '../types.js';
 
@@ -136,7 +137,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
 
       const { db, schema } = getDrizzleDb();
 
-      const recurrenceRule = body.recurrence?.rrule ?? null;
+      const recurrenceRule = body.recurrence ? composeRecurrenceRule(body.recurrence) : null;
 
       const [inserted] = await db
         .insert(schema.calendarEvents)
@@ -238,7 +239,9 @@ export async function calendarRoutes(fastify: FastifyInstance) {
             all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : parent.all_day,
             description: body.description !== undefined ? body.description : parent.description,
             article_id: body.articleId !== undefined ? body.articleId : parent.article_id,
-            recurrence_rule: body.recurrence?.rrule ?? parent.recurrence_rule,
+            recurrence_rule: body.recurrence
+              ? composeRecurrenceRule(body.recurrence)
+              : parent.recurrence_rule,
             updated_at: sql`CURRENT_TIMESTAMP`,
           })
           .where(eq(schema.calendarEvents.id, parent.id));
@@ -332,7 +335,9 @@ export async function calendarRoutes(fastify: FastifyInstance) {
           all_day: body.allDay !== undefined ? (body.allDay ? 1 : 0) : ev.all_day,
           description: body.description !== undefined ? body.description : ev.description,
           article_id: body.articleId !== undefined ? body.articleId : ev.article_id,
-          recurrence_rule: body.recurrence?.rrule ?? ev.recurrence_rule,
+          recurrence_rule: body.recurrence
+            ? composeRecurrenceRule(body.recurrence)
+            : ev.recurrence_rule,
           updated_at: sql`CURRENT_TIMESTAMP`,
         })
         .where(eq(schema.calendarEvents.id, dbId));

@@ -711,7 +711,7 @@ export default function AdminArticleEditor() {
                         type="button"
                         onClick={() => void handleCopyArticleUrl()}
                         disabled={!form.slug.trim()}
-                        className="text-sm text-primary-teal hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+                        className="text-sm text-primary-teal-link hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
                       >
                         {articleUrlCopied ? 'Copied!' : 'Copy URL'}
                       </button>
@@ -786,7 +786,7 @@ export default function AdminArticleEditor() {
                                       href={`/admin/content/articles/${id}/versions/${version.id}/preview`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-xs text-primary-teal hover:underline"
+                                      className="text-xs text-primary-teal-link hover:underline"
                                     >
                                       Preview
                                     </a>
@@ -794,7 +794,7 @@ export default function AdminArticleEditor() {
                                       type="button"
                                       onClick={() => handleRestoreVersion(version)}
                                       disabled={restoringVersionId === version.id}
-                                      className="text-xs text-primary-teal hover:underline disabled:opacity-50"
+                                      className="text-xs text-primary-teal-link hover:underline disabled:opacity-50"
                                     >
                                       {restoringVersionId === version.id
                                         ? 'Restoring...'

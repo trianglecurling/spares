@@ -115,6 +115,7 @@ export default function Leagues() {
   const [histSessionId, setHistSessionId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [datesDialogLeague, setDatesDialogLeague] = useState<League | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     dayOfWeek: 0,
@@ -336,12 +337,6 @@ export default function Leagues() {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
-  const getSessionName = (sessionId: number | null) => {
-    if (!sessionId) return 'Unassigned';
-    if (registrationWindow?.session.id === sessionId) return registrationWindow.session.name;
-    return registrationSessions.find((session) => session.id === sessionId)?.name ?? `Session ${sessionId}`;
-  };
-
   // Helper to format date for display, handling timezone offset
   const formatDateDisplay = (dateString: string) => {
     if (!dateString) return '';
@@ -350,6 +345,37 @@ export default function Leagues() {
     const userTimezoneOffset = date.getTimezoneOffset() * 60000;
     const adjustedDate = new Date(date.getTime() + userTimezoneOffset);
     return adjustedDate.toLocaleDateString();
+  };
+
+  const buildLeagueDrawOccurrences = (league: League) => {
+    const exceptions = new Set(league.exceptions ?? []);
+    const regularDates = computeLeagueDates(
+      league.startDate,
+      league.endDate,
+      league.dayOfWeek
+    ).filter((date) => !exceptions.has(date));
+    const times = (league.drawTimes ?? []).map((t) => t.trim().slice(0, 5)).filter(Boolean);
+    const byKey = new Map<string, { date: string; time: string; isExtra: boolean }>();
+
+    for (const date of regularDates) {
+      for (const time of times) {
+        byKey.set(`${date}|${time}`, { date, time, isExtra: false });
+      }
+    }
+
+    for (const extra of league.extraDraws ?? []) {
+      const date = extra.date.slice(0, 10);
+      const time = extra.time.slice(0, 5);
+      if (!date || !time) continue;
+      const key = `${date}|${time}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, { date, time, isExtra: true });
+      }
+    }
+
+    return Array.from(byKey.values()).sort(
+      (a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)
+    );
   };
 
   const removeException = (dateStr: string) => {
@@ -546,7 +572,7 @@ export default function Leagues() {
             <div className="flex-1">
               <Link
                 to={`/leagues/${league.id}`}
-                className="mb-2 inline-block text-left text-xl font-semibold text-primary-teal hover:underline"
+                className="mb-2 inline-block text-left text-xl font-semibold text-primary-teal-link hover:underline"
               >
                 {league.name}
               </Link>
@@ -555,12 +581,10 @@ export default function Leagues() {
                   <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
                 </p>
                 <p>
-                  <span className="font-medium dark:text-gray-300">Times:</span>{' '}
+                  <span className="font-medium dark:text-gray-300">
+                    {league.drawTimes.length === 1 ? 'Time' : 'Times'}:
+                  </span>{' '}
                   {league.drawTimes.map(formatTime).join(', ')}
-                </p>
-                <p>
-                  <span className="font-medium dark:text-gray-300">Draw duration:</span>{' '}
-                  {league.drawDurationMinutes ?? defaultDrawDurationMinutes(league.format)} minutes
                 </p>
                 <p>
                   <span className="font-medium dark:text-gray-300">Format:</span>{' '}
@@ -568,31 +592,15 @@ export default function Leagues() {
                 </p>
                 <p>
                   <span className="font-medium dark:text-gray-300">Season:</span>{' '}
-                  {formatDateDisplay(league.startDate)} – {formatDateDisplay(league.endDate)}
+                  <button
+                    type="button"
+                    onClick={() => setDatesDialogLeague(league)}
+                    className="text-primary-teal-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
+                    aria-label={`View draw dates for ${league.name}, ${formatDateDisplay(league.startDate)} to ${formatDateDisplay(league.endDate)}`}
+                  >
+                    {formatDateDisplay(league.startDate)} – {formatDateDisplay(league.endDate)}
+                  </button>
                 </p>
-                {league.waitlistId ? (
-                  <p>
-                    <span className="font-medium dark:text-gray-300">Waitlist:</span> #{league.waitlistId}
-                  </p>
-                ) : null}
-                <p>
-                  <span className="font-medium dark:text-gray-300">Registration:</span>{' '}
-                  {getSessionName(league.sessionId)} -{' '}
-                  {league.leagueType === 'bring_your_own_team' ? 'BYOT' : 'Standard'} - {league.capacityValue}{' '}
-                  {league.capacityType}
-                </p>
-                {league.exceptions?.length > 0 && (
-                  <p>
-                    <span className="font-medium dark:text-gray-300">Exceptions:</span>{' '}
-                    {league.exceptions.length} date(s)
-                  </p>
-                )}
-                {league.extraDraws?.length > 0 && (
-                  <p>
-                    <span className="font-medium dark:text-gray-300">One-off draws:</span>{' '}
-                    {league.extraDraws.length}
-                  </p>
-                )}
               </div>
             </div>
           </div>
@@ -600,6 +608,10 @@ export default function Leagues() {
       ))}
     </div>
   );
+
+  const datesDialogOccurrences = datesDialogLeague
+    ? buildLeagueDrawOccurrences(datesDialogLeague)
+    : [];
 
   return (
     <>
@@ -763,7 +775,7 @@ export default function Leagues() {
             <button
               type="button"
               onClick={addDrawTime}
-              className="text-sm text-primary-teal hover:text-opacity-80"
+              className="text-sm text-primary-teal-link hover:opacity-90"
             >
               + Add draw time
             </button>
@@ -1002,6 +1014,53 @@ export default function Leagues() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={datesDialogLeague != null}
+        onClose={() => setDatesDialogLeague(null)}
+        title={datesDialogLeague ? `${datesDialogLeague.name} draw dates` : 'Draw dates'}
+        size="md"
+      >
+        {datesDialogLeague ? (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {formatDateDisplay(datesDialogLeague.startDate)} –{' '}
+              {formatDateDisplay(datesDialogLeague.endDate)}
+              {datesDialogLeague.exceptions?.length
+                ? ` · ${datesDialogLeague.exceptions.length} exception${
+                    datesDialogLeague.exceptions.length === 1 ? '' : 's'
+                  } skipped`
+                : ''}
+            </p>
+            {datesDialogOccurrences.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No draw dates for this league.</p>
+            ) : (
+              <ul className="max-h-[min(60vh,28rem)] space-y-1 overflow-y-auto text-sm text-gray-700 dark:text-gray-300">
+                {datesDialogOccurrences.map((draw) => (
+                  <li
+                    key={`${draw.date}|${draw.time}`}
+                    className="flex items-center justify-between gap-2 rounded border border-gray-200 px-3 py-2 dark:border-gray-700"
+                  >
+                    <span>
+                      {formatDateDisplay(draw.date)} · {formatTime(draw.time)}
+                    </span>
+                    {draw.isExtra ? (
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                        Extra
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setDatesDialogLeague(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </>
   );

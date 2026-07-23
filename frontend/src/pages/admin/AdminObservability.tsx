@@ -85,7 +85,7 @@ export default function AdminObservability() {
               href="https://observability.tccnc.club"
               target="_blank"
               rel="noreferrer"
-              className="text-primary-teal hover:underline text-sm font-medium"
+              className="text-primary-teal-link hover:underline text-sm font-medium"
             >
               Grafana dashboard ↗
             </a>

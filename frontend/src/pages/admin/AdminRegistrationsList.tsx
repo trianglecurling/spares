@@ -147,7 +147,7 @@ export default function AdminRegistrationsList() {
       header: 'Curler',
       renderCell: (row) => (
         <div>
-          <Link to={`/admin/registrations/${row.id}`} className="font-medium text-primary-teal hover:underline">
+          <Link to={`/admin/registrations/${row.id}`} className="font-medium text-primary-teal-link hover:underline">
             {row.curlerName}
           </Link>
           {row.curlerEmail ? <div className="text-xs text-gray-500 dark:text-gray-400">{row.curlerEmail}</div> : null}

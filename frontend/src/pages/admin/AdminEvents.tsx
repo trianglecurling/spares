@@ -220,7 +220,7 @@ export default function AdminEvents() {
         renderCell: (event) => (
           <Link
             to={`/admin/events/${event.id}`}
-            className="font-medium text-primary-teal hover:underline"
+            className="font-medium text-primary-teal-link hover:underline"
           >
             {event.title}
           </Link>

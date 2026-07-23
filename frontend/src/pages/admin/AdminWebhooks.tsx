@@ -309,7 +309,7 @@ export default function AdminWebhooks() {
           <button
             type="button"
             onClick={() => setSelectedWebhookId(row.id)}
-            className="text-left font-medium text-gray-900 hover:text-primary-teal dark:text-gray-100"
+            className="text-left font-medium text-gray-900 hover:text-primary-teal-link dark:text-gray-100"
           >
             {row.eventLabel}
           </button>
