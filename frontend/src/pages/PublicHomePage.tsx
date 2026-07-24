@@ -631,13 +631,22 @@ export default function PublicHomePage() {
                 title="Upcoming bonspiels"
                 id="home-bonspiels-heading"
                 action={
-                  <Link
-                    to="/calendar/public"
-                    className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-primary-teal-link hover:underline"
-                  >
-                    Full calendar
-                    <HiArrowRight className="h-4 w-4" aria-hidden />
-                  </Link>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <Link
+                      to="/events"
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-primary-teal-link hover:underline"
+                    >
+                      All events
+                      <HiArrowRight className="h-4 w-4" aria-hidden />
+                    </Link>
+                    <Link
+                      to="/calendar/public"
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-primary-teal-link hover:underline"
+                    >
+                      Full calendar
+                      <HiArrowRight className="h-4 w-4" aria-hidden />
+                    </Link>
+                  </div>
                 }
               />
               <p className="public-body mt-2 max-w-2xl">

@@ -99,6 +99,11 @@ type ChoiceInputProps<Value extends ChoicePrimitiveValue> = {
   inputId?: string
   name?: string
   placeholder?: string
+  /**
+   * Popover select trigger: override the derived selection summary (e.g. "All event types").
+   * Ignored when nothing is selected (placeholder is shown instead).
+   */
+  selectionSummary?: string
   disabled?: boolean
   readOnly?: boolean
   loading?: boolean
@@ -456,6 +461,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   autoComplete,
   chromeOffAutocompleteWhileFocused = false,
   inputClassName = 'app-input',
+  selectionSummary: selectionSummaryOverride,
   clearButton,
   shouldShowDropdown = true,
   onOpenChange,
@@ -612,13 +618,14 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
 
   const selectedSummary = useMemo(() => {
     if (selectionSummaryLabels.length === 0) return ''
+    if (selectionSummaryOverride !== undefined) return selectionSummaryOverride
     if (!multiple) return selectionSummaryLabels[0] ?? ''
     if (selectionSummaryLabels.length <= 2) {
       return selectionSummaryLabels.join(', ')
     }
     const leading = selectionSummaryLabels.slice(0, 2).join(', ')
     return `${leading}, +${selectionSummaryLabels.length - 2} more`
-  }, [multiple, selectionSummaryLabels])
+  }, [multiple, selectionSummaryLabels, selectionSummaryOverride])
 
   const triggerValue = isTextInput ? inputValue ?? '' : selectedSummary
   const triggerButtonText =
@@ -1395,7 +1402,7 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
             </span>
           ) : null}
           {option.icon ? (
-            <span className="mt-px flex h-5 w-5 shrink-0 items-start justify-center pt-px text-gray-500 dark:text-gray-300">
+            <span className="mt-px flex shrink-0 items-center justify-center self-center text-gray-500 dark:text-gray-300 [&>svg]:h-4 [&>svg]:w-4">
               {option.icon}
             </span>
           ) : null}
@@ -2260,9 +2267,9 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
   const selectTriggerClassName = [
     popoverControlClassName,
     resolvedClearButton?.visible ? 'pr-20' : isTextInput && !canOpenPopover ? 'pr-3' : 'pr-10',
-    'select-none text-left',
+    'min-w-0 select-none text-left',
     !isTextInput
-      ? 'border-transparent bg-transparent focus:border-transparent focus:ring-0 disabled:border-transparent dark:disabled:border-transparent'
+      ? 'overflow-hidden border-transparent bg-transparent focus:border-transparent focus:ring-0 disabled:border-transparent dark:disabled:border-transparent'
       : '',
   ]
     .filter(Boolean)
@@ -2392,8 +2399,8 @@ export default function ChoiceInput<Value extends ChoicePrimitiveValue>({
             <span
               className={
                 selectedSummary && !(showSelectionPills && multiple)
-                  ? undefined
-                  : 'text-gray-500 dark:text-gray-400'
+                  ? 'block truncate'
+                  : 'block truncate text-gray-500 dark:text-gray-400'
               }
             >
               {triggerButtonText}

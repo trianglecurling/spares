@@ -5,6 +5,7 @@ export type RegistrationPaymentActivityItem = {
   id: string;
   kind: 'payment' | 'refund';
   orderId: number;
+  orderToken: string | null;
   amountMinor: number;
   currency: string;
   status: string;
@@ -65,6 +66,7 @@ export async function listCurlingRegistrationPaymentActivity(
     db
       .select({
         id: schema.paymentOrders.id,
+        order_token: schema.paymentOrders.order_token,
         provider: schema.paymentOrders.provider,
         amount_minor: schema.paymentOrders.amount_minor,
         currency: schema.paymentOrders.currency,
@@ -93,6 +95,8 @@ export async function listCurlingRegistrationPaymentActivity(
       .where(inArray(schema.refunds.payment_order_id, orderIds)),
   ]);
 
+  const orderTokenById = new Map(orders.map((order) => [order.id, order.order_token ?? null]));
+
   const items: RegistrationPaymentActivityItem[] = [];
   for (const order of orders) {
     const metadata = parsePaymentMetadata(order.metadata);
@@ -101,6 +105,7 @@ export async function listCurlingRegistrationPaymentActivity(
       id: `payment:${order.id}`,
       kind: 'payment',
       orderId: order.id,
+      orderToken: order.order_token ?? null,
       amountMinor: order.amount_minor,
       currency: order.currency,
       status: order.status,
@@ -116,6 +121,7 @@ export async function listCurlingRegistrationPaymentActivity(
       id: `refund:${refund.id}`,
       kind: 'refund',
       orderId: refund.payment_order_id,
+      orderToken: orderTokenById.get(refund.payment_order_id) ?? null,
       amountMinor: refund.amount_minor,
       currency: refund.currency,
       status: refund.status,

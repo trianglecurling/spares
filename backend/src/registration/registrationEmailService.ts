@@ -7,6 +7,14 @@ import type {
   RegistrationCommunicationMessageTypeSqlite,
 } from '../db/drizzle-schema.js';
 import { sendEmail } from '../services/email.js';
+import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
+
+const REGISTRATION_RECEIPT_ORDER_STATUSES = new Set([
+  'succeeded',
+  'partially_refunded',
+  'refunded',
+  'pending_refund',
+]);
 
 export type RegistrationMessageType = RegistrationCommunicationMessageTypeSqlite;
 
@@ -592,29 +600,37 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
       };
     case 'registration_cancelled_by_member': {
       const refundIssued = payload.refundIssued === true;
+      const receiptLinkLabel = refundIssued ? 'View refund receipt' : 'View payment details';
+      const receiptHtml = payload.paymentDetailsUrl
+        ? `<p><a href="${escapeHtml(payload.paymentDetailsUrl)}">${receiptLinkLabel}</a></p>`
+        : '';
+      const receiptText = payload.paymentDetailsUrl
+        ? `${receiptLinkLabel}: ${payload.paymentDetailsUrl}`
+        : '';
       const refundHtml = refundIssued
         ? `
           <p><strong>Refund amount:</strong> ${money(payload.amountRefundedMinor)}</p>
           ${payload.paymentReference ? `<p><strong>Payment reference:</strong> ${escapeHtml(payload.paymentReference)}</p>` : ''}
           <p>A refund has been issued and should appear on your original payment method within a few business days.</p>
+          ${receiptHtml}
         `
-        : '<p>No refund was issued because no completed payment was on file for this registration.</p>';
+        : `<p>No refund was issued because no completed payment was on file for this registration.</p>${receiptHtml}`;
       const refundText = refundIssued
-        ? `Refund amount: ${money(payload.amountRefundedMinor)}\n${payload.paymentReference ? `Payment reference: ${payload.paymentReference}\n` : ''}A refund has been issued and should appear on your original payment method within a few business days.`
-        : 'No refund was issued because no completed payment was on file for this registration.';
+        ? `Refund amount: ${money(payload.amountRefundedMinor)}\n${payload.paymentReference ? `Payment reference: ${payload.paymentReference}\n` : ''}A refund has been issued and should appear on your original payment method within a few business days.${receiptText ? `\n${receiptText}` : ''}`
+        : `No refund was issued because no completed payment was on file for this registration.${receiptText ? `\n${receiptText}` : ''}`;
       return {
-        subject: `Registration deleted for ${season}`,
+        subject: `Registration canceled for ${season}`,
         htmlBody: `
-          <h2>Registration deleted</h2>
+          <h2>Registration canceled</h2>
           <p>Hi ${escapeHtml(curlerName)},</p>
-          <p>Your registration for ${escapeHtml(season)} has been deleted.</p>
+          <p>Your registration for ${escapeHtml(season)} has been canceled.</p>
           <p>You will not be placed into any leagues from this registration.</p>
           ${refundHtml}
           <p>If you still need to register, you may submit a new registration while priority registration is open.</p>
           ${payload.dashboardUrl ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View your dashboard</a></p>` : ''}
           ${cancellationContactHtml}
         `,
-        textBody: `Registration deleted\n\nHi ${curlerName},\n\nYour registration for ${season} has been deleted.\nYou will not be placed into any leagues from this registration.\n\n${refundText}\n\nIf you still need to register, you may submit a new registration while priority registration is open.\n${payload.dashboardUrl ? `Dashboard: ${payload.dashboardUrl}\n` : ''}\n${cancellationContactText}`,
+        textBody: `Registration canceled\n\nHi ${curlerName},\n\nYour registration for ${season} has been canceled.\nYou will not be placed into any leagues from this registration.\n\n${refundText}\n\nIf you still need to register, you may submit a new registration while priority registration is open.\n${payload.dashboardUrl ? `Dashboard: ${payload.dashboardUrl}\n` : ''}\n${cancellationContactText}`,
       };
     }
   }
@@ -680,6 +696,7 @@ export async function sendRegistrationCancelledByMemberEmail(input: {
   refundIssued: boolean;
   amountRefundedMinor?: number | null;
   paymentReference?: string | null;
+  paymentDetailsUrl?: string | null;
 }): Promise<void> {
   try {
     const { db, schema } = getDrizzleDb();
@@ -708,6 +725,29 @@ export async function sendRegistrationCancelledByMemberEmail(input: {
       .where(eq(schema.curlingSessions.id, registration.session_id))
       .limit(1);
 
+    let resolvedPaymentDetailsUrl = input.paymentDetailsUrl?.trim() || null;
+    if (!resolvedPaymentDetailsUrl) {
+      const [invoice] = await db
+        .select({ paymentOrderId: schema.registrationInvoices.payment_order_id })
+        .from(schema.registrationInvoices)
+        .where(eq(schema.registrationInvoices.registration_id, input.registrationId))
+        .orderBy(desc(schema.registrationInvoices.updated_at), desc(schema.registrationInvoices.id))
+        .limit(1);
+      if (invoice?.paymentOrderId) {
+        const [order] = await db
+          .select({
+            orderToken: schema.paymentOrders.order_token,
+            status: schema.paymentOrders.status,
+          })
+          .from(schema.paymentOrders)
+          .where(eq(schema.paymentOrders.id, invoice.paymentOrderId))
+          .limit(1);
+        if (order && REGISTRATION_RECEIPT_ORDER_STATUSES.has(order.status)) {
+          resolvedPaymentDetailsUrl = paymentDetailsUrl(order.orderToken);
+        }
+      }
+    }
+
     await sendRegistrationEmailForDashboard({
       messageType: 'registration_cancelled_by_member',
       recipientEmail: curler.email,
@@ -721,6 +761,7 @@ export async function sendRegistrationCancelledByMemberEmail(input: {
         refundIssued: input.refundIssued,
         amountRefundedMinor: input.amountRefundedMinor ?? null,
         paymentReference: input.paymentReference ?? null,
+        paymentDetailsUrl: resolvedPaymentDetailsUrl,
       },
     });
   } catch (error) {

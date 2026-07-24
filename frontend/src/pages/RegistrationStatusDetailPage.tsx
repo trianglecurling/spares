@@ -181,12 +181,12 @@ export default function RegistrationStatusDetailPage() {
     }
   }
 
-  async function deleteRegistration() {
+  async function cancelRegistration() {
     const ok = await confirm({
-      title: 'Delete registration?',
+      title: 'Cancel registration?',
       message:
-        'Are you sure you want to delete your registration? If you have already paid, you will receive a refund, and you will not be placed into any leagues.',
-      confirmText: 'Delete registration',
+        'Are you sure you want to cancel your registration? If you have already paid, you will receive a refund, and you will not be placed into any leagues.',
+      confirmText: 'Cancel registration',
       cancelText: 'Keep registration',
       variant: 'danger',
     });
@@ -199,14 +199,14 @@ export default function RegistrationStatusDetailPage() {
       });
       showAlert(
         response.data.refundIssued
-          ? 'Your registration has been deleted and a refund has been issued.'
-          : 'Your registration has been deleted.',
+          ? 'Your registration has been canceled and a refund has been issued.'
+          : 'Your registration has been canceled.',
         'success',
-        'Registration deleted',
+        'Registration canceled',
       );
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      showAlert(getApiErrorMessage(err, 'Unable to delete registration.'), 'error', 'Delete failed');
+      showAlert(getApiErrorMessage(err, 'Unable to cancel registration.'), 'error', 'Cancel failed');
     } finally {
       setDeleting(false);
     }
@@ -238,8 +238,8 @@ export default function RegistrationStatusDetailPage() {
           description={detail ? `${detail.registration.seasonName ?? 'Season'} / ${detail.registration.sessionName ?? 'Session'}` : undefined}
           actions={
             canCancel ? (
-              <Button type="button" variant="outline-danger" disabled={deleting} onClick={() => void deleteRegistration()}>
-                Delete registration
+              <Button type="button" variant="outline-danger" disabled={deleting} onClick={() => void cancelRegistration()}>
+                Cancel registration
               </Button>
             ) : undefined
           }
@@ -264,7 +264,7 @@ export default function RegistrationStatusDetailPage() {
               {detail.registration.reciprocalDiscountClaimed ? <p>Reciprocal discount claimed.</p> : null}
               {isPaidRegistration && !canEdit && canCancel ? (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Paid registrations cannot be edited. During priority registration, you can delete this registration to receive a full refund and register again.
+                  Paid registrations cannot be edited. During priority registration, you can cancel this registration to receive a full refund and register again.
                 </p>
               ) : null}
               {detail.payment.paymentLink ? (

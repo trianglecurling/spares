@@ -86,12 +86,16 @@ describe('Phase 9 registration email rendering', () => {
       refundIssued: true,
       amountRefundedMinor: 25000,
       paymentReference: 'Payment order 42',
+      paymentDetailsUrl: 'https://example.test/payments/abc-123',
     });
 
-    expect(rendered.subject).toContain('Registration deleted');
+    expect(rendered.subject).toContain('Registration canceled');
     expect(rendered.textBody).toContain('$250.00');
     expect(rendered.textBody).toContain('Payment order 42');
     expect(rendered.textBody).toContain('refund has been issued');
+    expect(rendered.textBody).toContain('View refund receipt: https://example.test/payments/abc-123');
+    expect(rendered.htmlBody).toContain('Registration canceled');
+    expect(rendered.htmlBody).toContain('View refund receipt');
   });
 
   test('registration cancellation email explains when no refund was issued', () => {
@@ -104,6 +108,7 @@ describe('Phase 9 registration email rendering', () => {
 
     expect(rendered.textBody).toContain('No refund was issued');
     expect(rendered.textBody).not.toContain('Refund amount');
+    expect(rendered.subject).toContain('Registration canceled');
   });
 
   test('registration payment confirmation includes registration details, receipt, and contact emails', () => {

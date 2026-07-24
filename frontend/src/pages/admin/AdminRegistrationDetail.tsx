@@ -85,6 +85,7 @@ type RegistrationDetail = {
     id: string;
     kind: 'payment' | 'refund';
     orderId: number;
+    orderToken: string | null;
     amountMinor: number;
     currency: string;
     status: string;
@@ -181,7 +182,20 @@ function InvoiceSummaryRow({
   );
 }
 
-function balanceSummary(balanceMinor: number): { tone: InvoiceSummaryTone; hint: string } {
+function balanceSummary(
+  balanceMinor: number,
+  options?: { invoiceStatus?: string | null; registrationStatus?: string | null },
+): { tone: InvoiceSummaryTone; hint: string } {
+  if (
+    options?.registrationStatus === 'cancelled' ||
+    options?.invoiceStatus === 'cancelled' ||
+    options?.invoiceStatus === 'refunded'
+  ) {
+    return {
+      tone: 'balance-paid',
+      hint: options.invoiceStatus === 'refunded' ? 'Refunded — nothing owed' : 'Canceled — nothing owed',
+    };
+  }
   if (balanceMinor === 0) {
     return { tone: 'balance-paid', hint: 'Paid in full' };
   }
@@ -276,10 +290,25 @@ export default function AdminRegistrationDetail() {
   const byot = detail?.selections.filter((selection) => selection.selectionType === 'byot_request') ?? [];
   const invoiceTotals =
     detail?.invoice != null
-      ? invoicePaymentTotals(detail.paymentActivity, detail.invoice.totalMinor)
+      ? (() => {
+          const totals = invoicePaymentTotals(detail.paymentActivity, detail.invoice.totalMinor);
+          if (
+            detail.registration.registrationStatus === 'cancelled' ||
+            detail.invoice.status === 'cancelled' ||
+            detail.invoice.status === 'refunded'
+          ) {
+            return { ...totals, balanceMinor: 0 };
+          }
+          return totals;
+        })()
       : null;
   const invoiceBalanceSummary =
-    invoiceTotals != null ? balanceSummary(invoiceTotals.balanceMinor) : null;
+    invoiceTotals != null
+      ? balanceSummary(invoiceTotals.balanceMinor, {
+          invoiceStatus: detail?.invoice?.status,
+          registrationStatus: detail?.registration.registrationStatus,
+        })
+      : null;
   const sabbaticals = detail?.selections.filter((selection) => selection.selectionType === 'sabbatical') ?? [];
 
   async function handleEditSaved() {
@@ -399,6 +428,9 @@ export default function AdminRegistrationDetail() {
                   {detail.paymentActivity.map((entry) => {
                     const stripeUrl =
                       entry.provider === 'stripe' ? stripeDashboardUrl(entry.providerReference) : null;
+                    const receiptUrl = entry.orderToken
+                      ? `/payments/${encodeURIComponent(entry.orderToken)}`
+                      : null;
                     return (
                       <div
                         key={entry.id}
@@ -429,6 +461,18 @@ export default function AdminRegistrationDetail() {
                                 ) : (
                                   entry.providerReference
                                 )}
+                              </p>
+                            ) : null}
+                            {receiptUrl ? (
+                              <p className="mt-2">
+                                <a
+                                  href={receiptUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-primary-teal-link hover:underline"
+                                >
+                                  {entry.kind === 'refund' ? 'View refund receipt' : 'View receipt'}
+                                </a>
                               </p>
                             ) : null}
                           </div>

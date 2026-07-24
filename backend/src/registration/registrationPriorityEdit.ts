@@ -5,6 +5,7 @@ import { sendRegistrationCancelledByMemberEmail } from './registrationEmailServi
 import { createPaymentService } from '../services/paymentService.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
+import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import {
   canViewOrEditRegistration,
   getEffectiveRegistrationWindow,
@@ -99,12 +100,12 @@ export async function assertPriorityCancellableRegistration(
   }
   if (!isPriorityCancellableRegistrationStatus(registration.status)) {
     throw new RegistrationPriorityEditValidationError({
-      registration: 'This registration cannot be deleted right now.',
+      registration: 'This registration cannot be canceled right now.',
     });
   }
   if (!(await isRegistrationPriorityEditWindow(registration.season_id, registration.session_id))) {
     throw new RegistrationPriorityEditValidationError({
-      registration: 'Registration can only be deleted during priority registration.',
+      registration: 'Registration can only be canceled during priority registration.',
     });
   }
 }
@@ -222,6 +223,7 @@ async function cancelMemberRegistrationCore(input: {
   let refundIssued = false;
   let amountRefundedMinor: number | null = null;
   let paymentReference: string | null = null;
+  let resolvedPaymentDetailsUrl: string | null = null;
   if (invoice?.payment_order_id) {
     const [order] = await db
       .select()
@@ -231,6 +233,9 @@ async function cancelMemberRegistrationCore(input: {
     if (order?.status === 'succeeded') {
       amountRefundedMinor = order.amount_minor;
       paymentReference = `Payment order ${order.id}`;
+      if (order.order_token) {
+        resolvedPaymentDetailsUrl = paymentDetailsUrl(order.order_token);
+      }
       try {
         await createPaymentService().createRefundForOrder({
           orderId: order.id,
@@ -393,6 +398,7 @@ async function cancelMemberRegistrationCore(input: {
     refundIssued,
     amountRefundedMinor,
     paymentReference,
+    paymentDetailsUrl: resolvedPaymentDetailsUrl,
   });
 
   return { registrationId: input.registrationId, refundIssued };

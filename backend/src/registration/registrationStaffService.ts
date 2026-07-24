@@ -3,7 +3,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import { listCurlingRegistrationPaymentActivity } from '../domains/payments/queries/paymentSummaries.js';
-import { getMemberRegistrationDetail } from './registrationMemberService.js';
+import { getMemberRegistrationDetail, registrationAmountDueMinor } from './registrationMemberService.js';
 import { getDefaultRegistrationWindow } from './registrationShellService.js';
 
 export class RegistrationStaffValidationError extends Error {
@@ -158,7 +158,11 @@ export async function listStaffRegistrations(input: {
       registrationStatus: row.status,
       membershipOption: row.membershipOption,
       paymentStatus: invoice?.status ?? null,
-      amountDueMinor: invoice?.totalMinor ?? null,
+      amountDueMinor: registrationAmountDueMinor({
+        invoiceStatus: invoice?.status,
+        invoiceTotalMinor: invoice?.totalMinor ?? null,
+        registrationStatus: row.status,
+      }),
       submittedAt: row.submittedAt,
       updatedAt: row.updatedAt,
     });

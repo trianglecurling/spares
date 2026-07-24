@@ -46,6 +46,35 @@ function hostedCheckoutUrl(metadata: unknown): string | null {
   return null;
 }
 
+/** Remaining amount owed for a registration invoice. Canceled/refunded invoices are never due. */
+export function registrationAmountDueMinor(input: {
+  invoiceStatus?: string | null;
+  invoiceTotalMinor?: number | null;
+  registrationStatus?: string | null;
+}): number | null {
+  const invoiceStatus = input.invoiceStatus ?? null;
+  const registrationStatus = input.registrationStatus ?? null;
+  if (
+    registrationStatus === 'cancelled' ||
+    invoiceStatus === 'cancelled' ||
+    invoiceStatus === 'refunded'
+  ) {
+    return 0;
+  }
+  if (input.invoiceTotalMinor == null && invoiceStatus == null) return null;
+  return input.invoiceTotalMinor ?? null;
+}
+
+export function registrationAmountPaidMinor(input: {
+  invoiceStatus?: string | null;
+  invoiceTotalMinor?: number | null;
+}): number | null {
+  if (input.invoiceStatus === 'paid' || input.invoiceStatus === 'refunded') {
+    return input.invoiceTotalMinor ?? null;
+  }
+  return null;
+}
+
 async function loadLatestRegistrationPaymentSnapshot(registrationId: number, registrationStatus: string) {
   const { db, schema } = getDrizzleDb();
   let [invoice] = await db
@@ -75,7 +104,11 @@ async function loadLatestRegistrationPaymentSnapshot(registrationId: number, reg
   }
   return {
     paymentStatus: invoice?.status ?? (registrationStatus === 'confirmed' ? 'paid' : 'not_required'),
-    amountDueMinor: invoice?.total_minor ?? null,
+    amountDueMinor: registrationAmountDueMinor({
+      invoiceStatus: invoice?.status,
+      invoiceTotalMinor: invoice?.total_minor,
+      registrationStatus,
+    }),
     paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
   };
 }
@@ -496,8 +529,15 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     waitlists: waitlistDetails,
     payment: {
       status: invoice?.status ?? (registration.status === 'confirmed' ? 'paid' : 'not_required'),
-      amountDueMinor: invoice?.total_minor ?? null,
-      amountPaidMinor: invoice?.status === 'paid' ? invoice.total_minor : null,
+      amountDueMinor: registrationAmountDueMinor({
+        invoiceStatus: invoice?.status,
+        invoiceTotalMinor: invoice?.total_minor,
+        registrationStatus: registration.status,
+      }),
+      amountPaidMinor: registrationAmountPaidMinor({
+        invoiceStatus: invoice?.status,
+        invoiceTotalMinor: invoice?.total_minor,
+      }),
       paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
       deferredReason: invoice?.deferred_reason ?? null,
     },
