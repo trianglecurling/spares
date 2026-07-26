@@ -117,7 +117,7 @@ export function calendarDaysBetween(fromYmd: string, toYmd: string): number {
   return Math.round((toUtc - fromUtc) / 86_400_000);
 }
 
-function addCalendarDays(ymd: string, days: number): string {
+export function addCalendarDays(ymd: string, days: number): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!match) return ymd;
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));

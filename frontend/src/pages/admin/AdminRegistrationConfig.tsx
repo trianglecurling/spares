@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { Navigate, useLocation } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
+import InlineStateMessage from '../../components/InlineStateMessage';
 import PageTabs from '../../components/PageTabs';
 import Button from '../../components/Button';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
@@ -14,8 +15,14 @@ import { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
 import AdminRegistrationCommunicationsPanel from './AdminRegistrationCommunicationsPanel';
 import AdminRegistrationsList from './AdminRegistrationsList';
+import type { paths } from '../../api/generated/types';
 
 type RegistrationState = 'closed' | 'priority' | 'open';
+
+type MauticSyncStatus =
+  paths['/registration-config/mautic-sync/status']['get']['responses']['200']['content']['application/json'];
+type MauticSyncResult =
+  paths['/registration-config/mautic-sync']['post']['responses']['200']['content']['application/json'];
 
 interface Season {
   id: number;
@@ -176,6 +183,9 @@ export default function AdminRegistrationConfig() {
   const [applyNowForm, setApplyNowForm] = useState(emptyApplyNowForm);
   const [priceForm, setPriceForm] = useState(emptyPriceForm);
   const [discountForm, setDiscountForm] = useState(emptyDiscountForm);
+  const [mauticSyncStatus, setMauticSyncStatus] = useState<MauticSyncStatus | null>(null);
+  const [mauticSyncLoading, setMauticSyncLoading] = useState(false);
+  const [mauticSyncRunning, setMauticSyncRunning] = useState(false);
 
   const activeTab = useMemo<TabKey>(() => {
     const segments = location.pathname.split('/').filter(Boolean);
@@ -211,6 +221,18 @@ export default function AdminRegistrationConfig() {
     [sessions, applyNowForm.seasonId]
   );
 
+  const loadMauticSyncStatus = async () => {
+    setMauticSyncLoading(true);
+    try {
+      const status = (await get('/registration-config/mautic-sync/status')) as MauticSyncStatus;
+      setMauticSyncStatus(status);
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to load Mautic sync status'), 'error');
+    } finally {
+      setMauticSyncLoading(false);
+    }
+  };
+
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -239,6 +261,7 @@ export default function AdminRegistrationConfig() {
         reciprocalDiscount: discounts.reciprocalDiscount,
         winterOnlyDiscount: discounts.winterOnlyDiscount,
       });
+      void loadMauticSyncStatus();
     } catch (error) {
       showAlert(formatApiError(error, 'Failed to load registration configuration'), 'error');
     } finally {
@@ -275,6 +298,27 @@ export default function AdminRegistrationConfig() {
       showAlert(formatApiError(error, 'Failed to save season'), 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMauticSyncNow = async () => {
+    setMauticSyncRunning(true);
+    try {
+      const result = (await post('/registration-config/mautic-sync', undefined)) as MauticSyncResult;
+      await loadMauticSyncStatus();
+      const added = result.seasons.reduce((sum, season) => sum + season.added, 0);
+      const removed = result.seasons.reduce((sum, season) => sum + season.removed, 0);
+      if (result.status === 'success') {
+        showAlert(`Mautic sync completed. Added ${added}, removed ${removed}.`, 'success');
+      } else if (result.status === 'partial') {
+        showAlert(`Mautic sync finished with some errors. Added ${added}, removed ${removed}.`, 'warning');
+      } else {
+        showAlert('Mautic sync failed. Check the sync status details below.', 'error');
+      }
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to run Mautic sync'), 'error');
+    } finally {
+      setMauticSyncRunning(false);
     }
   };
 
@@ -504,6 +548,61 @@ export default function AdminRegistrationConfig() {
                   />
                   <FormActions saving={saving} onCancel={() => setSeasonForm(emptySeasonForm)} isEditing={Boolean(seasonForm.id)} />
                 </form>
+                <div className="app-card space-y-4 lg:col-span-2">
+                  <h2 className="app-section-title">Mautic email sync</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Keeps a Mautic segment for each curling season in sync with active season memberships.
+                  </p>
+                  {mauticSyncLoading && !mauticSyncStatus ? (
+                    <InlineStateMessage title="Loading Mautic sync status…" />
+                  ) : null}
+                  {!mauticSyncLoading && mauticSyncStatus && !mauticSyncStatus.configured ? (
+                    <InlineStateMessage
+                      title="Mautic is not configured"
+                      description="Set MAUTIC_BASE_URL, MAUTIC_OAUTH_CLIENT_ID, and MAUTIC_OAUTH_CLIENT_SECRET to enable membership segment sync."
+                    />
+                  ) : null}
+                  {mauticSyncStatus?.configured ? (
+                    <div className="space-y-3">
+                      <div className="text-sm text-gray-700 dark:text-gray-300" role="status" aria-live="polite">
+                        {mauticSyncStatus.lastRun?.at ? (
+                          <p>
+                            Last sync:{' '}
+                            {new Date(mauticSyncStatus.lastRun.at).toLocaleString()} (
+                            {mauticSyncStatus.lastRun.status ?? 'unknown'})
+                          </p>
+                        ) : (
+                          <p>No full sync has been run yet.</p>
+                        )}
+                      </div>
+                      <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
+                        {mauticSyncStatus.seasons.map((season) => (
+                          <li key={season.id}>
+                            {season.name}:{' '}
+                            {season.mauticSegmentId != null
+                              ? `segment ${season.mauticSegmentId}`
+                              : 'no segment yet'}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button
+                          type="button"
+                          onClick={() => void handleMauticSyncNow()}
+                          disabled={mauticSyncRunning}
+                          aria-label="Sync Mautic membership segments now"
+                        >
+                          {mauticSyncRunning ? 'Syncing…' : 'Sync now'}
+                        </Button>
+                        {mauticSyncRunning ? (
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            Sync is running. This may take a moment.
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </section>
             )}
 

@@ -15738,6 +15738,15 @@
         }
       }
     },
+    "/ice-bookings/availability": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/ice-bookings": {
       "get": {
         "responses": {
@@ -15755,6 +15764,23 @@
       }
     },
     "/ice-bookings/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
       "delete": {
         "parameters": [
           {
@@ -21635,6 +21661,268 @@
                     "endDate",
                     "createdAt",
                     "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/mautic-sync/status": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "seasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "mauticSegmentId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "mauticSegmentId"
+                        ]
+                      }
+                    },
+                    "lastRun": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "status": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "success",
+                                    "partial",
+                                    "error"
+                                  ]
+                                }
+                              ]
+                            },
+                            "summary": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "success",
+                                        "partial",
+                                        "error"
+                                      ]
+                                    },
+                                    "seasons": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "seasonId": {
+                                            "type": "number"
+                                          },
+                                          "seasonName": {
+                                            "type": "string"
+                                          },
+                                          "mauticSegmentId": {
+                                            "type": [
+                                              "null",
+                                              "number"
+                                            ]
+                                          },
+                                          "added": {
+                                            "type": "number"
+                                          },
+                                          "removed": {
+                                            "type": "number"
+                                          },
+                                          "errors": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "seasonId",
+                                          "seasonName",
+                                          "mauticSegmentId",
+                                          "added",
+                                          "removed",
+                                          "errors"
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "status",
+                                    "seasons"
+                                  ]
+                                }
+                              ]
+                            },
+                            "triggeredByMemberId": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "status",
+                            "summary",
+                            "triggeredByMemberId"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "seasons",
+                    "lastRun"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/mautic-sync": {
+      "post": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "success",
+                        "partial",
+                        "error"
+                      ]
+                    },
+                    "seasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "seasonId": {
+                            "type": "number"
+                          },
+                          "seasonName": {
+                            "type": "string"
+                          },
+                          "mauticSegmentId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "added": {
+                            "type": "number"
+                          },
+                          "removed": {
+                            "type": "number"
+                          },
+                          "errors": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "seasonId",
+                          "seasonName",
+                          "mauticSegmentId",
+                          "added",
+                          "removed",
+                          "errors"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "seasons"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }

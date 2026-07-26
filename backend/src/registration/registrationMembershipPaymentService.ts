@@ -10,6 +10,7 @@ import type {
   WaitlistAuditActionSqlite,
 } from '../db/drizzle-schema.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
+import { queueMembershipGrantSync } from '../services/mauticMembershipSyncService.js';
 import { normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
@@ -2070,6 +2071,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     entryType: 'add' | 'replace';
     replacesLeagueId: number | null;
   }> = [];
+  const membershipGrantRef: { value: { memberId: number; seasonId: number } | null } = { value: null };
   const invoiceId = await db.transaction(async (tx) => {
     if (!registration.curler_member_id) {
       throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
@@ -2176,7 +2178,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         .where(eq(schema.curlingSeasons.id, registration.season_id))
         .limit(1);
       if (season) {
-        await applyConfirmedRegistrationEntitlementsInTx({
+        const grant = await applyConfirmedRegistrationEntitlementsInTx({
           tx,
           registrationId: input.registrationId,
           registration,
@@ -2185,10 +2187,17 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
           season,
           paymentOrderId: null,
         });
+        if (grant) {
+          membershipGrantRef.value = { memberId: grant.memberId, seasonId: grant.seasonId };
+        }
       }
     }
     return snapshotId;
   });
+
+  if (membershipGrantRef.value) {
+    queueMembershipGrantSync(membershipGrantRef.value.memberId, membershipGrantRef.value.seasonId);
+  }
 
   if (input.staffEdit && priorPaidMinor > 0) {
     const newTotalMinor = evaluation.feePreview.totalDueMinor;
@@ -2599,8 +2608,9 @@ async function applyConfirmedRegistrationEntitlementsInTx(input: {
   curlerMemberId: number;
   season: { start_date: string | Date; end_date: string | Date };
   paymentOrderId?: number | null;
-}): Promise<void> {
+}): Promise<{ membershipGranted: boolean; memberId: number; seasonId: number } | null> {
   const { schema } = getDrizzleDb();
+  let membershipGranted = false;
 
   await input.tx
     .update(schema.curlingSabbaticalSessions)
@@ -2624,6 +2634,7 @@ async function applyConfirmedRegistrationEntitlementsInTx(input: {
       payment_order_id: input.paymentOrderId ?? null,
       status: 'active',
     } as any);
+    membershipGranted = true;
   }
 
   const [spareOnlyLineItem] = await input.tx
@@ -2675,6 +2686,13 @@ async function applyConfirmedRegistrationEntitlementsInTx(input: {
       })),
     registrationStatus: 'confirmed',
   });
+
+  if (!membershipGranted) return null;
+  return {
+    membershipGranted: true,
+    memberId: input.curlerMemberId,
+    seasonId: input.registration.season_id,
+  };
 }
 
 export async function confirmCurlingRegistrationForPaymentOrder(orderId: number): Promise<void> {
@@ -2743,6 +2761,7 @@ export async function confirmCurlingRegistrationForPaymentOrder(orderId: number)
 
   const paidAt = new Date();
   let confirmedNow = false;
+  const membershipGrantRef: { value: { memberId: number; seasonId: number } | null } = { value: null };
   await db.transaction(async (tx) => {
     const [updatedInvoice] = await tx
       .update(schema.registrationInvoices)
@@ -2779,7 +2798,7 @@ export async function confirmCurlingRegistrationForPaymentOrder(orderId: number)
           sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'sabbatical', 'spare_only', 'junior_recreational')`
         )
       );
-    await applyConfirmedRegistrationEntitlementsInTx({
+    const grant = await applyConfirmedRegistrationEntitlementsInTx({
       tx,
       registrationId,
       registration,
@@ -2788,8 +2807,15 @@ export async function confirmCurlingRegistrationForPaymentOrder(orderId: number)
       season,
       paymentOrderId: order.id,
     });
+    if (grant) {
+      membershipGrantRef.value = { memberId: grant.memberId, seasonId: grant.seasonId };
+    }
   });
   if (!confirmedNow) return;
+
+  if (membershipGrantRef.value) {
+    queueMembershipGrantSync(membershipGrantRef.value.memberId, membershipGrantRef.value.seasonId);
+  }
 
   if (!(await hasSentRegistrationMessage(registrationId, 'registration_payment_received'))) {
     const emailPayload = await buildRegistrationPaymentConfirmationEmailPayload({

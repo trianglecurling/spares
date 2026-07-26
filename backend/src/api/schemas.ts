@@ -799,6 +799,68 @@ export const registrationSeasonListResponseSchema = {
   items: registrationSeasonSchema,
 } as const;
 
+export const mauticMembershipSyncSeasonResultSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    seasonId: { type: 'number' },
+    seasonName: { type: 'string' },
+    mauticSegmentId: { type: ['number', 'null'] },
+    added: { type: 'number' },
+    removed: { type: 'number' },
+    errors: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['seasonId', 'seasonName', 'mauticSegmentId', 'added', 'removed', 'errors'],
+} as const;
+
+export const mauticMembershipSyncResultSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    status: { type: 'string', enum: ['success', 'partial', 'error'] },
+    seasons: { type: 'array', items: mauticMembershipSyncSeasonResultSchema },
+  },
+  required: ['status', 'seasons'],
+} as const;
+
+export const mauticMembershipSyncStatusResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    configured: { type: 'boolean' },
+    seasons: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'number' },
+          name: { type: 'string' },
+          mauticSegmentId: { type: ['number', 'null'] },
+        },
+        required: ['id', 'name', 'mauticSegmentId'],
+      },
+    },
+    lastRun: {
+      anyOf: [
+        { type: 'null' },
+        {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            at: { type: ['string', 'null'] },
+            status: { anyOf: [{ type: 'null' }, { type: 'string', enum: ['success', 'partial', 'error'] }] },
+            summary: { anyOf: [{ type: 'null' }, mauticMembershipSyncResultSchema] },
+            triggeredByMemberId: { type: ['number', 'null'] },
+          },
+          required: ['at', 'status', 'summary', 'triggeredByMemberId'],
+        },
+      ],
+    },
+  },
+  required: ['configured', 'seasons', 'lastRun'],
+} as const;
+
 export const registrationSessionListResponseSchema = {
   type: 'array',
   items: registrationSessionSchema,

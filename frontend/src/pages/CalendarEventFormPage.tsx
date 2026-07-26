@@ -158,7 +158,8 @@ export default function CalendarEventFormPage() {
           <AppPage narrow>
             <AppPageHeader title="Cannot edit this event" />
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              League games and member ice bookings are managed elsewhere.
+              League games are managed elsewhere. Member ice bookings can be edited or canceled from
+              the calendar event details.
             </p>
             <BackButton label="Calendar" onClick={() => goBackToCalendar(event.start)} />
           </AppPage>

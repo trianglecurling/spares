@@ -32,29 +32,21 @@ import {
   subMonths,
   subWeeks,
 } from 'date-fns';
-import type { IconType } from 'react-icons';
 import {
-  HiAcademicCap,
   HiCalendar,
   HiChevronLeft,
   HiChevronRight,
-  HiClipboardDocumentList,
   HiFunnel,
-  HiOutlineCalendar,
   HiOutlineCalendarDays,
   HiOutlineCalendarDays as HiOutlineDay,
   HiPencil,
   HiPlus,
-  HiRectangleGroup,
-  HiSparkles,
-  HiStar,
-  HiSun,
   HiTrash,
-  HiUserGroup,
-  HiWrench,
 } from 'react-icons/hi2';
-import { IoTrophyOutline } from 'react-icons/io5';
-import api from '../utils/api';
+import api, { formatApiError } from '../utils/api';
+import AdminIceBookingEditor, {
+  parseIceBookingId,
+} from '../components/AdminIceBookingEditor';
 import Button from '../components/Button';
 import PublicLayout from '../components/PublicLayout';
 import Modal from '../components/Modal';
@@ -63,7 +55,9 @@ import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
 import type { ArticleOption } from '../components/ArticleAutocomplete';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
+import { useAlert } from '../contexts/AlertContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import {
   calendarRangeCacheKey,
@@ -72,6 +66,16 @@ import {
   isCalendarRangeFresh,
   setCachedCalendarRange,
 } from '../utils/calendarEventsCache';
+import {
+  computeEventLayout,
+  formatHourLabel,
+  getVisibleHours,
+  HOUR_HEIGHT,
+} from '../utils/calendarDayGrid';
+import {
+  DEFAULT_EVENT_TYPES,
+  type CalendarEventType,
+} from '../utils/calendarEventTypeRegistry';
 
 export type CalendarView = 'day' | 'week' | 'month';
 
@@ -79,13 +83,8 @@ interface CalendarProps {
   publicMode?: boolean;
 }
 
-/** Event type definition - eventually user/admin-configurable */
-export interface CalendarEventType {
-  id: string;
-  label: string;
-  color: string; // Tailwind classes: bg + text for light/dark, e.g. 'bg-slate-100 text-gray-900 dark:bg-slate-600 dark:text-white'
-  icon: IconType;
-}
+export { DEFAULT_EVENT_TYPES };
+export type { CalendarEventType };
 
 /** Event location: configured sheet (on-ice) or fixed off-ice locations */
 export type EventLocation =
@@ -291,101 +290,6 @@ function EventBandRowContent({
   );
 }
 
-// Event type colors: light pastels with dark text for light theme, saturated with white text for dark theme
-export const DEFAULT_EVENT_TYPES: CalendarEventType[] = [
-  {
-    id: 'maintenance',
-    label: 'Maintenance',
-    color:
-      'bg-red-100 text-red-900 border-red-900/50 dark:bg-red-600 dark:text-white dark:border-white/25',
-    icon: HiWrench,
-  },
-  {
-    id: 'leagues',
-    label: 'Leagues',
-    color:
-      'bg-cyan-100 text-cyan-950 border-cyan-900/40 dark:bg-cyan-700 dark:text-white dark:border-white/25',
-    icon: HiRectangleGroup,
-  },
-  {
-    id: 'bonspiel',
-    label: 'Bonspiel',
-    color:
-      'bg-violet-200 text-violet-900 border-violet-900/50 dark:bg-violet-500 dark:text-white dark:border-white/25',
-    icon: IoTrophyOutline,
-  },
-  {
-    id: 'juniors',
-    label: 'Juniors',
-    color:
-      'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-900/50 dark:bg-fuchsia-600 dark:text-white dark:border-white/25',
-    icon: HiSparkles,
-  },
-  {
-    id: 'practice',
-    label: 'Practice',
-    color:
-      'bg-amber-100 text-amber-900 border-amber-900/50 dark:bg-amber-500 dark:text-white dark:border-white/25',
-    icon: HiOutlineCalendar,
-  },
-  {
-    id: 'group-event',
-    label: 'Group Event',
-    color:
-      'bg-orange-100 text-orange-900 border-orange-900/50 dark:bg-orange-500 dark:text-white dark:border-white/25',
-    icon: HiUserGroup,
-  },
-  {
-    id: 'clinic',
-    label: 'Clinic',
-    color:
-      'bg-sky-100 text-sky-900 border-sky-900/50 dark:bg-sky-500 dark:text-white dark:border-white/25',
-    icon: HiAcademicCap,
-  },
-  {
-    id: 'social',
-    label: 'Social',
-    color:
-      'bg-rose-100 text-rose-900 border-rose-900/50 dark:bg-rose-500 dark:text-white dark:border-white/25',
-    icon: HiUserGroup,
-  },
-  {
-    id: 'board-committee',
-    label: 'Board & Committee',
-    color:
-      'bg-indigo-100 text-indigo-900 border-indigo-900/50 dark:bg-indigo-600 dark:text-white dark:border-white/25',
-    icon: HiClipboardDocumentList,
-  },
-  {
-    id: 'learn-to-curl',
-    label: 'Learn to Curl',
-    color:
-      'bg-teal-100 text-teal-900 border-teal-900/50 dark:bg-teal-600 dark:text-white dark:border-white/25',
-    icon: HiAcademicCap,
-  },
-  {
-    id: 'off-season',
-    label: 'Off-Season',
-    color:
-      'bg-orange-100 text-orange-900 border-orange-900/50 dark:bg-orange-500 dark:text-white dark:border-white/25',
-    icon: HiSun,
-  },
-  {
-    id: 'other',
-    label: 'Other',
-    color:
-      'bg-gray-200 text-gray-900 border-gray-900/50 dark:bg-gray-500 dark:text-white dark:border-white/25',
-    icon: HiOutlineCalendarDays,
-  },
-  {
-    id: 'member-ice',
-    label: 'Member booking',
-    color:
-      'bg-teal-100 text-teal-900 border-teal-900/50 dark:bg-primary-teal-solid dark:text-white dark:border-white/25',
-    icon: HiStar,
-  },
-];
-
 /** Solid dot colors for compact mobile month cells (paired with DEFAULT_EVENT_TYPES). */
 const EVENT_TYPE_DOT_CLASS: Record<string, string> = {
   maintenance: 'bg-red-500 dark:bg-red-400',
@@ -474,79 +378,7 @@ export function apiEventToCalendar(ev: {
   };
 }
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-const EARLY_HOURS_END = 6; // Hide 12am–6am unless there are events
-
-/** Layout per event: { column, numColumns }. Overlap = share non-zero time: X.start < Y.end && Y.start < X.end */
-function computeEventLayout(
-  events: CalendarEvent[]
-): Map<string, { column: number; numColumns: number }> {
-  const result = new Map<string, { column: number; numColumns: number }>();
-  if (events.length === 0) return result;
-
-  // Step 1: Sort by start asc, then by end desc (longer first)
-  const sorted = [...events].sort((a, b) => {
-    const d = a.start.getTime() - b.start.getTime();
-    if (d !== 0) return d;
-    return b.end.getTime() - a.end.getTime();
-  });
-
-  // Step 2: Identify overlap groups (connected components)
-  const groups: CalendarEvent[][] = [];
-  let currentGroup: CalendarEvent[] = [];
-  let latestEnd = -1;
-
-  for (const ev of sorted) {
-    const start = ev.start.getTime();
-    const end = ev.end.getTime();
-    if (start >= latestEnd) {
-      if (currentGroup.length > 0) {
-        groups.push(currentGroup);
-        currentGroup = [];
-      }
-      latestEnd = end;
-      currentGroup.push(ev);
-    } else {
-      latestEnd = Math.max(latestEnd, end);
-      currentGroup.push(ev);
-    }
-  }
-  if (currentGroup.length > 0) groups.push(currentGroup);
-
-  // Step 3 & 4 & 5: For each group, compute numColumns, assign columns, store layout
-  for (const group of groups) {
-    // Step 3: Max concurrency via sweep
-    const sweep: { t: number; delta: number }[] = [];
-    for (const ev of group) {
-      sweep.push({ t: ev.start.getTime(), delta: 1 });
-      sweep.push({ t: ev.end.getTime(), delta: -1 });
-    }
-    sweep.sort((a, b) => a.t - b.t || a.delta - b.delta); // ends before starts at same time
-    let count = 0;
-    let numColumns = 0;
-    for (const { delta } of sweep) {
-      count += delta;
-      numColumns = Math.max(numColumns, count);
-    }
-    numColumns = Math.max(1, numColumns);
-
-    // Step 4: Assign column to each event (columns 0..numColumns-1, use "lowest available")
-    const columnEnds: number[] = [];
-    for (const ev of group) {
-      const start = ev.start.getTime();
-      const end = ev.end.getTime();
-      let col = 0;
-      while (col < columnEnds.length && columnEnds[col]! > start) col++;
-      if (col === columnEnds.length) columnEnds.push(end);
-      else columnEnds[col] = Math.max(columnEnds[col]!, end);
-      result.set(ev.id, { column: col, numColumns });
-    }
-  }
-
-  return result;
-}
 
 /** Compact time: "3a" or "3:30a". Minutes only when not on the hour. */
 function formatCompactTime(date: Date): string {
@@ -575,16 +407,6 @@ function formatCompactTimeRange(start: Date, end: Date): string {
   return `${formatCompactTime(start)}–${formatCompactTime(end)}`;
 }
 
-/** Returns hours to display: 0–23 if any event is before 6am, else 6–23 */
-function getVisibleHours(timedEvents: CalendarEvent[]): number[] {
-  const hasEarlyEvents = timedEvents.some((e) => {
-    const startH = e.start.getHours() + e.start.getMinutes() / 60;
-    const endH = e.end.getHours() + e.end.getMinutes() / 60;
-    return startH < EARLY_HOURS_END || endH < EARLY_HOURS_END;
-  });
-  return hasEarlyEvents ? HOURS : HOURS.slice(EARLY_HOURS_END);
-}
-
 function parseDateParam(value: string | null): Date {
   if (!value) return new Date();
   try {
@@ -602,6 +424,8 @@ function parseViewParam(value: string | null): CalendarView {
 
 export default function Calendar({ publicMode = false }: CalendarProps) {
   const { member } = useAuth();
+  const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
   const navigate = useNavigate();
   const canEditCalendar =
     !publicMode && (member?.isCalendarAdmin ?? member?.isAdmin ?? member?.isServerAdmin ?? false);
@@ -622,6 +446,8 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     if (selectedEvent) setViewEventActiveTab('details');
   }, [selectedEvent]);
   const [deleteEvent, setDeleteEvent] = useState<CalendarEvent | null>(null);
+  const [editingIceBooking, setEditingIceBooking] = useState<CalendarEvent | null>(null);
+  const [cancelingIceBookingId, setCancelingIceBookingId] = useState<number | null>(null);
   /** Selected type ids to show. Empty = show no events. Defaults to all types. */
   const [selectedTypeIds, setSelectedTypeIds] = useState<string[]>(() =>
     DEFAULT_EVENT_TYPES.map((t) => t.id)
@@ -639,22 +465,24 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const activeFilterCount = selectedTypeIds.length;
   const eventTypeFilterOptions = useMemo<ChoiceOption<string>[]>(
     () =>
-      eventTypes.map((t) => {
-        const Icon = t.icon;
-        return {
-          value: t.id,
-          label: t.label,
-          textValue: t.label,
-          icon: (
-            <span
-              className={`inline-flex h-6 w-6 items-center justify-center rounded ${t.color}`}
-              aria-hidden
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </span>
-          ),
-        };
-      }),
+      [...eventTypes]
+        .sort((a, b) => a.label.localeCompare(b.label))
+        .map((t) => {
+          const Icon = t.icon;
+          return {
+            value: t.id,
+            label: t.label,
+            textValue: t.label,
+            icon: (
+              <span
+                className={`inline-flex h-6 w-6 items-center justify-center rounded ${t.color}`}
+                aria-hidden
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </span>
+            ),
+          };
+        }),
     [eventTypes]
   );
   const eventTypeFilterSummary = allEventTypesSelected ? 'All event types' : undefined;
@@ -1447,6 +1275,58 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                           </Button>
                         </div>
                       )}
+                      {canEditCalendar && isIceBooking && (
+                        <div className="flex justify-end gap-2 mb-2">
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingIceBooking(selectedEvent);
+                              setSelectedEvent(null);
+                            }}
+                            className="inline-flex items-center justify-center gap-1.5 h-9 px-3"
+                          >
+                            <HiPencil className="w-4 h-4" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="danger"
+                            disabled={cancelingIceBookingId != null}
+                            onClick={() => {
+                              void (async () => {
+                                const bookingId = parseIceBookingId(selectedEvent.id);
+                                if (bookingId == null) return;
+                                const go = await confirm({
+                                  title: 'Cancel this ice booking?',
+                                  message:
+                                    'The sheet will be freed for that time, and the member who booked it will be emailed.',
+                                  confirmText: 'Cancel booking',
+                                  cancelText: 'Keep booking',
+                                  variant: 'danger',
+                                });
+                                if (!go) return;
+                                setCancelingIceBookingId(bookingId);
+                                try {
+                                  await api.delete(`/ice-bookings/${bookingId}`);
+                                  showAlert('Ice booking canceled. The member was emailed.', 'success');
+                                  setSelectedEvent(null);
+                                  refreshEvents();
+                                } catch (err: unknown) {
+                                  showAlert(
+                                    formatApiError(err, 'Could not cancel ice booking'),
+                                    'error'
+                                  );
+                                } finally {
+                                  setCancelingIceBookingId(null);
+                                }
+                              })();
+                            }}
+                            className="inline-flex items-center justify-center gap-1.5 h-9 px-3"
+                          >
+                            <HiTrash className="w-4 h-4" />
+                            {cancelingIceBookingId != null ? 'Canceling…' : 'Cancel'}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -1464,6 +1344,22 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
             );
           })()}
       </Modal>
+
+      {editingIceBooking && (
+        <AdminIceBookingEditor
+          event={editingIceBooking}
+          sheets={sheets}
+          onClose={() => setEditingIceBooking(null)}
+          onSaved={() => {
+            setEditingIceBooking(null);
+            refreshEvents();
+          }}
+          onCanceled={() => {
+            setEditingIceBooking(null);
+            refreshEvents();
+          }}
+        />
+      )}
 
       <Modal isOpen={!!deleteEvent} onClose={() => setDeleteEvent(null)} title="Delete event">
         {deleteEvent && (
@@ -2138,8 +2034,6 @@ function MonthView({
 }
 
 // --- Week View ---
-const HOUR_HEIGHT = 60;
-
 function WeekView({
   rangeStart,
   selectedDate,
@@ -2604,13 +2498,7 @@ function DesktopWeekView({
               className="border-r border-b border-gray-200 dark:border-gray-600/60 px-1 py-0.5 text-xs text-gray-500 dark:text-gray-400"
               style={{ height: HOUR_HEIGHT }}
             >
-              {hour === 0
-                ? '12 am'
-                : hour < 12
-                  ? `${hour} am`
-                  : hour === 12
-                    ? '12 pm'
-                    : `${hour - 12} pm`}
+              {formatHourLabel(hour)}
             </div>
           ))}
         </div>
@@ -2871,7 +2759,7 @@ function DayView({
               className="text-xs text-gray-500 dark:text-gray-400 px-1"
               style={{ height: HOUR_HEIGHT }}
             >
-              {h === 0 ? '12 am' : h < 12 ? `${h} am` : h === 12 ? '12 pm' : `${h - 12} pm`}
+              {formatHourLabel(h)}
             </div>
           ))}
         </div>

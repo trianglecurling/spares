@@ -1137,22 +1137,19 @@ const ICE_PURPOSE_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
-export async function sendIceBookingConfirmationEmail(
-  to: string,
-  recipientName: string,
-  details: {
-    sheetName: string;
-    startIso: string;
-    endIso: string;
-    purpose: string;
-    purposeOther?: string | null;
-    guestNames?: string | null;
-  },
-  memberToken?: string
-): Promise<void> {
-  const start = new Date(details.startIso);
-  const end = new Date(details.endIso);
-  const whenStr = `${start.toLocaleString('en-US', {
+type IceBookingEmailDetails = {
+  sheetName: string;
+  startIso: string;
+  endIso: string;
+  purpose: string;
+  purposeOther?: string | null;
+  guestNames?: string | null;
+};
+
+function formatIceBookingWhen(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  return `${start.toLocaleString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
@@ -1160,32 +1157,115 @@ export async function sendIceBookingConfirmationEmail(
     hour: 'numeric',
     minute: '2-digit',
   })} – ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function iceBookingDetailLinesHtml(details: IceBookingEmailDetails): string {
   const purposeLabel = ICE_PURPOSE_LABELS[details.purpose] ?? details.purpose;
   const otherLine =
     details.purpose === 'other' && details.purposeOther
       ? `<p><strong>Notes:</strong> ${escapeHtmlEmail(details.purposeOther)}</p>`
       : '';
   const guestNamesLine =
-    (details.purpose === 'guests_new' || details.purpose === 'guests_experienced') && details.guestNames
+    (details.purpose === 'guests_new' || details.purpose === 'guests_experienced') &&
+    details.guestNames
       ? `<p><strong>Guest names:</strong> ${escapeHtmlEmail(details.guestNames)}</p>`
       : '';
+  return `
+    <p><strong>When:</strong> ${escapeHtmlEmail(formatIceBookingWhen(details.startIso, details.endIso))}</p>
+    <p><strong>Sheet:</strong> ${escapeHtmlEmail(details.sheetName)}</p>
+    <p><strong>Purpose:</strong> ${escapeHtmlEmail(purposeLabel)}</p>
+    ${otherLine}
+    ${guestNamesLine}
+  `;
+}
+
+export async function sendIceBookingConfirmationEmail(
+  to: string,
+  recipientName: string,
+  details: IceBookingEmailDetails,
+  memberToken?: string
+): Promise<void> {
+  const siteBase = config.frontendUrl.replace(/\/+$/, '');
+  const guestPolicyUrl = `${siteBase}/go/guests`;
+  const waiverUrl = `${siteBase}/go/waiver`;
 
   const htmlContent = `
     <h2>Ice time booked</h2>
     <p>Hi ${escapeHtmlEmail(recipientName)},</p>
     <p>Your ice booking is confirmed.</p>
-    <p><strong>When:</strong> ${escapeHtmlEmail(whenStr)}</p>
-    <p><strong>Sheet:</strong> ${escapeHtmlEmail(details.sheetName)}</p>
-    <p><strong>Purpose:</strong> ${escapeHtmlEmail(purposeLabel)}</p>
-    ${otherLine}
-    ${guestNamesLine}
-    <p>Please review the facility rules shown in the app after booking. At least one other person must be on premises with you; you may not use the ice alone.</p>
+    ${iceBookingDetailLinesHtml(details)}
+    <p>Please remember:</p>
+    <ul>
+      <li>At least one other person must be on premises with you. You may not use the ice alone.</li>
+      <li>Do not enter the ice maintenance room without proper training.</li>
+      <li>Bringing guests? Maximum of 2 (see the full <a href="${guestPolicyUrl}">Guest Policy</a>). Guests must sign a <a href="${waiverUrl}">waiver</a> before entering the ice shed.</li>
+      <li>Clean up properly after you are done (sweep and cover hacks, mop sheet, return stones).</li>
+    </ul>
   `;
 
   await sendEmail(
     {
       to,
       subject: `Ice time confirmed: Sheet ${details.sheetName}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+
+export async function sendIceBookingCancellationEmail(
+  to: string,
+  recipientName: string,
+  details: IceBookingEmailDetails,
+  options?: { canceledByStaff?: boolean },
+  memberToken?: string
+): Promise<void> {
+  const bookIceUrl = `${config.frontendUrl.replace(/\/+$/, '')}/book-ice`;
+  const intro = options?.canceledByStaff
+    ? 'We apologize that your ice time booking has been canceled by the club.'
+    : 'Your ice booking has been canceled. The sheet is free again for that time.';
+  const htmlContent = `
+    <h2>Ice time canceled</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>${intro}</p>
+    ${iceBookingDetailLinesHtml(details)}
+    <p>You can book another slot any time from the <a href="${bookIceUrl}">Book ice time</a> page.</p>
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Ice time canceled: Sheet ${details.sheetName}`,
+      htmlContent,
+      recipientName,
+    },
+    memberToken
+  );
+}
+
+export async function sendIceBookingUpdatedEmail(
+  to: string,
+  recipientName: string,
+  details: { previous: IceBookingEmailDetails; next: IceBookingEmailDetails },
+  memberToken?: string
+): Promise<void> {
+  const bookIceUrl = `${config.frontendUrl.replace(/\/+$/, '')}/book-ice`;
+  const htmlContent = `
+    <h2>Ice time updated</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>Your ice booking was updated by the club. Here are the changes:</p>
+    <h3>Previous</h3>
+    ${iceBookingDetailLinesHtml(details.previous)}
+    <h3>Updated</h3>
+    ${iceBookingDetailLinesHtml(details.next)}
+    <p>View or manage your bookings on the <a href="${bookIceUrl}">Book ice time</a> page.</p>
+  `;
+
+  await sendEmail(
+    {
+      to,
+      subject: `Ice time updated: Sheet ${details.next.sheetName}`,
       htmlContent,
       recipientName,
     },

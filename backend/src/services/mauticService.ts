@@ -199,7 +199,7 @@ async function createContact(firstname: string, lastname: string, email: string)
   return id;
 }
 
-async function findContactIdByEmail(email: string): Promise<number | null> {
+export async function findContactIdByEmail(email: string): Promise<number | null> {
   const q = `email:${email}`;
   const path = `/contacts?search=${encodeURIComponent(q)}&limit=1`;
   const json = await mauticRequestJson(path, { method: 'GET' });
@@ -210,6 +210,173 @@ async function addContactToSegment(segmentId: number, contactId: number): Promis
   await mauticRequestJson(`/segments/${segmentId}/contact/${contactId}/add`, {
     method: 'POST',
   });
+}
+
+/** True when Mautic base URL and OAuth2 client credentials are configured. */
+export function isMauticConfigured(): boolean {
+  return Boolean(mauticOrigin() && hasOAuthCredentials());
+}
+
+function extractSegmentId(payload: unknown): number | null {
+  if (payload == null || typeof payload !== 'object') return null;
+  const o = payload as Record<string, unknown>;
+  const list = o.list;
+  if (list != null && typeof list === 'object') {
+    const lo = list as Record<string, unknown>;
+    if (typeof lo.id === 'number') return lo.id;
+  }
+  if (typeof o.id === 'number') return o.id;
+  return null;
+}
+
+function extractSegmentAlias(payload: unknown): string | null {
+  if (payload == null || typeof payload !== 'object') return null;
+  const o = payload as Record<string, unknown>;
+  const list = o.list;
+  if (list != null && typeof list === 'object') {
+    const lo = list as Record<string, unknown>;
+    if (typeof lo.alias === 'string' && lo.alias.trim()) return lo.alias.trim();
+  }
+  if (typeof o.alias === 'string' && o.alias.trim()) return o.alias.trim();
+  return null;
+}
+
+function extractContactEmail(contact: Record<string, unknown>): string | null {
+  const fields = contact.fields;
+  if (fields != null && typeof fields === 'object') {
+    const f = fields as Record<string, unknown>;
+    const core = f.core;
+    if (core != null && typeof core === 'object') {
+      const emailField = (core as Record<string, unknown>).email;
+      if (emailField != null && typeof emailField === 'object') {
+        const value = (emailField as { value?: unknown }).value;
+        if (typeof value === 'string' && value.trim()) return value.trim().toLowerCase();
+      }
+    }
+    const all = f.all;
+    if (all != null && typeof all === 'object') {
+      const email = (all as Record<string, unknown>).email;
+      if (typeof email === 'string' && email.trim()) return email.trim().toLowerCase();
+    }
+  }
+  if (typeof contact.email === 'string' && contact.email.trim()) {
+    return contact.email.trim().toLowerCase();
+  }
+  return null;
+}
+
+export async function createMauticSegment(name: string): Promise<number> {
+  const json = await mauticRequestJson('/segments/new', {
+    method: 'POST',
+    body: JSON.stringify({ name, isPublished: true }),
+  });
+  const id = extractSegmentId(json);
+  if (id == null) {
+    throw new MauticRequestError('Mautic did not return a segment id', 500, String(json));
+  }
+  return id;
+}
+
+export async function renameMauticSegment(segmentId: number, name: string): Promise<void> {
+  await mauticRequestJson(`/segments/${segmentId}/edit`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function getMauticSegmentAlias(segmentId: number): Promise<string | null> {
+  try {
+    const json = await mauticRequestJson(`/segments/${segmentId}`, { method: 'GET' });
+    return extractSegmentAlias(json);
+  } catch (e) {
+    if (e instanceof MauticRequestError && e.statusCode === 404) return null;
+    throw e;
+  }
+}
+
+export async function removeContactFromSegment(segmentId: number, contactId: number): Promise<void> {
+  await mauticRequestJson(`/segments/${segmentId}/contact/${contactId}/remove`, {
+    method: 'POST',
+  });
+}
+
+export async function findOrCreateContactByEmail(
+  email: string,
+  firstname: string,
+  lastname: string
+): Promise<number> {
+  const emailNorm = email.trim().toLowerCase();
+  const existing = await findContactIdByEmail(emailNorm);
+  if (existing != null) return existing;
+  return createContact(firstname, lastname, emailNorm);
+}
+
+export async function updateMauticContact(
+  contactId: number,
+  fields: { email?: string; firstname?: string; lastname?: string }
+): Promise<void> {
+  const payload: Record<string, string> = {};
+  if (fields.email != null) payload.email = fields.email.trim().toLowerCase();
+  if (fields.firstname != null) payload.firstname = fields.firstname;
+  if (fields.lastname != null) payload.lastname = fields.lastname;
+  if (Object.keys(payload).length === 0) return;
+  await mauticRequestJson(`/contacts/${contactId}/edit`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function addContactToMauticSegment(segmentId: number, contactId: number): Promise<void> {
+  try {
+    await addContactToSegment(segmentId, contactId);
+  } catch (e) {
+    if (e instanceof MauticRequestError && e.statusCode === 400) {
+      const message = (e.message || '').toLowerCase();
+      if (message.includes('already') || message.includes('member')) {
+        return;
+      }
+    }
+    throw e;
+  }
+}
+
+export type MauticSegmentContact = { id: number; email: string };
+
+export async function listSegmentContacts(segmentId: number): Promise<MauticSegmentContact[]> {
+  const alias = await getMauticSegmentAlias(segmentId);
+  if (!alias) {
+    throw new MauticRequestError(`Mautic segment ${segmentId} not found or has no alias`, 404, '');
+  }
+
+  const results: MauticSegmentContact[] = [];
+  const limit = 100;
+  let start = 0;
+
+  for (;;) {
+    const path = `/contacts?search=${encodeURIComponent(`segment:${alias}`)}&start=${start}&limit=${limit}`;
+    const json = await mauticRequestJson(path, { method: 'GET' });
+    if (json == null || typeof json !== 'object') break;
+    const o = json as Record<string, unknown>;
+    const contacts = o.contacts;
+    if (contacts == null || typeof contacts !== 'object') break;
+
+    const batch = Object.values(contacts as Record<string, unknown>);
+    if (batch.length === 0) break;
+
+    for (const value of batch) {
+      if (value == null || typeof value !== 'object') continue;
+      const c = value as Record<string, unknown>;
+      if (typeof c.id !== 'number') continue;
+      const email = extractContactEmail(c);
+      if (!email) continue;
+      results.push({ id: c.id, email });
+    }
+
+    if (batch.length < limit) break;
+    start += limit;
+  }
+
+  return results;
 }
 
 export async function sendMauticEmailToContact(emailId: number, contactId: number): Promise<void> {

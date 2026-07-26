@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { sendValidationError } from '../api/errors.js';
 import type { ApiReply } from '../api/types.js';
 import {
+  mauticMembershipSyncResultSchema,
+  mauticMembershipSyncStatusResponseSchema,
   registrationDiscountSettingsSchema,
   registrationPriceSettingsSchema,
   registrationSeasonListResponseSchema,
@@ -27,6 +29,13 @@ import {
   type RegistrationDiscountSettingsStored,
 } from '../registration/registrationConfigValidation.js';
 import { syncSeasonMembershipDatesForSeason } from '../services/memberSeasonMembershipAdminService.js';
+import {
+  getSyncStatus,
+  queueEnsureSeasonSegment,
+  queueRenameSeasonSegment,
+  runFullSync,
+} from '../services/mauticMembershipSyncService.js';
+import { isMauticConfigured } from '../services/mauticService.js';
 
 const SINGLETON_SCOPE = 'singleton';
 
@@ -426,6 +435,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
           end_date: body.endDate,
         })
         .returning();
+      queueEnsureSeasonSegment(inserted[0].id);
       return mapSeason(inserted[0]);
     }
   );
@@ -509,8 +519,53 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
         );
         return updatedSeason;
       });
+      if (body.name !== undefined && body.name !== existing.name) {
+        queueRenameSeasonSegment(id);
+      }
       return mapSeason(rows[0]);
     }
+  );
+
+  fastify.get(
+    '/registration-config/mautic-sync/status',
+    {
+      schema: {
+        tags: ['registration-config'],
+        response: { 200: mauticMembershipSyncStatusResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      return getSyncStatus();
+    },
+  );
+
+  fastify.post(
+    '/registration-config/mautic-sync',
+    {
+      schema: {
+        tags: ['registration-config'],
+        response: {
+          200: mauticMembershipSyncResultSchema,
+          503: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { error: { type: 'string' } },
+            required: ['error'],
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      if (!isMauticConfigured()) {
+        return reply.code(503).send({
+          error: 'Mautic is not configured. Set MAUTIC_BASE_URL and OAuth client credentials.',
+        });
+      }
+      const member = request.member;
+      return runFullSync(member?.id ?? null);
+    },
   );
 
   fastify.get<{ Reply: ApiReply<unknown> }>(

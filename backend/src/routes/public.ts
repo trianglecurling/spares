@@ -211,7 +211,8 @@ export async function publicRoutes(fastify: FastifyInstance) {
 
   // GET /public/upcoming-bonspiels
   fastify.get('/public/upcoming-bonspiels', async () => {
-    return getUpcomingBonspiels();
+    const { items } = await getUpcomingBonspiels();
+    return items;
   });
 
   // GET /sitemap.xml - Sitemap for search engines

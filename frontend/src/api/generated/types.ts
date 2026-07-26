@@ -9101,6 +9101,39 @@ export interface paths {
         };
         trace?: never;
     };
+    "/ice-bookings/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ice-bookings": {
         parameters: {
             query?: never;
@@ -9183,7 +9216,26 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         trace?: never;
     };
     "/content/articles": {
@@ -13839,6 +13891,122 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/registration-config/mautic-sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            configured: boolean;
+                            seasons: {
+                                id: number;
+                                name: string;
+                                mauticSegmentId: null | number;
+                            }[];
+                            lastRun: null | {
+                                at: string | null;
+                                status: null | ("success" | "partial" | "error");
+                                summary: null | {
+                                    /** @enum {string} */
+                                    status: "success" | "partial" | "error";
+                                    seasons: {
+                                        seasonId: number;
+                                        seasonName: string;
+                                        mauticSegmentId: null | number;
+                                        added: number;
+                                        removed: number;
+                                        errors: string[];
+                                    }[];
+                                };
+                                triggeredByMemberId: number | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration-config/mautic-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            status: "success" | "partial" | "error";
+                            seasons: {
+                                seasonId: number;
+                                seasonName: string;
+                                mauticSegmentId: null | number;
+                                added: number;
+                                removed: number;
+                                errors: string[];
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/registration-config/sessions": {

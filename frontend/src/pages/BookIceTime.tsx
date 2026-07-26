@@ -1,21 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { addDays, format, isSameDay, parseISO, startOfDay } from 'date-fns';
 import Button from '../components/Button';
 import { AppPage, AppPageHeader } from '../components/AppPage';
+import BookingDayGrid, { type BookingDaySlot } from '../components/BookingDayGrid';
+import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
+import FormField from '../components/FormField';
+import FormSection from '../components/FormSection';
 import InlineStateMessage from '../components/InlineStateMessage';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import api from '../utils/api';
-import { formatApiError } from '../utils/api';
-import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
+import api, { formatApiError } from '../utils/api';
 
-type PurposeOption = { value: Purpose; label: string };
+/** Members may book today through this many days ahead; mirrors the server window. */
+const MAX_ADVANCE_DAYS = 7;
 
-type Sheet = { id: number; name: string; isActive?: boolean };
+type BookingKind = 'ice' | 'member_event';
 
-type Purpose = 'practice' | 'makeup_game' | 'guests_new' | 'guests_experienced' | 'other';
+type Purpose = 'practice' | 'makeup_game' | 'other';
+
+/** Legacy bookings may still carry retired guest purposes; they are read-only now. */
+type StoredPurpose = Purpose | 'guests_new' | 'guests_experienced';
+
+type DurationHours = 1 | 2;
 
 type MyIceBooking = {
   id: number;
@@ -23,85 +32,157 @@ type MyIceBooking = {
   sheetName: string;
   start: string;
   end: string;
-  purpose: Purpose;
+  purpose: StoredPurpose;
   purposeOther?: string;
   guestNames?: string;
 };
 
-function toDatetimeLocalValue(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+type AvailabilityResponse = {
+  date: string;
+  durationHours: DurationHours;
+  slotMinutes: number;
+  sheets: Array<{ id: number; name: string }>;
+  events: Array<{
+    id: string;
+    typeId: string;
+    title: string;
+    start: string;
+    end: string;
+    sheetIds: number[];
+  }>;
+  slots: Array<{
+    start: string;
+    end: string;
+    availableSheetIds: number[];
+    unavailableReason?: 'past' | 'member_conflict' | 'sheets_busy';
+  }>;
+};
 
-const PURPOSE_OPTIONS: PurposeOption[] = [
+const BOOKING_KIND_OPTIONS: ChoiceOption<BookingKind>[] = [
+  {
+    value: 'ice',
+    label: 'Book ice time',
+    description: 'Intended for practice and make-up games. Free for all members.',
+  },
+  {
+    value: 'member_event',
+    label: 'Member event',
+    description: 'Reserve the ice for an event with guests.',
+  },
+];
+
+const PURPOSE_OPTIONS: Array<{ value: Purpose; label: string }> = [
   { value: 'practice', label: 'Practice' },
   { value: 'makeup_game', label: 'Make-up game' },
-  { value: 'guests_new', label: 'Bringing guests: new curlers' },
-  { value: 'guests_experienced', label: 'Bringing guests: experienced' },
   { value: 'other', label: 'Other' },
 ];
 
-function isGuestPurpose(p: Purpose): p is 'guests_new' | 'guests_experienced' {
-  return p === 'guests_new' || p === 'guests_experienced';
+const DURATION_OPTIONS: ChoiceOption<DurationHours>[] = [
+  { value: 1, label: '1 hour' },
+  { value: 2, label: '2 hours' },
+];
+
+const STORED_PURPOSE_LABELS: Record<StoredPurpose, string> = {
+  practice: 'Practice',
+  makeup_game: 'Make-up game',
+  other: 'Other',
+  guests_new: 'Bringing guests: new curlers',
+  guests_experienced: 'Bringing guests: experienced',
+};
+
+function toDateParam(date: Date): string {
+  return format(date, 'yyyy-MM-dd');
 }
 
 function bookingPurposeLabel(booking: MyIceBooking): string {
-  const base = PURPOSE_OPTIONS.find((p) => p.value === booking.purpose)?.label ?? booking.purpose;
+  const base = STORED_PURPOSE_LABELS[booking.purpose] ?? booking.purpose;
   if (booking.purpose === 'other' && booking.purposeOther) return `${base}: ${booking.purposeOther}`;
-  if (isGuestPurpose(booking.purpose) && booking.guestNames) {
-    return `${base} (${booking.guestNames})`;
-  }
+  if (booking.guestNames) return `${base} (${booking.guestNames})`;
   return base;
+}
+
+function formatWhen(start: Date, end: Date): string {
+  return `${format(start, 'EEEE, MMMM d')} · ${format(start, 'h:mm a')} – ${format(end, 'h:mm a')}`;
+}
+
+/** Minutes from local midnight. */
+function minutesOfDay(value: Date): number {
+  return value.getHours() * 60 + value.getMinutes();
+}
+
+/**
+ * Daytime windows when a later Group Event might bump a member booking:
+ * weekdays 10am–4pm, Saturdays 2:30pm–5pm.
+ */
+function bookingOverlapsGroupEventRiskWindow(start: Date, end: Date): boolean {
+  const day = start.getDay(); // 0 Sun … 6 Sat
+  let windowStart: number | null = null;
+  let windowEnd: number | null = null;
+  if (day >= 1 && day <= 5) {
+    windowStart = 10 * 60;
+    windowEnd = 16 * 60;
+  } else if (day === 6) {
+    windowStart = 14 * 60 + 30;
+    windowEnd = 17 * 60;
+  }
+  if (windowStart == null || windowEnd == null) return false;
+  const bookingStart = minutesOfDay(start);
+  const bookingEnd = minutesOfDay(end);
+  // Same-day bookings only; end-before-start would mean midnight crossover (not used for ice).
+  if (bookingEnd <= bookingStart) return bookingStart < windowEnd && windowStart < 24 * 60;
+  return bookingStart < windowEnd && bookingEnd > windowStart;
 }
 
 export default function BookIceTime() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
-  const [sheets, setSheets] = useState<Sheet[]>([]);
-  const [sheetsLoading, setSheetsLoading] = useState(true);
-  const [sheetId, setSheetId] = useState('');
-  const [startLocal, setStartLocal] = useState(() => {
-    const d = new Date();
-    d.setMinutes(0, 0, 0);
-    d.setHours(d.getHours() + 1);
-    return toDatetimeLocalValue(d);
-  });
-  const [durationHours, setDurationHours] = useState<1 | 2>(1);
+
+  const bookingKindFieldId = useId();
+  const dateFieldId = useId();
+  const durationFieldId = useId();
+  const timeFieldId = useId();
+  const sheetFieldId = useId();
+  const purposeFieldId = useId();
+  const purposeOtherId = useId();
+
+  const [bookingKind, setBookingKind] = useState<BookingKind | null>(null);
+  const [dateParam, setDateParam] = useState(() => toDateParam(new Date()));
+  const [durationHours, setDurationHours] = useState<DurationHours>(1);
+  const [selectedStartIso, setSelectedStartIso] = useState<string | null>(null);
+  const [sheetId, setSheetId] = useState<number | null>(null);
   const [purpose, setPurpose] = useState<Purpose>('practice');
   const [purposeOther, setPurposeOther] = useState('');
-  const [guestNames, setGuestNames] = useState('');
+
+  const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [availabilityReloadKey, setAvailabilityReloadKey] = useState(0);
+
   const [submitting, setSubmitting] = useState(false);
-  const [step, setStep] = useState<'form' | 'done'>('form');
   const [confirmedSummary, setConfirmedSummary] = useState<{
     sheetName: string;
     start: string;
     end: string;
     purpose: Purpose;
     purposeOther?: string;
-    guestNames?: string;
   } | null>(null);
+
   const [iceBookings, setIceBookings] = useState<MyIceBooking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
 
-  const minLocal = useMemo(() => toDatetimeLocalValue(new Date()), []);
-  const sheetOptions = useMemo<ChoiceOption<number>[]>(
-    () => sheets.map((s) => ({ value: s.id, label: s.name })),
-    [sheets]
-  );
-  const maxLocal = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return toDatetimeLocalValue(d);
+  const isSocialMember = member?.socialMember ?? false;
+  const selectedDate = useMemo(() => parseISO(dateParam), [dateParam]);
+
+  const dateOptions = useMemo<ChoiceOption<string>[]>(() => {
+    const today = startOfDay(new Date());
+    return Array.from({ length: MAX_ADVANCE_DAYS + 1 }, (_, offset) => {
+      const day = addDays(today, offset);
+      const label = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : format(day, 'EEE MMM d');
+      return { value: toDateParam(day), label };
+    });
   }, []);
-  const upcomingBookings = useMemo(
-    () =>
-      iceBookings
-        .filter((b) => new Date(b.end).getTime() > Date.now())
-        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()),
-    [iceBookings]
-  );
 
   const loadBookings = useCallback(async () => {
     setBookingsLoading(true);
@@ -116,59 +197,129 @@ export default function BookIceTime() {
   }, []);
 
   useEffect(() => {
-    let canceled = false;
-    setSheetsLoading(true);
-    api
-      .get<Sheet[]>('/sheets')
-      .then((res) => {
-        if (!canceled) {
-          const active = (res.data ?? []).filter((s) => s.isActive !== false);
-          setSheets(active);
-          if (active.length > 0 && !sheetId) {
-            setSheetId(String(active[0].id));
-          }
-        }
-      })
-      .catch(() => {
-        if (!canceled) setSheets([]);
-      })
-      .finally(() => {
-        if (!canceled) setSheetsLoading(false);
-      });
-    return () => {
-      canceled = true;
-    };
-  }, []);
+    if (isSocialMember) return;
+    void loadBookings();
+  }, [isSocialMember, loadBookings]);
 
   useEffect(() => {
-    if (member?.socialMember) return;
-    void loadBookings();
-  }, [member?.socialMember, loadBookings]);
+    if (isSocialMember || bookingKind !== 'ice') return;
+    const controller = new AbortController();
+    setAvailabilityLoading(true);
+    setAvailabilityError(null);
+    api
+      .get<AvailabilityResponse>('/ice-bookings/availability', {
+        params: { date: dateParam, durationHours },
+        signal: controller.signal,
+      })
+      .then(({ data }) => {
+        setAvailability(data);
+        // Keep the chosen time across a duration change when it still fits.
+        setSelectedStartIso((current) => {
+          if (!current) return null;
+          const match = data.slots.find((slot) => slot.start === current);
+          return match && !match.unavailableReason && match.availableSheetIds.length > 0
+            ? current
+            : null;
+        });
+      })
+      .catch((err: unknown) => {
+        if (axios.isCancel(err)) return;
+        setAvailability(null);
+        setAvailabilityError(formatApiError(err, 'Could not load ice availability'));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAvailabilityLoading(false);
+      });
+    return () => controller.abort();
+  }, [bookingKind, dateParam, durationHours, isSocialMember, availabilityReloadKey]);
+
+  const sheets = availability?.sheets ?? [];
+  const sheetNameById = useMemo(
+    () => new Map(sheets.map((sheet) => [sheet.id, sheet.name])),
+    [sheets]
+  );
+
+  const slots = useMemo<BookingDaySlot[]>(
+    () =>
+      (availability?.slots ?? []).map((slot) => ({
+        start: new Date(slot.start),
+        end: new Date(slot.end),
+        availableSheetIds: slot.availableSheetIds,
+        unavailableReason: slot.unavailableReason,
+      })),
+    [availability]
+  );
+
+  const events = useMemo(
+    () =>
+      (availability?.events ?? []).map((event) => ({
+        ...event,
+        start: new Date(event.start),
+        end: new Date(event.end),
+      })),
+    [availability]
+  );
+
+  const selectedSlot = useMemo(
+    () => slots.find((slot) => slot.start.toISOString() === selectedStartIso) ?? null,
+    [slots, selectedStartIso]
+  );
+  // While availability is refetching, the slot in hand may not match the new duration yet.
+  const confirmedSlot = availabilityLoading || availabilityError ? null : selectedSlot;
+
+  const hasOpenSlots = slots.some(
+    (slot) => !slot.unavailableReason && slot.availableSheetIds.length > 0
+  );
+
+  const sheetOptions = useMemo<ChoiceOption<number>[]>(() => {
+    const available = new Set(selectedSlot?.availableSheetIds ?? []);
+    return sheets.map((sheet) => ({
+      value: sheet.id,
+      label: `Sheet ${sheet.name}`,
+      disabled: !available.has(sheet.id),
+      ...(available.has(sheet.id) ? {} : { description: 'In use at this time' }),
+    }));
+  }, [sheets, selectedSlot]);
+
+  const handleSelectSlot = (slot: BookingDaySlot) => {
+    setSelectedStartIso(slot.start.toISOString());
+    setSheetId((current) => (current != null && slot.availableSheetIds.includes(current) ? current : null));
+  };
+
+  const upcomingBookings = useMemo(
+    () =>
+      iceBookings
+        .filter((b) => new Date(b.end).getTime() > Date.now())
+        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()),
+    [iceBookings]
+  );
 
   const resetForm = () => {
-    setStep('form');
     setConfirmedSummary(null);
-    setGuestNames('');
+    setBookingKind('ice');
+    setSelectedStartIso(null);
+    setSheetId(null);
+    setPurposeOther('');
+    setAvailabilityReloadKey((key) => key + 1);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (member?.socialMember) return;
+    if (isSocialMember || bookingKind !== 'ice') return;
 
-    if (!sheetId || !startLocal) {
-      showAlert('Choose a sheet and start time.', 'warning');
+    if (!selectedSlot) {
+      showAlert('Choose a start time on the calendar.', 'warning');
+      return;
+    }
+    if (sheetId == null) {
+      showAlert('Choose an available sheet.', 'warning');
       return;
     }
     if (purpose === 'other' && !purposeOther.trim()) {
       showAlert('Please describe your purpose.', 'warning');
       return;
     }
-    if (isGuestPurpose(purpose) && !guestNames.trim()) {
-      showAlert('Guest names are required when bringing guests.', 'warning');
-      return;
-    }
 
-    const startIso = new Date(startLocal).toISOString();
     setSubmitting(true);
     try {
       const { data } = await api.post<{
@@ -178,14 +329,12 @@ export default function BookIceTime() {
         end: string;
         purpose: Purpose;
         purposeOther?: string;
-        guestNames?: string;
       }>('/ice-bookings', {
-        sheetId: Number(sheetId),
-        start: startIso,
+        sheetId,
+        start: selectedSlot.start.toISOString(),
         durationHours,
         purpose,
         purposeOther: purpose === 'other' ? purposeOther.trim() : undefined,
-        guestNames: isGuestPurpose(purpose) ? guestNames.trim() : undefined,
       });
       setConfirmedSummary({
         sheetName: data.sheetName,
@@ -193,15 +342,15 @@ export default function BookIceTime() {
         end: data.end,
         purpose: data.purpose,
         purposeOther: data.purposeOther,
-        guestNames: data.guestNames,
       });
-      setStep('done');
       void loadBookings();
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data as { error?: string } | undefined)?.error
         : undefined;
       showAlert(msg || formatApiError(err, 'Could not complete booking'), 'error');
+      // Someone may have taken the slot while the form was open.
+      setAvailabilityReloadKey((key) => key + 1);
     } finally {
       setSubmitting(false);
     }
@@ -222,6 +371,7 @@ export default function BookIceTime() {
       await api.delete(`/ice-bookings/${id}`);
       showAlert('Your ice booking was canceled.', 'success');
       await loadBookings();
+      setAvailabilityReloadKey((key) => key + 1);
     } catch (err: unknown) {
       showAlert(formatApiError(err, 'Could not cancel booking'), 'error');
     } finally {
@@ -229,331 +379,357 @@ export default function BookIceTime() {
     }
   };
 
-  if (member?.socialMember) {
+  if (isSocialMember) {
     return (
-      <>
-        <AppPage narrow>
-          <AppPageHeader title="Book ice time" />
-          <div className="app-card">
-            <p className="app-page-subtitle">
-              Social memberships do not include ice booking. Upgrade to a full membership to reserve practice ice.
-            </p>
-            <Link to="/calendar" className="mt-5 inline-flex text-sm font-medium text-primary-teal-link hover:underline">
-              View full calendar
-            </Link>
-          </div>
-        </AppPage>
-      </>
+      <AppPage narrow>
+        <AppPageHeader title="Book ice time" />
+        <div className="app-card">
+          <p className="app-page-subtitle">
+            Social memberships do not include ice booking. Upgrade to a full membership to reserve
+            practice ice.
+          </p>
+          <Link
+            to="/calendar"
+            className="mt-5 inline-flex text-sm font-medium text-primary-teal-link hover:underline"
+          >
+            View full calendar
+          </Link>
+        </div>
+      </AppPage>
     );
   }
 
-  if (step === 'done' && confirmedSummary) {
+  if (confirmedSummary) {
     const purposeLabel =
-      PURPOSE_OPTIONS.find((p) => p.value === confirmedSummary.purpose)?.label ?? confirmedSummary.purpose;
+      PURPOSE_OPTIONS.find((p) => p.value === confirmedSummary.purpose)?.label ??
+      confirmedSummary.purpose;
     return (
-      <>
-        <AppPage narrow>
-          <div className="app-card">
-            <AppPageHeader
-              title="You're booked"
-              description={`We sent a confirmation email${member?.email ? ` to ${member.email}` : ''}. Please remember:`}
-            />
-            <ul className="list-disc pl-5 space-y-2 text-gray-800 dark:text-gray-200 mb-6">
-              <li>At least one other person must be on premises with you. You may not use the ice alone.</li>
-              <li>Do not enter the ice maintenance room without proper training.</li>
-              <li>Any guests must sign a waiver before entering the ice shed.</li>
-              <li>
-                Clean up properly after you are done (sweep and cover hacks, mop sheet, return stones).
-              </li>
-            </ul>
-            <div className="rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 p-4 text-sm text-gray-700 dark:text-gray-300 space-y-1">
-              <p>
-                <span className="font-medium text-gray-900 dark:text-gray-100">When: </span>
-                {new Date(confirmedSummary.start).toLocaleString(undefined, {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}{' '}
-                –{' '}
-                {new Date(confirmedSummary.end).toLocaleTimeString(undefined, {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
-              </p>
-              <p>
-                <span className="font-medium text-gray-900 dark:text-gray-100">Sheet: </span>
-                {confirmedSummary.sheetName}
-              </p>
-              <p>
-                <span className="font-medium text-gray-900 dark:text-gray-100">Purpose: </span>
-                {purposeLabel}
-                {confirmedSummary.purpose === 'other' && confirmedSummary.purposeOther
-                  ? ` — ${confirmedSummary.purposeOther}`
-                  : ''}
-              </p>
-              {isGuestPurpose(confirmedSummary.purpose) && confirmedSummary.guestNames && (
-                <p>
-                  <span className="font-medium text-gray-900 dark:text-gray-100">Guests: </span>
-                  {confirmedSummary.guestNames}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3 mt-8">
+      <AppPage narrow>
+        <div className="app-card">
+          <AppPageHeader
+            title="You're booked"
+            description={`We sent a confirmation email${member?.email ? ` to ${member.email}` : ''}. Please remember:`}
+          />
+          <ul className="mb-6 list-disc space-y-2 pl-5 text-gray-800 dark:text-gray-200">
+            <li>At least one other person must be on premises with you. You may not use the ice alone.</li>
+            <li>Do not enter the ice maintenance room without proper training.</li>
+            <li>
+              Bringing guests? Maximum of 2 (see the full{' '}
               <Link
-                to="/dashboard"
-                className="px-4 py-2 rounded-md font-medium transition-colors inline-flex items-center justify-center bg-primary-teal-solid text-white hover:bg-opacity-90"
+                to="/go/guests"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-teal-link hover:underline"
               >
-                Back to dashboard
+                Guest Policy
               </Link>
-              <Button type="button" variant="secondary" onClick={resetForm}>
-                Book another slot
-              </Button>
-            </div>
+              ). Guests must sign a{' '}
+              <Link
+                to="/go/waiver"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-teal-link hover:underline"
+              >
+                waiver
+              </Link>{' '}
+              before entering the ice shed.
+            </li>
+            <li>Clean up properly after you are done (sweep and cover hacks, mop sheet, return stones).</li>
+          </ul>
+          <div className="space-y-1 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-300">
+            <p>
+              <span className="font-medium text-gray-900 dark:text-gray-100">When: </span>
+              {formatWhen(new Date(confirmedSummary.start), new Date(confirmedSummary.end))}
+            </p>
+            <p>
+              <span className="font-medium text-gray-900 dark:text-gray-100">Sheet: </span>
+              {confirmedSummary.sheetName}
+            </p>
+            <p>
+              <span className="font-medium text-gray-900 dark:text-gray-100">Purpose: </span>
+              {purposeLabel}
+              {confirmedSummary.purpose === 'other' && confirmedSummary.purposeOther
+                ? ` — ${confirmedSummary.purposeOther}`
+                : ''}
+            </p>
           </div>
-        </AppPage>
-      </>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              to="/dashboard"
+              className="inline-flex items-center justify-center rounded-md bg-primary-teal-solid px-4 py-2 font-medium text-white transition-colors hover:bg-opacity-90"
+            >
+              Back to dashboard
+            </Link>
+            <Button type="button" variant="secondary" onClick={resetForm}>
+              Book another slot
+            </Button>
+          </div>
+        </div>
+      </AppPage>
     );
   }
 
   return (
-    <>
-      <AppPage narrow>
-        <AppPageHeader
-          title="Book ice time"
-          description={
+    <AppPage narrow>
+      <AppPageHeader
+        title="Book ice time"
+        description={
+          bookingKind === 'ice' ? (
             <>
-              Reserve 1 or 2 hours on one sheet, up to 7 days ahead. Your sheet must be available according to the{' '}
+              Reserve 1 or 2 hours on one sheet, up to {MAX_ADVANCE_DAYS} days ahead. Only times with
+              a free sheet can be selected. See everything else on the{' '}
               <Link to="/calendar" className="text-primary-teal-link hover:underline">
                 club calendar
               </Link>
               .
             </>
-          }
-        />
+          ) : (
+            'Choose whether you need free practice ice or a member event with guests.'
+          )
+        }
+      />
 
-        <form onSubmit={handleSubmit} className="app-card space-y-5">
-          <div>
-            <label htmlFor="ice-sheet" className="app-label">
-              Sheet
-            </label>
-            {sheetsLoading ? (
-              <p className="text-sm text-gray-500">Loading sheets…</p>
-            ) : sheets.length === 0 ? (
-              <p className="text-sm text-amber-700 dark:text-amber-300">No active sheets are configured.</p>
-            ) : (
-              <ChoiceInput<number>
-                inputId="ice-sheet"
-                options={sheetOptions}
-                value={sheetId === '' ? null : Number(sheetId)}
-                onChange={(next) => {
-                  if (next != null && !Array.isArray(next)) setSheetId(String(next));
-                }}
-                placeholder="Select a sheet"
-                listboxLabel="Sheet"
-                required
-              />
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="ice-start" className="app-label">
-              Start date and time
-            </label>
-            <input
-              id="ice-start"
-              type="datetime-local"
-              value={startLocal}
-              min={minLocal}
-              max={maxLocal}
-              onChange={(e) => setStartLocal(e.target.value)}
-              className="app-input"
-              required
+      <form onSubmit={handleSubmit} className="app-card space-y-8 p-6">
+        <FormSection>
+          <FormField
+            label="Would you like to book ice time or a member rental?"
+            labelId={bookingKindFieldId}
+            required
+          >
+            <ChoiceInput<BookingKind>
+              layout="block"
+              name="booking-kind"
+              ariaLabelledBy={bookingKindFieldId}
+              options={BOOKING_KIND_OPTIONS}
+              value={bookingKind}
+              onChange={(next) => {
+                if (next === 'ice' || next === 'member_event') setBookingKind(next);
+              }}
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Bookings must start within the next 7 days.
+          </FormField>
+        </FormSection>
+
+        {bookingKind === 'member_event' && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-gray-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-gray-200">
+            <p>
+              Member events must be booked through our rentals team. Please find more information on
+              our{' '}
+              <Link
+                to="/articles/team-building-group-events"
+                className="font-medium text-primary-teal-link hover:underline"
+              >
+                Group Events
+              </Link>{' '}
+              page, and contact{' '}
+              <a
+                href="mailto:rentals@trianglecurling.com"
+                className="font-medium text-primary-teal-link hover:underline"
+              >
+                rentals@trianglecurling.com
+              </a>{' '}
+              to book your event.
             </p>
           </div>
+        )}
 
-          <fieldset>
-            <legend className="app-label">Duration</legend>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 text-gray-800 dark:text-gray-200">
-                <input
-                  type="radio"
-                  name="duration"
-                  checked={durationHours === 1}
-                  onChange={() => setDurationHours(1)}
+        {bookingKind === 'ice' && (
+          <>
+            <FormSection
+              title="When"
+              description="Pick a day, then choose a start time on the calendar."
+            >
+              <FormField label="Date" labelId={dateFieldId} required>
+                <ChoiceInput<string>
+                  layout="inline"
+                  name="ice-date"
+                  ariaLabelledBy={dateFieldId}
+                  options={dateOptions}
+                  value={dateParam}
+                  onChange={(next) => {
+                    if (typeof next === 'string') {
+                      setDateParam(next);
+                      setSelectedStartIso(null);
+                      setSheetId(null);
+                    }
+                  }}
                 />
-                1 hour
-              </label>
-              <label className="flex items-center gap-2 text-gray-800 dark:text-gray-200">
-                <input
-                  type="radio"
-                  name="duration"
-                  checked={durationHours === 2}
-                  onChange={() => setDurationHours(2)}
-                />
-                2 hours
-              </label>
-            </div>
-          </fieldset>
+              </FormField>
 
-          <fieldset>
-            <legend className="app-label">Purpose</legend>
-            <div className="space-y-2">
-              {PURPOSE_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="flex items-center gap-2 text-gray-800 dark:text-gray-200 cursor-pointer"
-                >
-                  <input
-                    type="radio"
-                    name="purpose"
-                    value={opt.value}
-                    checked={purpose === opt.value}
-                    onChange={() => setPurpose(opt.value)}
+              <FormField label="Duration" labelId={durationFieldId} required>
+                <ChoiceInput<DurationHours>
+                  layout="inline"
+                  name="ice-duration"
+                  ariaLabelledBy={durationFieldId}
+                  options={DURATION_OPTIONS}
+                  value={durationHours}
+                  onChange={(next) => {
+                    if (next === 1 || next === 2) setDurationHours(next);
+                  }}
+                />
+              </FormField>
+
+              <FormField label="Start time" labelId={timeFieldId} required>
+                {availabilityLoading ? (
+                  <InlineStateMessage title="Loading the day's schedule..." />
+                ) : availabilityError ? (
+                  <InlineStateMessage
+                    tone="error"
+                    title="Could not load ice availability"
+                    description={availabilityError}
+                    action={
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setAvailabilityReloadKey((key) => key + 1)}
+                      >
+                        Try again
+                      </Button>
+                    }
                   />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
-            {purpose === 'guests_new' && (
-              <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 rounded-md bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 px-3 py-3 space-y-2">
-                <p>
-                  Please read the{' '}
-                  <a
-                    href="https://links.tccnc.club/guests"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-teal-link font-medium hover:underline"
-                  >
-                    guest policy
-                  </a>{' '}
-                  before bringing guests. Each member may provide private learn-to-curl instruction for up to four
-                  guests per curling season. Ensure that all guests{' '}
-                  <a
-                    href="https://links.tccnc.club/waiver"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-teal-link font-medium hover:underline"
-                  >
-                    sign a waiver
-                  </a>{' '}
-                  before entering the ice shed.
-                </p>
-              </div>
-            )}
-            {purpose === 'guests_experienced' && (
-              <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 rounded-md bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 px-3 py-3 space-y-2">
-                <p>
-                  Please read the{' '}
-                  <a
-                    href="https://links.tccnc.club/guests"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-teal-link font-medium hover:underline"
-                  >
-                    guest policy
-                  </a>{' '}
-                  before bringing guests. Members may host up to two simultaneous guests who are experienced curlers.
-                  Ensure that all guests{' '}
-                  <a
-                    href="https://links.tccnc.club/waiver"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-teal-link font-medium hover:underline"
-                  >
-                    sign a waiver
-                  </a>{' '}
-                  before entering the ice shed.
-                </p>
-              </div>
-            )}
-            {isGuestPurpose(purpose) && (
-              <div className="mt-3">
-                <label
-                  htmlFor="guest-names"
-                  className="app-label"
+                ) : sheets.length === 0 ? (
+                  <InlineStateMessage
+                    tone="warning"
+                    title="No active sheets are configured."
+                    description="Ice cannot be booked until an admin sets up the sheets."
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    <BookingDayGrid
+                      date={selectedDate}
+                      slots={slots}
+                      events={events}
+                      sheetNameById={sheetNameById}
+                      totalSheetCount={sheets.length}
+                      selectedStart={selectedSlot?.start ?? null}
+                      onSelect={handleSelectSlot}
+                      labelledBy={timeFieldId}
+                    />
+                    {!hasOpenSlots && (
+                      <InlineStateMessage
+                        title="No open ice on this day"
+                        description={
+                          durationHours === 2
+                            ? 'Try a 1-hour booking or a different day.'
+                            : 'Try a different day.'
+                        }
+                      />
+                    )}
+                  </div>
+                )}
+              </FormField>
+            </FormSection>
+
+            {confirmedSlot &&
+              bookingOverlapsGroupEventRiskWindow(confirmedSlot.start, confirmedSlot.end) && (
+                <div
+                  role="note"
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
                 >
-                  Guest names <span className="text-red-600 dark:text-red-400">*</span>
-                </label>
-                <textarea
-                  id="guest-names"
-                  value={guestNames}
-                  onChange={(e) => setGuestNames(e.target.value)}
-                  rows={2}
-                  placeholder="List everyone who will be on the ice as your guests"
-                  className="app-input"
-                  required
-                  aria-required="true"
-                />
-              </div>
-            )}
-            {purpose === 'other' && (
-              <div className="mt-3">
-                <label htmlFor="purpose-other" className="sr-only">
-                  Describe purpose
-                </label>
-                <textarea
-                  id="purpose-other"
-                  value={purposeOther}
-                  onChange={(e) => setPurposeOther(e.target.value)}
-                  rows={3}
-                  placeholder={"Briefly describe what you're using the ice for"}
-                  className="app-input"
-                  required
-                />
-              </div>
-            )}
-          </fieldset>
+                  While unlikely, it&apos;s possible that a Group Event is later scheduled during the
+                  time you selected. Your selected sheet may change, or in rare cases, your booking
+                  may be canceled to accommodate the event. Any changes will be communicated to you
+                  via email.
+                </div>
+              )}
 
-          <div className="flex justify-end pt-2">
-            <Button type="submit" variant="primary" disabled={submitting || sheets.length === 0}>
-              {submitting ? 'Booking…' : 'Book now'}
-            </Button>
+            {confirmedSlot && (
+              <FormSection
+                title="Sheet"
+                description="Only sheets that are free for your whole booking."
+              >
+                <FormField label="Sheet" labelId={sheetFieldId} required>
+                  <ChoiceInput<number>
+                    layout="inline"
+                    name="ice-sheet"
+                    ariaLabelledBy={sheetFieldId}
+                    options={sheetOptions}
+                    value={sheetId}
+                    onChange={(next) => {
+                      if (typeof next === 'number') setSheetId(next);
+                    }}
+                  />
+                </FormField>
+              </FormSection>
+            )}
+
+            {confirmedSlot && sheetId != null && (
+              <FormSection title="Purpose">
+                <FormField
+                  label="What are you using the ice for?"
+                  labelId={purposeFieldId}
+                  required
+                >
+                  <ChoiceInput<Purpose>
+                    layout="inline"
+                    name="ice-purpose"
+                    ariaLabelledBy={purposeFieldId}
+                    options={PURPOSE_OPTIONS}
+                    value={purpose}
+                    onChange={(next) => {
+                      if (typeof next === 'string') setPurpose(next as Purpose);
+                    }}
+                  />
+                </FormField>
+                {purpose === 'other' && (
+                  <FormField label="Describe your purpose" htmlFor={purposeOtherId} required>
+                    <textarea
+                      id={purposeOtherId}
+                      value={purposeOther}
+                      onChange={(e) => setPurposeOther(e.target.value)}
+                      rows={3}
+                      placeholder="Briefly describe what you're using the ice for"
+                      className="app-input"
+                      required
+                    />
+                  </FormField>
+                )}
+              </FormSection>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={submitting || !confirmedSlot || sheetId == null}
+              >
+                {submitting ? 'Booking…' : 'Book now'}
+              </Button>
+            </div>
+          </>
+        )}
+      </form>
+
+      <section aria-labelledby="upcoming-ice-bookings-heading">
+        <h2 id="upcoming-ice-bookings-heading" className="app-section-title mb-4">
+          My upcoming ice bookings
+        </h2>
+        {bookingsLoading ? (
+          <div className="app-card">
+            <InlineStateMessage title="Loading your bookings..." />
           </div>
-        </form>
-
-        <section className="mt-8" aria-labelledby="upcoming-ice-bookings-heading">
-          <h2 id="upcoming-ice-bookings-heading" className="app-section-title mb-4">
-            My upcoming ice bookings
-          </h2>
-          {bookingsLoading ? (
-            <div className="app-card">
-              <InlineStateMessage title="Loading your bookings..." />
-            </div>
-          ) : upcomingBookings.length === 0 ? (
-            <div className="app-card">
-              <InlineStateMessage title="You have no upcoming ice bookings." />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {upcomingBookings.map((b) => (
+        ) : upcomingBookings.length === 0 ? (
+          <div className="app-card">
+            <InlineStateMessage title="You have no upcoming ice bookings." />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {upcomingBookings.map((b) => {
+              const start = new Date(b.start);
+              const end = new Date(b.end);
+              return (
                 <div
                   key={b.id}
-                  className="app-card p-4 flex flex-wrap items-center gap-3 justify-between"
+                  className="app-card flex flex-wrap items-center justify-between gap-3 p-4"
                 >
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-900 dark:text-gray-100">
                     <span className="font-medium">
-                      {new Date(b.start).toLocaleString(undefined, {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
+                      {isSameDay(start, new Date()) ? 'Today' : format(start, 'EEE, MMM d')}
                     </span>
                     <span className="text-gray-600 dark:text-gray-400">
-                      →{' '}
-                      {new Date(b.end).toLocaleTimeString(undefined, {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
+                      {format(start, 'h:mm a')} – {format(end, 'h:mm a')}
                     </span>
                     <span className="text-gray-600 dark:text-gray-400">Sheet {b.sheetName}</span>
-                    <span className="text-gray-600 dark:text-gray-400 text-sm">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
                       {bookingPurposeLabel(b)}
                     </span>
                   </div>
@@ -566,11 +742,11 @@ export default function BookIceTime() {
                     {cancelingId === b.id ? 'Canceling…' : 'Cancel booking'}
                   </Button>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </AppPage>
-    </>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </AppPage>
   );
 }

@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { SeasonMembershipStatusSqlite, SeasonMembershipTypeSqlite } from '../db/drizzle-schema.js';
+import { queueMembershipGrantSync, queueMembershipRemovalSync } from './mauticMembershipSyncService.js';
 
 export type MemberSeasonMembershipRow = {
   id: number;
@@ -134,6 +135,8 @@ export async function createMemberSeasonMembership(input: {
     } as any)
     .returning({ id: schema.seasonMemberships.id });
 
+  queueMembershipGrantSync(input.memberId, input.seasonId);
+
   return {
     id: inserted.id,
     seasonId: season.id,
@@ -188,6 +191,7 @@ export async function deleteMemberSeasonMembership(input: {
     .select({
       id: schema.seasonMemberships.id,
       memberId: schema.seasonMemberships.member_id,
+      seasonId: schema.seasonMemberships.season_id,
     })
     .from(schema.seasonMemberships)
     .where(eq(schema.seasonMemberships.id, input.membershipId))
@@ -197,5 +201,13 @@ export async function deleteMemberSeasonMembership(input: {
     throw new MemberSeasonMembershipNotFoundError('Membership not found');
   }
 
+  const [member] = await db
+    .select({ email: schema.members.email })
+    .from(schema.members)
+    .where(eq(schema.members.id, input.memberId))
+    .limit(1);
+
   await db.delete(schema.seasonMemberships).where(eq(schema.seasonMemberships.id, input.membershipId));
+
+  queueMembershipRemovalSync(input.memberId, membership.seasonId, member?.email || '');
 }

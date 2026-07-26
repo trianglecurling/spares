@@ -11,6 +11,17 @@ export const curlingRegistrationDDLBase = `
     name TEXT NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
+    mautic_segment_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS mautic_membership_sync_status (
+    id INTEGER PRIMARY KEY NOT NULL,
+    last_run_at DATETIME,
+    last_run_status TEXT,
+    last_run_summary TEXT,
+    last_run_triggered_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );

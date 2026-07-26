@@ -1,12 +1,13 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { fetchDirectCalendarEventsForRange, fetchLeagueCalendarEventsForRange } from '../../../services/calendarExpansion.js';
 import { getEventTimespansForCalendar } from '../../../services/eventService.js';
-import { isBonspielCalendarType } from '../../../services/eventCalendarTypes.js';
+import { isBonspielCalendarType, parseCalendarTypeIds } from '../../../services/eventCalendarTypes.js';
 import { fetchIceBookingsAsCalendarEvents } from '../../../services/iceBookingsCalendar.js';
 import type { Member } from '../../../types.js';
 import { isCalendarAdmin } from '../../../utils/auth.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../../../utils/memberMembershipHelpers.js';
+import { notArchivedCondition } from '../../../utils/softDelete.js';
 
 const UPCOMING_BONSPIEL_LIMIT = 10;
 
@@ -96,55 +97,80 @@ export async function getPublicCalendarBundle(start: string, end: string) {
   };
 }
 
+function toIsoTimestamp(value: string | Date): string {
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
+/**
+ * Upcoming public bonspiels for the homepage.
+ * Matches `/events?type=bonspiel` upcoming semantics: published public events whose
+ * latest timespan has not ended yet (no 6-month calendar window).
+ */
 export async function getUpcomingBonspiels(now = new Date()) {
-  const nowIso = now.toISOString();
-  const rangeEnd = new Date(now);
-  rangeEnd.setMonth(rangeEnd.getMonth() + 6);
-  const rangeEndIso = rangeEnd.toISOString();
+  const { db, schema } = getDrizzleDb();
+  const nowMs = now.getTime();
 
-  const [directEvents, eventItems] = await Promise.all([
-    fetchDirectCalendarEventsForRange(now, rangeEnd),
-    getEventTimespansForCalendar(nowIso, rangeEndIso, ['public']),
-  ]);
+  const rows = await db
+    .select({
+      eventId: schema.events.id,
+      title: schema.events.title,
+      slug: schema.events.slug,
+      calendarTypeIds: schema.events.calendar_type_ids,
+      startDt: schema.eventTimespans.start_dt,
+      endDt: schema.eventTimespans.end_dt,
+    })
+    .from(schema.events)
+    .innerJoin(schema.eventTimespans, eq(schema.eventTimespans.event_id, schema.events.id))
+    .where(
+      and(
+        eq(schema.events.published, 1),
+        eq(schema.events.visibility, 'public'),
+        notArchivedCondition(schema.events.archived_at),
+      ),
+    );
 
-  const bonspiels: PublicUpcomingBonspiel[] = [];
+  const byEventId = new Map<
+    number,
+    { title: string; slug: string; start: string; end: string }
+  >();
 
-  for (const item of directEvents) {
-    if (isBonspielCalendarType(item.typeId) && item.start >= nowIso) {
-      bonspiels.push({
-        id: item.id,
-        title: item.title,
-        start: item.start,
-        end: item.end,
-        allDay: item.allDay,
-        eventSlug: null,
-      });
-    }
-  }
-
-  // Events can have several timespans (e.g. one per day); collapse them into a
-  // single homepage entry per event spanning the earliest start to latest end.
-  const byEventSlug = new Map<string, PublicUpcomingBonspiel>();
-  for (const item of eventItems) {
-    if (!isBonspielCalendarType(item.typeId) || item.start < nowIso) continue;
-    const existing = item.slug ? byEventSlug.get(item.slug) : undefined;
+  for (const row of rows) {
+    if (!isBonspielCalendarType(parseCalendarTypeIds(row.calendarTypeIds))) continue;
+    const start = toIsoTimestamp(row.startDt as string | Date);
+    const end = toIsoTimestamp(row.endDt as string | Date);
+    const existing = byEventId.get(row.eventId);
     if (!existing) {
-      const entry: PublicUpcomingBonspiel = {
-        id: item.id,
-        title: item.title,
-        start: item.start,
-        end: item.end,
-        allDay: item.allDay,
-        eventSlug: item.slug ?? null,
-      };
-      if (item.slug) byEventSlug.set(item.slug, entry);
-      bonspiels.push(entry);
+      byEventId.set(row.eventId, {
+        title: row.title,
+        slug: row.slug,
+        start,
+        end,
+      });
       continue;
     }
-    if (item.start < existing.start) existing.start = item.start;
-    if (item.end > existing.end) existing.end = item.end;
+    if (start < existing.start) existing.start = start;
+    if (end > existing.end) existing.end = end;
+  }
+
+  const bonspiels: PublicUpcomingBonspiel[] = [];
+  for (const [eventId, event] of byEventId) {
+    // Same rule as frontend isUpcomingEventUtc: still upcoming while latest end >= now.
+    if (new Date(event.end).getTime() < nowMs) continue;
+    bonspiels.push({
+      id: `event:${eventId}`,
+      title: event.title,
+      start: event.start,
+      end: event.end,
+      allDay: false,
+      eventSlug: event.slug,
+    });
   }
 
   bonspiels.sort((a, b) => a.start.localeCompare(b.start));
-  return bonspiels.slice(0, UPCOMING_BONSPIEL_LIMIT);
+  const hasMore = bonspiels.length > UPCOMING_BONSPIEL_LIMIT;
+  return {
+    items: bonspiels.slice(0, UPCOMING_BONSPIEL_LIMIT),
+    hasMore,
+  };
 }

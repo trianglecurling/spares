@@ -1,29 +1,41 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, sql, desc, ne } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
+import { sendApiError } from '../api/errors.js';
 import {
-  fetchDirectCalendarEventsForRange,
-  fetchLeagueCalendarEventsForRange,
-  calendarIntervalBlocksSheet,
-} from '../services/calendarExpansion.js';
-import { sendIceBookingConfirmationEmail } from '../services/email.js';
-import { memberIsSocialMember } from '../utils/memberMembershipHelpers.js';
+  sendIceBookingCancellationEmail,
+  sendIceBookingConfirmationEmail,
+  sendIceBookingUpdatedEmail,
+} from '../services/email.js';
+import {
+  getIceBookingDateWindow,
+  getIceDayAvailability,
+  hasIceSheetConflict,
+  ICE_MAX_ADVANCE_DAYS,
+  isWithinIceBookingWindow,
+  memberCanBookIce,
+  type IceDurationHours,
+} from '../services/iceAvailability.js';
+import { isCalendarAdmin } from '../utils/auth.js';
 
 const MS_HOUR = 60 * 60 * 1000;
-const MAX_ADVANCE_MS = 7 * 24 * MS_HOUR;
 
-const guestPurposes = ['guests_new', 'guests_experienced'] as const;
+const durationHoursSchema = z.union([z.literal(1), z.literal(2)]);
+
+const availabilityQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
+  durationHours: z.coerce.number().pipe(durationHoursSchema),
+});
 
 const createBodySchema = z
   .object({
     sheetId: z.number().int().positive(),
     start: z.string().min(1),
-    durationHours: z.union([z.literal(1), z.literal(2)]),
-    purpose: z.enum(['practice', 'makeup_game', 'guests_new', 'guests_experienced', 'other']),
+    durationHours: durationHoursSchema,
+    purpose: z.enum(['practice', 'makeup_game', 'other']),
     purposeOther: z.string().max(500).optional(),
-    guestNames: z.string().max(2000).optional(),
   })
   .refine(
     (b) => {
@@ -31,45 +43,97 @@ const createBodySchema = z
       return true;
     },
     { message: 'purposeOther is required when purpose is other' }
-  )
-  .refine(
-    (b) => {
-      if (guestPurposes.includes(b.purpose as (typeof guestPurposes)[number])) {
-        return (b.guestNames ?? '').trim().length > 0;
-      }
-      return true;
-    },
-    { message: 'Guest names are required when bringing guests' }
   );
 
-function bookingWindowForConflictCheck(blockStart: Date, blockEnd: Date): { rangeStart: Date; rangeEnd: Date } {
+const adminUpdateBodySchema = z.object({
+  sheetId: z.number().int().positive(),
+  start: z.string().min(1),
+  durationHours: durationHoursSchema,
+});
+
+type IceBookingRow = {
+  id: number;
+  memberId: number;
+  memberName: string;
+  memberEmail: string | null;
+  sheetId: number;
+  sheetName: string;
+  startDt: string;
+  endDt: string;
+  purpose: string;
+  purposeOther: string | null;
+  guestNames: string | null;
+};
+
+async function loadIceBookingById(id: number): Promise<IceBookingRow | null> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({
+      id: schema.iceBookings.id,
+      memberId: schema.iceBookings.member_id,
+      memberName: schema.members.name,
+      memberEmail: schema.members.email,
+      sheetId: schema.iceBookings.sheet_id,
+      sheetName: schema.sheets.name,
+      startDt: schema.iceBookings.start_dt,
+      endDt: schema.iceBookings.end_dt,
+      purpose: schema.iceBookings.purpose,
+      purposeOther: schema.iceBookings.purpose_other,
+      guestNames: schema.iceBookings.guest_names,
+    })
+    .from(schema.iceBookings)
+    .innerJoin(schema.sheets, eq(schema.iceBookings.sheet_id, schema.sheets.id))
+    .innerJoin(schema.members, eq(schema.iceBookings.member_id, schema.members.id))
+    .where(eq(schema.iceBookings.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+function emailDetailsFromRow(row: IceBookingRow) {
   return {
-    rangeStart: new Date(blockStart.getTime() - MS_HOUR),
-    rangeEnd: new Date(blockEnd.getTime() + MS_HOUR),
+    sheetName: row.sheetName,
+    startIso: row.startDt,
+    endIso: row.endDt,
+    purpose: row.purpose,
+    purposeOther: row.purposeOther,
+    guestNames: row.guestNames,
   };
 }
 
-async function hasCalendarConflict(sheetId: number, blockStart: Date, blockEnd: Date): Promise<boolean> {
-  const { rangeStart, rangeEnd } = bookingWindowForConflictCheck(blockStart, blockEnd);
-  const [direct, league] = await Promise.all([
-    fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
-    fetchLeagueCalendarEventsForRange(rangeStart, rangeEnd),
-  ]);
-  for (const ev of direct) {
-    if (calendarIntervalBlocksSheet(ev, sheetId, blockStart, blockEnd)) return true;
-  }
-  for (const ev of league) {
-    if (calendarIntervalBlocksSheet(ev, sheetId, blockStart, blockEnd)) return true;
-  }
-  return false;
-}
-
 export async function iceBookingRoutes(fastify: FastifyInstance) {
+  fastify.get('/ice-bookings/availability', async (request, reply) => {
+    const member = request.member as Member | undefined;
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    if (!memberCanBookIce(member)) {
+      return sendApiError(reply, 403, 'Social members cannot book ice time');
+    }
+
+    const parsed = availabilityQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return sendApiError(reply, 400, 'Invalid request', parsed.error.issues);
+    }
+
+    const { firstDate, lastDate } = getIceBookingDateWindow();
+    if (parsed.data.date < firstDate || parsed.data.date > lastDate) {
+      return sendApiError(
+        reply,
+        400,
+        `Ice time can only be booked between ${firstDate} and ${lastDate}`
+      );
+    }
+
+    return getIceDayAvailability({
+      date: parsed.data.date,
+      durationHours: parsed.data.durationHours as IceDurationHours,
+      member,
+    });
+  });
+
   fastify.get('/ice-bookings', async (request, reply) => {
     const member = request.member as Member | undefined;
-    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
-    if (memberIsSocialMember(member)) {
-      return reply.code(403).send({ error: 'Social members cannot book ice time' });
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    if (!memberCanBookIce(member)) {
+      return sendApiError(reply, 403, 'Social members cannot book ice time');
     }
 
     const { db, schema } = getDrizzleDb();
@@ -105,34 +169,38 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
 
   fastify.post('/ice-bookings', async (request, reply) => {
     const member = request.member as Member | undefined;
-    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
-    if (memberIsSocialMember(member)) {
-      return reply.code(403).send({ error: 'Social members cannot book ice time' });
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    if (!memberCanBookIce(member)) {
+      return sendApiError(reply, 403, 'Social members cannot book ice time');
     }
 
     const parsed = createBodySchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
+      return sendApiError(
+        reply,
+        400,
+        parsed.error.issues[0]?.message ?? 'Invalid request',
+        parsed.error.issues
+      );
     }
     const body = parsed.data;
 
     const start = new Date(body.start);
     if (Number.isNaN(start.getTime())) {
-      return reply.code(400).send({ error: 'Invalid start time' });
+      return sendApiError(reply, 400, 'Invalid start time');
     }
 
     const end = new Date(start.getTime() + body.durationHours * MS_HOUR);
-    const expectedMs = body.durationHours * MS_HOUR;
-    if (Math.abs(end.getTime() - start.getTime() - expectedMs) > 2000) {
-      return reply.code(400).send({ error: 'Invalid booking duration' });
-    }
 
-    const now = Date.now();
-    if (start.getTime() < now - 60_000) {
-      return reply.code(400).send({ error: 'Booking must be in the future' });
+    if (start.getTime() < Date.now() - 60_000) {
+      return sendApiError(reply, 400, 'Booking must be in the future');
     }
-    if (start.getTime() > now + MAX_ADVANCE_MS) {
-      return reply.code(400).send({ error: 'Ice time can only be booked up to 7 days in advance' });
+    if (!isWithinIceBookingWindow(start)) {
+      return sendApiError(
+        reply,
+        400,
+        `Ice time can only be booked up to ${ICE_MAX_ADVANCE_DAYS} days in advance`
+      );
     }
 
     const { db, schema } = getDrizzleDb();
@@ -144,7 +212,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
       .limit(1);
     const sheet = sheetRows[0];
     if (!sheet || sheet.active === 0) {
-      return reply.code(400).send({ error: 'Invalid or inactive sheet' });
+      return sendApiError(reply, 400, 'Invalid or inactive sheet');
     }
 
     const startIso = start.toISOString();
@@ -162,38 +230,23 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
       )
       .limit(1);
     if (memberOverlap.length > 0) {
-      return reply
-        .code(409)
-        .send({ error: 'You already have a booking that overlaps this time. Cancel it first or choose another time.' });
+      return sendApiError(
+        reply,
+        409,
+        'You already have a booking that overlaps this time. Cancel it first or choose another time.'
+      );
     }
 
-    const sheetOverlap = await db
-      .select({ id: schema.iceBookings.id })
-      .from(schema.iceBookings)
-      .where(
-        and(
-          eq(schema.iceBookings.sheet_id, body.sheetId),
-          sql`${schema.iceBookings.start_dt} < ${endIso}`,
-          sql`${schema.iceBookings.end_dt} > ${startIso}`
-        )
-      )
-      .limit(1);
-    if (sheetOverlap.length > 0) {
-      return reply.code(409).send({ error: 'That sheet is already booked for part of this time.' });
-    }
-
-    if (await hasCalendarConflict(body.sheetId, start, end)) {
-      return reply
-        .code(409)
-        .send({ error: 'This sheet has a calendar event during all or part of the requested time.' });
+    if (await hasIceSheetConflict(body.sheetId, start, end, member)) {
+      return sendApiError(
+        reply,
+        409,
+        'That sheet is no longer free for all of this time. Pick another time or sheet.'
+      );
     }
 
     const purposeOtherTrimmed =
       body.purpose === 'other' ? (body.purposeOther ?? '').trim() : null;
-    const guestNamesTrimmed =
-      body.purpose === 'guests_new' || body.purpose === 'guests_experienced'
-        ? (body.guestNames ?? '').trim()
-        : null;
 
     const [inserted] = await db
       .insert(schema.iceBookings)
@@ -204,7 +257,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
         end_dt: endIso,
         purpose: body.purpose,
         purpose_other: purposeOtherTrimmed,
-        guest_names: guestNamesTrimmed,
+        guest_names: null,
       })
       .returning({
         id: schema.iceBookings.id,
@@ -213,7 +266,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
       });
 
     if (!inserted) {
-      return reply.code(500).send({ error: 'Failed to create booking' });
+      return sendApiError(reply, 500, 'Failed to create booking');
     }
 
     if (member.email) {
@@ -226,7 +279,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
           endIso: inserted.end_dt,
           purpose: body.purpose,
           purposeOther: purposeOtherTrimmed,
-          guestNames: guestNamesTrimmed,
+          guestNames: null,
         }
       ).catch((err) => console.error('Ice booking confirmation email failed:', err));
     }
@@ -239,30 +292,175 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
       end: inserted.end_dt,
       purpose: body.purpose,
       purposeOther: purposeOtherTrimmed ?? undefined,
-      guestNames: guestNamesTrimmed ?? undefined,
+    };
+  });
+
+  /** Calendar admins: change sheet and/or date/time for any member booking. */
+  fastify.patch<{ Params: { id: string } }>('/ice-bookings/:id', async (request, reply) => {
+    const member = request.member as Member | undefined;
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    if (!isCalendarAdmin(member)) {
+      return sendApiError(reply, 403, 'Calendar admin access required');
+    }
+
+    const id = parseInt(request.params.id, 10);
+    if (Number.isNaN(id)) {
+      return sendApiError(reply, 400, 'Invalid id');
+    }
+
+    const parsed = adminUpdateBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendApiError(
+        reply,
+        400,
+        parsed.error.issues[0]?.message ?? 'Invalid request',
+        parsed.error.issues
+      );
+    }
+    const body = parsed.data;
+
+    const existing = await loadIceBookingById(id);
+    if (!existing) {
+      return sendApiError(reply, 404, 'Booking not found');
+    }
+
+    const start = new Date(body.start);
+    if (Number.isNaN(start.getTime())) {
+      return sendApiError(reply, 400, 'Invalid start time');
+    }
+    const end = new Date(start.getTime() + body.durationHours * MS_HOUR);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+
+    const { db, schema } = getDrizzleDb();
+    const sheetRows = await db
+      .select({ id: schema.sheets.id, name: schema.sheets.name, active: schema.sheets.is_active })
+      .from(schema.sheets)
+      .where(eq(schema.sheets.id, body.sheetId))
+      .limit(1);
+    const sheet = sheetRows[0];
+    if (!sheet || sheet.active === 0) {
+      return sendApiError(reply, 400, 'Invalid or inactive sheet');
+    }
+
+    const ownerOverlap = await db
+      .select({ id: schema.iceBookings.id })
+      .from(schema.iceBookings)
+      .where(
+        and(
+          eq(schema.iceBookings.member_id, existing.memberId),
+          ne(schema.iceBookings.id, id),
+          sql`${schema.iceBookings.start_dt} < ${endIso}`,
+          sql`${schema.iceBookings.end_dt} > ${startIso}`
+        )
+      )
+      .limit(1);
+    if (ownerOverlap.length > 0) {
+      return sendApiError(
+        reply,
+        409,
+        'That member already has another ice booking overlapping this time.'
+      );
+    }
+
+    if (await hasIceSheetConflict(body.sheetId, start, end, member, { excludeBookingId: id })) {
+      return sendApiError(
+        reply,
+        409,
+        'That sheet is not free for all of this time. Pick another time or sheet.'
+      );
+    }
+
+    const unchanged =
+      existing.sheetId === body.sheetId &&
+      existing.startDt === startIso &&
+      existing.endDt === endIso;
+    if (unchanged) {
+      return {
+        id: existing.id,
+        sheetId: existing.sheetId,
+        sheetName: existing.sheetName,
+        start: existing.startDt,
+        end: existing.endDt,
+        purpose: existing.purpose,
+        purposeOther: existing.purposeOther ?? undefined,
+        guestNames: existing.guestNames ?? undefined,
+        memberId: existing.memberId,
+        memberName: existing.memberName,
+      };
+    }
+
+    await db
+      .update(schema.iceBookings)
+      .set({
+        sheet_id: body.sheetId,
+        start_dt: startIso,
+        end_dt: endIso,
+      })
+      .where(eq(schema.iceBookings.id, id));
+
+    const nextDetails = {
+      sheetName: sheet.name,
+      startIso,
+      endIso,
+      purpose: existing.purpose,
+      purposeOther: existing.purposeOther,
+      guestNames: existing.guestNames,
+    };
+
+    if (existing.memberEmail) {
+      sendIceBookingUpdatedEmail(existing.memberEmail, existing.memberName, {
+        previous: emailDetailsFromRow(existing),
+        next: nextDetails,
+      }).catch((err) => console.error('Ice booking update email failed:', err));
+    }
+
+    return {
+      id,
+      sheetId: body.sheetId,
+      sheetName: sheet.name,
+      start: startIso,
+      end: endIso,
+      purpose: existing.purpose,
+      purposeOther: existing.purposeOther ?? undefined,
+      guestNames: existing.guestNames ?? undefined,
+      memberId: existing.memberId,
+      memberName: existing.memberName,
     };
   });
 
   fastify.delete<{ Params: { id: string } }>('/ice-bookings/:id', async (request, reply) => {
     const member = request.member as Member | undefined;
-    if (!member) return reply.code(401).send({ error: 'Unauthorized' });
-    if (memberIsSocialMember(member)) {
-      return reply.code(403).send({ error: 'Social members cannot manage ice bookings' });
-    }
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
 
     const id = parseInt(request.params.id, 10);
     if (Number.isNaN(id)) {
-      return reply.code(400).send({ error: 'Invalid id' });
+      return sendApiError(reply, 400, 'Invalid id');
+    }
+
+    const asStaff = isCalendarAdmin(member);
+    if (!asStaff && !memberCanBookIce(member)) {
+      return sendApiError(reply, 403, 'Social members cannot manage ice bookings');
+    }
+
+    const existing = await loadIceBookingById(id);
+    if (!existing) {
+      return sendApiError(reply, 404, 'Booking not found');
+    }
+    if (!asStaff && existing.memberId !== member.id) {
+      return sendApiError(reply, 404, 'Booking not found');
     }
 
     const { db, schema } = getDrizzleDb();
-    const deleted = await db
-      .delete(schema.iceBookings)
-      .where(and(eq(schema.iceBookings.id, id), eq(schema.iceBookings.member_id, member.id)))
-      .returning({ id: schema.iceBookings.id });
+    await db.delete(schema.iceBookings).where(eq(schema.iceBookings.id, id));
 
-    if (deleted.length === 0) {
-      return reply.code(404).send({ error: 'Booking not found' });
+    if (existing.memberEmail) {
+      sendIceBookingCancellationEmail(
+        existing.memberEmail,
+        existing.memberName,
+        emailDetailsFromRow(existing),
+        { canceledByStaff: asStaff && existing.memberId !== member.id }
+      ).catch((err) => console.error('Ice booking cancellation email failed:', err));
     }
 
     return { success: true };

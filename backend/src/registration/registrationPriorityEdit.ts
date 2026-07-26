@@ -3,6 +3,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { CurlingRegistrationStatusSqlite } from '../db/drizzle-schema.js';
 import { sendRegistrationCancelledByMemberEmail } from './registrationEmailService.js';
 import { createPaymentService } from '../services/paymentService.js';
+import { queueMembershipRemovalSync } from '../services/mauticMembershipSyncService.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
@@ -14,6 +15,7 @@ import {
 } from './registrationShellService.js';
 import { removeAllRegistrationRosterPlacements } from './registrationRosterService.js';
 import { recordAndDeleteWaitlistEntry, waitlistMemberDisplayName } from './waitlistAudit.js';
+import { normalizeEmail } from '../utils/auth.js';
 
 export class RegistrationPriorityEditValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -392,6 +394,19 @@ async function cancelMemberRegistrationCore(input: {
       })
       .where(eq(schema.curlingRegistrations.id, input.registrationId));
   });
+
+  if (registration.curler_member_id) {
+    const [curlerEmailRow] = await db
+      .select({ email: schema.members.email })
+      .from(schema.members)
+      .where(eq(schema.members.id, registration.curler_member_id))
+      .limit(1);
+    queueMembershipRemovalSync(
+      registration.curler_member_id,
+      registration.season_id,
+      normalizeEmail(curlerEmailRow?.email || ''),
+    );
+  }
 
   await sendRegistrationCancelledByMemberEmail({
     registrationId: input.registrationId,

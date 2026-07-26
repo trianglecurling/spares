@@ -1,10 +1,14 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import {
+  EVENT_CALENDAR_TYPE_IDS,
+  type EventCalendarTypeId,
+} from '../utils/eventCalendarTypes';
 import {
   EVENT_CALENDAR_TYPE_OPTIONS,
   eventOverlapsRangeUtc,
@@ -23,6 +27,13 @@ import {
   publicEventTypeLabel,
 } from '../utils/publicEventCardUtils';
 import api from '../utils/api';
+
+const EVENT_TYPE_FILTER_IDS = new Set<string>(EVENT_CALENDAR_TYPE_IDS);
+
+function parseEventTypeFilter(raw: string | null): EventCalendarTypeId | '' {
+  if (!raw || !EVENT_TYPE_FILTER_IDS.has(raw)) return '';
+  return raw as EventCalendarTypeId;
+}
 
 interface PublicSiteConfigResponse {
   fiscalYearStartMmdd?: string;
@@ -105,6 +116,7 @@ function normalizeCategoryRows(data: unknown): EventCategoryRow[] {
 }
 
 export default function PublicEventsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [fiscalYearStartMmdd, setFiscalYearStartMmdd] = useState<string>('09-01');
@@ -112,10 +124,23 @@ export default function PublicEventsPage() {
   const [categoryById, setCategoryById] = useState<Map<number, string>>(new Map());
   /** `null` = all upcoming events in chronological order (any season). */
   const [pastSeasonStartYear, setPastSeasonStartYear] = useState<number | null>(null);
-  const [typeFilter, setTypeFilter] = useState('');
+  const typeFilter = parseEventTypeFilter(searchParams.get('type'));
   const pastEventsId = useId();
   const typesId = useId();
   const fiscal = useMemo(() => parseFiscalYearStartMmdd(fiscalYearStartMmdd), [fiscalYearStartMmdd]);
+
+  const setTypeFilter = (next: string) => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        const parsed = parseEventTypeFilter(next);
+        if (!parsed) params.delete('type');
+        else params.set('type', parsed);
+        return params;
+      },
+      { replace: true },
+    );
+  };
 
   const typeOptions: ChoiceOption<string>[] = useMemo(
     () => [

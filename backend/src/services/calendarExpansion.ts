@@ -505,21 +505,3 @@ export async function fetchLeagueCalendarEventsForRange(
 
   return result;
 }
-
-/** True if this calendar interval uses the given sheet and overlaps [blockStart, blockEnd). */
-export function calendarIntervalBlocksSheet(
-  ev: { start: string; end: string; locations?: Array<{ type: string; sheetId?: number }> },
-  sheetId: number,
-  blockStart: Date,
-  blockEnd: Date
-): boolean {
-  const sheetIds = (ev.locations ?? [])
-    .filter((l) => l.type === 'sheet' && l.sheetId != null)
-    .map((l) => l.sheetId!);
-  if (sheetIds.length === 0 || !sheetIds.includes(sheetId)) return false;
-  const es = new Date(ev.start).getTime();
-  const ee = new Date(ev.end).getTime();
-  const bs = blockStart.getTime();
-  const be = blockEnd.getTime();
-  return bs < ee && be > es;
-}

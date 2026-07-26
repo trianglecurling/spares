@@ -66,6 +66,7 @@ interface HomeData {
     allDay: boolean;
     eventSlug?: string | null;
   }>;
+  upcomingBonspielsHasMore?: boolean;
   currentSponsorships: Array<{
     sponsorshipId: number;
     sponsorId: number;
@@ -662,42 +663,55 @@ export default function PublicHomePage() {
                   for everything else happening on the ice.
                 </div>
               ) : (
-                <ul className="mt-6 space-y-3">
-                  {data.upcomingBonspiels.map((ev) => {
-                    const dates = formatBonspielDates(ev);
-                    const rowInner = (
-                      <>
-                        <div
-                          className="flex w-20 shrink-0 flex-col items-center justify-center self-stretch rounded-xl bg-primary-teal/10 px-2 py-3 text-primary-teal-on-tint"
-                          aria-hidden
-                        >
-                          <span className="text-xs font-bold uppercase tracking-widest">{dates.monthLabel}</span>
-                          <span className="public-display text-xl font-semibold leading-tight">{dates.dayLabel}</span>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="public-display truncate text-lg font-semibold text-gray-900">{ev.title}</p>
-                          <p className="mt-0.5 text-sm text-gray-500">{dates.fullLabel}</p>
-                        </div>
-                      </>
-                    );
-                    return (
-                      <li key={ev.id}>
-                        {ev.eventSlug ? (
-                          <Link
-                            to={`/events/${ev.eventSlug}`}
-                            className="group flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 sm:p-5 motion-reduce:transition-none"
+                <>
+                  <ul className="mt-6 space-y-3">
+                    {data.upcomingBonspiels.map((ev) => {
+                      const dates = formatBonspielDates(ev);
+                      const rowInner = (
+                        <>
+                          <div
+                            className="flex w-20 shrink-0 flex-col items-center justify-center self-stretch rounded-xl bg-primary-teal/10 px-2 py-3 text-primary-teal-on-tint"
+                            aria-hidden
                           >
-                            {rowInner}
-                          </Link>
-                        ) : (
-                          <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-                            {rowInner}
+                            <span className="text-xs font-bold uppercase tracking-widest">{dates.monthLabel}</span>
+                            <span className="public-display text-xl font-semibold leading-tight">{dates.dayLabel}</span>
                           </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                          <div className="min-w-0 flex-1">
+                            <p className="public-display truncate text-lg font-semibold text-gray-900">{ev.title}</p>
+                            <p className="mt-0.5 text-sm text-gray-500">{dates.fullLabel}</p>
+                          </div>
+                        </>
+                      );
+                      return (
+                        <li key={ev.id}>
+                          {ev.eventSlug ? (
+                            <Link
+                              to={`/events/${ev.eventSlug}`}
+                              className="group flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-teal/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 sm:p-5 motion-reduce:transition-none"
+                            >
+                              {rowInner}
+                            </Link>
+                          ) : (
+                            <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                              {rowInner}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {data.upcomingBonspielsHasMore ? (
+                    <div className="mt-4">
+                      <Link
+                        to="/events?type=bonspiel"
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-teal-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 rounded-sm"
+                      >
+                        Show all bonspiels
+                        <HiArrowRight className="h-4 w-4" aria-hidden />
+                      </Link>
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           </section>

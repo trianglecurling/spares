@@ -11,6 +11,11 @@ type FormFieldRenderProps = {
 type FormFieldProps = {
   label?: ReactNode;
   htmlFor?: string;
+  /**
+   * Id placed on the visible label so composite regions (radiogroup, group, listbox) can
+   * name themselves with `aria-labelledby` when there is no single focusable control.
+   */
+  labelId?: string;
   required?: boolean;
   optional?: boolean;
   helperText?: ReactNode;
@@ -40,6 +45,7 @@ const markerToneClasses: Record<FormFieldTone, string> = {
 export default function FormField({
   label,
   htmlFor,
+  labelId,
   required = false,
   optional = false,
   helperText,
@@ -67,13 +73,16 @@ export default function FormField({
     <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
       {htmlFor ? (
         <label
+          id={labelId}
           htmlFor={htmlFor}
           className={joinClasses(labelToneClasses[tone], labelClassName)}
         >
           {label}
         </label>
       ) : (
-        <div className={joinClasses(labelToneClasses[tone], labelClassName)}>{label}</div>
+        <div id={labelId} className={joinClasses(labelToneClasses[tone], labelClassName)}>
+          {label}
+        </div>
       )}
       {markerText ? <span className={markerToneClasses[tone]}>{markerText}</span> : null}
     </div>

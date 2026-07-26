@@ -116,6 +116,9 @@ export const config = {
    * Full base URL of the Mautic web app, **including a path** if Mautic is not at the domain root
    * (e.g. `https://mail.example.com` or `https://example.com/mautic`). No trailing slash.
    * Segment IDs are Mautic segment (static list) IDs.
+   *
+   * In Mautic (Settings → API Credentials), name the OAuth2 client **TCCNC-Web Integration**
+   * (not "TCC"). That display name is what Mautic shows as "Created by" on segments/contacts.
    */
   mautic: {
     baseUrl: (process.env.MAUTIC_BASE_URL || '').trim().replace(/\/$/, ''),

@@ -29,6 +29,7 @@ import {
 } from '../api/schemas.js';
 import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
 import { clearMemberRestrictedRelations } from '../services/clearMemberRestrictedRelations.js';
+import { queueMemberContactInfoSync, queueMembershipRemovalSync } from '../services/mauticMembershipSyncService.js';
 import { getMemberMembershipCard } from '../services/memberMembershipCardService.js';
 import { memberHasActiveMembershipCondition } from '../services/memberMembershipStatusService.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
@@ -871,6 +872,24 @@ export async function memberRoutes(fastify: FastifyInstance) {
         .update(schema.members)
         .set(updateData)
         .where(eq(schema.members.id, member.id));
+
+      if (updateData.email !== undefined || updateData.name !== undefined) {
+        const newEmail =
+          typeof updateData.email === 'string'
+            ? updateData.email
+            : normalizeEmail(member.email || '');
+        const nameParts =
+          typeof updateData.name === 'string'
+            ? splitMemberDisplayName(updateData.name)
+            : splitMemberDisplayName(member.name || '');
+        queueMemberContactInfoSync(
+          member.id,
+          normalizeEmail(member.email || ''),
+          newEmail,
+          nameParts.firstName,
+          nameParts.lastName,
+        );
+      }
     }
 
     const updatedMembers = await db
@@ -1772,6 +1791,33 @@ export async function memberRoutes(fastify: FastifyInstance) {
         .update(schema.members)
         .set(updateData)
         .where(eq(schema.members.id, memberId));
+
+      if (
+        updateData.email !== undefined ||
+        updateData.first_name !== undefined ||
+        updateData.last_name !== undefined ||
+        updateData.name !== undefined
+      ) {
+        const newEmail =
+          typeof updateData.email === 'string'
+            ? updateData.email
+            : normalizeEmail(targetMember.email || '');
+        const firstName =
+          typeof updateData.first_name === 'string'
+            ? updateData.first_name
+            : (targetMember.first_name || splitMemberDisplayName(targetMember.name || '').firstName);
+        const lastName =
+          typeof updateData.last_name === 'string'
+            ? updateData.last_name
+            : (targetMember.last_name || splitMemberDisplayName(targetMember.name || '').lastName);
+        queueMemberContactInfoSync(
+          memberId,
+          normalizeEmail(targetMember.email || ''),
+          newEmail,
+          firstName,
+          lastName,
+        );
+      }
     }
 
     if (body.isLeagueAdministrator !== undefined) {
@@ -1861,10 +1907,25 @@ export async function memberRoutes(fastify: FastifyInstance) {
       return _reply.code(400).send({ error: LAST_SERVER_ADMIN_ERROR });
     }
 
+    const activeMemberships = await db
+      .select({ seasonId: schema.seasonMemberships.season_id })
+      .from(schema.seasonMemberships)
+      .where(
+        and(
+          eq(schema.seasonMemberships.member_id, memberId),
+          eq(schema.seasonMemberships.status, 'active'),
+        ),
+      );
+    const memberEmail = normalizeEmail(targetMember.email || '');
+
     await db.transaction(async (tx) => {
       await clearMemberRestrictedRelations(tx, schema, [memberId]);
       await tx.delete(schema.members).where(eq(schema.members.id, memberId));
     });
+
+    for (const row of activeMemberships) {
+      queueMembershipRemovalSync(memberId, row.seasonId, memberEmail);
+    }
 
     return { success: true };
     }
@@ -1925,6 +1986,22 @@ export async function memberRoutes(fastify: FastifyInstance) {
       return _reply.code(400).send({ error: 'No members can be deleted with your permissions' });
     }
 
+    const activeMemberships = await db
+      .select({
+        memberId: schema.seasonMemberships.member_id,
+        seasonId: schema.seasonMemberships.season_id,
+      })
+      .from(schema.seasonMemberships)
+      .where(
+        and(
+          inArray(schema.seasonMemberships.member_id, deletableIds),
+          eq(schema.seasonMemberships.status, 'active'),
+        ),
+      );
+    const emailByMemberId = new Map(
+      membersToDelete.map((m: Member) => [m.id, normalizeEmail(m.email || '')] as const),
+    );
+
     // Use a transaction to ensure atomicity
     await db.transaction(async (tx) => {
       await clearMemberRestrictedRelations(tx, schema, deletableIds);
@@ -1954,6 +2031,14 @@ export async function memberRoutes(fastify: FastifyInstance) {
         .delete(schema.members)
         .where(inArray(schema.members.id, deletableIds));
     });
+
+    for (const row of activeMemberships) {
+      queueMembershipRemovalSync(
+        row.memberId,
+        row.seasonId,
+        emailByMemberId.get(row.memberId) || '',
+      );
+    }
 
     return { success: true, deletedCount: deletableIds.length };
     }

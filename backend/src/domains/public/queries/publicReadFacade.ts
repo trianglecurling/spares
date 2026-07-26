@@ -233,7 +233,7 @@ export async function getPublicHomeData() {
       ),
   );
 
-  const [siteConfig, featuredArticleRows, showcaseRows, sponsorshipRows, upcomingBonspiels] = await Promise.all([
+  const [siteConfig, featuredArticleRows, showcaseRows, sponsorshipRows, upcomingBonspielsResult] = await Promise.all([
     getPublicSiteConfig(),
     db
       .select({
@@ -286,6 +286,8 @@ export async function getPublicHomeData() {
       .orderBy(asc(schema.sponsorshipLevels.sort_order), asc(schema.sponsorships.id)),
     getUpcomingBonspiels(),
   ]);
+  const upcomingBonspiels = upcomingBonspielsResult.items;
+  const upcomingBonspielsHasMore = upcomingBonspielsResult.hasMore;
 
   const featuredIds = featuredArticleRows.map((a) => a.id);
   const eventSlugByArticleId = new Map<number, string>();
@@ -348,6 +350,7 @@ export async function getPublicHomeData() {
       levelSortOrder: row.levelSortOrder,
     })),
     upcomingBonspiels,
+    upcomingBonspielsHasMore,
   };
 }
 

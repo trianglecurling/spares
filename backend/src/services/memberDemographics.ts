@@ -1,12 +1,10 @@
 import { eq, sql } from 'drizzle-orm';
 import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import {
-  fetchMemberEmailRow,
-  findMemberIdWithConflictingNormalizedEmailChange,
-} from './accountAccess.js';
+import { findMemberIdWithConflictingNormalizedEmailChange } from './accountAccess.js';
 import { normalizeEmail } from '../utils/auth.js';
 import { isMemberMinor } from '../utils/memberAge.js';
+import { queueMemberContactInfoSync } from './mauticMembershipSyncService.js';
 
 export type MemberDemographicsInput = {
   firstName: string;
@@ -113,14 +111,21 @@ export async function applyMemberDemographicsUpdate(
   memberId: number,
   input: MemberDemographicsInput,
   options?: { registrationUpdate?: boolean; resolvedDateOfBirth?: string | null },
-): Promise<void> {
+): Promise<{ oldEmail: string; newEmail: string; firstName: string; lastName: string }> {
   const { db, schema } = getDrizzleDb();
   const memberRows = await db
-    .select({ date_of_birth: schema.members.date_of_birth })
+    .select({
+      date_of_birth: schema.members.date_of_birth,
+      email: schema.members.email,
+      first_name: schema.members.first_name,
+      last_name: schema.members.last_name,
+      name: schema.members.name,
+    })
     .from(schema.members)
     .where(eq(schema.members.id, memberId))
     .limit(1);
-  const existingDateOfBirth = normalizeMemberDateOfBirth(memberRows[0]?.date_of_birth);
+  const existing = memberRows[0];
+  const existingDateOfBirth = normalizeMemberDateOfBirth(existing?.date_of_birth);
   const resolvedDateOfBirth = options?.registrationUpdate
     ? (existingDateOfBirth ?? (input.dateOfBirth.trim() || null))
     : resolveProfileDateOfBirth(existingDateOfBirth, input.dateOfBirth);
@@ -136,10 +141,10 @@ export async function applyMemberDemographicsUpdate(
   });
 
   const normalizedEmail = normalizeEmail(input.email);
-  const curlerRow = await fetchMemberEmailRow(memberId);
+  const oldEmail = normalizeEmail(existing?.email || '');
   const conflictId = await findMemberIdWithConflictingNormalizedEmailChange(
     normalizedEmail,
-    curlerRow?.email ?? null,
+    existing?.email ?? null,
     memberId
   );
   if (conflictId != null) {
@@ -148,12 +153,14 @@ export async function applyMemberDemographicsUpdate(
     });
   }
 
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
   const updateData: Record<string, unknown> = {
     name: memberName(input),
     email: normalizedEmail,
     phone: input.phone.trim(),
-    first_name: input.firstName.trim(),
-    last_name: input.lastName.trim(),
+    first_name: firstName,
+    last_name: lastName,
     mailing_address: input.mailingAddress.trim(),
     emergency_contact_name: input.emergencyContactName.trim(),
     emergency_contact_phone: input.emergencyContactPhone.trim(),
@@ -167,6 +174,14 @@ export async function applyMemberDemographicsUpdate(
     .update(schema.members)
     .set(updateData as any)
     .where(eq(schema.members.id, memberId));
+
+  const oldFirst = (existing?.first_name || '').trim();
+  const oldLast = (existing?.last_name || '').trim();
+  if (oldEmail !== normalizedEmail || oldFirst !== firstName || oldLast !== lastName) {
+    queueMemberContactInfoSync(memberId, oldEmail, normalizedEmail, firstName, lastName);
+  }
+
+  return { oldEmail, newEmail: normalizedEmail, firstName, lastName };
 }
 
 export function normalizeMemberDateOfBirth(value: unknown): string | null {

@@ -335,6 +335,8 @@ export const curlingSeasonsSqlite = sqliteTable('curling_seasons', {
   name: text('name').notNull(),
   start_date: text('start_date').notNull(),
   end_date: text('end_date').notNull(),
+  /** Mautic segment (static list) id for this season's active members. */
+  mautic_segment_id: integer('mautic_segment_id'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
@@ -1582,6 +1584,20 @@ export const mailingListsSqlite = sqliteTable('mailing_lists', {
   slugIdx: index('idx_mailing_lists_slug').on(table.slug),
 }));
 
+/** Singleton row (id = 1) tracking the last admin-triggered Mautic membership segment sync. */
+export const mauticMembershipSyncStatusSqlite = sqliteTable('mautic_membership_sync_status', {
+  id: integer('id').primaryKey(),
+  last_run_at: text('last_run_at'),
+  last_run_status: text('last_run_status').$type<'success' | 'partial' | 'error'>(),
+  last_run_summary: text('last_run_summary'),
+  last_run_triggered_by_member_id: integer('last_run_triggered_by_member_id').references(
+    () => membersSqlite.id,
+    { onDelete: 'set null' },
+  ),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
 // Showcase images for homepage (URLs only)
 export const showcaseImagesSqlite = sqliteTable('showcase_images', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -2278,6 +2294,8 @@ export const curlingSeasonsPg = pgTable('curling_seasons', {
   name: textPg('name').notNull(),
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
+  /** Mautic segment (static list) id for this season's active members. */
+  mautic_segment_id: integerPg('mautic_segment_id'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
@@ -3503,6 +3521,20 @@ export const mailingListsPg = pgTable('mailing_lists', {
   slugIdx: indexPg('idx_mailing_lists_slug').on(table.slug),
 }));
 
+/** Singleton row (id = 1) tracking the last admin-triggered Mautic membership segment sync. */
+export const mauticMembershipSyncStatusPg = pgTable('mautic_membership_sync_status', {
+  id: integerPg('id').primaryKey(),
+  last_run_at: timestamp('last_run_at', { withTimezone: false }),
+  last_run_status: textPg('last_run_status').$type<'success' | 'partial' | 'error'>(),
+  last_run_summary: textPg('last_run_summary'),
+  last_run_triggered_by_member_id: integerPg('last_run_triggered_by_member_id').references(
+    () => membersPg.id,
+    { onDelete: 'set null' },
+  ),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
 export const showcaseImagesPg = pgTable('showcase_images', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   url: textPg('url').notNull(),
@@ -4125,6 +4157,7 @@ export const sqliteSchema = {
   siteConfig: siteConfigSqlite,
   publicContactRecipients: publicContactRecipientsSqlite,
   mailingLists: mailingListsSqlite,
+  mauticMembershipSyncStatus: mauticMembershipSyncStatusSqlite,
   showcaseImages: showcaseImagesSqlite,
   menuItems: menuItemsSqlite,
   files: filesSqlite,
@@ -4234,6 +4267,7 @@ export const pgSchema = {
   siteConfig: siteConfigPg,
   publicContactRecipients: publicContactRecipientsPg,
   mailingLists: mailingListsPg,
+  mauticMembershipSyncStatus: mauticMembershipSyncStatusPg,
   showcaseImages: showcaseImagesPg,
   menuItems: menuItemsPg,
   files: filesPg,

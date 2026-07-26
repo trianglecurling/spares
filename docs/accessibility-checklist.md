@@ -14,7 +14,7 @@ Use **`FormField`** (`frontend/src/components/FormField.tsx`) for every labeled 
 
 - **`FormCheckbox`** — Use for standalone checkbox rows (same form-shell family); it wraps the control and label correctly.
 - **Choice inputs / autocomplete / combobox** — Wrap with **`FormField`** and pass **`inputId`** (same value as **`htmlFor`**) into `ChoiceInput` or wrappers such as `ArticleAutocomplete` / `AutocompleteInput` so the label targets the real textbox.
-- **Composite regions** (no single native control: rich text, split controls) — Use **`role="group"`** with **`aria-labelledby`** pointing at a visible label’s **`id`**, or **`fieldset` / `legend`** when the spec allows (legend must be a direct child of `fieldset`).
+- **Composite regions** (no single native control: rich text, split controls, radiogroup grids) — Use **`role="group"`** / **`role="radiogroup"`** with **`aria-labelledby`** pointing at a visible label’s **`id`**, or **`fieldset` / `legend`** when the spec allows (legend must be a direct child of `fieldset`). Pass **`labelId`** to **`FormField`** to put that **`id`** on the field’s visible label instead of hand-rolling the label row. Inline and block **`ChoiceInput`** render a `radiogroup` / `group` rather than a single control, so name them with **`ariaLabelledBy`** (not **`inputId`**).
 
 Do **not** leave a visible `app-label` (or plain text) that only *looks* like a label without **`FormField`** (or **`FormCheckbox`** / composite association above).
 
