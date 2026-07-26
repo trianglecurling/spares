@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation, Outlet } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
@@ -138,6 +138,26 @@ function LegacyPublicLeaguesRedirect() {
   return <Navigate to={`/leagues/public${location.search}${location.hash}`} replace />;
 }
 
+/** Logged-in members should use the member calendar; pair with ProtectedRoute's public fallback. */
+function PublicCalendarRoute() {
+  const { member, token, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (token && member) {
+    return <Navigate to={`/calendar${location.search}${location.hash}`} replace />;
+  }
+
+  return <Calendar publicMode />;
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -209,7 +229,7 @@ function App() {
                       <Route path="/explainers/waitlists" element={<WaitlistsExplainerPage />} />
                       <Route path="/explainers/sparing" element={<SparingExplainerPage />} />
 
-                      <Route path="/calendar/public" element={<Calendar publicMode />} />
+                      <Route path="/calendar/public" element={<PublicCalendarRoute />} />
 
                       <Route
                         path="/admin/content/articles/:id/versions/:versionId/preview"

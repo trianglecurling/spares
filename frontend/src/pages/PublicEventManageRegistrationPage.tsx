@@ -11,6 +11,7 @@ import PublicRegistrationFieldInput, {
   type EventRegistrationField,
 } from '../components/eventRegistration/PublicRegistrationFieldInput';
 import { isSubheadingFieldType } from '../utils/eventRegistrationFieldPresets';
+import { resolveEventContactFieldLabels } from '../utils/eventRegistrationContactLabels';
 import api, { formatApiError } from '../utils/api';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -29,6 +30,9 @@ interface ManageRegistrationPayload {
     slug: string;
     allowGroupRegistration: number;
     maxGroupSize: number | null;
+    contactFirstNameLabel?: string | null;
+    contactLastNameLabel?: string | null;
+    contactEmailLabel?: string | null;
     registrationFields: EventRegistrationField[];
     cancellationCutoff: string | null;
     pointOfContact: string;
@@ -290,6 +294,7 @@ export default function PublicEventManageRegistrationPage() {
   }
 
   const { event, registration } = payload;
+  const contactLabels = resolveEventContactFieldLabels(event);
   const isWaitlistEntry = payload.isWaitlistEntry ?? registration.status === 'waitlisted';
   const isCanceledView = registration.status === 'cancelled' || canceled;
   const manageTitle = isWaitlistEntry ? 'Manage waitlist entry' : 'Manage registration';
@@ -356,7 +361,7 @@ export default function PublicEventManageRegistrationPage() {
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField tone="public" label="First name" htmlFor={contactFirstNameFieldId} required>
+                <FormField tone="public" label={contactLabels.firstName} htmlFor={contactFirstNameFieldId} required>
                   <input
                     id={contactFirstNameFieldId}
                     type="text"
@@ -368,7 +373,7 @@ export default function PublicEventManageRegistrationPage() {
                   />
                 </FormField>
 
-                <FormField tone="public" label="Last name" htmlFor={contactLastNameFieldId} required>
+                <FormField tone="public" label={contactLabels.lastName} htmlFor={contactLastNameFieldId} required>
                   <input
                     id={contactLastNameFieldId}
                     type="text"
@@ -381,7 +386,7 @@ export default function PublicEventManageRegistrationPage() {
                 </FormField>
               </div>
 
-              <FormField tone="public" label="Email address" htmlFor={contactEmailFieldId} required>
+              <FormField tone="public" label={contactLabels.email} htmlFor={contactEmailFieldId} required>
                 <input
                   id={contactEmailFieldId}
                   type="email"

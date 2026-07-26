@@ -6,13 +6,17 @@ import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
+import DietaryRestrictionsField from '../../components/eventRegistration/DietaryRestrictionsField';
 import { TeamPlayersField, defaultTeamPlayersJson } from '../../components/eventRegistration/TeamPlayersField';
 import {
   isSubheadingFieldType,
+  joinCommaSeparatedFieldOptions,
+  splitCommaSeparatedFieldOptions,
   teamFieldOptionsFromRegistrationField,
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
 } from '../../utils/eventRegistrationFieldPresets';
+import { resolveEventContactFieldLabels } from '../../utils/eventRegistrationContactLabels';
 import { formatDisplayName, splitDisplayName } from '../../utils/personName';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
@@ -32,6 +36,9 @@ type EventDetail = {
   title: string;
   feeMinor: number;
   allowGroupRegistration: number;
+  contactFirstNameLabel?: string | null;
+  contactLastNameLabel?: string | null;
+  contactEmailLabel?: string | null;
   registrationFields: EventRegistrationField[];
 };
 
@@ -127,10 +134,7 @@ function stripeDashboardUrl(
 }
 
 function fieldOptions(field: EventRegistrationField): string[] {
-  return (field.options ?? '')
-    .split(',')
-    .map((option) => option.trim())
-    .filter(Boolean);
+  return splitCommaSeparatedFieldOptions(field.options);
 }
 
 export default function AdminEventRegistrationEditor() {
@@ -156,6 +160,7 @@ export default function AdminEventRegistrationEditor() {
   const [fieldValueByKey, setFieldValueByKey] = useState<Record<string, string>>({});
 
   const eventAllowsGroupRegistration = event?.allowGroupRegistration === 1;
+  const contactLabels = useMemo(() => resolveEventContactFieldLabels(event), [event]);
   const sortedFields = useMemo(
     () =>
       [...(event?.registrationFields ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
@@ -556,7 +561,7 @@ export default function AdminEventRegistrationEditor() {
             <section className="space-y-4">
               <h2 className="app-section-title">Contact details</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <FormField label="First name" htmlFor="admin-registration-first-name" required>
+                <FormField label={contactLabels.firstName} htmlFor="admin-registration-first-name" required>
                   <input
                     id="admin-registration-first-name"
                     value={contactFirstName}
@@ -566,7 +571,7 @@ export default function AdminEventRegistrationEditor() {
                     required
                   />
                 </FormField>
-                <FormField label="Last name" htmlFor="admin-registration-last-name" required>
+                <FormField label={contactLabels.lastName} htmlFor="admin-registration-last-name" required>
                   <input
                     id="admin-registration-last-name"
                     value={contactLastName}
@@ -576,7 +581,7 @@ export default function AdminEventRegistrationEditor() {
                     required
                   />
                 </FormField>
-                <FormField label="Email" htmlFor="admin-registration-email" required>
+                <FormField label={contactLabels.email} htmlFor="admin-registration-email" required>
                   <input
                     id="admin-registration-email"
                     type="email"
@@ -786,6 +791,27 @@ function FieldInput({
       </label>
     );
   }
+  if (field.field_type === 'checkbox_list') {
+    const listOptions: ChoiceOption<string>[] = options.map((option) => ({
+      value: option,
+      label: option,
+    }));
+    return (
+      <ChoiceInput<string>
+        options={listOptions}
+        value={splitCommaSeparatedFieldOptions(value)}
+        onChange={(next) => {
+          const nextSelected = Array.isArray(next) ? next : next ? [next] : [];
+          onChange(joinCommaSeparatedFieldOptions(nextSelected));
+        }}
+        layout="block"
+        maxSelectedItems={null}
+        multiSelectionIndicatorStyle="checkboxes"
+        ariaLabel={field.label}
+        name={inputName ?? `field-${field.id}-${compact ? 'compact' : 'full'}`}
+      />
+    );
+  }
   if (field.field_type === 'dropdown') {
     const dropdownOptions: ChoiceOption<string>[] = options.map((option) => ({
       value: option,
@@ -891,6 +917,19 @@ function FieldInput({
         rows={4}
         required={field.required === 1}
         spellCheck={false}
+      />
+    );
+  }
+  if (field.field_type === 'preset_dietary_restrictions') {
+    return (
+      <DietaryRestrictionsField
+        label={field.label}
+        required={field.required === 1}
+        value={value}
+        onChange={onChange}
+        tone="app"
+        showLabel={false}
+        name={inputName ?? `field-${field.id}-${compact ? 'compact' : 'full'}`}
       />
     );
   }

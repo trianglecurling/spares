@@ -14,6 +14,9 @@ export type EventRegistrationPreviewPayloadV1 = {
   currency: string;
   allowGroupRegistration: boolean;
   maxGroupSize: number | null;
+  contactFirstNameLabel?: string | null;
+  contactLastNameLabel?: string | null;
+  contactEmailLabel?: string | null;
   registrationFields: EventRegistrationField[];
 };
 

@@ -18,6 +18,7 @@ import {
   isSubheadingFieldType,
   lastNameFromDisplayName,
 } from '../utils/eventRegistrationFieldPresets';
+import { resolveEventContactFieldLabels } from '../utils/eventRegistrationContactLabels';
 
 const publicInput = publicEventRegistrationInput;
 
@@ -36,6 +37,9 @@ interface EventDetail {
   allowGroupRegistration: number;
   maxGroupSize: number | null;
   termsArticleId: number | null;
+  contactFirstNameLabel?: string | null;
+  contactLastNameLabel?: string | null;
+  contactEmailLabel?: string | null;
   registrationFields: EventField[];
   confirmedCount: number;
   waitlistedCount?: number;
@@ -250,6 +254,8 @@ export default function PublicEventRegisterPage() {
     if (!event?.registrationFields) return [];
     return [...event.registrationFields].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   }, [event]);
+
+  const contactLabels = useMemo(() => resolveEventContactFieldLabels(event), [event]);
 
   const serverNowMs = useMemo(() => {
     void tick;
@@ -563,7 +569,7 @@ export default function PublicEventRegisterPage() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField tone="public" label="First name" htmlFor={contactFirstNameFieldId} required>
+            <FormField tone="public" label={contactLabels.firstName} htmlFor={contactFirstNameFieldId} required>
               <input
                 id={contactFirstNameFieldId}
                 type="text"
@@ -575,7 +581,7 @@ export default function PublicEventRegisterPage() {
               />
             </FormField>
 
-            <FormField tone="public" label="Last name" htmlFor={contactLastNameFieldId} required>
+            <FormField tone="public" label={contactLabels.lastName} htmlFor={contactLastNameFieldId} required>
               <input
                 id={contactLastNameFieldId}
                 type="text"
@@ -588,7 +594,7 @@ export default function PublicEventRegisterPage() {
             </FormField>
           </div>
 
-          <FormField tone="public" label="Email address" htmlFor={contactEmailFieldId} required>
+          <FormField tone="public" label={contactLabels.email} htmlFor={contactEmailFieldId} required>
             <input
               id={contactEmailFieldId}
               type="email"

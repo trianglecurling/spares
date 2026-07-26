@@ -8,6 +8,7 @@ export const PRESET_FIELD_TYPES = [
   'preset_team_doubles',
   'preset_dob',
   'preset_bonspiel_comments',
+  'preset_dietary_restrictions',
 ] as const;
 
 export type PresetFieldType = (typeof PRESET_FIELD_TYPES)[number];
@@ -21,6 +22,7 @@ export const PRESET_LABELS: Record<PresetFieldType | 'subheading', string> = {
   preset_team_doubles: 'Doubles team information (2 players)',
   preset_dob: 'Date of birth',
   preset_bonspiel_comments: 'Questions/Comments?',
+  preset_dietary_restrictions: 'Dietary restrictions',
 };
 
 export function isPresetFieldType(ft: string): ft is PresetFieldType {
@@ -41,6 +43,33 @@ export function isTeamPresetFieldType(ft: string): boolean {
 }
 
 const TEAM_DIETARY_KEYS = ['vegetarian', 'glutenFree', 'dairyFree'] as const;
+
+const TEAM_DIETARY_LABELS: Record<(typeof TEAM_DIETARY_KEYS)[number], string> = {
+  vegetarian: 'Vegetarian',
+  glutenFree: 'Gluten free',
+  dairyFree: 'Dairy free',
+};
+
+/** Human-readable display for `preset_dietary_restrictions` JSON values. */
+export function formatDietaryRestrictionsFieldDisplay(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return trimmed;
+    const o = parsed as Record<string, unknown>;
+    const parts: string[] = [];
+    for (const key of TEAM_DIETARY_KEYS) {
+      if (o[key] === true) parts.push(TEAM_DIETARY_LABELS[key]);
+    }
+    if (typeof o.other === 'string' && o.other.trim()) {
+      parts.push(`Other: ${o.other.trim()}`);
+    }
+    return parts.length > 0 ? parts.join(', ') : null;
+  } catch {
+    return trimmed;
+  }
+}
 
 function normalizeTeamFieldOptions(options: string | null | undefined): string | null {
   if (!options?.trim()) return null;
@@ -168,6 +197,18 @@ function valueSatisfiesRequired(fieldRow: RegistrationFieldRow, raw: string): bo
       return false;
     }
   }
+  if (fieldRow.field_type === 'preset_dietary_restrictions') {
+    try {
+      const o = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof o !== 'object' || o === null || Array.isArray(o)) return false;
+      for (const key of TEAM_DIETARY_KEYS) {
+        if (o[key] === true) return true;
+      }
+      return typeof o.other === 'string' && o.other.trim() !== '';
+    } catch {
+      return false;
+    }
+  }
   return raw.trim() !== '';
 }
 
@@ -254,6 +295,7 @@ function validateValueForFieldType(field: RegistrationFieldRow, value: string): 
     case 'text':
     case 'number':
     case 'checkbox':
+    case 'checkbox_list':
     case 'dropdown':
     case 'radio':
       return;
@@ -300,6 +342,31 @@ function validateValueForFieldType(field: RegistrationFieldRow, value: string): 
       }
       for (const row of parsed) {
         validateTeamPlayerRow(row, field.label);
+      }
+      return;
+    }
+    case 'preset_dietary_restrictions': {
+      if (!value.trim()) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        throw new EventServiceError(`Invalid dietary restrictions for "${field.label}"`, 400);
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new EventServiceError(`Invalid dietary restrictions for "${field.label}"`, 400);
+      }
+      const o = parsed as Record<string, unknown>;
+      for (const key of TEAM_DIETARY_KEYS) {
+        if (o[key] != null && typeof o[key] !== 'boolean') {
+          throw new EventServiceError(`Invalid dietary restrictions for "${field.label}"`, 400);
+        }
+      }
+      if (o.other != null && typeof o.other !== 'string') {
+        throw new EventServiceError(`Invalid dietary restrictions for "${field.label}"`, 400);
+      }
+      if (typeof o.other === 'string' && o.other.length > 500) {
+        throw new EventServiceError(`Field "${field.label}" is too long`, 400);
       }
       return;
     }

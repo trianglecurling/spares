@@ -66,6 +66,9 @@ export default function AdminEventRegistrationPreview() {
           currency: data!.currency,
           allowGroupRegistration: data!.allowGroupRegistration ? 1 : 0,
           maxGroupSize: data!.maxGroupSize,
+          contactFirstNameLabel: data!.contactFirstNameLabel,
+          contactLastNameLabel: data!.contactLastNameLabel,
+          contactEmailLabel: data!.contactEmailLabel,
           registrationFields: data!.registrationFields,
         }}
       />

@@ -2,8 +2,11 @@ import { useMemo } from 'react';
 import ChoiceInput, { type ChoiceOption } from '../ChoiceInput';
 import FormField from '../FormField';
 import PhysicalAddressCollect from '../PhysicalAddressCollect';
+import DietaryRestrictionsField from './DietaryRestrictionsField';
 import { TeamPlayersField, defaultTeamPlayersJson } from './TeamPlayersField';
 import {
+  joinCommaSeparatedFieldOptions,
+  splitCommaSeparatedFieldOptions,
   teamFieldOptionsFromRegistrationField,
   TEAM_POSITIONS_DOUBLES,
   TEAM_POSITIONS_FOUR,
@@ -112,6 +115,18 @@ export default function PublicRegistrationFieldInput({
       );
     case 'preset_address':
       return <PresetAddressField field={field} value={value} onChange={onChange} />;
+    case 'preset_dietary_restrictions':
+      return (
+        <DietaryRestrictionsField
+          label={field.label}
+          required={field.required === 1}
+          value={value}
+          onChange={onChange}
+          tone="public"
+          lightOnly
+          name={`field-${gk}`}
+        />
+      );
     case 'preset_team_four':
       return (
         <TeamPlayersField
@@ -180,7 +195,7 @@ function LegacyRegistrationField({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const options = field.options ? field.options.split(',').map((o) => o.trim()).filter(Boolean) : [];
+  const options = splitCommaSeparatedFieldOptions(field.options);
 
   switch (field.field_type) {
     case 'checkbox':
@@ -197,6 +212,44 @@ function LegacyRegistrationField({
           </span>
         </label>
       );
+
+    case 'checkbox_list': {
+      const listOptions: ChoiceOption<string>[] = options.map((opt) => ({
+        value: opt,
+        label: opt,
+      }));
+      const selected = splitCommaSeparatedFieldOptions(value);
+      return (
+        <FormField tone="public" label={field.label} required={field.required === 1}>
+          <div className="space-y-1">
+            <ChoiceInput<string>
+              options={listOptions}
+              value={selected}
+              onChange={(next) => {
+                const nextSelected = Array.isArray(next) ? next : next ? [next] : [];
+                onChange(joinCommaSeparatedFieldOptions(nextSelected));
+              }}
+              layout="block"
+              maxSelectedItems={null}
+              multiSelectionIndicatorStyle="checkboxes"
+              ariaLabel={field.label}
+              name={`field-${radioGroupName}`}
+            />
+            {field.required === 1 && selected.length === 0 ? (
+              <input
+                type="text"
+                tabIndex={-1}
+                aria-hidden
+                required
+                value=""
+                onChange={() => undefined}
+                className="sr-only"
+              />
+            ) : null}
+          </div>
+        </FormField>
+      );
+    }
 
     case 'dropdown': {
       const dropdownOptions: ChoiceOption<string>[] = options.map((opt) => ({

@@ -1817,6 +1817,7 @@ export type EventFieldType =
   | 'text'
   | 'number'
   | 'checkbox'
+  | 'checkbox_list'
   | 'dropdown'
   | 'radio'
   | 'subheading'
@@ -1826,7 +1827,8 @@ export type EventFieldType =
   | 'preset_team_four'
   | 'preset_team_doubles'
   | 'preset_dob'
-  | 'preset_bonspiel_comments';
+  | 'preset_bonspiel_comments'
+  | 'preset_dietary_restrictions';
 export type EventFieldScope = 'group' | 'individual';
 
 export const eventCategoriesSqlite = sqliteTable('event_categories', {
@@ -1859,6 +1861,10 @@ export const eventsSqlite = sqliteTable('events', {
   allow_group_registration: integer('allow_group_registration').default(0).notNull(),
   max_group_size: integer('max_group_size'),
   enable_waitlist: integer('enable_waitlist').default(1).notNull(),
+  /** Optional public registration form label overrides for built-in contact fields. */
+  contact_first_name_label: text('contact_first_name_label'),
+  contact_last_name_label: text('contact_last_name_label'),
+  contact_email_label: text('contact_email_label'),
   /** JSON array of event type ids (e.g. no-experience-necessary, juniors, bonspiel). Empty allowed. */
   calendar_type_ids: text('calendar_type_ids').default('[]').notNull(),
   /** Fours/doubles when bonspiel is among calendar_type_ids; otherwise null. */
@@ -3772,6 +3778,10 @@ export const eventsPg = pgTable('events', {
   allow_group_registration: integerPg('allow_group_registration').default(0).notNull(),
   max_group_size: integerPg('max_group_size'),
   enable_waitlist: integerPg('enable_waitlist').default(1).notNull(),
+  /** Optional public registration form label overrides for built-in contact fields. */
+  contact_first_name_label: textPg('contact_first_name_label'),
+  contact_last_name_label: textPg('contact_last_name_label'),
+  contact_email_label: textPg('contact_email_label'),
   calendar_type_ids: textPg('calendar_type_ids').default('[]').notNull(),
   tournament_format: textPg('tournament_format'),
   tournament_teams_published: integerPg('tournament_teams_published').default(0).notNull(),

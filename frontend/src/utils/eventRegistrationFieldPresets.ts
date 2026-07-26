@@ -1,4 +1,20 @@
-export const CUSTOM_FIELD_TYPES = ['text', 'number', 'checkbox', 'dropdown', 'radio'] as const;
+export const CUSTOM_FIELD_TYPES = ['text', 'number', 'checkbox', 'checkbox_list', 'dropdown', 'radio'] as const;
+
+export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number];
+
+export function customFieldTypeLabel(ft: string): string {
+  return ft.replace(/_/g, ' ');
+}
+
+/** Parse comma-separated option definitions or selected checkbox-list values. */
+export function splitCommaSeparatedFieldOptions(options: string | null | undefined): string[] {
+  if (!options?.trim()) return [];
+  return options.split(',').map((o) => o.trim()).filter(Boolean);
+}
+
+export function joinCommaSeparatedFieldOptions(values: string[]): string {
+  return values.map((v) => v.trim()).filter(Boolean).join(', ');
+}
 
 export const PRESET_FIELD_TYPES = [
   'preset_phone',
@@ -8,6 +24,7 @@ export const PRESET_FIELD_TYPES = [
   'preset_team_doubles',
   'preset_dob',
   'preset_bonspiel_comments',
+  'preset_dietary_restrictions',
 ] as const;
 
 export type PresetFieldType = (typeof PRESET_FIELD_TYPES)[number];
@@ -20,6 +37,7 @@ export const PRESET_LABELS: Record<PresetFieldType, string> = {
   preset_team_doubles: 'Doubles team information (2 players)',
   preset_dob: 'Date of birth',
   preset_bonspiel_comments: 'Questions/Comments?',
+  preset_dietary_restrictions: 'Dietary restrictions',
 };
 
 /** Admin menu label when it should differ from the public form label. */
@@ -235,4 +253,59 @@ export function addDietaryCombinationCounts(
 
 export function playerHasDietaryRestrictions(row: TeamPlayerRow): boolean {
   return DIETARY_RESTRICTION_KEYS.some((key) => row[key] === true);
+}
+
+/** Standalone `preset_dietary_restrictions` value (JSON in field_values). */
+export type DietaryRestrictionsFieldValue = {
+  vegetarian?: boolean;
+  glutenFree?: boolean;
+  dairyFree?: boolean;
+  /** Freeform answer when the registrant checks Other. */
+  other?: string;
+};
+
+export function parseDietaryRestrictionsFieldValue(value: string): DietaryRestrictionsFieldValue {
+  if (!value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    const o = parsed as Record<string, unknown>;
+    const next: DietaryRestrictionsFieldValue = {};
+    for (const key of DIETARY_RESTRICTION_KEYS) {
+      if (o[key] === true) next[key] = true;
+    }
+    if (typeof o.other === 'string') {
+      const trimmed = o.other.trim();
+      if (trimmed) next.other = trimmed;
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+export function serializeDietaryRestrictionsFieldValue(value: DietaryRestrictionsFieldValue): string {
+  const next: DietaryRestrictionsFieldValue = {};
+  for (const key of DIETARY_RESTRICTION_KEYS) {
+    if (value[key] === true) next[key] = true;
+  }
+  const other = value.other?.trim();
+  if (other) next.other = other;
+  if (Object.keys(next).length === 0) return '';
+  return JSON.stringify(next);
+}
+
+export function dietaryRestrictionsFieldHasSelection(value: DietaryRestrictionsFieldValue): boolean {
+  return DIETARY_RESTRICTION_KEYS.some((key) => value[key] === true) || Boolean(value.other?.trim());
+}
+
+export function formatDietaryRestrictionsFieldDisplay(value: string): string {
+  const parsed = parseDietaryRestrictionsFieldValue(value);
+  const parts = DIETARY_RESTRICTION_KEYS.filter((key) => parsed[key] === true).map(
+    (key) => DIETARY_RESTRICTION_LABELS[key],
+  );
+  if (parsed.other?.trim()) {
+    parts.push(`Other: ${parsed.other.trim()}`);
+  }
+  return parts.join(', ');
 }

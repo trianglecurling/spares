@@ -1,5 +1,8 @@
 import { splitMemberDisplayName } from '../utils/memberName.js';
-import { isSubheadingFieldType } from './eventRegistrationFieldDefinitions.js';
+import {
+  formatDietaryRestrictionsFieldDisplay,
+  isSubheadingFieldType,
+} from './eventRegistrationFieldDefinitions.js';
 import {
   sendEventPointOfContactRegistrationCancelledEmail,
   sendEventPointOfContactRegistrationUpdatedEmail,
@@ -44,6 +47,13 @@ function personLabel(index: number): string {
 function normalizeDisplayValue(value: string | null | undefined): string {
   const trimmed = (value ?? '').trim();
   return trimmed.length > 0 ? trimmed : '(empty)';
+}
+
+function displayValueForField(fieldType: string, value: string | null | undefined): string {
+  if (fieldType === 'preset_dietary_restrictions') {
+    return formatDietaryRestrictionsFieldDisplay(value) ?? '(empty)';
+  }
+  return normalizeDisplayValue(value);
 }
 
 function sortedRegistrationFields(event: EventWithRegistrationFields): EventRegistrationField[] {
@@ -91,7 +101,7 @@ function buildFieldRows(
         rows.push({
           key,
           label: `${field.label} (${personLabel(index)})`,
-          value: normalizeDisplayValue(valueByKey.get(key)),
+          value: displayValueForField(field.field_type, valueByKey.get(key)),
         });
       }
     } else {
@@ -99,7 +109,7 @@ function buildFieldRows(
       rows.push({
         key,
         label: field.label,
-        value: normalizeDisplayValue(valueByKey.get(key)),
+        value: displayValueForField(field.field_type, valueByKey.get(key)),
       });
     }
   }

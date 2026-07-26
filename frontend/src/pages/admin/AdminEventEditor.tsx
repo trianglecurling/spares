@@ -36,10 +36,12 @@ import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import { LOCATION_OPTIONS } from '../calendarEventFormShared';
 import {
   CUSTOM_FIELD_TYPES,
+  customFieldTypeLabel,
   PRESET_LABELS,
   addDietaryCombinationCounts,
   countDietaryCombinationsFromTeamValue,
   emptyDietaryCombinationCounts,
+  formatDietaryRestrictionsFieldDisplay,
   isPresetFieldType,
   isSubheadingFieldType,
   isTeamPresetFieldType,
@@ -58,6 +60,12 @@ import {
   editorRegistrationFieldsToPreviewFields,
   storeEventRegistrationPreview,
 } from '../../utils/eventRegistrationPreviewSession';
+import {
+  DEFAULT_CONTACT_EMAIL_LABEL,
+  DEFAULT_CONTACT_FIRST_NAME_LABEL,
+  DEFAULT_CONTACT_LAST_NAME_LABEL,
+  normalizeContactFieldLabelOverride,
+} from '../../utils/eventRegistrationContactLabels';
 
 /** Skip values that would break mailto/BCC lists. */
 const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -147,6 +155,9 @@ type EventEditorSavePayload = {
   allowGroupRegistration: boolean;
   maxGroupSize: number | null;
   enableWaitlist: boolean;
+  contactFirstNameLabel: string | null;
+  contactLastNameLabel: string | null;
+  contactEmailLabel: string | null;
   pointOfContact: string;
   timespans: Array<{ startDt: string; endDt: string }>;
   locations: Array<
@@ -202,7 +213,7 @@ const REGISTRATION_SCOPE_OPTIONS: ChoiceOption<string>[] = [
 
 const CUSTOM_FIELD_TYPE_OPTIONS: ChoiceOption<string>[] = CUSTOM_FIELD_TYPES.map((ft) => ({
   value: ft,
-  label: ft,
+  label: customFieldTypeLabel(ft),
 }));
 
 function toMinor(dollars: string): number {
@@ -254,6 +265,10 @@ export default function AdminEventEditor() {
   const [enableWaitlist, setEnableWaitlist] = useState(true);
   const [hasWaitlistEntries, setHasWaitlistEntries] = useState(false);
   const [pointOfContact, setPointOfContact] = useState('');
+  const [contactFirstNameLabel, setContactFirstNameLabel] = useState('');
+  const [contactLastNameLabel, setContactLastNameLabel] = useState('');
+  const [contactEmailLabel, setContactEmailLabel] = useState('');
+  const [showContactLabelOverrides, setShowContactLabelOverrides] = useState(false);
   const [timespans, setTimespans] = useState<Timespan[]>([{ startDt: '', endDt: '' }]);
   const [selectedSheets, setSelectedSheets] = useState<number[]>([]);
   const [selectedFixedLocs, setSelectedFixedLocs] = useState<
@@ -332,6 +347,7 @@ export default function AdminEventEditor() {
     'preset_team_four',
     'preset_team_doubles',
     'preset_bonspiel_comments',
+    'preset_dietary_restrictions',
   ];
 
   useEffect(() => {
@@ -385,6 +401,15 @@ export default function AdminEventEditor() {
         setEnableWaitlist(e.enableWaitlist !== 0);
         setHasWaitlistEntries(false);
         setPointOfContact(e.pointOfContact ?? '');
+        const loadedFirstNameLabel = e.contactFirstNameLabel?.trim() ?? '';
+        const loadedLastNameLabel = e.contactLastNameLabel?.trim() ?? '';
+        const loadedEmailLabel = e.contactEmailLabel?.trim() ?? '';
+        setContactFirstNameLabel(loadedFirstNameLabel);
+        setContactLastNameLabel(loadedLastNameLabel);
+        setContactEmailLabel(loadedEmailLabel);
+        setShowContactLabelOverrides(
+          Boolean(loadedFirstNameLabel || loadedLastNameLabel || loadedEmailLabel),
+        );
         setTimespans(
           (e.timespans || []).map((ts: ApiEventTimespanRow) => ({
             startDt: toDateTimeLocal(ts.start_dt),
@@ -512,6 +537,9 @@ export default function AdminEventEditor() {
       allowGroupRegistration,
       maxGroupSize: maxGroupSize ? parseInt(maxGroupSize, 10) : null,
       enableWaitlist,
+      contactFirstNameLabel: normalizeContactFieldLabelOverride(contactFirstNameLabel),
+      contactLastNameLabel: normalizeContactFieldLabelOverride(contactLastNameLabel),
+      contactEmailLabel: normalizeContactFieldLabelOverride(contactEmailLabel),
       pointOfContact: pointOfContact.trim(),
       timespans: timespans
         .filter((ts) => ts.startDt && ts.endDt)
@@ -700,6 +728,9 @@ export default function AdminEventEditor() {
       currency: 'usd',
       allowGroupRegistration,
       maxGroupSize: maxGroupSize.trim() ? Number.parseInt(maxGroupSize, 10) : null,
+      contactFirstNameLabel: normalizeContactFieldLabelOverride(contactFirstNameLabel),
+      contactLastNameLabel: normalizeContactFieldLabelOverride(contactLastNameLabel),
+      contactEmailLabel: normalizeContactFieldLabelOverride(contactEmailLabel),
       registrationFields: previewFields,
     });
     if (!k) {
@@ -748,6 +779,9 @@ export default function AdminEventEditor() {
       } catch {
         return value;
       }
+    }
+    if (fieldType === 'preset_dietary_restrictions') {
+      return formatDietaryRestrictionsFieldDisplay(value);
     }
     return value;
   };
@@ -1770,6 +1804,85 @@ export default function AdminEventEditor() {
                 description="Keep labels clear and use required text consistently so the public registration form stays predictable."
                 surface="panel"
               >
+                <div>
+                  {!showContactLabelOverrides ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowContactLabelOverrides(true)}
+                      className="text-sm text-primary-teal-link hover:underline"
+                    >
+                      Override name and email labels
+                    </button>
+                  ) : (
+                    <div className="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Optional labels for the built-in contact fields on the registration form. Leave blank to use
+                          the defaults.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setContactFirstNameLabel('');
+                            setContactLastNameLabel('');
+                            setContactEmailLabel('');
+                            setShowContactLabelOverrides(false);
+                          }}
+                          className="shrink-0 text-sm text-primary-teal-link hover:underline"
+                        >
+                          Clear overrides
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <FormField
+                          label="First name label"
+                          htmlFor="contact-first-name-label-override"
+                          helperText={`Default: ${DEFAULT_CONTACT_FIRST_NAME_LABEL}`}
+                        >
+                          <input
+                            id="contact-first-name-label-override"
+                            type="text"
+                            value={contactFirstNameLabel}
+                            onChange={(e) => setContactFirstNameLabel(e.target.value)}
+                            placeholder={DEFAULT_CONTACT_FIRST_NAME_LABEL}
+                            className="app-input"
+                            maxLength={100}
+                          />
+                        </FormField>
+                        <FormField
+                          label="Last name label"
+                          htmlFor="contact-last-name-label-override"
+                          helperText={`Default: ${DEFAULT_CONTACT_LAST_NAME_LABEL}`}
+                        >
+                          <input
+                            id="contact-last-name-label-override"
+                            type="text"
+                            value={contactLastNameLabel}
+                            onChange={(e) => setContactLastNameLabel(e.target.value)}
+                            placeholder={DEFAULT_CONTACT_LAST_NAME_LABEL}
+                            className="app-input"
+                            maxLength={100}
+                          />
+                        </FormField>
+                        <FormField
+                          label="Email label"
+                          htmlFor="contact-email-label-override"
+                          helperText={`Default: ${DEFAULT_CONTACT_EMAIL_LABEL}`}
+                        >
+                          <input
+                            id="contact-email-label-override"
+                            type="text"
+                            value={contactEmailLabel}
+                            onChange={(e) => setContactEmailLabel(e.target.value)}
+                            placeholder={DEFAULT_CONTACT_EMAIL_LABEL}
+                            className="app-input"
+                            maxLength={100}
+                          />
+                        </FormField>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                   <div className="relative" ref={addFieldMenuRef}>
                     <Button
@@ -2014,7 +2127,9 @@ export default function AdminEventEditor() {
                               />
                             </FormField>
                           )}
-                          {(field.fieldType === 'dropdown' || field.fieldType === 'radio') && (
+                          {(field.fieldType === 'dropdown' ||
+                            field.fieldType === 'radio' ||
+                            field.fieldType === 'checkbox_list') && (
                             <FormField
                               label="Options"
                               htmlFor={`registration-field-options-${i}`}

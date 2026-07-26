@@ -112,6 +112,10 @@ export interface CreateEventInput {
   allowGroupRegistration?: boolean;
   maxGroupSize?: number | null;
   enableWaitlist?: boolean;
+  /** Optional public form label overrides for built-in contact fields. */
+  contactFirstNameLabel?: string | null;
+  contactLastNameLabel?: string | null;
+  contactEmailLabel?: string | null;
   termsArticleId?: number | null;
   /** Multi-select event type ids (empty allowed). */
   calendarTypeIds?: string[];
@@ -165,6 +169,9 @@ export interface UpdateEventInput {
   allowGroupRegistration?: boolean;
   maxGroupSize?: number | null;
   enableWaitlist?: boolean;
+  contactFirstNameLabel?: string | null;
+  contactLastNameLabel?: string | null;
+  contactEmailLabel?: string | null;
   termsArticleId?: number | null;
   calendarTypeIds?: string[];
   tournamentFormat?: TournamentFormat | null;
@@ -184,6 +191,12 @@ export interface UpdateEventInput {
     options?: string | null;
     sortOrder?: number;
   }>;
+}
+
+function normalizeOptionalLabel(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 export interface RegisterForEventInput {
@@ -320,6 +333,9 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
       allow_group_registration: input.allowGroupRegistration ? 1 : 0,
       max_group_size: input.maxGroupSize ?? null,
       enable_waitlist: input.enableWaitlist !== false ? 1 : 0,
+      contact_first_name_label: normalizeOptionalLabel(input.contactFirstNameLabel),
+      contact_last_name_label: normalizeOptionalLabel(input.contactLastNameLabel),
+      contact_email_label: normalizeOptionalLabel(input.contactEmailLabel),
       calendar_type_ids: serializeCalendarTypeIds(calendarTypeIds),
       tournament_format: tournamentFormat,
       tournament_teams_published: input.tournamentTeamsPublished ? 1 : 0,
@@ -424,6 +440,15 @@ export async function updateEvent(
   if (input.allowGroupRegistration !== undefined) updateValues.allow_group_registration = input.allowGroupRegistration ? 1 : 0;
   if (input.maxGroupSize !== undefined) updateValues.max_group_size = input.maxGroupSize;
   if (input.enableWaitlist !== undefined) updateValues.enable_waitlist = input.enableWaitlist ? 1 : 0;
+  if (input.contactFirstNameLabel !== undefined) {
+    updateValues.contact_first_name_label = normalizeOptionalLabel(input.contactFirstNameLabel);
+  }
+  if (input.contactLastNameLabel !== undefined) {
+    updateValues.contact_last_name_label = normalizeOptionalLabel(input.contactLastNameLabel);
+  }
+  if (input.contactEmailLabel !== undefined) {
+    updateValues.contact_email_label = normalizeOptionalLabel(input.contactEmailLabel);
+  }
   if (input.termsArticleId !== undefined) updateValues.terms_article_id = input.termsArticleId;
   if (input.calendarTypeIds !== undefined || input.tournamentFormat !== undefined) {
     const [row] = await db
@@ -1412,6 +1437,9 @@ export async function duplicateEvent(
     allowGroupRegistration: event.allow_group_registration === 1,
     maxGroupSize: event.max_group_size,
     enableWaitlist: event.enable_waitlist === 1,
+    contactFirstNameLabel: event.contact_first_name_label ?? null,
+    contactLastNameLabel: event.contact_last_name_label ?? null,
+    contactEmailLabel: event.contact_email_label ?? null,
     termsArticleId: event.terms_article_id,
     tournamentTeamsPublished: false,
     tournamentDrawPublished: false,

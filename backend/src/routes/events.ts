@@ -142,6 +142,9 @@ interface EventFormattingSource {
   allow_group_registration: number;
   max_group_size: number | null;
   enable_waitlist: number;
+  contact_first_name_label?: string | null;
+  contact_last_name_label?: string | null;
+  contact_email_label?: string | null;
   terms_article_id: number | null;
   payment_item_name?: string | null;
   point_of_contact: string;
@@ -174,6 +177,7 @@ const registrationFieldTypeSchema = z.enum([
   'text',
   'number',
   'checkbox',
+  'checkbox_list',
   'dropdown',
   'radio',
   'subheading',
@@ -184,6 +188,7 @@ const registrationFieldTypeSchema = z.enum([
   'preset_team_doubles',
   'preset_dob',
   'preset_bonspiel_comments',
+  'preset_dietary_restrictions',
 ]);
 
 const registrationFieldSchema = z.object({
@@ -221,6 +226,9 @@ const createEventSchema = z.object({
   allowGroupRegistration: z.boolean().optional(),
   maxGroupSize: z.number().int().positive().nullable().optional(),
   enableWaitlist: z.boolean().optional(),
+  contactFirstNameLabel: z.string().trim().max(100).nullable().optional(),
+  contactLastNameLabel: z.string().trim().max(100).nullable().optional(),
+  contactEmailLabel: z.string().trim().max(100).nullable().optional(),
   termsArticleId: z.number().int().nullable().optional(),
   calendarTypeIds: z.array(eventCalendarTypeIdSchema).optional(),
   tournamentFormat: tournamentFormatSchema.nullable().optional(),
@@ -547,6 +555,9 @@ async function formatManageRegistrationResponse(accessToken: string) {
       slug: event.slug,
       allowGroupRegistration: event.allow_group_registration,
       maxGroupSize: event.max_group_size,
+      contactFirstNameLabel: event.contact_first_name_label ?? null,
+      contactLastNameLabel: event.contact_last_name_label ?? null,
+      contactEmailLabel: event.contact_email_label ?? null,
       registrationFields: event.registrationFields ?? [],
       cancellationCutoff: event.cancellation_cutoff,
       pointOfContact: event.point_of_contact,
@@ -2422,6 +2433,9 @@ function formatEventResponse(event: EventFormattingSource) {
     allowGroupRegistration: event.allow_group_registration,
     maxGroupSize: event.max_group_size,
     enableWaitlist: event.enable_waitlist,
+    contactFirstNameLabel: event.contact_first_name_label ?? null,
+    contactLastNameLabel: event.contact_last_name_label ?? null,
+    contactEmailLabel: event.contact_email_label ?? null,
     termsArticleId: event.terms_article_id,
     pointOfContact: event.point_of_contact,
     createdByMemberId: event.created_by_member_id,
