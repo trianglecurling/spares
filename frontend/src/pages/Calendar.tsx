@@ -43,6 +43,7 @@ import {
   HiPlus,
   HiTrash,
 } from 'react-icons/hi2';
+import type { IconType } from 'react-icons';
 import api, { formatApiError } from '../utils/api';
 import AdminIceBookingEditor, {
   parseIceBookingId,
@@ -222,14 +223,36 @@ function eventBandTimeLabel(ev: CalendarEvent): string | null {
   return formatCompactTimeRange(ev.start, ev.end);
 }
 
+/**
+ * Compact location text for event bars only.
+ * Show when: (1) sole location is exterior, virtual, or offsite; or
+ * (2) 1–3 sheets are included (sheets only, omitting warm room / other places).
+ */
 function getEventBandLocationSummary(
   ev: CalendarEvent,
   sheetNameById: Map<number, string>
 ): string | null {
   const locs = ev.locations;
   if (!locs?.length) return null;
-  const s = formatEventLocationsSummary(locs, sheetNameById, sheetNameById.size);
-  return s || null;
+
+  const sheetLocs = locs.filter(
+    (loc): loc is Extract<EventLocation, { type: 'sheet' }> => loc.type === 'sheet'
+  );
+  const uniqueSheetCount = new Set(sheetLocs.map((loc) => loc.sheetId)).size;
+
+  if (uniqueSheetCount >= 1 && uniqueSheetCount <= 3) {
+    const s = formatEventLocationsSummary(sheetLocs, sheetNameById, sheetNameById.size);
+    return s || null;
+  }
+
+  if (uniqueSheetCount === 0 && locs.length === 1) {
+    const only = locs[0]!;
+    if (only.type === 'exterior' || only.type === 'virtual' || only.type === 'offsite') {
+      return getLocationLabel(only);
+    }
+  }
+
+  return null;
 }
 
 /** Horizontal band chips: type icon, title, optional location text, optional time (single calendar day only). */
@@ -287,6 +310,104 @@ function EventBandRowContent({
         </>
       )}
     </>
+  );
+}
+
+/**
+ * Day-view timed event label: icon never separates from title.
+ * Title(+location) and time share one line with a middle dot when they fit;
+ * otherwise time stacks on the next line with no dot.
+ */
+function DayTimedEventChipContent({
+  title,
+  locationLabel,
+  timeLabel,
+  Icon,
+  iconClassName = 'h-4 w-4 shrink-0',
+}: {
+  title: string;
+  locationLabel: string | null;
+  timeLabel: string | null;
+  Icon: IconType;
+  iconClassName?: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  // Prefer stacked until measurement proves the inline "+ · +" row fits.
+  const [stacked, setStacked] = useState(() => Boolean(timeLabel));
+  const primary = locationLabel ? `${title} · ${locationLabel}` : title;
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container) return;
+    if (!timeLabel || !measure) {
+      setStacked(false);
+      return;
+    }
+
+    const update = () => {
+      const available = container.clientWidth;
+      if (available <= 0) return;
+      const needed = measure.offsetWidth;
+      if (needed <= 0) return;
+      const nextStacked = needed > available + 0.5;
+      setStacked((prev) => (prev !== nextStacked ? nextStacked : prev));
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [primary, timeLabel]);
+
+  return (
+    <div ref={containerRef} className="relative w-full min-w-0">
+      {/* Full inline row at max-content width — source of truth for the fit check. */}
+      {timeLabel ? (
+        <div
+          ref={measureRef}
+          className="pointer-events-none absolute left-0 top-0 -z-10 flex w-max items-center gap-1.5 whitespace-nowrap opacity-0"
+          aria-hidden
+        >
+          <span className="inline-flex shrink-0">
+            <Icon className={iconClassName} />
+          </span>
+          <span className="font-medium">{primary}</span>
+          <span>·</span>
+          <span className="text-sm">{timeLabel}</span>
+        </div>
+      ) : null}
+
+      {stacked && timeLabel ? (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="inline-flex shrink-0">
+              <Icon className={iconClassName} />
+            </span>
+            <span className="min-w-0 truncate font-medium">{primary}</span>
+          </div>
+          <span className="min-w-0 truncate text-sm opacity-90">{timeLabel}</span>
+        </div>
+      ) : (
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+            <span className="inline-flex shrink-0">
+              <Icon className={iconClassName} />
+            </span>
+            <span className="min-w-0 truncate font-medium">{primary}</span>
+          </div>
+          {timeLabel ? (
+            <>
+              <span className="shrink-0 opacity-90" aria-hidden>
+                ·
+              </span>
+              <span className="shrink-0 truncate text-sm opacity-90">{timeLabel}</span>
+            </>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -437,6 +558,8 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const currentDate = useMemo(() => parseDateParam(dateParam), [dateParam]);
   const view = parseViewParam(viewParam);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const eventsRef = useRef<CalendarEvent[]>([]);
+  eventsRef.current = events;
   const [eventsLoading, setEventsLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [viewEventActiveTab, setViewEventActiveTab] = useState<'details' | 'description'>(
@@ -534,6 +657,9 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       .catch(() => {});
   }, [publicMode]);
 
+  const rangeStartMs = rangeStart.getTime();
+  const rangeEndMs = rangeEnd.getTime();
+
   useEffect(() => {
     type EventPayload = {
       id: string;
@@ -556,7 +682,9 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       leagueEvents: EventPayload[];
     };
 
-    const cacheKey = calendarRangeCacheKey(publicMode, rangeStart, rangeEnd);
+    const rangeStartDate = new Date(rangeStartMs);
+    const rangeEndDate = new Date(rangeEndMs);
+    const cacheKey = calendarRangeCacheKey(publicMode, rangeStartDate, rangeEndDate);
     const cached = getCachedCalendarRange<CalendarEvent>(cacheKey);
     if (cached) {
       setEvents(cached.events);
@@ -568,12 +696,14 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       // Stale-while-revalidate: keep showing cached events without a blocking overlay.
       setEventsLoading(false);
     } else {
-      setEventsLoading(true);
+      // Range changes (e.g. day↔compact week at the 767px breakpoint) should not flash a
+      // full-screen loader when we already have events on screen.
+      setEventsLoading(eventsRef.current.length === 0);
     }
 
     const abortController = new AbortController();
     const { signal } = abortController;
-    const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+    const rangeQuery = `start=${rangeStartDate.toISOString()}&end=${rangeEndDate.toISOString()}`;
 
     const applyLoaded = (nextEvents: CalendarEvent[], nextSheets?: Array<{ id: number; name: string }>) => {
       if (signal.aborted) return;
@@ -628,7 +758,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       });
 
     return () => abortController.abort();
-  }, [rangeStart, rangeEnd, publicMode]);
+  }, [rangeStartMs, rangeEndMs, publicMode]);
 
   const refreshEvents = () => {
     invalidateCalendarEventsCache();
@@ -762,9 +892,16 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     navigate(`/calendar/events/edit/${encodeURIComponent(ev.id)}`, { state: { calendarEvent: ev } });
   };
 
+  /** Day/week keep a fixed shell + internal scroll; month grows and scrolls the page. */
+  const lockViewport = view === 'day' || view === 'week';
+
   const calendarContent = (
     <>
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div
+        className={`flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 ${
+          lockViewport ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1'
+        }`}
+      >
         {/* Toolbar — compact on mobile, full controls from md up */}
         <div className="shrink-0 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
           {/* Mobile compact header */}
@@ -956,12 +1093,14 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
           </div>
         </div>
 
-        {/* Calendar grid — day/compact week scroll inside the view; month/desktop week may scroll here */}
+        {/* Calendar grid — day/week scroll inside the view; month fills leftover viewport, page scrolls if min height won't fit. */}
         <div
-          className={`flex-1 min-h-0 flex flex-col relative ${
-            view === 'day' || (view === 'week' && isCompactLayout)
-              ? 'overflow-hidden'
-              : 'overflow-auto'
+          className={`flex flex-col relative ${
+            lockViewport
+              ? view === 'day' || (view === 'week' && isCompactLayout)
+                ? 'flex-1 min-h-0 overflow-hidden'
+                : 'flex-1 min-h-0 overflow-auto'
+              : 'flex-1'
           }`}
         >
           {eventsLoading && (
@@ -1435,8 +1574,12 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   );
 
   return publicMode ? (
-    <PublicLayout fillViewport>
-      <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-8 flex-1 min-h-0 flex flex-col overflow-hidden">
+    <PublicLayout fillViewport={lockViewport}>
+      <div
+        className={`px-4 sm:px-6 lg:px-8 py-4 sm:py-8 flex flex-col ${
+          lockViewport ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1'
+        }`}
+      >
         {calendarContent}
       </div>
     </PublicLayout>
@@ -1446,8 +1589,38 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 }
 
 const ESTIMATED_EVENT_HEIGHT = 26;
-/** Slot height = event + space-y-0.5 gap, matches MonthDayEvents layout */
-const SLOT_HEIGHT = 28;
+/** space-y-0.5 between month day event rows */
+const EVENT_STACK_GAP_PX = 2;
+/** Slot stride used by multi-day band positioning (event + following gap). */
+const SLOT_HEIGHT = ESTIMATED_EVENT_HEIGHT + EVENT_STACK_GAP_PX;
+/** How many stacked event rows fit in a list of height `h` (accounts for N-1 gaps, not N). */
+function eventSlotsForHeight(h: number): number {
+  if (h <= 0) return 0;
+  return Math.max(0, Math.floor((h + EVENT_STACK_GAP_PX) / SLOT_HEIGHT));
+}
+/** Height consumed by `count` stacked event rows (or continuing placeholders). */
+function eventStackHeight(count: number): number {
+  if (count <= 0) return 0;
+  return count * ESTIMATED_EVENT_HEIGHT + (count - 1) * EVENT_STACK_GAP_PX;
+}
+/** Month cell chrome used for week row min-height (desktop month bars). */
+const MONTH_CELL_PADDING_Y_PX = 8; // p-1 top + bottom
+const MONTH_CELL_DATE_PX = 24; // h-6 date button
+const MONTH_CELL_EVENTS_MT_PX = 4; // mt-1 above event list
+/** "+N more" text-xs + py-0.5; padded for tablet/font metrics that run taller than 20px. */
+const MONTH_CELL_MORE_LINE_PX = 24;
+/** Extra room so 4 bars + more still fit when borders/subpixels eat space. */
+const MONTH_CELL_HEIGHT_SLACK_PX = 8;
+const MONTH_CELL_MIN_EVENT_SLOTS = 4;
+const MONTH_CELL_MIN_LIST_HEIGHT_PX = eventStackHeight(MONTH_CELL_MIN_EVENT_SLOTS);
+/** Min week-row height: date + 4 stacked bars + "+N more" (page/grid may scroll). */
+const MONTH_WEEK_MIN_ROW_PX =
+  MONTH_CELL_PADDING_Y_PX +
+  MONTH_CELL_DATE_PX +
+  MONTH_CELL_EVENTS_MT_PX +
+  MONTH_CELL_MIN_LIST_HEIGHT_PX +
+  MONTH_CELL_MORE_LINE_PX +
+  MONTH_CELL_HEIGHT_SLACK_PX;
 /** Compact mobile month: thin multi-day bars under the date number */
 const COMPACT_DATE_OFFSET_PX = 36;
 const COMPACT_BAND_HEIGHT_PX = 4;
@@ -1556,38 +1729,56 @@ function MonthDayEvents({
   onDayClick?: (day: Date) => void;
   onEmptyCellClick?: (day: Date) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [visibleCount, setVisibleCount] = useState(() => Math.min(4, events.length));
-  const lastHeightRef = useRef(-1);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const [visibleCount, setVisibleCount] = useState(() =>
+    Math.min(MONTH_CELL_MIN_EVENT_SLOTS, events.length)
+  );
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
+  // Fit from the cell stack root so "+N more" reservation isn't double-counted via list flex shrink.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
     const updateCount = () => {
-      const h = el.clientHeight;
-      if (h <= 0) return;
-      if (Math.abs(h - lastHeightRef.current) < 2) return;
-      lastHeightRef.current = h;
-      const totalSlots = Math.max(1, Math.floor(h / ESTIMATED_EVENT_HEIGHT));
-      const count = Math.max(0, totalSlots - continuingCount);
+      const rootH = root.clientHeight;
+      if (rootH <= 0) return;
+
+      const slotsIfNoMore = Math.max(0, eventSlotsForHeight(rootH) - continuingCount);
+      if (events.length <= slotsIfNoMore) {
+        setVisibleCount((prev) => (prev !== events.length ? events.length : prev));
+        return;
+      }
+
+      const moreH = moreRef.current?.offsetHeight || MONTH_CELL_MORE_LINE_PX;
+      const listH = Math.max(0, rootH - moreH);
+      const slotsWithMore = Math.max(0, eventSlotsForHeight(listH) - continuingCount);
+      // Row min-height guarantees room for 4 total slots; don't drop below that when overflow exists.
+      const count = Math.max(
+        0,
+        Math.min(
+          events.length,
+          Math.max(slotsWithMore, MONTH_CELL_MIN_EVENT_SLOTS - continuingCount)
+        )
+      );
       setVisibleCount((prev) => (prev !== count ? count : prev));
     };
     updateCount();
     const ro = new ResizeObserver(updateCount);
-    ro.observe(el);
+    ro.observe(root);
     return () => ro.disconnect();
-  }, [events.length, continuingCount]);
+    // Re-run when visibleCount changes so a newly mounted "+N more" can be measured.
+  }, [events.length, continuingCount, visibleCount]);
 
   const visibleEvents = events.slice(0, visibleCount);
   const overflowCount = events.length - visibleCount;
   const showOverflow = overflowCount > 0;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col mt-1">
+    <div ref={rootRef} className="mt-1 flex min-h-0 flex-1 flex-col">
       <div
-        ref={scrollRef}
         data-events-area
-        className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-0.5 ${onEmptyCellClick ? 'cursor-pointer [&:hover:not(:has(*:hover))]:bg-gray-100 dark:[&:hover:not(:has(*:hover))]:bg-gray-700/50 transition-colors' : ''}`}
+        className={`min-h-0 flex-1 overflow-hidden space-y-0.5 ${onEmptyCellClick ? 'cursor-pointer [&:hover:not(:has(*:hover))]:bg-gray-100 dark:[&:hover:not(:has(*:hover))]:bg-gray-700/50 transition-colors' : ''}`}
+        style={{ minHeight: MONTH_CELL_MIN_LIST_HEIGHT_PX }}
         onClick={(e) => {
           if (e.defaultPrevented) return;
           if (e.target === e.currentTarget) onEmptyCellClick?.(day);
@@ -1642,6 +1833,7 @@ function MonthDayEvents({
       </div>
       {showOverflow && (
         <button
+          ref={moreRef}
           type="button"
           onClick={(e) => {
             e.preventDefault();
@@ -1769,7 +1961,7 @@ function MonthView({
   };
 
   const weekdayLabels = compact ? ['S', 'M', 'T', 'W', 'T', 'F', 'S'] : WEEKDAYS;
-  const weekMinRowPx = 106;
+  const weekMinRowPx = MONTH_WEEK_MIN_ROW_PX;
   const compactBandStackPx =
     maxBandsPerWeek > 0
       ? maxBandsPerWeek * COMPACT_BAND_HEIGHT_PX + Math.max(0, maxBandsPerWeek - 1) * COMPACT_BAND_GAP_PX
@@ -1780,6 +1972,8 @@ function MonthView({
   );
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(compact ? 28 : 40);
+  const rowMinPx = compact ? compactMinRowPx : weekMinRowPx;
+  const monthGridMinHeightPx = headerHeight + weeks.length * rowMinPx;
 
   useEffect(() => {
     const el = headerRef.current;
@@ -1792,15 +1986,14 @@ function MonthView({
   }, [compact, weeks.length]);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col relative">
-      {/* Single grid: header row + week rows */}
+    <div className="relative flex w-full flex-1 flex-col" style={{ minHeight: monthGridMinHeightPx }}>
+      {/* Single grid: header row + week rows — grows with tall viewports, never below 4-bar min rows */}
       <div
-        className="flex-1 grid min-h-0 overflow-hidden"
+        className="grid h-full w-full flex-1"
         style={{
+          minHeight: monthGridMinHeightPx,
           gridTemplateColumns: 'repeat(7, 1fr)',
-          gridTemplateRows: compact
-            ? `auto repeat(${weeks.length}, minmax(${compactMinRowPx}px, 1fr))`
-            : `auto repeat(${weeks.length}, minmax(${weekMinRowPx}px, 1fr))`,
+          gridTemplateRows: `auto repeat(${weeks.length}, minmax(${rowMinPx}px, 1fr))`,
         }}
       >
         {/* Weekday headers */}
@@ -2845,31 +3038,12 @@ function DayView({
                   <div
                     className={`flex flex-col justify-center px-3 py-2 rounded-lg border ${type.color} h-full min-w-0 shadow-sm`}
                   >
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
-                      {(() => {
-                        const Icon = type.icon;
-                        const loc = getEventBandLocationSummary(ev, sheetNameById);
-                        const showTime = eventSpansSingleCalendarDay(ev);
-                        return (
-                          <>
-                            <Icon className="w-4 h-4 shrink-0" />
-                            <span className="font-medium truncate min-w-0">{ev.title}</span>
-                            {loc && (
-                              <>
-                                <span className="shrink-0">·</span>
-                                <span className="text-sm opacity-90 truncate min-w-0">{loc}</span>
-                              </>
-                            )}
-                            {showTime && (
-                              <>
-                                <span className="shrink-0">·</span>
-                                <span className="text-sm opacity-90 shrink-0">{timeLabel}</span>
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
+                    <DayTimedEventChipContent
+                      title={ev.title}
+                      locationLabel={getEventBandLocationSummary(ev, sheetNameById)}
+                      timeLabel={eventSpansSingleCalendarDay(ev) ? timeLabel : null}
+                      Icon={type.icon}
+                    />
                   </div>
                 </div>
               );

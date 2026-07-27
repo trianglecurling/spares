@@ -191,7 +191,7 @@ export default function PublicLayout({
   return (
     <div
       className={`public-shell flex flex-col ${
-        fillViewport ? 'h-dvh max-h-dvh overflow-hidden' : 'min-h-screen'
+        fillViewport ? 'h-dvh max-h-dvh overflow-hidden' : 'min-h-dvh'
       }`}
     >
       <SiteNavBar
@@ -280,7 +280,11 @@ export default function PublicLayout({
         }
       />
 
-      <main className={`flex-1 min-h-0 flex flex-col ${fillViewport ? 'overflow-hidden' : ''}`}>
+      <main
+        className={`flex flex-col ${
+          fillViewport ? 'min-h-0 flex-1 overflow-hidden' : 'flex-1'
+        }`}
+      >
         {children}
       </main>
 

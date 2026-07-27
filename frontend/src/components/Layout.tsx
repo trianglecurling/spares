@@ -92,7 +92,7 @@ export default function Layout({ children, fullWidth, fillViewport = false }: La
   return (
     <div
       className={`bg-gray-50 dark:bg-gray-900 flex flex-col ${
-        fillViewport ? 'h-dvh max-h-dvh overflow-hidden' : 'min-h-screen'
+        fillViewport ? 'h-dvh max-h-dvh overflow-hidden' : 'min-h-dvh'
       }`}
     >
       <SiteNavBar
@@ -143,12 +143,12 @@ export default function Layout({ children, fullWidth, fillViewport = false }: La
       />
 
       <main
-        className={`mx-auto px-4 sm:px-6 lg:px-8 w-full min-h-0 ${
-          fillViewport ? 'flex-1 overflow-hidden py-4 sm:py-8' : 'flex-grow py-8'
-        } ${
-          fullWidth || fillViewport
-            ? 'max-w-full flex flex-col overflow-hidden'
-            : 'max-w-6xl'
+        className={`mx-auto px-4 sm:px-6 lg:px-8 w-full ${
+          fillViewport
+            ? 'min-h-0 flex-1 overflow-hidden py-4 sm:py-8 max-w-full flex flex-col'
+            : fullWidth
+              ? 'flex-1 py-8 max-w-full flex flex-col'
+              : 'flex-1 py-8 max-w-6xl'
         }`}
       >
         {children}

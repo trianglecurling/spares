@@ -39,9 +39,11 @@ import {
   customFieldTypeLabel,
   PRESET_LABELS,
   addDietaryCombinationCounts,
+  countDietaryCombinationsFromDietaryFieldValue,
   countDietaryCombinationsFromTeamValue,
   emptyDietaryCombinationCounts,
   formatDietaryRestrictionsFieldDisplay,
+  isDietaryRestrictionsPresetFieldType,
   isPresetFieldType,
   isSubheadingFieldType,
   isTeamPresetFieldType,
@@ -905,8 +907,9 @@ export default function AdminEventEditor() {
     () =>
       registrationFields.some(
         (field) =>
-          isTeamPresetFieldType(field.fieldType) &&
-          parseTeamFieldOptions(field.options).collectDietaryRestrictions,
+          isDietaryRestrictionsPresetFieldType(field.fieldType) ||
+          (isTeamPresetFieldType(field.fieldType) &&
+            parseTeamFieldOptions(field.options).collectDietaryRestrictions),
       ),
     [registrationFields],
   );
@@ -918,12 +921,20 @@ export default function AdminEventEditor() {
         isTeamPresetFieldType(field.fieldType) &&
         parseTeamFieldOptions(field.options).collectDietaryRestrictions,
     );
+    const dietaryFields = registrationFields.filter((field) =>
+      isDietaryRestrictionsPresetFieldType(field.fieldType),
+    );
     let totals = emptyDietaryCombinationCounts();
     for (const registration of registrations) {
       if (registration.status === 'cancelled') continue;
       for (const field of teamFieldsWithDietary) {
         const raw = getRegistrationFieldGroupRawValue(registration, field);
         totals = addDietaryCombinationCounts(totals, countDietaryCombinationsFromTeamValue(raw));
+      }
+      for (const field of dietaryFields) {
+        for (const raw of getRegistrationFieldRawValues(registration, field)) {
+          totals = addDietaryCombinationCounts(totals, countDietaryCombinationsFromDietaryFieldValue(raw));
+        }
       }
     }
     return totals;
@@ -2337,8 +2348,7 @@ export default function AdminEventEditor() {
                   </dl>
                 )}
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Counts include active registrations only. Each player is counted once in the combination that matches
-                  all of their selected restrictions.
+                  Counts include active registrations only.
                 </p>
               </div>
             ) : null}
@@ -2699,6 +2709,18 @@ function formatDateTime24(value: string): string {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${month}/${day}/${year} ${hours}:${minutes}`;
+}
+
+function getRegistrationFieldRawValues(registration: Registration, field: RegistrationField): string[] {
+  const targetFieldId = Number(field.id);
+  if (!Number.isFinite(targetFieldId)) return [];
+  return registration.fieldValues
+    .filter((fv) => {
+      const rawFieldId = fv.field_id ?? fv.fieldId;
+      return Number(rawFieldId) === targetFieldId;
+    })
+    .map((fv) => fv.value ?? '')
+    .filter((value) => value.trim().length > 0);
 }
 
 function getRegistrationFieldGroupRawValue(registration: Registration, field: RegistrationField): string {

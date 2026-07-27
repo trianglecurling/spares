@@ -309,3 +309,25 @@ export function formatDietaryRestrictionsFieldDisplay(value: string): string {
   }
   return parts.join(', ');
 }
+
+/**
+ * Meal-combination counts for a standalone `preset_dietary_restrictions` value.
+ * Freeform `other` is ignored (shown on individual registration rows only).
+ */
+export function countDietaryCombinationsFromDietaryFieldValue(
+  value: string,
+): Record<DietaryCombinationKey, number> {
+  const counts = emptyDietaryCombinationCounts();
+  const parsed = parseDietaryRestrictionsFieldValue(value);
+  const combo = dietaryCombinationKeyFromFlags(
+    parsed.vegetarian === true,
+    parsed.dairyFree === true,
+    parsed.glutenFree === true,
+  );
+  if (combo) counts[combo] += 1;
+  return counts;
+}
+
+export function isDietaryRestrictionsPresetFieldType(ft: string): boolean {
+  return ft === 'preset_dietary_restrictions';
+}

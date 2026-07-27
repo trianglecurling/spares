@@ -17,11 +17,11 @@ const FULL_WIDTH_ROUTE_PATTERNS = [
   '/admin/events/:id/details',
 ] as const;
 
-/** Paths that lock the shell to the viewport (internal scroll only). */
+/** Paths that can lock the shell to the viewport (day/week calendar only; month scrolls the page). */
 const FILL_VIEWPORT_ROUTE_PATTERNS = ['/calendar'] as const;
 
 function useAppShellLayoutOptions() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   const bare = BARE_ROUTE_PATTERNS.some((pattern) =>
     matchPath({ path: pattern, end: true }, pathname),
@@ -31,9 +31,12 @@ function useAppShellLayoutOptions() {
     matchPath({ path: pattern, end: pattern !== '/calendar/*' }, pathname),
   );
 
-  const fillViewport = FILL_VIEWPORT_ROUTE_PATTERNS.some((pattern) =>
-    matchPath({ path: pattern, end: true }, pathname),
-  );
+  const calendarView = new URLSearchParams(search).get('view');
+  const calendarLocksViewport = calendarView === 'day' || calendarView === 'week';
+  const fillViewport =
+    FILL_VIEWPORT_ROUTE_PATTERNS.some((pattern) =>
+      matchPath({ path: pattern, end: true }, pathname),
+    ) && calendarLocksViewport;
 
   return { bare, fullWidth, fillViewport };
 }
