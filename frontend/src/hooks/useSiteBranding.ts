@@ -8,8 +8,15 @@ import {
 export interface SiteBranding {
   clubName: string | null;
   logoUrl: string | null;
+  wordmarkUrl: string | null;
   isPreviewDatabase: boolean;
 }
+
+type SiteBrandingConfig = {
+  clubName?: string | null;
+  logoUrl?: string | null;
+  wordmarkUrl?: string | null;
+};
 
 let cachedBranding: SiteBranding | null = null;
 
@@ -22,12 +29,13 @@ function notifySiteBrandingSynced(): void {
 }
 
 export function syncSiteBrandingFromConfig(
-  config: { clubName?: string | null; logoUrl?: string | null } | null | undefined,
+  config: SiteBrandingConfig | null | undefined,
 ): void {
   if (!config) return;
   cachedBranding = {
     clubName: config.clubName ?? null,
     logoUrl: config.logoUrl ?? null,
+    wordmarkUrl: config.wordmarkUrl ?? null,
     isPreviewDatabase: cachedBranding?.isPreviewDatabase ?? false,
   };
 }
@@ -35,7 +43,7 @@ export function syncSiteBrandingFromConfig(
 export function syncSiteBrandingFromBootstrap(
   data:
     | {
-        siteConfig?: { clubName?: string | null; logoUrl?: string | null } | null;
+        siteConfig?: SiteBrandingConfig | null;
         isPreviewDatabase?: boolean;
       }
     | null
@@ -45,6 +53,7 @@ export function syncSiteBrandingFromBootstrap(
   cachedBranding = {
     clubName: data.siteConfig?.clubName ?? null,
     logoUrl: data.siteConfig?.logoUrl ?? null,
+    wordmarkUrl: data.siteConfig?.wordmarkUrl ?? null,
     isPreviewDatabase: data.isPreviewDatabase === true,
   };
   notifySiteBrandingSynced();
@@ -57,7 +66,7 @@ export function useSiteBranding(): { branding: SiteBranding | null; loading: boo
   const loadBranding = useCallback(() => {
     return api
       .get<{
-        siteConfig?: { clubName?: string | null; logoUrl?: string | null } | null;
+        siteConfig?: SiteBrandingConfig | null;
         isPreviewDatabase?: boolean;
       }>('/public/bootstrap', publicBootstrapFetchConfig)
       .then((response) => {
@@ -67,7 +76,12 @@ export function useSiteBranding(): { branding: SiteBranding | null; loading: boo
       })
       .catch(() => {
         if (!cachedBranding) {
-          cachedBranding = { clubName: null, logoUrl: null, isPreviewDatabase: false };
+          cachedBranding = {
+            clubName: null,
+            logoUrl: null,
+            wordmarkUrl: null,
+            isPreviewDatabase: false,
+          };
         }
         setBranding(cachedBranding);
         setLoading(false);

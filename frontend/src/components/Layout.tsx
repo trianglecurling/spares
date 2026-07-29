@@ -99,6 +99,7 @@ export default function Layout({ children, fullWidth, fillViewport = false }: La
         headerRef={headerRef}
         clubName={clubName}
         logoUrl={branding?.logoUrl ?? null}
+        wordmarkUrl={branding?.wordmarkUrl ?? null}
         brandingLoading={brandingLoading}
         isPreviewDatabase={branding?.isPreviewDatabase}
         subtitle="members-area"

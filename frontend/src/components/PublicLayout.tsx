@@ -29,6 +29,7 @@ const DEFAULT_CONTACT_EMAIL_DOMAIN = 'trianglecurling.com';
 interface SiteConfig {
   clubName: string | null;
   logoUrl: string | null;
+  wordmarkUrl: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
   physicalAddressLine1: string | null;
@@ -146,6 +147,7 @@ export default function PublicLayout({
           cachedSiteConfig = {
             clubName: null,
             logoUrl: null,
+            wordmarkUrl: null,
             contactEmail: null,
             contactPhone: null,
             physicalAddressLine1: null,
@@ -197,6 +199,7 @@ export default function PublicLayout({
       <SiteNavBar
         clubName={clubName}
         logoUrl={siteConfig?.logoUrl ?? null}
+        wordmarkUrl={siteConfig?.wordmarkUrl ?? branding?.wordmarkUrl ?? null}
         brandingLoading={!publicDataReady}
         isPreviewDatabase={branding?.isPreviewDatabase}
         backToHome={backToHome}

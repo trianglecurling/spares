@@ -18,6 +18,7 @@ export type MenuItemNode = {
 type PublicSiteConfig = {
   clubName: string | null;
   logoUrl: string | null;
+  wordmarkUrl: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
   physicalAddressLine1: string | null;
@@ -175,6 +176,7 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
     return {
       clubName: null,
       logoUrl: null,
+      wordmarkUrl: null,
       contactEmail: null,
       contactPhone: null,
       physicalAddressLine1: null,
@@ -194,6 +196,7 @@ export async function getPublicSiteConfig(): Promise<PublicSiteConfig> {
   return {
     clubName: siteConfig.club_name ?? null,
     logoUrl: siteConfig.logo_url ?? null,
+    wordmarkUrl: siteConfig.wordmark_url ?? null,
     contactEmail: siteConfig.contact_email ?? null,
     contactPhone: siteConfig.contact_phone ?? null,
     physicalAddressLine1: siteConfig.physical_address_line1 ?? null,

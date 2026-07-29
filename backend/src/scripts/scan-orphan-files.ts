@@ -42,6 +42,7 @@ async function main() {
 
   const siteConfig = siteConfigRows[0];
   for (const id of extractReferencedFileIds(siteConfig?.logo_url)) referencedIds.add(id);
+  for (const id of extractReferencedFileIds(siteConfig?.wordmark_url)) referencedIds.add(id);
   for (const id of extractReferencedFileIds(siteConfig?.footer_markdown)) referencedIds.add(id);
 
   for (const item of showcaseImages) {

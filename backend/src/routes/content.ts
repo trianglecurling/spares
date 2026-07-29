@@ -76,6 +76,7 @@ const optionalAbsoluteOrRootRelativeUrlSchema = z
 const siteConfigBodySchema = z.object({
   clubName: z.string().nullable().optional(),
   logoUrl: optionalAbsoluteOrRootRelativeUrlSchema,
+  wordmarkUrl: optionalAbsoluteOrRootRelativeUrlSchema,
   contactEmail: z.string().nullable().optional(),
   contactPhone: z.string().nullable().optional(),
   physicalAddressLine1: z.string().nullable().optional(),
@@ -1124,6 +1125,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
       return {
         clubName: null,
         logoUrl: null,
+        wordmarkUrl: null,
         contactEmail: null,
         contactPhone: null,
         physicalAddressLine1: null,
@@ -1141,6 +1143,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
     return {
       clubName: row.club_name ?? null,
       logoUrl: row.logo_url ?? null,
+      wordmarkUrl: row.wordmark_url ?? null,
       contactEmail: row.contact_email ?? null,
       contactPhone: row.contact_phone ?? null,
       physicalAddressLine1: row.physical_address_line1 ?? null,
@@ -1166,6 +1169,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
     const updates: Record<string, unknown> = {};
     if (parsed.data.clubName !== undefined) updates.club_name = parsed.data.clubName;
     if (parsed.data.logoUrl !== undefined) updates.logo_url = parsed.data.logoUrl;
+    if (parsed.data.wordmarkUrl !== undefined) updates.wordmark_url = parsed.data.wordmarkUrl;
     if (parsed.data.contactEmail !== undefined) updates.contact_email = parsed.data.contactEmail;
     if (parsed.data.contactPhone !== undefined) updates.contact_phone = parsed.data.contactPhone;
     if (parsed.data.physicalAddressLine1 !== undefined) updates.physical_address_line1 = parsed.data.physicalAddressLine1;
@@ -1199,6 +1203,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
     return {
       clubName: r.club_name ?? null,
       logoUrl: r.logo_url ?? null,
+      wordmarkUrl: r.wordmark_url ?? null,
       contactEmail: r.contact_email ?? null,
       contactPhone: r.contact_phone ?? null,
       physicalAddressLine1: r.physical_address_line1 ?? null,

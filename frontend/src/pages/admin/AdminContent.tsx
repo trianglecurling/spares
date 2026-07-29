@@ -208,6 +208,7 @@ export default function AdminContent() {
   const [siteConfig, setSiteConfig] = useState<{
     clubName: string | null;
     logoUrl: string | null;
+    wordmarkUrl: string | null;
     contactEmail: string | null;
     contactPhone: string | null;
     physicalAddressLine1: string | null;
@@ -1326,6 +1327,20 @@ export default function AdminContent() {
                     value={siteConfig.logoUrl ?? ''}
                     onChange={(e) => setSiteConfig({ ...siteConfig, logoUrl: e.target.value || null })}
                     placeholder="https://example.com/logo.png or /images/logo.png"
+                    className="app-input"
+                  />
+                </FormField>
+                <FormField
+                  label="Wordmark URL"
+                  htmlFor={`${formFieldId}-site-wordmark-url`}
+                  helperText="Replaces the club name text in the site header. Club name is still used for alt text and other labels."
+                >
+                  <input
+                    id={`${formFieldId}-site-wordmark-url`}
+                    type="text"
+                    value={siteConfig.wordmarkUrl ?? ''}
+                    onChange={(e) => setSiteConfig({ ...siteConfig, wordmarkUrl: e.target.value || null })}
+                    placeholder="https://example.com/wordmark.svg or /images/wordmark.svg"
                     className="app-input"
                   />
                 </FormField>

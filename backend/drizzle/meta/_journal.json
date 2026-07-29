@@ -253,6 +253,13 @@
       "when": 1780352498477,
       "tag": "0036_add_event_contact_field_labels",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1780352498478,
+      "tag": "0037_add_site_config_wordmark_url",
+      "breakpoints": true
     }
   ]
 }

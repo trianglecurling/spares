@@ -5,16 +5,17 @@ import { HiHome } from 'react-icons/hi2';
 export interface SiteNavBarProps {
   clubName: string;
   logoUrl: string | null;
+  wordmarkUrl?: string | null;
   brandingLoading?: boolean;
-  /** Shown below the club name in the brand link. */
+  /** Shown below the club name / wordmark in the brand link. */
   subtitle?: 'members-area';
-  /** Destination for the logo + club name block. Defaults to `/`. */
+  /** Destination for the logo + club name / wordmark block. Defaults to `/`. */
   brandTo?: string;
   /** Circular home icon before desktop nav items (logged-in layout; links to `/`). */
   showPublicHomeLink?: boolean;
   /** Replace logo + club name with a back link. */
   backToHome?: boolean;
-  /** When true, club name is shown in red to indicate a preview database connection. */
+  /** When true, brand text (or wordmark ring) indicates a preview database connection. */
   isPreviewDatabase?: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -29,6 +30,7 @@ export interface SiteNavBarProps {
 export default function SiteNavBar({
   clubName,
   logoUrl,
+  wordmarkUrl = null,
   brandingLoading = false,
   subtitle,
   brandTo = '/',
@@ -43,10 +45,20 @@ export default function SiteNavBar({
   trailingAuth,
   headerRef,
 }: SiteNavBarProps) {
+  const hasBrandIdentity = Boolean(clubName || wordmarkUrl);
   const brandText = (
     <span className="flex min-w-0 flex-col">
-      {brandingLoading && !clubName ? (
+      {brandingLoading && !hasBrandIdentity ? (
         <span className="h-5 w-40 rounded bg-gray-100 dark:bg-gray-700" aria-hidden />
+      ) : wordmarkUrl ? (
+        <img
+          src={wordmarkUrl}
+          alt={clubName || 'Home'}
+          title={isPreviewDatabase ? 'Preview database' : clubName || undefined}
+          className={`h-auto w-[140px] object-contain object-left ${
+            isPreviewDatabase ? 'rounded-sm ring-2 ring-red-500 ring-offset-1 dark:ring-offset-gray-800' : ''
+          }`}
+        />
       ) : (
         <span
           className={`truncate text-lg font-semibold tracking-tight sm:text-xl ${
