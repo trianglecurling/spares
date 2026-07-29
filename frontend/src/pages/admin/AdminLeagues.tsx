@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { HiChevronDown } from 'react-icons/hi2';
+import { HiChevronDown, HiOutlineCalendarDays, HiOutlineClock } from 'react-icons/hi2';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { get, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
@@ -41,6 +41,12 @@ function leagueFormatCardLabel(format: LeagueListPlayFormat): string {
   if (format === 'doubles') return 'Doubles';
   return 'Teams';
 }
+
+const LEAGUE_FORMAT_PILL_CLASSES: Record<LeagueListPlayFormat, string> = {
+  teams: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200',
+  doubles: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200',
+  instructional: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200',
+};
 
 interface League {
   id: number;
@@ -337,14 +343,36 @@ export default function Leagues() {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
-  // Helper to format date for display, handling timezone offset
-  const formatDateDisplay = (dateString: string) => {
-    if (!dateString) return '';
-    // Create date object and adjust for timezone offset to display correct local date
+  // Parse a date string as a local calendar date, compensating for timezone offset
+  const parseLocalDate = (dateString: string): Date | null => {
+    if (!dateString) return null;
     const date = new Date(dateString);
-    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-    const adjustedDate = new Date(date.getTime() + userTimezoneOffset);
-    return adjustedDate.toLocaleDateString();
+    if (isNaN(date.getTime())) return null;
+    return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+  };
+
+  const formatDateDisplay = (dateString: string) => {
+    const date = parseLocalDate(dateString);
+    return date ? date.toLocaleDateString() : '';
+  };
+
+  // Compact "Oct 8 – Dec 17, 2025" range, omitting the start year when both ends share it
+  const formatDateRangeCompact = (startStr: string, endStr: string) => {
+    const start = parseLocalDate(startStr);
+    const end = parseLocalDate(endStr);
+    if (!start || !end) return '';
+    const sameYear = start.getFullYear() === end.getFullYear();
+    const startText = start.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    });
+    const endText = end.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    return `${startText} – ${endText}`;
   };
 
   const buildLeagueDrawOccurrences = (league: League) => {
@@ -565,44 +593,47 @@ export default function Leagues() {
     ));
 
   const renderLeagueGrid = (list: League[]) => (
-    <div className="grid gap-4">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {list.map((league) => (
-        <div key={league.id} className="app-card p-6">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <Link
-                to={`/leagues/${league.id}`}
-                className="mb-2 inline-block text-left text-xl font-semibold text-primary-teal-link hover:underline"
+        <div key={league.id} className="app-card flex flex-col gap-3 p-5">
+          <div className="flex items-start justify-between gap-3">
+            <Link
+              to={`/leagues/${league.id}`}
+              className="min-w-0 text-lg font-semibold leading-snug text-primary-teal-link hover:underline"
+            >
+              {league.name}
+            </Link>
+            <span
+              className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${LEAGUE_FORMAT_PILL_CLASSES[league.format] ?? LEAGUE_FORMAT_PILL_CLASSES.teams}`}
+            >
+              {leagueFormatCardLabel(league.format)}
+            </span>
+          </div>
+          <div className="space-y-1.5 text-sm text-gray-600 dark:text-gray-400">
+            <p className="flex items-center gap-2">
+              <HiOutlineClock className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="font-medium text-gray-800 dark:text-gray-200">
+                  {getDayName(league.dayOfWeek)}s
+                </span>
+                {' · '}
+                {league.drawTimes.map(formatTime).join(', ')}
+              </span>
+            </p>
+            <p className="flex items-center gap-2">
+              <HiOutlineCalendarDays
+                className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500"
+                aria-hidden="true"
+              />
+              <button
+                type="button"
+                onClick={() => setDatesDialogLeague(league)}
+                className="rounded text-left text-primary-teal-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40"
+                aria-label={`View draw dates for ${league.name}, ${formatDateDisplay(league.startDate)} to ${formatDateDisplay(league.endDate)}`}
               >
-                {league.name}
-              </Link>
-              <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                <p>
-                  <span className="font-medium dark:text-gray-300">Day:</span> {getDayName(league.dayOfWeek)}
-                </p>
-                <p>
-                  <span className="font-medium dark:text-gray-300">
-                    {league.drawTimes.length === 1 ? 'Time' : 'Times'}:
-                  </span>{' '}
-                  {league.drawTimes.map(formatTime).join(', ')}
-                </p>
-                <p>
-                  <span className="font-medium dark:text-gray-300">Format:</span>{' '}
-                  {leagueFormatCardLabel(league.format)}
-                </p>
-                <p>
-                  <span className="font-medium dark:text-gray-300">Season:</span>{' '}
-                  <button
-                    type="button"
-                    onClick={() => setDatesDialogLeague(league)}
-                    className="text-primary-teal-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 rounded"
-                    aria-label={`View draw dates for ${league.name}, ${formatDateDisplay(league.startDate)} to ${formatDateDisplay(league.endDate)}`}
-                  >
-                    {formatDateDisplay(league.startDate)} – {formatDateDisplay(league.endDate)}
-                  </button>
-                </p>
-              </div>
-            </div>
+                {formatDateRangeCompact(league.startDate, league.endDate)}
+              </button>
+            </p>
           </div>
         </div>
       ))}
@@ -674,7 +705,7 @@ export default function Leagues() {
         ) : filteredLeagues.length === 0 ? (
           <AppStateCard title={emptyFilteredMessage.title} description={emptyFilteredMessage.detail} />
         ) : (
-          <div className="space-y-10">
+          <div className="space-y-8">
             {myLeagues.length > 0 ? (
               <section className="space-y-4" aria-labelledby="leagues-my-heading">
                 <h2 id="leagues-my-heading" className="app-section-title">

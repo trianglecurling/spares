@@ -143,6 +143,15 @@ interface RegistrationSession {
   id: number;
   name: string;
   seasonId: number;
+  startDate: string;
+  endDate: string;
+}
+
+interface RegistrationSeason {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
 }
 
 interface Division {
@@ -308,6 +317,9 @@ export default function LeagueDetail() {
   const [league, setLeague] = useState<League | null>(null);
   const [allLeagues, setAllLeagues] = useState<League[]>([]);
   const [registrationSessions, setRegistrationSessions] = useState<RegistrationSession[]>([]);
+  const [registrationSeasons, setRegistrationSeasons] = useState<RegistrationSeason[]>([]);
+  const [predecessorSeasonId, setPredecessorSeasonId] = useState<number | null>(null);
+  const [predecessorSessionId, setPredecessorSessionId] = useState<number | null>(null);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
@@ -472,7 +484,73 @@ export default function LeagueDetail() {
     get('/registration-config/sessions')
       .then((response) => setRegistrationSessions(response as RegistrationSession[]))
       .catch(() => {});
+    get('/registration-config/seasons')
+      .then((response) => setRegistrationSeasons(response as RegistrationSeason[]))
+      .catch(() => {});
   }, [canEditLeagueConfiguration]);
+
+  // A predecessor league must come from a session prior to this league's assigned session.
+  const predecessorEligibleSessions = useMemo(() => {
+    const currentSessionId = leagueForm.sessionId || null;
+    const currentSession =
+      currentSessionId != null
+        ? (registrationSessions.find((s) => s.id === currentSessionId) ?? null)
+        : null;
+    return registrationSessions
+      .filter((s) => {
+        if (currentSessionId != null && s.id === currentSessionId) return false;
+        if (currentSession) {
+          return (
+            s.startDate < currentSession.startDate ||
+            (s.startDate === currentSession.startDate && s.id < currentSession.id)
+          );
+        }
+        return true;
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id);
+  }, [registrationSessions, leagueForm.sessionId]);
+
+  const predecessorSeasonOptions = useMemo<ChoiceOption<number>[]>(() => {
+    const seasonIdsWithEligibleSessions = new Set(
+      predecessorEligibleSessions.map((s) => s.seasonId)
+    );
+    return [...registrationSeasons]
+      .filter((season) => seasonIdsWithEligibleSessions.has(season.id))
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id)
+      .map((season) => ({ value: season.id, label: season.name }));
+  }, [registrationSeasons, predecessorEligibleSessions]);
+
+  const predecessorSessionOptions = useMemo<ChoiceOption<number>[]>(() => {
+    if (predecessorSeasonId == null) return [];
+    return predecessorEligibleSessions
+      .filter((s) => s.seasonId === predecessorSeasonId)
+      .map((s) => ({ value: s.id, label: s.name }));
+  }, [predecessorEligibleSessions, predecessorSeasonId]);
+
+  const predecessorLeagueOptions = useMemo<ChoiceOption<number>[]>(() => {
+    const options: ChoiceOption<number>[] = [{ value: 0, label: 'None' }];
+    if (predecessorSessionId != null) {
+      options.push(
+        ...allLeagues
+          .filter((l) => l.sessionId === predecessorSessionId && l.id !== numericLeagueId)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((l) => ({ value: l.id, label: l.name }))
+      );
+    }
+    return options;
+  }, [allLeagues, predecessorSessionId, numericLeagueId]);
+
+  // Keep the season/session pickers in sync with the saved predecessor once data loads.
+  useEffect(() => {
+    const predecessorId = leagueForm.predecessorLeagueId;
+    if (!predecessorId) return;
+    const predecessor = allLeagues.find((l) => l.id === predecessorId);
+    if (!predecessor?.sessionId) return;
+    const session = registrationSessions.find((s) => s.id === predecessor.sessionId);
+    if (!session) return;
+    setPredecessorSeasonId(session.seasonId);
+    setPredecessorSessionId(session.id);
+  }, [leagueForm.predecessorLeagueId, allLeagues, registrationSessions]);
 
   useEffect(() => {
     if (!canEditLeagueConfiguration || normalizedTab !== 'configuration') return;
@@ -2402,27 +2480,76 @@ export default function LeagueDetail() {
                     </div>
                   </div>
 
-                  <div>
-                    <label htmlFor="leagueCfgPredecessorLeagueId" className="app-label">
-                      Predecessor league
-                    </label>
-                    <ChoiceInput<number>
-                      inputId="leagueCfgPredecessorLeagueId"
-                      options={[
-                        { value: 0, label: 'None' },
-                        ...allLeagues
-                          .filter((l) => l.id !== numericLeagueId)
-                          .map((l) => ({ value: l.id, label: l.name })),
-                      ]}
-                      value={leagueForm.predecessorLeagueId}
-                      onChange={(next) => {
-                        if (next != null && !Array.isArray(next)) {
-                          setLeagueForm({ ...leagueForm, predecessorLeagueId: next });
-                        }
-                      }}
-                      listboxLabel="Predecessor league"
-                    />
-                  </div>
+                  <fieldset className="min-w-0 space-y-2 border-0 p-0">
+                    <legend className="app-label">Predecessor league</legend>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      The league this one continues from.
+                    </p>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <FormField label="Season" htmlFor="leagueCfgPredecessorSeason">
+                        <ChoiceInput<number>
+                          inputId="leagueCfgPredecessorSeason"
+                          options={predecessorSeasonOptions}
+                          value={predecessorSeasonId}
+                          onChange={(next) => {
+                            const value = next != null && !Array.isArray(next) ? next : null;
+                            setPredecessorSeasonId(value);
+                            setPredecessorSessionId(null);
+                            setLeagueForm((prev) =>
+                              prev.predecessorLeagueId ? { ...prev, predecessorLeagueId: 0 } : prev
+                            );
+                          }}
+                          listboxLabel="Predecessor season"
+                          placeholder={
+                            predecessorSeasonOptions.length === 0 ? 'No prior sessions' : 'Season…'
+                          }
+                          disabled={predecessorSeasonOptions.length === 0}
+                        />
+                      </FormField>
+                      <FormField label="Session" htmlFor="leagueCfgPredecessorSession">
+                        <ChoiceInput<number>
+                          inputId="leagueCfgPredecessorSession"
+                          options={predecessorSessionOptions}
+                          value={predecessorSessionId}
+                          onChange={(next) => {
+                            const value = next != null && !Array.isArray(next) ? next : null;
+                            setPredecessorSessionId(value);
+                            setLeagueForm((prev) =>
+                              prev.predecessorLeagueId ? { ...prev, predecessorLeagueId: 0 } : prev
+                            );
+                          }}
+                          listboxLabel="Predecessor session"
+                          placeholder={
+                            predecessorSeasonId == null
+                              ? 'Pick a season first'
+                              : predecessorSessionOptions.length === 0
+                                ? 'No sessions'
+                                : 'Session…'
+                          }
+                          disabled={
+                            predecessorSeasonId == null || predecessorSessionOptions.length === 0
+                          }
+                        />
+                      </FormField>
+                      <FormField label="League" htmlFor="leagueCfgPredecessorLeagueId">
+                        <ChoiceInput<number>
+                          inputId="leagueCfgPredecessorLeagueId"
+                          options={predecessorLeagueOptions}
+                          value={leagueForm.predecessorLeagueId}
+                          onChange={(next) => {
+                            if (next != null && !Array.isArray(next)) {
+                              setLeagueForm({ ...leagueForm, predecessorLeagueId: next });
+                            }
+                          }}
+                          listboxLabel="Predecessor league"
+                          placeholder={
+                            predecessorSessionId == null ? 'Pick a session first' : undefined
+                          }
+                          disabled={predecessorSessionId == null}
+                        />
+                      </FormField>
+                    </div>
+                  </fieldset>
                 </div>
 
                 <div className="flex flex-wrap gap-3 pt-2">
