@@ -11,10 +11,11 @@ type MembershipCardPayload = {
     validThrough: string | null;
   };
   icePrivilegesValidThrough: string | null;
+  pendingRegistrationPayment: boolean;
   leagues: Array<{
     leagueId: number;
     leagueName: string;
-    participation: 'roster' | 'sabbatical' | 'waitlist';
+    participation: 'roster' | 'sabbatical' | 'waitlist' | 'pending';
   }>;
 };
 
@@ -61,6 +62,7 @@ function membershipStatusLine(status: MembershipCardPayload['membershipStatus'])
 function participationLabel(participation: MembershipCardPayload['leagues'][number]['participation']) {
   if (participation === 'sabbatical') return 'Sabbatical';
   if (participation === 'waitlist') return 'Waitlist';
+  if (participation === 'pending') return 'Pending';
   return null;
 }
 
@@ -174,6 +176,9 @@ export default function DashboardMembershipCard() {
               <p className="font-medium text-gray-900 dark:text-gray-100">
                 Ice privileges through {formatDateDisplay(data.icePrivilegesValidThrough)}
               </p>
+            ) : null}
+            {data.pendingRegistrationPayment ? (
+              <p className="text-gray-600 dark:text-gray-400">(Pending registration payment)</p>
             ) : null}
           </div>
 

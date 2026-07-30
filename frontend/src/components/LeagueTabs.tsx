@@ -8,6 +8,7 @@ interface LeagueTabsProps {
   showMaintenanceTab?: boolean;
   hideTeamsAndDivisionsTabs?: boolean;
   showSabbaticalsTab?: boolean;
+  showPlayInEntryTab?: boolean;
 }
 
 const leagueTabs = [
@@ -19,6 +20,7 @@ const leagueTabs = [
   { label: 'Schedule generation', path: 'schedule-generation', requiresManager: true },
   { label: 'Teams', path: 'teams' },
   { label: 'Roster', path: 'roster' },
+  { label: 'Play-in entry', path: 'play-in-entry', requiresPlayInEntry: true },
   { label: 'Divisions', path: 'divisions' },
   { label: 'League managers', path: 'managers' },
   { label: 'Sabbaticals', path: 'sabbaticals' },
@@ -32,6 +34,7 @@ export default function LeagueTabs({
   showMaintenanceTab = false,
   hideTeamsAndDivisionsTabs = false,
   showSabbaticalsTab = false,
+  showPlayInEntryTab = false,
 }: LeagueTabsProps) {
   const location = useLocation();
   const basePath = `/leagues/${leagueId}`;
@@ -40,6 +43,7 @@ export default function LeagueTabs({
       if (tab.requiresConfigurationAccess) return showConfigurationTab;
       if (tab.requiresManager) return showSheetsTab;
       if (tab.requiresAdmin) return showMaintenanceTab;
+      if (tab.requiresPlayInEntry) return showPlayInEntryTab;
       if (hideTeamsAndDivisionsTabs && (tab.path === 'teams' || tab.path === 'divisions')) {
         return false;
       }

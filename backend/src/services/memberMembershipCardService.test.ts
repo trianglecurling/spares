@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  applyPendingRegistrationMembership,
+  playInMembershipCardParticipation,
   resolveIcePrivilegesValidThrough,
   resolveMembershipCardStatus,
 } from './memberMembershipCardService.js';
@@ -70,6 +72,73 @@ describe('resolveMembershipCardStatus', () => {
   });
 });
 
+describe('applyPendingRegistrationMembership', () => {
+  test('optimistically upgrades former member to pending season end date', () => {
+    expect(
+      applyPendingRegistrationMembership({
+        today: '2026-07-01',
+        membershipStatus: { kind: 'former', validThrough: '2026-06-30' },
+        pendingGrant: { membershipOption: 'regular', seasonEndsAt: '2027-06-30' },
+      }),
+    ).toEqual({
+      membershipStatus: { kind: 'regular', validThrough: '2027-06-30' },
+      pendingRegistrationPayment: true,
+    });
+  });
+
+  test('optimistically upgrades non-member using social membership option', () => {
+    expect(
+      applyPendingRegistrationMembership({
+        today: '2026-07-01',
+        membershipStatus: { kind: 'non_member', validThrough: null },
+        pendingGrant: { membershipOption: 'social', seasonEndsAt: '2027-06-30' },
+      }),
+    ).toEqual({
+      membershipStatus: { kind: 'social', validThrough: '2027-06-30' },
+      pendingRegistrationPayment: true,
+    });
+  });
+
+  test('keeps purchased date when it already covers the pending season and still marks payment pending', () => {
+    expect(
+      applyPendingRegistrationMembership({
+        today: '2026-07-01',
+        membershipStatus: { kind: 'regular', validThrough: '2027-06-30' },
+        pendingGrant: { membershipOption: 'regular', seasonEndsAt: '2027-06-30' },
+      }),
+    ).toEqual({
+      membershipStatus: { kind: 'regular', validThrough: '2027-06-30' },
+      pendingRegistrationPayment: true,
+    });
+  });
+
+  test('does not override lifetime membership', () => {
+    expect(
+      applyPendingRegistrationMembership({
+        today: '2026-07-01',
+        membershipStatus: { kind: 'lifetime', validThrough: null },
+        pendingGrant: { membershipOption: 'regular', seasonEndsAt: '2027-06-30' },
+      }),
+    ).toEqual({
+      membershipStatus: { kind: 'lifetime', validThrough: null },
+      pendingRegistrationPayment: false,
+    });
+  });
+
+  test('ignores expired pending season grants', () => {
+    expect(
+      applyPendingRegistrationMembership({
+        today: '2026-07-01',
+        membershipStatus: { kind: 'former', validThrough: '2025-12-31' },
+        pendingGrant: { membershipOption: 'regular', seasonEndsAt: '2026-06-30' },
+      }),
+    ).toEqual({
+      membershipStatus: { kind: 'former', validThrough: '2025-12-31' },
+      pendingRegistrationPayment: false,
+    });
+  });
+});
+
 describe('resolveIcePrivilegesValidThrough', () => {
   test('omits ice privileges for social members', () => {
     expect(
@@ -113,5 +182,19 @@ describe('resolveIcePrivilegesValidThrough', () => {
         onSessionRoster: false,
       }),
     ).toBeNull();
+  });
+});
+
+describe('playInMembershipCardParticipation', () => {
+  test('lists guaranteed play-in like roster (no pending badge)', () => {
+    expect(playInMembershipCardParticipation({ guaranteed: true })).toBe('roster');
+  });
+
+  test('lists non-guaranteed play-in as pending', () => {
+    expect(playInMembershipCardParticipation({ guaranteed: false })).toBe('pending');
+  });
+
+  test('omits missing evaluations', () => {
+    expect(playInMembershipCardParticipation(undefined)).toBeNull();
   });
 });

@@ -1,7 +1,24 @@
 import { describe, expect, test } from 'bun:test';
-import { renderRegistrationEmail } from './registrationEmailService.js';
+import { formatRegistrationTeammatesDisplay, renderRegistrationEmail } from './registrationEmailService.js';
 
 describe('Phase 9 registration email rendering', () => {
+  test('formatRegistrationTeammatesDisplay joins account-linked and pending names', () => {
+    expect(
+      formatRegistrationTeammatesDisplay({
+        memberNames: ['Alice Example', 'Bob Example'],
+        pendingNames: ['Casey Pending'],
+      }),
+    ).toBe('Alice Example, Bob Example, Casey Pending');
+  });
+
+  test('formatRegistrationTeammatesDisplay falls back to legacy roster text', () => {
+    expect(
+      formatRegistrationTeammatesDisplay({
+        legacyRosterText: 'Dana\nEli',
+      }),
+    ).toBe('Dana, Eli');
+  });
+
   test('deferred registration email does not call pending choices confirmed', () => {
     const rendered = renderRegistrationEmail('registration_submitted_deferred_payment', {
       curlerName: 'Alex Curler',
@@ -111,6 +128,19 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.subject).toContain('Registration canceled');
   });
 
+  test('deferred registration email includes teammate summary lines when provided', () => {
+    const rendered = renderRegistrationEmail('registration_submitted_deferred_payment', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      summaryLines: ['play in request: Tuesday Competitive · Teammates: Alice Example, Bob Example'],
+      deferralReasons: ['Play-in placement is pending.'],
+    });
+
+    expect(rendered.textBody).toContain('Teammates: Alice Example, Bob Example');
+    expect(rendered.subject).toContain('payment will come later');
+  });
+
   test('registration payment confirmation includes registration details, receipt, and contact emails', () => {
     const rendered = renderRegistrationEmail('registration_payment_received', {
       curlerName: 'Alex Curler',
@@ -123,6 +153,7 @@ describe('Phase 9 registration email rendering', () => {
         'Membership/program: Regular membership',
         'League and program choices:',
         'Guaranteed return: Monday Open (confirmed)',
+        'Play-in request: Tuesday Competitive (confirmed) · Teammates: Alice Example, Bob Example',
       ],
       receiptLineItems: [
         { description: 'Regular membership fee', amountMinor: 30000 },
@@ -141,6 +172,7 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).toContain('View payment details: https://example.test/payments/abc-123');
     expect(rendered.textBody).toContain('Registration details');
     expect(rendered.textBody).toContain('Guaranteed return: Monday Open (confirmed)');
+    expect(rendered.textBody).toContain('Teammates: Alice Example, Bob Example');
     expect(rendered.textBody).toContain('Regular membership fee: $300.00');
     expect(rendered.textBody).toContain('Discounts: -$25.00');
     expect(rendered.textBody).toContain('Total paid: $475.00');

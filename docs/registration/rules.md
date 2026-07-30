@@ -414,6 +414,31 @@ BYOT rules:
 - If someone pays and later does not receive a spot, staff handles the refund or
   correction manually.
 
+### Play-in based leagues
+
+A league may additionally be marked as play-in based (for example the Tuesday
+competitive league). Play-in based leagues replace guaranteed returns and
+waitlists with a competitive entry scheme based on TLINE points.
+
+Play-in rules:
+
+- Registrants declare their full team when registering (member autocomplete
+  plus free-text names for teammates who are not yet members).
+- The first teammate to register creates the entry team. Later teammates are
+  attached to the existing team and confirm only their own ADD or REPLACE
+  choice. Canceling that registration removes the curler from the entry team
+  and deletes the declaration when no other teammate has registered onto it.
+- The top teams by combined TLINE points are granted automatic entry. The
+  remaining `playInSpotCount` spots (default 2) are decided by playdowns.
+- A team evaluated as guaranteed at registration time pays immediately, like a
+  guaranteed return. All other play-in teams defer payment until staff record
+  the entry outcome.
+- ADD/REPLACE semantics follow the waitlist rules: a successful REPLACE entry
+  releases the replaced league spot.
+
+See `play-in-entry.md` for the full entry scheme, the returning-member rule,
+and the guarantee threshold calculation.
+
 ## 11. League configuration
 
 Each league exists for one session.
@@ -433,6 +458,8 @@ Each league may have registration-related configuration including:
 - Last day of play
 - Whether waitlists are allowed
 - Whether sabbaticals are allowed
+- Whether the roster is play-in based, and if so, how many spots are decided
+  by playdowns (`playInSpotCount`, default 2)
 - Predecessor league
 - Successor league
 
@@ -526,6 +553,17 @@ Protected claims include:
 - Guaranteed return to a league
 - Sabbatical for a league
 
+Play-in requests for a competitive league do **not** count as protected claims.
+
+Play-in based leagues do not offer guaranteed returns. A returning member who
+played a play-in league's predecessor chooses whether to join the competitive
+league again or not join. Joining does not use one of the two protected claims.
+Team roster details are collected with other league requests. Returning players
+on a TLINE-guaranteed team are automatic ADD unless they also selected two
+guaranteed-return leagues (in which case they must choose a REPLACE target).
+New players who already hold two leagues must choose a REPLACE target.
+Teammates choose their own ADD/REPLACE when they register.
+
 Example:
 
 - A member cannot play in two guaranteed-return leagues and also take sabbatical
@@ -533,6 +571,13 @@ Example:
 - A member could return to one league and take sabbatical for one league.
 - A member could take sabbatical for two leagues.
 - A member could return to two leagues.
+- A member could join the competitive league and guarantee returning to one
+  regular league.
+- A member could join the competitive league and take sabbatical for one regular
+  league.
+- A member could join the competitive league and guarantee returning to two
+  regular leagues, but must choose which league to replace if they get into the
+  competitive league.
 
 If a member participated in Fall 2025, skipped Winter 2026 without an official
 sabbatical, and wants to return in Fall 2026, they are not guaranteed a spot

@@ -53,6 +53,10 @@ import {
 } from '../registration/registrationShellService.js';
 import { getLeagueTeamMemberPlacementOptions } from '../registration/memberWaitlistJoinService.js';
 import { RegistrationMemberValidationError } from '../registration/registrationMemberService.js';
+import {
+  evaluateRegistrantPlayInEntry,
+  LeagueEntryValidationError,
+} from '../registration/leagueEntryService.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
@@ -171,6 +175,20 @@ const teamMemberPlacementOptionsQuerySchema = z.object({
     }),
 });
 const leagueIdParamsSchema = z.object({ leagueId: z.coerce.number().int().positive() });
+const playInEntryPreviewQuerySchema = z.object({
+  memberIds: z
+    .union([z.string(), z.array(z.coerce.number().int().positive())])
+    .optional()
+    .transform((value) => {
+      if (value == null) return [] as number[];
+      if (Array.isArray(value)) return value;
+      return value
+        .split(',')
+        .map((part) => Number(part.trim()))
+        .filter((id) => Number.isFinite(id) && id > 0);
+    }),
+  pendingNames: z.string().max(2000).optional().nullable(),
+});
 const leagueSelectionsSchema = z.object({
   selections: z.array(registrationSelectionSchema),
   desiredAddWaitlistLeagueCount: z.number().int().min(1).max(2).nullable().optional(),
@@ -770,6 +788,41 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         const query = teamMemberPlacementOptionsQuerySchema.parse(request.query);
         return await getLeagueTeamMemberPlacementOptions(params.leagueId, query.memberIds);
       } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    },
+  );
+
+  fastify.get<{ Params: { leagueId: number }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/leagues/:leagueId/play-in-entry-preview',
+    {
+      schema: {
+        tags: ['registration'],
+        params: { type: 'object', properties: { leagueId: { type: 'integer' } }, required: ['leagueId'] },
+        response: {
+          200: anyObjectSchema,
+          400: apiErrorResponseSchema,
+          401: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!request.member) {
+        return sendApiError(reply, 401, 'Unauthorized');
+      }
+      try {
+        const params = leagueIdParamsSchema.parse(request.params);
+        const query = playInEntryPreviewQuerySchema.parse(request.query);
+        return await evaluateRegistrantPlayInEntry({
+          leagueId: params.leagueId,
+          memberId: request.member.id,
+          teamRosterPlacements: query.memberIds.map((memberId) => ({ memberId })),
+          pendingTeammateText: query.pendingNames ?? null,
+        });
+      } catch (error) {
+        if (error instanceof LeagueEntryValidationError) {
+          return sendValidationError(reply, error.message, error.details);
+        }
         return handleRegistrationError(reply, error);
       }
     },

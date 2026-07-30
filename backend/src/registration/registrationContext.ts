@@ -104,6 +104,17 @@ export type JuniorAssistanceRequest = {
   status?: 'none' | 'pending' | 'approved' | 'partially_approved' | 'denied' | 'withdrawn';
 };
 
+/** Play-in (TLINE) entry state for a play-in based league the registrant selected. */
+export type PlayInEntryContext = {
+  /** The registrant is already listed on a declared entry team for this league. */
+  onExistingTeam: boolean;
+  existingTeamId?: number | null;
+  /** Members (other than the registrant) already committed to other active entry teams. */
+  committedOtherMemberIds: number[];
+  /** The registrant's declared/drafted team is pessimistically guaranteed auto entry. */
+  guaranteed: boolean;
+};
+
 export type RegistrationContext = {
   desiredAddWaitlistLeagueCount?: number | null;
   season: {
@@ -147,6 +158,8 @@ export type RegistrationContext = {
   selections: RegistrationSelectionInput[];
   discountClaims: DiscountClaims;
   juniorAssistance?: JuniorAssistanceRequest;
+  /** Keyed by league id; present for play-in based leagues with a play_in_request selection. */
+  playInEntry?: Record<number, PlayInEntryContext>;
   priceConfig: PriceConfigInput;
   discountSettings: RegistrationDiscountSettingsStored;
   sabbaticalDurationLimitYears: number;
@@ -192,6 +205,10 @@ export function playInSelectionDefersPayment(
   selection: RegistrationSelectionInput,
 ): boolean {
   if (selection.selectionType !== 'play_in_request') return false;
+  // Teams evaluated as guaranteed auto entry pay immediately, like guaranteed returns.
+  if (selection.leagueId != null && context.playInEntry?.[selection.leagueId]?.guaranteed) {
+    return false;
+  }
   if (!selection.replacesLeagueId) return true;
   if (selection.leagueId == null) return true;
 
@@ -200,6 +217,29 @@ export function playInSelectionDefersPayment(
   if (!playInLeague || !replacedLeague) return true;
 
   return playInLeague.registrationFeeMinor !== replacedLeague.registrationFeeMinor;
+}
+
+/**
+ * Leagues released immediately when a guaranteed play-in REPLACE succeeds at
+ * registration time. Those selections stay on the draft for validation/history,
+ * but must not be billed or rostered.
+ */
+export function guaranteedPlayInReplacedLeagueIds(context: RegistrationContext): Set<number> {
+  const ids = new Set<number>();
+  for (const selection of context.selections) {
+    if (selection.selectionType !== 'play_in_request') continue;
+    if (selection.leagueId == null || selection.replacesLeagueId == null) continue;
+    if (!context.playInEntry?.[selection.leagueId]?.guaranteed) continue;
+    ids.add(selection.replacesLeagueId);
+  }
+  return ids;
+}
+
+export function isSelectionReplacedByGuaranteedPlayIn(
+  context: RegistrationContext,
+  selection: RegistrationSelectionInput,
+): boolean {
+  return selection.leagueId != null && guaranteedPlayInReplacedLeagueIds(context).has(selection.leagueId);
 }
 
 export function waitlistSelectionDefersPayment(

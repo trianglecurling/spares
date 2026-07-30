@@ -16,7 +16,7 @@ import {
   applyAddWaitlistPriorityOrder,
   defaultDesiredAddWaitlistLeagueCount,
   getAddWaitlistSelections,
-  countPriorSeasonProtectedReturnSelections,
+  countProtectedClaimSelections,
   PROTECTED_RETURN_SELECTION_TYPES,
   REAL_LEAGUE_SELECTION_TYPES,
   remainingFirstTwoLeagueSlots,
@@ -27,6 +27,7 @@ import {
   hasClubExperienceRecord,
   isJuniorRecreationalEligibleDate,
   isLeagueSelectionEligibleLeague,
+  isPlayInBasedLeague,
   isThirdLeagueInterestEligibleLeague,
   isThirdLeagueInterestSelection,
   leagueScheduleText,
@@ -34,8 +35,10 @@ import {
   loadRegistrationEditContext,
   continuingSabbaticalForLeague,
   formatCurrency,
+  hasPlayInWithTwoGuaranteedReturns,
   priorLeagueChoiceValue,
   priorSeasonReturnLeaguesFromPayload,
+  PLAY_IN_WITH_TWO_GUARANTEED_RETURNS_NOTICE,
   registrationDiscountLabel,
   saveLeagueSelections,
   setThirdLeagueInterestSelections,
@@ -45,6 +48,7 @@ import {
   updateLeagueSelection,
   updateWaitlistReplaceSelection,
   waitlistJoinOptionDescription,
+  withoutInvalidPlayInPriorSelections,
   type IcePrivilegesChoice,
   type LeagueEligibilityInput,
   type RegistrationLeagueEvaluation,
@@ -135,7 +139,7 @@ function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdi
       .then((context) => {
         if (canceled) return;
         setLeaguePayload(context.league);
-        setSelections(context.league.selections);
+        setSelections(withoutInvalidPlayInPriorSelections(context.league.selections, context.league.leagues));
         setAddWaitlistPriority(addWaitlistPriorityFromSelections(context.league.selections));
         setDesiredAddWaitlistLeagueCount(
           requiresWaitlistFulfillmentPreferences(context.league.selections)
@@ -201,8 +205,8 @@ function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdi
   }, [leaguePayload]);
 
   const priorSeasonProtectedReturnCount = useMemo(
-    () => countPriorSeasonProtectedReturnSelections(selections, priorSeasonReturnLeagueIds),
-    [selections, priorSeasonReturnLeagueIds],
+    () => countProtectedClaimSelections(selections),
+    [selections],
   );
 
   const scheduledLeagueSelections = useMemo(
@@ -694,10 +698,14 @@ function PriorLeagueEditModal({
 
   function handleSave() {
     const undecidedLeague = state.priorSeasonReturnLeagues.find(
-      (league) => !state.selections.some((selection) => selection.leagueId === league.id),
+      (league) =>
+        priorLeagueChoiceValue(
+          state.selections.find((selection) => selection.leagueId === league.id),
+          league,
+        ) == null,
     );
     if (undecidedLeague) {
-      state.setError('Choose whether to return, extend sabbatical, or drop each prior league before saving.');
+      state.setError('Choose whether to return, join the competitive league, extend sabbatical, or drop each prior league before saving.');
       return;
     }
     if (state.priorSeasonProtectedReturnCount > 2) {
@@ -750,7 +758,8 @@ function PriorLeagueEditModal({
           ) : null}
           {state.priorSeasonReturnLeagues.map((league) => {
             const currentSelection = state.selections.find((selection) => selection.leagueId === league.id);
-            const value = priorLeagueChoiceValue(currentSelection);
+            const value = priorLeagueChoiceValue(currentSelection, league);
+            const isPlayInPrior = isPlayInBasedLeague(league);
             const selectedProtected = currentSelection
               ? PROTECTED_RETURN_SELECTION_TYPES.has(currentSelection.selectionType)
               : false;
@@ -771,12 +780,27 @@ function PriorLeagueEditModal({
                   inputId={`edit-prior-league-${league.id}`}
                   layout="block"
                   value={value}
+                  placeholder="Make a selection"
                   onChange={(next) =>
                     state.setSelections((current) =>
                       updateLeagueSelection(current, league.id, (next ?? 'none') as RegistrationSelectionType | 'none'),
                     )
                   }
-                  options={[
+                  options={
+                    isPlayInPrior
+                      ? [
+                          {
+                            value: 'play_in_request',
+                            label: 'Join competitive league',
+                            description: 'Declare the team on league requests. This does not use a protected league spot.',
+                          },
+                          {
+                            value: 'drop',
+                            label: 'Not joining',
+                            description: 'Skip this competitive league for now.',
+                          },
+                        ]
+                      : [
                     {
                       value: 'guaranteed_return',
                       label: continuingSabbatical
@@ -826,11 +850,17 @@ function PriorLeagueEditModal({
                         ? 'Permanently release this sabbatical-protected spot.'
                         : 'Release this guaranteed return spot.',
                     },
-                  ]}
+                  ]
+                  }
                 />
               </FormField>
             );
           })}
+          {hasPlayInWithTwoGuaranteedReturns(state.selections) ? (
+            <p className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+              {PLAY_IN_WITH_TWO_GUARANTEED_RETURNS_NOTICE}
+            </p>
+          ) : null}
         </div>
       )}
     </EditModalShell>

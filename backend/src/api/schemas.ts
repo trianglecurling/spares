@@ -421,6 +421,7 @@ export const memberMembershipCardResponseSchema = {
       required: ['kind', 'validThrough'],
     },
     icePrivilegesValidThrough: { type: ['string', 'null'] },
+    pendingRegistrationPayment: { type: 'boolean' },
     session: {
       type: ['object', 'null'],
       additionalProperties: false,
@@ -441,14 +442,14 @@ export const memberMembershipCardResponseSchema = {
           leagueName: { type: 'string' },
           participation: {
             type: 'string',
-            enum: ['roster', 'sabbatical', 'waitlist'],
+            enum: ['roster', 'sabbatical', 'waitlist', 'pending'],
           },
         },
         required: ['leagueId', 'leagueName', 'participation'],
       },
     },
   },
-  required: ['name', 'membershipStatus', 'icePrivilegesValidThrough', 'session', 'leagues'],
+  required: ['name', 'membershipStatus', 'icePrivilegesValidThrough', 'pendingRegistrationPayment', 'session', 'leagues'],
 } as const;
 
 export const memberEmergencyContactResponseSchema = {
@@ -559,6 +560,7 @@ export const leagueResponseSchema = {
     allowsWaitlist: { type: 'boolean' },
     waitlistId: { type: ['number', 'null'] },
     isPlayInBased: { type: 'boolean' },
+    playInSpotCount: { type: 'number' },
     allowsSabbatical: { type: 'boolean' },
     allowsDropIns: { type: 'boolean' },
     dropInFeeMinor: { type: ['number', 'null'] },

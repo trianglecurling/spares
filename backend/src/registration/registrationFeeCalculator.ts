@@ -1,6 +1,11 @@
 import { validateDiscountClaims } from './registrationEligibility.js';
 import type { DecisionMessage } from './registrationDecisionTypes.js';
-import { getSelectionLeague, type RegistrationContext, type RegistrationInvoiceLineKind } from './registrationContext.js';
+import {
+  getSelectionLeague,
+  isSelectionReplacedByGuaranteedPlayIn,
+  type RegistrationContext,
+  type RegistrationInvoiceLineKind,
+} from './registrationContext.js';
 
 export type RegistrationFeeLineItem = {
   lineType: RegistrationInvoiceLineKind;
@@ -170,6 +175,7 @@ function addOrdinaryDiscounts(context: RegistrationContext, lineItems: Registrat
 
 function addSelectionCharges(context: RegistrationContext, lineItems: RegistrationFeeLineItem[]): void {
   for (const selection of context.selections) {
+    if (isSelectionReplacedByGuaranteedPlayIn(context, selection)) continue;
     const league = getSelectionLeague(context, selection);
     if (
       league &&

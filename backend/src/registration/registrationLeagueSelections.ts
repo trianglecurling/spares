@@ -118,6 +118,21 @@ function validateHybridByotRoster(
   }
 }
 
+function guaranteedReturnSelectionCount(context: RegistrationContext): number {
+  return context.selections.filter((selection) => selection.selectionType === 'guaranteed_return').length;
+}
+
+function isReturningPlayInRegistrant(
+  context: RegistrationContext,
+  league: NonNullable<ReturnType<typeof getSelectionLeague>>,
+): boolean {
+  return (
+    league.isPlayInBased === true &&
+    league.predecessorLeagueId != null &&
+    context.participatedLeagueIds.includes(league.predecessorLeagueId)
+  );
+}
+
 function validatePlayInRoster(
   context: RegistrationContext,
   league: NonNullable<ReturnType<typeof getSelectionLeague>>,
@@ -134,6 +149,22 @@ function validatePlayInRoster(
     (expectedSize) => `Play-in BYOT leagues require exactly ${expectedSize} players for this league.`,
   );
 }
+
+function isPlayInIntentOnly(selection: RegistrationSelectionInput): boolean {
+  const hasRoster =
+    (selection.teamRosterPlacements?.length ?? 0) > 0 ||
+    Boolean(selection.byotTeammateText?.trim()) ||
+    Boolean(selection.teamRosterText?.trim());
+  return !hasRoster && selection.replacesLeagueId == null;
+}
+
+export type SelectionValidationOptions = {
+  /**
+   * When false, allows mid-flow `play_in_request` intent without a full roster or
+   * finalized ADD/REPLACE choice (roster is collected on a later step).
+   */
+  requirePlayInRoster?: boolean;
+};
 
 function isBasicIceIncludedDaytimeLeague(context: RegistrationContext, league: LeagueConfig): boolean {
   return (
@@ -167,11 +198,16 @@ function expectedByotRosterSize(league: { format: string }): number | null {
   return null;
 }
 
-function validateSelection(context: RegistrationContext, selection: RegistrationSelectionInput): {
+function validateSelection(
+  context: RegistrationContext,
+  selection: RegistrationSelectionInput,
+  options: SelectionValidationOptions = {},
+): {
   blockingErrors: DecisionMessage[];
   warnings: DecisionMessage[];
   deferralReasonCodes: RegistrationReasonCode[];
 } {
+  const requirePlayInRoster = options.requirePlayInRoster !== false;
   const blockingErrors: DecisionMessage[] = [];
   const warnings: DecisionMessage[] = [];
   const deferralReasonCodes: RegistrationReasonCode[] = [];
@@ -324,20 +360,64 @@ function validateSelection(context: RegistrationContext, selection: Registration
     if (!league.isPlayInBased) {
       blockingErrors.push(blockingError('play_in_not_enabled', 'This league does not use play-in based registration.'));
     }
-    validatePlayInRoster(context, league, selection, blockingErrors);
-    if (!selection.replacesLeagueId) {
-      if (activeLeagueCount(context) > 1) {
+    const playInEntry = selection.leagueId != null ? context.playInEntry?.[selection.leagueId] : undefined;
+    const intentOnly = !requirePlayInRoster && isPlayInIntentOnly(selection);
+    if (playInEntry?.onExistingTeam) {
+      // A teammate already declared this team (or the same account-linked roster);
+      // the registrant only confirms their own ADD/REPLACE choice.
+    } else if (!intentOnly) {
+      validatePlayInRoster(context, league, selection, blockingErrors);
+      if (playInEntry && (selection.teamRosterPlacements?.length ?? 0) > 0) {
+        const committed = new Set(playInEntry.committedOtherMemberIds);
+        const conflicting = (selection.teamRosterPlacements ?? []).filter((placement) =>
+          committed.has(placement.memberId)
+        );
+        if (conflicting.length > 0) {
+          blockingErrors.push(
+            blockingError(
+              'play_in_teammate_already_committed',
+              'One or more selected teammates are already on another declared team for this league. Contact membership@trianglecurling.com to sort out team assignments.'
+            )
+          );
+        }
+      }
+    }
+    if (!intentOnly) {
+      if (!selection.replacesLeagueId) {
+        if (guaranteedReturnSelectionCount(context) >= 2) {
+          blockingErrors.push(
+            blockingError(
+              'play_in_replace_required_with_two_returns',
+              'With two guaranteed-return leagues selected, choose which league to replace if you get into the play-in league.',
+            ),
+          );
+        } else {
+          const returningPlayIn = isReturningPlayInRegistrant(context, league);
+          if (!returningPlayIn && activeLeagueCount(context) > 1) {
+            blockingErrors.push(
+              blockingError(
+                'play_in_add_requires_zero_or_one_leagues',
+                'Play-in ADD requests are only available for members with zero or one current leagues.',
+              ),
+            );
+          }
+          if (!returningPlayIn && activeLeagueCount(context) + selectedFirstTwoLeagueCount(context) > 2) {
+            blockingErrors.push(
+              blockingError(
+                'play_in_cannot_be_third_league',
+                'Play-in leagues must count as one of the first two leagues.',
+              ),
+            );
+          }
+        }
+      } else if (!hasReplacementLeague(context, selection.replacesLeagueId)) {
         blockingErrors.push(
-          blockingError('play_in_add_requires_zero_or_one_leagues', 'Play-in ADD requests are only available for members with zero or one current leagues.'),
+          blockingError(
+            'play_in_replace_replacement_not_held',
+            'Play-in REPLACE requests must identify a league the registrant currently holds.',
+          ),
         );
       }
-      if (activeLeagueCount(context) + selectedFirstTwoLeagueCount(context) > 2) {
-        blockingErrors.push(blockingError('play_in_cannot_be_third_league', 'Play-in leagues must count as one of the first two leagues.'));
-      }
-    } else if (!hasReplacementLeague(context, selection.replacesLeagueId)) {
-      blockingErrors.push(
-        blockingError('play_in_replace_replacement_not_held', 'Play-in REPLACE requests must identify a league the registrant currently holds.'),
-      );
     }
     if (playInSelectionDefersPayment(context, selection)) {
       deferralReasonCodes.push('play_in_placement_pending');
@@ -366,7 +446,10 @@ function validateSelection(context: RegistrationContext, selection: Registration
   return { blockingErrors, warnings, deferralReasonCodes };
 }
 
-export function validateRegistrationSelections(context: RegistrationContext): SelectionValidationResult {
+export function validateRegistrationSelections(
+  context: RegistrationContext,
+  options: SelectionValidationOptions = {},
+): SelectionValidationResult {
   const blockingErrors: DecisionMessage[] = [];
   const warnings: DecisionMessage[] = [];
   const deferralReasonCodes: RegistrationReasonCode[] = [];
@@ -378,7 +461,7 @@ export function validateRegistrationSelections(context: RegistrationContext): Se
   }
 
   for (const selection of context.selections) {
-    const result = validateSelection(context, selection);
+    const result = validateSelection(context, selection, options);
     blockingErrors.push(...result.blockingErrors);
     warnings.push(...result.warnings);
     deferralReasonCodes.push(...result.deferralReasonCodes);

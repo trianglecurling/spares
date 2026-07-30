@@ -633,17 +633,19 @@ Must include:
 - Explanation that returning later requires joining the waitlist.
 - Staff contact information.
 
-### 17. BYOT registration confirmation
+### 17. BYOT / play-in teammates on registration confirmation
 
-This may be a separate email or part of registration/payment confirmation.
+Do **not** send a separate BYOT registration confirmation email.
 
-Must include:
+Instead, the main registration confirmation emails
+(`registration_submitted_deferred_payment` and `registration_payment_received`)
+must include selected teammates for BYOT and play-in league choices:
 
-- League name.
-- Submitted teammate list.
-- Reminder that BYOT placement is coordinated by the league coordinator.
-- Reminder that staff will contact the member if an adjustment or refund is
-  needed.
+- Account-linked teammates (from team roster placements).
+- Pending teammate names when present.
+
+Historical `byot_registration_confirmation` messages may still be resent from
+staff tools, but new submissions do not create them.
 
 ### 18. Registration manually updated by staff
 
@@ -881,7 +883,7 @@ Email bodies should:
 - [ ] Junior Recreational assistance decision.
 - [ ] Sabbatical confirmation.
 - [ ] Sabbatical release warning/confirmation.
-- [ ] BYOT registration confirmation or variant.
+- [x] BYOT / play-in teammates included on main registration confirmation emails (no separate BYOT confirmation).
 - [ ] Registration manually updated by staff.
 
 ### Email sending

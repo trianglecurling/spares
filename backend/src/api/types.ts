@@ -176,6 +176,7 @@ export type MemberMembershipCardResponse = {
     validThrough: string | null;
   };
   icePrivilegesValidThrough: string | null;
+  pendingRegistrationPayment: boolean;
   session: {
     id: number;
     name: string;
@@ -184,7 +185,7 @@ export type MemberMembershipCardResponse = {
   leagues: Array<{
     leagueId: number;
     leagueName: string;
-    participation: 'roster' | 'sabbatical' | 'waitlist';
+    participation: 'roster' | 'sabbatical' | 'waitlist' | 'pending';
   }>;
 };
 

@@ -233,6 +233,8 @@ Needed registration-related fields:
 - Last day of play
 - Allows waitlist
 - Allows sabbatical
+- Is play-in based
+- Play-in spot count (default 2; spots decided by playdowns)
 - Predecessor league ID
 - Successor league ID
 
@@ -606,6 +608,7 @@ Recommended values:
 - `byot`
 - `staff_manual`
 - `temporary_sabbatical_fill`
+- `play_in` (placed by a play-in entry outcome; see section 16)
 
 ## 5. Sabbatical entities
 
@@ -1350,3 +1353,94 @@ Phase 1 does not need to build:
 - Email templates
 
 Those are later phases.
+
+## 16. Play-in entry entities
+
+These tables support the competitive entry scheme for play-in based leagues.
+See `play-in-entry.md` for the business rules.
+
+## 16.1 LeagueEntryPoints (`league_entry_points`)
+
+The TLINE points ledger, scoped to the target play-in league.
+
+### Purpose
+
+Stores each member's TLINE points for one play-in league. A member's effective
+points are the sum of that league's ledger rows for the member.
+
+### Fields
+
+- ID
+- League ID
+- Member ID
+- Points half (integer half-point units; 39 = 19½, avoids float issues)
+- Counts as returning boolean (playdown losers earn 1 point but do not count
+  as returning)
+- Source
+- Notes, nullable
+- Created by member ID
+- Created at
+- Updated at
+
+### Source enum
+
+- `manual` — entered by staff (the only source currently in use)
+- `standings` — reserved for automatic awards from final standings
+- `playdown` — reserved for automatic awards to playdown participants
+
+### Constraints
+
+- Unique per league, member, and source.
+
+## 16.2 LeagueEntryTeam (`league_entry_teams`)
+
+A persistent declared team for one play-in league, shared across teammates'
+registrations.
+
+### Fields
+
+- ID
+- League ID
+- Name, nullable
+- Status
+- Created from registration ID, nullable
+- Notes, nullable
+- Created at
+- Updated at
+
+### Status enum
+
+- `pending` — declared, awaiting evaluation or playdowns
+- `guaranteed` — evaluated as guaranteed automatic entry
+- `playdown` — expected to play down
+- `entered` — outcome recorded: granted entry (members placed on the roster)
+- `not_entered` — legacy outcome status (same practical effect as withdrawn for
+  pool math); new staff actions use `withdrawn` instead
+- `withdrawn` — removed from entry (pulled out or did not get a spot); can be reinstated
+
+`pending`, `guaranteed`, `playdown`, and `entered` are active statuses: their
+members are committed and removed from the uncommitted points pool.
+
+## 16.3 LeagueEntryTeamMember (`league_entry_team_members`)
+
+One person's spot on an entry team.
+
+### Fields
+
+- ID
+- Entry team ID
+- Member ID, nullable
+- Pending name, nullable (free-text for non-members; always 0 points until
+  linked)
+- Entry type (`add` or `replace`, same semantics as waitlist entries)
+- Replaces league ID, nullable
+- Source registration ID, nullable (set once that person registers)
+- Created at
+- Updated at
+
+### Constraints
+
+- Exactly one of member ID and pending name is set.
+- Unique per team and member.
+- A member should be on at most one active entry team per league (enforced in
+  application code).

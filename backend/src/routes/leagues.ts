@@ -162,6 +162,7 @@ const updateLeagueSchema = z.object({
   lastDayOfPlay: z.string().nullable().optional(),
   allowsWaitlist: z.boolean().optional(),
   isPlayInBased: z.boolean().optional(),
+  playInSpotCount: z.preprocess(preprocessRoundFiniteInt, z.number().int().min(0).max(100).optional()),
   allowsSabbatical: z.boolean().optional(),
   allowsDropIns: z.boolean().optional(),
   dropInFeeMinor: z.preprocess(
@@ -451,6 +452,7 @@ function mapLeagueResponse(
     allows_waitlist?: number | boolean;
     waitlist_id?: number | null;
     is_play_in_based?: number | boolean;
+    play_in_spot_count?: number | null;
     allows_sabbatical?: number | boolean;
     allows_drop_ins?: number | boolean;
     drop_in_fee_minor?: number | null;
@@ -487,6 +489,7 @@ function mapLeagueResponse(
     allowsWaitlist: row.waitlist_id != null,
     waitlistId: row.waitlist_id ?? null,
     isPlayInBased: toBool(row.is_play_in_based ?? 0),
+    playInSpotCount: row.play_in_spot_count ?? 2,
     allowsSabbatical: toBool(row.allows_sabbatical ?? 1),
     allowsDropIns: toBool(row.allows_drop_ins ?? 0),
     dropInFeeMinor: row.drop_in_fee_minor ?? null,
@@ -1246,6 +1249,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             lastDayOfPlay: { type: ['string', 'null'] },
             allowsWaitlist: { type: 'boolean' },
             isPlayInBased: { type: 'boolean' },
+            playInSpotCount: { type: 'number' },
             allowsSabbatical: { type: 'boolean' },
             allowsDropIns: { type: 'boolean' },
             dropInFeeMinor: { type: ['number', 'null'] },
@@ -1429,6 +1433,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       allows_waitlist: number;
       waitlist_id: number | null;
       is_play_in_based: number;
+      play_in_spot_count: number;
       allows_sabbatical: number;
       allows_drop_ins: number;
       drop_in_fee_minor: number | null;
@@ -1500,6 +1505,9 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         updateData.waitlist_id = null;
         updateData.allows_waitlist = 0;
       }
+    }
+    if (body.playInSpotCount !== undefined) {
+      updateData.play_in_spot_count = body.playInSpotCount;
     }
     if (body.allowsSabbatical !== undefined) {
       updateData.allows_sabbatical = body.allowsSabbatical ? 1 : 0;

@@ -342,6 +342,13 @@ async function cancelMemberRegistrationCore(input: {
         registrationId: input.registrationId,
         curlerMemberId: registration.curler_member_id,
       });
+
+      const { releaseEntryTeamsForCancelledRegistration } = await import('./leagueEntryService.js');
+      await releaseEntryTeamsForCancelledRegistration({
+        tx,
+        registrationId: input.registrationId,
+        curlerMemberId: registration.curler_member_id,
+      });
     }
 
     await tx

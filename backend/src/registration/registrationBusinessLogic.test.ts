@@ -392,6 +392,132 @@ describe('registration business logic', () => {
     expectReason(result, 'protected_claim_limit_exceeded');
   });
 
+  test('play-in request does not count toward the two protected claims', () => {
+    const regular = league({ id: 100, predecessorLeagueId: 90 });
+    const playInLeague = league({
+      id: 120,
+      predecessorLeagueId: 91,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+    });
+    const extra = league({ id: 101, predecessorLeagueId: 92 });
+    const twoReturnsPlusPlayIn = registrationContext({
+      leagues: { [regular.id]: regular, [playInLeague.id]: playInLeague, [extra.id]: extra },
+      participatedLeagueIds: [90, 91, 92],
+      selections: [
+        selection({ leagueId: regular.id, selectionType: 'guaranteed_return' }),
+        selection({ leagueId: extra.id, selectionType: 'guaranteed_return' }),
+        selection({
+          leagueId: playInLeague.id,
+          selectionType: 'play_in_request',
+          replacesLeagueId: regular.id,
+          teamRosterPlacements: [
+            { memberId: 20, entryType: 'replace', replacesLeagueId: regular.id },
+            { memberId: 21, entryType: 'add' },
+            { memberId: 22, entryType: 'add' },
+            { memberId: 23, entryType: 'add' },
+          ],
+        }),
+      ],
+    });
+    expect(validateRegistrationSelections(twoReturnsPlusPlayIn).allowed).toBe(true);
+
+    const threeReturns = {
+      ...twoReturnsPlusPlayIn,
+      selections: [
+        selection({ leagueId: regular.id, selectionType: 'guaranteed_return' }),
+        selection({ leagueId: extra.id, selectionType: 'guaranteed_return' }),
+        selection({ leagueId: 102, selectionType: 'guaranteed_return' }),
+      ],
+      leagues: {
+        ...twoReturnsPlusPlayIn.leagues,
+        102: league({ id: 102, predecessorLeagueId: 93 }),
+      },
+      participatedLeagueIds: [90, 91, 92, 93],
+    };
+    const result = validateRegistrationSelections(threeReturns);
+    expect(result.allowed).toBe(false);
+    expectReason(result, 'protected_claim_limit_exceeded');
+  });
+
+  test('play-in with two guaranteed returns requires a replacement league', () => {
+    const regular = league({ id: 100, predecessorLeagueId: 90 });
+    const extra = league({ id: 101, predecessorLeagueId: 92 });
+    const playInLeague = league({
+      id: 120,
+      predecessorLeagueId: 91,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+    });
+    const missingReplace = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [regular.id]: regular, [playInLeague.id]: playInLeague, [extra.id]: extra },
+        participatedLeagueIds: [90, 91, 92],
+        selections: [
+          selection({ leagueId: regular.id, selectionType: 'guaranteed_return' }),
+          selection({ leagueId: extra.id, selectionType: 'guaranteed_return' }),
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            teamRosterPlacements: [
+              { memberId: 20, entryType: 'add' },
+              { memberId: 21, entryType: 'add' },
+              { memberId: 22, entryType: 'add' },
+              { memberId: 23, entryType: 'add' },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(missingReplace.allowed).toBe(false);
+    expectReason(missingReplace, 'play_in_replace_required_with_two_returns');
+  });
+
+  test('play-in leagues cannot use guaranteed_return', () => {
+    const playInLeague = league({
+      id: 120,
+      predecessorLeagueId: 90,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+    });
+    const result = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        participatedLeagueIds: [90],
+        selections: [selection({ leagueId: playInLeague.id, selectionType: 'guaranteed_return' })],
+      }),
+    );
+    expect(result.allowed).toBe(false);
+    expectReason(result, 'play_in_no_guaranteed_return');
+  });
+
+  test('play-in intent-only selections are allowed when roster is not required yet', () => {
+    const playInLeague = league({
+      id: 120,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+    });
+    const intentOnly = registrationContext({
+      leagues: { [playInLeague.id]: playInLeague },
+      selections: [selection({ leagueId: playInLeague.id, selectionType: 'play_in_request' })],
+    });
+    expect(validateRegistrationSelections(intentOnly, { requirePlayInRoster: false }).allowed).toBe(true);
+    expect(validateRegistrationSelections(intentOnly).allowed).toBe(false);
+    expectReason(validateRegistrationSelections(intentOnly), 'byot_play_in_requires_full_roster');
+  });
+
   test('returning member with one return and one sabbatical may join an ADD waitlist', () => {
     const leagueA = league({ id: 100, predecessorLeagueId: 90 });
     const leagueB = league({ id: 101, predecessorLeagueId: 91 });
@@ -798,6 +924,254 @@ describe('registration business logic', () => {
     );
     expect(diffFeeReplaceDraft.paymentDecision.outcome).toBe('deferred_payment');
     expectReason(diffFeeReplaceDraft.paymentDecision, 'play_in_placement_pending');
+  });
+
+  test('returning play-in ADD is allowed with two active leagues', () => {
+    const playInLeague = league({
+      id: 110,
+      predecessorLeagueId: 90,
+      isPlayInBased: true,
+      allowsWaitlist: false,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsSabbatical: false,
+    });
+    const otherLeague = league({ id: 111, name: 'Monday League' });
+    const draft = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague, [otherLeague.id]: otherLeague },
+        activeLeagueIds: [playInLeague.id, otherLeague.id],
+        participatedLeagueIds: [90, 91],
+        selections: [
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            teamRosterPlacements: [
+              { memberId: 20, entryType: 'add' },
+              { memberId: 21, entryType: 'add' },
+              { memberId: 22, entryType: 'add' },
+              { memberId: 23, entryType: 'add' },
+            ],
+          }),
+        ],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [], guaranteed: true },
+        },
+      }),
+    );
+    expect(draft.allowed).toBe(true);
+  });
+
+  test('play-in entry team attach skips roster validation and dedupes committed teammates', () => {
+    const playInLeague = league({
+      id: 120,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+    });
+    const playInSelection = selection({ leagueId: playInLeague.id, selectionType: 'play_in_request' });
+
+    // A teammate already declared the team: the registrant attaches without re-declaring a roster.
+    const attachedToExistingTeam = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [playInSelection],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: true, existingTeamId: 7, committedOtherMemberIds: [], guaranteed: false },
+        },
+      }),
+    );
+    expect(attachedToExistingTeam.allowed).toBe(true);
+
+    // Without an existing team, a full roster is still required.
+    const missingRoster = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [playInSelection],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [], guaranteed: false },
+        },
+      }),
+    );
+    expect(missingRoster.allowed).toBe(false);
+    expectReason(missingRoster, 'byot_play_in_requires_full_roster');
+
+    // Drafting a roster that includes a member already committed to another declared team is blocked.
+    const rosterWithCommittedTeammate = selection({
+      leagueId: playInLeague.id,
+      selectionType: 'play_in_request',
+      teamRosterPlacements: [
+        { memberId: 20, entryType: 'add' },
+        { memberId: 21, entryType: 'add' },
+        { memberId: 22, entryType: 'add' },
+        { memberId: 23, entryType: 'add' },
+      ],
+    });
+    const conflictingDraft = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [rosterWithCommittedTeammate],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [22], guaranteed: false },
+        },
+      }),
+    );
+    expect(conflictingDraft.allowed).toBe(false);
+    expectReason(conflictingDraft, 'play_in_teammate_already_committed');
+
+    // The same roster validates when no teammates are committed elsewhere.
+    const cleanDraft = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [rosterWithCommittedTeammate],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [30, 31], guaranteed: false },
+        },
+      }),
+    );
+    expect(cleanDraft.allowed).toBe(true);
+  });
+
+  test('guaranteed play-in teams pay immediately instead of deferring', () => {
+    const playInLeague = league({
+      id: 121,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+    });
+    const fullRoster = selection({
+      leagueId: playInLeague.id,
+      selectionType: 'play_in_request',
+      teamRosterPlacements: [
+        { memberId: 20, entryType: 'add' },
+        { memberId: 21, entryType: 'add' },
+        { memberId: 22, entryType: 'add' },
+        { memberId: 23, entryType: 'add' },
+      ],
+    });
+
+    const guaranteedDraft = evaluateRegistrationDraft(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [fullRoster],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [], guaranteed: true },
+        },
+      }),
+    );
+    expect(guaranteedDraft.paymentDecision.outcome).toBe('immediate_payment');
+
+    const notGuaranteedDraft = evaluateRegistrationDraft(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [fullRoster],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [], guaranteed: false },
+        },
+      }),
+    );
+    expect(notGuaranteedDraft.paymentDecision.outcome).toBe('deferred_payment');
+    expectReason(notGuaranteedDraft.paymentDecision, 'play_in_placement_pending');
+  });
+
+  test('guaranteed play-in REPLACE drops the replaced league from fees', () => {
+    const kept = league({ id: 130, name: 'Monday League', predecessorLeagueId: 80, registrationFeeMinor: 25000 });
+    const replaced = league({ id: 131, name: 'Wednesday League', predecessorLeagueId: 81, registrationFeeMinor: 25000 });
+    const playInLeague = league({
+      id: 132,
+      name: 'Tuesday Competitive',
+      predecessorLeagueId: 82,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+      registrationFeeMinor: 30000,
+    });
+    const fullRoster = [
+      { memberId: 20, entryType: 'add' as const },
+      { memberId: 21, entryType: 'add' as const },
+      { memberId: 22, entryType: 'add' as const },
+      { memberId: 23, entryType: 'add' as const },
+    ];
+    const draft = evaluateRegistrationDraft(
+      registrationContext({
+        leagues: { [kept.id]: kept, [replaced.id]: replaced, [playInLeague.id]: playInLeague },
+        participatedLeagueIds: [80, 81, 82],
+        selections: [
+          selection({ leagueId: kept.id, selectionType: 'guaranteed_return' }),
+          selection({ leagueId: replaced.id, selectionType: 'guaranteed_return' }),
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            replacesLeagueId: replaced.id,
+            teamRosterPlacements: fullRoster,
+          }),
+        ],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [], guaranteed: true },
+        },
+      }),
+    );
+    expect(draft.selectionValidation.allowed).toBe(true);
+    expect(draft.paymentDecision.outcome).toBe('immediate_payment');
+    const leagueFeeIds = draft.feePreview.lineItems
+      .filter((item) => item.lineType === 'league_fee')
+      .map((item) => item.relatedLeagueId)
+      .sort((left, right) => (left ?? 0) - (right ?? 0));
+    expect(leagueFeeIds).toEqual([kept.id, playInLeague.id]);
+  });
+
+  test('non-guaranteed play-in REPLACE still bills both guaranteed returns', () => {
+    const kept = league({ id: 140, name: 'Monday League', predecessorLeagueId: 80, registrationFeeMinor: 25000 });
+    const replaced = league({ id: 141, name: 'Wednesday League', predecessorLeagueId: 81, registrationFeeMinor: 25000 });
+    const playInLeague = league({
+      id: 142,
+      name: 'Tuesday Competitive',
+      predecessorLeagueId: 82,
+      leagueType: 'bring_your_own_team',
+      capacityType: 'team',
+      allowsWaitlist: false,
+      allowsSabbatical: false,
+      isPlayInBased: true,
+      registrationFeeMinor: 30000,
+    });
+    const draft = evaluateRegistrationDraft(
+      registrationContext({
+        leagues: { [kept.id]: kept, [replaced.id]: replaced, [playInLeague.id]: playInLeague },
+        participatedLeagueIds: [80, 81, 82],
+        selections: [
+          selection({ leagueId: kept.id, selectionType: 'guaranteed_return' }),
+          selection({ leagueId: replaced.id, selectionType: 'guaranteed_return' }),
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            replacesLeagueId: replaced.id,
+            teamRosterPlacements: [
+              { memberId: 20, entryType: 'add' },
+              { memberId: 21, entryType: 'add' },
+              { memberId: 22, entryType: 'add' },
+              { memberId: 23, entryType: 'add' },
+            ],
+          }),
+        ],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [], guaranteed: false },
+        },
+      }),
+    );
+    expect(draft.paymentDecision.outcome).toBe('deferred_payment');
+    const leagueFeeIds = draft.feePreview.lineItems
+      .filter((item) => item.lineType === 'league_fee')
+      .map((item) => item.relatedLeagueId)
+      .sort((left, right) => (left ?? 0) - (right ?? 0));
+    // Play-in is deferred (still charged in fee preview today) — replaced GR remains until entry.
+    expect(leagueFeeIds).toContain(kept.id);
+    expect(leagueFeeIds).toContain(replaced.id);
   });
 
   test('payment decision covers guaranteed, waitlist-only, non-guaranteed, sabbatical, and BYOT cases', () => {

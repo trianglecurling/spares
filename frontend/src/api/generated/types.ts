@@ -2959,6 +2959,7 @@ export interface paths {
                                 validThrough: null | string;
                             };
                             icePrivilegesValidThrough: null | string;
+                            pendingRegistrationPayment: boolean;
                             session: null | {
                                 id: number;
                                 name: string;
@@ -2968,7 +2969,7 @@ export interface paths {
                                 leagueId: number;
                                 leagueName: string;
                                 /** @enum {string} */
-                                participation: "roster" | "sabbatical" | "waitlist";
+                                participation: "roster" | "sabbatical" | "waitlist" | "pending";
                             }[];
                         };
                     };
@@ -4074,6 +4075,7 @@ export interface paths {
                             allowsWaitlist: boolean;
                             waitlistId: null | number;
                             isPlayInBased: boolean;
+                            playInSpotCount?: number;
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
                             dropInFeeMinor: null | number;
@@ -4174,6 +4176,7 @@ export interface paths {
                             allowsWaitlist: boolean;
                             waitlistId: null | number;
                             isPlayInBased: boolean;
+                            playInSpotCount?: number;
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
                             dropInFeeMinor: null | number;
@@ -4301,6 +4304,7 @@ export interface paths {
                                 allowsWaitlist: boolean;
                                 waitlistId: null | number;
                                 isPlayInBased: boolean;
+                                playInSpotCount?: number;
                                 allowsSabbatical: boolean;
                                 allowsDropIns: boolean;
                                 dropInFeeMinor: null | number;
@@ -4405,6 +4409,7 @@ export interface paths {
                         lastDayOfPlay?: string | null;
                         allowsWaitlist?: boolean;
                         isPlayInBased?: boolean;
+                        playInSpotCount?: number;
                         allowsSabbatical?: boolean;
                         allowsDropIns?: boolean;
                         dropInFeeMinor?: number | null;
@@ -4456,6 +4461,7 @@ export interface paths {
                             allowsWaitlist: boolean;
                             waitlistId: null | number;
                             isPlayInBased: boolean;
+                            playInSpotCount?: number;
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
                             dropInFeeMinor: null | number;
@@ -4602,6 +4608,7 @@ export interface paths {
                                 allowsWaitlist: boolean;
                                 waitlistId: null | number;
                                 isPlayInBased: boolean;
+                                playInSpotCount?: number;
                                 allowsSabbatical: boolean;
                                 allowsDropIns: boolean;
                                 dropInFeeMinor: null | number;
@@ -15651,6 +15658,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/leagues/{leagueId}/play-in-entry-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/drafts/{id}/league-catalog": {
         parameters: {
             query?: never;
@@ -17854,6 +17928,285 @@ export interface paths {
                 header?: never;
                 path: {
                     offerId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{leagueId}/entry/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{leagueId}/entry/points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{leagueId}/entry/points/{pointsId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                    pointsId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{leagueId}/entry/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{leagueId}/entry/teams/{teamId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                    teamId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/leagues/{leagueId}/entry/teams/{teamId}/link-member": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                    teamId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leagues/{leagueId}/entry/teams/{teamId}/outcome": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    leagueId: string;
+                    teamId: string;
                 };
                 cookie?: never;
             };

@@ -30,6 +30,11 @@ type Props = {
   onSelectionsChange: (updater: (current: RegistrationSelectionInput[]) => RegistrationSelectionInput[]) => void;
   /** When true, show an intro and button before the roster editor (registration join flow). */
   revealRosterOnDemand?: boolean;
+  /**
+   * When true, hide the ADD/REPLACE editor for teammates. Used for play-in teams where
+   * each teammate chooses their own placement when they register.
+   */
+  omitTeamMemberPlacements?: boolean;
 };
 
 function hasByotRosterProgress(
@@ -57,6 +62,7 @@ export default function RegistrationByotWaitlistFields({
   onPlacementOptionsLoaded,
   onSelectionsChange,
   revealRosterOnDemand = false,
+  omitTeamMemberPlacements = false,
 }: Props) {
   const expectedRosterSize = expectedByotRosterSize(league);
   const additionalTeammateCount = expectedRosterSize ? Math.max(expectedRosterSize - 1, 0) : undefined;
@@ -120,6 +126,7 @@ export default function RegistrationByotWaitlistFields({
   onPlacementOptionsLoadedRef.current = onPlacementOptionsLoaded;
 
   useEffect(() => {
+    if (omitTeamMemberPlacements) return;
     if (!rosterExpanded || teammateMemberIds.length === 0 || selection.leagueId == null) return;
     let canceled = false;
     void api
@@ -136,7 +143,13 @@ export default function RegistrationByotWaitlistFields({
     return () => {
       canceled = true;
     };
-  }, [rosterExpanded, teammateMemberIds.length, teammateMemberIdsKey, selection.leagueId]);
+  }, [
+    omitTeamMemberPlacements,
+    rosterExpanded,
+    teammateMemberIds.length,
+    teammateMemberIdsKey,
+    selection.leagueId,
+  ]);
 
   const memberNameById = useMemo(
     () => new Map(Array.from(memberOptionById.entries()).map(([id, option]) => [id, option.name])),
@@ -255,10 +268,9 @@ export default function RegistrationByotWaitlistFields({
             addButtonLabel: 'Add',
             onAdd: addPendingName,
           }}
-          helperText="Teammates who are not club members must register individually. We will collect their league placement when they sign up."
         />
       </FormField>
-      {teammatePlacements.length > 0 ? (
+      {!omitTeamMemberPlacements && teammatePlacements.length > 0 ? (
         <FormField label="Team member placements" htmlFor={`${inputId}-placements`} tone={tone} required>
           <WaitlistTeamRosterPlacementsEditor
             placements={teammatePlacements}

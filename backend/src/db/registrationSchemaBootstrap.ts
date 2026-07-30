@@ -430,6 +430,61 @@ function curlingRegistrationDDLForDialect(isPostgres: boolean): string {
   return s;
 }
 
+/** Play-in entry tables (TLINE points ledger + declared entry teams) for play-in based leagues. */
+const leagueEntryDDL = `
+  CREATE TABLE IF NOT EXISTS league_entry_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    points_half INTEGER NOT NULL DEFAULT 0,
+    counts_as_returning INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'manual',
+    notes TEXT,
+    created_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_league_entry_points_league_id ON league_entry_points(league_id);
+  CREATE INDEX IF NOT EXISTS idx_league_entry_points_member_id ON league_entry_points(member_id);
+  CREATE INDEX IF NOT EXISTS idx_league_entry_points_league_member ON league_entry_points(league_id, member_id);
+
+  CREATE TABLE IF NOT EXISTS league_entry_teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+    name TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_from_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_league_entry_teams_league_id ON league_entry_teams(league_id);
+  CREATE INDEX IF NOT EXISTS idx_league_entry_teams_status ON league_entry_teams(status);
+
+  CREATE TABLE IF NOT EXISTS league_entry_team_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_team_id INTEGER NOT NULL REFERENCES league_entry_teams(id) ON DELETE CASCADE,
+    member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
+    pending_name TEXT,
+    entry_type TEXT NOT NULL DEFAULT 'add',
+    replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
+    source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_league_entry_team_members_entry_team_id ON league_entry_team_members(entry_team_id);
+  CREATE INDEX IF NOT EXISTS idx_league_entry_team_members_member_id ON league_entry_team_members(member_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS league_entry_team_members_team_member_unique ON league_entry_team_members(entry_team_id, member_id);
+`;
+
+function leagueEntryDDLForDialect(isPostgres: boolean): string {
+  if (!isPostgres) return leagueEntryDDL;
+  let s = leagueEntryDDL;
+  s = s.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY');
+  s = s.replace(/DATETIME DEFAULT CURRENT_TIMESTAMP/g, 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
+  return s;
+}
+
 /** Idempotent DDL for installs that predate registration pricing tables (Postgres / SQLite). */
 export async function ensureRegistrationPriceDiscountSettingsTablesExist(): Promise<void> {
   const config = getDatabaseConfig();
@@ -600,6 +655,7 @@ const leagueBootstrapColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'allows_waitlist', ddl: 'allows_waitlist INTEGER NOT NULL DEFAULT 1' },
   { name: 'waitlist_id', ddl: 'waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE SET NULL' },
   { name: 'is_play_in_based', ddl: 'is_play_in_based INTEGER NOT NULL DEFAULT 0' },
+  { name: 'play_in_spot_count', ddl: 'play_in_spot_count INTEGER NOT NULL DEFAULT 2' },
   { name: 'allows_sabbatical', ddl: 'allows_sabbatical INTEGER NOT NULL DEFAULT 1' },
   { name: 'allows_drop_ins', ddl: 'allows_drop_ins INTEGER NOT NULL DEFAULT 0' },
   { name: 'drop_in_fee_minor', ddl: 'drop_in_fee_minor INTEGER CHECK(drop_in_fee_minor IS NULL OR drop_in_fee_minor >= 0)' },
@@ -772,6 +828,7 @@ const leagueBootstrapColumnsPg: string[] = [
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS allows_waitlist INTEGER NOT NULL DEFAULT 1',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE SET NULL',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS is_play_in_based INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS play_in_spot_count INTEGER NOT NULL DEFAULT 2',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS allows_sabbatical INTEGER NOT NULL DEFAULT 1',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS allows_drop_ins INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS drop_in_fee_minor INTEGER',
@@ -887,6 +944,7 @@ export async function ensureCurlingRegistrationBootstrap(
     }
     await ensureLeagueBootstrapPostgres(db, execSQL);
     await ensureLeagueWaitlistSchema(db, execSQL);
+    await execSQL(db, leagueEntryDDLForDialect(true));
   } else {
     await sqliteEnsureRegistrationMembershipPaymentColumns(db, execSQL);
     await sqliteEnsureWaitlistOfferColumns(db, execSQL);
@@ -894,6 +952,7 @@ export async function ensureCurlingRegistrationBootstrap(
     await sqliteEnsureRegistrationSelectionColumns(db, execSQL);
     await sqliteEnsureLeaguesRegistrationColumns(db, execSQL);
     await ensureLeagueWaitlistSchema(db, execSQL);
+    await execSQL(db, leagueEntryDDLForDialect(false));
   }
 }
 
@@ -955,4 +1014,5 @@ export function ensureCurlingRegistrationBootstrapSync(
     CREATE INDEX IF NOT EXISTS idx_leagues_waitlist_id ON leagues(waitlist_id);
     `
   );
+  execSQLSync(db, leagueEntryDDLForDialect(false));
 }

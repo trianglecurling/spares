@@ -17,7 +17,8 @@ function sabbaticalMatchesLeagueLineage(sabbatical: ExistingSabbatical, league: 
 
 export function protectedClaimCount(context: RegistrationContext): number {
   return context.selections.filter(
-    (selection) => selection.selectionType === 'guaranteed_return' || selection.selectionType === 'sabbatical',
+    (selection) =>
+      selection.selectionType === 'guaranteed_return' || selection.selectionType === 'sabbatical',
   ).length;
 }
 
@@ -40,6 +41,14 @@ export function evaluateGuaranteedReturnEligibility(
 ): BusinessDecision<'eligible' | 'ineligible'> {
   const blockingErrors: DecisionMessage[] = [];
 
+  if (league.isPlayInBased) {
+    blockingErrors.push(
+      blockingError(
+        'play_in_no_guaranteed_return',
+        'Play-in based leagues do not offer guaranteed returns. Request play-in entry instead.',
+      ),
+    );
+  }
   if (context.registrationState !== 'priority') {
     blockingErrors.push(blockingError('not_priority_registration', 'Guaranteed returns are available only during priority registration.'));
   }

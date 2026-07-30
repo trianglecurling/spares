@@ -51,6 +51,9 @@ type PgSchema = {
   teamMembers: typeof pgSchema.teamMembersPg;
   leagueMemberRoles: typeof pgSchema.leagueMemberRolesPg;
   leagueRoster: typeof pgSchema.leagueRosterPg;
+  leagueEntryPoints: typeof pgSchema.leagueEntryPointsPg;
+  leagueEntryTeams: typeof pgSchema.leagueEntryTeamsPg;
+  leagueEntryTeamMembers: typeof pgSchema.leagueEntryTeamMembersPg;
   memberAvailability: typeof pgSchema.memberAvailabilityPg;
   spareRequests: typeof pgSchema.spareRequestsPg;
   spareRequestInvitations: typeof pgSchema.spareRequestInvitationsPg;
@@ -184,6 +187,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       teamMembers: sqliteSchema.teamMembersSqlite,
       leagueMemberRoles: sqliteSchema.leagueMemberRolesSqlite,
       leagueRoster: sqliteSchema.leagueRosterSqlite,
+      leagueEntryPoints: sqliteSchema.leagueEntryPointsSqlite,
+      leagueEntryTeams: sqliteSchema.leagueEntryTeamsSqlite,
+      leagueEntryTeamMembers: sqliteSchema.leagueEntryTeamMembersSqlite,
       memberAvailability: sqliteSchema.memberAvailabilitySqlite,
       spareRequests: sqliteSchema.spareRequestsSqlite,
       spareRequestInvitations: sqliteSchema.spareRequestInvitationsSqlite,
@@ -308,6 +314,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       teamMembers: pgSchema.teamMembersPg,
       leagueMemberRoles: pgSchema.leagueMemberRolesPg,
       leagueRoster: pgSchema.leagueRosterPg,
+      leagueEntryPoints: pgSchema.leagueEntryPointsPg,
+      leagueEntryTeams: pgSchema.leagueEntryTeamsPg,
+      leagueEntryTeamMembers: pgSchema.leagueEntryTeamMembersPg,
       memberAvailability: pgSchema.memberAvailabilityPg,
       spareRequests: pgSchema.spareRequestsPg,
       spareRequestInvitations: pgSchema.spareRequestInvitationsPg,

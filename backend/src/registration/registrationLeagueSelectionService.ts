@@ -20,6 +20,7 @@ import type { LeagueConfig, RegistrationContext, RegistrationSelectionInput } fr
 import { applyAddWaitlistPriorityRanks, requiresWaitlistFulfillmentPreferences } from './waitlistFulfillment.js';
 import { listContinuingSabbaticalSummaries } from './registrationSabbaticalContinuity.js';
 import { loadActiveWaitlistEntryCountsByLeagueId } from './waitlistEntityService.js';
+import { evaluateRegistrantPlayInEntry, type RegistrantPlayInEntrySummary } from './leagueEntryService.js';
 
 export class RegistrationLeagueSelectionValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -47,14 +48,34 @@ function basicIceFallbackInterestFromRow(value: number | null | undefined): bool
   return null;
 }
 
-function canCollectBasicIceFallback(input: {
+async function hasGuaranteedPlayInSelections(context: RegistrationContext): Promise<boolean> {
+  for (const selection of context.selections) {
+    if (selection.selectionType !== 'play_in_request' || selection.leagueId == null) continue;
+    try {
+      const summary = await evaluateRegistrantPlayInEntry({
+        leagueId: selection.leagueId,
+        memberId: context.registrant.memberId ?? null,
+        teamRosterPlacements: selection.teamRosterPlacements ?? null,
+        pendingTeammateText: selection.byotTeammateText ?? null,
+      });
+      if (summary.guaranteed) return true;
+    } catch {
+      // Unevaluable play-in leagues do not suppress basic ice fallback.
+    }
+  }
+  return false;
+}
+
+async function canCollectBasicIceFallback(input: {
   icePrivilegesChoice: string | null | undefined;
   membershipOption: string | null | undefined;
-  selections: RegistrationSelectionInput[];
-}): boolean {
+  context: RegistrationContext;
+}): Promise<boolean> {
   if (input.icePrivilegesChoice === 'basic_ice') return false;
   if (input.membershipOption === 'junior_recreational') return false;
-  return !hasGuaranteedReturnSelections(input.selections);
+  if (hasGuaranteedReturnSelections(input.context.selections)) return false;
+  if (await hasGuaranteedPlayInSelections(input.context)) return false;
+  return true;
 }
 
 function assertSelectionType(value: string): asserts value is CurlingRegistrationSelectionKindSqlite {
@@ -183,10 +204,13 @@ function validationDetails(
   selections: RegistrationSelectionInput[],
   desiredAddWaitlistLeagueCount?: number | null,
 ): Record<string, string> {
-  const validation = validateRegistrationSelections({
-    ...context,
-    desiredAddWaitlistLeagueCount: desiredAddWaitlistLeagueCount ?? context.desiredAddWaitlistLeagueCount ?? null,
-  });
+  const validation = validateRegistrationSelections(
+    {
+      ...context,
+      desiredAddWaitlistLeagueCount: desiredAddWaitlistLeagueCount ?? context.desiredAddWaitlistLeagueCount ?? null,
+    },
+    { requirePlayInRoster: false },
+  );
   const cleanup = evaluateWaitlistCleanup(context);
   const existingWaitlistPreferences = registrationTouchesWaitlistChoices(selections)
     ? evaluateExistingWaitlistPreferences(context)
@@ -212,6 +236,33 @@ async function leaguesWithActiveWaitlistEntryCounts(leagues: LeagueConfig[]): Pr
   }));
 }
 
+/**
+ * Live play-in entry summaries for every play-in based league in the catalog:
+ * whether the registrant is already on a declared entry team and the guarantee
+ * evaluation for their declared/drafted roster.
+ */
+async function buildPlayInEntrySummaries(context: RegistrationContext): Promise<Record<number, RegistrantPlayInEntrySummary>> {
+  const summaries: Record<number, RegistrantPlayInEntrySummary> = {};
+  const playInLeagues = Object.values(context.leagues).filter((league) => league.isPlayInBased);
+  for (const league of playInLeagues) {
+    const selection = context.selections.find(
+      (item) => item.selectionType === 'play_in_request' && item.leagueId === league.id,
+    );
+    try {
+      summaries[league.id] = await evaluateRegistrantPlayInEntry({
+        leagueId: league.id,
+        memberId: context.registrant.memberId ?? null,
+        teamRosterPlacements: selection?.teamRosterPlacements ?? null,
+        pendingTeammateText: selection?.byotTeammateText ?? null,
+      });
+    } catch {
+      // A league that can't be evaluated simply omits its summary; the
+      // selection UI falls back to the plain play-in request flow.
+    }
+  }
+  return summaries;
+}
+
 async function buildRegistrationLeagueSelectionPayload(registrationId: number) {
   const { db, schema } = getDrizzleDb();
   const [registration] = await db
@@ -232,6 +283,7 @@ async function buildRegistrationLeagueSelectionPayload(registrationId: number) {
     existingWaitlistEntries: context.existingWaitlistEntries,
     desiredAddWaitlistLeagueCount: context.desiredAddWaitlistLeagueCount ?? null,
     basicIceFallbackInterest: basicIceFallbackInterestFromRow(registration?.basic_ice_fallback_interest),
+    playInEntry: await buildPlayInEntrySummaries(context),
     evaluation: evaluateRegistrationDraft(context),
   };
 }
@@ -277,7 +329,9 @@ export async function putRegistrationLeagueSelections(registrationId: number, ac
   }
 
   const { db, schema } = getDrizzleDb();
-  const clearBasicIceFallbackInterest = hasGuaranteedReturnSelections(prioritySelections);
+  const clearBasicIceFallbackInterest =
+    hasGuaranteedReturnSelections(prioritySelections) ||
+    (await hasGuaranteedPlayInSelections(context));
   await db.transaction(async (tx) => {
     await tx
       .update(schema.curlingRegistrations)
@@ -349,13 +403,14 @@ export async function updateBasicIceFallbackInterest(
 ) {
   const registration = await requireEditableRegistration(registrationId, actor);
   const context = await buildRegistrationContextForDraft(registrationId);
-  if (!canCollectBasicIceFallback({
+  if (!(await canCollectBasicIceFallback({
     icePrivilegesChoice: registration.ice_privileges_choice,
     membershipOption: registration.membership_option,
-    selections: context.selections,
-  })) {
+    context,
+  }))) {
     throw new RegistrationLeagueSelectionValidationError({
-      basicIceFallback: 'Basic ice fallback only applies when the registrant has no guaranteed return leagues.',
+      basicIceFallback:
+        'Basic ice fallback only applies when the registrant has no guaranteed return or guaranteed play-in leagues.',
     });
   }
 

@@ -15,6 +15,7 @@ import MemberAutocomplete from '../../components/MemberAutocomplete';
 import LeagueSchedule from './LeagueSchedule';
 import LeagueScheduleGeneration from './LeagueScheduleGeneration';
 import LeagueStandings from './LeagueStandings';
+import LeaguePlayInEntryTab from './LeaguePlayInEntryTab';
 import LeagueSheets from './LeagueSheets';
 import LeagueMaintenance from './LeagueMaintenance';
 import Modal from '../../components/Modal';
@@ -126,6 +127,7 @@ interface League {
   allowsWaitlist: boolean;
   waitlistId?: number | null;
   isPlayInBased?: boolean;
+  playInSpotCount?: number;
   allowsSabbatical: boolean;
   allowsDropIns?: boolean;
   dropInFeeMinor?: number | null;
@@ -255,6 +257,7 @@ const leagueParamTabs = [
   'schedule-generation',
   'teams',
   'roster',
+  'play-in-entry',
   'divisions',
   'managers',
   'sabbaticals',
@@ -373,6 +376,7 @@ export default function LeagueDetail() {
     allowsDropIns: false,
     dropInFeeDollars: '' as number | '',
     isPlayInBased: false,
+    playInSpotCount: 2 as number | '',
     predecessorLeagueId: 0,
     teamFormation: 'coordinator' as 'coordinator' | 'skips_draft',
     publicNotes: '',
@@ -570,6 +574,14 @@ export default function LeagueDetail() {
   const canManageSabbaticals = useMemo(
     () => Boolean(member && memberHasScope(member, 'members.manage')),
     [member]
+  );
+  /** Play-in entry tab: registration managers and global league admins manage; league managers view. */
+  const canViewPlayInEntry = useMemo(
+    () =>
+      Boolean(member && memberHasScope(member, 'registrations.manage')) ||
+      leagueAccess.hasGlobalLeagueAdmin ||
+      leagueAccess.isLeagueManagerForLeague,
+    [member, leagueAccess]
   );
 
   const selectedRoleMemberIds = useMemo(() => {
@@ -965,6 +977,7 @@ export default function LeagueDetail() {
           ? league.dropInFeeMinor / 100
           : '',
       isPlayInBased: league.isPlayInBased ?? false,
+      playInSpotCount: league.playInSpotCount ?? 2,
       predecessorLeagueId: league.predecessorLeagueId ?? 0,
       teamFormation: league.teamFormation ?? 'coordinator',
       publicNotes: league.publicNotes ?? '',
@@ -1180,6 +1193,8 @@ export default function LeagueDetail() {
           ? Math.round(Number(leagueForm.dropInFeeDollars) * 100)
           : null,
         isPlayInBased: leagueForm.isPlayInBased,
+        playInSpotCount:
+          leagueForm.playInSpotCount === '' ? 2 : Math.max(0, Math.round(Number(leagueForm.playInSpotCount))),
         predecessorLeagueId: leagueForm.predecessorLeagueId || null,
         teamFormation: leagueForm.teamFormation,
         publicNotes: leagueForm.publicNotes.trim() || null,
@@ -1703,6 +1718,7 @@ export default function LeagueDetail() {
             showMaintenanceTab={canManageSetup}
             hideTeamsAndDivisionsTabs={leagueAllowsDropIns}
             showSabbaticalsTab={Boolean(league?.allowsSabbatical)}
+            showPlayInEntryTab={Boolean(league?.isPlayInBased) && canViewPlayInEntry}
           />
         )}
 
@@ -2419,7 +2435,7 @@ export default function LeagueDetail() {
                   </fieldset>
 
                   {leagueForm.format !== 'instructional' ? (
-                    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                    <div className="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                       <FormCheckbox
                         label="Play-in based roster"
                         helperText="Rosters are filled from play-in results instead of a waitlist."
@@ -2432,6 +2448,37 @@ export default function LeagueDetail() {
                           }))
                         }
                       />
+                      {leagueForm.isPlayInBased ? (
+                        <FormField
+                          label="Play-in spots"
+                          htmlFor="leagueCfgPlayInSpotCount"
+                          helperText={
+                            leagueForm.capacityType === 'team'
+                              ? `Teams decided by playdowns. The remaining ${Math.max(
+                                  0,
+                                  (leagueForm.capacityValue || 0) -
+                                    (leagueForm.playInSpotCount === '' ? 0 : leagueForm.playInSpotCount),
+                                )} of ${leagueForm.capacityValue || 0} team spots are granted by TLINE points.`
+                              : 'Teams decided by playdowns; the rest of the capacity is granted by TLINE points.'
+                          }
+                        >
+                          <input
+                            id="leagueCfgPlayInSpotCount"
+                            type="number"
+                            min={0}
+                            step={1}
+                            className="app-input max-w-32"
+                            value={leagueForm.playInSpotCount}
+                            onChange={(event) =>
+                              setLeagueForm((prev) => ({
+                                ...prev,
+                                playInSpotCount:
+                                  event.target.value === '' ? '' : Math.max(0, parseInt(event.target.value, 10) || 0),
+                              }))
+                            }
+                          />
+                        </FormField>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -3165,6 +3212,10 @@ export default function LeagueDetail() {
               )}
             </div>
           </div>
+        )}
+
+        {normalizedTab === 'play-in-entry' && league?.isPlayInBased && canViewPlayInEntry && (
+          <LeaguePlayInEntryTab leagueId={numericLeagueId} />
         )}
 
         {normalizedTab === 'maintenance' && canManageSetup && league && (

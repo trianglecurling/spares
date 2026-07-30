@@ -63,11 +63,16 @@ export async function removeOrphanedRegistrationRosterPlacements(input: {
   registrationId: number;
   curlerMemberId: number;
   selections: RegistrationSelectionInput[];
+  /** League IDs that must not keep an active roster row from this registration. */
+  excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
-  const keepLeagueIds = selectedGuaranteedReturnLeagueIds(input.selections);
+  const excluded = new Set(input.excludeLeagueIds ?? []);
+  const keepLeagueIds = new Set(
+    [...selectedGuaranteedReturnLeagueIds(input.selections)].filter((leagueId) => !excluded.has(leagueId)),
+  );
 
   const rosterRows = await executor
     .select()
@@ -110,11 +115,16 @@ export async function persistRegistrationRosterPlacements(input: {
   registrationId: number;
   curlerMemberId: number;
   selections: RegistrationSelectionInput[];
+  /** League IDs that must not receive a guaranteed-return roster placement. */
+  excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
-  const leagueIds = [...selectedGuaranteedReturnLeagueIds(input.selections)];
+  const excluded = new Set(input.excludeLeagueIds ?? []);
+  const leagueIds = [...selectedGuaranteedReturnLeagueIds(input.selections)].filter(
+    (leagueId) => !excluded.has(leagueId),
+  );
   if (leagueIds.length === 0) return;
 
   for (const leagueId of leagueIds) {
@@ -156,6 +166,7 @@ export async function syncRegistrationRosterPlacements(input: {
   curlerMemberId: number;
   selections: RegistrationSelectionInput[];
   registrationStatus: string;
+  excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;
 }): Promise<void> {
   await removeOrphanedRegistrationRosterPlacements(input);

@@ -324,7 +324,7 @@ Ensure emails are clear, correct, and actionable.
 - Waitlist acceptance confirmation.
 - Waitlist decline confirmation.
 - Sabbatical confirmation.
-- BYOT registration confirmation.
+- BYOT / play-in teammates on the main registration confirmation (no separate BYOT email).
 - Staff-adjusted registration notification, if implemented.
 - Registration cancellation notification, if implemented.
 

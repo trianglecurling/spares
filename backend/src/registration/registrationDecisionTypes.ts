@@ -21,6 +21,8 @@ export type RegistrationReasonCode =
   | 'play_in_cannot_be_third_league'
   | 'play_in_replace_replacement_not_held'
   | 'play_in_placement_pending'
+  | 'play_in_teammate_already_committed'
+  | 'play_in_no_guaranteed_return'
   | 'instructional_join_requires_instructional'
   | 'instructional_join_not_play_in'
   | 'instructional_join_not_waitlisted'

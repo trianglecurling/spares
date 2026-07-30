@@ -260,6 +260,13 @@
       "when": 1780352498478,
       "tag": "0037_add_site_config_wordmark_url",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1780352498479,
+      "tag": "0038_add_league_play_in_entry",
+      "breakpoints": true
     }
   ]
 }

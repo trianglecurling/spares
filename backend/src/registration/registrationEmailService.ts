@@ -23,6 +23,28 @@ export interface RegistrationReceiptLineItem {
   amountMinor: number;
 }
 
+/** Comma-separated teammate names for BYOT / play-in lines on confirmation emails. */
+export function formatRegistrationTeammatesDisplay(input: {
+  memberNames?: string[] | null;
+  pendingNames?: string[] | null;
+  legacyRosterText?: string | null;
+}): string | null {
+  const names = [
+    ...(input.memberNames ?? []),
+    ...(input.pendingNames ?? []),
+  ]
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (names.length > 0) {
+    return names.join(', ');
+  }
+  const legacy = (input.legacyRosterText ?? '')
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return legacy.length > 0 ? legacy.join(', ') : null;
+}
+
 export const REGISTRATION_PAYMENT_FINANCE_EMAIL = 'finance@trianglecurling.com';
 export const REGISTRATION_MEMBERSHIP_EMAIL = 'membership@trianglecurling.com';
 export const REGISTRATION_JUNIORS_EMAIL = 'juniors@trianglecurling.com';
@@ -575,6 +597,8 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         textBody: `Your sabbatical spot for ${leagueName} has been released.\n\nReturning later requires joining the waitlist.\n\n${membershipContactText}`,
       };
     case 'byot_registration_confirmation':
+      // Legacy template kept for resending historical messages. New registrations no
+      // longer send this email; teammates appear on the main registration confirmation.
       return {
         subject: `BYOT registration received: ${leagueName}`,
         htmlBody: `

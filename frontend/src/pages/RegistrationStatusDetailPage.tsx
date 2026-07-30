@@ -6,7 +6,12 @@ import Button from '../components/Button';
 import RegistrationViewEditModals, {
   type RegistrationEditModalKind,
 } from '../components/registration/RegistrationViewEditModals';
-import { isConfirmedLeaguePlacement, rosterTextDisplay } from '../components/registration/registrationViewEditShared';
+import {
+  isConfirmedLeaguePlacement,
+  rosterTextDisplay,
+  type RegistrationPlayInEntrySummary,
+} from '../components/registration/registrationViewEditShared';
+import { playInEntryTeamMembersText } from '../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import api, { getApiErrorMessage } from '../utils/api';
@@ -65,6 +70,7 @@ type RegistrationDetail = {
     updatedAt: string | null;
   };
   selections: Selection[];
+  playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
   waitlists: WaitlistEntry[];
   payment: {
     status: string;
@@ -303,25 +309,49 @@ export default function RegistrationStatusDetailPage() {
 
                 <Section title="League play-ins">
                   {playIns.length === 0 ? <p>No league play-ins are listed.</p> : null}
-                  {playIns.map((selection) => (
-                    <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                      <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">
-                        {selection.replacesLeagueId
-                          ? `REPLACE${
-                              selection.replacedLeagueName ? ` · Would replace ${selection.replacedLeagueName}` : ''
-                            }`
-                          : 'ADD'}
-                        {' · '}
-                        Placement depends on play-in results.
-                      </p>
-                      {selection.byotTeammateText ? (
+                  {playIns.map((selection) => {
+                    const playInSummary =
+                      selection.leagueId != null ? detail.playInEntry?.[selection.leagueId] : undefined;
+                    return (
+                      <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                        <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300">
-                          Pending teammates (not yet registered): {rosterTextDisplay(selection.byotTeammateText)}
+                          {selection.replacesLeagueId
+                            ? `REPLACE${
+                                selection.replacedLeagueName ? ` · Would replace ${selection.replacedLeagueName}` : ''
+                              }`
+                            : 'ADD'}
+                          {' · '}
+                          {selection.status === 'placed'
+                            ? 'Your team has been granted entry.'
+                            : selection.status === 'not_placed'
+                              ? 'Your team did not win entry this session.'
+                              : playInSummary?.guaranteed
+                                ? 'Your team is guaranteed entry.'
+                                : 'Placement depends on play-in results.'}
                         </p>
-                      ) : null}
-                    </div>
-                  ))}
+                        {playInSummary?.existingTeam ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
+                          </p>
+                        ) : null}
+                        {playInSummary?.existingTeam ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Not your team? Contact{' '}
+                            <a className="underline" href="mailto:membership@trianglecurling.com">
+                              membership@trianglecurling.com
+                            </a>{' '}
+                            ASAP.
+                          </p>
+                        ) : null}
+                        {selection.byotTeammateText && !playInSummary?.existingTeam ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Pending teammates (not yet registered): {rosterTextDisplay(selection.byotTeammateText)}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </Section>
 
                 <Section

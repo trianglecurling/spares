@@ -151,9 +151,24 @@ export type RegistrationLeagueFlowStep =
 export function shouldCollectBasicIceFallback(
   selections: RegistrationSelectionInput[],
   isBasicIceLeagueSelection: boolean,
+  hasGuaranteedPlayInEntry = false,
 ): boolean {
   if (isBasicIceLeagueSelection) return false;
+  if (hasGuaranteedPlayInEntry) return false;
   return selections.filter((selection) => selection.selectionType === 'guaranteed_return').length === 0;
+}
+
+/** True when a play-in request is currently evaluated as guaranteed entry. */
+export function hasGuaranteedPlayInSelection(
+  selections: RegistrationSelectionInput[],
+  playInEntry: Record<number, { guaranteed?: boolean }> | null | undefined,
+): boolean {
+  return selections.some(
+    (selection) =>
+      selection.selectionType === 'play_in_request' &&
+      selection.leagueId != null &&
+      playInEntry?.[selection.leagueId]?.guaranteed === true,
+  );
 }
 
 export type RegistrationFeePreviewLineItem = {
@@ -374,11 +389,18 @@ function nextLeagueFlowStepAfterIntermediateSteps(input: {
   selections: RegistrationSelectionInput[];
   desiredAddWaitlistLeagueCount: number | null;
   isBasicIceLeagueSelection: boolean;
+  hasGuaranteedPlayInEntry?: boolean;
 }): '/registration/basic-ice-fallback' | '/registration/third-league-interest' | '/registration/league-summary' {
   if (shouldCollectThirdLeagueInterest(input.selections, input.desiredAddWaitlistLeagueCount)) {
     return '/registration/third-league-interest';
   }
-  if (shouldCollectBasicIceFallback(input.selections, input.isBasicIceLeagueSelection)) {
+  if (
+    shouldCollectBasicIceFallback(
+      input.selections,
+      input.isBasicIceLeagueSelection,
+      input.hasGuaranteedPlayInEntry === true,
+    )
+  ) {
     return '/registration/basic-ice-fallback';
   }
   return '/registration/league-summary';
@@ -395,6 +417,7 @@ export function nextLeagueFlowStepAfterSelections(input: {
   selections: RegistrationSelectionInput[];
   desiredAddWaitlistLeagueCount: number | null;
   isBasicIceLeagueSelection: boolean;
+  hasGuaranteedPlayInEntry?: boolean;
 }): RegistrationLeagueFlowStep {
   return nextLeagueFlowStepAfterIntermediateSteps(input);
 }
@@ -406,8 +429,15 @@ export function nextLeagueFlowStepAfterLeagueRequests(): '/registration/league-s
 export function nextLeagueFlowStepAfterThirdLeagueInterest(input: {
   selections: RegistrationSelectionInput[];
   isBasicIceLeagueSelection: boolean;
+  hasGuaranteedPlayInEntry?: boolean;
 }): '/registration/basic-ice-fallback' | '/registration/league-summary' {
-  if (shouldCollectBasicIceFallback(input.selections, input.isBasicIceLeagueSelection)) {
+  if (
+    shouldCollectBasicIceFallback(
+      input.selections,
+      input.isBasicIceLeagueSelection,
+      input.hasGuaranteedPlayInEntry === true,
+    )
+  ) {
     return '/registration/basic-ice-fallback';
   }
   return '/registration/league-summary';
@@ -417,9 +447,16 @@ export function previousLeagueFlowStepBeforeSummary(input: {
   selections: RegistrationSelectionInput[];
   desiredAddWaitlistLeagueCount: number | null;
   isBasicIceLeagueSelection: boolean;
+  hasGuaranteedPlayInEntry?: boolean;
 }): '/registration/league-selection' | '/registration/basic-ice-fallback' | '/registration/third-league-interest' {
   if (input.isBasicIceLeagueSelection) return '/registration/league-selection';
-  if (shouldCollectBasicIceFallback(input.selections, input.isBasicIceLeagueSelection)) {
+  if (
+    shouldCollectBasicIceFallback(
+      input.selections,
+      input.isBasicIceLeagueSelection,
+      input.hasGuaranteedPlayInEntry === true,
+    )
+  ) {
     return '/registration/basic-ice-fallback';
   }
   if (shouldCollectThirdLeagueInterest(input.selections, input.desiredAddWaitlistLeagueCount)) {
@@ -513,6 +550,34 @@ export type ContinuingSabbaticalSummary = {
   sabbaticalFeeMinor: number;
 };
 
+export type RegistrationPlayInEntryTeamMember = {
+  memberId: number | null;
+  memberName: string | null;
+  pendingName: string | null;
+  entryType: 'add' | 'replace';
+  replacesLeagueId: number | null;
+};
+
+/** Live play-in entry evaluation for one play-in based league, keyed by league id in the payload. */
+export type RegistrationPlayInEntrySummary = {
+  leagueId: number;
+  autoEntryCount: number;
+  playInSpotCount: number;
+  teamSize: number;
+  onExistingTeam: boolean;
+  existingTeam: {
+    id: number;
+    name: string | null;
+    createdByName: string | null;
+    members: RegistrationPlayInEntryTeamMember[];
+  } | null;
+  committedOtherMemberIds: number[];
+  teamTotalPoints: number | null;
+  meetsReturningRule: boolean | null;
+  guaranteed: boolean;
+  guaranteeThresholdPoints: number | null;
+};
+
 export type RegistrationLeagueSelectionPayload = {
   leagues: LeagueCatalogItem[];
   selections: RegistrationSelectionInput[];
@@ -530,6 +595,7 @@ export type RegistrationLeagueSelectionPayload = {
     queueTotal?: number | null;
     declineCount?: number | null;
   }>;
+  playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
   evaluation?: RegistrationLeagueEvaluation;
 };
 
@@ -621,7 +687,14 @@ export const REAL_LEAGUE_SELECTION_TYPES = new Set<RegistrationSelectionType>([
   'instructional_join',
 ]);
 
-export const PROTECTED_RETURN_SELECTION_TYPES = new Set<RegistrationSelectionType>(['guaranteed_return', 'sabbatical']);
+export const PROTECTED_RETURN_SELECTION_TYPES = new Set<RegistrationSelectionType>([
+  'guaranteed_return',
+  'sabbatical',
+]);
+
+export function countProtectedClaimSelections(selections: RegistrationSelectionInput[]): number {
+  return selections.filter((selection) => PROTECTED_RETURN_SELECTION_TYPES.has(selection.selectionType)).length;
+}
 
 export function countPriorSeasonProtectedReturnSelections(
   selections: RegistrationSelectionInput[],
@@ -633,6 +706,34 @@ export function countPriorSeasonProtectedReturnSelections(
       priorSeasonReturnLeagueIds.has(selection.leagueId) &&
       PROTECTED_RETURN_SELECTION_TYPES.has(selection.selectionType),
   ).length;
+}
+
+export const PLAY_IN_WITH_TWO_GUARANTEED_RETURNS_NOTICE =
+  'You have selected two guaranteed-return leagues in addition to a play-in league. On the next page, you must choose which league to replace if you are successful entering the play-in league.';
+
+export function hasPlayInWithTwoGuaranteedReturns(selections: RegistrationSelectionInput[]): boolean {
+  const guaranteedReturnCount = selections.filter(
+    (selection) => selection.selectionType === 'guaranteed_return',
+  ).length;
+  const hasPlayIn = selections.some((selection) => selection.selectionType === 'play_in_request');
+  return hasPlayIn && guaranteedReturnCount >= 2;
+}
+
+export function isPlayInBasedLeague(league: Pick<LeagueCatalogItem, 'isPlayInBased'>): boolean {
+  return league.isPlayInBased === true;
+}
+
+/**
+ * Prior leagues stay off League requests, except play-in leagues which still need
+ * team/ADD-REPLACE completion (or re-join after "Not joining").
+ */
+export function shouldExcludePriorLeagueFromLeagueRequests(
+  league: Pick<LeagueCatalogItem, 'id' | 'isPlayInBased'>,
+  priorSeasonReturnLeagueIds: ReadonlySet<number>,
+): boolean {
+  if (!priorSeasonReturnLeagueIds.has(league.id)) return false;
+  if (isPlayInBasedLeague(league)) return false;
+  return true;
 }
 
 const CONFIRMED_LEAGUE_PLACEMENT_STATUSES = new Set(['confirmed', 'placed']);
@@ -664,10 +765,41 @@ export function isThirdLeagueInterestSelection(selection: RegistrationSelectionI
   return NON_GUARANTEED_LEAGUE_INTEREST_TYPES.has(selection.selectionType);
 }
 
-export function priorLeagueChoiceValue(selection: RegistrationSelectionInput | undefined): RegistrationSelectionType | null {
+export function priorLeagueChoiceValue(
+  selection: RegistrationSelectionInput | undefined,
+  league?: Pick<LeagueCatalogItem, 'isPlayInBased'>,
+): RegistrationSelectionType | null {
   if (!selection) return null;
-  if (selection.selectionType === 'third_league_interest') return 'return_subject_to_availability';
-  return selection.selectionType;
+  const choice =
+    selection.selectionType === 'third_league_interest'
+      ? ('return_subject_to_availability' as const)
+      : selection.selectionType;
+  if (league?.isPlayInBased === true) {
+    if (choice !== 'play_in_request' && choice !== 'drop') return null;
+  }
+  return choice;
+}
+
+/** Prior-league selection types that are invalid for a play-in based league. */
+const INVALID_PLAY_IN_PRIOR_SELECTION_TYPES = new Set<RegistrationSelectionType>([
+  'guaranteed_return',
+  'sabbatical',
+  'return_subject_to_availability',
+  'third_league_interest',
+]);
+
+export function withoutInvalidPlayInPriorSelections(
+  selections: RegistrationSelectionInput[],
+  leagues: Array<Pick<LeagueCatalogItem, 'id' | 'isPlayInBased'>>,
+): RegistrationSelectionInput[] {
+  const playInLeagueIds = new Set(
+    leagues.filter((league) => league.isPlayInBased === true).map((league) => league.id),
+  );
+  if (playInLeagueIds.size === 0) return selections;
+  return selections.filter((selection) => {
+    if (selection.leagueId == null || !playInLeagueIds.has(selection.leagueId)) return true;
+    return !INVALID_PLAY_IN_PRIOR_SELECTION_TYPES.has(selection.selectionType);
+  });
 }
 
 export function formatRegistrationDisplayDate(dateString: string): string {
@@ -897,12 +1029,22 @@ export function filterDirectLeagueRequestEligibleLeagues(
   eligibilityInput: LeagueEligibilityInput,
   priorSeasonReturnLeagueIds: Set<number>,
 ): LeagueCatalogItem[] {
-  return leagues.filter(
-    (league) =>
-      isLeagueSelectionEligibleLeague(league, eligibilityInput) &&
-      isDirectLeagueRequestLeague(league) &&
-      !priorSeasonReturnLeagueIds.has(league.id),
-  );
+  return leagues
+    .filter(
+      (league) =>
+        isLeagueSelectionEligibleLeague(league, eligibilityInput) &&
+        isDirectLeagueRequestLeague(league) &&
+        !shouldExcludePriorLeagueFromLeagueRequests(league, priorSeasonReturnLeagueIds),
+    )
+    .sort((left, right) => Number(right.isPlayInBased === true) - Number(left.isPlayInBased === true));
+}
+
+/** Returning competitive players already used a protected claim on Returning leagues. */
+export function isReturningPlayInLeague(
+  league: Pick<LeagueCatalogItem, 'id' | 'isPlayInBased'>,
+  priorSeasonReturnLeagueIds: ReadonlySet<number>,
+): boolean {
+  return isPlayInBasedLeague(league) && priorSeasonReturnLeagueIds.has(league.id);
 }
 
 /** Fee-0 standard leagues included with basic ice privileges (daytime leagues). */
@@ -928,6 +1070,21 @@ export function expectedByotRosterSize(league: Pick<LeagueCatalogItem, 'format'>
   if (league.format === 'teams') return 4;
   if (league.format === 'doubles') return 2;
   return null;
+}
+
+/** True when a play-in draft has a full team (linked members + pending names). */
+export function isPlayInDraftRosterComplete(
+  selection: RegistrationSelectionInput,
+  league: Pick<LeagueCatalogItem, 'format'>,
+  memberOptionIdByName: Map<string, number>,
+  registeringCurlerMemberId: number | null,
+): boolean {
+  const expectedSize = expectedByotRosterSize(league);
+  if (expectedSize == null) return false;
+  const teammateIds = byotRosterMemberIds(selection, memberOptionIdByName, registeringCurlerMemberId);
+  const pending = pendingByotRosterNames(selection, memberOptionIdByName, registeringCurlerMemberId);
+  const registeringCount = registeringCurlerMemberId != null ? 1 : 0;
+  return registeringCount + teammateIds.length + pending.length === expectedSize;
 }
 
 export function rosterEntries(text: string | null | undefined): string[] {
@@ -1245,28 +1402,44 @@ export function hydrateByotWaitlistPlacements(
   registeringCurler: { id: number | null; name: string },
 ): WaitlistTeamMemberPlacement[] {
   const members = buildByotWaitlistMemberList(selection, memberOptionById, memberOptionIdByName, registeringCurler);
-  if (selection.teamRosterPlacements?.length) {
-    return syncPlacementsWithMembers(
-      members,
-      selection.teamRosterPlacements.map((placement) => ({
-        memberId: placement.memberId,
-        memberName: memberOptionById.get(placement.memberId)?.name ?? `Member #${placement.memberId}`,
-        entryType: placement.entryType,
-        replacesLeagueId: placement.replacesLeagueId ?? null,
-      })),
-    );
-  }
   const fallbackType = selectionUsesReplacePlacement(selection) ? 'replace' : 'add';
   const fallbackReplaces = selectionUsesReplacePlacement(selection) ? selection.replacesLeagueId ?? null : null;
-  return members.map((member) => {
-    const isRegisteringCurler =
-      registeringCurler.id != null && member.memberId === registeringCurler.id;
-    return {
-      ...member,
-      entryType: isRegisteringCurler ? fallbackType : 'add',
-      replacesLeagueId: isRegisteringCurler && fallbackType === 'replace' ? fallbackReplaces : null,
-    };
-  });
+  const basePlacements = selection.teamRosterPlacements?.length
+    ? syncPlacementsWithMembers(
+        members,
+        selection.teamRosterPlacements.map((placement) => ({
+          memberId: placement.memberId,
+          memberName: memberOptionById.get(placement.memberId)?.name ?? `Member #${placement.memberId}`,
+          entryType: placement.entryType,
+          replacesLeagueId: placement.replacesLeagueId ?? null,
+        })),
+      )
+    : members.map((member) => {
+        const isRegisteringCurler =
+          registeringCurler.id != null && member.memberId === registeringCurler.id;
+        return {
+          ...member,
+          entryType: isRegisteringCurler ? fallbackType : 'add',
+          replacesLeagueId: isRegisteringCurler && fallbackType === 'replace' ? fallbackReplaces : null,
+        };
+      });
+
+  // Play-in REPLACE is chosen on the selection itself (not teammate placements). Keep the
+  // registering curler's placement aligned so roster edits cannot clear replacesLeagueId.
+  if (selection.selectionType === 'play_in_request' && registeringCurler.id != null) {
+    return basePlacements.map((placement) => {
+      if (placement.memberId !== registeringCurler.id) return placement;
+      if (selection.replacesLeagueId != null) {
+        return {
+          ...placement,
+          entryType: 'replace' as const,
+          replacesLeagueId: selection.replacesLeagueId,
+        };
+      }
+      return { ...placement, entryType: 'add' as const, replacesLeagueId: null };
+    });
+  }
+  return basePlacements;
 }
 
 function applyPrimaryPlacementToSelection(
@@ -1282,7 +1455,8 @@ function applyPrimaryPlacementToSelection(
   if (selection.selectionType === 'play_in_request') {
     return {
       ...selection,
-      replacesLeagueId: primaryPlacement.entryType === 'replace' ? primaryPlacement.replacesLeagueId : null,
+      // Selection-level REPLACE target is authoritative for play-in requests.
+      replacesLeagueId: selection.replacesLeagueId ?? null,
       teamRosterPlacements: toPlacementPayload(placements),
     };
   }
@@ -1458,6 +1632,7 @@ export function firstPlayInRosterValidationMessage(
   memberOptionById: Map<number, { name: string }>,
   memberOptionIdByName: Map<string, number>,
   registeringCurler: { id: number | null; name: string },
+  skipRosterLeagueIds?: Set<number>,
 ): string | null {
   return firstByotRosterValidationMessageForSelections(
     selections,
@@ -1465,7 +1640,9 @@ export function firstPlayInRosterValidationMessage(
     memberOptionById,
     memberOptionIdByName,
     registeringCurler,
-    isPlayInRequestSelection,
+    (selection) =>
+      isPlayInRequestSelection(selection) &&
+      !(selection.leagueId != null && skipRosterLeagueIds?.has(selection.leagueId)),
     'Enter the full team roster for this play-in league.',
   );
 }
@@ -1476,6 +1653,8 @@ export function firstDirectLeagueRequestRosterValidationMessage(
   memberOptionById: Map<number, { name: string }>,
   memberOptionIdByName: Map<string, number>,
   registeringCurler: { id: number | null; name: string },
+  /** Play-in leagues where the registrant is already on a declared entry team. */
+  skipPlayInRosterLeagueIds?: Set<number>,
 ): string | null {
   return (
     firstByotWaitlistRosterValidationMessage(
@@ -1491,6 +1670,7 @@ export function firstDirectLeagueRequestRosterValidationMessage(
       memberOptionById,
       memberOptionIdByName,
       registeringCurler,
+      skipPlayInRosterLeagueIds,
     )
   );
 }

@@ -3845,6 +3845,9 @@
                         "string"
                       ]
                     },
+                    "pendingRegistrationPayment": {
+                      "type": "boolean"
+                    },
                     "session": {
                       "type": [
                         "null",
@@ -3885,7 +3888,8 @@
                             "enum": [
                               "roster",
                               "sabbatical",
-                              "waitlist"
+                              "waitlist",
+                              "pending"
                             ]
                           }
                         },
@@ -3901,6 +3905,7 @@
                     "name",
                     "membershipStatus",
                     "icePrivilegesValidThrough",
+                    "pendingRegistrationPayment",
                     "session",
                     "leagues"
                   ]
@@ -6040,6 +6045,9 @@
                       "isPlayInBased": {
                         "type": "boolean"
                       },
+                      "playInSpotCount": {
+                        "type": "number"
+                      },
                       "allowsSabbatical": {
                         "type": "boolean"
                       },
@@ -6441,6 +6449,9 @@
                     "isPlayInBased": {
                       "type": "boolean"
                     },
+                    "playInSpotCount": {
+                      "type": "number"
+                    },
                     "allowsSabbatical": {
                       "type": "boolean"
                     },
@@ -6765,6 +6776,9 @@
                           "isPlayInBased": {
                             "type": "boolean"
                           },
+                          "playInSpotCount": {
+                            "type": "number"
+                          },
                           "allowsSabbatical": {
                             "type": "boolean"
                           },
@@ -6996,6 +7010,9 @@
                   "isPlayInBased": {
                     "type": "boolean"
                   },
+                  "playInSpotCount": {
+                    "type": "number"
+                  },
                   "allowsSabbatical": {
                     "type": "boolean"
                   },
@@ -7196,6 +7213,9 @@
                     },
                     "isPlayInBased": {
                       "type": "boolean"
+                    },
+                    "playInSpotCount": {
+                      "type": "number"
                     },
                     "allowsSabbatical": {
                       "type": "boolean"
@@ -7685,6 +7705,9 @@
                           },
                           "isPlayInBased": {
                             "type": "boolean"
+                          },
+                          "playInSpotCount": {
+                            "type": "number"
                           },
                           "allowsSabbatical": {
                             "type": "boolean"
@@ -24126,6 +24149,76 @@
         }
       }
     },
+    "/registration/leagues/{leagueId}/play-in-entry-preview": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/drafts/{id}/league-catalog": {
       "get": {
         "tags": [
@@ -25708,6 +25801,247 @@
             },
             "in": "path",
             "name": "offerId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/entry/report": {
+      "get": {
+        "tags": [
+          "league-entry"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/entry/points": {
+      "put": {
+        "tags": [
+          "league-entry"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/entry/points/{pointsId}": {
+      "delete": {
+        "tags": [
+          "league-entry"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "pointsId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/entry/teams": {
+      "post": {
+        "tags": [
+          "league-entry"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/entry/teams/{teamId}": {
+      "patch": {
+        "tags": [
+          "league-entry"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "teamId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/entry/teams/{teamId}/link-member": {
+      "post": {
+        "tags": [
+          "league-entry"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "teamId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leagues/{leagueId}/entry/teams/{teamId}/outcome": {
+      "post": {
+        "tags": [
+          "league-entry"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "leagueId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "teamId",
             "required": true
           }
         ],

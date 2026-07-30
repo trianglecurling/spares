@@ -21,8 +21,13 @@ import { effectiveLeagueRegistrationFeeMinor } from './registrationConfigValidat
 import { calculateRegistrationFees, type RegistrationFeeLineItem, type RegistrationFeePreview } from './registrationFeeCalculator.js';
 import { evaluateExistingWaitlistPreferences, evaluateWaitlistCleanup } from './registrationLeagueSelections.js';
 import { decideRegistrationPayment, type RegistrationPaymentDecision } from './registrationPaymentDecision.js';
-import type { LeagueConfig, RegistrationContext, RegistrationSelectionInput } from './registrationContext.js';
-import { sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType, type RegistrationReceiptLineItem } from './registrationEmailService.js';
+import {
+  guaranteedPlayInReplacedLeagueIds,
+  type LeagueConfig,
+  type RegistrationContext,
+  type RegistrationSelectionInput,
+} from './registrationContext.js';
+import { formatRegistrationTeammatesDisplay, sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType, type RegistrationReceiptLineItem } from './registrationEmailService.js';
 import {
   assertStaffEditableRegistration,
   isPriorityEditableRegistrationStatus,
@@ -351,7 +356,22 @@ function memberDisplayName(row: { name?: string | null; first_name?: string | nu
   return parts.length > 0 ? parts.join(' ') : row.name?.trim() || row.email?.trim() || 'there';
 }
 
-function registrationSummaryLines(context: RegistrationContext): string[] {
+async function selectionTeammatesDisplayText(selection: {
+  byotTeammateText?: string | null;
+  teamRosterText?: string | null;
+  teamRosterPlacements?: RegistrationSelectionInput['teamRosterPlacements'];
+}): Promise<string | null> {
+  const { enrichTeamRosterPlacements, waitlistRosterEntries } = await import('./waitlistTeamRoster.js');
+  const placements = selection.teamRosterPlacements ?? [];
+  const enriched = placements.length > 0 ? await enrichTeamRosterPlacements(placements) : [];
+  return formatRegistrationTeammatesDisplay({
+    memberNames: enriched.map((placement) => placement.memberName),
+    pendingNames: waitlistRosterEntries(selection.byotTeammateText),
+    legacyRosterText: selection.teamRosterText,
+  });
+}
+
+async function registrationSummaryLines(context: RegistrationContext): Promise<string[]> {
   const lines: string[] = [];
   if (context.membershipOption && context.membershipOption !== 'none') {
     lines.push(`${context.membershipOption.replace(/_/g, ' ')} membership`);
@@ -359,7 +379,14 @@ function registrationSummaryLines(context: RegistrationContext): string[] {
   for (const selection of context.selections) {
     const leagueName = selection.leagueId ? context.leagues[selection.leagueId]?.name : null;
     const label = selection.selectionType.replace(/_/g, ' ');
-    lines.push(leagueName ? `${label}: ${leagueName}` : label);
+    let line = leagueName ? `${label}: ${leagueName}` : label;
+    if (selection.selectionType === 'byot_request' || selection.selectionType === 'play_in_request') {
+      const teammates = await selectionTeammatesDisplayText(selection);
+      if (teammates) {
+        line += ` · Teammates: ${teammates}`;
+      }
+    }
+    lines.push(line);
   }
   return lines;
 }
@@ -414,7 +441,7 @@ function formatRegistrationSelectionDetailLine(input: {
   replacesLeagueId: number | null;
   replacedLeagueName: string | null;
   isTemporarySabbaticalFill: boolean;
-  byotTeammateText: string | null;
+  teammatesText: string | null;
   rank: number | null;
 }): string {
   const typeLabel = SELECTION_TYPE_LABELS[input.selectionType] ?? humanizeRegistrationToken(input.selectionType);
@@ -429,9 +456,9 @@ function formatRegistrationSelectionDetailLine(input: {
   }
   if (
     (input.selectionType === 'byot_request' || input.selectionType === 'play_in_request') &&
-    input.byotTeammateText?.trim()
+    input.teammatesText?.trim()
   ) {
-    parts.push(`Teammates: ${input.byotTeammateText.trim()}`);
+    parts.push(`Teammates: ${input.teammatesText.trim()}`);
   }
   return parts.join(' · ');
 }
@@ -484,6 +511,7 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
       replacesLeagueId: schema.registrationSelections.replaces_league_id,
       isTemporarySabbaticalFill: schema.registrationSelections.is_temporary_sabbatical_fill,
       byotTeammateText: schema.registrationSelections.byot_teammate_text,
+      teamRosterPlacements: schema.registrationSelections.team_roster_placements,
       leagueName: schema.leagues.name,
     })
     .from(schema.registrationSelections)
@@ -511,6 +539,7 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
     .where(eq(schema.registrationInvoiceLineItems.invoice_id, input.invoice.id))
     .orderBy(asc(schema.registrationInvoiceLineItems.sort_order), asc(schema.registrationInvoiceLineItems.id));
 
+  const { parseTeamRosterPlacements } = await import('./waitlistTeamRoster.js');
   const registrationDetailLines = [
     `Season: ${season?.name ?? 'Not available'}`,
     `Session: ${session?.name ?? 'Not available'}`,
@@ -526,6 +555,12 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
   if (selections.length > 0) {
     registrationDetailLines.push('League and program choices:');
     for (const selection of selections) {
+      const teammatesText = await selectionTeammatesDisplayText({
+        selectionType: selection.selectionType,
+        leagueId: selection.leagueId,
+        byotTeammateText: selection.byotTeammateText,
+        teamRosterPlacements: parseTeamRosterPlacements(selection.teamRosterPlacements),
+      });
       registrationDetailLines.push(
         formatRegistrationSelectionDetailLine({
           selectionType: selection.selectionType,
@@ -534,7 +569,7 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
           replacesLeagueId: selection.replacesLeagueId,
           replacedLeagueName: selection.replacesLeagueId ? replacedLeagueNames.get(selection.replacesLeagueId) ?? null : null,
           isTemporarySabbaticalFill: selection.isTemporarySabbaticalFill === 1,
-          byotTeammateText: selection.byotTeammateText,
+          teammatesText,
           rank: selection.rank,
         })
       );
@@ -901,6 +936,15 @@ async function buildRegistrationContextFromSourceRow(
     new Set([...options.completedSessions.map((session) => session.leagueId), ...activeLeagueIds])
   );
 
+  const { loadPlayInEntryContextsForRegistration } = await import('./leagueEntryService.js');
+  const playInEntry = options.registrationId
+    ? await loadPlayInEntryContextsForRegistration({
+        memberId,
+        selections,
+        leagues,
+      })
+    : undefined;
+
   return {
     season: {
       id: window.season.id,
@@ -955,6 +999,7 @@ async function buildRegistrationContextFromSourceRow(
           },
     ...settings,
     juniorAssistance,
+    playInEntry,
     sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
     desiredAddWaitlistLeagueCount: registration.desired_add_waitlist_league_count ?? null,
   };
@@ -1945,16 +1990,37 @@ async function persistRegistrationSabbaticals(input: {
   }
 }
 
-async function setSubmittedSelectionStatuses(tx: any, registrationId: number): Promise<void> {
+async function setSubmittedSelectionStatuses(
+  tx: any,
+  registrationId: number,
+  options?: { droppedLeagueIds?: Iterable<number> },
+): Promise<void> {
   const { schema } = getDrizzleDb();
+  const droppedLeagueIds = [...new Set(options?.droppedLeagueIds ?? [])].filter(
+    (leagueId) => Number.isInteger(leagueId) && leagueId > 0,
+  );
+  if (droppedLeagueIds.length > 0) {
+    // Guaranteed play-in REPLACE releases these leagues immediately — do not confirm or roster them.
+    await tx
+      .update(schema.registrationSelections)
+      .set({ status: 'dropped', updated_at: sql`CURRENT_TIMESTAMP` })
+      .where(
+        and(
+          eq(schema.registrationSelections.registration_id, registrationId),
+          inArray(schema.registrationSelections.league_id, droppedLeagueIds),
+          sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'instructional_join')`,
+        ),
+      );
+  }
   await tx
     .update(schema.registrationSelections)
     .set({ status: 'confirmed', updated_at: sql`CURRENT_TIMESTAMP` })
     .where(
       and(
         eq(schema.registrationSelections.registration_id, registrationId),
-        sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'spare_only', 'junior_recreational')`
-      )
+        sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'spare_only', 'junior_recreational')`,
+        sql`${schema.registrationSelections.status} NOT IN ('dropped', 'not_placed', 'cancelled', 'declined')`,
+      ),
     );
   await tx
     .update(schema.registrationSelections)
@@ -1962,8 +2028,8 @@ async function setSubmittedSelectionStatuses(tx: any, registrationId: number): P
     .where(
       and(
         eq(schema.registrationSelections.registration_id, registrationId),
-        sql`${schema.registrationSelections.selection_type} IN ('return_subject_to_availability', 'third_league_interest')`
-      )
+        sql`${schema.registrationSelections.selection_type} IN ('return_subject_to_availability', 'third_league_interest')`,
+      ),
     );
   await tx
     .update(schema.registrationSelections)
@@ -1971,9 +2037,16 @@ async function setSubmittedSelectionStatuses(tx: any, registrationId: number): P
     .where(
       and(
         eq(schema.registrationSelections.registration_id, registrationId),
-        sql`${schema.registrationSelections.selection_type} IN ('waitlist_add', 'waitlist_replace', 'waitlist_add_auto_decline', 'waitlist_replace_auto_decline', 'waitlist_keep_auto_accept', 'waitlist_keep_auto_decline')`
-      )
+        sql`${schema.registrationSelections.selection_type} IN ('waitlist_add', 'waitlist_replace', 'waitlist_add_auto_decline', 'waitlist_replace_auto_decline', 'waitlist_keep_auto_accept', 'waitlist_keep_auto_decline')`,
+      ),
     );
+}
+
+/** Selection statuses that must never be overwritten when confirming payment/entitlements. */
+export const PRESERVED_REGISTRATION_SELECTION_STATUSES = ['dropped', 'not_placed', 'cancelled', 'declined'] as const;
+
+export function registrationSelectionStatusIsPreserved(status: string): boolean {
+  return (PRESERVED_REGISTRATION_SELECTION_STATUSES as readonly string[]).includes(status);
 }
 
 export async function submitStaffRegistrationEdits(input: SubmitRegistrationInput & { changedSummary?: string }): Promise<SubmitRegistrationResult> {
@@ -2004,6 +2077,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
       selections: initialContext.selections,
+      excludeLeagueIds: guaranteedPlayInReplacedLeagueIds(initialContext),
     });
   }
   const context = await buildRegistrationContextForDraft(input.registrationId);
@@ -2098,6 +2172,16 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       desiredAddWaitlistLeagueCount: context.desiredAddWaitlistLeagueCount ?? null,
       notifications: waitlistNotifications,
     });
+    {
+      const { syncRegistrationEntryTeams } = await import('./leagueEntryService.js');
+      await syncRegistrationEntryTeams({
+        tx,
+        registrationId: input.registrationId,
+        curlerMemberId: registration.curler_member_id,
+        selections: context.selections,
+        leagues: context.leagues,
+      });
+    }
     await persistWaitlistOfferPreferences({
       tx,
       registrationId: input.registrationId,
@@ -2117,7 +2201,9 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       context,
       feePreview: evaluation.feePreview,
     });
-    await setSubmittedSelectionStatuses(tx, input.registrationId);
+    await setSubmittedSelectionStatuses(tx, input.registrationId, {
+      droppedLeagueIds: guaranteedPlayInReplacedLeagueIds(context),
+    });
     const snapshotId = await createInvoiceSnapshot({
       registrationId: input.registrationId,
       payerMemberId,
@@ -2165,6 +2251,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
       selections: context.selections,
+      excludeLeagueIds: guaranteedPlayInReplacedLeagueIds(context),
       registrationStatus: submittedStatus,
     });
     if (
@@ -2280,7 +2367,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
           payload: {
             amountDueMinor: adjustmentMinor,
             paymentUrl: checkout.checkoutUrl,
-            summaryLines: registrationSummaryLines(context),
+            summaryLines: await registrationSummaryLines(context),
           },
         });
       } catch (error) {
@@ -2378,20 +2465,6 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         })
         .where(eq(schema.curlingRegistrations.id, input.registrationId));
 
-      for (const selection of context.selections.filter(
-        (item) => item.selectionType === 'byot_request' || item.selectionType === 'play_in_request',
-      )) {
-        if (!selection.leagueId || await hasSentRegistrationMessage(input.registrationId, 'byot_registration_confirmation')) continue;
-        await safeSendRegistrationEmail({
-          registrationId: input.registrationId,
-          messageType: 'byot_registration_confirmation',
-          payload: {
-            leagueName: context.leagues[selection.leagueId]?.name,
-            teammateText: selection.byotTeammateText,
-          },
-        });
-      }
-
       return {
         outcome: 'immediate_payment',
         registrationId: input.registrationId,
@@ -2415,7 +2488,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     payload: {
       amountDueMinor: evaluation.feePreview.totalDueMinor,
       deferralReasons: evaluation.paymentDecision.deferralReasons,
-      summaryLines: registrationSummaryLines(context),
+      summaryLines: await registrationSummaryLines(context),
     },
   });
 
@@ -2425,20 +2498,6 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       messageType: 'junior_assistance_pending',
       payload: {
         requestedAssistancePercent: context.juniorAssistance.requestedPercent,
-      },
-    });
-  }
-
-  for (const selection of context.selections.filter(
-    (item) => item.selectionType === 'byot_request' || item.selectionType === 'play_in_request',
-  )) {
-    if (!selection.leagueId || await hasSentRegistrationMessage(input.registrationId, 'byot_registration_confirmation')) continue;
-    await safeSendRegistrationEmail({
-      registrationId: input.registrationId,
-      messageType: 'byot_registration_confirmation',
-      payload: {
-        leagueName: context.leagues[selection.leagueId]?.name,
-        teammateText: selection.byotTeammateText,
       },
     });
   }
@@ -2481,20 +2540,59 @@ export async function triggerDeferredRegistrationPayment(input: {
       .map((selection) => selection.leagueId)
       .filter((leagueId): leagueId is number => leagueId !== null && leagueId !== undefined)
   );
+  // Play-in teams granted entry bill like placements; teams that lost playdowns drop off the invoice.
+  const placedPlayInLeagues = new Set(
+    selectionRows
+      .filter((selection) => selection.selectionType === 'play_in_request' && selection.status === 'placed')
+      .map((selection) => selection.leagueId)
+      .filter((leagueId): leagueId is number => leagueId !== null && leagueId !== undefined)
+  );
+  const notPlacedPlayInLeagues = new Set(
+    selectionRows
+      .filter((selection) => selection.selectionType === 'play_in_request' && selection.status === 'not_placed')
+      .map((selection) => selection.leagueId)
+      .filter((leagueId): leagueId is number => leagueId !== null && leagueId !== undefined)
+  );
+  // Successful play-in REPLACE releases the replaced league; do not bill it again.
+  const replacedByPlacedPlayIn = new Set(
+    context.selections
+      .filter(
+        (selection) =>
+          selection.selectionType === 'play_in_request' &&
+          selection.leagueId != null &&
+          placedPlayInLeagues.has(selection.leagueId) &&
+          selection.replacesLeagueId != null,
+      )
+      .map((selection) => selection.replacesLeagueId as number),
+  );
   const paymentContext: RegistrationContext = {
     ...context,
     selections: context.selections
       .filter((selection) => {
+        if (selection.leagueId != null && replacedByPlacedPlayIn.has(selection.leagueId)) {
+          return false;
+        }
         if (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') {
           return selection.leagueId != null && placedWaitlistLeagues.has(selection.leagueId);
         }
+        if (selection.selectionType === 'play_in_request') {
+          return selection.leagueId == null || !notPlacedPlayInLeagues.has(selection.leagueId);
+        }
         return true;
       })
-      .map((selection) =>
-        selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace'
-          ? { ...selection, selectionType: 'guaranteed_return' as const }
-          : selection
-      ),
+      .map((selection) => {
+        if (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') {
+          return { ...selection, selectionType: 'guaranteed_return' as const };
+        }
+        if (
+          selection.selectionType === 'play_in_request' &&
+          selection.leagueId != null &&
+          placedPlayInLeagues.has(selection.leagueId)
+        ) {
+          return { ...selection, selectionType: 'guaranteed_return' as const };
+        }
+        return selection;
+      }),
   };
   const feePreview = calculateRegistrationFees(paymentContext);
   const paymentDecision = decideRegistrationPayment({ context: paymentContext, feePreview });
@@ -2574,7 +2672,7 @@ export async function triggerDeferredRegistrationPayment(input: {
       payload: {
         amountDueMinor: feePreview.totalDueMinor,
         paymentUrl: checkout.checkoutUrl,
-        summaryLines: registrationSummaryLines(paymentContext),
+        summaryLines: await registrationSummaryLines(paymentContext),
       },
     });
     return {
@@ -2671,19 +2769,30 @@ async function applyConfirmedRegistrationEntitlementsInTx(input: {
     .select({
       leagueId: schema.registrationSelections.league_id,
       selectionType: schema.registrationSelections.selection_type,
+      status: schema.registrationSelections.status,
     })
     .from(schema.registrationSelections)
     .where(eq(schema.registrationSelections.registration_id, input.registrationId));
+  const excludeLeagueIds = selectionRows
+    .filter(
+      (row: { leagueId: number | null; status: string }) =>
+        row.leagueId != null && registrationSelectionStatusIsPreserved(row.status),
+    )
+    .map((row: { leagueId: number | null }) => row.leagueId as number);
   await syncRegistrationRosterPlacements({
     tx: input.tx,
     registrationId: input.registrationId,
     curlerMemberId: input.curlerMemberId,
     selections: selectionRows
-      .filter((row: { leagueId: number | null; selectionType: string }) => row.leagueId != null)
+      .filter(
+        (row: { leagueId: number | null; status: string }) =>
+          row.leagueId != null && !registrationSelectionStatusIsPreserved(row.status),
+      )
       .map((row: { leagueId: number | null; selectionType: string }) => ({
         leagueId: row.leagueId,
         selectionType: row.selectionType,
       })),
+    excludeLeagueIds,
     registrationStatus: 'confirmed',
   });
 
@@ -2795,7 +2904,9 @@ export async function confirmCurlingRegistrationForPaymentOrder(orderId: number)
       .where(
         and(
           eq(schema.registrationSelections.registration_id, registrationId),
-          sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'sabbatical', 'spare_only', 'junior_recreational')`
+          sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'sabbatical', 'spare_only', 'junior_recreational')`,
+          // Preserve REPLACE releases and other terminal outcomes — never re-confirm unpaid leagues.
+          sql`${schema.registrationSelections.status} NOT IN ('dropped', 'not_placed', 'cancelled', 'declined')`,
         )
       );
     const grant = await applyConfirmedRegistrationEntitlementsInTx({

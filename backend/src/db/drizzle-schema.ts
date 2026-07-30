@@ -211,8 +211,19 @@ export type LeagueRosterPlacementTypeSqlite =
   | 'waitlist_add'
   | 'waitlist_replace'
   | 'byot'
+  | 'play_in'
   | 'staff_manual'
   | 'temporary_sabbatical_fill';
+
+/** Source of a TLINE entry-points ledger row. Only 'manual' is written today; the others are reserved for future automated awards. */
+export type LeagueEntryPointsSourceSqlite = 'manual' | 'standings' | 'playdown';
+export type LeagueEntryTeamStatusSqlite =
+  | 'pending'
+  | 'guaranteed'
+  | 'playdown'
+  | 'entered'
+  | 'not_entered'
+  | 'withdrawn';
 
 export type CurlingLeagueSabbaticalStatusSqlite =
   | 'active'
@@ -381,6 +392,8 @@ export const leaguesSqlite = sqliteTable('leagues', {
   allows_waitlist: integer('allows_waitlist').default(1).notNull(),
   waitlist_id: integer('waitlist_id'),
   is_play_in_based: integer('is_play_in_based').default(0).notNull(),
+  /** Number of roster spots decided by playdowns for play-in based leagues (auto-entry spots = capacity_value - play_in_spot_count). */
+  play_in_spot_count: integer('play_in_spot_count').default(2).notNull(),
   allows_sabbatical: integer('allows_sabbatical').default(1).notNull(),
   allows_drop_ins: integer('allows_drop_ins').default(0).notNull(),
   drop_in_fee_minor: integer('drop_in_fee_minor'),
@@ -1104,6 +1117,63 @@ export const leagueRosterSqlite = sqliteTable('league_roster', {
   leagueIdIdx: index('idx_league_roster_league_id').on(table.league_id),
   memberIdIdx: index('idx_league_roster_member_id').on(table.member_id),
   uniqueLeagueMember: uniqueIndex('league_roster_league_id_member_id_unique').on(table.league_id, table.member_id),
+}));
+
+/** TLINE points ledger for play-in based leagues; a member's effective points = sum of rows for the league. */
+export const leagueEntryPointsSqlite = sqliteTable('league_entry_points', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  /** Points in half-point units (e.g. 39 = 19.5) to avoid floating point issues. */
+  points_half: integer('points_half').default(0).notNull(),
+  /** Whether this row marks the member as having played in the league's prior-season sessions (playdown losers get points but are not "returning"). */
+  counts_as_returning: integer('counts_as_returning').default(0).notNull(),
+  source: text('source').notNull().default('manual').$type<LeagueEntryPointsSourceSqlite>(),
+  notes: text('notes'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  leagueIdIdx: index('idx_league_entry_points_league_id').on(table.league_id),
+  memberIdIdx: index('idx_league_entry_points_member_id').on(table.member_id),
+  leagueMemberIdx: index('idx_league_entry_points_league_member').on(table.league_id, table.member_id),
+}));
+
+/** Declared entry team for a play-in based league; persists across teammates' registrations. */
+export const leagueEntryTeamsSqlite = sqliteTable('league_entry_teams', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  name: text('name'),
+  status: text('status').notNull().default('pending').$type<LeagueEntryTeamStatusSqlite>(),
+  created_from_registration_id: integer('created_from_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  notes: text('notes'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  leagueIdIdx: index('idx_league_entry_teams_league_id').on(table.league_id),
+  statusIdx: index('idx_league_entry_teams_status').on(table.status),
+}));
+
+export const leagueEntryTeamMembersSqlite = sqliteTable('league_entry_team_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  entry_team_id: integer('entry_team_id').notNull().references(() => leagueEntryTeamsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  /** Free-text name for teammates without a member account yet (always 0 TLINE points). */
+  pending_name: text('pending_name'),
+  entry_type: text('entry_type').notNull().default('add').$type<WaitlistEntryTypeSqlite>(),
+  replaces_league_id: integer('replaces_league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
+  /** Set once this person submits their own registration naming this team. */
+  source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
+    onDelete: 'set null',
+  }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  entryTeamIdx: index('idx_league_entry_team_members_entry_team_id').on(table.entry_team_id),
+  memberIdx: index('idx_league_entry_team_members_member_id').on(table.member_id),
+  uniqueTeamMember: uniqueIndex('league_entry_team_members_team_member_unique').on(table.entry_team_id, table.member_id),
 }));
 
 export const memberAvailabilitySqlite = sqliteTable('member_availability', {
@@ -2347,6 +2417,8 @@ export const leaguesPg = pgTable('leagues', {
   allows_waitlist: integerPg('allows_waitlist').default(1).notNull(),
   waitlist_id: integerPg('waitlist_id'),
   is_play_in_based: integerPg('is_play_in_based').default(0).notNull(),
+  /** Number of roster spots decided by playdowns for play-in based leagues (auto-entry spots = capacity_value - play_in_spot_count). */
+  play_in_spot_count: integerPg('play_in_spot_count').default(2).notNull(),
   allows_sabbatical: integerPg('allows_sabbatical').default(1).notNull(),
   allows_drop_ins: integerPg('allows_drop_ins').default(0).notNull(),
   drop_in_fee_minor: integerPg('drop_in_fee_minor'),
@@ -3051,6 +3123,63 @@ export const leagueRosterPg = pgTable('league_roster', {
   leagueIdIdx: indexPg('idx_league_roster_league_id').on(table.league_id),
   memberIdIdx: indexPg('idx_league_roster_member_id').on(table.member_id),
   uniqueLeagueMember: uniqueIndexPg('league_roster_league_id_member_id_unique').on(table.league_id, table.member_id),
+}));
+
+/** TLINE points ledger for play-in based leagues; a member's effective points = sum of rows for the league. */
+export const leagueEntryPointsPg = pgTable('league_entry_points', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  /** Points in half-point units (e.g. 39 = 19.5) to avoid floating point issues. */
+  points_half: integerPg('points_half').default(0).notNull(),
+  /** Whether this row marks the member as having played in the league's prior-season sessions (playdown losers get points but are not "returning"). */
+  counts_as_returning: integerPg('counts_as_returning').default(0).notNull(),
+  source: textPg('source').notNull().default('manual').$type<LeagueEntryPointsSourceSqlite>(),
+  notes: textPg('notes'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  leagueIdIdx: indexPg('idx_league_entry_points_league_id').on(table.league_id),
+  memberIdIdx: indexPg('idx_league_entry_points_member_id').on(table.member_id),
+  leagueMemberIdx: indexPg('idx_league_entry_points_league_member').on(table.league_id, table.member_id),
+}));
+
+/** Declared entry team for a play-in based league; persists across teammates' registrations. */
+export const leagueEntryTeamsPg = pgTable('league_entry_teams', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  name: textPg('name'),
+  status: textPg('status').notNull().default('pending').$type<LeagueEntryTeamStatusSqlite>(),
+  created_from_registration_id: integerPg('created_from_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  notes: textPg('notes'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  leagueIdIdx: indexPg('idx_league_entry_teams_league_id').on(table.league_id),
+  statusIdx: indexPg('idx_league_entry_teams_status').on(table.status),
+}));
+
+export const leagueEntryTeamMembersPg = pgTable('league_entry_team_members', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  entry_team_id: integerPg('entry_team_id').notNull().references(() => leagueEntryTeamsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'cascade' }),
+  /** Free-text name for teammates without a member account yet (always 0 TLINE points). */
+  pending_name: textPg('pending_name'),
+  entry_type: textPg('entry_type').notNull().default('add').$type<WaitlistEntryTypeSqlite>(),
+  replaces_league_id: integerPg('replaces_league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
+  /** Set once this person submits their own registration naming this team. */
+  source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
+    onDelete: 'set null',
+  }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  entryTeamIdx: indexPg('idx_league_entry_team_members_entry_team_id').on(table.entry_team_id),
+  memberIdx: indexPg('idx_league_entry_team_members_member_id').on(table.member_id),
+  uniqueTeamMember: uniqueIndexPg('league_entry_team_members_team_member_unique').on(table.entry_team_id, table.member_id),
 }));
 
 export const memberAvailabilityPg = pgTable('member_availability', {

@@ -95,6 +95,14 @@ A registration choice indicating that the curler does not want to return to a pr
 
 Dropping a league gives up the curler’s protected return claim for that league.
 
+## Entry team
+
+A persistent declared team for a play-in based league.
+
+The first teammate to register creates the entry team from their declared roster. Later teammates are attached to the existing team instead of creating duplicates.
+
+Entry team members are either linked member accounts or pending names. A member may be on at most one active entry team per league.
+
 ## Fiscal year
 
 The tenant-configured financial year.
@@ -111,15 +119,21 @@ A person placed into a full spot may be eligible for guaranteed return in the su
 
 A full spot is different from a temporary sabbatical-fill spot.
 
+## Guarantee threshold
+
+The auto-entry cutoff for a play-in based league: the combined TLINE total of the `autoEntryCount`-th strongest opposing team (already-declared teams plus the strongest teams formable by stacking the uncommitted points pool).
+
+A registering team is guaranteed automatic entry when its total strictly exceeds this threshold (and it meets the returning-member rule).
+
 ## Guaranteed return
 
 A protected right for a returning member to return to an eligible league during priority registration.
 
 A member may claim up to two protected league spots total during priority registration.
 
-Protected claims include both guaranteed returns and sabbaticals.
+Protected claims include guaranteed returns and sabbaticals.
 
-To receive a guaranteed return, the member must register during priority registration and must be eligible based on league continuity and prior participation.
+To receive a guaranteed return, the member must register during priority registration and must be eligible based on league continuity and prior participation. Play-in based leagues do not offer guaranteed returns.
 
 ## Ice privileges
 
@@ -268,6 +282,34 @@ The adult responsible for a minor curler.
 
 Parent/guardian information is required when the curler is under 18.
 
+## Pending name
+
+A free-text teammate name on an entry team for someone who is not yet a member.
+
+Pending names contribute zero TLINE points until staff link them to a member account.
+
+## Play-in based league
+
+A league whose roster is decided by TLINE points and playdowns instead of guaranteed returns and waitlists.
+
+The top teams by combined TLINE points receive automatic entry. The remaining spots are decided by playdowns.
+
+## Play-in request
+
+A league selection type for joining a play-in based league.
+
+Play-in requests declare a full entry team and follow the same ADD/REPLACE semantics as waitlist entries. Payment is immediate for guaranteed teams and deferred otherwise.
+
+A play-in request does not count as one of the two protected claims. If two
+guaranteed returns are also selected, the registrant must choose a REPLACE
+target for the play-in request.
+
+## Playdown
+
+The competitive process used to fill the final spots of a play-in based league.
+
+Teams that are not guaranteed automatic entry play down for the remaining spots. Playdown participants who do not win entry earn 1 TLINE point, which does not count as returning participation.
+
 ## Policy acceptance
 
 The required agreement to club policies before continuing registration.
@@ -294,7 +336,7 @@ Anyone may register during priority registration, including new members, but onl
 
 ## Protected claim
 
-A guaranteed return or sabbatical claim.
+A guaranteed return or sabbatical.
 
 A member may have at most two protected claims during priority registration.
 
@@ -303,6 +345,10 @@ Examples:
 - Two guaranteed returns.
 - One guaranteed return and one sabbatical.
 - Two sabbaticals.
+
+A play-in request does not count as a protected claim. A member may select two
+guaranteed returns and also join a competitive league; if so, they must choose
+which league to replace if they get into the play-in league.
 
 A member may not play in two guaranteed-return leagues and also hold a third league on sabbatical.
 
@@ -472,6 +518,14 @@ Third-league interest:
 - Defers payment.
 - May be processed manually by staff.
 - Cannot include BYOT leagues.
+
+## TLINE points
+
+Individual points earned from prior-season standings, used to rank entry teams for play-in based leagues.
+
+Points are awarded per session based on finishing position (20, 19½, 19, ... down to 2), carried by the individual to their next team, and count only from the prior season. Playdown participants who do not win entry earn 1 point.
+
+Points are stored in half-point units and are currently entered manually by staff.
 
 ## User
 

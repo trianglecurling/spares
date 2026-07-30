@@ -9,6 +9,7 @@ import {
   getDefaultRegistrationWindow,
   getRegistrationById,
 } from './registrationShellService.js';
+import { evaluateRegistrantPlayInEntry } from './leagueEntryService.js';
 import { listRegistrationOutboundMessages, sendRegistrationEmailForDashboard } from './registrationEmailService.js';
 import { syncCurlingRegistrationPaymentConfirmationForOrder } from './registrationMembershipPaymentService.js';
 import { resolvePlacementLeagueForWaitlist } from './waitlistEntityService.js';
@@ -511,6 +512,24 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     : null;
   const canEditDuringPriority = await canEditRegistrationDuringPriority(actor, shellRegistration);
   const canCancelDuringPriority = await canCancelRegistrationDuringPriority(actor, shellRegistration);
+  const playInLeagueIds = [
+    ...new Set(
+      selections
+        .filter((selection) => selection.selectionType === 'play_in_request' && selection.leagueId != null)
+        .map((selection) => selection.leagueId as number),
+    ),
+  ];
+  const playInEntry: Record<number, Awaited<ReturnType<typeof evaluateRegistrantPlayInEntry>>> = {};
+  for (const leagueId of playInLeagueIds) {
+    try {
+      playInEntry[leagueId] = await evaluateRegistrantPlayInEntry({
+        leagueId,
+        memberId: registration.curler_member_id,
+      });
+    } catch {
+      // Leagues that cannot be evaluated are simply omitted from the echo.
+    }
+  }
   return {
     registration: {
       id: registration.id,
@@ -526,6 +545,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       reciprocalDiscountClaimed: registration.reciprocal_discount_claimed === 1,
     },
     selections: selectionsWithContext,
+    playInEntry,
     waitlists: waitlistDetails,
     payment: {
       status: invoice?.status ?? (registration.status === 'confirmed' ? 'paid' : 'not_required'),
