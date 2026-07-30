@@ -1402,9 +1402,11 @@ export function hydrateByotWaitlistPlacements(
   registeringCurler: { id: number | null; name: string },
 ): WaitlistTeamMemberPlacement[] {
   const members = buildByotWaitlistMemberList(selection, memberOptionById, memberOptionIdByName, registeringCurler);
-  const fallbackType = selectionUsesReplacePlacement(selection) ? 'replace' : 'add';
+  const fallbackType: WaitlistTeamMemberPlacement['entryType'] = selectionUsesReplacePlacement(selection)
+    ? 'replace'
+    : 'add';
   const fallbackReplaces = selectionUsesReplacePlacement(selection) ? selection.replacesLeagueId ?? null : null;
-  const basePlacements = selection.teamRosterPlacements?.length
+  const basePlacements: WaitlistTeamMemberPlacement[] = selection.teamRosterPlacements?.length
     ? syncPlacementsWithMembers(
         members,
         selection.teamRosterPlacements.map((placement) => ({
@@ -1419,7 +1421,7 @@ export function hydrateByotWaitlistPlacements(
           registeringCurler.id != null && member.memberId === registeringCurler.id;
         return {
           ...member,
-          entryType: isRegisteringCurler ? fallbackType : 'add',
+          entryType: isRegisteringCurler ? fallbackType : ('add' as const),
           replacesLeagueId: isRegisteringCurler && fallbackType === 'replace' ? fallbackReplaces : null,
         };
       });

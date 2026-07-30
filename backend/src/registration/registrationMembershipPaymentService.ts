@@ -556,8 +556,6 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
     registrationDetailLines.push('League and program choices:');
     for (const selection of selections) {
       const teammatesText = await selectionTeammatesDisplayText({
-        selectionType: selection.selectionType,
-        leagueId: selection.leagueId,
         byotTeammateText: selection.byotTeammateText,
         teamRosterPlacements: parseTeamRosterPlacements(selection.teamRosterPlacements),
       });

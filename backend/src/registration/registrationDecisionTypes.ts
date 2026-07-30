@@ -19,6 +19,7 @@ export type RegistrationReasonCode =
   | 'play_in_not_enabled'
   | 'play_in_add_requires_zero_or_one_leagues'
   | 'play_in_cannot_be_third_league'
+  | 'play_in_replace_required_with_two_returns'
   | 'play_in_replace_replacement_not_held'
   | 'play_in_placement_pending'
   | 'play_in_teammate_already_committed'
