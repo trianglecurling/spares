@@ -221,7 +221,8 @@ export default function LeaguePlayInEntryTab({ leagueId }: { leagueId: number })
         countsAsReturning: pointsForm.countsAsReturning,
         notes: pointsForm.notes.trim() || null,
       });
-      setPointsForm(emptyPointsForm);
+      // Keep points for the next entry — many members share the same value.
+      setPointsForm({ ...emptyPointsForm, points: pointsForm.points });
       requestAnimationFrame(() => {
         document.getElementById(pointsMemberInputId)?.focus();
       });

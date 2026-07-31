@@ -846,8 +846,8 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     const confirmed = await confirm({
       title: 'Leave waitlist?',
       message: isByot
-        ? 'Leaving will remove your entire team from this waitlist and you will lose your position in the queue.'
-        : 'You will lose your position in the queue. You can join again later if spots are still available.',
+        ? 'Leaving will remove your entire team from this waitlist and you will lose your position.'
+        : 'You will lose your position on this waitlist. If you join again later, you will be added to the end of the queue.',
       confirmText: 'Leave waitlist',
       cancelText: 'Keep my position',
       variant: 'danger',
