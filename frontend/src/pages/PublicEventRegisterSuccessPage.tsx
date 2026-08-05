@@ -3,12 +3,16 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
-import api from '../utils/api';
+import PaymentDetailContent from '../components/payments/PaymentDetailContent';
+import api, { formatApiError } from '../utils/api';
+import type { MemberPaymentDetail } from '../../../backend/src/api/types';
 
 type ResolveResponse = {
   status?: string;
   registrationStatus?: string | null;
   registrationId?: number;
+  manageAccessToken?: string | null;
+  orderToken?: string | null;
   refundIssued?: boolean;
   waitlistPosition?: number | null;
   waitlistLength?: number | null;
@@ -56,6 +60,11 @@ export default function PublicEventRegisterSuccessPage() {
   const [refundIssued, setRefundIssued] = useState(false);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
   const [waitlistLength, setWaitlistLength] = useState<number | null>(null);
+  const [manageAccessToken, setManageAccessToken] = useState<string | null>(null);
+  const [orderToken, setOrderToken] = useState<string | null>(null);
+  const [receiptDetail, setReceiptDetail] = useState<MemberPaymentDetail | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!registrationId) {
@@ -90,22 +99,35 @@ export default function PublicEventRegisterSuccessPage() {
           if (data.waitlistLength != null) {
             setWaitlistLength(data.waitlistLength);
           }
+          if (data.manageAccessToken) {
+            setManageAccessToken(data.manageAccessToken);
+          }
+          if (data.orderToken) {
+            setOrderToken(data.orderToken);
+          }
 
-          if (data.registrationStatus === 'confirmed') {
-            setStatus('confirmed');
+          if (data.status === 'failed') {
+            setStatus('error');
+            setError('Payment did not complete. Return to the event to try registering again.');
             return;
           }
+
+          if (data.registrationStatus === 'confirmed') {
+            // Wait for provider-confirmed payment (order token) when possible so the receipt can load.
+            if (data.orderToken || attempt >= MAX_POLL_ATTEMPTS) {
+              setStatus('confirmed');
+              return;
+            }
+            await sleep(POLL_INTERVAL_MS);
+            continue;
+          }
+
           if (data.registrationStatus === 'waitlisted') {
             setStatus('waitlisted');
             return;
           }
           if (data.registrationStatus === 'cancelled' && data.refundIssued) {
             setStatus('cancelled');
-            return;
-          }
-          if (data.status === 'failed') {
-            setStatus('error');
-            setError('Payment did not complete. Return to the event to try registering again.');
             return;
           }
           if (isRegistrationSettled(data.registrationStatus)) {
@@ -144,23 +166,93 @@ export default function PublicEventRegisterSuccessPage() {
     };
   }, [registrationId, sessionId]);
 
+  useEffect(() => {
+    if (status !== 'confirmed' || !orderToken) {
+      setReceiptDetail(null);
+      setReceiptError(null);
+      setReceiptLoading(false);
+      return;
+    }
+
+    let canceled = false;
+    setReceiptLoading(true);
+    setReceiptError(null);
+
+    api
+      .get<MemberPaymentDetail>(`/public/payments/${encodeURIComponent(orderToken)}`)
+      .then((res) => {
+        if (canceled) return;
+        // Only show the receipt after the provider-backed payment order is confirmed.
+        if (res.data.status === 'succeeded' || res.data.status === 'partially_refunded') {
+          setReceiptDetail(res.data);
+        } else {
+          setReceiptDetail(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!canceled) {
+          setReceiptDetail(null);
+          setReceiptError(formatApiError(err, 'Could not load payment receipt.'));
+        }
+      })
+      .finally(() => {
+        if (!canceled) setReceiptLoading(false);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [status, orderToken]);
+
   return (
     <PublicLayout>
       <SeoMeta title="Registration Complete" />
-      <div className="max-w-2xl mx-auto px-4 py-16">
+      <div className="mx-auto max-w-3xl space-y-6 px-4 py-16">
         {status === 'resolving' && <PublicStateCard title="Verifying your payment..." />}
 
         {status === 'confirmed' && (
-          <PublicStateCard
-            tone="success"
-            title="Registration confirmed!"
-            description="Your payment has been processed and your spot is confirmed. A confirmation email has been sent."
-            action={
-              <Link to={`/events/${slug}`} className="text-primary-teal-link hover:underline">
-                Back to event
-              </Link>
-            }
-          />
+          <>
+            <PublicStateCard
+              tone="success"
+              title="Registration confirmed!"
+              description="Your payment has been processed and your spot is confirmed. A confirmation email has been sent."
+              action={
+                <span className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                  {manageAccessToken ? (
+                    <>
+                      <Link
+                        to={`/events/registrations/manage/${encodeURIComponent(manageAccessToken)}`}
+                        className="text-primary-teal-link hover:underline"
+                      >
+                        Manage registration
+                      </Link>
+                      <span aria-hidden="true" className="text-current/40">
+                        |
+                      </span>
+                    </>
+                  ) : null}
+                  <Link to={`/events/${slug}`} className="text-primary-teal-link hover:underline">
+                    Back to event
+                  </Link>
+                </span>
+              }
+            />
+
+            {receiptLoading ? (
+              <PublicStateCard title="Loading payment receipt..." />
+            ) : receiptDetail ? (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold text-gray-900">Payment receipt</h2>
+                <PaymentDetailContent detail={receiptDetail} publicTheme />
+              </div>
+            ) : receiptError ? (
+              <PublicStateCard
+                tone="warning"
+                title="Payment receipt unavailable"
+                description={receiptError}
+              />
+            ) : null}
+          </>
         )}
 
         {status === 'waitlisted' && (

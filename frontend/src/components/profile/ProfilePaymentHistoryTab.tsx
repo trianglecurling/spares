@@ -14,7 +14,7 @@ import {
 } from '../../utils/memberPaymentDisplay';
 
 const PAYMENT_TYPE_LINK_CLASS =
-  'font-medium text-primary-teal-link hover:opacity-90 hover:underline dark:text-primary-teal-link dark:hover:opacity-90';
+  'font-medium text-primary-teal-link hover:opacity-90 hover:underline';
 
 type ProfilePaymentHistoryTabProps = {
   memberId?: number;

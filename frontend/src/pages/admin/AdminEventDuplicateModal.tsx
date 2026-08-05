@@ -29,6 +29,7 @@ export type EventDuplicatePayload = {
   pointOfContact: string;
   ownerMemberIds: number[];
   timespans: Array<{ startDt: string; endDt: string }>;
+  linkForTransfers?: boolean;
 };
 
 type Props = {
@@ -77,6 +78,7 @@ export default function AdminEventDuplicateModal({ sourceEvent, onClose, onDupli
   const [published, setPublished] = useState(false);
   const [pointOfContact, setPointOfContact] = useState('');
   const [ownerMemberIds, setOwnerMemberIds] = useState<number[]>([]);
+  const [linkForTransfers, setLinkForTransfers] = useState(true);
 
   useEffect(() => {
     if (!sourceEvent) return;
@@ -93,6 +95,7 @@ export default function AdminEventDuplicateModal({ sourceEvent, onClose, onDupli
     setPublished(false);
     setPointOfContact('');
     setOwnerMemberIds([]);
+    setLinkForTransfers(true);
     setLoadError('');
     setSubmitError('');
     setLoadedSourceEventId(null);
@@ -162,6 +165,7 @@ export default function AdminEventDuplicateModal({ sourceEvent, onClose, onDupli
       cancellationCutoff: toIsoOrNull(cancellationCutoff),
       pointOfContact: pointOfContact.trim(),
       ownerMemberIds,
+      linkForTransfers,
       timespans: [
         {
           startDt: new Date(startDt).toISOString(),
@@ -246,6 +250,12 @@ export default function AdminEventDuplicateModal({ sourceEvent, onClose, onDupli
               checked={published}
               onChange={setPublished}
               helperText="Leave unpublished until the copied event is ready to appear in event listings."
+            />
+            <FormCheckbox
+              label="Link for registration moves"
+              checked={linkForTransfers}
+              onChange={setLinkForTransfers}
+              helperText="Allow registrants to switch between this event and the source when fees and forms match."
             />
           </FormSection>
 

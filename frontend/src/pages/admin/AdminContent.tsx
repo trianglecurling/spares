@@ -24,10 +24,27 @@ import FormSection from '../../components/FormSection';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import AdminContentPermalinksPanel, { type PermalinkAdminRow } from './AdminContentPermalinksPanel';
 import AdminContentContactsPanel, { type PublicContactRecipientAdminRow } from './AdminContentContactsPanel';
+import AdminContentDashboardPanel, { type DashboardSectionAdminRow } from './AdminContentDashboardPanel';
 import AdminContentMailingListsPanel, { type MailingListAdminRow } from './AdminContentMailingListsPanel';
+import { notifyMemberMenuChanged } from '../../utils/memberMenuClient';
+import {
+  buildMembersAreaArticlePath,
+  parseMembersAreaArticlePath,
+} from '../../utils/memberNavMenuItems';
 import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 
-type Tab = 'site' | 'home' | 'articles' | 'showcase' | 'menus' | 'files' | 'permalinks' | 'contacts' | 'mailing-lists';
+type Tab =
+  | 'site'
+  | 'home'
+  | 'articles'
+  | 'showcase'
+  | 'menus'
+  | 'files'
+  | 'permalinks'
+  | 'contacts'
+  | 'mailing-lists'
+  | 'dashboard';
+type MenuEditorType = 'navbar' | 'member';
 type MenuItem = {
   id: number;
   menuType: string;
@@ -81,6 +98,8 @@ const MENU_LINK_TYPE_CHOICES: ChoiceOption<MenuLinkTypeChoice>[] = [
   { value: 'external', label: 'Other (custom URL)' },
 ];
 
+const MENU_EDITOR_TYPES: MenuEditorType[] = ['navbar', 'member'];
+
 const FILE_ORPHAN_FILTER_OPTIONS: ChoiceOption<FileOrphanFilter>[] = [
   { value: 'all', label: 'All files' },
   { value: 'suspected', label: 'Suspected orphan' },
@@ -105,6 +124,46 @@ const FILE_VISIBILITY_STRICT_OPTIONS: ChoiceOption<'public' | 'authenticated'>[]
   { value: 'public', label: 'Public' },
   { value: 'authenticated', label: 'Logged-in users only' },
 ];
+
+function articleSlugFromMenuUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const membersArea = parseMembersAreaArticlePath(url);
+  if (membersArea) return membersArea.articleSlug;
+  if (url.startsWith('/article/')) return url.slice('/article/'.length) || null;
+  if (url.startsWith('/articles/')) return url.slice('/articles/'.length) || null;
+  return null;
+}
+
+function findTopLevelMenuLabel(
+  menuItems: MenuItem[],
+  parentId: number | null,
+  fallbackLabel: string,
+): string {
+  let currentId = parentId;
+  let label = fallbackLabel;
+  const byId = new Map(menuItems.map((item) => [item.id, item]));
+  while (currentId != null) {
+    const parent = byId.get(currentId);
+    if (!parent) break;
+    label = parent.label;
+    currentId = parent.parentId;
+  }
+  return label;
+}
+
+function buildMenuArticleUrl(
+  menuType: MenuEditorType,
+  menuItems: MenuItem[],
+  parentId: number | null,
+  itemLabel: string,
+  articleSlug: string,
+): string {
+  if (menuType !== 'member') return `/article/${articleSlug}`;
+  return buildMembersAreaArticlePath(
+    findTopLevelMenuLabel(menuItems, parentId, itemLabel),
+    articleSlug,
+  );
+}
 
 function buildMenuParentChoiceOptions(
   menuItems: MenuItem[],
@@ -181,7 +240,18 @@ function extractReferencedFileIds(content: string): number[] {
   return Array.from(ids.values());
 }
 
-const VALID_TABS: Tab[] = ['articles', 'home', 'menus', 'site', 'showcase', 'files', 'permalinks', 'contacts', 'mailing-lists'];
+const VALID_TABS: Tab[] = [
+  'articles',
+  'home',
+  'menus',
+  'site',
+  'showcase',
+  'files',
+  'permalinks',
+  'contacts',
+  'mailing-lists',
+  'dashboard',
+];
 
 /** ISO timestamp -> value for a `datetime-local` input in the admin's local time zone. */
 function isoToLocalDateTimeInput(value: string | null): string {
@@ -234,6 +304,7 @@ export default function AdminContent() {
   const [showcaseImages, setShowcaseImages] = useState<ShowcaseImage[]>([]);
   const [showcaseSelectableFiles, setShowcaseSelectableFiles] = useState<ManagedFile[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [menuEditorType, setMenuEditorType] = useState<MenuEditorType>('navbar');
   const [files, setFiles] = useState<ManagedFile[]>([]);
   const [permalinks, setPermalinks] = useState<PermalinkAdminRow[]>([]);
   const [contactRecipients, setContactRecipients] = useState<PublicContactRecipientAdminRow[]>([]);
@@ -242,6 +313,9 @@ export default function AdminContent() {
   const [mailingLists, setMailingLists] = useState<MailingListAdminRow[]>([]);
   const [mailingListsLoaded, setMailingListsLoaded] = useState(false);
   const [mailingListsLoading, setMailingListsLoading] = useState(false);
+  const [dashboardSections, setDashboardSections] = useState<DashboardSectionAdminRow[]>([]);
+  const [dashboardSectionsLoaded, setDashboardSectionsLoaded] = useState(false);
+  const [dashboardSectionsLoading, setDashboardSectionsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -404,6 +478,20 @@ export default function AdminContent() {
     }
   }, [showAlert]);
 
+  const loadDashboardSections = useCallback(async () => {
+    setDashboardSectionsLoading(true);
+    try {
+      const res = await api.get<DashboardSectionAdminRow[]>('/content/dashboard-sections');
+      setDashboardSections(res.data);
+      setDashboardSectionsLoaded(true);
+    } catch {
+      showAlert('Failed to load dashboard sections', 'error');
+      setDashboardSectionsLoaded(true);
+    } finally {
+      setDashboardSectionsLoading(false);
+    }
+  }, [showAlert]);
+
   useEffect(() => {
     if (activeTab !== 'contacts') return;
     if (contactsLoaded) return;
@@ -416,6 +504,12 @@ export default function AdminContent() {
     void loadMailingLists();
   }, [activeTab, mailingListsLoaded, loadMailingLists]);
 
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+    if (dashboardSectionsLoaded) return;
+    void loadDashboardSections();
+  }, [activeTab, dashboardSectionsLoaded, loadDashboardSections]);
+
   const loadContentData = useCallback(async () => {
     const requestId = loadDataRequestIdRef.current + 1;
     loadDataRequestIdRef.current = requestId;
@@ -426,7 +520,6 @@ export default function AdminContent() {
         featuredHomeRes,
         menuArticlesRes,
         showcaseRes,
-        menuRes,
         showcaseFilesRes,
         permalinksRes,
       ] = await Promise.all([
@@ -434,7 +527,6 @@ export default function AdminContent() {
         api.get<Article[]>('/content/homepage/featured-articles'),
         api.get<ArticlesListResponse>('/content/articles', { params: { page: 1, pageSize: 1000, sort: 'title', order: 'asc' } }),
         api.get('/content/showcase-images'),
-        api.get('/content/menu-items', { params: { menuType: 'navbar' } }),
         api.get<FilesListResponse>('/content/files', { params: { page: 1, pageSize: 1000, visibility: 'public', type: 'image' } }),
         api.get<PermalinkAdminRow[]>('/content/permalinks'),
       ]);
@@ -443,7 +535,6 @@ export default function AdminContent() {
       setFeaturedHomeArticles(featuredHomeRes.data);
       setMenuArticleOptions(menuArticlesRes.data.items);
       setShowcaseImages(showcaseRes.data);
-      setMenuItems(menuRes.data);
       setShowcaseSelectableFiles(showcaseFilesRes.data.items);
       setPermalinks(permalinksRes.data);
     } catch {
@@ -455,6 +546,32 @@ export default function AdminContent() {
       }
     }
   }, [showAlert]);
+
+  const loadMenuItems = useCallback(async (menuType: MenuEditorType) => {
+    try {
+      const menuRes = await api.get<MenuItem[]>('/content/menu-items', { params: { menuType } });
+      setMenuItems(menuRes.data);
+      setMenuExpandedIds(new Set());
+    } catch {
+      showAlert('Failed to load menu items', 'error');
+    }
+  }, [showAlert]);
+
+  const notifyMenuChanged = useCallback((menuType: MenuEditorType) => {
+    if (menuType === 'navbar') {
+      notifyPublicBootstrapChanged();
+      return;
+    }
+    notifyMemberMenuChanged();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'menus') return;
+    setMenuModalOpen(false);
+    setEditingMenuItem(null);
+    setMenuInsertBeforeId(null);
+    void loadMenuItems(menuEditorType);
+  }, [activeTab, menuEditorType, loadMenuItems]);
 
   useEffect(() => {
     loadContentData();
@@ -744,10 +861,11 @@ export default function AdminContent() {
   const openMenuModal = (item: MenuItem) => {
     setEditingMenuItem(item);
     setMenuInsertBeforeId(null);
+    const urlSlug = articleSlugFromMenuUrl(item.url);
     const article = item.articleId
       ? menuArticleOptions.find((a) => a.id === item.articleId)
-      : item.linkType === 'internal' && item.url
-        ? menuArticleOptions.find((a) => item.url === `/article/${a.slug}`)
+      : item.linkType === 'internal' && urlSlug
+        ? menuArticleOptions.find((a) => a.slug === urlSlug)
         : null;
     setMenuForm({
       label: item.useArticleTitleForLabel ? '' : item.label,
@@ -757,7 +875,7 @@ export default function AdminContent() {
       openInNewTab: item.openInNewTab ?? false,
       selectedArticleId: article?.id ?? item.articleId ?? null,
       selectedArticleTitle: article?.title ?? item.label,
-      selectedArticleSlug: article?.slug ?? (item.url?.startsWith('/article/') ? item.url.replace('/article/', '') : ''),
+      selectedArticleSlug: article?.slug ?? urlSlug ?? '',
       labelOverridden: !item.useArticleTitleForLabel,
     });
     setMenuModalOpen(true);
@@ -813,13 +931,19 @@ export default function AdminContent() {
     }
     setSaving(true);
     try {
+      const labelToSend = useArticleTitleForLabel ? article!.title : menuForm.label.trim();
       const url =
         menuForm.linkType === 'internal' && article
-          ? `/article/${article.slug}`
+          ? buildMenuArticleUrl(
+              menuEditorType,
+              menuItems,
+              menuForm.parentId,
+              labelToSend,
+              article.slug,
+            )
           : menuForm.linkType === 'external'
             ? menuForm.url.trim()
             : null;
-      const labelToSend = useArticleTitleForLabel ? article!.title : menuForm.label.trim();
       if (editingMenuItem) {
         await api.patch(`/content/menu-items/${editingMenuItem.id}`, {
           label: labelToSend,
@@ -839,7 +963,7 @@ export default function AdminContent() {
         );
       } else {
         const res = await api.post<MenuItem>('/content/menu-items', {
-          menuType: 'navbar',
+          menuType: menuEditorType,
           label: labelToSend,
           parentId: menuForm.parentId,
           linkType: menuForm.linkType,
@@ -866,7 +990,7 @@ export default function AdminContent() {
         }
       }
       closeMenuModal();
-      notifyPublicBootstrapChanged();
+      notifyMenuChanged(menuEditorType);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to save menu item', 'error');
@@ -887,8 +1011,8 @@ export default function AdminContent() {
     try {
       await api.delete(`/content/menu-items/${item.id}`);
       showAlert('Menu item deleted', 'success');
-      notifyPublicBootstrapChanged();
-      loadContentData();
+      notifyMenuChanged(menuEditorType);
+      void loadMenuItems(menuEditorType);
     } catch {
       showAlert('Failed to delete menu item', 'error');
     } finally {
@@ -927,10 +1051,10 @@ export default function AdminContent() {
       await api.patch('/content/menu-items/reorder', {
         updates: reordered.map((item, i) => ({ id: item.id, sortOrder: i })),
       });
-      notifyPublicBootstrapChanged();
+      notifyMenuChanged(menuEditorType);
     } catch {
       showAlert('Failed to update order', 'error');
-      loadContentData();
+      void loadMenuItems(menuEditorType);
     } finally {
       setSaving(false);
     }
@@ -955,10 +1079,10 @@ export default function AdminContent() {
       await api.patch('/content/menu-items/reorder', {
         updates: reordered.map((item, index) => ({ id: item.id, sortOrder: index })),
       });
-      notifyPublicBootstrapChanged();
+      notifyMenuChanged(menuEditorType);
     } catch {
       showAlert('Failed to update order', 'error');
-      loadContentData();
+      void loadMenuItems(menuEditorType);
     } finally {
       setSaving(false);
     }
@@ -1109,6 +1233,7 @@ export default function AdminContent() {
     { id: 'permalinks', label: 'Permalinks' },
     { id: 'contacts', label: 'Contacts' },
     { id: 'mailing-lists', label: 'Mailing lists' },
+    { id: 'dashboard', label: 'Dashboard' },
   ];
 
   const handleBulkDeleteFiles = async () => {
@@ -1305,7 +1430,11 @@ export default function AdminContent() {
           }))}
         />
 
-        {activeTab !== 'files' && activeTab !== 'contacts' && activeTab !== 'mailing-lists' && loading ? (
+        {activeTab !== 'files' &&
+        activeTab !== 'contacts' &&
+        activeTab !== 'mailing-lists' &&
+        activeTab !== 'dashboard' &&
+        loading ? (
           <p className="text-gray-500">Loading...</p>
         ) : (
           <>
@@ -1441,8 +1570,18 @@ export default function AdminContent() {
 
             {activeTab === 'menus' && (
               <div>
+                <PageTabs
+                  items={MENU_EDITOR_TYPES.map((type) => ({
+                    key: type,
+                    label: type === 'navbar' ? 'Public navbar' : 'Members area',
+                    isActive: menuEditorType === type,
+                    onClick: () => setMenuEditorType(type),
+                  }))}
+                />
                 <p className="text-gray-500 mb-4">
-                  Navbar menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level.
+                  {menuEditorType === 'navbar'
+                    ? 'Public navbar menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level.'
+                    : 'Members-area menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level. Article links use /members-area/{section}/{slug} so the members layout stays put and the matching top-level section stays highlighted. Personal league links are added under Leagues automatically. Admin links fill the Admin section based on each member’s permissions. Building access and Member communications show only for active members; Book ice time and spare links are hidden for social memberships.'}
                 </p>
                 {(() => {
                   const byParent = new Map<number | null, MenuItem[]>();
@@ -1587,7 +1726,9 @@ export default function AdminContent() {
                       )}
                       emptyState={
                         <p className="py-2 text-sm text-gray-500">
-                          No menu items yet. Click above to add. When empty, default links (Home, Articles) are shown.
+                          {menuEditorType === 'navbar'
+                            ? 'No menu items yet. Click above to add. When empty, a Home link is shown on public pages.'
+                            : 'No menu items yet. Click above to add. When empty, the built-in members-area menu is shown.'}
                         </p>
                       }
                     />
@@ -1640,14 +1781,27 @@ export default function AdminContent() {
                               : null
                           }
                           onChange={(selected) => {
-                            setMenuForm((f) => ({
-                              ...f,
-                              selectedArticleId: selected?.id ?? null,
-                              selectedArticleTitle: selected?.title ?? '',
-                              selectedArticleSlug: selected?.slug ?? '',
-                              url: selected ? `/article/${selected.slug}` : '',
-                              label: !f.labelOverridden ? '' : f.label,
-                            }));
+                            setMenuForm((f) => {
+                              const labelForNav = f.labelOverridden
+                                ? f.label
+                                : selected?.title ?? f.label;
+                              return {
+                                ...f,
+                                selectedArticleId: selected?.id ?? null,
+                                selectedArticleTitle: selected?.title ?? '',
+                                selectedArticleSlug: selected?.slug ?? '',
+                                url: selected
+                                  ? buildMenuArticleUrl(
+                                      menuEditorType,
+                                      menuItems,
+                                      f.parentId,
+                                      labelForNav || selected.title,
+                                      selected.slug,
+                                    )
+                                  : '',
+                                label: !f.labelOverridden ? '' : f.label,
+                              };
+                            });
                           }}
                           placeholder="Search for an article"
                         />
@@ -1718,10 +1872,26 @@ export default function AdminContent() {
                         options={buildMenuParentChoiceOptions(menuItems, editingMenuItem)}
                         value={menuForm.parentId}
                         onChange={(next) =>
-                          setMenuForm((f) => ({
-                            ...f,
-                            parentId: next == null || Array.isArray(next) ? null : next,
-                          }))
+                          setMenuForm((f) => {
+                            const parentId = next == null || Array.isArray(next) ? null : next;
+                            const labelForNav = f.labelOverridden
+                              ? f.label
+                              : f.selectedArticleTitle || f.label;
+                            return {
+                              ...f,
+                              parentId,
+                              url:
+                                f.linkType === 'internal' && f.selectedArticleSlug
+                                  ? buildMenuArticleUrl(
+                                      menuEditorType,
+                                      menuItems,
+                                      parentId,
+                                      labelForNav || f.selectedArticleSlug,
+                                      f.selectedArticleSlug,
+                                    )
+                                  : f.url,
+                            };
+                          })
                         }
                         placeholder="— None (top level) —"
                         listboxLabel="Parent menu item"
@@ -2454,6 +2624,16 @@ export default function AdminContent() {
                 saving={saving}
                 onSavingChange={setSaving}
                 onRefresh={loadMailingLists}
+              />
+            )}
+
+            {activeTab === 'dashboard' && (
+              <AdminContentDashboardPanel
+                rows={dashboardSections}
+                loading={dashboardSectionsLoading && !dashboardSectionsLoaded}
+                saving={saving}
+                onSavingChange={setSaving}
+                onRefresh={loadDashboardSections}
               />
             )}
           </>

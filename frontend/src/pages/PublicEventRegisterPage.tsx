@@ -7,6 +7,10 @@ import SeoMeta from '../components/SeoMeta';
 import { useAuth } from '../contexts/AuthContext';
 import PublicNotFoundPage from './PublicNotFoundPage';
 import api, { formatApiError } from '../utils/api';
+import AdditionalRegistrantsSection, {
+  emptyAdditionalRegistrant,
+  type AdditionalRegistrant,
+} from '../components/eventRegistration/AdditionalRegistrantsSection';
 import PublicRegistrationFieldInput, {
   publicEventRegistrationInput,
   fieldValueKey,
@@ -16,9 +20,9 @@ import PublicRegistrationFieldInput, {
 import {
   defaultTeamNameFromLastName,
   isSubheadingFieldType,
-  lastNameFromDisplayName,
 } from '../utils/eventRegistrationFieldPresets';
 import { resolveEventContactFieldLabels } from '../utils/eventRegistrationContactLabels';
+import { formatLinkedSessionWhen } from '../utils/eventLinkedSessionLabel';
 
 const publicInput = publicEventRegistrationInput;
 
@@ -46,7 +50,7 @@ interface EventDetail {
   openSpots?: number | null;
   registrationStart: string | null;
   registrationCutoff: string | null;
-  timespans?: Array<{ start_dt: string }>;
+  timespans?: Array<{ start_dt: string; end_dt?: string; sort_order?: number }>;
   serverNow?: string;
 }
 
@@ -59,10 +63,6 @@ interface SpecialLinkInfo {
   ignoreRegistrationDates?: boolean;
 }
 
-interface GroupMember {
-  name: string;
-  email: string;
-}
 
 const MS_HOUR = 60 * 60 * 1000;
 
@@ -132,7 +132,7 @@ export default function PublicEventRegisterPage() {
   const [contactFirstName, setContactFirstName] = useState('');
   const [contactLastName, setContactLastName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
-  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [groupMembers, setGroupMembers] = useState<AdditionalRegistrant[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const teamNameTouchedRef = useRef<Set<string>>(new Set());
   const [acceptTerms, setAcceptTerms] = useState(false);
@@ -227,9 +227,7 @@ export default function PublicEventRegisterPage() {
             const key = fieldValueKey(field.id, field.scope, personIndex);
             if (teamNameTouchedRef.current.has(key)) continue;
             const personLastName =
-              personIndex === 0
-                ? contactLastName
-                : lastNameFromDisplayName(groupMembers[personIndex - 1]?.name ?? '');
+              personIndex === 0 ? contactLastName : groupMembers[personIndex - 1]?.lastName ?? '';
             const defaultValue = defaultTeamNameFromLastName(personLastName);
             if (next[key] !== defaultValue) {
               next[key] = defaultValue;
@@ -318,16 +316,24 @@ export default function PublicEventRegisterPage() {
 
   const totalPeople = 1 + groupMembers.length;
   const groupSize = groupMembers.length + 1;
+  const bypassCapacity = !!(specialLink?.valid && specialLink?.bypassCapacity);
+  const openSpots =
+    event?.capacity == null || bypassCapacity
+      ? null
+      : event.openSpots != null
+        ? event.openSpots
+        : Math.max(0, event.capacity - event.confirmedCount - (event.waitlistedCount ?? 0));
 
-  /** Matches backend: waitlist when no direct registration capacity remains. */
+  /**
+   * Waitlist only when the event is already full for a solo registration.
+   * Growing the group past remaining spots is blocked in the UI instead of flipping to waitlist.
+   */
   const registeringAsWaitlist =
     !!event &&
     event.capacity != null &&
-    !(specialLink?.valid && specialLink?.bypassCapacity) &&
+    !bypassCapacity &&
     event.enableWaitlist === 1 &&
-    (event.openSpots != null
-      ? groupSize > event.openSpots
-      : event.confirmedCount + (event.waitlistedCount ?? 0) + groupSize > event.capacity);
+    (openSpots != null ? openSpots < 1 : false);
 
   if (loading) {
     return (
@@ -415,13 +421,35 @@ export default function PublicEventRegisterPage() {
       : event.feeMinor;
   const totalFee = effectiveFee * groupSize;
 
-  const effectiveMaxGroupSize = specialLink?.valid && specialLink?.maxGroupSize != null
-    ? (event.maxGroupSize != null ? Math.min(event.maxGroupSize, specialLink.maxGroupSize) : specialLink.maxGroupSize)
-    : event.maxGroupSize;
+  const configuredMaxGroupSize =
+    specialLink?.valid && specialLink?.maxGroupSize != null
+      ? event.maxGroupSize != null
+        ? Math.min(event.maxGroupSize, specialLink.maxGroupSize)
+        : specialLink.maxGroupSize
+      : event.maxGroupSize;
+  /** Cap group size by remaining open spots so adding people cannot push the form onto the waitlist. */
+  const capacityLimitedMaxGroupSize =
+    !registeringAsWaitlist && openSpots != null ? openSpots : null;
+  const effectiveMaxGroupSize = (() => {
+    const caps = [configuredMaxGroupSize, capacityLimitedMaxGroupSize].filter(
+      (value): value is number => value != null,
+    );
+    return caps.length > 0 ? Math.min(...caps) : null;
+  })();
+  const limitedByCapacity =
+    capacityLimitedMaxGroupSize != null &&
+    effectiveMaxGroupSize === capacityLimitedMaxGroupSize &&
+    (configuredMaxGroupSize == null || capacityLimitedMaxGroupSize <= configuredMaxGroupSize);
+  const additionalRegistrantsLimitMessage = limitedByCapacity
+    ? 'No additional spots are available'
+    : null;
 
-  const addGroupMember = () => setGroupMembers([...groupMembers, { name: '', email: '' }]);
+  const addGroupMember = () => {
+    if (effectiveMaxGroupSize != null && groupSize >= effectiveMaxGroupSize) return;
+    setGroupMembers([...groupMembers, emptyAdditionalRegistrant()]);
+  };
   const removeGroupMember = (i: number) => setGroupMembers(groupMembers.filter((_, idx) => idx !== i));
-  const updateGroupMember = (i: number, field: keyof GroupMember, value: string) => {
+  const updateGroupMember = (i: number, field: keyof AdditionalRegistrant, value: string) => {
     const updated = [...groupMembers];
     updated[i] = { ...updated[i], [field]: value };
     setGroupMembers(updated);
@@ -459,7 +487,11 @@ export default function PublicEventRegisterPage() {
         contactLastName: contactLastName.trim(),
         contactEmail: contactEmail.trim(),
         groupMembers: groupMembers.length > 0
-          ? groupMembers.map((m) => ({ name: m.name.trim(), email: m.email.trim() || undefined }))
+          ? groupMembers.map((m) => ({
+              firstName: m.firstName.trim(),
+              lastName: m.lastName.trim(),
+              email: m.email.trim(),
+            }))
           : undefined,
         fieldValues: fvArray.length > 0 ? fvArray : undefined,
         specialLinkToken: specialLinkToken || undefined,
@@ -513,7 +545,7 @@ export default function PublicEventRegisterPage() {
   return (
     <PublicLayout>
       <SeoMeta title={registeringAsWaitlist ? `Waitlist: ${event.title}` : `Register: ${event.title}`} />
-      <div className="max-w-2xl mx-auto px-4 py-10">
+      <div className="mx-auto w-full min-w-0 max-w-3xl px-4 py-10 sm:min-w-[36rem]">
         <Link to={`/events/${slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
           &larr; Back to event
         </Link>
@@ -527,6 +559,9 @@ export default function PublicEventRegisterPage() {
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
           {registeringAsWaitlist ? `Join waitlist for ${event.title}` : `Register for ${event.title}`}
         </h1>
+        {event.timespans && event.timespans.length > 0 ? (
+          <p className="text-gray-600 mb-2">{formatLinkedSessionWhen(event.timespans)}</p>
+        ) : null}
         {registeringAsWaitlist ? (
           <div className="mb-8 space-y-2">
             <p className="text-gray-700">
@@ -606,48 +641,17 @@ export default function PublicEventRegisterPage() {
           </FormField>
 
           {event.allowGroupRegistration === 1 && (
-            <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium text-gray-900">Group Members</h3>
-                <button
-                  type="button"
-                  onClick={addGroupMember}
-                  disabled={effectiveMaxGroupSize ? groupSize >= effectiveMaxGroupSize : false}
-                  className="text-sm text-primary-teal-link hover:underline disabled:opacity-50"
-                >
-                  + Add member
-                </button>
-              </div>
-              {groupMembers.map((member, i) => (
-                <div key={i} className="flex gap-2 items-start">
-                  <input
-                    type="text"
-                    placeholder="Name"
-                    required
-                    value={member.name}
-                    onChange={(e) => updateGroupMember(i, 'name', e.target.value)}
-                    className={`${publicInput} flex-1`}
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email (optional)"
-                    value={member.email}
-                    onChange={(e) => updateGroupMember(i, 'email', e.target.value)}
-                    className={`${publicInput} flex-1`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeGroupMember(i)}
-                    className="text-red-500 hover:text-red-700 px-2 py-2"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {groupMembers.length === 0 && (
-                <p className="text-sm text-gray-500">No additional group members added.</p>
-              )}
-            </div>
+            <AdditionalRegistrantsSection
+              members={groupMembers}
+              labels={contactLabels}
+              onAdd={addGroupMember}
+              onRemove={removeGroupMember}
+              onChange={updateGroupMember}
+              maxGroupSize={effectiveMaxGroupSize}
+              limitMessage={additionalRegistrantsLimitMessage}
+              perPersonFeeMinor={registeringAsWaitlist ? null : effectiveFee}
+              currency={event.currency}
+            />
           )}
 
           {sortedFields.map((field) => {

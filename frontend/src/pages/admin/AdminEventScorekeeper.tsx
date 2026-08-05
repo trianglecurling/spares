@@ -4,14 +4,40 @@ import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
 import TournamentScorekeeperView from '../../components/tournament/TournamentScorekeeperView';
 import { useTournamentDrawResults } from '../../hooks/useTournamentDrawResults';
+import { formatLinkedSessionWhen } from '../../utils/eventLinkedSessionLabel';
 
 export default function AdminEventScorekeeper() {
   const { id } = useParams<{ id: string }>();
   const eventId = Number.parseInt(id ?? '', 10);
   const validId = Number.isFinite(eventId) && eventId > 0;
 
-  const { draw, teams, eventTitle, tournamentFormat, loading, loadError, saveStatus, updateDrawForResults, replaceDrawAndPersist } =
-    useTournamentDrawResults(validId ? eventId : 0);
+  const {
+    draw,
+    teams,
+    eventTitle,
+    eventTimespans,
+    tournamentFormat,
+    loading,
+    loadError,
+    saveStatus,
+    updateDrawForResults,
+    replaceDrawAndPersist,
+  } = useTournamentDrawResults(validId ? eventId : 0);
+  const eventWhenLabel = (() => {
+    const when = formatLinkedSessionWhen(eventTimespans);
+    return when === 'Schedule TBD' ? null : when;
+  })();
+  const pageDescription = (
+    <>
+      {eventWhenLabel ? (
+        <>
+          {eventWhenLabel}
+          <br />
+        </>
+      ) : null}
+      Enter game results. Changes save automatically.
+    </>
+  );
 
   if (!validId) {
     return (
@@ -25,7 +51,7 @@ export default function AdminEventScorekeeper() {
     <AppPage>
       <AppPageHeader
         title={eventTitle ? `${eventTitle} · Scorekeeper` : 'Scorekeeper'}
-        description="Enter game results. Changes save automatically."
+        description={pageDescription}
         actions={<BackButton to={`/admin/events/${eventId}/tournament`} label="Tournament" />}
       />
 

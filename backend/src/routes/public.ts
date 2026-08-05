@@ -6,7 +6,6 @@ import { publicFileUrl, sanitizeFilename, shouldUseInlineContentDisposition } fr
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { getPublicCalendarBundle, getUpcomingBonspiels } from '../domains/calendar/queries/calendarReadFacade.js';
 import {
-  getMenuTree,
   getPublicArticleBySlug,
   getPublishedPublicEventSlugForArticlePathAlias,
   getPublicArticleBodyByIdForPublishedPublicEvent,
@@ -18,6 +17,7 @@ import {
   getCachedPublicBootstrap,
   getPublicBootstrapCacheEtag,
 } from '../services/publicBootstrapCache.js';
+import { getCachedMenuTree } from '../services/menuTreeCache.js';
 import { getPublicLeaguesPage } from '../services/publicLeaguesService.js';
 import { listPublicContactDropdownRecipients } from '../domains/content/publicContactRecipients.js';
 import { resolveSpaDocumentHttpStatus } from '../services/spaDocumentStatus.js';
@@ -146,10 +146,10 @@ export async function publicRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // GET /public/menus/:type - Menu tree for public nav (e.g. navbar, footer)
+  // GET /public/menus/:type - Menu tree for nav (e.g. navbar, member)
   fastify.get<{ Params: { type: string } }>('/public/menus/:type', async (request) => {
     const menuType = request.params.type || 'navbar';
-    return getMenuTree(menuType);
+    return getCachedMenuTree(menuType);
   });
 
   // GET /public/site-config - Lightweight site config for header/footer

@@ -1338,7 +1338,10 @@ export async function gameRoutes(fastify: FastifyInstance) {
       }
 
       const today = await getCurrentDateStringAsync();
-      const endDate = addDays(today, 6); // 7 days total: today + 6 more
+      const { getDashboardSectionConfig } = await import('../domains/content/dashboardSections.js');
+      const gamesConfig = await getDashboardSectionConfig('upcoming_games');
+      const lookAheadDays = gamesConfig.lookAheadDays ?? 7;
+      const endDate = addDays(today, Math.max(lookAheadDays - 1, 0));
       const rows = await db
         .select({
           id: schema.games.id,

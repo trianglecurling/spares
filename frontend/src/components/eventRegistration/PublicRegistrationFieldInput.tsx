@@ -34,7 +34,7 @@ export function fieldValueKey(fieldId: number, scope: string, personIndex: numbe
 
 export function personLabel(personIndex: number): string {
   if (personIndex === 0) return 'Primary registrant';
-  return `Group member ${personIndex}`;
+  return `Registrant ${personIndex + 1}`;
 }
 
 export default function PublicRegistrationFieldInput({

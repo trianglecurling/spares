@@ -6,6 +6,15 @@
   html {
     /* Reserve scrollbar gutter so layout doesn't shift when overflow appears (modern browsers). */
     scrollbar-gutter: stable;
+    /**
+     * Link teal: darkened for WCAG AA on light surfaces; brand teal on dark surfaces.
+     * Consumed by text-primary-teal-link (see tailwind.config.js).
+     */
+    --color-primary-teal-link: 8 132 135; /* #088487 */
+  }
+
+  html.dark {
+    --color-primary-teal-link: 1 185 188; /* #01B9BC */
   }
 
   html,
@@ -466,7 +475,7 @@ html.dark body {
   }
 
   .markdown-content a {
-    @apply text-primary-teal-link underline underline-offset-2 hover:opacity-90 dark:text-primary-teal-link dark:hover:opacity-90;
+    @apply text-primary-teal-link underline underline-offset-2 hover:opacity-90;
   }
 
   .markdown-content strong {

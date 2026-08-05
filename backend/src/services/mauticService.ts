@@ -389,6 +389,134 @@ export async function sendMauticEmailToContact(emailId: number, contactId: numbe
   });
 }
 
+/** Mautic category id for club "Member comms" emails shown on the member communications page. */
+export const MEMBER_COMMS_CATEGORY_ID = 4;
+
+export type MauticMemberCommsEmail = {
+  id: number;
+  name: string;
+  subject: string;
+  /** ISO date used for season grouping (publishUp, else dateModified, else dateAdded). */
+  sortDate: string | null;
+  previewUrl: string;
+};
+
+function extractCategoryId(category: unknown): number | null {
+  if (category == null) return null;
+  if (typeof category === 'number' && Number.isFinite(category)) return category;
+  if (typeof category === 'object') {
+    const id = (category as { id?: unknown }).id;
+    if (typeof id === 'number' && Number.isFinite(id)) return id;
+    if (typeof id === 'string' && /^\d+$/.test(id)) return Number.parseInt(id, 10);
+  }
+  return null;
+}
+
+function extractCategoryAlias(category: unknown): string | null {
+  if (category == null || typeof category !== 'object') return null;
+  const alias = (category as { alias?: unknown }).alias;
+  return typeof alias === 'string' && alias.trim() ? alias.trim() : null;
+}
+
+function firstNonEmptyDate(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function isPublicPreviewEnabled(value: unknown): boolean {
+  return value === true || value === 1 || value === '1';
+}
+
+async function resolveMemberCommsCategoryAlias(): Promise<string | null> {
+  try {
+    const json = await mauticRequestJson(`/categories/${MEMBER_COMMS_CATEGORY_ID}`, { method: 'GET' });
+    if (json == null || typeof json !== 'object') return null;
+    const o = json as Record<string, unknown>;
+    const category = o.category ?? o;
+    return extractCategoryAlias(category);
+  } catch (e) {
+    // Category lookup is an optimization only; fall back to scanning emails.
+    console.warn(
+      'Failed to resolve Mautic member-comms category alias',
+      e instanceof MauticRequestError ? { status: e.statusCode, message: e.message } : e,
+    );
+    return null;
+  }
+}
+
+function mapMemberCommsEmail(raw: Record<string, unknown>): MauticMemberCommsEmail | null {
+  if (typeof raw.id !== 'number') return null;
+  if (extractCategoryId(raw.category) !== MEMBER_COMMS_CATEGORY_ID) return null;
+  if (!isPublicPreviewEnabled(raw.publicPreview)) return null;
+
+  const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+  const subject = typeof raw.subject === 'string' ? raw.subject.trim() : '';
+  const sortDate = firstNonEmptyDate(raw.publishUp, raw.dateModified, raw.dateAdded);
+
+  return {
+    id: raw.id,
+    name: name || subject || `Email ${raw.id}`,
+    subject: subject || name || `Email ${raw.id}`,
+    sortDate,
+    previewUrl: `${mauticOrigin()}/email/preview/${raw.id}`,
+  };
+}
+
+/**
+ * Lists Mautic emails in the Member comms category (id 4) that are marked Available for use
+ * (`publicPreview`).
+ */
+export async function listMemberCommsEmails(): Promise<MauticMemberCommsEmail[]> {
+  if (!isMauticConfigured()) {
+    throw new Error('Mautic is not configured');
+  }
+
+  const alias = await resolveMemberCommsCategoryAlias();
+  // Prefer category alias search; without it, scan the email list and filter by category id.
+  const search = alias ? `category:${alias}` : null;
+  const results: MauticMemberCommsEmail[] = [];
+  const limit = 100;
+  let start = 0;
+
+  for (;;) {
+    // This Mautic instance 500s on snake_case orderBy (e.g. date_added); camelCase works.
+    // Avoid minimal=1: it omits publicPreview, which we need for "Available for use".
+    const query = new URLSearchParams({
+      start: String(start),
+      limit: String(limit),
+      orderBy: 'dateAdded',
+      orderByDir: 'desc',
+    });
+    if (search) query.set('search', search);
+    const json = await mauticRequestJson(`/emails?${query.toString()}`, { method: 'GET' });
+    if (json == null || typeof json !== 'object') break;
+    const emails = (json as { emails?: unknown }).emails;
+    if (emails == null || typeof emails !== 'object') break;
+
+    const batch = Object.values(emails as Record<string, unknown>);
+    if (batch.length === 0) break;
+
+    for (const value of batch) {
+      if (value == null || typeof value !== 'object') continue;
+      const mapped = mapMemberCommsEmail(value as Record<string, unknown>);
+      if (mapped) results.push(mapped);
+    }
+
+    if (batch.length < limit) break;
+    start += limit;
+  }
+
+  results.sort((a, b) => {
+    const aTime = a.sortDate ? Date.parse(a.sortDate) : 0;
+    const bTime = b.sortDate ? Date.parse(b.sortDate) : 0;
+    return bTime - aTime;
+  });
+
+  return results;
+}
+
 export type MailingListSubscribeResult = {
   contactId: number;
   newlyAddedToSegment: boolean;

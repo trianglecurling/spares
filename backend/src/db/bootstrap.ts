@@ -182,9 +182,19 @@ async function seedPublicContactRecipients(): Promise<void> {
   await seedPublicContactRecipientsIfNeeded();
 }
 
+async function seedDashboardSections(): Promise<void> {
+  const { seedDashboardSectionsIfNeeded } = await import('../domains/content/dashboardSections.js');
+  await seedDashboardSectionsIfNeeded();
+}
+
 async function seedMailingLists(): Promise<void> {
   const { seedMailingListsIfNeeded } = await import('../domains/content/mailingLists.js');
   await seedMailingListsIfNeeded();
+}
+
+async function seedMemberMenu(): Promise<void> {
+  const { seedMemberMenuIfNeeded } = await import('../domains/content/memberMenu.js');
+  await seedMemberMenuIfNeeded();
 }
 
 async function seedCoreRows(isPostgres: boolean): Promise<void> {
@@ -197,11 +207,20 @@ async function seedCoreRows(isPostgres: boolean): Promise<void> {
       VALUES (1, '09-01', '09-01')
       ON CONFLICT (id) DO NOTHING
     `));
+    await db.execute(sql.raw(`
+      INSERT INTO building_access_config (id, access_code, content_type, content)
+      VALUES (1, '', 'markdown', '')
+      ON CONFLICT (id) DO NOTHING
+    `));
   } else {
     await db.execute(sql.raw(`INSERT OR IGNORE INTO server_config (id) VALUES (1)`));
     await db.execute(sql.raw(`
       INSERT OR IGNORE INTO governance_settings (id, fiscal_year_start_mmdd, board_turnover_mmdd)
       VALUES (1, '09-01', '09-01')
+    `));
+    await db.execute(sql.raw(`
+      INSERT OR IGNORE INTO building_access_config (id, access_code, content_type, content)
+      VALUES (1, '', 'markdown', '')
     `));
   }
 
@@ -243,7 +262,9 @@ export async function runDatabaseBootstrap(config: DatabaseConfig): Promise<void
   await seedMemberRoleAssignmentsFromLegacyFlags(isPostgres);
   await seedCoreRows(isPostgres);
   await seedPublicContactRecipients();
+  await seedDashboardSections();
   await seedMailingLists();
+  await seedMemberMenu();
   await ensureRegistrationPriceDiscountSettingsTablesExist();
 
   if (config.type === 'sqlite') {

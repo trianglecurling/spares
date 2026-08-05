@@ -402,6 +402,45 @@ export type UpdateConfigBody = {
   refreshTokenTtlDays?: number;
 };
 
+export type DashboardSectionConfig = {
+  lookAheadDays?: number;
+  maxItems?: number;
+  showWhenEmpty?: boolean;
+  defaultExpanded?: boolean;
+};
+
+export type DashboardAlertPayload = {
+  title: string | null;
+  body: string | null;
+  expiresAt: string | null;
+  variant: string | null;
+  icon: string | null;
+};
+
+export type DashboardLayoutSection = {
+  key: string;
+  label: string;
+  enabled: boolean;
+  config: DashboardSectionConfig;
+  alert?: DashboardAlertPayload;
+};
+
+export type DashboardLayoutResponse = {
+  sections: DashboardLayoutSection[];
+};
+
+export type DashboardSectionAdminRow = {
+  id: number;
+  key: string;
+  label: string;
+  sortOrder: number;
+  isEnabled: boolean;
+  config: DashboardSectionConfig;
+  createdAt: string;
+  updatedAt: string;
+  alert?: DashboardAlertPayload;
+};
+
 export type DatabaseConfigBody = {
   databaseType: 'sqlite' | 'postgres';
   sqlite?: { path?: string };

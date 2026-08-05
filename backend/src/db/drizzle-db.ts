@@ -80,7 +80,9 @@ type PgSchema = {
   permalinks: typeof pgSchema.permalinksPg;
   permalinkHits: typeof pgSchema.permalinkHitsPg;
   siteConfig: typeof pgSchema.siteConfigPg;
+  buildingAccessConfig: typeof pgSchema.buildingAccessConfigPg;
   publicContactRecipients: typeof pgSchema.publicContactRecipientsPg;
+  dashboardSections: typeof pgSchema.dashboardSectionsPg;
   mailingLists: typeof pgSchema.mailingListsPg;
   mauticMembershipSyncStatus: typeof pgSchema.mauticMembershipSyncStatusPg;
   showcaseImages: typeof pgSchema.showcaseImagesPg;
@@ -95,7 +97,9 @@ type PgSchema = {
   governanceCommitteeChairs: typeof pgSchema.governanceCommitteeChairsPg;
   governanceBoardMemberCommittees: typeof pgSchema.governanceBoardMemberCommitteesPg;
   governanceOfficers: typeof pgSchema.governanceOfficersPg;
+  boardMeetingMinutes: typeof pgSchema.boardMeetingMinutesPg;
   eventCategories: typeof pgSchema.eventCategoriesPg;
+  eventTransferGroups: typeof pgSchema.eventTransferGroupsPg;
   events: typeof pgSchema.eventsPg;
   eventTimespans: typeof pgSchema.eventTimespansPg;
   eventLocations: typeof pgSchema.eventLocationsPg;
@@ -216,7 +220,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       permalinks: sqliteSchema.permalinksSqlite,
       permalinkHits: sqliteSchema.permalinkHitsSqlite,
       siteConfig: sqliteSchema.siteConfigSqlite,
+      buildingAccessConfig: sqliteSchema.buildingAccessConfigSqlite,
       publicContactRecipients: sqliteSchema.publicContactRecipientsSqlite,
+      dashboardSections: sqliteSchema.dashboardSectionsSqlite,
       mailingLists: sqliteSchema.mailingListsSqlite,
       mauticMembershipSyncStatus: sqliteSchema.mauticMembershipSyncStatusSqlite,
       showcaseImages: sqliteSchema.showcaseImagesSqlite,
@@ -231,7 +237,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       governanceCommitteeChairs: sqliteSchema.governanceCommitteeChairsSqlite,
       governanceBoardMemberCommittees: sqliteSchema.governanceBoardMemberCommitteesSqlite,
       governanceOfficers: sqliteSchema.governanceOfficersSqlite,
+      boardMeetingMinutes: sqliteSchema.boardMeetingMinutesSqlite,
       eventCategories: sqliteSchema.eventCategoriesSqlite,
+      eventTransferGroups: sqliteSchema.eventTransferGroupsSqlite,
       events: sqliteSchema.eventsSqlite,
       eventTimespans: sqliteSchema.eventTimespansSqlite,
       eventLocations: sqliteSchema.eventLocationsSqlite,
@@ -343,7 +351,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       permalinks: pgSchema.permalinksPg,
       permalinkHits: pgSchema.permalinkHitsPg,
       siteConfig: pgSchema.siteConfigPg,
+      buildingAccessConfig: pgSchema.buildingAccessConfigPg,
       publicContactRecipients: pgSchema.publicContactRecipientsPg,
+      dashboardSections: pgSchema.dashboardSectionsPg,
       mailingLists: pgSchema.mailingListsPg,
       mauticMembershipSyncStatus: pgSchema.mauticMembershipSyncStatusPg,
       showcaseImages: pgSchema.showcaseImagesPg,
@@ -358,7 +368,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       governanceCommitteeChairs: pgSchema.governanceCommitteeChairsPg,
       governanceBoardMemberCommittees: pgSchema.governanceBoardMemberCommitteesPg,
       governanceOfficers: pgSchema.governanceOfficersPg,
+      boardMeetingMinutes: pgSchema.boardMeetingMinutesPg,
       eventCategories: pgSchema.eventCategoriesPg,
+      eventTransferGroups: pgSchema.eventTransferGroupsPg,
       events: pgSchema.eventsPg,
       eventTimespans: pgSchema.eventTimespansPg,
       eventLocations: pgSchema.eventLocationsPg,

@@ -33,7 +33,10 @@
     "db:import-articles": "bun run src/scripts/import-articles.ts",
     "db:scan-orphan-files": "bun run src/scripts/scan-orphan-files.ts",
     "db:import-yourls-permalinks": "bun run src/scripts/import-yourls-permalinks.ts",
-    "db:delete-all-permalinks": "bun run src/scripts/delete-all-permalinks.ts"
+    "db:delete-all-permalinks": "bun run src/scripts/delete-all-permalinks.ts",
+    "db:migrate-minutes-to-drive": "bun run src/scripts/migrate-minutes-to-drive.ts",
+    "db:export-board-meeting-minutes": "bun run src/scripts/export-board-meeting-minutes.ts",
+    "db:import-board-meeting-minutes-json": "bun run src/scripts/import-board-meeting-minutes-json.ts"
   },
   "dependencies": {
     "@azure/communication-email": "^1.0.0",
@@ -58,6 +61,7 @@
     "drizzle-orm": "^0.44.7",
     "fastify": "^5.7.4",
     "fastify-raw-body": "^5.0.0",
+    "googleapis": "^174.0.0",
     "jsonwebtoken": "^9.0.2",
     "marked": "^14.0.0",
     "minisearch": "^7.2.0",

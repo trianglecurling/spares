@@ -1305,7 +1305,11 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
-  const horizon = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { getDashboardSectionConfig } = await import('../domains/content/dashboardSections.js');
+  const sectionConfig = await getDashboardSectionConfig('volunteer_opportunities');
+  const lookAheadDays = sectionConfig.lookAheadDays ?? 30;
+  const maxItems = sectionConfig.maxItems ?? 10;
+  const horizon = new Date(now.getTime() + lookAheadDays * 24 * 60 * 60 * 1000).toISOString();
   const held = await getMemberCredentials(memberId);
 
   const shifts = await db
@@ -1392,7 +1396,10 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     });
   }
 
-  return opportunities;
+  opportunities.sort(
+    (a, b) => new Date(a.startDt).getTime() - new Date(b.startDt).getTime() || a.shiftRoleId - b.shiftRoleId,
+  );
+  return opportunities.slice(0, maxItems);
 }
 
 export async function listMySignups(memberId: number): Promise<{

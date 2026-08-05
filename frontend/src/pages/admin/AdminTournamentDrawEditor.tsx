@@ -368,7 +368,7 @@ function TournamentSheetsSection({ draw, updateDraw, clubSheets }: TournamentShe
   return (
     <FormSection
       title="Sheets"
-      description="Club sheets (from Manage sheets) or custom names for this tournament only."
+      description="Club sheets (from Manage facility info) or custom names for this tournament only."
       surface="panel"
     >
       <div className="space-y-3">
@@ -2120,7 +2120,7 @@ function InspectorPanel({
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <button
             type="button"
-            className="text-sm font-medium text-primary-teal-link hover:underline dark:text-teal-400"
+            className="text-sm font-medium text-primary-teal-link hover:underline"
             onClick={addCompetitor}
             disabled={k >= 32}
           >

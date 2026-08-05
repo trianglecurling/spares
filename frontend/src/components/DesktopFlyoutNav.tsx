@@ -13,6 +13,8 @@ export interface NavMenuItemNode {
   url: string | null;
   openInNewTab: boolean;
   children: NavMenuItemNode[];
+  /** Optional classes applied to the rendered label/link (e.g. emphasis color). */
+  labelClassName?: string;
 }
 
 export interface DesktopFlyoutNavClasses {
@@ -37,9 +39,16 @@ const TOP_CLOSE_DELAY_MS = 120;
 const flyoutBridgeClass =
   'pointer-events-auto absolute top-0 bottom-0 z-40 w-[12rem] max-w-[50vw]';
 
-function linkForItem(item: NavMenuItemNode): { kind: 'internal' | 'external' | 'none'; href: string | null } {
-  if (item.linkType === 'internal' && item.url) return { kind: 'internal', href: item.url };
-  if (item.linkType === 'external' && item.url) return { kind: 'external', href: item.url };
+export function linkForItem(
+  item: NavMenuItemNode,
+): { kind: 'internal' | 'external' | 'none'; href: string | null } {
+  if (!item.url) return { kind: 'none', href: null };
+  // Root-relative "Other" URLs are in-app routes; use the SPA router unless opening a new tab.
+  const isAppRelative = item.url.startsWith('/') && !item.openInNewTab;
+  if (item.linkType === 'internal' || (item.linkType === 'external' && isAppRelative)) {
+    return { kind: 'internal', href: item.url };
+  }
+  if (item.linkType === 'external') return { kind: 'external', href: item.url };
   return { kind: 'none', href: null };
 }
 
@@ -140,10 +149,14 @@ function FlyoutItem({
       };
 
   if (!hasChildren) {
-    const itemClass =
+    const itemClass = [
       link.kind === 'none'
         ? `${classes.dropdownItem} text-gray-500 dark:text-gray-400`
-        : classes.dropdownItem;
+        : classes.dropdownItem,
+      item.labelClassName,
+    ]
+      .filter(Boolean)
+      .join(' ');
     return (
       <li className="list-none" {...rowHandlers}>
         {link.kind === 'external' && link.href ? (
@@ -423,11 +436,13 @@ export function MobileMenuItem({
     );
   }
 
+  const itemClass = [mobileNavItemClass, item.labelClassName].filter(Boolean).join(' ');
+
   if (link.kind === 'external' && link.href) {
     return (
       <a
         href={link.href}
-        className={mobileNavItemClass}
+        className={itemClass}
         style={rowStyle}
         onClick={onNavigate}
         {...externalTargetProps(item)}
@@ -439,14 +454,14 @@ export function MobileMenuItem({
 
   if (link.kind === 'internal' && link.href) {
     return (
-      <Link to={link.href} className={mobileNavItemClass} style={rowStyle} onClick={onNavigate}>
+      <Link to={link.href} className={itemClass} style={rowStyle} onClick={onNavigate}>
         {item.label}
       </Link>
     );
   }
 
   return (
-    <span className={`${mobileNavItemClass} cursor-default`} style={rowStyle}>
+    <span className={`${itemClass} cursor-default`} style={rowStyle}>
       {item.label}
     </span>
   );

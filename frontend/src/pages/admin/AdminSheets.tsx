@@ -1,9 +1,9 @@
 import { useEffect, useId, useState } from 'react';
-import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, patch, post } from '../../api/client';
 import { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
 import ChoiceInput from '../../components/ChoiceInput';
@@ -253,66 +253,63 @@ export default function AdminSheets() {
 
   return (
     <>
-      <AppPage>
-        <AppPageHeader
-          title="Manage sheets"
-          actions={<Button onClick={() => handleOpenModal()}>Add sheet</Button>}
+      <AppPageControlsRow
+        right={<Button onClick={() => handleOpenModal()}>Add sheet</Button>}
+      />
+
+      {loading ? (
+        <AppStateCard title="Loading sheets..." />
+      ) : sheets.length === 0 ? (
+        <AppStateCard
+          title="No sheets configured yet."
+          action={<Button onClick={() => handleOpenModal()}>Create your first sheet</Button>}
         />
-
-        {loading ? (
-          <AppStateCard title="Loading sheets..." />
-        ) : sheets.length === 0 ? (
-          <AppStateCard
-            title="No sheets configured yet."
-            action={<Button onClick={() => handleOpenModal()}>Create your first sheet</Button>}
-          />
-        ) : (
-          <div className="grid gap-4">
-            {sheets.map((sheet) => (
-              <div key={sheet.id} className="app-card p-6">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <h3 className="app-section-title mb-2">{sheet.name}</h3>
-                    <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                      <p>
-                        <span className="font-medium dark:text-gray-300">Sort order:</span>{' '}
-                        {sheet.sortOrder}
-                      </p>
-                      <p>
-                        <span className="font-medium dark:text-gray-300">Status:</span>{' '}
-                        {sheet.isActive ? 'Active' : 'Inactive'}
-                      </p>
-                      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span className="font-medium dark:text-gray-300">Stone colors:</span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <StoneColorSwatch color={sheet.stoneColor1} />
-                          {sheetStoneColorLabel(sheet.stoneColor1)}
-                        </span>
-                        <span className="text-gray-400" aria-hidden>
-                          /
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <StoneColorSwatch color={sheet.stoneColor2} />
-                          {sheetStoneColorLabel(sheet.stoneColor2)}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex space-x-2">
-                    <Button onClick={() => handleOpenModal(sheet)} variant="secondary">
-                      Edit
-                    </Button>
-                    <Button onClick={() => handleDelete(sheet)} variant="danger">
-                      Delete
-                    </Button>
+      ) : (
+        <div className="grid gap-4">
+          {sheets.map((sheet) => (
+            <div key={sheet.id} className="app-card p-6">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <h3 className="app-section-title mb-2">{sheet.name}</h3>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                    <p>
+                      <span className="font-medium dark:text-gray-300">Sort order:</span>{' '}
+                      {sheet.sortOrder}
+                    </p>
+                    <p>
+                      <span className="font-medium dark:text-gray-300">Status:</span>{' '}
+                      {sheet.isActive ? 'Active' : 'Inactive'}
+                    </p>
+                    <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="font-medium dark:text-gray-300">Stone colors:</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <StoneColorSwatch color={sheet.stoneColor1} />
+                        {sheetStoneColorLabel(sheet.stoneColor1)}
+                      </span>
+                      <span className="text-gray-400" aria-hidden>
+                        /
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <StoneColorSwatch color={sheet.stoneColor2} />
+                        {sheetStoneColorLabel(sheet.stoneColor2)}
+                      </span>
+                    </p>
                   </div>
                 </div>
+
+                <div className="flex space-x-2">
+                  <Button onClick={() => handleOpenModal(sheet)} variant="secondary">
+                    Edit
+                  </Button>
+                  <Button onClick={() => handleDelete(sheet)} variant="danger">
+                    Delete
+                  </Button>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </AppPage>
+            </div>
+          ))}
+        </div>
+      )}
 
       <Modal
         isOpen={isModalOpen}
@@ -382,3 +379,4 @@ export default function AdminSheets() {
     </>
   );
 }
+

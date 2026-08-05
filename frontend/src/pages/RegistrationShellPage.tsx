@@ -583,7 +583,7 @@ type LocalRegistrationDraftV1 = {
   sameEmail: 'same' | 'different';
   demographics: DemographicsForm;
   guardian: { firstName: string; lastName: string; email: string; phone: string };
-  membershipChoice: 'regular' | 'social';
+  membershipChoice: 'regular' | 'social' | null;
   basicIcePrivileges: boolean;
   studentDiscountClaimed: boolean;
   studentInstitution: string;
@@ -1006,7 +1006,7 @@ function buildGuestDraftBase(
     sameEmail: partial.sameEmail ?? 'different',
     demographics: partial.demographics ?? emptyDemographics,
     guardian: partial.guardian ?? { firstName: '', lastName: '', email: '', phone: '' },
-    membershipChoice: partial.membershipChoice ?? 'regular',
+    membershipChoice: partial.membershipChoice ?? null,
     basicIcePrivileges: partial.basicIcePrivileges ?? false,
     studentDiscountClaimed: partial.studentDiscountClaimed ?? false,
     studentInstitution: partial.studentInstitution ?? '',
@@ -1105,7 +1105,9 @@ export default function RegistrationShellPage() {
   }, []);
   const [guardian, setGuardian] = useState({ firstName: '', lastName: '', email: '', phone: '' });
   const [membershipPayment, setMembershipPayment] = useState<RegistrationMembershipPaymentPayload | null>(null);
-  const [membershipChoice, setMembershipChoice] = useState<'regular' | 'social' | 'junior_recreational' | 'none'>('regular');
+  const [membershipChoice, setMembershipChoice] = useState<
+    'regular' | 'social' | 'junior_recreational' | 'none' | null
+  >(null);
   const isNoMembershipRegistration =
     membershipPayment?.selection.membershipOption === 'none' || membershipChoice === 'none';
   const [juniorAssistancePercent, setJuniorAssistancePercent] = useState<'0' | '25' | '50' | '75'>('0');
@@ -1541,7 +1543,9 @@ export default function RegistrationShellPage() {
           demographics: demographicsRef.current,
           guardian,
           membershipChoice:
-            membershipChoice === 'junior_recreational' || membershipChoice === 'none' ? 'regular' : membershipChoice,
+            membershipChoice === 'junior_recreational' || membershipChoice === 'none' || membershipChoice == null
+              ? null
+              : membershipChoice,
           basicIcePrivileges,
           studentDiscountClaimed,
           studentInstitution,
@@ -1841,7 +1845,7 @@ export default function RegistrationShellPage() {
   useEffect(() => {
     if (currentStep !== 'membership') return;
     if (membershipChoice === 'junior_recreational' && !juniorRecreationalEligible) {
-      setMembershipChoice('regular');
+      setMembershipChoice(null);
     }
   }, [currentStep, membershipChoice, juniorRecreationalEligible]);
 
@@ -1918,13 +1922,15 @@ export default function RegistrationShellPage() {
         const data = response.data as RegistrationMembershipPaymentPayload;
         setMembershipPayment(data);
         const membershipOption = data.selection.membershipOption;
+        // Only hydrate an explicit saved choice. The DB default is `none` before selection;
+        // leave local state alone so we do not auto-select or clobber a pending UI pick.
         if (membershipOption === 'none' && data.noMembershipEligible && noMembershipPathActiveRef.current) {
           setMembershipChoice('none');
         } else if (membershipOption === 'junior_recreational') {
           setMembershipChoice('junior_recreational');
         } else if (membershipOption === 'social') {
           setMembershipChoice('social');
-        } else {
+        } else if (membershipOption === 'regular' || membershipOption === 'regular_spare_only') {
           setMembershipChoice('regular');
         }
         setBasicIcePrivileges(membershipOption === 'regular_spare_only');
@@ -2094,7 +2100,8 @@ export default function RegistrationShellPage() {
           seasonId: windowState.season.id,
           sessionId: windowState.session.id,
           curlerDateOfBirth: registeringCurlerDateOfBirth || '',
-          membershipChoice,
+          // Preview only; UI membership choice stays unselected until the curler picks one.
+          membershipChoice: membershipChoice === 'social' ? 'social' : 'regular',
           basicIcePrivileges,
           studentDiscountClaimed,
           studentInstitution: studentInstitution || null,
@@ -2910,14 +2917,20 @@ export default function RegistrationShellPage() {
 
   async function saveMembership(event: React.FormEvent) {
     event.preventDefault();
+    const isLifetimeMember = membershipPayment?.hasLifetimeMembership === true;
+    if (!isLifetimeMember && membershipChoice == null) {
+      setError('Choose a membership type.');
+      return;
+    }
+    const selectedMembership = membershipChoice ?? 'regular';
     setLoading(true);
     setError('');
     try {
       if (member && registrationId !== null) {
         const response = await api.patch(`/registration/drafts/${registrationId}/membership`, {
-          membershipOption: membershipChoice,
+          membershipOption: selectedMembership,
           basicIcePrivileges: false,
-          juniorAssistancePercent: membershipChoice === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
+          juniorAssistancePercent: selectedMembership === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
         });
         setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
         if (isPriorityEdit) {
@@ -2926,22 +2939,22 @@ export default function RegistrationShellPage() {
         }
         const paymentPayload = response.data as RegistrationMembershipPaymentPayload;
         navigate(
-          membershipChoice === 'none'
+          selectedMembership === 'none'
             ? '/registration/prior-league-selection'
-            : membershipChoice === 'social'
+            : selectedMembership === 'social'
               ? '/registration/review'
-              : membershipChoice === 'junior_recreational'
+              : selectedMembership === 'junior_recreational'
                 ? '/registration/league-summary'
                 : `/registration/${stepAfterDiscounts(paymentPayload)}`,
         );
-        if (membershipChoice === 'none') {
+        if (selectedMembership === 'none') {
           noMembershipPathActiveRef.current = true;
         } else {
           noMembershipPathActiveRef.current = false;
         }
       } else {
         const guestNextStep =
-          membershipChoice === 'social'
+          selectedMembership === 'social'
             ? 'review'
             : membershipPayment
               ? stepAfterDiscounts(membershipPayment)
@@ -3738,7 +3751,7 @@ export default function RegistrationShellPage() {
           submitter: registeringForSelf === 'self' ? undefined : demographicsPayloadForIdentityApi(demographics, curlerStoredDateOfBirth),
           curler: demographicsPayloadForPersistedSave(demographics, curlerStoredDateOfBirth),
           guardian: isMinorDate(registeringCurlerDateOfBirth || '') ? guardian : undefined,
-          membershipChoice,
+          membershipChoice: membershipChoice === 'social' ? 'social' : 'regular',
           basicIcePrivileges,
           studentDiscountClaimed,
           studentInstitution: studentInstitution || null,
@@ -4799,9 +4812,15 @@ export default function RegistrationShellPage() {
                 layout="block"
                 value={membershipChoice}
                 onChange={(value) => {
-                  const next = value as 'regular' | 'social' | 'junior_recreational' | 'none';
-                  setMembershipChoice(next);
-                  if (next !== 'none') {
+                  const next = (Array.isArray(value) ? value[0] : value) as
+                    | 'regular'
+                    | 'social'
+                    | 'junior_recreational'
+                    | 'none'
+                    | null
+                    | undefined;
+                  setMembershipChoice(next ?? null);
+                  if (next != null && next !== 'none') {
                     noMembershipPathActiveRef.current = false;
                   }
                 }}
@@ -4837,7 +4856,7 @@ export default function RegistrationShellPage() {
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex flex-wrap gap-3">
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || (!isLifetimeMember && membershipChoice == null)}>
               {isPriorityEdit ? 'Save and return' : 'Continue'}
             </Button>
           </div>
