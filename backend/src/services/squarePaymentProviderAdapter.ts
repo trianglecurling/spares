@@ -394,10 +394,12 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       asString(payment?.order_id)
       ?? asString(order?.id)
       ?? null;
-    const providerTransactionId =
-      asString(payment?.id)
-      ?? asString(refund?.payment_id)
-      ?? asString(refund?.id);
+    const isRefundEvent = eventType.toLowerCase().includes('refund');
+    const transactionType = isRefundEvent ? 'refund' : 'charge';
+    // Refund rows must key off refund.id — payment.id collides with the charge unique key.
+    const providerTransactionId = isRefundEvent
+      ? (asString(refund?.id) ?? asString(refund?.payment_id))
+      : asString(payment?.id);
 
     const amountMinor =
       moneyAmountMinor(payment?.amount_money)
@@ -414,13 +416,16 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     if (!nextStatus && order) {
       nextStatus = resolveSquareOrderPaymentStatusFromRecord(order);
     }
-    if (!nextStatus && eventType.toLowerCase().includes('refund')) {
+    if (!nextStatus && isRefundEvent) {
       nextStatus = 'refunded';
     }
 
     const refundAmountMinor = moneyAmountMinor(refund?.amount_money);
-    const transactionType = eventType.toLowerCase().includes('refund') ? 'refund' : 'charge';
     const transactionAmount = transactionType === 'refund' && refundAmountMinor > 0 ? refundAmountMinor : amountMinor;
+    // Prefer created_at for charges — payment.updated_at changes again when refunds land.
+    const occurredAt = isRefundEvent
+      ? (asString(refund?.created_at) ?? asString(refund?.createdAt) ?? asString(refund?.updated_at) ?? eventCreatedAt)
+      : (asString(payment?.created_at) ?? asString(payment?.createdAt) ?? asString(payment?.updated_at) ?? eventCreatedAt);
 
     return {
       providerEventId,
@@ -444,7 +449,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
                 ? moneyAmountMinor(payment.processing_fee[0])
                 : null,
             status: nextStatus ?? 'pending',
-            occurredAt: asString(payment?.updated_at) ?? asString(refund?.updated_at) ?? eventCreatedAt,
+            occurredAt,
             metadata: isRecord(payment?.note) ? payment.note : null,
           }
         : null,
@@ -465,33 +470,45 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
   }
 
   async createRefund(input: CreateRefundInput): Promise<ProviderRefundResult> {
-    const client = this.requireClient();
-    const paymentId =
-      input.providerPaymentId?.trim()
-      || await this.resolvePaymentIdForRefund(client, input);
-    const response = await callSquare(() => client.refunds.refundPayment({
-      idempotencyKey: crypto.randomUUID(),
-      paymentId,
-      amountMoney: {
-        amount: BigInt(input.amountMinor),
-        currency: squareCurrency(input.currency),
-      },
-      reason: input.reason?.trim() ? 'Requested by customer' : undefined,
-    }));
+    try {
+      const client = this.requireClient();
+      const paymentId =
+        input.providerPaymentId?.trim()
+        || await this.resolvePaymentIdForRefund(client, input);
+      const response = await callSquare(() => client.refunds.refundPayment({
+        idempotencyKey: crypto.randomUUID(),
+        paymentId,
+        amountMoney: {
+          amount: BigInt(input.amountMinor),
+          currency: squareCurrency(input.currency),
+        },
+        reason: input.reason?.trim() ? 'Requested by customer' : undefined,
+      }));
 
-    const refund = response.refund;
-    if (!refund?.id) {
-      const detail =
-        response.errors?.map((error) => error.detail ?? error.code).filter(Boolean).join('; ')
-        || 'Square refund request failed';
-      throw new PaymentServiceError(detail, 502);
+      const refund = response.refund;
+      if (!refund?.id) {
+        const detail =
+          response.errors?.map((error) => error.detail ?? error.code).filter(Boolean).join('; ')
+          || 'Square refund request failed';
+        throw new PaymentServiceError(detail, 502);
+      }
+
+      return {
+        providerRefundId: refund.id,
+        status: mapSquareRefundStatus(asString(refund.status)),
+        rawResponse: refund,
+      };
+    } catch (error) {
+      if (error instanceof PaymentServiceError) throw error;
+      const mapped = toPaymentServiceError(error);
+      if (mapped) throw mapped;
+      throw new PaymentServiceError(
+        error instanceof Error && error.message.trim()
+          ? `Square refund failed: ${error.message}`
+          : 'Square refund request failed',
+        502,
+      );
     }
-
-    return {
-      providerRefundId: refund.id,
-      status: mapSquareRefundStatus(asString(refund.status)),
-      rawResponse: refund,
-    };
   }
 
   async fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null> {
@@ -503,10 +520,8 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
   private paymentIdFromTenders(tenders: unknown[]): string | null {
     for (const tender of tenders) {
       if (!isRecord(tender)) continue;
-      const paymentId =
-        asString(tender.paymentId)
-        ?? asString(tender.payment_id)
-        ?? asString(tender.id);
+      // Prefer payment_id only — tender.id is not a valid Refunds API paymentId.
+      const paymentId = asString(tender.paymentId) ?? asString(tender.payment_id);
       if (paymentId) return paymentId;
     }
     return null;

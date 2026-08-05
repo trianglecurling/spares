@@ -26,7 +26,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
   return [
     ...(canManageMembers ? [{ to: '/admin/members', label: 'Manage members' }] : []),
     ...(canManageWaivers ? [{ to: '/admin/waivers', label: 'Manage waivers' }] : []),
-    ...(canManageLeagues ? [{ to: '/admin/sheets', label: 'Manage sheets' }] : []),
+    ...(canManageLeagues ? [{ to: '/admin/facility', label: 'Manage facility info' }] : []),
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canAccessEventsAdmin ? [{ to: '/admin/events', label: 'Manage events' }] : []),

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import BackButton from '../../components/BackButton';
@@ -7,6 +7,7 @@ import Modal from '../../components/Modal';
 import api, { formatApiError } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
 import DietaryRestrictionsField from '../../components/eventRegistration/DietaryRestrictionsField';
+import { personLabel } from '../../components/eventRegistration/PublicRegistrationFieldInput';
 import { TeamPlayersField, defaultTeamPlayersJson } from '../../components/eventRegistration/TeamPlayersField';
 import {
   isSubheadingFieldType,
@@ -20,6 +21,9 @@ import { resolveEventContactFieldLabels } from '../../utils/eventRegistrationCon
 import { formatDisplayName, splitDisplayName } from '../../utils/personName';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
+import FormSection from '../../components/FormSection';
+import InlineStateMessage from '../../components/InlineStateMessage';
+import { formatLinkedSessionEventLabel, formatLinkedSessionWhen } from '../../utils/eventLinkedSessionLabel';
 
 type EventRegistrationField = {
   id: number;
@@ -40,6 +44,7 @@ type EventDetail = {
   contactLastNameLabel?: string | null;
   contactEmailLabel?: string | null;
   registrationFields: EventRegistrationField[];
+  timespans?: Array<{ start_dt: string; end_dt?: string; sort_order?: number }>;
 };
 
 type RegistrationGroupMember = {
@@ -93,7 +98,19 @@ type RegistrationDetail = {
   } | null;
 };
 
-type GroupMemberInput = { name: string; email: string };
+type GroupMemberInput = { firstName: string; lastName: string; email: string };
+
+type TransferSessionOption = {
+  eventId: number;
+  title: string;
+  slug: string;
+  timespans: Array<{ start_dt: string; end_dt: string; sort_order: number }>;
+  openSpots: number | null;
+  waitlistEnabled: boolean;
+  eligible: boolean;
+  ineligibleReason: string | null;
+  resultingStatus: 'confirmed' | 'waitlisted' | null;
+};
 
 function formatDateTime24(value: string): string {
   const date = new Date(value);
@@ -149,6 +166,11 @@ export default function AdminEventRegistrationEditor() {
   const [saving, setSaving] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferOptions, setTransferOptions] = useState<TransferSessionOption[]>([]);
+  const [transferOptionsLoading, setTransferOptionsLoading] = useState(false);
+  const [transferTargetEventId, setTransferTargetEventId] = useState<number | null>(null);
+  const [transferBusy, setTransferBusy] = useState(false);
   const [managementLinkCopied, setManagementLinkCopied] = useState(false);
 
   const [event, setEvent] = useState<EventDetail | null>(null);
@@ -158,6 +180,7 @@ export default function AdminEventRegistrationEditor() {
   const [contactEmail, setContactEmail] = useState('');
   const [groupMembers, setGroupMembers] = useState<GroupMemberInput[]>([]);
   const [fieldValueByKey, setFieldValueByKey] = useState<Record<string, string>>({});
+  const groupMemberFieldIdPrefix = useId();
 
   const eventAllowsGroupRegistration = event?.allowGroupRegistration === 1;
   const contactLabels = useMemo(() => resolveEventContactFieldLabels(event), [event]);
@@ -178,7 +201,8 @@ export default function AdminEventRegistrationEditor() {
       { index: 0, label: formatDisplayName(contactFirstName, contactLastName) || 'Primary registrant' },
       ...groupMembers.map((member, idx) => ({
         index: idx + 1,
-        label: member.name.trim() || `Group member ${idx + 1}`,
+        label:
+          formatDisplayName(member.firstName, member.lastName) || `Registrant ${idx + 2}`,
       })),
     ],
     [contactFirstName, contactLastName, groupMembers],
@@ -209,7 +233,12 @@ export default function AdminEventRegistrationEditor() {
           setContactLastName(lastName);
           setContactEmail(reg.contact_email || '');
           const sortedMembers = [...(reg.groupMembers ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-          setGroupMembers(sortedMembers.map((member) => ({ name: member.name || '', email: member.email || '' })));
+          setGroupMembers(
+            sortedMembers.map((member) => {
+              const { firstName, lastName } = splitDisplayName(member.name || '');
+              return { firstName, lastName, email: member.email || '' };
+            }),
+          );
 
           const memberIndexById = new Map<number, number>();
           sortedMembers.forEach((member, idx) => {
@@ -250,7 +279,7 @@ export default function AdminEventRegistrationEditor() {
   };
 
   const addGroupMember = () => {
-    setGroupMembers((prev) => [...prev, { name: '', email: '' }]);
+    setGroupMembers((prev) => [...prev, { firstName: '', lastName: '', email: '' }]);
   };
 
   const removeGroupMember = (index: number) => {
@@ -289,10 +318,14 @@ export default function AdminEventRegistrationEditor() {
     try {
       const normalizedGroupMembers = groupMembers
         .map((member) => ({
-          name: member.name.trim(),
+          firstName: member.firstName.trim(),
+          lastName: member.lastName.trim(),
           email: member.email.trim(),
         }))
-        .filter((member) => member.name.length > 0);
+        .filter(
+          (member) =>
+            member.firstName.length > 0 && member.lastName.length > 0 && member.email.length > 0,
+        );
 
       const fieldValues: Array<{ fieldId: number; registrationMemberIndex?: number | null; value: string }> = [];
       groupFields.forEach((field) => {
@@ -316,10 +349,7 @@ export default function AdminEventRegistrationEditor() {
         contactFirstName: contactFirstName.trim(),
         contactLastName: contactLastName.trim(),
         contactEmail: contactEmail.trim(),
-        groupMembers: normalizedGroupMembers.map((member) => ({
-          name: member.name,
-          email: member.email || null,
-        })),
+        groupMembers: normalizedGroupMembers,
         fieldValues,
       };
 
@@ -336,6 +366,52 @@ export default function AdminEventRegistrationEditor() {
       showAlert(formatApiError(error, isNew ? 'Failed to create registration' : 'Failed to update registration'), 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openTransferModal = async () => {
+    if (isNew || !registration) return;
+    setShowTransferModal(true);
+    setTransferOptionsLoading(true);
+    setTransferTargetEventId(null);
+    try {
+      const res = await api.get<{ sessions: TransferSessionOption[] }>(
+        `/events/${eventId}/registrations/${registration.id}/transfer-options`,
+      );
+      setTransferOptions(res.data.sessions || []);
+      setTransferTargetEventId(null);
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to load linked sessions'), 'error');
+      setShowTransferModal(false);
+    } finally {
+      setTransferOptionsLoading(false);
+    }
+  };
+
+  const handleTransferRegistration = async () => {
+    if (!registration || transferTargetEventId == null || transferBusy) return;
+    setTransferBusy(true);
+    try {
+      const res = await api.post<{
+        targetEventId: number;
+        status: string;
+      }>(`/events/${eventId}/registrations/${registration.id}/transfer`, {
+        targetEventId: transferTargetEventId,
+      });
+      showAlert(
+        res.data.status === 'waitlisted'
+          ? 'Registration moved to the waitlist for the new session'
+          : 'Registration moved to the linked session',
+        'success',
+      );
+      navigate(`/admin/events/${res.data.targetEventId}/registrations/${registration.id}`, {
+        replace: true,
+      });
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to move registration'), 'error');
+    } finally {
+      setTransferBusy(false);
+      setShowTransferModal(false);
     }
   };
 
@@ -405,6 +481,23 @@ export default function AdminEventRegistrationEditor() {
   const pageTitle = isNew
     ? `New registration: ${event.title}`
     : `Registration #${registration?.id ?? ''}: ${event.title}`;
+  const eventWhenLabel = (() => {
+    const when = formatLinkedSessionWhen(event.timespans);
+    return when === 'Schedule TBD' ? null : when;
+  })();
+  const pageDescription = (
+    <>
+      {eventWhenLabel ? (
+        <>
+          {eventWhenLabel}
+          <br />
+        </>
+      ) : null}
+      {isNew
+        ? 'Create a manual registration. Payment is bypassed for admin-created records.'
+        : 'View and edit full registration details.'}
+    </>
+  );
   const showRefundWarning = event.feeMinor > 0 && registration?.status !== 'waitlisted';
   const payment = registration?.payment ?? null;
   const primaryTransactionId = payment?.latest_transaction?.provider_transaction_id ?? null;
@@ -418,13 +511,26 @@ export default function AdminEventRegistrationEditor() {
   const refundStripeUrl = payment?.provider === 'stripe'
     ? stripeDashboardUrl(payment?.latest_refund?.provider_refund_id, checkoutSessionId)
     : null;
+  const transferGroupSize = registration?.group_size ?? 1;
+  const selectedTransferSession = transferOptions.find(
+    (session) => session.eventId === transferTargetEventId && session.eligible,
+  );
+  const transferCapacityOverrideWarning =
+    selectedTransferSession != null &&
+    selectedTransferSession.openSpots != null &&
+    selectedTransferSession.openSpots < transferGroupSize
+      ? {
+          openSpots: selectedTransferSession.openSpots,
+          groupSize: transferGroupSize,
+        }
+      : null;
 
   return (
     <>
       <AppPage>
         <AppPageHeader
           title={pageTitle}
-          description={isNew ? 'Create a manual registration. Payment is bypassed for admin-created records.' : 'View and edit full registration details.'}
+          description={pageDescription}
           actions={
             <BackButton
               label="Registrations"
@@ -597,41 +703,70 @@ export default function AdminEventRegistrationEditor() {
 
             {eventAllowsGroupRegistration && (
               <section className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="app-section-title">Group members</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="app-section-title">Additional registrants</h2>
                   <Button type="button" variant="secondary" onClick={addGroupMember}>
-                    Add member
+                    Add registrant
                   </Button>
                 </div>
-                {groupMembers.length === 0 && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No additional members.</p>
-                )}
-                {groupMembers.map((member, idx) => (
-                  <div key={idx} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
-                    <div>
-                      <label className="app-label">Member name</label>
-                      <input
-                        value={member.name}
-                        onChange={(e) => updateGroupMember(idx, 'name', e.target.value)}
-                        className="app-input"
-                        placeholder={`Group member ${idx + 1}`}
-                      />
+                {groupMembers.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Register additional attendees for this event
+                  </p>
+                ) : null}
+                {groupMembers.map((member, idx) => {
+                  const registrantHeading = personLabel(idx + 1);
+                  const firstNameId = `${groupMemberFieldIdPrefix}-${idx}-firstName`;
+                  const lastNameId = `${groupMemberFieldIdPrefix}-${idx}-lastName`;
+                  const emailId = `${groupMemberFieldIdPrefix}-${idx}-email`;
+                  return (
+                    <div
+                      key={idx}
+                      className="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+                      role="group"
+                      aria-label={registrantHeading}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                          {registrantHeading}
+                        </p>
+                        <Button type="button" variant="secondary" onClick={() => removeGroupMember(idx)}>
+                          Remove
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField label={contactLabels.firstName} htmlFor={firstNameId} required>
+                          <input
+                            id={firstNameId}
+                            value={member.firstName}
+                            onChange={(e) => updateGroupMember(idx, 'firstName', e.target.value)}
+                            className="app-input"
+                            required
+                          />
+                        </FormField>
+                        <FormField label={contactLabels.lastName} htmlFor={lastNameId} required>
+                          <input
+                            id={lastNameId}
+                            value={member.lastName}
+                            onChange={(e) => updateGroupMember(idx, 'lastName', e.target.value)}
+                            className="app-input"
+                            required
+                          />
+                        </FormField>
+                      </div>
+                      <FormField label={contactLabels.email} htmlFor={emailId} required>
+                        <input
+                          id={emailId}
+                          type="email"
+                          value={member.email}
+                          onChange={(e) => updateGroupMember(idx, 'email', e.target.value)}
+                          className="app-input"
+                          required
+                        />
+                      </FormField>
                     </div>
-                    <div>
-                      <label className="app-label">Member email</label>
-                      <input
-                        type="email"
-                        value={member.email}
-                        onChange={(e) => updateGroupMember(idx, 'email', e.target.value)}
-                        className="app-input"
-                        placeholder="Optional"
-                      />
-                    </div>
-                    <Button type="button" variant="secondary" onClick={() => removeGroupMember(idx)} className="h-10">
-                      Remove
-                    </Button>
-                  </div>
-                ))}
+                  );
+                })}
               </section>
             )}
 
@@ -697,6 +832,13 @@ export default function AdminEventRegistrationEditor() {
                   : 'This registration will skip checkout and fee collection.'}
               </div>
               <div className="flex items-center gap-2">
+                {!isNew &&
+                  registration &&
+                  (registration.status === 'confirmed' || registration.status === 'waitlisted') && (
+                  <Button type="button" variant="secondary" onClick={() => void openTransferModal()}>
+                    Move to linked session
+                  </Button>
+                )}
                 {!isNew && registration && registration.status !== 'cancelled' && (
                   <Button type="button" variant="secondary" onClick={() => setShowCancelModal(true)}>
                     Cancel registration
@@ -709,6 +851,95 @@ export default function AdminEventRegistrationEditor() {
             </div>
           </form>
         </div>
+
+        {!isNew && registration && (
+          <Modal
+            isOpen={showTransferModal}
+            onClose={() => !transferBusy && setShowTransferModal(false)}
+            title="Move to linked session"
+            size="lg"
+          >
+            <div className="space-y-4">
+              {transferOptionsLoading ? (
+                <InlineStateMessage title="Loading linked sessions..." />
+              ) : transferOptions.length === 0 ? (
+                <InlineStateMessage title="No linked sessions are available for this registration. Link events under the Linked sessions tab." />
+              ) : (
+                <FormSection
+                  title="Target session"
+                  description="Choose another session in the same linked group. Fees must match."
+                >
+                  <FormField label="Session" htmlFor="admin-registration-transfer-target" required>
+                    <ChoiceInput
+                      inputId="admin-registration-transfer-target"
+                      layout="popover"
+                      value={transferTargetEventId != null ? String(transferTargetEventId) : null}
+                      onChange={(value) => {
+                        if (value == null || Array.isArray(value)) {
+                          setTransferTargetEventId(null);
+                          return;
+                        }
+                        const next = Number.parseInt(value, 10);
+                        setTransferTargetEventId(Number.isFinite(next) ? next : null);
+                      }}
+                      options={transferOptions.map((session) => {
+                        const spotsLabel =
+                          session.openSpots == null
+                            ? ''
+                            : ` (${session.openSpots} open ${session.openSpots === 1 ? 'spot' : 'spots'})`;
+                        return {
+                          value: String(session.eventId),
+                          label: `${formatLinkedSessionEventLabel(session.title, session.timespans)}${spotsLabel}${
+                            session.eligible
+                              ? ''
+                              : ` (unavailable: ${session.ineligibleReason ?? 'not eligible'})`
+                          }`,
+                          disabled: !session.eligible,
+                        };
+                      })}
+                      placeholder="Choose a linked session"
+                    />
+                  </FormField>
+                  {transferCapacityOverrideWarning ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                      This session only has {transferCapacityOverrideWarning.openSpots} open{' '}
+                      {transferCapacityOverrideWarning.openSpots === 1 ? 'spot' : 'spots'}, but this
+                      registration needs {transferCapacityOverrideWarning.groupSize}. You can still
+                      move it and override capacity.
+                    </div>
+                  ) : null}
+                </FormSection>
+              )}
+              <div className="flex flex-wrap justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setShowTransferModal(false)}
+                  disabled={transferBusy}
+                >
+                  Keep current session
+                </Button>
+                <Button
+                  type="button"
+                  variant={transferCapacityOverrideWarning ? 'danger' : 'primary'}
+                  onClick={() => void handleTransferRegistration()}
+                  disabled={
+                    transferBusy ||
+                    transferOptionsLoading ||
+                    transferTargetEventId == null ||
+                    !transferOptions.some((s) => s.eventId === transferTargetEventId && s.eligible)
+                  }
+                >
+                  {transferBusy
+                    ? 'Moving...'
+                    : transferCapacityOverrideWarning
+                      ? 'Move and override capacity'
+                      : 'Move registration'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        )}
 
         {!isNew && registration && (
           <Modal

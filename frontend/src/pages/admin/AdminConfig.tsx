@@ -9,24 +9,6 @@ import Button from '../../components/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhone } from '../../utils/phone';
 import { setFrontendLogCaptureEnabled } from '../../otel';
-import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
-
-const DASHBOARD_ALERT_VARIANT_OPTIONS: ChoiceOption<string>[] = [
-  { value: 'info', label: 'Info (blue)' },
-  { value: 'warning', label: 'Warning (amber)' },
-  { value: 'success', label: 'Success (green)' },
-  { value: 'danger', label: 'Danger (red)' },
-];
-
-const DASHBOARD_ALERT_ICON_OPTIONS: ChoiceOption<string>[] = [
-  { value: 'announcement', label: 'Announcement' },
-  { value: 'info', label: 'Info' },
-  { value: 'warning', label: 'Warning' },
-  { value: 'success', label: 'Success' },
-  { value: 'error', label: 'Error' },
-  { value: 'none', label: 'No icon' },
-];
-
 interface ServerConfig {
   twilioApiKeySid: string | null;
   twilioApiKeySecret: string | null;
@@ -34,11 +16,6 @@ interface ServerConfig {
   twilioCampaignSid: string | null;
   azureConnectionString: string | null;
   azureSenderEmail: string | null;
-  dashboardAlertTitle: string | null;
-  dashboardAlertBody: string | null;
-  dashboardAlertExpiresAt: string | null;
-  dashboardAlertVariant: string | null;
-  dashboardAlertIcon: string | null;
   testMode: boolean;
   disableEmail: boolean;
   disableSms: boolean;
@@ -61,11 +38,6 @@ interface UpdateConfigPayload {
   twilioCampaignSid?: string;
   azureConnectionString?: string;
   azureSenderEmail?: string;
-  dashboardAlertTitle?: string;
-  dashboardAlertBody?: string;
-  dashboardAlertExpiresAt?: string;
-  dashboardAlertVariant?: 'info' | 'warning' | 'success' | 'danger';
-  dashboardAlertIcon?: 'info' | 'warning' | 'success' | 'none' | 'announcement' | 'error';
   testMode?: boolean;
   disableEmail?: boolean;
   disableSms?: boolean;
@@ -79,103 +51,6 @@ interface UpdateConfigPayload {
   sessionTokenTtlMinutes?: number;
   refreshTokenTtlDays?: number;
 }
-
-const EASTERN_TIME_ZONE = 'America/New_York';
-
-type DateTimeParts = {
-  year: string;
-  month: string;
-  day: string;
-  hour: string;
-  minute: string;
-  second?: string;
-};
-
-const extractDateTimeParts = (
-  date: Date,
-  timeZone: string,
-  includeSeconds = false
-): DateTimeParts | null => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: includeSeconds ? '2-digit' : undefined,
-    hour12: false,
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((acc, part) => {
-      if (part.type !== 'literal') {
-        acc[part.type] = part.value;
-      }
-      return acc;
-    }, {});
-
-  if (!parts.year || !parts.month || !parts.day || !parts.hour || !parts.minute) {
-    return null;
-  }
-  if (includeSeconds && !parts.second) {
-    return null;
-  }
-
-  return {
-    year: parts.year,
-    month: parts.month,
-    day: parts.day,
-    hour: parts.hour,
-    minute: parts.minute,
-    second: parts.second,
-  };
-};
-
-const formatEasternDateTime = (value?: string | null): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-
-  const parts = extractDateTimeParts(date, EASTERN_TIME_ZONE);
-  if (!parts) return '';
-
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
-};
-
-const getTimeZoneOffsetMinutes = (date: Date, timeZone: string) => {
-  const parts = extractDateTimeParts(date, timeZone, true);
-  if (!parts || !parts.second) return 0;
-
-  const utcTime = Date.UTC(
-    Number(parts.year),
-    Number(parts.month) - 1,
-    Number(parts.day),
-    Number(parts.hour),
-    Number(parts.minute),
-    Number(parts.second)
-  );
-
-  return (utcTime - date.getTime()) / 60000;
-};
-
-const parseEasternDateTimeToIso = (value: string): string => {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!match) return '';
-
-  const [, year, month, day, hour, minute] = match;
-  const utcGuess = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    0
-  );
-  const offsetMinutes = getTimeZoneOffsetMinutes(new Date(utcGuess), EASTERN_TIME_ZONE);
-  const utcTime = utcGuess - offsetMinutes * 60000;
-
-  return new Date(utcTime).toISOString();
-};
 
 export default function AdminConfig() {
   const { member } = useAuth();
@@ -193,11 +68,6 @@ export default function AdminConfig() {
     twilioCampaignSid: '',
     azureConnectionString: '',
     azureSenderEmail: '',
-    dashboardAlertTitle: '',
-    dashboardAlertBody: '',
-    dashboardAlertExpiresAt: '',
-    dashboardAlertVariant: 'info',
-    dashboardAlertIcon: 'announcement',
     testMode: false,
     disableEmail: false,
     disableSms: false,
@@ -227,11 +97,6 @@ export default function AdminConfig() {
         twilioCampaignSid: response.twilioCampaignSid || '',
         azureConnectionString: '', // Never populate the connection string field
         azureSenderEmail: response.azureSenderEmail || '',
-        dashboardAlertTitle: response.dashboardAlertTitle || '',
-        dashboardAlertBody: response.dashboardAlertBody || '',
-        dashboardAlertExpiresAt: response.dashboardAlertExpiresAt || '',
-        dashboardAlertVariant: response.dashboardAlertVariant || 'info',
-        dashboardAlertIcon: response.dashboardAlertIcon || 'announcement',
         testMode: response.testMode || false,
         disableEmail: response.disableEmail || false,
         disableSms: response.disableSms || false,
@@ -279,38 +144,6 @@ export default function AdminConfig() {
       }
       if (formData.azureSenderEmail !== (config?.azureSenderEmail || '')) {
         payload.azureSenderEmail = formData.azureSenderEmail || undefined;
-      }
-      if (formData.dashboardAlertTitle !== (config?.dashboardAlertTitle || '')) {
-        payload.dashboardAlertTitle = formData.dashboardAlertTitle || undefined;
-      }
-      if (formData.dashboardAlertBody !== (config?.dashboardAlertBody || '')) {
-        payload.dashboardAlertBody = formData.dashboardAlertBody || undefined;
-      }
-      if (formData.dashboardAlertExpiresAt !== (config?.dashboardAlertExpiresAt || '')) {
-        payload.dashboardAlertExpiresAt = formData.dashboardAlertExpiresAt || undefined;
-      }
-      if (formData.dashboardAlertVariant !== (config?.dashboardAlertVariant || '')) {
-        const allowedVariants = ['info', 'warning', 'success', 'danger'] as const;
-        payload.dashboardAlertVariant = allowedVariants.includes(
-          formData.dashboardAlertVariant as (typeof allowedVariants)[number]
-        )
-          ? (formData.dashboardAlertVariant as (typeof allowedVariants)[number])
-          : undefined;
-      }
-      if (formData.dashboardAlertIcon !== (config?.dashboardAlertIcon || '')) {
-        const allowedIcons = [
-          'info',
-          'warning',
-          'success',
-          'none',
-          'announcement',
-          'error',
-        ] as const;
-        payload.dashboardAlertIcon = allowedIcons.includes(
-          formData.dashboardAlertIcon as (typeof allowedIcons)[number]
-        )
-          ? (formData.dashboardAlertIcon as (typeof allowedIcons)[number])
-          : undefined;
       }
       if (formData.testMode !== config?.testMode) {
         payload.testMode = formData.testMode;
@@ -612,113 +445,6 @@ export default function AdminConfig() {
                   When enabled, members can log in with email or phone alone — no verification code
                   is sent or required. Independent of test mode.
                 </p>
-              </div>
-            </div>
-
-            {/* Dashboard Alert Configuration */}
-            <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="app-section-title mb-4">
-                Dashboard Alert
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="dashboardAlertTitle"
-                    className="app-label"
-                  >
-                    Alert title
-                  </label>
-                  <input
-                    type="text"
-                    id="dashboardAlertTitle"
-                    value={formData.dashboardAlertTitle}
-                    onChange={(e) =>
-                      setFormData({ ...formData, dashboardAlertTitle: e.target.value })
-                    }
-                    className="app-input"
-                    placeholder="Monday Leagues Canceled"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="dashboardAlertBody"
-                    className="app-label"
-                  >
-                    Alert message
-                  </label>
-                  <textarea
-                    id="dashboardAlertBody"
-                    value={formData.dashboardAlertBody}
-                    onChange={(e) =>
-                      setFormData({ ...formData, dashboardAlertBody: e.target.value })
-                    }
-                    rows={4}
-                    className="app-input"
-                    placeholder="Due to the icy road conditions, Monday leagues have been canceled!"
-                  />
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                    Leave both fields empty to hide the alert on the dashboard.
-                  </p>
-                </div>
-                <div>
-                  <label
-                    htmlFor="dashboardAlertExpiresAt"
-                    className="app-label"
-                  >
-                    Optional expiration (Eastern Time)
-                  </label>
-                  <input
-                    type="datetime-local"
-                    id="dashboardAlertExpiresAt"
-                    value={formatEasternDateTime(formData.dashboardAlertExpiresAt)}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setFormData({
-                        ...formData,
-                        dashboardAlertExpiresAt: value ? parseEasternDateTimeToIso(value) : '',
-                      });
-                    }}
-                    className="app-input"
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label
-                      htmlFor="dashboardAlertVariant"
-                      className="app-label"
-                    >
-                      Alert color
-                    </label>
-                    <ChoiceInput<string>
-                      inputId="dashboardAlertVariant"
-                      options={DASHBOARD_ALERT_VARIANT_OPTIONS}
-                      value={formData.dashboardAlertVariant}
-                      onChange={(next) => {
-                        if (next != null && !Array.isArray(next))
-                          setFormData({ ...formData, dashboardAlertVariant: next });
-                      }}
-                      listboxLabel="Alert color"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="dashboardAlertIcon"
-                      className="app-label"
-                    >
-                      Alert icon
-                    </label>
-                    <ChoiceInput<string>
-                      inputId="dashboardAlertIcon"
-                      options={DASHBOARD_ALERT_ICON_OPTIONS}
-                      value={formData.dashboardAlertIcon}
-                      onChange={(next) => {
-                        if (next != null && !Array.isArray(next))
-                          setFormData({ ...formData, dashboardAlertIcon: next });
-                      }}
-                      listboxLabel="Alert icon"
-                    />
-                  </div>
-                </div>
               </div>
             </div>
 

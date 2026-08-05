@@ -2182,6 +2182,50 @@
         }
       }
     },
+    "/public/events/registrations/manage/{accessToken}/transfer-options": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/events/registrations/manage/{accessToken}/transfer": {
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/events/registrations/manage/{accessToken}/cancel": {
       "post": {
         "tags": [
@@ -16181,6 +16225,43 @@
         }
       }
     },
+    "/content/dashboard-sections": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/dashboard-sections/reorder": {
+      "patch": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/dashboard-sections/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/content/mailing-lists": {
       "get": {
         "responses": {
@@ -16226,6 +16307,15 @@
             "required": true
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/dashboard/layout": {
+      "get": {
         "responses": {
           "200": {
             "description": "Default Response"
@@ -20682,6 +20772,9 @@
                       "type": "integer"
                     }
                   },
+                  "linkForTransfers": {
+                    "type": "boolean"
+                  },
                   "timespans": {
                     "type": "array",
                     "minItems": 1,
@@ -20889,6 +20982,130 @@
             },
             "in": "path",
             "name": "registrationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/events/{id}/registrations/{registrationId}/transfer-options": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "registrationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/events/{id}/registrations/{registrationId}/transfer": {
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "registrationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/events/transfer-groups": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/events/transfer-groups/{id}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
             "required": true
           }
         ],
@@ -26828,6 +27045,599 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/building-access": {
+      "get": {
+        "tags": [
+          "building-access"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "contentType": {
+                      "type": "string",
+                      "enum": [
+                        "markdown",
+                        "html"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "hasAccessCode": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "contentType",
+                    "content",
+                    "hasAccessCode"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/building-access/code": {
+      "get": {
+        "tags": [
+          "building-access"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessCode": {
+                      "type": "string",
+                      "minLength": 4,
+                      "maxLength": 4
+                    }
+                  },
+                  "required": [
+                    "accessCode"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/building-access/admin": {
+      "get": {
+        "tags": [
+          "building-access"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessCode": {
+                      "type": "string"
+                    },
+                    "contentType": {
+                      "type": "string",
+                      "enum": [
+                        "markdown",
+                        "html"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accessCode",
+                    "contentType",
+                    "content",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "building-access"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "accessCode": {
+                    "type": "string",
+                    "pattern": "^[0-9]{4}$"
+                  },
+                  "contentType": {
+                    "type": "string",
+                    "enum": [
+                      "markdown",
+                      "html"
+                    ]
+                  },
+                  "content": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accessCode",
+                  "contentType",
+                  "content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessCode": {
+                      "type": "string"
+                    },
+                    "contentType": {
+                      "type": "string",
+                      "enum": [
+                        "markdown",
+                        "html"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accessCode",
+                    "contentType",
+                    "content",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/member-communications": {
+      "get": {
+        "tags": [
+          "member-communications"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "seasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "seasonId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "seasonName": {
+                            "type": "string"
+                          },
+                          "emails": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "subject": {
+                                  "type": "string"
+                                },
+                                "sortDate": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "previewUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "subject",
+                                "sortDate",
+                                "previewUrl"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "seasonId",
+                          "seasonName",
+                          "emails"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "seasons"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/board-meeting-minutes": {
+      "get": {
+        "tags": [
+          "board-meeting-minutes"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "canManage": {
+                      "type": "boolean"
+                    },
+                    "fiscalYearStartMmdd": {
+                      "type": "string"
+                    },
+                    "fiscalYears": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "fiscalYearStartYear": {
+                            "type": "number"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "minutes": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "meetingDate": {
+                                  "type": "string"
+                                },
+                                "documentUrl": {
+                                  "type": "string"
+                                },
+                                "comment": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "createdAt": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "updatedAt": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "meetingDate",
+                                "documentUrl",
+                                "comment",
+                                "createdAt",
+                                "updatedAt"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "fiscalYearStartYear",
+                          "label",
+                          "minutes"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "canManage",
+                    "fiscalYearStartMmdd",
+                    "fiscalYears"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "board-meeting-minutes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "meetingDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "documentUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "comment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "meetingDate",
+                  "documentUrl"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "meetingDate": {
+                      "type": "string"
+                    },
+                    "documentUrl": {
+                      "type": "string"
+                    },
+                    "comment": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "meetingDate",
+                    "documentUrl",
+                    "comment",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/board-meeting-minutes/{id}": {
+      "patch": {
+        "tags": [
+          "board-meeting-minutes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "meetingDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "documentUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "comment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "meetingDate",
+                  "documentUrl"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "meetingDate": {
+                      "type": "string"
+                    },
+                    "documentUrl": {
+                      "type": "string"
+                    },
+                    "comment": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "meetingDate",
+                    "documentUrl",
+                    "comment",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "board-meeting-minutes"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
           }
         }
       }

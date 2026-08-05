@@ -1624,6 +1624,18 @@ export const siteConfigSqlite = sqliteTable('site_config', {
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
+/** Singleton (id=1): facility building access code + member-facing instructions. */
+export const buildingAccessConfigSqlite = sqliteTable('building_access_config', {
+  id: integer('id').primaryKey(),
+  access_code: text('access_code').default('').notNull(),
+  content_type: text('content_type').default('markdown').notNull(), // 'markdown' | 'html'
+  content: text('content').default('').notNull(),
+  updated_by_member_id: integer('updated_by_member_id').references(() => membersSqlite.id, {
+    onDelete: 'set null',
+  }),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
 // Public contact form recipient categories (contact page + article links)
 export const publicContactRecipientsSqlite = sqliteTable('public_contact_recipients', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -1637,6 +1649,21 @@ export const publicContactRecipientsSqlite = sqliteTable('public_contact_recipie
 }, (table) => ({
   slugIdx: index('idx_public_contact_recipients_slug').on(table.slug),
   sortIdx: index('idx_public_contact_recipients_sort_order').on(table.sort_order),
+}));
+
+/** Global member dashboard section order, visibility, and per-section config. */
+export const dashboardSectionsSqlite = sqliteTable('dashboard_sections', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  key: text('key').notNull().unique(),
+  label: text('label').notNull(),
+  sort_order: integer('sort_order').default(0).notNull(),
+  is_enabled: integer('is_enabled').default(1).notNull(),
+  config_json: text('config_json').default('{}').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  keyIdx: index('idx_dashboard_sections_key').on(table.key),
+  sortIdx: index('idx_dashboard_sections_sort_order').on(table.sort_order),
 }));
 
 // Public mailing list sign-up pages (Mautic segment connections)
@@ -1878,6 +1905,25 @@ export const governanceOfficersSqlite = sqliteTable('governance_officers', {
   boardMemberIdx: index('idx_governance_officers_board_member_id').on(table.board_member_id),
 }));
 
+/** Club board / AGM meeting minutes (date + document link + optional comment). */
+export const boardMeetingMinutesSqlite = sqliteTable('board_meeting_minutes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  meeting_date: text('meeting_date').notNull(), // YYYY-MM-DD
+  document_url: text('document_url').notNull(),
+  comment: text('comment'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, {
+    onDelete: 'set null',
+  }),
+  updated_by_member_id: integer('updated_by_member_id').references(() => membersSqlite.id, {
+    onDelete: 'set null',
+  }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  meetingDateIdx: index('idx_board_meeting_minutes_meeting_date').on(table.meeting_date),
+  documentUrlUnique: uniqueIndex('board_meeting_minutes_document_url_unique').on(table.document_url),
+}));
+
 // ========== Events System (SQLite) ==========
 
 export type EventVisibility = 'public' | 'active_members' | 'ice_members';
@@ -1912,6 +1958,14 @@ export const eventCategoriesSqlite = sqliteTable('event_categories', {
 }, (table) => ({
   slugIdx: uniqueIndex('event_categories_slug_unique').on(table.slug),
 }));
+
+/** Named group of events between which registrations may move (linked sessions). */
+export const eventTransferGroupsSqlite = sqliteTable('event_transfer_groups', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
 
 export const eventsSqlite = sqliteTable('events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -1951,6 +2005,8 @@ export const eventsSqlite = sqliteTable('events', {
   payment_item_name: text('payment_item_name'),
   /** Email address for event inquiries and operational contact. */
   point_of_contact: text('point_of_contact').notNull(),
+  /** When set, registrations may move to other events in the same transfer group. */
+  transfer_group_id: integer('transfer_group_id').references(() => eventTransferGroupsSqlite.id, { onDelete: 'set null' }),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   /** When set, the event is archived (soft-deleted) and hidden from normal listings. */
   archived_at: text('archived_at'),
@@ -1961,8 +2017,8 @@ export const eventsSqlite = sqliteTable('events', {
   publishedIdx: index('idx_events_published').on(table.published),
   visibilityIdx: index('idx_events_visibility').on(table.visibility),
   archivedAtIdx: index('idx_events_archived_at').on(table.archived_at),
+  transferGroupIdx: index('idx_events_transfer_group_id').on(table.transfer_group_id),
 }));
-
 export const eventTimespansSqlite = sqliteTable('event_timespans', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
@@ -2007,6 +2063,8 @@ export const eventOwnersSqlite = sqliteTable('event_owners', {
 export const eventRegistrationFieldsSqlite = sqliteTable('event_registration_fields', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
+  /** Stable identity across linked/duplicated events for registration value remapping. */
+  field_key: text('field_key').notNull(),
   label: text('label').notNull(),
   field_type: text('field_type').notNull().$type<EventFieldType>(),
   scope: text('scope').default('group').notNull().$type<EventFieldScope>(),
@@ -2015,8 +2073,8 @@ export const eventRegistrationFieldsSqlite = sqliteTable('event_registration_fie
   sort_order: integer('sort_order').default(0).notNull(),
 }, (table) => ({
   eventIdx: index('idx_event_registration_fields_event_id').on(table.event_id),
+  eventFieldKeyIdx: uniqueIndex('event_registration_fields_event_field_key_unique').on(table.event_id, table.field_key),
 }));
-
 export const eventRegistrationsSqlite = sqliteTable('event_registrations', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   event_id: integer('event_id').notNull().references(() => eventsSqlite.id, { onDelete: 'cascade' }),
@@ -3628,6 +3686,18 @@ export const siteConfigPg = pgTable('site_config', {
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+/** Singleton (id=1): facility building access code + member-facing instructions. */
+export const buildingAccessConfigPg = pgTable('building_access_config', {
+  id: integerPg('id').primaryKey(),
+  access_code: textPg('access_code').default('').notNull(),
+  content_type: textPg('content_type').default('markdown').notNull(), // 'markdown' | 'html'
+  content: textPg('content').default('').notNull(),
+  updated_by_member_id: integerPg('updated_by_member_id').references(() => membersPg.id, {
+    onDelete: 'set null',
+  }),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
 // Showcase images for homepage (URLs only)
 export const publicContactRecipientsPg = pgTable('public_contact_recipients', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -3641,6 +3711,21 @@ export const publicContactRecipientsPg = pgTable('public_contact_recipients', {
 }, (table) => ({
   slugIdx: indexPg('idx_public_contact_recipients_slug').on(table.slug),
   sortIdx: indexPg('idx_public_contact_recipients_sort_order').on(table.sort_order),
+}));
+
+/** Global member dashboard section order, visibility, and per-section config. */
+export const dashboardSectionsPg = pgTable('dashboard_sections', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  key: textPg('key').notNull().unique(),
+  label: textPg('label').notNull(),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  is_enabled: integerPg('is_enabled').default(1).notNull(),
+  config_json: jsonb('config_json').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  keyIdx: indexPg('idx_dashboard_sections_key').on(table.key),
+  sortIdx: indexPg('idx_dashboard_sections_sort_order').on(table.sort_order),
 }));
 
 export const mailingListsPg = pgTable('mailing_lists', {
@@ -3878,6 +3963,25 @@ export const governanceOfficersPg = pgTable('governance_officers', {
   boardMemberIdx: indexPg('idx_governance_officers_board_member_id').on(table.board_member_id),
 }));
 
+/** Club board / AGM meeting minutes (date + document link + optional comment). */
+export const boardMeetingMinutesPg = pgTable('board_meeting_minutes', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  meeting_date: date('meeting_date').notNull(),
+  document_url: textPg('document_url').notNull(),
+  comment: textPg('comment'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, {
+    onDelete: 'set null',
+  }),
+  updated_by_member_id: integerPg('updated_by_member_id').references(() => membersPg.id, {
+    onDelete: 'set null',
+  }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  meetingDateIdx: indexPg('idx_board_meeting_minutes_meeting_date').on(table.meeting_date),
+  documentUrlUnique: uniqueIndexPg('board_meeting_minutes_document_url_unique').on(table.document_url),
+}));
+
 // ========== Events System (PostgreSQL) ==========
 
 export const eventCategoriesPg = pgTable('event_categories', {
@@ -3890,6 +3994,14 @@ export const eventCategoriesPg = pgTable('event_categories', {
 }, (table) => ({
   slugIdx: uniqueIndexPg('event_categories_slug_unique_pg').on(table.slug),
 }));
+
+/** Named group of events between which registrations may move (linked sessions). */
+export const eventTransferGroupsPg = pgTable('event_transfer_groups', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
 
 export const eventsPg = pgTable('events', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -3923,6 +4035,8 @@ export const eventsPg = pgTable('events', {
   payment_item_name: textPg('payment_item_name'),
   /** Email address for event inquiries and operational contact. */
   point_of_contact: textPg('point_of_contact').notNull(),
+  /** When set, registrations may move to other events in the same transfer group. */
+  transfer_group_id: integerPg('transfer_group_id').references(() => eventTransferGroupsPg.id, { onDelete: 'set null' }),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   /** When set, the event is archived (soft-deleted) and hidden from normal listings. */
   archived_at: timestamp('archived_at', { withTimezone: false }),
@@ -3933,8 +4047,8 @@ export const eventsPg = pgTable('events', {
   publishedIdx: indexPg('idx_events_published').on(table.published),
   visibilityIdx: indexPg('idx_events_visibility').on(table.visibility),
   archivedAtIdx: indexPg('idx_events_archived_at').on(table.archived_at),
+  transferGroupIdx: indexPg('idx_events_transfer_group_id').on(table.transfer_group_id),
 }));
-
 export const eventTimespansPg = pgTable('event_timespans', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
@@ -3979,6 +4093,8 @@ export const eventOwnersPg = pgTable('event_owners', {
 export const eventRegistrationFieldsPg = pgTable('event_registration_fields', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
+  /** Stable identity across linked/duplicated events for registration value remapping. */
+  field_key: textPg('field_key').notNull(),
   label: textPg('label').notNull(),
   field_type: textPg('field_type').notNull().$type<EventFieldType>(),
   scope: textPg('scope').default('group').notNull().$type<EventFieldScope>(),
@@ -3987,8 +4103,8 @@ export const eventRegistrationFieldsPg = pgTable('event_registration_fields', {
   sort_order: integerPg('sort_order').default(0).notNull(),
 }, (table) => ({
   eventIdx: indexPg('idx_event_registration_fields_event_id').on(table.event_id),
+  eventFieldKeyIdx: uniqueIndexPg('event_registration_fields_event_field_key_unique_pg').on(table.event_id, table.field_key),
 }));
-
 export const eventRegistrationsPg = pgTable('event_registrations', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   event_id: integerPg('event_id').notNull().references(() => eventsPg.id, { onDelete: 'cascade' }),
@@ -4296,7 +4412,9 @@ export const sqliteSchema = {
   permalinks: permalinksSqlite,
   permalinkHits: permalinkHitsSqlite,
   siteConfig: siteConfigSqlite,
+  buildingAccessConfig: buildingAccessConfigSqlite,
   publicContactRecipients: publicContactRecipientsSqlite,
+  dashboardSections: dashboardSectionsSqlite,
   mailingLists: mailingListsSqlite,
   mauticMembershipSyncStatus: mauticMembershipSyncStatusSqlite,
   showcaseImages: showcaseImagesSqlite,
@@ -4311,7 +4429,9 @@ export const sqliteSchema = {
   governanceCommitteeChairs: governanceCommitteeChairsSqlite,
   governanceBoardMemberCommittees: governanceBoardMemberCommitteesSqlite,
   governanceOfficers: governanceOfficersSqlite,
+  boardMeetingMinutes: boardMeetingMinutesSqlite,
   eventCategories: eventCategoriesSqlite,
+  eventTransferGroups: eventTransferGroupsSqlite,
   events: eventsSqlite,
   eventTimespans: eventTimespansSqlite,
   eventLocations: eventLocationsSqlite,
@@ -4406,7 +4526,9 @@ export const pgSchema = {
   permalinks: permalinksPg,
   permalinkHits: permalinkHitsPg,
   siteConfig: siteConfigPg,
+  buildingAccessConfig: buildingAccessConfigPg,
   publicContactRecipients: publicContactRecipientsPg,
+  dashboardSections: dashboardSectionsPg,
   mailingLists: mailingListsPg,
   mauticMembershipSyncStatus: mauticMembershipSyncStatusPg,
   showcaseImages: showcaseImagesPg,
@@ -4421,7 +4543,9 @@ export const pgSchema = {
   governanceCommitteeChairs: governanceCommitteeChairsPg,
   governanceBoardMemberCommittees: governanceBoardMemberCommitteesPg,
   governanceOfficers: governanceOfficersPg,
+  boardMeetingMinutes: boardMeetingMinutesPg,
   eventCategories: eventCategoriesPg,
+  eventTransferGroups: eventTransferGroupsPg,
   events: eventsPg,
   eventTimespans: eventTimespansPg,
   eventLocations: eventLocationsPg,

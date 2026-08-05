@@ -12,6 +12,17 @@ import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
 import { listMailingLists, getMailingListById } from '../domains/content/mailingLists.js';
+import {
+  assertDashboardSectionIdsExist,
+  getDashboardAlertFromServerConfig,
+  getDashboardSectionById,
+  listDashboardSections,
+  parseDashboardSectionConfig,
+  reorderDashboardSections,
+  updateDashboardAlertOnServerConfig,
+  updateDashboardSection,
+  type DashboardSectionKey,
+} from '../domains/content/dashboardSections.js';
 import { isEventOwner } from '../services/eventService.js';
 
 async function ensureGeneratedCss(content: string, contentType: string): Promise<string> {
@@ -143,6 +154,37 @@ const contactRecipientUpdateSchema = z.object({
 
 const contactRecipientsReorderSchema = z.object({
   updates: z.array(z.object({ id: z.number(), sortOrder: z.number() })).min(1),
+});
+
+const dashboardSectionsReorderSchema = z.object({
+  updates: z.array(z.object({ id: z.number().int().positive(), sortOrder: z.number().int() })).min(1),
+});
+
+const dashboardSectionAlertSchema = z.object({
+  title: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
+  expiresAt: z
+    .string()
+    .nullable()
+    .optional()
+    .refine((value) => value == null || value === '' || !Number.isNaN(new Date(value).getTime()), {
+      message: 'Invalid date',
+    }),
+  variant: z.enum(['info', 'warning', 'success', 'danger']).nullable().optional(),
+  icon: z.enum(['none', 'info', 'warning', 'announcement', 'success', 'error']).nullable().optional(),
+});
+
+const dashboardSectionUpdateSchema = z.object({
+  isEnabled: z.boolean().optional(),
+  config: z
+    .object({
+      lookAheadDays: z.number().int().min(1).max(365).optional(),
+      maxItems: z.number().int().min(1).max(100).optional(),
+      showWhenEmpty: z.boolean().optional(),
+      defaultExpanded: z.boolean().optional(),
+    })
+    .optional(),
+  alert: dashboardSectionAlertSchema.optional(),
 });
 
 const mailingListSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
@@ -1532,6 +1574,87 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .returning({ id: schema.publicContactRecipients.id });
     if (deleted.length === 0) return reply.code(404).send({ error: 'Contact not found' });
     return { success: true };
+  });
+
+  // Dashboard sections (global member dashboard layout)
+  fastify.get('/content/dashboard-sections', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const sections = await listDashboardSections();
+    const alert = await getDashboardAlertFromServerConfig();
+    return sections.map((section) => ({
+      ...section,
+      ...(section.key === 'alert' ? { alert } : {}),
+    }));
+  });
+
+  fastify.patch('/content/dashboard-sections/reorder', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const parsed = dashboardSectionsReorderSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const ids = parsed.data.updates.map((update) => update.id);
+    if (!(await assertDashboardSectionIdsExist(ids))) {
+      return reply.code(400).send({ error: 'One or more dashboard sections were not found' });
+    }
+    await reorderDashboardSections(parsed.data.updates);
+    return { success: true };
+  });
+
+  fastify.patch<{ Params: { id: string } }>('/content/dashboard-sections/:id', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const id = parseInt(request.params.id, 10);
+    if (isNaN(id)) return reply.code(400).send({ error: 'Invalid id' });
+    const parsed = dashboardSectionUpdateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+    if (
+      body.isEnabled === undefined &&
+      body.config === undefined &&
+      body.alert === undefined
+    ) {
+      return reply.code(400).send({ error: 'No fields to update' });
+    }
+
+    const existing = await getDashboardSectionById(id);
+    if (!existing) return reply.code(404).send({ error: 'Dashboard section not found' });
+
+    if (body.alert !== undefined && existing.key !== 'alert') {
+      return reply.code(400).send({ error: 'Alert settings can only be updated on the alert section' });
+    }
+
+    let nextConfig = existing.config;
+    if (body.config !== undefined) {
+      nextConfig = parseDashboardSectionConfig(existing.key as DashboardSectionKey, body.config);
+    }
+
+    const updated = await updateDashboardSection(id, {
+      isEnabled: body.isEnabled,
+      config: body.config !== undefined ? nextConfig : undefined,
+    });
+    if (!updated) return reply.code(404).send({ error: 'Dashboard section not found' });
+
+    let alert = undefined as Awaited<ReturnType<typeof getDashboardAlertFromServerConfig>> | undefined;
+    if (existing.key === 'alert') {
+      if (body.alert !== undefined) {
+        alert = await updateDashboardAlertOnServerConfig({
+          title: body.alert.title,
+          body: body.alert.body,
+          expiresAt: body.alert.expiresAt === '' ? null : body.alert.expiresAt,
+          variant: body.alert.variant,
+          icon: body.alert.icon,
+        });
+      } else {
+        alert = await getDashboardAlertFromServerConfig();
+      }
+    }
+
+    return {
+      ...updated,
+      ...(alert ? { alert } : {}),
+    };
   });
 
   // Mailing lists (public sign-up pages connected to Mautic segments)

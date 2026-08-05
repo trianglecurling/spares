@@ -1,9 +1,14 @@
 import { FormEvent, useEffect, useId, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import ChoiceInput from '../components/ChoiceInput';
 import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import AdditionalRegistrantsSection, {
+  emptyAdditionalRegistrant,
+  type AdditionalRegistrant,
+} from '../components/eventRegistration/AdditionalRegistrantsSection';
 import PublicRegistrationFieldInput, {
   publicEventRegistrationInput,
   fieldValueKey,
@@ -12,15 +17,19 @@ import PublicRegistrationFieldInput, {
 } from '../components/eventRegistration/PublicRegistrationFieldInput';
 import { isSubheadingFieldType } from '../utils/eventRegistrationFieldPresets';
 import { resolveEventContactFieldLabels } from '../utils/eventRegistrationContactLabels';
+import { formatLinkedSessionEventLabel, formatLinkedSessionWhen } from '../utils/eventLinkedSessionLabel';
 import api, { formatApiError } from '../utils/api';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 
 const publicInput = publicEventRegistrationInput;
+const PAYMENT_POLL_INTERVAL_MS = 2000;
+const PAYMENT_MAX_POLL_ATTEMPTS = 15;
 
-interface GroupMember {
-  name: string;
-  email: string;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 interface ManageRegistrationPayload {
@@ -30,12 +39,17 @@ interface ManageRegistrationPayload {
     slug: string;
     allowGroupRegistration: number;
     maxGroupSize: number | null;
+    capacity?: number | null;
+    feeMinor?: number;
+    memberFeeMinor?: number | null;
+    currency?: string;
     contactFirstNameLabel?: string | null;
     contactLastNameLabel?: string | null;
     contactEmailLabel?: string | null;
     registrationFields: EventRegistrationField[];
     cancellationCutoff: string | null;
     pointOfContact: string;
+    timespans?: Array<{ start_dt: string; end_dt?: string; sort_order?: number }>;
   };
   registration: {
     id: number;
@@ -43,17 +57,53 @@ interface ManageRegistrationPayload {
     contactFirstName: string;
     contactLastName: string;
     contactEmail: string;
-    groupMembers: GroupMember[];
+    groupSize?: number;
+    perPersonFeeMinor?: number;
+    groupMembers: AdditionalRegistrant[];
     fieldValues: Array<{ fieldId: number; registrationMemberIndex: number | null; value: string }>;
     waitlistPosition: number | null;
     waitlistLength?: number | null;
   };
+  openSpots?: number | null;
+  balanceDueMinor?: number;
   receiptUrl: string | null;
   isWaitlistEntry?: boolean;
   canCancel: boolean;
+  canSwitchSession?: boolean;
   cancellationCutoffPassed: boolean;
   serverNow: string;
+  checkoutUrl?: string | null;
+  paymentStatus?: string;
+  orderToken?: string;
+  feeAdjustment?: {
+    previousGroupSize: number;
+    groupSize: number;
+    perPersonFeeMinor: number;
+    feeDeltaMinor: number;
+    refundIssued: boolean;
+    refundAmountMinor: number;
+    refundError: string | null;
+  };
 }
+
+function formatMoney(amountMinor: number, currency = 'usd'): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: (currency || 'usd').toUpperCase(),
+  }).format(amountMinor / 100);
+}
+
+type TransferSessionOption = {
+  eventId: number;
+  title: string;
+  slug: string;
+  timespans: Array<{ start_dt: string; end_dt: string; sort_order: number }>;
+  openSpots: number | null;
+  waitlistEnabled: boolean;
+  eligible: boolean;
+  ineligibleReason: string | null;
+  resultingStatus: 'confirmed' | 'waitlisted' | null;
+};
 
 function formatStatusLabel(status: string): string {
   switch (status) {
@@ -84,7 +134,8 @@ function applyPayloadToForm(payload: ManageRegistrationPayload) {
     contactLastName: payload.registration.contactLastName,
     contactEmail: payload.registration.contactEmail,
     groupMembers: payload.registration.groupMembers.map((member) => ({
-      name: member.name,
+      firstName: member.firstName,
+      lastName: member.lastName,
       email: member.email ?? '',
     })),
     fieldValues: nextFieldValues,
@@ -93,26 +144,59 @@ function applyPayloadToForm(payload: ManageRegistrationPayload) {
 
 export default function PublicEventManageRegistrationPage() {
   const { accessToken } = useParams<{ accessToken: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+
+  const checkoutSessionId = searchParams.get('session_id')?.trim() || '';
+  const checkoutOrderToken = searchParams.get('orderToken')?.trim() || '';
+  const needsCheckoutResolve = Boolean(checkoutSessionId || checkoutOrderToken);
 
   const [payload, setPayload] = useState<ManageRegistrationPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [canceled, setCanceled] = useState(false);
+  const [cancelRefundIssued, setCancelRefundIssued] = useState(false);
+  const [cancelRefundError, setCancelRefundError] = useState<string | null>(null);
+  const [verifyingPayment, setVerifyingPayment] = useState(needsCheckoutResolve);
+  const [paymentStillProcessing, setPaymentStillProcessing] = useState(false);
 
   const [contactFirstName, setContactFirstName] = useState('');
   const [contactLastName, setContactLastName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
-  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [groupMembers, setGroupMembers] = useState<AdditionalRegistrant[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [transferSessions, setTransferSessions] = useState<TransferSessionOption[]>([]);
+  const [transferSessionsLoading, setTransferSessionsLoading] = useState(false);
+  const [transferTargetEventId, setTransferTargetEventId] = useState<number | null>(null);
 
   const contactFirstNameFieldId = useId();
   const contactLastNameFieldId = useId();
   const contactEmailFieldId = useId();
+  const transferTargetFieldId = useId();
+
+  const applyManagePayload = (data: ManageRegistrationPayload) => {
+    setPayload(data);
+    const formState = applyPayloadToForm(data);
+    setContactFirstName(formState.contactFirstName);
+    setContactLastName(formState.contactLastName);
+    setContactEmail(formState.contactEmail);
+    setGroupMembers(formState.groupMembers);
+    setFieldValues(formState.fieldValues);
+    setCanceled(data.registration.status === 'cancelled');
+  };
+
+  const clearCheckoutReturnParams = () => {
+    if (!checkoutSessionId && !checkoutOrderToken) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('session_id');
+    next.delete('orderToken');
+    setSearchParams(next, { replace: true });
+  };
 
   useEffect(() => {
     if (!accessToken) return;
@@ -121,18 +205,123 @@ export default function PublicEventManageRegistrationPage() {
     api
       .get<ManageRegistrationPayload>(`/public/events/registrations/manage/${encodeURIComponent(accessToken)}`)
       .then((res) => {
-        setPayload(res.data);
-        const formState = applyPayloadToForm(res.data);
-        setContactFirstName(formState.contactFirstName);
-        setContactLastName(formState.contactLastName);
-        setContactEmail(formState.contactEmail);
-        setGroupMembers(formState.groupMembers);
-        setFieldValues(formState.fieldValues);
-        setCanceled(res.data.registration.status === 'cancelled');
+        applyManagePayload(res.data);
       })
       .catch(() => setLoadError('Registration not found'))
       .finally(() => setLoading(false));
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken || !needsCheckoutResolve || loading) return;
+
+    let cancelled = false;
+
+    const resolveOnce = async (): Promise<ManageRegistrationPayload> => {
+      const { data } = await api.post<ManageRegistrationPayload>(
+        `/public/events/registrations/manage/${encodeURIComponent(accessToken)}/resolve`,
+        {
+          ...(checkoutSessionId ? { sessionId: checkoutSessionId } : {}),
+          ...(checkoutOrderToken ? { orderToken: checkoutOrderToken } : {}),
+        },
+      );
+      return data;
+    };
+
+    const poll = async () => {
+      setVerifyingPayment(true);
+      setPaymentStillProcessing(false);
+
+      for (let attempt = 1; attempt <= PAYMENT_MAX_POLL_ATTEMPTS; attempt += 1) {
+        if (cancelled) return;
+        try {
+          const data = await resolveOnce();
+          if (cancelled) return;
+
+          applyManagePayload(data);
+
+          const paymentStatus = data.paymentStatus;
+          const balanceCleared = (data.balanceDueMinor ?? 0) <= 0;
+          const paymentSucceeded =
+            paymentStatus === 'succeeded' ||
+            paymentStatus === 'partially_refunded' ||
+            paymentStatus === 'refunded';
+
+          if (paymentStatus === 'failed') {
+            setSubmitError('Payment did not complete. Save changes again to retry checkout.');
+            setVerifyingPayment(false);
+            clearCheckoutReturnParams();
+            return;
+          }
+
+          if (paymentSucceeded || balanceCleared) {
+            setVerifyingPayment(false);
+            clearCheckoutReturnParams();
+            if (paymentSucceeded && balanceCleared) {
+              showAlert('Additional payment received', 'success');
+            }
+            return;
+          }
+
+          if (attempt < PAYMENT_MAX_POLL_ATTEMPTS) {
+            await sleep(PAYMENT_POLL_INTERVAL_MS);
+          }
+        } catch {
+          if (cancelled) return;
+          if (attempt < PAYMENT_MAX_POLL_ATTEMPTS) {
+            await sleep(PAYMENT_POLL_INTERVAL_MS);
+          }
+        }
+      }
+
+      if (!cancelled) {
+        setVerifyingPayment(false);
+        setPaymentStillProcessing(true);
+        clearCheckoutReturnParams();
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally keyed to checkout return params + initial load completion.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clear/search helpers close over current params
+  }, [accessToken, needsCheckoutResolve, loading, checkoutSessionId, checkoutOrderToken]);
+
+  useEffect(() => {
+    if (!accessToken || !payload?.canSwitchSession || payload.registration.status === 'cancelled') {
+      setTransferSessions([]);
+      setTransferTargetEventId(null);
+      return;
+    }
+
+    let cancelled = false;
+    setTransferSessionsLoading(true);
+    api
+      .get<{ sessions: TransferSessionOption[] }>(
+        `/public/events/registrations/manage/${encodeURIComponent(accessToken)}/transfer-options`,
+      )
+      .then((res) => {
+        if (cancelled) return;
+        const sessions = res.data.sessions || [];
+        setTransferSessions(sessions);
+        setTransferTargetEventId(null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTransferSessions([]);
+          setTransferTargetEventId(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTransferSessionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, payload?.canSwitchSession, payload?.registration.status, payload?.event.id]);
 
   const sortedFields = useMemo(
     () => [...(payload?.event.registrationFields ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
@@ -145,7 +334,7 @@ export default function PublicEventManageRegistrationPage() {
   const isEditable = !isCanceled;
 
   const addGroupMember = () => {
-    setGroupMembers((prev) => [...prev, { name: '', email: '' }]);
+    setGroupMembers((prev) => [...prev, emptyAdditionalRegistrant()]);
   };
 
   const removeGroupMember = (index: number) => {
@@ -171,7 +360,7 @@ export default function PublicEventManageRegistrationPage() {
     });
   };
 
-  const updateGroupMember = (index: number, field: keyof GroupMember, value: string) => {
+  const updateGroupMember = (index: number, field: keyof AdditionalRegistrant, value: string) => {
     setGroupMembers((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
@@ -207,9 +396,79 @@ export default function PublicEventManageRegistrationPage() {
     return fvArray;
   };
 
+  const savedGroupSize = payload?.registration.groupSize ?? (payload?.registration.groupMembers.length ?? 0) + 1;
+  const perPersonFeeMinor = payload?.registration.perPersonFeeMinor ?? 0;
+  const currency = payload?.event.currency || 'usd';
+  const draftGroupSize = groupMembers.length + 1;
+  const groupSizeDelta = draftGroupSize - savedGroupSize;
+  const balanceDueMinor = payload?.balanceDueMinor ?? 0;
+  // Matches backend: expected total minus paid net (includes any unpaid balance from a prior add).
+  const feeDeltaMinor =
+    payload?.registration.status === 'confirmed' && perPersonFeeMinor > 0
+      ? perPersonFeeMinor * groupSizeDelta + balanceDueMinor
+      : 0;
+  const capacityLimitedMaxGroupSize =
+    payload?.registration.status === 'confirmed' && payload.openSpots != null
+      ? savedGroupSize + Math.max(0, payload.openSpots)
+      : null;
+  const effectiveMaxGroupSize = (() => {
+    const caps = [payload?.event.maxGroupSize ?? null, capacityLimitedMaxGroupSize].filter(
+      (value): value is number => value != null,
+    );
+    return caps.length > 0 ? Math.min(...caps) : null;
+  })();
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!accessToken || !payload || submitting || !isEditable) return;
+
+    if (groupSizeDelta > 0 && payload.registration.status === 'confirmed') {
+      const openSpots = payload.openSpots;
+      if (openSpots != null && groupSizeDelta > openSpots) {
+        setSubmitError(
+          openSpots <= 0
+            ? 'There are no open spots left to add more people.'
+            : `Only ${openSpots} open ${openSpots === 1 ? 'spot is' : 'spots are'} available.`,
+        );
+        return;
+      }
+    }
+
+    if (groupSizeDelta < 0 && feeDeltaMinor < 0) {
+      const removedCount = Math.abs(groupSizeDelta);
+      const refundAmount = Math.abs(feeDeltaMinor);
+      const confirmed = await confirm({
+        title: removedCount === 1 ? 'Remove registrant and refund?' : 'Remove registrants and refund?',
+        message:
+          `This removes ${removedCount} ${removedCount === 1 ? 'person' : 'people'} from your registration and issues a refund of ${formatMoney(refundAmount, currency)}. ` +
+          'Refunds usually appear within a few business days.',
+        confirmText: 'Remove and refund',
+        cancelText: 'Keep current group',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+    } else if (feeDeltaMinor > 0) {
+      const addedCount = Math.max(0, groupSizeDelta);
+      const confirmed = await confirm({
+        title:
+          addedCount > 0
+            ? addedCount === 1
+              ? 'Add registrant and pay?'
+              : 'Add registrants and pay?'
+            : 'Complete additional payment?',
+        message:
+          (addedCount > 0
+            ? `Adding ${addedCount} ${addedCount === 1 ? 'person' : 'people'} requires an additional payment of ${formatMoney(feeDeltaMinor, currency)}`
+            : `An additional payment of ${formatMoney(feeDeltaMinor, currency)} is still due for your current group size`) +
+          (perPersonFeeMinor > 0 && addedCount > 0
+            ? ` (${formatMoney(perPersonFeeMinor, currency)} each). `
+            : '. ') +
+          'You will be taken to checkout to complete payment.',
+        confirmText: 'Continue to payment',
+        cancelText: addedCount > 0 ? 'Keep current group' : 'Not now',
+      });
+      if (!confirmed) return;
+    }
 
     setSubmitting(true);
     setSubmitError(null);
@@ -222,13 +481,39 @@ export default function PublicEventManageRegistrationPage() {
           contactLastName: contactLastName.trim(),
           contactEmail: contactEmail.trim(),
           groupMembers: groupMembers.length > 0
-            ? groupMembers.map((m) => ({ name: m.name.trim(), email: m.email.trim() || null }))
+            ? groupMembers.map((m) => ({
+                firstName: m.firstName.trim(),
+                lastName: m.lastName.trim(),
+                email: m.email.trim(),
+              }))
             : [],
           fieldValues: buildFieldValuesPayload(),
         },
       );
+
+      if (data.checkoutUrl) {
+        window.location.assign(data.checkoutUrl);
+        return;
+      }
+
       setPayload(data);
-      showAlert('Registration updated', 'success');
+      const formState = applyPayloadToForm(data);
+      setGroupMembers(formState.groupMembers);
+      setFieldValues(formState.fieldValues);
+
+      if (data.feeAdjustment?.refundIssued && data.feeAdjustment.refundAmountMinor > 0) {
+        showAlert(
+          `Registration updated. A refund of ${formatMoney(data.feeAdjustment.refundAmountMinor, currency)} has been initiated.`,
+          'success',
+        );
+      } else if (data.feeAdjustment?.refundError) {
+        showAlert(
+          `Registration updated, but the refund failed: ${data.feeAdjustment.refundError}. Contact ${data.event.pointOfContact}.`,
+          'warning',
+        );
+      } else {
+        showAlert('Registration updated', 'success');
+      }
     } catch (err: unknown) {
       setSubmitError(formatApiError(err, 'Unable to update registration'));
     } finally {
@@ -236,16 +521,69 @@ export default function PublicEventManageRegistrationPage() {
     }
   };
 
+  const handleSwitchSession = async () => {
+    if (!accessToken || !payload || transferring || transferTargetEventId == null) return;
+    const target = transferSessions.find((session) => session.eventId === transferTargetEventId);
+    if (!target?.eligible) return;
+
+    const waitlistNote =
+      target.resultingStatus === 'waitlisted'
+        ? ' The selected session is full, so you will be placed on its waitlist.'
+        : '';
+    const groupNote =
+      draftGroupSize > 1
+        ? ` All ${draftGroupSize} people on this registration will move together.`
+        : '';
+    const confirmed = await confirm({
+      title: 'Switch session?',
+      message: `Move your registration from "${payload.event.title}" to "${formatLinkedSessionEventLabel(target.title, target.timespans)}".${groupNote}${waitlistNote}`,
+      confirmText: 'Switch session',
+      cancelText: 'Keep current session',
+    });
+    if (!confirmed) return;
+
+    setTransferring(true);
+    setSubmitError(null);
+    try {
+      const { data } = await api.post<ManageRegistrationPayload>(
+        `/public/events/registrations/manage/${encodeURIComponent(accessToken)}/transfer`,
+        { targetEventId: transferTargetEventId },
+      );
+      setPayload(data);
+      const formState = applyPayloadToForm(data);
+      setContactFirstName(formState.contactFirstName);
+      setContactLastName(formState.contactLastName);
+      setContactEmail(formState.contactEmail);
+      setGroupMembers(formState.groupMembers);
+      setFieldValues(formState.fieldValues);
+      showAlert(
+        data.registration.status === 'waitlisted'
+          ? 'Moved to the waitlist for the new session'
+          : 'Registration moved to the new session',
+        'success',
+      );
+    } catch (err: unknown) {
+      setSubmitError(formatApiError(err, 'Unable to switch sessions'));
+    } finally {
+      setTransferring(false);
+    }
+  };
+
   const handleCancelRegistration = async () => {
     if (!accessToken || !payload || canceling || !payload.canCancel) return;
 
     const isWaitlistEntry = payload.isWaitlistEntry ?? payload.registration.status === 'waitlisted';
+    const peopleCount = savedGroupSize;
+    const groupCancelNote =
+      peopleCount > 1
+        ? ` This cancels the registration for all ${peopleCount} people in your group.`
+        : '';
 
     const confirmed = await confirm({
       title: isWaitlistEntry ? 'Cancel waitlist entry?' : 'Cancel registration?',
       message: isWaitlistEntry
-        ? 'This will remove your waitlist entry for this event. You will lose your place on the waitlist.'
-        : 'This will cancel your registration for this event. Registering again may not be possible if the event is full. If you paid a registration fee, you should receive a full refund within a few business days.',
+        ? `This will remove your waitlist entry for this event.${groupCancelNote} You will lose your place on the waitlist.`
+        : `This will cancel your registration for this event.${groupCancelNote} Registering again may not be possible if the event is full. If you paid a registration fee, you should receive a full refund within a few business days.`,
       confirmText: isWaitlistEntry ? 'Cancel waitlist entry' : 'Cancel registration',
       cancelText: isWaitlistEntry ? 'Keep waitlist entry' : 'Keep registration',
       variant: 'danger',
@@ -254,14 +592,38 @@ export default function PublicEventManageRegistrationPage() {
 
     setCanceling(true);
     setSubmitError(null);
+    setCancelRefundError(null);
+    setCancelRefundIssued(false);
     try {
-      await api.post(`/public/events/registrations/manage/${encodeURIComponent(accessToken)}/cancel`);
+      const { data: cancelResult } = await api.post<{
+        success: boolean;
+        refundIssued?: boolean;
+        refundError?: string | null;
+        refundAmountMinor?: number;
+      }>(`/public/events/registrations/manage/${encodeURIComponent(accessToken)}/cancel`);
       const { data } = await api.get<ManageRegistrationPayload>(
         `/public/events/registrations/manage/${encodeURIComponent(accessToken)}`,
       );
-      setPayload(data);
+      applyManagePayload(data);
       setCanceled(true);
-      showAlert(isWaitlistEntry ? 'Waitlist entry canceled' : 'Registration canceled', 'success');
+
+      const refundIssued = Boolean(cancelResult.refundIssued);
+      const refundError = cancelResult.refundError ?? null;
+      setCancelRefundIssued(refundIssued);
+      setCancelRefundError(refundError);
+
+      if (isWaitlistEntry) {
+        showAlert('Waitlist entry canceled', 'success');
+      } else if (refundError) {
+        showAlert(
+          `Registration canceled, but the refund failed: ${refundError}. Contact ${data.event.pointOfContact}.`,
+          'warning',
+        );
+      } else if (refundIssued) {
+        showAlert('Registration canceled. A refund has been initiated.', 'success');
+      } else {
+        showAlert('Registration canceled', 'success');
+      }
     } catch (err: unknown) {
       setSubmitError(formatApiError(err, 'Unable to cancel registration'));
     } finally {
@@ -269,10 +631,17 @@ export default function PublicEventManageRegistrationPage() {
     }
   };
 
-  if (loading) {
+  if (loading || verifyingPayment) {
     return (
       <PublicLayout>
-        <PublicStateCard title="Loading registration..." />
+        <PublicStateCard
+          title={verifyingPayment ? 'Verifying your payment...' : 'Loading registration...'}
+          description={
+            verifyingPayment
+              ? 'This usually takes a few seconds. Please keep this page open.'
+              : undefined
+          }
+        />
       </PublicLayout>
     );
   }
@@ -303,7 +672,7 @@ export default function PublicEventManageRegistrationPage() {
   return (
     <PublicLayout>
       <SeoMeta title={`${manageTitle}: ${event.title}`} />
-      <div className="max-w-2xl mx-auto px-4 py-10">
+      <div className="mx-auto w-full min-w-0 max-w-3xl px-4 py-10 sm:min-w-[36rem]">
         <Link to={`/events/${event.slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
           &larr; Back to event
         </Link>
@@ -311,24 +680,49 @@ export default function PublicEventManageRegistrationPage() {
         <h1 className="text-2xl font-bold text-gray-900 mb-2">{manageTitle}</h1>
 
         {isCanceledView ? (
-          <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 text-gray-700">
+          <div
+            className={`mb-6 rounded-lg border px-4 py-4 ${
+              cancelRefundError
+                ? 'border-amber-300 bg-amber-50 text-amber-950'
+                : 'border-gray-200 bg-gray-50 text-gray-700'
+            }`}
+          >
             <p className="font-medium text-gray-900">
               {isWaitlistEntry ? 'This waitlist entry has been canceled.' : 'This registration has been canceled.'}
             </p>
-            {!isWaitlistEntry && payload.receiptUrl ? (
+            {!isWaitlistEntry && cancelRefundError ? (
               <p className="mt-2 text-sm">
-                If you paid a registration fee, your refund should appear within a few business days. You can review
-                refund details on your{' '}
-                <a href={payload.receiptUrl} className="text-primary-teal-link hover:underline">
-                  refund receipt
-                </a>
-                .
+                Your registration was canceled, but the refund could not be completed automatically
+                {cancelRefundError ? ` (${cancelRefundError})` : ''}. Contact{' '}
+                <a href={`mailto:${event.pointOfContact}`} className="text-primary-teal-link hover:underline">
+                  {event.pointOfContact}
+                </a>{' '}
+                for help.
+              </p>
+            ) : !isWaitlistEntry && (cancelRefundIssued || payload.receiptUrl) ? (
+              <p className="mt-2 text-sm">
+                {cancelRefundIssued
+                  ? 'A refund has been initiated and should appear within a few business days.'
+                  : 'If you paid a registration fee, your refund should appear within a few business days.'}
+                {payload.receiptUrl ? (
+                  <>
+                    {' '}
+                    You can review refund details on your{' '}
+                    <a href={payload.receiptUrl} className="text-primary-teal-link hover:underline">
+                      refund receipt
+                    </a>
+                    .
+                  </>
+                ) : null}
               </p>
             ) : null}
           </div>
         ) : null}
 
         <p className="text-gray-600 mb-2">{event.title}</p>
+        {event.timespans && event.timespans.length > 0 ? (
+          <p className="text-gray-600 mb-2">{formatLinkedSessionWhen(event.timespans)}</p>
+        ) : null}
         <p className="text-sm text-gray-600 mb-6">
           Status: <span className="font-medium text-gray-800">{formatStatusLabel(registration.status)}</span>
           {registration.status === 'waitlisted' && registration.waitlistPosition != null
@@ -337,6 +731,28 @@ export default function PublicEventManageRegistrationPage() {
               : ` (#${registration.waitlistPosition} on waitlist)`
             : null}
         </p>
+
+        {paymentStillProcessing ? (
+          <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-medium">Payment is still processing</p>
+            <p className="mt-1">
+              Refresh this page in a moment. If the balance still shows as due, contact{' '}
+              <a href={`mailto:${event.pointOfContact}`} className="text-primary-teal-link hover:underline">
+                {event.pointOfContact}
+              </a>
+              .
+            </p>
+          </div>
+        ) : null}
+
+        {!isCanceledView && balanceDueMinor > 0 ? (
+          <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-medium">Additional payment due: {formatMoney(balanceDueMinor, currency)}</p>
+            <p className="mt-1">
+              Your group was updated, but payment was not completed. Save changes or continue below to finish checkout.
+            </p>
+          </div>
+        ) : null}
 
         {!isCanceledView ? (
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -398,48 +814,25 @@ export default function PublicEventManageRegistrationPage() {
               </FormField>
 
               {event.allowGroupRegistration === 1 && (
-                <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-900">Group members</h3>
-                    <button
-                      type="button"
-                      onClick={addGroupMember}
-                      disabled={event.maxGroupSize ? groupSize >= event.maxGroupSize : false}
-                      className="text-sm text-primary-teal-link hover:underline disabled:opacity-50"
-                    >
-                      + Add member
-                    </button>
-                  </div>
-                  {groupMembers.map((member, i) => (
-                    <div key={i} className="flex gap-2 items-start">
-                      <input
-                        type="text"
-                        placeholder="Name"
-                        required
-                        value={member.name}
-                        onChange={(e) => updateGroupMember(i, 'name', e.target.value)}
-                        className={`${publicInput} flex-1`}
-                      />
-                      <input
-                        type="email"
-                        placeholder="Email (optional)"
-                        value={member.email}
-                        onChange={(e) => updateGroupMember(i, 'email', e.target.value)}
-                        className={`${publicInput} flex-1`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeGroupMember(i)}
-                        className="text-red-500 hover:text-red-700 px-2 py-2"
-                        aria-label={`Remove group member ${i + 1}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                  {groupMembers.length === 0 && (
-                    <p className="text-sm text-gray-500">No additional group members added.</p>
-                  )}
+                <div className="space-y-2">
+                  <AdditionalRegistrantsSection
+                    members={groupMembers}
+                    labels={contactLabels}
+                    onAdd={addGroupMember}
+                    onRemove={removeGroupMember}
+                    onChange={updateGroupMember}
+                    maxGroupSize={effectiveMaxGroupSize ?? event.maxGroupSize}
+                    perPersonFeeMinor={
+                      registration.status === 'confirmed' ? perPersonFeeMinor : null
+                    }
+                    currency={currency}
+                  />
+                  {registration.status === 'confirmed' && perPersonFeeMinor > 0 ? (
+                    <p className="text-sm text-gray-600">
+                      Adding people requires an additional payment of {formatMoney(perPersonFeeMinor, currency)} each.
+                      Removing people issues a refund for the unused spots. You will confirm before checkout or refund.
+                    </p>
+                  ) : null}
                 </div>
               )}
 
@@ -493,14 +886,90 @@ export default function PublicEventManageRegistrationPage() {
               </button>
             </form>
 
+            {payload.canSwitchSession ? (
+              <div className="mt-10 border-t border-gray-200 pt-8">
+                <h2 className="text-lg font-semibold text-gray-900 mb-2">Switch session</h2>
+                {transferSessionsLoading ? (
+                  <p className="text-sm text-gray-600">Loading other sessions...</p>
+                ) : transferSessions.filter((session) => session.eligible).length === 0 ? (
+                  <p className="text-sm text-gray-600">
+                    All other sessions are full. Please contact{' '}
+                    <a
+                      href={`mailto:${event.pointOfContact}`}
+                      className="text-primary-teal-link hover:underline"
+                    >
+                      {event.pointOfContact}
+                    </a>{' '}
+                    if you need assistance.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      Move this registration to another linked session of the same event. Your answers and payment
+                      stay with you when fees match.
+                      {draftGroupSize > 1
+                        ? ` All ${draftGroupSize} people on this registration will switch together.`
+                        : ''}
+                    </p>
+                    <FormField tone="public" label="New session" htmlFor={transferTargetFieldId} required>
+                      <ChoiceInput
+                        inputId={transferTargetFieldId}
+                        layout="popover"
+                        value={transferTargetEventId != null ? String(transferTargetEventId) : null}
+                        onChange={(value) => {
+                          if (value == null || Array.isArray(value)) {
+                            setTransferTargetEventId(null);
+                            return;
+                          }
+                          const next = Number.parseInt(value, 10);
+                          setTransferTargetEventId(Number.isFinite(next) ? next : null);
+                        }}
+                        options={transferSessions
+                          .filter((session) => session.eligible)
+                          .map((session) => ({
+                            value: String(session.eventId),
+                            label: `${formatLinkedSessionEventLabel(session.title, session.timespans)}${
+                              session.resultingStatus === 'waitlisted'
+                                ? ' (waitlist)'
+                                : session.openSpots != null
+                                  ? ` (${session.openSpots} open)`
+                                  : ''
+                            }`,
+                          }))}
+                        placeholder="Choose another session"
+                      />
+                    </FormField>
+                    <button
+                      type="button"
+                      onClick={() => void handleSwitchSession()}
+                      disabled={
+                        transferring ||
+                        transferTargetEventId == null ||
+                        !transferSessions.some(
+                          (session) => session.eventId === transferTargetEventId && session.eligible,
+                        )
+                      }
+                      className="px-4 py-2 rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {transferring ? 'Switching...' : 'Switch session'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div className="mt-10 border-t border-gray-200 pt-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-2">{cancelTitle}</h2>
               {payload.canCancel ? (
                 <>
                   <p className="text-sm text-gray-600 mb-4">
                     {isWaitlistEntry
-                      ? 'You can cancel your waitlist entry at any time.'
-                      : 'You can cancel before the cancellation cutoff. If you paid a fee, a full refund will be processed within a few business days.'}
+                      ? savedGroupSize > 1
+                        ? `You can cancel your waitlist entry at any time. This removes all ${savedGroupSize} people in your group from the waitlist.`
+                        : 'You can cancel your waitlist entry at any time.'
+                      : savedGroupSize > 1
+                        ? `You can cancel before the cancellation cutoff. This cancels the registration for all ${savedGroupSize} people in your group. If you paid a fee, a full refund will be processed within a few business days.`
+                        : 'You can cancel before the cancellation cutoff. If you paid a fee, a full refund will be processed within a few business days.'}
                   </p>
                   <button
                     type="button"

@@ -1,5 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
+import type { NavMenuItemNode } from './DesktopFlyoutNav';
+import { linkForItem, MobileMenuItem } from './DesktopFlyoutNav';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useMemberNavigation } from '../hooks/useMemberNavigation';
@@ -108,21 +110,91 @@ function useAdaptiveFlyoutDirection(
   return { panelRef, resolvedDirection: effectiveDirection };
 }
 
-function NavLink({
-  to,
-  children,
-  className,
+function MemberFlyoutNavNode({
+  item,
+  direction,
   onNavigate,
 }: {
-  to: string;
-  children: React.ReactNode;
-  className: string;
-  onNavigate?: () => void;
+  item: NavMenuItemNode;
+  direction: 'left' | 'right';
+  onNavigate: () => void;
 }) {
+  const link = linkForItem(item);
+  const itemClass = [flyoutItemClass, item.labelClassName].filter(Boolean).join(' ');
+
+  if (item.children.length > 0) {
+    return (
+      <FlyoutMenuItem
+        id={`nav-${item.id}`}
+        label={item.label}
+        direction={direction}
+        triggerClassName={flyoutTriggerClass}
+      >
+        {item.children.map((child) => {
+          const childLink = linkForItem(child);
+          const childClass = [flyoutItemClass, child.labelClassName].filter(Boolean).join(' ');
+          if (childLink.kind === 'none') {
+            return (
+              <li key={child.id} className="list-none">
+                <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{child.label}</p>
+              </li>
+            );
+          }
+          if (childLink.kind === 'external' && childLink.href) {
+            return (
+              <li key={child.id} className="list-none">
+                <a
+                  href={childLink.href}
+                  className={childClass}
+                  onClick={onNavigate}
+                  {...(child.openInNewTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                >
+                  {child.label}
+                </a>
+              </li>
+            );
+          }
+          return (
+            <li key={child.id} className="list-none">
+              <Link to={childLink.href!} className={childClass} onClick={onNavigate}>
+                {child.label}
+              </Link>
+            </li>
+          );
+        })}
+      </FlyoutMenuItem>
+    );
+  }
+
+  if (link.kind === 'none') {
+    return (
+      <FlyoutMenuLeaf>
+        <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{item.label}</p>
+      </FlyoutMenuLeaf>
+    );
+  }
+
+  if (link.kind === 'external' && link.href) {
+    return (
+      <FlyoutMenuLeaf>
+        <a
+          href={link.href}
+          className={itemClass}
+          onClick={onNavigate}
+          {...(item.openInNewTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        >
+          {item.label}
+        </a>
+      </FlyoutMenuLeaf>
+    );
+  }
+
   return (
-    <Link to={to} className={className} onClick={onNavigate}>
-      {children}
-    </Link>
+    <FlyoutMenuLeaf>
+      <Link to={link.href!} className={itemClass} onClick={onNavigate}>
+        {item.label}
+      </Link>
+    </FlyoutMenuLeaf>
   );
 }
 
@@ -162,13 +234,7 @@ export default function MemberNavigationPanel({
     stopImpersonation,
   } = useAuth();
   const { showAlert } = useAlert();
-  const {
-    isSocialMember,
-    adminLinks,
-    hasAdminLinks,
-    navMyLeaguesInCurrentSession,
-    isNavigationReady,
-  } = useMemberNavigation();
+  const { memberNavItems, isNavigationReady } = useMemberNavigation();
 
   const { panelRef, resolvedDirection } = useAdaptiveFlyoutDirection(
     variant === 'flyout' && isNavigationReady,
@@ -203,126 +269,14 @@ export default function MemberNavigationPanel({
     return <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">Loading menu…</p>;
   }
 
-  const leaguesItems = (
-    <>
-      <li className="list-none">
-        <NavLink to="/leagues" className={flyoutItemClass} onNavigate={handleNavigate}>
-          View all
-        </NavLink>
-      </li>
-      <li className="list-none">
-        <NavLink to="/waitlists" className={flyoutItemClass} onNavigate={handleNavigate}>
-          Waitlists
-        </NavLink>
-      </li>
-      {navMyLeaguesInCurrentSession.length > 0 ? (
-        <>
-          <li className="my-1 list-none border-t border-gray-200 dark:border-gray-700" aria-hidden />
-          {navMyLeaguesInCurrentSession.map((league) => (
-            <li key={league.id} className="list-none">
-              <NavLink
-                to={`/leagues/${league.id}`}
-                className={flyoutItemClass}
-                onNavigate={handleNavigate}
-              >
-                {league.name}
-              </NavLink>
-            </li>
-          ))}
-        </>
-      ) : null}
-    </>
-  );
-
-  const sparesItems = isSocialMember ? (
-    <li className="list-none">
-      <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-        Social memberships do not include sparing or spare requests.
-      </p>
-    </li>
-  ) : (
-    <>
-      <li className="list-none">
-        <NavLink to="/availability" className={flyoutItemClass} onNavigate={handleNavigate}>
-          My availability
-        </NavLink>
-      </li>
-      <li className="list-none">
-        <NavLink to="/my-requests" className={flyoutItemClass} onNavigate={handleNavigate}>
-          My requests
-        </NavLink>
-      </li>
-      <li className="list-none">
-        <NavLink to="/request-spare" className={flyoutItemClass} onNavigate={handleNavigate}>
-          Request a spare
-        </NavLink>
-      </li>
-    </>
-  );
-
-  const directoryItems = (
-    <>
-      <li className="list-none">
-        <NavLink to="/members" className={flyoutItemClass} onNavigate={handleNavigate}>
-          Club membership
-        </NavLink>
-      </li>
-      <li className="list-none">
-        <NavLink to="/governance" className={flyoutItemClass} onNavigate={handleNavigate}>
-          Club governance
-        </NavLink>
-      </li>
-    </>
-  );
-
-  const calendarItems = (
-    <>
-      <li className="list-none">
-        <NavLink to="/calendar" className={flyoutItemClass} onNavigate={handleNavigate}>
-          Full calendar
-        </NavLink>
-      </li>
-      {!isSocialMember && (
-        <li className="list-none">
-          <NavLink to="/book-ice" className={flyoutItemClass} onNavigate={handleNavigate}>
-            Book ice time
-          </NavLink>
-        </li>
-      )}
-    </>
-  );
-
-  const volunteeringItems = (
-    <>
-      <li className="list-none">
-        <NavLink to="/volunteering" className={flyoutItemClass} onNavigate={handleNavigate}>
-          Volunteering hub
-        </NavLink>
-      </li>
-      <li className="list-none">
-        <NavLink to="/volunteering?tab=shifts" className={flyoutItemClass} onNavigate={handleNavigate}>
-          My shifts
-        </NavLink>
-      </li>
-    </>
-  );
-
-  const adminItems = adminLinks.map((link) => (
-    <li key={link.to} className="list-none">
-      <NavLink to={link.to} className={flyoutItemClass} onNavigate={handleNavigate}>
-        {link.label}
-      </NavLink>
-    </li>
-  ));
-
   const accountFooter = showAccountFooter ? (
     <div className={showMainNav ? 'border-t border-gray-200 pt-2 dark:border-gray-700' : undefined}>
       {variant === 'flyout' ? (
         <FlyoutMenuList visible direction={resolvedDirection} className="space-y-0.5">
           <FlyoutMenuLeaf>
-            <NavLink to="/profile" className={flyoutItemClass} onNavigate={handleNavigate}>
+            <Link to="/profile" className={flyoutItemClass} onClick={handleNavigate}>
               My profile
-            </NavLink>
+            </Link>
           </FlyoutMenuLeaf>
           {showAccountSwitcher && (
             <FlyoutMenuItem
@@ -372,9 +326,9 @@ export default function MemberNavigationPanel({
         </FlyoutMenuList>
       ) : (
         <>
-          <NavLink to="/profile" className={mobileNavItemClass} onNavigate={handleNavigate}>
+          <Link to="/profile" className={mobileNavItemClass} onClick={handleNavigate}>
             My profile
-          </NavLink>
+          </Link>
           {showAccountSwitcher && (
             <MobileNavAccordionItem id="switch-account" label="Switch account">
               {accountSwitchOptions.map((opt) => {
@@ -424,93 +378,9 @@ export default function MemberNavigationPanel({
   if (variant === 'accordion') {
     const accordionContent = (
       <>
-        <NavLink to="/dashboard" className={mobileNavItemClass} onNavigate={handleNavigate}>
-          Dashboard
-        </NavLink>
-
-        <MobileNavAccordionItem id="leagues" label="Leagues">
-          <NavLink to="/leagues" className={mobileNavItemClass} onNavigate={handleNavigate}>
-            View all
-          </NavLink>
-          <NavLink to="/waitlists" className={mobileNavItemClass} onNavigate={handleNavigate}>
-            Waitlists
-          </NavLink>
-          {navMyLeaguesInCurrentSession.length > 0 ? (
-            <>
-              <div className="my-1 border-t border-gray-200 dark:border-gray-700" aria-hidden />
-              {navMyLeaguesInCurrentSession.map((league) => (
-                <NavLink
-                  key={league.id}
-                  to={`/leagues/${league.id}`}
-                  className={mobileNavItemClass}
-                  onNavigate={handleNavigate}
-                >
-                  {league.name}
-                </NavLink>
-              ))}
-            </>
-          ) : null}
-        </MobileNavAccordionItem>
-
-        <MobileNavAccordionItem id="spares" label="Spares">
-          {isSocialMember ? (
-            <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-              Social memberships do not include sparing or spare requests.
-            </p>
-          ) : (
-            <>
-              <NavLink to="/availability" className={mobileNavItemClass} onNavigate={handleNavigate}>
-                My availability
-              </NavLink>
-              <NavLink to="/my-requests" className={mobileNavItemClass} onNavigate={handleNavigate}>
-                My requests
-              </NavLink>
-              <NavLink to="/request-spare" className={mobileNavItemClass} onNavigate={handleNavigate}>
-                Request a spare
-              </NavLink>
-            </>
-          )}
-        </MobileNavAccordionItem>
-
-        <MobileNavAccordionItem id="directory" label="Directory">
-          <NavLink to="/members" className={mobileNavItemClass} onNavigate={handleNavigate}>
-            Club membership
-          </NavLink>
-          <NavLink to="/governance" className={mobileNavItemClass} onNavigate={handleNavigate}>
-            Club governance
-          </NavLink>
-        </MobileNavAccordionItem>
-
-        <MobileNavAccordionItem id="calendar" label="Calendar">
-          <NavLink to="/calendar" className={mobileNavItemClass} onNavigate={handleNavigate}>
-            Full calendar
-          </NavLink>
-          {!isSocialMember && (
-            <NavLink to="/book-ice" className={mobileNavItemClass} onNavigate={handleNavigate}>
-              Book ice time
-            </NavLink>
-          )}
-        </MobileNavAccordionItem>
-
-        <MobileNavAccordionItem id="volunteering" label="Volunteering">
-          <NavLink to="/volunteering" className={mobileNavItemClass} onNavigate={handleNavigate}>
-            Volunteering hub
-          </NavLink>
-          <NavLink to="/volunteering?tab=shifts" className={mobileNavItemClass} onNavigate={handleNavigate}>
-            My shifts
-          </NavLink>
-        </MobileNavAccordionItem>
-
-        {hasAdminLinks && (
-          <MobileNavAccordionItem id="admin" label="Admin">
-            {adminLinks.map((link) => (
-              <NavLink key={link.to} to={link.to} className={mobileNavItemClass} onNavigate={handleNavigate}>
-                {link.label}
-              </NavLink>
-            ))}
-          </MobileNavAccordionItem>
-        )}
-
+        {memberNavItems.map((item) => (
+          <MobileMenuItem key={item.id} item={item} onNavigate={handleNavigate} />
+        ))}
         {accountFooter}
       </>
     );
@@ -529,61 +399,14 @@ export default function MemberNavigationPanel({
   return (
     <div ref={panelRef}>
       <FlyoutMenuList visible direction={resolvedDirection} className="space-y-0.5">
-        <FlyoutMenuLeaf>
-          <NavLink to="/dashboard" className={flyoutItemClass} onNavigate={handleNavigate}>
-            Dashboard
-          </NavLink>
-        </FlyoutMenuLeaf>
-        <FlyoutMenuItem
-          id="leagues"
-          label="Leagues"
-          direction={resolvedDirection}
-          triggerClassName={flyoutTriggerClass}
-        >
-          {leaguesItems}
-        </FlyoutMenuItem>
-        <FlyoutMenuItem
-          id="spares"
-          label="Spares"
-          direction={resolvedDirection}
-          triggerClassName={flyoutTriggerClass}
-        >
-          {sparesItems}
-        </FlyoutMenuItem>
-        <FlyoutMenuItem
-          id="directory"
-          label="Directory"
-          direction={resolvedDirection}
-          triggerClassName={flyoutTriggerClass}
-        >
-          {directoryItems}
-        </FlyoutMenuItem>
-        <FlyoutMenuItem
-          id="calendar"
-          label="Calendar"
-          direction={resolvedDirection}
-          triggerClassName={flyoutTriggerClass}
-        >
-          {calendarItems}
-        </FlyoutMenuItem>
-        <FlyoutMenuItem
-          id="volunteering"
-          label="Volunteering"
-          direction={resolvedDirection}
-          triggerClassName={flyoutTriggerClass}
-        >
-          {volunteeringItems}
-        </FlyoutMenuItem>
-        {hasAdminLinks && (
-          <FlyoutMenuItem
-            id="admin"
-            label="Admin"
+        {memberNavItems.map((item) => (
+          <MemberFlyoutNavNode
+            key={item.id}
+            item={item}
             direction={resolvedDirection}
-            triggerClassName={flyoutTriggerClass}
-          >
-            {adminItems}
-          </FlyoutMenuItem>
-        )}
+            onNavigate={handleNavigate}
+          />
+        ))}
       </FlyoutMenuList>
       {accountFooter}
     </div>

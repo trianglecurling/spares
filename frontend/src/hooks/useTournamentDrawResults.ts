@@ -146,6 +146,9 @@ export function useTournamentDrawResults(eventId: number) {
   const [draw, setDraw] = useState<TournamentDrawState | null>(null);
   const [teams, setTeams] = useState<TournamentTeamApi[]>([]);
   const [eventTitle, setEventTitle] = useState('');
+  const [eventTimespans, setEventTimespans] = useState<
+    Array<{ start_dt: string; end_dt?: string; sort_order?: number }>
+  >([]);
   const [tournamentFormat, setTournamentFormat] = useState<'fours' | 'doubles' | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -167,7 +170,11 @@ export function useTournamentDrawResults(eventId: number) {
     Promise.all([
       api.get<{ draw: TournamentDrawState | null }>(`/events/${eventId}/tournament-draw`),
       api.get<{ teams: TournamentTeamApi[] }>(`/events/${eventId}/tournament-teams`),
-      api.get<{ title: string; tournamentFormat?: 'fours' | 'doubles' | null }>(`/events/${eventId}`),
+      api.get<{
+        title: string;
+        tournamentFormat?: 'fours' | 'doubles' | null;
+        timespans?: Array<{ start_dt: string; end_dt?: string; sort_order?: number }>;
+      }>(`/events/${eventId}`),
     ])
       .then(([drawRes, teamsRes, eventRes]) => {
         if (cancelled) return;
@@ -175,6 +182,7 @@ export function useTournamentDrawResults(eventId: number) {
         setDraw(raw ? normalizeDrawState(raw) : null);
         setTeams(teamsRes.data.teams ?? []);
         setEventTitle(eventRes.data.title ?? '');
+        setEventTimespans(eventRes.data.timespans ?? []);
         setTournamentFormat(
           eventRes.data.tournamentFormat === 'doubles' || eventRes.data.tournamentFormat === 'fours'
             ? eventRes.data.tournamentFormat
@@ -206,6 +214,7 @@ export function useTournamentDrawResults(eventId: number) {
     draw,
     teams,
     eventTitle,
+    eventTimespans,
     tournamentFormat,
     loading,
     loadError,

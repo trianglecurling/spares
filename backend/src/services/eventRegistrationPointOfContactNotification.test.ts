@@ -29,7 +29,7 @@ describe('event registration point of contact notification', () => {
     const snapshot = buildRegistrationFormSnapshot(
       event,
       { firstName: 'Alex', lastName: 'Curler', email: 'alex@example.com' },
-      [{ name: 'Blair Curler', email: 'blair@example.com' }],
+      [{ firstName: 'Blair', lastName: 'Curler', email: 'blair@example.com' }],
       [
         { fieldId: 10, registrationMemberIndex: null, value: 'Ice Breakers' },
         { fieldId: 11, registrationMemberIndex: 0, value: 'Large' },
@@ -41,11 +41,12 @@ describe('event registration point of contact notification', () => {
       { key: 'contact:firstName', label: 'First name', value: 'Alex' },
       { key: 'contact:lastName', label: 'Last name', value: 'Curler' },
       { key: 'contact:email', label: 'Email address', value: 'alex@example.com' },
-      { key: 'groupMember:0:name', label: 'Group member 1 name', value: 'Blair Curler' },
-      { key: 'groupMember:0:email', label: 'Group member 1 email', value: 'blair@example.com' },
+      { key: 'groupMember:0:firstName', label: 'Registrant 2 first name', value: 'Blair' },
+      { key: 'groupMember:0:lastName', label: 'Registrant 2 last name', value: 'Curler' },
+      { key: 'groupMember:0:email', label: 'Registrant 2 email', value: 'blair@example.com' },
       { key: 'field:10:group', label: 'Team name', value: 'Ice Breakers' },
       { key: 'field:11:0', label: 'Shirt size (Primary registrant)', value: 'Large' },
-      { key: 'field:11:1', label: 'Shirt size (Group member 1)', value: 'Medium' },
+      { key: 'field:11:1', label: 'Shirt size (Registrant 2)', value: 'Medium' },
     ]);
   });
 
@@ -54,7 +55,7 @@ describe('event registration point of contact notification', () => {
       contactFirstName: 'Alex',
       contactLastName: 'Curler',
       contactEmail: 'alex@example.com',
-      groupMembers: [{ name: 'Blair Curler', email: 'blair@example.com' }],
+      groupMembers: [{ firstName: 'Blair', lastName: 'Curler', email: 'blair@example.com' }],
       fieldValues: [
         { fieldId: 10, registrationMemberIndex: null, value: 'Ice Breakers' },
         { fieldId: 11, registrationMemberIndex: 0, value: 'Large' },
@@ -65,7 +66,7 @@ describe('event registration point of contact notification', () => {
       contactFirstName: 'Alex',
       contactLastName: 'Curler',
       contactEmail: 'alex.new@example.com',
-      groupMembers: [{ name: 'Blair Curler', email: 'blair.new@example.com' }],
+      groupMembers: [{ firstName: 'Blair', lastName: 'Curler', email: 'blair.new@example.com' }],
       fieldValues: [
         { fieldId: 10, registrationMemberIndex: null, value: 'Ice Breakers' },
         { fieldId: 11, registrationMemberIndex: 0, value: 'Large' },
@@ -80,12 +81,12 @@ describe('event registration point of contact notification', () => {
         newValue: 'alex.new@example.com',
       },
       {
-        label: 'Group member 1 email',
+        label: 'Registrant 2 email',
         oldValue: 'blair@example.com',
         newValue: 'blair.new@example.com',
       },
       {
-        label: 'Shirt size (Group member 1)',
+        label: 'Shirt size (Registrant 2)',
         oldValue: 'Medium',
         newValue: 'Small',
       },

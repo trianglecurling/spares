@@ -80,6 +80,133 @@ function normalizeDateTime(value: unknown): string | null {
   return null;
 }
 
+function toEpochMs(value: unknown): number | null {
+  const normalized = normalizeDateTime(value);
+  if (!normalized) return null;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function isBeforeRefund(candidateMs: number, earliestRefundMs: number | null): boolean {
+  // Require strictly earlier than refund so equal stamps (overwritten completed_at / updated_at) are rejected.
+  if (earliestRefundMs == null) return true;
+  return candidateMs < earliestRefundMs;
+}
+
+function extractProviderPaymentCreatedAt(rawPayload: string | null | undefined): string | null {
+  if (!rawPayload) return null;
+  try {
+    const parsed = JSON.parse(rawPayload) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const root = parsed as Record<string, unknown>;
+    const data = root.data && typeof root.data === 'object' ? (root.data as Record<string, unknown>) : null;
+    const object = data?.object && typeof data.object === 'object' ? (data.object as Record<string, unknown>) : null;
+    const payment =
+      (object?.payment && typeof object.payment === 'object' ? (object.payment as Record<string, unknown>) : null) ||
+      (object && ('created_at' in object || 'createdAt' in object) ? object : null);
+    if (!payment) return null;
+    const created =
+      (typeof payment.created_at === 'string' && payment.created_at) ||
+      (typeof payment.createdAt === 'string' && payment.createdAt) ||
+      null;
+    return created;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the original paid time for receipts. Prefer charge / provider created timestamps that
+ * predate refunds — Square's payment.updated_at (and historically completed_at) get overwritten
+ * when a refund lands.
+ */
+async function resolvePaidAtForOrder(input: {
+  orderId: number;
+  completedAt: unknown;
+  chargeOccurredAt: unknown;
+  refundTimes: unknown[];
+}): Promise<string | null> {
+  const { db, schema } = getDrizzleDb();
+  const earliestRefundMs = input.refundTimes
+    .map((value) => toEpochMs(value))
+    .filter((ms): ms is number => ms != null)
+    .reduce<number | null>((min, ms) => (min == null || ms < min ? ms : min), null);
+
+  const chargeMs = toEpochMs(input.chargeOccurredAt);
+  if (chargeMs != null && isBeforeRefund(chargeMs, earliestRefundMs)) {
+    return normalizeDateTime(input.chargeOccurredAt);
+  }
+
+  const [providerEvents, succeededTransition] = await Promise.all([
+    db
+      .select({
+        eventType: schema.paymentEvents.event_type,
+        receivedAt: schema.paymentEvents.received_at,
+        rawPayload: schema.paymentEvents.raw_payload,
+      })
+      .from(schema.paymentEvents)
+      .where(eq(schema.paymentEvents.payment_order_id, input.orderId))
+      .orderBy(asc(schema.paymentEvents.received_at), asc(schema.paymentEvents.id)),
+    db
+      .select({
+        createdAt: schema.observabilityEvents.created_at,
+        meta: schema.observabilityEvents.meta,
+      })
+      .from(schema.observabilityEvents)
+      .where(
+        and(
+          eq(schema.observabilityEvents.event_type, 'payment.order.status_transition'),
+          eq(schema.observabilityEvents.related_id, input.orderId),
+        ),
+      )
+      .orderBy(asc(schema.observabilityEvents.created_at), asc(schema.observabilityEvents.id)),
+  ]);
+
+  for (const event of providerEvents) {
+    const eventType = (event.eventType || '').toLowerCase();
+    if (eventType.includes('refund')) continue;
+
+    const createdFromPayload = extractProviderPaymentCreatedAt(event.rawPayload);
+    const createdMs = toEpochMs(createdFromPayload);
+    if (createdMs != null && isBeforeRefund(createdMs, earliestRefundMs)) {
+      return normalizeDateTime(createdFromPayload);
+    }
+
+    const receivedMs = toEpochMs(event.receivedAt);
+    const looksLikePaymentSuccess =
+      eventType.includes('payment.updated') ||
+      eventType.includes('payment.created') ||
+      eventType.includes('checkout.session.completed') ||
+      eventType.includes('completed');
+    if (looksLikePaymentSuccess && receivedMs != null && isBeforeRefund(receivedMs, earliestRefundMs)) {
+      return normalizeDateTime(event.receivedAt);
+    }
+  }
+
+  for (const row of succeededTransition) {
+    let toStatus: string | null = null;
+    try {
+      const meta = row.meta ? (JSON.parse(row.meta) as { to?: unknown }) : null;
+      toStatus = typeof meta?.to === 'string' ? meta.to : null;
+    } catch {
+      toStatus = null;
+    }
+    if (toStatus !== 'succeeded') continue;
+    const transitionMs = toEpochMs(row.createdAt);
+    if (transitionMs != null && isBeforeRefund(transitionMs, earliestRefundMs)) {
+      return normalizeDateTime(row.createdAt);
+    }
+  }
+
+  const completedMs = toEpochMs(input.completedAt);
+  if (completedMs != null && isBeforeRefund(completedMs, earliestRefundMs)) {
+    return normalizeDateTime(input.completedAt);
+  }
+
+  // Last resort: charge/completed even if equal to refund (better than blank), but prefer charge.
+  return normalizeDateTime(input.chargeOccurredAt) ?? normalizeDateTime(input.completedAt);
+}
+
 function tryParseMetadata(value: string | null): Record<string, unknown> {
   if (!value) return {};
   try {
@@ -505,7 +632,7 @@ async function buildPaymentDetailFromOrder(order: PaymentOrderDetailRow): Promis
     totalMinor = order.amountMinor;
   }
 
-  const [eventDescriptions, curlingDescriptions, refundRows] = await Promise.all([
+  const [eventDescriptions, curlingDescriptions, refundRows, chargeRows] = await Promise.all([
     order.subjectType === 'event_registration' && order.subjectId != null
       ? loadEventRegistrationDescriptions([order.subjectId])
       : Promise.resolve(new Map<number, string>()),
@@ -525,6 +652,19 @@ async function buildPaymentDetailFromOrder(order: PaymentOrderDetailRow): Promis
       .from(schema.refunds)
       .where(eq(schema.refunds.payment_order_id, order.id))
       .orderBy(desc(schema.refunds.created_at), desc(schema.refunds.id)),
+    db
+      .select({
+        occurredAt: schema.paymentTransactions.occurred_at,
+      })
+      .from(schema.paymentTransactions)
+      .where(
+        and(
+          eq(schema.paymentTransactions.payment_order_id, order.id),
+          eq(schema.paymentTransactions.transaction_type, 'charge'),
+        ),
+      )
+      .orderBy(asc(schema.paymentTransactions.occurred_at), asc(schema.paymentTransactions.id))
+      .limit(1),
   ]);
 
   const description = buildDescription(
@@ -535,6 +675,13 @@ async function buildPaymentDetailFromOrder(order: PaymentOrderDetailRow): Promis
     curlingDescriptions
   );
 
+  const paidAt = await resolvePaidAtForOrder({
+    orderId: order.id,
+    completedAt: order.completedAt,
+    chargeOccurredAt: chargeRows[0]?.occurredAt ?? null,
+    refundTimes: refundRows.flatMap((refund) => [refund.processedAt, refund.createdAt]),
+  });
+
   return {
     orderToken: order.orderToken,
     subjectType,
@@ -544,7 +691,7 @@ async function buildPaymentDetailFromOrder(order: PaymentOrderDetailRow): Promis
     status: order.status as MemberPaymentHistoryStatus,
     provider: order.provider,
     providerReference: order.providerOrderId,
-    paidAt: normalizeDateTime(order.completedAt),
+    paidAt,
     createdAt: normalizeDateTime(order.createdAt) ?? '',
     updatedAt: normalizeDateTime(order.updatedAt) ?? '',
     lineItems,
@@ -616,6 +763,7 @@ export async function listMemberPaymentHistory(
   const [rows, totalRows] = await Promise.all([
     db
       .select({
+        id: schema.paymentOrders.id,
         orderToken: schema.paymentOrders.order_token,
         subjectType: schema.paymentOrders.subject_type,
         subjectId: schema.paymentOrders.subject_id,
@@ -644,6 +792,30 @@ export async function listMemberPaymentHistory(
     .filter((row) => row.subjectType === 'curling_registration' && row.subjectId != null)
     .map((row) => row.subjectId as number);
 
+  // Prefer charge transaction time for Paid — completed_at was historically overwritten on refund.
+  const orderIds = rows.map((row) => row.id);
+  const chargePaidAtByOrderId = new Map<number, string>();
+  if (orderIds.length > 0) {
+    const chargeRows = await db
+      .select({
+        paymentOrderId: schema.paymentTransactions.payment_order_id,
+        occurredAt: schema.paymentTransactions.occurred_at,
+      })
+      .from(schema.paymentTransactions)
+      .where(
+        and(
+          inArray(schema.paymentTransactions.payment_order_id, orderIds),
+          eq(schema.paymentTransactions.transaction_type, 'charge'),
+        ),
+      )
+      .orderBy(asc(schema.paymentTransactions.occurred_at), asc(schema.paymentTransactions.id));
+    for (const charge of chargeRows) {
+      if (charge.paymentOrderId == null || chargePaidAtByOrderId.has(charge.paymentOrderId)) continue;
+      const paidAt = normalizeDateTime(charge.occurredAt);
+      if (paidAt) chargePaidAtByOrderId.set(charge.paymentOrderId, paidAt);
+    }
+  }
+
   const [eventDescriptions, curlingDescriptions] = await Promise.all([
     loadEventRegistrationDescriptions(eventRegistrationIds),
     loadCurlingRegistrationDescriptions(curlingRegistrationIds),
@@ -668,7 +840,7 @@ export async function listMemberPaymentHistory(
         amountMinor: row.amountMinor,
         currency: row.currency,
         status: row.status as MemberPaymentHistoryStatus,
-        paidAt: normalizeDateTime(row.completedAt),
+        paidAt: chargePaidAtByOrderId.get(row.id) ?? normalizeDateTime(row.completedAt),
         createdAt: normalizeDateTime(row.createdAt) ?? '',
       };
     }),

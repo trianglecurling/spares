@@ -267,6 +267,34 @@
       "when": 1780352498479,
       "tag": "0038_add_league_play_in_entry",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1780352498480,
+      "tag": "0039_add_building_access_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1780352498481,
+      "tag": "0040_add_board_meeting_minutes",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1780352498482,
+      "tag": "0041_add_dashboard_sections",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1780352498483,
+      "tag": "0042_add_event_transfer_groups",
+      "breakpoints": true
     }
   ]
 }

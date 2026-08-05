@@ -13,3 +13,8 @@ coverage
 db-config*.json
 backend/data/uploads/
 backend/data/search-index.json
+backend/data/google-oauth.client.json
+backend/data/google-oauth.token.json
+backend/data/minutes-migration-cache/
+backend/data/minutes-drive-migration-manifest.json
+backend/data/board-meeting-minutes-export.json

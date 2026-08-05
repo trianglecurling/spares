@@ -131,6 +131,7 @@ export interface CreateEventInput {
   categoryIds?: number[];
   ownerMemberIds?: number[];
   registrationFields?: Array<{
+    fieldKey?: string;
     label: string;
     fieldType: EventFieldType;
     scope?: EventFieldScope;
@@ -138,6 +139,7 @@ export interface CreateEventInput {
     options?: string | null;
     sortOrder?: number;
   }>;
+  transferGroupId?: number | null;
 }
 
 export interface DuplicateEventInput {
@@ -150,6 +152,8 @@ export interface DuplicateEventInput {
   pointOfContact: string;
   ownerMemberIds: number[];
   timespans: Array<{ startDt: string; endDt: string; sortOrder?: number }>;
+  /** When true, put source + duplicate in the same transfer group (creating one if needed). */
+  linkForTransfers?: boolean;
 }
 
 export interface UpdateEventInput {
@@ -184,6 +188,7 @@ export interface UpdateEventInput {
   ownerMemberIds?: number[];
   registrationFields?: Array<{
     id?: number;
+    fieldKey?: string;
     label: string;
     fieldType: EventFieldType;
     scope?: EventFieldScope;
@@ -191,6 +196,11 @@ export interface UpdateEventInput {
     options?: string | null;
     sortOrder?: number;
   }>;
+  transferGroupId?: number | null;
+}
+
+export function generateRegistrationFieldKey(): string {
+  return crypto.randomUUID();
 }
 
 function normalizeOptionalLabel(value: string | null | undefined): string | null {
@@ -205,7 +215,7 @@ export interface RegisterForEventInput {
   contactFirstName: string;
   contactLastName: string;
   contactEmail: string;
-  groupMembers?: Array<{ name: string; email?: string }>;
+  groupMembers?: Array<{ firstName: string; lastName: string; email: string }>;
   fieldValues?: Array<{
     fieldId: number;
     registrationMemberId?: number | null;
@@ -342,6 +352,7 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
       tournament_draw_published: input.tournamentDrawPublished ? 1 : 0,
       terms_article_id: input.termsArticleId ?? null,
       point_of_contact: pointOfContact,
+      transfer_group_id: input.transferGroupId ?? null,
       created_by_member_id: input.createdByMemberId ?? null,
     } as any)
     .returning({ id: schema.events.id });
@@ -387,6 +398,7 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
 
   if (input.registrationFields && input.registrationFields.length > 0) {
     assertNoDuplicatePresets(input.registrationFields);
+    const usedKeys = new Set<string>();
     await db.insert(schema.eventRegistrationFields).values(
       input.registrationFields.map((f, i) => {
         const n = normalizeRegistrationFieldRow({
@@ -397,8 +409,14 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
           options: f.options,
           sortOrder: f.sortOrder ?? i,
         });
+        let fieldKey = typeof f.fieldKey === 'string' && f.fieldKey.trim() ? f.fieldKey.trim() : generateRegistrationFieldKey();
+        while (usedKeys.has(fieldKey)) {
+          fieldKey = generateRegistrationFieldKey();
+        }
+        usedKeys.add(fieldKey);
         return {
           event_id: eventId,
+          field_key: fieldKey,
           label: n.label,
           field_type: n.fieldType as any,
           scope: n.scope as any,
@@ -408,6 +426,10 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
         };
       })
     );
+  }
+
+  if (input.transferGroupId != null) {
+    await alignRegistrationFieldKeysWithTransferGroup(eventId, input.transferGroupId);
   }
 
   markSearchIndexDirty();
@@ -448,6 +470,17 @@ export async function updateEvent(
   }
   if (input.contactEmailLabel !== undefined) {
     updateValues.contact_email_label = normalizeOptionalLabel(input.contactEmailLabel);
+  }
+  if (input.transferGroupId !== undefined) {
+    if (input.transferGroupId != null) {
+      const [group] = await db
+        .select({ id: schema.eventTransferGroups.id })
+        .from(schema.eventTransferGroups)
+        .where(eq(schema.eventTransferGroups.id, input.transferGroupId))
+        .limit(1);
+      if (!group) throw new EventServiceError('Linked sessions group not found', 404);
+    }
+    updateValues.transfer_group_id = input.transferGroupId;
   }
   if (input.termsArticleId !== undefined) updateValues.terms_article_id = input.termsArticleId;
   if (input.calendarTypeIds !== undefined || input.tournamentFormat !== undefined) {
@@ -569,10 +602,14 @@ export async function updateEvent(
 
   if (input.registrationFields !== undefined) {
     const existingFields = await db
-      .select({ id: schema.eventRegistrationFields.id })
+      .select({
+        id: schema.eventRegistrationFields.id,
+        field_key: schema.eventRegistrationFields.field_key,
+      })
       .from(schema.eventRegistrationFields)
       .where(eq(schema.eventRegistrationFields.event_id, eventId));
     const existingIdSet = new Set(existingFields.map((field) => field.id));
+    const existingKeyById = new Map(existingFields.map((field) => [field.id, field.field_key]));
     const keptIds = new Set(
       input.registrationFields
         .map((field) => field.id)
@@ -587,6 +624,7 @@ export async function updateEvent(
     }
 
     assertNoDuplicatePresets(input.registrationFields);
+    const usedKeys = new Set<string>();
     for (let i = 0; i < input.registrationFields.length; i += 1) {
       const field = input.registrationFields[i];
       const n = normalizeRegistrationFieldRow({
@@ -597,7 +635,17 @@ export async function updateEvent(
         options: field.options,
         sortOrder: field.sortOrder ?? i,
       });
+      const existingKey = field.id && existingIdSet.has(field.id) ? existingKeyById.get(field.id) : undefined;
+      let fieldKey =
+        typeof field.fieldKey === 'string' && field.fieldKey.trim()
+          ? field.fieldKey.trim()
+          : (existingKey || generateRegistrationFieldKey());
+      while (usedKeys.has(fieldKey)) {
+        fieldKey = generateRegistrationFieldKey();
+      }
+      usedKeys.add(fieldKey);
       const nextValues = {
+        field_key: fieldKey,
         label: n.label,
         field_type: n.fieldType as any,
         scope: n.scope as any,
@@ -619,7 +667,65 @@ export async function updateEvent(
     }
   }
 
+  if (input.transferGroupId !== undefined && input.transferGroupId != null) {
+    await alignRegistrationFieldKeysWithTransferGroup(eventId, input.transferGroupId);
+  }
+
   markSearchIndexDirty();
+}
+
+/**
+ * When an event joins a transfer group, copy matching sibling field_keys by
+ * label + type + scope so pre-existing duplicated events can transfer values.
+ */
+export async function alignRegistrationFieldKeysWithTransferGroup(
+  eventId: number,
+  transferGroupId: number,
+): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const siblings = await db
+    .select({ id: schema.events.id })
+    .from(schema.events)
+    .where(
+      and(
+        eq(schema.events.transfer_group_id, transferGroupId),
+        ne(schema.events.id, eventId),
+      ),
+    );
+  if (siblings.length === 0) return;
+
+  const siblingFields = await db
+    .select()
+    .from(schema.eventRegistrationFields)
+    .where(inArray(schema.eventRegistrationFields.event_id, siblings.map((s) => s.id)));
+
+  const keyBySignature = new Map<string, string>();
+  for (const field of siblingFields) {
+    const signature = `${field.label}\0${field.field_type}\0${field.scope}`;
+    if (!keyBySignature.has(signature)) {
+      keyBySignature.set(signature, field.field_key);
+    }
+  }
+  if (keyBySignature.size === 0) return;
+
+  const ownFields = await db
+    .select()
+    .from(schema.eventRegistrationFields)
+    .where(eq(schema.eventRegistrationFields.event_id, eventId));
+
+  const usedKeys = new Set(ownFields.map((f) => f.field_key));
+  for (const field of ownFields) {
+    const signature = `${field.label}\0${field.field_type}\0${field.scope}`;
+    const siblingKey = keyBySignature.get(signature);
+    if (!siblingKey || siblingKey === field.field_key) continue;
+    if (usedKeys.has(siblingKey)) continue;
+    usedKeys.delete(field.field_key);
+    usedKeys.add(siblingKey);
+    await db
+      .update(schema.eventRegistrationFields)
+      .set({ field_key: siblingKey })
+      .where(eq(schema.eventRegistrationFields.id, field.id));
+  }
 }
 
 export async function archiveEvent(eventId: number): Promise<void> {
@@ -997,8 +1103,8 @@ export async function registerForEvent(input: RegisterForEventInput) {
     ? await db.insert(schema.eventRegistrationMembers).values(
         input.groupMembers.map((m, i) => ({
           registration_id: registrationId,
-          name: m.name,
-          email: m.email ?? null,
+          name: formatMemberDisplayName(m.firstName, m.lastName),
+          email: m.email,
           sort_order: i,
         }))
       ).returning({ id: schema.eventRegistrationMembers.id, sort_order: schema.eventRegistrationMembers.sort_order })
@@ -1248,9 +1354,10 @@ export async function cancelRegistration(registrationId: number): Promise<{ refu
   if (!event) throw new EventServiceError('Event not found', 404);
 
   const cancelMs = eventTimeMs(event.cancellation_cutoff);
-  const refundEligible = reg.status === 'confirmed' &&
-    reg.payment_order_id !== null &&
-    (cancelMs == null || Date.now() <= cancelMs);
+  // Eligibility is cutoff + confirmed status; actual paid orders are resolved at refund time
+  // (primary receipt order and any group-size balance top-ups).
+  const refundEligible =
+    reg.status === 'confirmed' && (cancelMs == null || Date.now() <= cancelMs);
 
   await db
     .update(schema.eventRegistrations)
@@ -1305,15 +1412,56 @@ export interface UpsertEventRegistrationInput {
   contactFirstName: string;
   contactLastName: string;
   contactEmail: string;
-  groupMembers?: Array<{ name: string; email?: string | null }>;
+  groupMembers?: Array<{ firstName: string; lastName: string; email: string }>;
   fieldValues?: Array<{ fieldId: number; registrationMemberIndex?: number | null; value: string }>;
+}
+
+export type UpdateRegistrationForEventOptions = {
+  /** When true, reject confirmed group-size increases that exceed capacity. */
+  enforceCapacity?: boolean;
+  /** When true, block group-size changes on pending_payment registrations. */
+  blockPendingPaymentGroupSizeChanges?: boolean;
+};
+
+export type UpdateRegistrationForEventResult = {
+  registration: Awaited<ReturnType<typeof getRegistrationForEvent>>;
+  previousGroupSize: number;
+  groupSize: number;
+  perPersonFeeMinor: number;
+  feeDeltaMinor: number;
+};
+
+export async function resolveRegistrationPerPersonFeeMinor(registration: {
+  member_id?: number | null;
+  special_link_id?: number | null;
+  event_id: number;
+}): Promise<number> {
+  const event = await getEventById(registration.event_id);
+  if (!event) throw new EventServiceError('Event not found', 404);
+
+  let specialLinkOverrideMinor: number | null = null;
+  if (registration.special_link_id != null) {
+    const { db, schema } = getDrizzleDb();
+    const [link] = await db
+      .select({ override_fee_minor: schema.eventSpecialLinks.override_fee_minor })
+      .from(schema.eventSpecialLinks)
+      .where(eq(schema.eventSpecialLinks.id, registration.special_link_id))
+      .limit(1);
+    specialLinkOverrideMinor = link?.override_fee_minor ?? null;
+  }
+
+  return resolveEventRegistrationFeeMinor(event, {
+    memberId: registration.member_id ?? null,
+    specialLinkOverrideMinor,
+  });
 }
 
 export async function updateRegistrationForEvent(
   eventId: number,
   registrationId: number,
-  input: UpsertEventRegistrationInput
-) {
+  input: UpsertEventRegistrationInput,
+  options?: UpdateRegistrationForEventOptions,
+): Promise<UpdateRegistrationForEventResult> {
   const { db, schema } = getDrizzleDb();
   const [existing] = await db
     .select()
@@ -1324,9 +1472,13 @@ export async function updateRegistrationForEvent(
   if (existing.status === 'cancelled') throw new EventServiceError('Canceled registrations cannot be edited', 400);
 
   const normalizedGroupMembers = (input.groupMembers ?? [])
-    .map((m) => ({ name: m.name.trim(), email: m.email?.trim() || null }))
+    .map((m) => ({
+      name: formatMemberDisplayName(m.firstName, m.lastName),
+      email: m.email.trim(),
+    }))
     .filter((m) => m.name.length > 0);
   const groupSize = normalizedGroupMembers.length + 1;
+  const previousGroupSize = existing.group_size ?? 1;
   const event = await getEventById(eventId);
   if (!event) throw new EventServiceError('Event not found', 404);
   if (groupSize > 1 && !event.allow_group_registration) {
@@ -1334,6 +1486,44 @@ export async function updateRegistrationForEvent(
   }
   if (event.max_group_size && groupSize > event.max_group_size) {
     throw new EventServiceError(`Maximum group size is ${event.max_group_size}`, 400);
+  }
+
+  if (
+    options?.blockPendingPaymentGroupSizeChanges &&
+    existing.status === 'pending_payment' &&
+    groupSize !== previousGroupSize
+  ) {
+    throw new EventServiceError('Complete or cancel payment before changing group size', 400);
+  }
+
+  if (
+    options?.enforceCapacity &&
+    existing.status === 'confirmed' &&
+    groupSize > previousGroupSize
+  ) {
+    const { getRegistrationDemandCount } = await import('./eventWaitlistService.js');
+    const { hasDirectRegistrationCapacity } = await import('./eventCapacityLogic.js');
+    const demand = await getRegistrationDemandCount(eventId);
+    // Demand already includes this registration's previous size; only the delta needs room.
+    const delta = groupSize - previousGroupSize;
+    if (!hasDirectRegistrationCapacity(event.capacity, demand, delta)) {
+      throw new EventServiceError(
+        event.enable_waitlist
+          ? 'Not enough open spots to add that many people. Cancel and join the waitlist, or remove fewer people from another registration.'
+          : 'Not enough open spots to add that many people.',
+        400,
+      );
+    }
+  }
+
+  const perPersonFeeMinor = await resolveRegistrationPerPersonFeeMinor(existing);
+  // Fee delta is based on paid net vs expected total so abandoned balance checkouts still surface a due amount.
+  let feeDeltaMinor = 0;
+  if (existing.status === 'confirmed' && perPersonFeeMinor > 0) {
+    const { getEventRegistrationPaidNetMinor } = await import('./eventRegistrationRefundService.js');
+    const paidNetMinor = await getEventRegistrationPaidNetMinor(registrationId);
+    const expectedMinor = perPersonFeeMinor * groupSize;
+    feeDeltaMinor = expectedMinor - paidNetMinor;
   }
 
   await db
@@ -1393,8 +1583,13 @@ export async function updateRegistrationForEvent(
     );
   }
 
-
-  return getRegistrationForEvent(eventId, registrationId);
+  return {
+    registration: await getRegistrationForEvent(eventId, registrationId),
+    previousGroupSize,
+    groupSize,
+    perPersonFeeMinor,
+    feeDeltaMinor,
+  };
 }
 
 export async function duplicateEvent(
@@ -1416,6 +1611,22 @@ export async function duplicateEvent(
       newTitle,
       createdByMemberId,
     );
+  }
+
+  let transferGroupId: number | null = event.transfer_group_id ?? null;
+  if (input.linkForTransfers) {
+    if (transferGroupId == null) {
+      const group = await createEventTransferGroup(event.title);
+      transferGroupId = group.id;
+      const { db, schema } = getDrizzleDb();
+      await db
+        .update(schema.events)
+        .set({
+          transfer_group_id: transferGroupId,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        } as Record<string, unknown>)
+        .where(eq(schema.events.id, eventId));
+    }
   }
 
   const created = await createEvent({
@@ -1452,7 +1663,9 @@ export async function duplicateEvent(
     })),
     categoryIds: event.categoryIds || [],
     ownerMemberIds: input.ownerMemberIds,
+    transferGroupId: input.linkForTransfers ? transferGroupId : null,
     registrationFields: (event.registrationFields || []).map((f: any) => ({
+      fieldKey: f.field_key,
       label: f.label,
       fieldType: f.field_type,
       scope: f.scope,
@@ -1462,9 +1675,9 @@ export async function duplicateEvent(
     })),
   });
 
+  const { db, schema } = getDrizzleDb();
   const drawJson = (event as { tournament_draw_json?: string | null }).tournament_draw_json;
   if (drawJson != null && drawJson !== '') {
-    const { db, schema } = getDrizzleDb();
     await db
       .update(schema.events)
       .set({
@@ -1474,7 +1687,200 @@ export async function duplicateEvent(
       .where(eq(schema.events.id, created.id));
   }
 
+  if (input.linkForTransfers && transferGroupId != null) {
+    await alignRegistrationFieldKeysWithTransferGroup(created.id, transferGroupId);
+  }
+
   return created;
+}
+
+export async function createEventTransferGroup(name: string): Promise<{ id: number; name: string }> {
+  const { db, schema } = getDrizzleDb();
+  const trimmed = name.trim();
+  if (!trimmed) throw new EventServiceError('Linked sessions group name is required', 400);
+  const [row] = await db
+    .insert(schema.eventTransferGroups)
+    .values({ name: trimmed })
+    .returning({ id: schema.eventTransferGroups.id, name: schema.eventTransferGroups.name });
+  return row;
+}
+
+export async function renameEventTransferGroup(
+  groupId: number,
+  name: string,
+): Promise<{ id: number; name: string }> {
+  const { db, schema } = getDrizzleDb();
+  const trimmed = name.trim();
+  if (!trimmed) throw new EventServiceError('Linked sessions group name is required', 400);
+  const [row] = await db
+    .update(schema.eventTransferGroups)
+    .set({ name: trimmed, updated_at: sql`CURRENT_TIMESTAMP` } as Record<string, unknown>)
+    .where(eq(schema.eventTransferGroups.id, groupId))
+    .returning({ id: schema.eventTransferGroups.id, name: schema.eventTransferGroups.name });
+  if (!row) throw new EventServiceError('Linked sessions group not found', 404);
+  return row;
+}
+
+export async function getEventTransferGroup(groupId: number) {
+  const { db, schema } = getDrizzleDb();
+  const [group] = await db
+    .select()
+    .from(schema.eventTransferGroups)
+    .where(eq(schema.eventTransferGroups.id, groupId))
+    .limit(1);
+  if (!group) return null;
+
+  const events = await db
+    .select({
+      id: schema.events.id,
+      title: schema.events.title,
+      slug: schema.events.slug,
+      published: schema.events.published,
+      archived_at: schema.events.archived_at,
+    })
+    .from(schema.events)
+    .where(eq(schema.events.transfer_group_id, groupId))
+    .orderBy(asc(schema.events.title));
+
+  const timespans = events.length
+    ? await db
+        .select()
+        .from(schema.eventTimespans)
+        .where(inArray(schema.eventTimespans.event_id, events.map((e) => e.id)))
+        .orderBy(asc(schema.eventTimespans.sort_order))
+    : [];
+
+  const timespansByEvent = new Map<number, typeof timespans>();
+  for (const ts of timespans) {
+    const list = timespansByEvent.get(ts.event_id) ?? [];
+    list.push(ts);
+    timespansByEvent.set(ts.event_id, list);
+  }
+
+  const eventsWithTimespans = events.map((e) => ({
+    ...e,
+    timespans: timespansByEvent.get(e.id) ?? [],
+  }));
+  eventsWithTimespans.sort((a, b) => {
+    const aStart = a.timespans[0]?.start_dt ?? '';
+    const bStart = b.timespans[0]?.start_dt ?? '';
+    return aStart.localeCompare(bStart) || a.title.localeCompare(b.title);
+  });
+
+  return {
+    id: group.id,
+    name: group.name,
+    events: eventsWithTimespans,
+  };
+}
+
+export async function listEventTransferGroups(): Promise<
+  Array<{
+    id: number;
+    name: string;
+    eventCount: number;
+    events: Array<{
+      id: number;
+      title: string;
+      slug: string;
+      timespans: Array<{ start_dt: string; end_dt: string; sort_order: number }>;
+    }>;
+  }>
+> {
+  const { db, schema } = getDrizzleDb();
+  const groups = await db
+    .select({
+      id: schema.eventTransferGroups.id,
+      name: schema.eventTransferGroups.name,
+    })
+    .from(schema.eventTransferGroups)
+    .orderBy(asc(schema.eventTransferGroups.name));
+
+  if (groups.length === 0) return [];
+
+  const groupIds = groups.map((g) => g.id);
+  const eventRows = await db
+    .select({
+      id: schema.events.id,
+      title: schema.events.title,
+      slug: schema.events.slug,
+      transfer_group_id: schema.events.transfer_group_id,
+    })
+    .from(schema.events)
+    .where(
+      and(
+        inArray(schema.events.transfer_group_id, groupIds),
+        notArchivedCondition(schema.events.archived_at),
+      ),
+    )
+    .orderBy(asc(schema.events.title));
+
+  const eventIds = eventRows.map((row) => row.id);
+  const timespanRows = eventIds.length
+    ? await db
+        .select()
+        .from(schema.eventTimespans)
+        .where(inArray(schema.eventTimespans.event_id, eventIds))
+        .orderBy(asc(schema.eventTimespans.sort_order))
+    : [];
+
+  const timespansByEvent = new Map<number, Array<{ start_dt: string; end_dt: string; sort_order: number }>>();
+  for (const ts of timespanRows) {
+    const list = timespansByEvent.get(ts.event_id) ?? [];
+    list.push({ start_dt: ts.start_dt, end_dt: ts.end_dt, sort_order: ts.sort_order });
+    timespansByEvent.set(ts.event_id, list);
+  }
+
+  const eventsByGroup = new Map<
+    number,
+    Array<{
+      id: number;
+      title: string;
+      slug: string;
+      timespans: Array<{ start_dt: string; end_dt: string; sort_order: number }>;
+    }>
+  >();
+  for (const row of eventRows) {
+    if (row.transfer_group_id == null) continue;
+    const list = eventsByGroup.get(row.transfer_group_id) ?? [];
+    list.push({
+      id: row.id,
+      title: row.title,
+      slug: row.slug,
+      timespans: timespansByEvent.get(row.id) ?? [],
+    });
+    eventsByGroup.set(row.transfer_group_id, list);
+  }
+
+  return groups.map((group) => {
+    const events = [...(eventsByGroup.get(group.id) ?? [])].sort((a, b) => {
+      const aStart = a.timespans[0]?.start_dt ?? '';
+      const bStart = b.timespans[0]?.start_dt ?? '';
+      return aStart.localeCompare(bStart) || a.title.localeCompare(b.title);
+    });
+    return {
+      id: group.id,
+      name: group.name,
+      eventCount: events.length,
+      events,
+    };
+  });
+}
+
+export async function listEventsInTransferGroup(transferGroupId: number, excludeEventId?: number) {
+  const { db, schema } = getDrizzleDb();
+  const conditions = [
+    eq(schema.events.transfer_group_id, transferGroupId),
+    notArchivedCondition(schema.events.archived_at),
+  ];
+  if (excludeEventId != null) {
+    conditions.push(ne(schema.events.id, excludeEventId));
+  }
+  return db
+    .select()
+    .from(schema.events)
+    .where(and(...conditions))
+    .orderBy(asc(schema.events.title));
 }
 
 export async function createSpecialLink(

@@ -41,7 +41,7 @@ export type RegistrationFormSnapshot = {
 };
 
 function personLabel(index: number): string {
-  return index === 0 ? 'Primary registrant' : `Group member ${index}`;
+  return index === 0 ? 'Primary registrant' : `Registrant ${index + 1}`;
 }
 
 function normalizeDisplayValue(value: string | null | undefined): string {
@@ -120,7 +120,7 @@ function buildFieldRows(
 export function buildRegistrationFormSnapshot(
   event: EventWithRegistrationFields,
   contact: { firstName: string; lastName: string; email: string },
-  groupMembers: Array<{ name: string; email?: string | null }>,
+  groupMembers: Array<{ firstName: string; lastName: string; email?: string | null }>,
   fieldValues: Array<{ fieldId: number; registrationMemberIndex?: number | null; value: string | null | undefined }>,
 ): RegistrationFormSnapshot {
   const rows: EventRegistrationFormEmailRow[] = [
@@ -130,14 +130,20 @@ export function buildRegistrationFormSnapshot(
   ];
 
   groupMembers.forEach((member, index) => {
+    const label = personLabel(index + 1);
     rows.push({
-      key: `groupMember:${index}:name`,
-      label: `${personLabel(index + 1)} name`,
-      value: normalizeDisplayValue(member.name),
+      key: `groupMember:${index}:firstName`,
+      label: `${label} first name`,
+      value: normalizeDisplayValue(member.firstName),
+    });
+    rows.push({
+      key: `groupMember:${index}:lastName`,
+      label: `${label} last name`,
+      value: normalizeDisplayValue(member.lastName),
     });
     rows.push({
       key: `groupMember:${index}:email`,
-      label: `${personLabel(index + 1)} email`,
+      label: `${label} email`,
       value: normalizeDisplayValue(member.email),
     });
   });
@@ -176,7 +182,10 @@ export function buildRegistrationFormSnapshotFromRegistration(
       lastName,
       email: registration.contact_email ?? '',
     },
-    sortedMembers.map((member) => ({ name: member.name, email: member.email })),
+    sortedMembers.map((member) => {
+      const { firstName, lastName } = splitMemberDisplayName(member.name ?? '');
+      return { firstName, lastName, email: member.email };
+    }),
     fieldValues,
   );
 }
@@ -192,7 +201,11 @@ export function buildRegistrationFormSnapshotFromInput(
       lastName: input.contactLastName,
       email: input.contactEmail,
     },
-    (input.groupMembers ?? []).map((member) => ({ name: member.name, email: member.email })),
+    (input.groupMembers ?? []).map((member) => ({
+      firstName: member.firstName,
+      lastName: member.lastName,
+      email: member.email,
+    })),
     (input.fieldValues ?? []).map((fv) => ({
       fieldId: fv.fieldId,
       registrationMemberIndex: fv.registrationMemberIndex ?? null,

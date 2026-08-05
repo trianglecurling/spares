@@ -25,7 +25,12 @@ const ProfilePaymentDetailPage = lazy(() => import('./pages/ProfilePaymentDetail
 const PublicPaymentDetailPage = lazy(() => import('./pages/PublicPaymentDetailPage'));
 const AdminMembers = lazy(() => import('./pages/admin/AdminMembers'));
 const AdminWaivers = lazy(() => import('./pages/admin/AdminWaivers'));
+const AdminFacilityInfo = lazy(() => import('./pages/admin/AdminFacilityInfo'));
 const AdminSheets = lazy(() => import('./pages/admin/AdminSheets'));
+const AdminBuildingAccess = lazy(() => import('./pages/admin/AdminBuildingAccess'));
+const BuildingAccessPage = lazy(() => import('./pages/BuildingAccessPage'));
+const MemberCommunicationsPage = lazy(() => import('./pages/MemberCommunicationsPage'));
+const BoardMeetingMinutesPage = lazy(() => import('./pages/BoardMeetingMinutesPage'));
 const AdminConfig = lazy(() => import('./pages/admin/AdminConfig'));
 const AdminDatabaseConfig = lazy(() => import('./pages/admin/AdminDatabaseConfig'));
 const Help = lazy(() => import('./pages/Help'));
@@ -55,6 +60,7 @@ const Calendar = lazy(() => import('./pages/Calendar'));
 const CalendarEventFormPage = lazy(() => import('./pages/CalendarEventFormPage'));
 const BookIceTime = lazy(() => import('./pages/BookIceTime'));
 const PublicArticle = lazy(() => import('./pages/PublicArticle'));
+const MemberArticlePage = lazy(() => import('./pages/MemberArticlePage'));
 const PublicContactPage = lazy(() => import('./pages/PublicContactPage'));
 const PublicContactConfirmPage = lazy(() => import('./pages/PublicContactConfirmPage'));
 const PublicDonatePage = lazy(() => import('./pages/PublicDonatePage'));
@@ -390,6 +396,38 @@ function App() {
                           </ProtectedRoute>
                         }
                       />
+                      <Route
+                        path="/building-access"
+                        element={
+                          <ProtectedRoute>
+                            <BuildingAccessPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/member-communications"
+                        element={
+                          <ProtectedRoute>
+                            <MemberCommunicationsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/board-meeting-minutes"
+                        element={
+                          <ProtectedRoute>
+                            <BoardMeetingMinutesPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/members-area/:navLabel/:articleSlug"
+                        element={
+                          <ProtectedRoute>
+                            <MemberArticlePage />
+                          </ProtectedRoute>
+                        }
+                      />
 
                       <Route
                         path="/calendar"
@@ -487,14 +525,18 @@ function App() {
                         path="/admin/leagues/:leagueId/setup/:tab"
                         element={<LeagueSetupRedirect defaultTab="" />}
                       />
+                      <Route path="/admin/sheets" element={<Navigate to="/admin/facility" replace />} />
                       <Route
-                        path="/admin/sheets"
+                        path="/admin/facility"
                         element={
                           <ProtectedRoute leagueManagerOnly>
-                            <AdminSheets />
+                            <AdminFacilityInfo />
                           </ProtectedRoute>
                         }
-                      />
+                      >
+                        <Route index element={<AdminSheets />} />
+                        <Route path="building-access" element={<AdminBuildingAccess />} />
+                      </Route>
                       <Route
                         path="/admin/config"
                         element={

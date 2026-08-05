@@ -1,4 +1,5 @@
 import { invalidatePublicBootstrapCache } from './publicBootstrapCache.js';
+import { invalidateMenuTreeCache } from './menuTreeCache.js';
 
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -48,4 +49,7 @@ export function maybeInvalidatePublicBootstrapCache(request: {
   }
 
   invalidatePublicBootstrapCache(path);
+  if (path.startsWith('/api/content/')) {
+    invalidateMenuTreeCache(path);
+  }
 }

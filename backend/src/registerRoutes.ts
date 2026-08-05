@@ -23,6 +23,7 @@ import { publicPaymentRoutes } from './routes/publicPayments.js';
 import { paymentWebhookRoutes } from './routes/paymentWebhooks.js';
 import { paymentRoutes } from './routes/payments.js';
 import { contentRoutes } from './routes/content.js';
+import { dashboardRoutes } from './routes/dashboard.js';
 import { permalinkAdminRoutes } from './routes/permalinksAdmin.js';
 import { fileRoutes } from './routes/files.js';
 import { sponsorshipRoutes } from './routes/sponsorship.js';
@@ -40,6 +41,9 @@ import { leagueEntryRoutes } from './routes/leagueEntry.js';
 import { publicSearchRoutes } from './routes/publicSearch.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { volunteeringRoutes } from './routes/volunteering.js';
+import { buildingAccessRoutes } from './routes/buildingAccess.js';
+import { memberCommunicationsRoutes } from './routes/memberCommunications.js';
+import { boardMeetingMinutesRoutes } from './routes/boardMeetingMinutes.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(installRoutes, { prefix: '/api' });
@@ -73,6 +77,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(calendarRoutes, { prefix: '/api' });
   await fastify.register(iceBookingRoutes, { prefix: '/api' });
   await fastify.register(contentRoutes, { prefix: '/api' });
+  await fastify.register(dashboardRoutes, { prefix: '/api' });
   await fastify.register(permalinkAdminRoutes, { prefix: '/api' });
   await fastify.register(fileRoutes, { prefix: '/api' });
   await fastify.register(sponsorshipRoutes, { prefix: '/api' });
@@ -91,4 +96,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(leagueEntryRoutes, { prefix: '/api' });
   await fastify.register(webhookRoutes, { prefix: '/api' });
   await fastify.register(volunteeringRoutes, { prefix: '/api' });
+  await fastify.register(buildingAccessRoutes, { prefix: '/api' });
+  await fastify.register(memberCommunicationsRoutes, { prefix: '/api' });
+  await fastify.register(boardMeetingMinutesRoutes, { prefix: '/api' });
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -33,6 +33,7 @@ import { renderMe } from '../utils/me';
 import {
   formatVolunteerRange,
   type DashboardVolunteerOpportunity,
+  type MyVolunteerSignup,
 } from '../utils/volunteering';
 
 interface SpareRequest {
@@ -97,6 +98,65 @@ interface MyIceBooking {
   createdAt: string;
 }
 
+type DashboardSectionConfig = {
+  lookAheadDays?: number;
+  maxItems?: number;
+  showWhenEmpty?: boolean;
+  defaultExpanded?: boolean;
+};
+
+type DashboardAlertPayload = {
+  title: string | null;
+  body: string | null;
+  expiresAt: string | null;
+  variant: string | null;
+  icon: string | null;
+};
+
+type DashboardLayoutSection = {
+  key: string;
+  label: string;
+  enabled: boolean;
+  config: DashboardSectionConfig;
+  alert?: DashboardAlertPayload;
+};
+
+const STRUCTURAL_SECTION_KEYS = new Set(['alert', 'top_row', 'registration']);
+const DEFAULT_LAYOUT_SECTIONS: DashboardLayoutSection[] = [
+  { key: 'alert', label: 'Alert', enabled: true, config: {} },
+  { key: 'top_row', label: 'Membership and quick actions', enabled: true, config: {} },
+  { key: 'registration', label: 'Registration status', enabled: true, config: {} },
+  { key: 'ice_bookings', label: 'My ice bookings', enabled: true, config: { lookAheadDays: 30 } },
+  { key: 'upcoming_games', label: 'My upcoming games', enabled: true, config: { lookAheadDays: 7 } },
+  {
+    key: 'upcoming_volunteering',
+    label: 'Upcoming volunteering',
+    enabled: true,
+    config: { lookAheadDays: 30, showWhenEmpty: false },
+  },
+  {
+    key: 'volunteer_opportunities',
+    label: 'Upcoming volunteer opportunities',
+    enabled: true,
+    config: { lookAheadDays: 30, maxItems: 10 },
+  },
+  { key: 'my_sparing', label: 'My upcoming sparing', enabled: true, config: { showWhenEmpty: false } },
+  { key: 'my_spare_requests', label: 'My spare requests', enabled: true, config: { showWhenEmpty: false } },
+  { key: 'cc_requests', label: "Requests I've been CC'd on", enabled: true, config: { showWhenEmpty: false } },
+  {
+    key: 'outstanding_spares',
+    label: 'Outstanding spare requests',
+    enabled: true,
+    config: { showWhenEmpty: true },
+  },
+  {
+    key: 'filled_spares',
+    label: 'Filled spare requests',
+    enabled: true,
+    config: { showWhenEmpty: false, defaultExpanded: false },
+  },
+];
+
 const icePurposeLabel = (purpose: string, other?: string, guestNames?: string) => {
   const map: Record<string, string> = {
     practice: 'Practice',
@@ -156,8 +216,11 @@ export default function Dashboard() {
   const [upcomingGames, setUpcomingGames] = useState<UpcomingGame[]>([]);
   const [iceBookings, setIceBookings] = useState<MyIceBooking[]>([]);
   const [volunteerOpportunities, setVolunteerOpportunities] = useState<DashboardVolunteerOpportunity[]>([]);
+  const [myVolunteerSignups, setMyVolunteerSignups] = useState<MyVolunteerSignup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [layoutSections, setLayoutSections] = useState<DashboardLayoutSection[]>(DEFAULT_LAYOUT_SECTIONS);
   const [showFilled, setShowFilled] = useState(false);
+  const [filledExpandedInitialized, setFilledExpandedInitialized] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SpareRequest | null>(null);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -167,12 +230,6 @@ export default function Dashboard() {
   const [cancelRequest, setCancelRequest] = useState<SpareRequest | null>(null);
   const [cancelComment, setCancelComment] = useState('');
   const [canceling, setCanceling] = useState(false);
-  const [dashboardAlert, setDashboardAlert] = useState<{
-    title?: string;
-    body?: string;
-    variant?: string;
-    icon?: string;
-  } | null>(null);
   const [opponentRosterModal, setOpponentRosterModal] = useState<{
     teamId: number;
     teamName: string;
@@ -227,32 +284,16 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    loadAllData();
+    void loadAllData();
   }, []);
 
   useEffect(() => {
-    const loadDashboardAlert = async () => {
-      try {
-        const response = await get('/public-config');
-        const title = response?.dashboardAlertTitle || '';
-        const body = response?.dashboardAlertBody || '';
-        const variant = response?.dashboardAlertVariant || 'info';
-        const icon = response?.dashboardAlertIcon || 'announcement';
-        const expiresAtRaw = response?.dashboardAlertExpiresAt || null;
-        const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
-        const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() : false;
-        if ((title.trim() || body.trim()) && !isExpired) {
-          setDashboardAlert({ title: title.trim(), body: body.trim(), variant, icon });
-        } else {
-          setDashboardAlert(null);
-        }
-      } catch (error) {
-        console.error('Failed to load dashboard alert:', error);
-      }
-    };
-
-    loadDashboardAlert();
-  }, []);
+    if (filledExpandedInitialized) return;
+    const filledSection = layoutSections.find((section) => section.key === 'filled_spares');
+    if (!filledSection) return;
+    setShowFilled(filledSection.config.defaultExpanded === true);
+    setFilledExpandedInitialized(true);
+  }, [layoutSections, filledExpandedInitialized]);
 
   useEffect(() => {
     if (!opponentRosterModal) return;
@@ -356,10 +397,24 @@ export default function Dashboard() {
 
   const loadAllData = async () => {
     try {
+      let sections = DEFAULT_LAYOUT_SECTIONS;
+      try {
+        const layoutRes = await api.get<{ sections: DashboardLayoutSection[] }>('/dashboard/layout');
+        if (Array.isArray(layoutRes.data?.sections) && layoutRes.data.sections.length > 0) {
+          sections = layoutRes.data.sections;
+          setLayoutSections(sections);
+        }
+      } catch (error) {
+        console.error('Failed to load dashboard layout:', error);
+      }
+
+      const enabled = new Set(sections.filter((section) => section.enabled).map((section) => section.key));
+      const emptyList = Promise.resolve([] as never[]);
+
       const icePromise =
-        member?.socialMember === true
-          ? Promise.resolve([] as MyIceBooking[])
-          : api.get<MyIceBooking[]>('/ice-bookings').then((r) => r.data ?? []);
+        enabled.has('ice_bookings') && member?.socialMember !== true
+          ? api.get<MyIceBooking[]>('/ice-bookings').then((r) => r.data ?? [])
+          : Promise.resolve([] as MyIceBooking[]);
 
       const [
         openRes,
@@ -370,26 +425,38 @@ export default function Dashboard() {
         upcomingGamesRes,
         iceRes,
         volunteerRes,
+        myVolunteerRes,
       ] = await Promise.all([
-          get('/spares'),
-          get('/spares/my-sparing'),
-          get('/spares/filled-upcoming'),
-          get('/spares/cc'),
-          get('/spares/my-requests'),
-          get('/members/me/upcoming-games').catch(() => []),
-          icePromise.catch(() => [] as MyIceBooking[]),
-          get('/volunteering/dashboard-opportunities').catch(() => ({ opportunities: [] })),
-        ]);
+        enabled.has('outstanding_spares') ? get('/spares') : emptyList,
+        enabled.has('my_sparing') ? get('/spares/my-sparing') : emptyList,
+        enabled.has('filled_spares') ? get('/spares/filled-upcoming') : emptyList,
+        enabled.has('cc_requests') ? get('/spares/cc') : emptyList,
+        enabled.has('my_spare_requests') ? get('/spares/my-requests') : emptyList,
+        enabled.has('upcoming_games')
+          ? get('/members/me/upcoming-games').catch(() => [])
+          : emptyList,
+        icePromise.catch(() => [] as MyIceBooking[]),
+        enabled.has('volunteer_opportunities')
+          ? get('/volunteering/dashboard-opportunities').catch(() => ({ opportunities: [] }))
+          : Promise.resolve({ opportunities: [] }),
+        enabled.has('upcoming_volunteering')
+          ? get('/volunteering/my-signups').catch(() => ({ upcoming: [], past: [] }))
+          : Promise.resolve({ upcoming: [], past: [] }),
+      ]);
       setOpenRequests(openRes);
       setMySparing(mySparingRes);
       setFilledRequests(filledRes);
       setCcRequests(ccRes || []);
-      // Filter out canceled requests - only show open and filled
       setMyRequests(myRequestsRes.filter((r: MySpareRequest) => r.status !== 'cancelled'));
       setUpcomingGames(upcomingGamesRes || []);
       setIceBookings(iceRes);
       setVolunteerOpportunities(
         (volunteerRes as { opportunities?: DashboardVolunteerOpportunity[] })?.opportunities || []
+      );
+      setMyVolunteerSignups(
+        ((myVolunteerRes as { upcoming?: MyVolunteerSignup[] })?.upcoming || []).filter(
+          (signup) => signup.status === 'confirmed',
+        ),
       );
     } catch (error) {
       console.error('Failed to load spare requests:', error);
@@ -558,10 +625,46 @@ export default function Dashboard() {
     return date.toLocaleDateString('en-US', { weekday: 'long' });
   };
 
-  const upcomingIceBookings = useMemo(
-    () => iceBookings.filter((b) => new Date(b.end).getTime() > Date.now()),
-    [iceBookings]
+  const iceLookAheadDays = useMemo(() => {
+    const section = layoutSections.find((item) => item.key === 'ice_bookings');
+    return section?.config.lookAheadDays ?? 30;
+  }, [layoutSections]);
+
+  const upcomingIceBookings = useMemo(() => {
+    const now = Date.now();
+    const horizon = now + iceLookAheadDays * 24 * 60 * 60 * 1000;
+    return iceBookings.filter((b) => {
+      const start = new Date(b.start).getTime();
+      const end = new Date(b.end).getTime();
+      return end > now && start <= horizon;
+    });
+  }, [iceBookings, iceLookAheadDays]);
+
+  const volunteeringLookAheadDays = useMemo(() => {
+    const section = layoutSections.find((item) => item.key === 'upcoming_volunteering');
+    return section?.config.lookAheadDays ?? 30;
+  }, [layoutSections]);
+
+  const upcomingVolunteering = useMemo(() => {
+    const now = Date.now();
+    const horizon = now + volunteeringLookAheadDays * 24 * 60 * 60 * 1000;
+    return myVolunteerSignups.filter((signup) => {
+      const start = new Date(signup.startDt).getTime();
+      // API already excludes past shifts; keep a client-side guard and apply look-ahead.
+      return Number.isFinite(start) && start >= now && start <= horizon;
+    });
+  }, [myVolunteerSignups, volunteeringLookAheadDays]);
+
+  const enabledSections = useMemo(
+    () => layoutSections.filter((section) => section.enabled),
+    [layoutSections],
   );
+
+  const shouldShowWhenEmpty = (key: string, count: number) => {
+    if (count > 0) return true;
+    const section = layoutSections.find((item) => item.key === key);
+    return section?.config.showWhenEmpty === true;
+  };
 
   const filledBadge = (
     <span className="px-2 py-1 rounded text-sm font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">
@@ -706,6 +809,618 @@ export default function Dashboard() {
     );
   };
 
+  const renderAlertSection = (section: DashboardLayoutSection) => {
+    const title = section.alert?.title?.trim() || '';
+    const body = section.alert?.body?.trim() || '';
+    const expiresAtRaw = section.alert?.expiresAt || null;
+    const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+    const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() : false;
+    if ((!title && !body) || isExpired) return null;
+
+    const variant = section.alert?.variant || 'info';
+    const icon = section.alert?.icon || 'announcement';
+    const styles = dashboardAlertStyles(variant);
+    return (
+      <div className={`${styles.container} rounded-lg p-4 shadow-sm`}>
+        <div className="flex items-start gap-3">
+          {icon !== 'none' && (
+            <div className={`${styles.text} mt-0.5`}>
+              {renderDashboardAlertIcon(icon, styles.text)}
+            </div>
+          )}
+          <div>
+            {title ? <div className={`text-lg font-semibold ${styles.text}`}>{title}</div> : null}
+            {body ? (
+              <div className={`text-sm whitespace-pre-line mt-1 ${styles.text}`}>{body}</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTopRowSection = () => (
+    <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+      <DashboardMembershipCard />
+
+      {!member?.socialMember ? (
+        <div className="app-card flex flex-col">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal-link/80 dark:text-primary-teal-link">
+            Quick actions
+          </p>
+          <div className="mt-4 flex flex-1 flex-col justify-center gap-2.5">
+            {!member?.spareOnly && (
+              <Link
+                to="/request-spare"
+                className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-orange/40 hover:bg-primary-orange/5 dark:hover:border-primary-orange/40 dark:hover:bg-primary-orange/10"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-orange/10 text-primary-orange dark:bg-primary-orange/20">
+                  <HiOutlineUserPlus className="h-5 w-5" />
+                </span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                  Request a spare
+                </span>
+                <HiChevronRight
+                  className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-orange"
+                  aria-hidden="true"
+                />
+              </Link>
+            )}
+
+            <Link
+              to="/availability"
+              className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-teal/40 hover:bg-primary-teal/5 dark:hover:border-primary-teal/40 dark:hover:bg-primary-teal/10"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-teal/10 text-primary-teal-link dark:bg-primary-teal/20">
+                <HiOutlineCalendar className="h-5 w-5" />
+              </span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                Set availability
+              </span>
+              <HiChevronRight
+                className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal-link"
+                aria-hidden="true"
+              />
+            </Link>
+
+            <Link
+              to="/book-ice"
+              className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-dark/30 hover:bg-primary-dark/[0.04] dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-dark/[0.08] text-primary-dark dark:bg-indigo-500/15 dark:text-indigo-300">
+                <HiOutlineCalendarDays className="h-5 w-5" />
+              </span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                Book ice time
+              </span>
+              <HiChevronRight
+                className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-dark dark:group-hover:text-indigo-300"
+                aria-hidden="true"
+              />
+            </Link>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const renderDataSection = (section: DashboardLayoutSection): ReactNode => {
+    switch (section.key) {
+      case 'ice_bookings':
+        if (member?.socialMember || !shouldShowWhenEmpty('ice_bookings', upcomingIceBookings.length)) {
+          return null;
+        }
+        return (
+          <DashboardSection
+            title="My ice bookings"
+            action={
+              <Link
+                to="/book-ice"
+                className="text-sm font-medium text-primary-teal-link hover:underline"
+              >
+                Book ice time →
+              </Link>
+            }
+          >
+            {upcomingIceBookings.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">No upcoming ice bookings.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {upcomingIceBookings.map((b) => (
+                  <div
+                    key={b.id}
+                    className="app-card p-4 flex flex-wrap items-center gap-3 justify-between"
+                  >
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-900 dark:text-gray-100">
+                      <span className="font-medium">
+                        {new Date(b.start).toLocaleString(undefined, {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      <span className="text-gray-600 dark:text-gray-400">
+                        →{' '}
+                        {new Date(b.end).toLocaleTimeString(undefined, {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      <span className="text-gray-600 dark:text-gray-400">Sheet {b.sheetName}</span>
+                      <span className="text-gray-600 dark:text-gray-400 text-sm">
+                        {icePurposeLabel(b.purpose, b.purposeOther, b.guestNames)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteIceBooking(b.id)}
+                      className="text-sm text-rose-600 dark:text-rose-400 hover:underline font-medium"
+                    >
+                      Cancel booking
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'upcoming_games':
+        if (!shouldShowWhenEmpty('upcoming_games', upcomingGames.length)) return null;
+        return (
+          <DashboardSection title="My upcoming games">
+            {upcomingGames.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">No upcoming games.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {upcomingGames.map((game) => (
+                  <div
+                    key={game.id}
+                    className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+                  >
+                    <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                      <HiOutlineCalendarDays className="w-5 h-5 text-primary-teal-link shrinking-0" />
+                      <span className="font-medium">
+                        {game.gameDate ? formatDayOfWeek(game.gameDate) : '—'}
+                      </span>
+                      <span className="text-gray-600 dark:text-gray-400">
+                        {game.gameTime ? formatTime(game.gameTime) : '—'}
+                      </span>
+                    </div>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Sheet {game.sheetName ?? '—'}
+                    </span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      vs{' '}
+                      {game.opponentTeamId && game.opponentName ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpponentRosterModal({
+                              teamId: game.opponentTeamId!,
+                              teamName: game.opponentName!,
+                            })
+                          }
+                          className="text-primary-teal-link hover:underline font-medium"
+                        >
+                          {game.opponentName}
+                        </button>
+                      ) : (
+                        (game.opponentName ?? 'TBD')
+                      )}
+                    </span>
+                    <Link
+                      to={`/leagues/${game.leagueId}/schedule`}
+                      className="text-sm text-primary-teal-link hover:underline ml-auto"
+                    >
+                      {game.leagueName}
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'upcoming_volunteering':
+        if (!shouldShowWhenEmpty('upcoming_volunteering', upcomingVolunteering.length)) {
+          return null;
+        }
+        return (
+          <DashboardSection
+            title="Upcoming volunteering"
+            action={
+              <Link
+                to="/volunteering?tab=shifts"
+                className="text-sm text-primary-teal-link hover:underline"
+              >
+                View all →
+              </Link>
+            }
+          >
+            {upcomingVolunteering.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">
+                  You are not signed up for any upcoming volunteer shifts.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {upcomingVolunteering.map((signup) => (
+                  <div
+                    key={signup.signupId}
+                    className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-gray-900 dark:text-gray-100">
+                        {signup.programTitle} · {signup.roleName}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {formatVolunteerRange(signup.startDt, signup.endDt)}
+                      </div>
+                      {signup.location ? (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">{signup.location}</div>
+                      ) : null}
+                    </div>
+                    <Link
+                      to="/volunteering?tab=shifts"
+                      className="text-sm text-primary-teal-link hover:underline ml-auto"
+                    >
+                      Manage
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'volunteer_opportunities':
+        if (!shouldShowWhenEmpty('volunteer_opportunities', volunteerOpportunities.length)) {
+          return null;
+        }
+        return (
+          <DashboardSection
+            title="Upcoming volunteer opportunities"
+            action={
+              <Link to="/volunteering" className="text-sm text-primary-teal-link hover:underline">
+                View all →
+              </Link>
+            }
+          >
+            {volunteerOpportunities.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">
+                  No upcoming volunteer opportunities.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {volunteerOpportunities.map((opp) => (
+                  <div
+                    key={opp.shiftRoleId}
+                    className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-gray-900 dark:text-gray-100">
+                        {opp.programTitle} · {opp.roleName}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {formatVolunteerRange(opp.startDt, opp.endDt)}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {opp.volunteersRegistered}/{opp.volunteersNeeded} filled
+                        {opp.location ? ` · ${opp.location}` : ''}
+                      </div>
+                    </div>
+                    <Link
+                      to="/volunteering"
+                      className="text-sm text-primary-teal-link hover:underline ml-auto"
+                    >
+                      Sign up
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'my_sparing':
+        if (!shouldShowWhenEmpty('my_sparing', mySparing.length)) return null;
+        return (
+          <DashboardSection title="My upcoming sparing">
+            {mySparing.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">No upcoming sparing.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {mySparing.map((request) => renderRequestCard(request, false, true, true))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'my_spare_requests':
+        if (!shouldShowWhenEmpty('my_spare_requests', myRequests.length)) return null;
+        return (
+          <DashboardSection
+            title="My spare requests"
+            action={
+              <Link
+                to="/my-requests"
+                className="text-sm font-medium text-primary-teal-link hover:underline"
+              >
+                Manage requests →
+              </Link>
+            }
+          >
+            {myRequests.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">No spare requests.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {myRequests.map((request) => (
+                  <div key={request.id} className="app-card p-6">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            Spare for {renderMe(request.requestedForName, member?.name)}
+                          </h3>
+                          {request.status === 'open' && (
+                            <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
+                              Unfilled
+                            </span>
+                          )}
+                          {request.status === 'filled' && (
+                            <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-2 py-1 rounded text-sm font-medium">
+                              Filled
+                            </span>
+                          )}
+                          {requestTypeBadge(request.requestType)}
+                          {request.position && (
+                            <span className="bg-primary-teal-solid text-white px-2 py-1 rounded text-sm">
+                              {request.position}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-gray-600 dark:text-gray-400 space-y-1">
+                          <p>
+                            <span className="font-medium dark:text-gray-300">When:</span>{' '}
+                            {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
+                            {request.leagueName ? <span> • {request.leagueName}</span> : null}
+                          </p>
+                          {request.requesterId &&
+                            request.requesterId !== member?.id &&
+                            request.requesterName && (
+                              <p>
+                                <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+                                {renderMe(request.requesterName, member?.name)}
+                              </p>
+                            )}
+                          {request.message && (
+                            <p className="italic mt-2">&quot;{request.message}&quot;</p>
+                          )}
+                          {request.status === 'filled' && request.filledByName && (
+                            <>
+                              <p className="text-green-700 dark:text-green-400 font-medium mt-2">
+                                ✓ Filled by {renderMe(request.filledByName, member?.name)}
+                              </p>
+                              {request.filledByEmail && (
+                                <p className="text-sm ml-4 mt-1">
+                                  <a
+                                    href={`mailto:${request.filledByEmail}`}
+                                    className="text-primary-teal-link hover:underline"
+                                  >
+                                    {request.filledByEmail}
+                                  </a>
+                                </p>
+                              )}
+                              {request.filledByPhone && (
+                                <p className="text-sm ml-4 mt-1">
+                                  <a
+                                    href={`tel:${request.filledByPhone.replace(/\D/g, '')}`}
+                                    className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                                  >
+                                    {formatPhone(request.filledByPhone)}
+                                  </a>
+                                </p>
+                              )}
+                            </>
+                          )}
+                          {request.status === 'filled' && request.sparerComment && (
+                            <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">
+                              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Message from {renderMe(request.filledByName, member?.name)}:
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 italic">
+                                &quot;{request.sparerComment}&quot;
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'cc_requests':
+        if (!shouldShowWhenEmpty('cc_requests', ccRequests.length)) return null;
+        return (
+          <DashboardSection title="Requests I've been CC'd on">
+            {ccRequests.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">No CC&apos;d spare requests.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {ccRequests.map((request) => (
+                  <div key={request.id} className="app-card p-6">
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2 flex-wrap">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            Spare for {renderMe(request.requestedForName, member?.name)}
+                          </h3>
+                          {statusBadge(request.status)}
+                          {requestTypeBadge(request.requestType)}
+                          {request.position && (
+                            <span className="bg-primary-teal-solid text-white px-2 py-1 rounded text-sm">
+                              {request.position}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-gray-600 dark:text-gray-400 space-y-1">
+                          <p>
+                            <span className="font-medium dark:text-gray-300">When:</span>{' '}
+                            {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
+                            {request.leagueName ? <span> • {request.leagueName}</span> : null}
+                          </p>
+                          <p>
+                            <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
+                            {renderMe(request.requesterName, member?.name)}
+                          </p>
+                          {request.filledByName && (
+                            <p>
+                              <span className="font-medium dark:text-gray-300">Filled by:</span>{' '}
+                              {renderMe(request.filledByName, member?.name)}
+                            </p>
+                          )}
+                          {request.message ? (
+                            <p className="italic mt-2">&quot;{request.message}&quot;</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'outstanding_spares':
+        if (!shouldShowWhenEmpty('outstanding_spares', openRequests.length)) return null;
+        return (
+          <DashboardSection title="Outstanding spare requests">
+            {openRequests.length === 0 ? (
+              <div className="app-card py-8 text-center">
+                <div className="flex justify-center mb-2">
+                  <HiOutlineInbox className="w-12 h-12 text-gray-400 dark:text-gray-500" />
+                </div>
+                <p className="text-gray-600 dark:text-gray-400">
+                  No open spare requests at the moment. Check back later!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {openRequests.map((request) => renderRequestCard(request, true))}
+              </div>
+            )}
+          </DashboardSection>
+        );
+
+      case 'filled_spares':
+        if (!shouldShowWhenEmpty('filled_spares', filledRequests.length)) return null;
+        return (
+          <section>
+            <div className="app-card overflow-hidden p-0">
+              <h2>
+                <button
+                  type="button"
+                  onClick={() => setShowFilled(!showFilled)}
+                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  aria-expanded={showFilled}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <span className="app-section-title">Filled spare requests</span>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                      {filledRequests.length}
+                    </span>
+                  </span>
+                  <HiChevronDown
+                    className={`h-5 w-5 shrink-0 text-gray-400 transition-transform ${
+                      showFilled ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                </button>
+              </h2>
+
+              {showFilled && (
+                <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4">
+                  {filledRequests.length === 0 ? (
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      No filled spare requests.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {filledRequests.map((request) => (
+                        <div
+                          key={request.id}
+                          className="py-3 flex items-start justify-between gap-4"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                {formatDate(request.gameDate)} • {formatTime(request.gameTime)}
+                                {request.leagueName ? ` • ${request.leagueName}` : ''}
+                              </span>
+                              {filledBadge}
+                              {requestTypeBadge(request.requestType)}
+                              {request.position && (
+                                <span className="text-xs px-2 py-0.5 rounded bg-primary-teal-solid text-white">
+                                  {request.position}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                              Spare for{' '}
+                              <span className="font-medium dark:text-gray-300">
+                                {renderMe(request.requestedForName, member?.name)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              Requested by {renderMe(request.requesterName, member?.name)}
+                              {request.filledByName
+                                ? ` • Filled by ${renderMe(request.filledByName, member?.name)}`
+                                : ''}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const firstDataSectionKey = enabledSections.find(
+    (section) => !STRUCTURAL_SECTION_KEYS.has(section.key),
+  )?.key;
+
   return (
     <>
       <AppPage>
@@ -716,503 +1431,34 @@ export default function Dashboard() {
           }
         />
 
-        {dashboardAlert &&
-          (() => {
-            const styles = dashboardAlertStyles(dashboardAlert.variant);
-            return (
-              <div className={`${styles.container} rounded-lg p-4 shadow-sm`}>
-                <div className="flex items-start gap-3">
-                  {dashboardAlert.icon !== 'none' && (
-                    <div className={`${styles.text} mt-0.5`}>
-                      {renderDashboardAlertIcon(dashboardAlert.icon, styles.text)}
-                    </div>
-                  )}
-                  <div>
-                    {dashboardAlert.title && (
-                      <div className={`text-lg font-semibold ${styles.text}`}>
-                        {dashboardAlert.title}
-                      </div>
-                    )}
-                    {dashboardAlert.body && (
-                      <div className={`text-sm whitespace-pre-line mt-1 ${styles.text}`}>
-                        {dashboardAlert.body}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+        <div className="space-y-8">
+          {enabledSections.map((section) => {
+            if (section.key === 'alert') {
+              return <Fragment key={section.key}>{renderAlertSection(section)}</Fragment>;
+            }
+            if (section.key === 'top_row') {
+              return <Fragment key={section.key}>{renderTopRowSection()}</Fragment>;
+            }
+            if (section.key === 'registration') {
+              return (
+                <Fragment key={section.key}>
+                  <DashboardRegistrationStatus />
+                </Fragment>
+              );
+            }
 
-        <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
-          <DashboardMembershipCard />
+            if (STRUCTURAL_SECTION_KEYS.has(section.key)) {
+              return null;
+            }
 
-          {!member?.socialMember ? (
-            <div className="app-card flex flex-col">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal-link/80 dark:text-primary-teal-link">
-                Quick actions
-              </p>
-              <div className="mt-4 flex flex-1 flex-col justify-center gap-2.5">
-                {!member?.spareOnly && (
-                  <Link
-                    to="/request-spare"
-                    className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-orange/40 hover:bg-primary-orange/5 dark:hover:border-primary-orange/40 dark:hover:bg-primary-orange/10"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-orange/10 text-primary-orange dark:bg-primary-orange/20">
-                      <HiOutlineUserPlus className="h-5 w-5" />
-                    </span>
-                    <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                      Request a spare
-                    </span>
-                    <HiChevronRight
-                      className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-orange"
-                      aria-hidden="true"
-                    />
-                  </Link>
-                )}
+            if (loading) {
+              if (section.key !== firstDataSectionKey) return null;
+              return <AppStateCard key="dashboard-loading" title="Loading dashboard..." />;
+            }
 
-                <Link
-                  to="/availability"
-                  className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-teal/40 hover:bg-primary-teal/5 dark:hover:border-primary-teal/40 dark:hover:bg-primary-teal/10"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-teal/10 text-primary-teal-link dark:bg-primary-teal/20">
-                    <HiOutlineCalendar className="h-5 w-5" />
-                  </span>
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                    Set availability
-                  </span>
-                  <HiChevronRight
-                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-teal-link"
-                    aria-hidden="true"
-                  />
-                </Link>
-
-                <Link
-                  to="/book-ice"
-                  className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-dark/30 hover:bg-primary-dark/[0.04] dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-dark/[0.08] text-primary-dark dark:bg-indigo-500/15 dark:text-indigo-300">
-                    <HiOutlineCalendarDays className="h-5 w-5" />
-                  </span>
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                    Book ice time
-                  </span>
-                  <HiChevronRight
-                    className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-dark dark:group-hover:text-indigo-300"
-                    aria-hidden="true"
-                  />
-                </Link>
-              </div>
-            </div>
-          ) : null}
+            return <Fragment key={section.key}>{renderDataSection(section)}</Fragment>;
+          })}
         </div>
-
-        <DashboardRegistrationStatus />
-
-        {loading ? (
-          <AppStateCard title="Loading dashboard..." />
-        ) : (
-          <div className="space-y-8">
-            {/* My ice bookings */}
-            {!member?.socialMember && upcomingIceBookings.length > 0 && (
-              <DashboardSection
-                title="My ice bookings"
-                action={
-                  <Link
-                    to="/book-ice"
-                    className="text-sm font-medium text-primary-teal-link hover:underline"
-                  >
-                    Book ice time →
-                  </Link>
-                }
-              >
-                <div className="space-y-3">
-                  {upcomingIceBookings.map((b) => (
-                    <div
-                      key={b.id}
-                      className="app-card p-4 flex flex-wrap items-center gap-3 justify-between"
-                    >
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-900 dark:text-gray-100">
-                        <span className="font-medium">
-                          {new Date(b.start).toLocaleString(undefined, {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                        <span className="text-gray-600 dark:text-gray-400">
-                          →{' '}
-                          {new Date(b.end).toLocaleTimeString(undefined, {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                        <span className="text-gray-600 dark:text-gray-400">Sheet {b.sheetName}</span>
-                        <span className="text-gray-600 dark:text-gray-400 text-sm">
-                          {icePurposeLabel(b.purpose, b.purposeOther, b.guestNames)}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteIceBooking(b.id)}
-                        className="text-sm text-rose-600 dark:text-rose-400 hover:underline font-medium"
-                      >
-                        Cancel booking
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </DashboardSection>
-            )}
-
-            {upcomingGames.length > 0 && (
-              <DashboardSection title="My upcoming games">
-                <div className="space-y-3">
-                  {upcomingGames.map((game) => (
-                    <div
-                      key={game.id}
-                      className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
-                    >
-                      <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
-                        <HiOutlineCalendarDays className="w-5 h-5 text-primary-teal-link shrinking-0" />
-                        <span className="font-medium">
-                          {game.gameDate ? formatDayOfWeek(game.gameDate) : '—'}
-                        </span>
-                        <span className="text-gray-600 dark:text-gray-400">
-                          {game.gameTime ? formatTime(game.gameTime) : '—'}
-                        </span>
-                      </div>
-                      <span className="text-gray-600 dark:text-gray-400">
-                        Sheet {game.sheetName ?? '—'}
-                      </span>
-                      <span className="text-gray-600 dark:text-gray-400">
-                        vs{' '}
-                        {game.opponentTeamId && game.opponentName ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOpponentRosterModal({
-                                teamId: game.opponentTeamId!,
-                                teamName: game.opponentName!,
-                              })
-                            }
-                            className="text-primary-teal-link hover:underline font-medium"
-                          >
-                            {game.opponentName}
-                          </button>
-                        ) : (
-                          (game.opponentName ?? 'TBD')
-                        )}
-                      </span>
-                      <Link
-                        to={`/leagues/${game.leagueId}/schedule`}
-                        className="text-sm text-primary-teal-link hover:underline ml-auto"
-                      >
-                        {game.leagueName}
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </DashboardSection>
-            )}
-
-            {volunteerOpportunities.length > 0 && (
-              <DashboardSection
-                title="Upcoming volunteer opportunities"
-                action={
-                  <Link to="/volunteering" className="text-sm text-primary-teal-link hover:underline">
-                    View all →
-                  </Link>
-                }
-              >
-                <div className="space-y-3">
-                  {volunteerOpportunities.map((opp) => (
-                    <div
-                      key={opp.shiftRoleId}
-                      className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium text-gray-900 dark:text-gray-100">
-                          {opp.programTitle} · {opp.roleName}
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          {formatVolunteerRange(opp.startDt, opp.endDt)}
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          {opp.volunteersRegistered}/{opp.volunteersNeeded} filled
-                          {opp.location ? ` · ${opp.location}` : ''}
-                        </div>
-                      </div>
-                      <Link
-                        to="/volunteering"
-                        className="text-sm text-primary-teal-link hover:underline ml-auto"
-                      >
-                        Sign up
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </DashboardSection>
-            )}
-
-            {/* My upcoming sparing */}
-            {mySparing.length > 0 && (
-              <DashboardSection title="My upcoming sparing">
-                <div className="space-y-3">
-                  {mySparing.map((request) => renderRequestCard(request, false, true, true))}
-                </div>
-              </DashboardSection>
-            )}
-
-            {/* My spare requests */}
-            {myRequests.length > 0 && (
-              <DashboardSection
-                title="My spare requests"
-                action={
-                  <Link
-                    to="/my-requests"
-                    className="text-sm font-medium text-primary-teal-link hover:underline"
-                  >
-                    Manage requests →
-                  </Link>
-                }
-              >
-                <div className="space-y-3">
-                  {myRequests.map((request) => (
-                    <div
-                      key={request.id}
-                      className="app-card p-6"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                              Spare for {renderMe(request.requestedForName, member?.name)}
-                            </h3>
-                            {request.status === 'open' && (
-                              <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
-                                Unfilled
-                              </span>
-                            )}
-                            {request.status === 'filled' && (
-                              <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-2 py-1 rounded text-sm font-medium">
-                                Filled
-                              </span>
-                            )}
-                            {requestTypeBadge(request.requestType)}
-                            {request.position && (
-                              <span className="bg-primary-teal-solid text-white px-2 py-1 rounded text-sm">
-                                {request.position}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="text-gray-600 dark:text-gray-400 space-y-1">
-                            <p>
-                              <span className="font-medium dark:text-gray-300">When:</span>{' '}
-                              {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
-                              {request.leagueName ? <span> • {request.leagueName}</span> : null}
-                            </p>
-                            {request.requesterId &&
-                              request.requesterId !== member?.id &&
-                              request.requesterName && (
-                                <p>
-                                  <span className="font-medium dark:text-gray-300">
-                                    Requested by:
-                                  </span>{' '}
-                                  {renderMe(request.requesterName, member?.name)}
-                                </p>
-                              )}
-                            {request.message && <p className="italic mt-2">&quot;{request.message}&quot;</p>}
-                            {request.status === 'filled' && request.filledByName && (
-                              <>
-                                <p className="text-green-700 dark:text-green-400 font-medium mt-2">
-                                  ✓ Filled by {renderMe(request.filledByName, member?.name)}
-                                </p>
-                                {request.filledByEmail && (
-                                  <p className="text-sm ml-4 mt-1">
-                                    <a
-                                      href={`mailto:${request.filledByEmail}`}
-                                      className="text-primary-teal-link hover:underline"
-                                    >
-                                      {request.filledByEmail}
-                                    </a>
-                                  </p>
-                                )}
-                                {request.filledByPhone && (
-                                  <p className="text-sm ml-4 mt-1">
-                                    <a
-                                      href={`tel:${request.filledByPhone.replace(/\D/g, '')}`}
-                                      className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-                                    >
-                                      {formatPhone(request.filledByPhone)}
-                                    </a>
-                                  </p>
-                                )}
-                              </>
-                            )}
-                            {request.status === 'filled' && request.sparerComment && (
-                              <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                  Message from {renderMe(request.filledByName, member?.name)}:
-                                </p>
-                                <p className="text-sm text-gray-600 dark:text-gray-400 italic">
-                                  &quot;{request.sparerComment}&quot;
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </DashboardSection>
-            )}
-
-            {/* Requests I've been CC'd on */}
-            {ccRequests.length > 0 && (
-              <DashboardSection title="Requests I've been CC'd on">
-                <div className="space-y-3">
-                  {ccRequests.map((request) => (
-                    <div
-                      key={request.id}
-                      className="app-card p-6"
-                    >
-                      <div className="flex justify-between items-start gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2 flex-wrap">
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                              Spare for {renderMe(request.requestedForName, member?.name)}
-                            </h3>
-                            {statusBadge(request.status)}
-                            {requestTypeBadge(request.requestType)}
-                            {request.position && (
-                              <span className="bg-primary-teal-solid text-white px-2 py-1 rounded text-sm">
-                                {request.position}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="text-gray-600 dark:text-gray-400 space-y-1">
-                            <p>
-                              <span className="font-medium dark:text-gray-300">When:</span>{' '}
-                              {formatDate(request.gameDate)} at {formatTime(request.gameTime)}
-                              {request.leagueName ? <span> • {request.leagueName}</span> : null}
-                            </p>
-                            <p>
-                              <span className="font-medium dark:text-gray-300">Requested by:</span>{' '}
-                              {renderMe(request.requesterName, member?.name)}
-                            </p>
-                            {request.filledByName && (
-                              <p>
-                                <span className="font-medium dark:text-gray-300">Filled by:</span>{' '}
-                                {renderMe(request.filledByName, member?.name)}
-                              </p>
-                            )}
-                            {request.message ? (
-                              <p className="italic mt-2">&quot;{request.message}&quot;</p>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </DashboardSection>
-            )}
-
-            {/* Outstanding spare requests */}
-            <DashboardSection title="Outstanding spare requests">
-              {openRequests.length === 0 ? (
-                <div className="app-card py-8 text-center">
-                  <div className="flex justify-center mb-2">
-                    <HiOutlineInbox className="w-12 h-12 text-gray-400 dark:text-gray-500" />
-                  </div>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    No open spare requests at the moment. Check back later!
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {openRequests.map((request) => renderRequestCard(request, true))}
-                </div>
-              )}
-            </DashboardSection>
-
-            {/* Filled spare requests */}
-            {filledRequests.length > 0 && (
-              <section>
-                <div className="app-card overflow-hidden p-0">
-                  <h2>
-                    <button
-                      type="button"
-                      onClick={() => setShowFilled(!showFilled)}
-                      className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                      aria-expanded={showFilled}
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <span className="app-section-title">Filled spare requests</span>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                          {filledRequests.length}
-                        </span>
-                      </span>
-                      <HiChevronDown
-                        className={`h-5 w-5 shrink-0 text-gray-400 transition-transform ${
-                          showFilled ? 'rotate-180' : ''
-                        }`}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  </h2>
-
-                  {showFilled && (
-                    <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4">
-                      <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {filledRequests.map((request) => (
-                          <div
-                            key={request.id}
-                            className="py-3 flex items-start justify-between gap-4"
-                          >
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                  {formatDate(request.gameDate)} • {formatTime(request.gameTime)}
-                                  {request.leagueName ? ` • ${request.leagueName}` : ''}
-                                </span>
-                                {filledBadge}
-                                {requestTypeBadge(request.requestType)}
-                                {request.position && (
-                                  <span className="text-xs px-2 py-0.5 rounded bg-primary-teal-solid text-white">
-                                    {request.position}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                                Spare for{' '}
-                                <span className="font-medium dark:text-gray-300">
-                                  {renderMe(request.requestedForName, member?.name)}
-                                </span>
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                Requested by {renderMe(request.requesterName, member?.name)}
-                                {request.filledByName
-                                  ? ` • Filled by ${renderMe(request.filledByName, member?.name)}`
-                                  : ''}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
       </AppPage>
 
       <Modal

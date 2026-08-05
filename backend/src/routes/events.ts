@@ -4,7 +4,11 @@ import { config } from '../config.js';
 import { isEventsAdmin, isServerAdmin } from '../utils/auth.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
-import { issueEventRegistrationRefund } from '../services/eventRegistrationRefundService.js';
+import {
+  getEventRegistrationPaidNetMinor,
+  issueEventRegistrationFullRefund,
+  issueEventRegistrationRefundAmount,
+} from '../services/eventRegistrationRefundService.js';
 import { resolveFrontendBaseUrl, normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { formatMemberDisplayName, splitMemberDisplayName } from '../utils/memberName.js';
 import { eventRegistrationManageUrl } from '../utils/eventRegistrationManageUrl.js';
@@ -13,6 +17,8 @@ import { formatEventTimespansForDisplay } from '../utils/formatEventTimespans.js
 import {
   sendEventRegistrationConfirmationEmail,
   sendEventRegistrationCancelledEmail,
+  sendEventRegistrationTransferredEmail,
+  sendEventPointOfContactRegistrationTransferredEmail,
   sendEventOwnerNewRegistrationEmail,
   type EventRegistrationEmailLinks,
 } from '../services/email.js';
@@ -61,8 +67,20 @@ import {
   normalizeTournamentFormat,
   parseCalendarTypeIds,
   resolveEventRegistrationFeeMinor,
+  resolveRegistrationPerPersonFeeMinor,
   confirmRegistrationPayment,
+  createEventTransferGroup,
+  renameEventTransferGroup,
+  getEventTransferGroup,
+  listEventTransferGroups,
 } from '../services/eventService.js';
+import {
+  EventTransferServiceError,
+  listTransferableSessionsForAccessToken,
+  listTransferableSessionsForRegistration,
+  transferRegistration,
+  transferRegistrationByAccessToken,
+} from '../services/eventTransferService.js';
 import {
   EVENT_CALENDAR_TYPE_IDS,
 } from '../services/eventCalendarTypes.js';
@@ -113,7 +131,7 @@ import { isArchivedAt } from '../utils/softDelete.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendApiError, sendValidationError } from '../api/errors.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Member } from '../types.js';
 import { getRegistrationPaymentSummary } from '../domains/payments/queries/paymentSummaries.js';
 
@@ -148,6 +166,7 @@ interface EventFormattingSource {
   terms_article_id: number | null;
   payment_item_name?: string | null;
   point_of_contact: string;
+  transfer_group_id?: number | null;
   tournament_teams_published?: number;
   tournament_draw_published?: number;
   tournament_draw_json?: string | null;
@@ -193,6 +212,7 @@ const registrationFieldTypeSchema = z.enum([
 
 const registrationFieldSchema = z.object({
   id: z.number().int().optional(),
+  fieldKey: z.string().trim().min(1).max(80).optional(),
   label: z.string().min(1).max(200),
   fieldType: registrationFieldTypeSchema,
   scope: z.enum(['group', 'individual']).optional(),
@@ -240,12 +260,14 @@ const createEventSchema = z.object({
   categoryIds: z.array(z.number().int()).optional(),
   ownerMemberIds: z.array(z.number().int()).optional(),
   registrationFields: z.array(registrationFieldSchema).optional(),
+  transferGroupId: z.number().int().positive().nullable().optional(),
 });
 
 const updateEventSchema = createEventSchema.partial().extend({
   published: z.boolean().optional(),
   timespans: z.array(timespanSchema).optional(),
   pointOfContact: eventPointOfContactSchema.optional(),
+  transferGroupId: z.number().int().positive().nullable().optional(),
 });
 
 const duplicateEventSchema = z
@@ -259,6 +281,7 @@ const duplicateEventSchema = z
     pointOfContact: eventPointOfContactSchema,
     ownerMemberIds: z.array(z.number().int()),
     timespans: z.array(timespanSchema).min(1),
+    linkForTransfers: z.boolean().optional(),
   })
   .superRefine((value, context) => {
     value.timespans.forEach((timespan, index) => {
@@ -292,11 +315,14 @@ const registrationContactSchema = z.object({
   contactEmail: z.string().email().max(320),
 });
 
+const registrationGroupMemberSchema = z.object({
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
+  email: z.string().trim().email().max(320),
+});
+
 const registerSchema = registrationContactSchema.extend({
-  groupMembers: z.array(z.object({
-    name: z.string().min(1).max(200),
-    email: z.string().email().max(320).optional(),
-  })).optional(),
+  groupMembers: z.array(registrationGroupMemberSchema).optional(),
   fieldValues: z.array(z.object({
     fieldId: z.number().int(),
     registrationMemberId: z.number().int().nullable().optional(),
@@ -313,16 +339,82 @@ const adminRegistrationFieldValueSchema = z.object({
 });
 
 const adminUpsertRegistrationSchema = registrationContactSchema.extend({
-  groupMembers: z.array(z.object({
-    name: z.string().min(1).max(200),
-    email: z.string().email().max(320).optional().nullable(),
-  })).optional(),
+  groupMembers: z.array(registrationGroupMemberSchema).optional(),
   fieldValues: z.array(adminRegistrationFieldValueSchema).optional(),
 });
 
 const adminCancelRegistrationSchema = z.object({
   refund: z.boolean().optional(),
 });
+
+const transferRegistrationSchema = z.object({
+  targetEventId: z.number().int().positive(),
+});
+
+const resolveManageRegistrationPaymentSchema = z.object({
+  sessionId: z.string().trim().min(1).optional().nullable(),
+  orderToken: z.string().trim().min(1).optional().nullable(),
+});
+
+const createTransferGroupSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+});
+
+const renameTransferGroupSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+});
+
+function handleEventTransferError(reply: FastifyReply, error: unknown): boolean {
+  if (error instanceof EventTransferServiceError) {
+    if (error.code) {
+      return !!sendApiError(reply, error.statusCode, error.message, { code: error.code });
+    }
+    return !!sendApiError(reply, error.statusCode, error.message);
+  }
+  return false;
+}
+
+async function sendRegistrationTransferredNotifications(input: {
+  log: FastifyRequest['log'];
+  registrationId: number;
+  accessToken: string | null;
+  contactEmail: string;
+  contactName: string;
+  sourceEvent: EventFormattingSource;
+  targetEvent: EventFormattingSource;
+  status: 'confirmed' | 'waitlisted';
+}): Promise<void> {
+  const links = await buildRegistrationEmailLinks(input.registrationId, input.accessToken);
+  const timespanArgs = (event: EventFormattingSource) =>
+    event.timespans as Array<{ start_dt: string; end_dt: string; sort_order?: number }>;
+  const sourceWhen = formatEventTimespansForDisplay(timespanArgs(input.sourceEvent));
+  const targetWhen = formatEventTimespansForDisplay(timespanArgs(input.targetEvent));
+  await sendEventRegistrationTransferredEmail(
+    input.contactEmail,
+    input.contactName,
+    input.sourceEvent.title,
+    sourceWhen,
+    input.targetEvent.title,
+    targetWhen,
+    input.status,
+    undefined,
+    { ...links, pointOfContact: input.targetEvent.point_of_contact },
+  ).catch((err) => input.log.error({ err }, 'Failed to send registration transfer email'));
+
+  const poc = input.targetEvent.point_of_contact?.trim() || input.sourceEvent.point_of_contact?.trim();
+  if (poc) {
+    await sendEventPointOfContactRegistrationTransferredEmail(
+      poc,
+      input.contactName,
+      input.contactEmail,
+      input.sourceEvent.title,
+      sourceWhen,
+      input.targetEvent.title,
+      targetWhen,
+      input.status,
+    ).catch((err) => input.log.error({ err }, 'Failed to notify point of contact of registration transfer'));
+  }
+}
 
 const waitlistReorderSchema = z.object({
   registrationIds: z.array(z.number().int().positive()).min(1),
@@ -548,6 +640,20 @@ async function formatManageRegistrationResponse(accessToken: string) {
     receiptUrl = await resolveRegistrationReceiptUrl(registration.payment_order_id);
   }
 
+  const canSwitchSession =
+    (registration.status === 'confirmed' || registration.status === 'waitlisted') &&
+    event.transfer_group_id != null &&
+    registration.special_link_id == null;
+
+  const perPersonFeeMinor = await resolveRegistrationPerPersonFeeMinor(registration);
+  const openSpots = await getOpenSpots(registration.event_id, event.capacity);
+  const groupSize = registration.group_size ?? sortedMembers.length + 1;
+  let balanceDueMinor = 0;
+  if (registration.status === 'confirmed' && perPersonFeeMinor > 0) {
+    const paidNetMinor = await getEventRegistrationPaidNetMinor(registration.id);
+    balanceDueMinor = Math.max(0, perPersonFeeMinor * groupSize - paidNetMinor);
+  }
+
   return {
     event: {
       id: event.id,
@@ -555,12 +661,18 @@ async function formatManageRegistrationResponse(accessToken: string) {
       slug: event.slug,
       allowGroupRegistration: event.allow_group_registration,
       maxGroupSize: event.max_group_size,
+      capacity: event.capacity,
+      feeMinor: event.fee_minor,
+      memberFeeMinor: event.member_fee_minor ?? null,
+      currency: event.currency || 'usd',
       contactFirstNameLabel: event.contact_first_name_label ?? null,
       contactLastNameLabel: event.contact_last_name_label ?? null,
       contactEmailLabel: event.contact_email_label ?? null,
       registrationFields: event.registrationFields ?? [],
       cancellationCutoff: event.cancellation_cutoff,
       pointOfContact: event.point_of_contact,
+      transferGroupId: event.transfer_group_id ?? null,
+      timespans: event.timespans ?? [],
     },
     registration: {
       id: registration.id,
@@ -568,17 +680,26 @@ async function formatManageRegistrationResponse(accessToken: string) {
       contactFirstName: firstName,
       contactLastName: lastName,
       contactEmail: registration.contact_email,
-      groupMembers: sortedMembers.map((m: { name: string; email?: string | null }) => ({
-        name: m.name,
-        email: m.email ?? '',
-      })),
+      groupSize,
+      perPersonFeeMinor,
+      groupMembers: sortedMembers.map((m: { name: string; email?: string | null }) => {
+        const { firstName, lastName } = splitMemberDisplayName(m.name ?? '');
+        return {
+          firstName,
+          lastName,
+          email: m.email ?? '',
+        };
+      }),
       fieldValues: formatManageRegistrationFieldValues(registration),
       waitlistPosition: registration.waitlist_position,
       waitlistLength,
     },
+    openSpots,
+    balanceDueMinor,
     receiptUrl,
     isWaitlistEntry,
     canCancel,
+    canSwitchSession,
     cancellationCutoffPassed,
     serverNow: new Date(nowMs).toISOString(),
   };
@@ -992,28 +1113,68 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       const beforeSnapshot = buildRegistrationFormSnapshotFromRegistration(event, registration);
 
       try {
-        await updateRegistrationForEvent(registration.event_id, registration.id, {
-          contactFirstName: parsed.data.contactFirstName,
-          contactLastName: parsed.data.contactLastName,
-          contactEmail: parsed.data.contactEmail,
-          groupMembers: parsed.data.groupMembers?.map((m) => ({
-            name: m.name,
-            email: m.email ?? undefined,
-          })),
-          fieldValues: parsed.data.fieldValues?.map((fv) => ({
-            fieldId: fv.fieldId,
-            registrationMemberIndex: fv.registrationMemberIndex ?? null,
-            value: fv.value,
-          })),
-        });
+        const updateResult = await updateRegistrationForEvent(
+          registration.event_id,
+          registration.id,
+          {
+            contactFirstName: parsed.data.contactFirstName,
+            contactLastName: parsed.data.contactLastName,
+            contactEmail: parsed.data.contactEmail,
+            groupMembers: parsed.data.groupMembers,
+            fieldValues: parsed.data.fieldValues?.map((fv) => ({
+              fieldId: fv.fieldId,
+              registrationMemberIndex: fv.registrationMemberIndex ?? null,
+              value: fv.value,
+            })),
+          },
+          {
+            enforceCapacity: true,
+            blockPendingPaymentGroupSizeChanges: true,
+          },
+        );
+
+        let checkoutUrl: string | null = null;
+        let refundIssued = false;
+        let refundAmountMinor = 0;
+        let refundError: string | null = null;
+
+        if (updateResult.feeDeltaMinor > 0) {
+          const balanceCheckout = await createCheckoutForRegistrationBalance(
+            event,
+            {
+              registrationId: registration.id,
+              amountMinor: updateResult.feeDeltaMinor,
+              previousGroupSize: updateResult.previousGroupSize,
+              groupSize: updateResult.groupSize,
+            },
+            parsed.data.contactEmail,
+            registration.member_id ?? null,
+          );
+          checkoutUrl = balanceCheckout.checkoutUrl;
+        } else if (updateResult.feeDeltaMinor < 0) {
+          refundAmountMinor = Math.abs(updateResult.feeDeltaMinor);
+          const refundResult = await issueEventRegistrationRefundAmount({
+            registrationId: registration.id,
+            amountMinor: refundAmountMinor,
+            reason: 'Event registration group size reduced by registrant',
+            requestedByMemberId: registration.member_id ?? null,
+            surfaceIneligibleError: true,
+          });
+          refundIssued = refundResult.refundIssued;
+          refundError = refundResult.refundError;
+          if (!refundIssued) {
+            refundAmountMinor = 0;
+          }
+          if (refundError) {
+            request.log.error({ refundError }, 'Failed to refund event registration group size reduction');
+          }
+        }
+
         const afterSnapshot = buildRegistrationFormSnapshotFromInput(event, {
           contactFirstName: parsed.data.contactFirstName,
           contactLastName: parsed.data.contactLastName,
           contactEmail: parsed.data.contactEmail,
-          groupMembers: parsed.data.groupMembers?.map((m) => ({
-            name: m.name,
-            email: m.email ?? undefined,
-          })),
+          groupMembers: parsed.data.groupMembers,
           fieldValues: parsed.data.fieldValues?.map((fv) => ({
             fieldId: fv.fieldId,
             registrationMemberIndex: fv.registrationMemberIndex ?? null,
@@ -1026,8 +1187,157 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         );
         const payload = await formatManageRegistrationResponse(request.params.accessToken);
         if (!payload) return sendApiError(reply, 404, 'Registration not found');
+        return {
+          ...payload,
+          checkoutUrl,
+          feeAdjustment: {
+            previousGroupSize: updateResult.previousGroupSize,
+            groupSize: updateResult.groupSize,
+            perPersonFeeMinor: updateResult.perPersonFeeMinor,
+            feeDeltaMinor: updateResult.feeDeltaMinor,
+            refundIssued,
+            refundAmountMinor: refundIssued ? refundAmountMinor : 0,
+            refundError,
+          },
+        };
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  // Checkout return: reconcile balance (or other) payment before showing manage page state.
+  fastify.post<{ Params: { accessToken: string }; Body: unknown }>(
+    '/public/events/registrations/manage/:accessToken/resolve',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const registration = await getRegistrationByAccessToken(request.params.accessToken);
+      if (!registration) return sendApiError(reply, 404, 'Registration not found');
+
+      const parsed = resolveManageRegistrationPaymentSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid checkout return payload', parsed.error.flatten());
+      }
+
+      const sessionId = parsed.data.sessionId?.trim() || null;
+      const orderToken = parsed.data.orderToken?.trim() || null;
+      if (!sessionId && !orderToken) {
+        return sendApiError(reply, 400, 'Missing checkout session or order token');
+      }
+
+      const { db, schema } = getDrizzleDb();
+      const paymentService = createPaymentService();
+
+      try {
+        let resolvedOrderToken = orderToken;
+        if (!resolvedOrderToken && sessionId) {
+          const [orderBySession] = await db
+            .select({ order_token: schema.paymentOrders.order_token })
+            .from(schema.paymentOrders)
+            .where(
+              and(
+                eq(schema.paymentOrders.subject_type, 'event_registration'),
+                eq(schema.paymentOrders.subject_id, registration.id),
+                eq(schema.paymentOrders.provider_order_id, sessionId),
+              ),
+            )
+            .limit(1);
+          resolvedOrderToken = orderBySession?.order_token ?? null;
+        }
+
+        if (!resolvedOrderToken) {
+          return sendApiError(reply, 404, 'Payment order not found for this checkout return');
+        }
+
+        const order = await paymentService.getPaymentOrderByToken(resolvedOrderToken);
+        if (
+          !order ||
+          order.subjectType !== 'event_registration' ||
+          order.subjectId !== registration.id
+        ) {
+          return sendApiError(reply, 404, 'Payment order not found');
+        }
+
+        await paymentService.reconcilePaymentOrderByToken(
+          resolvedOrderToken,
+          sessionId,
+          'checkout-return',
+        );
+
+        const refreshed = await paymentService.getPaymentOrderByToken(resolvedOrderToken);
+        const payload = await formatManageRegistrationResponse(request.params.accessToken);
+        if (!payload) return sendApiError(reply, 404, 'Registration not found');
+
+        return {
+          ...payload,
+          paymentStatus: refreshed?.status ?? order.status,
+          orderToken: resolvedOrderToken,
+        };
+      } catch (err) {
+        if (err instanceof PaymentServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    },
+  );
+
+  fastify.get<{ Params: { accessToken: string } }>(
+    '/public/events/registrations/manage/:accessToken/transfer-options',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      try {
+        const sessions = await listTransferableSessionsForAccessToken(request.params.accessToken);
+        return { sessions };
+      } catch (err) {
+        if (handleEventTransferError(reply, err)) return;
+        throw err;
+      }
+    }
+  );
+
+  fastify.post<{ Params: { accessToken: string }; Body: unknown }>(
+    '/public/events/registrations/manage/:accessToken/transfer',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const parsed = transferRegistrationSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid transfer request', parsed.error.flatten());
+      }
+
+      const registration = await getRegistrationByAccessToken(request.params.accessToken);
+      if (!registration) return sendApiError(reply, 404, 'Registration not found');
+
+      const sourceEvent = await getEventById(registration.event_id);
+      if (!sourceEvent) return sendApiError(reply, 404, 'Event not found');
+
+      try {
+        const result = await transferRegistrationByAccessToken({
+          accessToken: request.params.accessToken,
+          targetEventId: parsed.data.targetEventId,
+        });
+        const targetEvent = await getEventById(result.targetEventId);
+        if (!targetEvent) return sendApiError(reply, 404, 'Target event not found');
+
+        await sendRegistrationTransferredNotifications({
+          log: request.log,
+          registrationId: result.registrationId,
+          accessToken: result.accessToken,
+          contactEmail: registration.contact_email,
+          contactName: registration.contact_name,
+          sourceEvent,
+          targetEvent,
+          status: result.status === 'waitlisted' ? 'waitlisted' : 'confirmed',
+        });
+
+        const payload = await formatManageRegistrationResponse(request.params.accessToken);
+        if (!payload) return sendApiError(reply, 404, 'Registration not found');
         return payload;
       } catch (err) {
+        if (handleEventTransferError(reply, err)) return;
         if (err instanceof EventServiceError) {
           return sendApiError(reply, err.statusCode, err.message);
         }
@@ -1067,14 +1377,21 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
 
         let refundIssued = false;
         let refundError: string | null = null;
-        if (!wasWaitlisted && refundEligible && registration.payment_order_id) {
-          const refundResult = await issueEventRegistrationRefund({
-            paymentOrderId: registration.payment_order_id,
+        let refundAmountMinor = 0;
+        if (!wasWaitlisted && refundEligible) {
+          const refundResult = await issueEventRegistrationFullRefund({
+            registrationId: registration.id,
             reason: 'Event registration canceled by registrant',
             requestedByMemberId: registration.member_id ?? null,
+            surfaceIneligibleError: true,
           });
           refundIssued = refundResult.refundIssued;
           refundError = refundResult.refundError;
+          refundAmountMinor = refundResult.refundAmountMinor;
+          // Free / unpaid registrations have nothing to refund — not an error.
+          if (!refundIssued && refundError === 'No refundable payment found') {
+            refundError = null;
+          }
           if (refundError) {
             request.log.error({ refundError }, 'Failed to create refund for event registration cancellation');
           }
@@ -1088,7 +1405,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           wasWaitlisted,
         ).catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
-        return { success: true, refundIssued, refundError };
+        return { success: true, refundIssued, refundError, refundAmountMinor };
       } catch (err) {
         if (err instanceof EventServiceError) {
           return sendApiError(reply, err.statusCode, err.message);
@@ -1156,11 +1473,19 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
           finalReg?.status === 'waitlisted' && finalReg.event_id
             ? await getWaitlistLength(finalReg.event_id)
             : null;
+        const manageAccessToken = await ensureRegistrationAccessToken(registrationId);
+        const paymentStatus = updatedOrder?.status ?? 'unknown';
+        const orderToken =
+          updatedOrder && REGISTRATION_RECEIPT_ORDER_STATUSES.has(updatedOrder.status)
+            ? order.order_token
+            : null;
 
         return {
-          status: updatedOrder?.status ?? 'unknown',
+          status: paymentStatus,
           registrationStatus: finalReg?.status ?? null,
           registrationId,
+          manageAccessToken,
+          orderToken,
           refundIssued: confirmResult?.refundIssued ?? false,
           waitlistPosition: finalReg?.waitlist_position ?? confirmResult?.waitlistPosition ?? null,
           waitlistLength: confirmResult?.waitlistLength ?? waitlistLength,
@@ -1654,6 +1979,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
               type: 'array',
               items: { type: 'integer' },
             },
+            linkForTransfers: { type: 'boolean' },
             timespans: {
               type: 'array',
               minItems: 1,
@@ -1814,14 +2140,20 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
 
         let refundIssued = false;
         let refundError: string | null = null;
-        if (!wasWaitlisted && refundEligible && reg.payment_order_id) {
-          const refundResult = await issueEventRegistrationRefund({
-            paymentOrderId: reg.payment_order_id,
+        let refundAmountMinor = 0;
+        if (!wasWaitlisted && refundEligible) {
+          const refundResult = await issueEventRegistrationFullRefund({
+            registrationId: registrationId,
             reason: 'Event registration canceled',
             requestedByMemberId: member.id,
+            surfaceIneligibleError: true,
           });
           refundIssued = refundResult.refundIssued;
           refundError = refundResult.refundError;
+          refundAmountMinor = refundResult.refundAmountMinor;
+          if (!refundIssued && refundError === 'No refundable payment found') {
+            refundError = null;
+          }
           if (refundError) {
             request.log.error({ refundError }, 'Failed to create refund for event registration cancellation');
           }
@@ -1830,7 +2162,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact, wasWaitlisted)
           .catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
-        return { success: true, refundIssued, refundError };
+        return { success: true, refundIssued, refundError, refundAmountMinor };
       } catch (err) {
         if (err instanceof EventServiceError) {
           return sendApiError(reply, err.statusCode, err.message);
@@ -1880,6 +2212,206 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
     }
   );
 
+  fastify.get<{ Params: { id: string; registrationId: string } }>(
+    '/events/:id/registrations/:registrationId/transfer-options',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      const registrationId = parseInt(request.params.registrationId, 10);
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const registration = await getRegistrationById(registrationId);
+      if (!registration || registration.event_id !== eventId) {
+        return sendApiError(reply, 404, 'Registration not found');
+      }
+
+      try {
+        const sessions = await listTransferableSessionsForRegistration({
+          registrationId,
+          adminOverride: true,
+        });
+        return { sessions };
+      } catch (err) {
+        if (handleEventTransferError(reply, err)) return;
+        throw err;
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string; registrationId: string }; Body: unknown }>(
+    '/events/:id/registrations/:registrationId/transfer',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      const registrationId = parseInt(request.params.registrationId, 10);
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsed = transferRegistrationSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid transfer request', parsed.error.flatten());
+      }
+
+      const registration = await getRegistrationById(registrationId);
+      if (!registration || registration.event_id !== eventId) {
+        return sendApiError(reply, 404, 'Registration not found');
+      }
+
+      const sourceEvent = await getEventById(eventId);
+      if (!sourceEvent) return sendApiError(reply, 404, 'Event not found');
+
+      try {
+        const result = await transferRegistration({
+          registrationId,
+          targetEventId: parsed.data.targetEventId,
+          adminOverride: true,
+        });
+        const targetEvent = await getEventById(result.targetEventId);
+        if (!targetEvent) return sendApiError(reply, 404, 'Target event not found');
+
+        await sendRegistrationTransferredNotifications({
+          log: request.log,
+          registrationId: result.registrationId,
+          accessToken: result.accessToken,
+          contactEmail: registration.contact_email,
+          contactName: registration.contact_name,
+          sourceEvent,
+          targetEvent,
+          status: result.status === 'waitlisted' ? 'waitlisted' : 'confirmed',
+        });
+
+        return {
+          registrationId: result.registrationId,
+          sourceEventId: result.sourceEventId,
+          targetEventId: result.targetEventId,
+          status: result.status,
+          waitlistPosition: result.waitlistPosition,
+        };
+      } catch (err) {
+        if (handleEventTransferError(reply, err)) return;
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  // Transfer groups (linked sessions)
+  fastify.get(
+    '/events/transfer-groups',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!isEventsAdmin(member)) {
+        const ownedIds = await listOwnedEventIds(member.id);
+        if (ownedIds.length === 0) {
+          return sendApiError(reply, 403, 'Forbidden');
+        }
+      }
+      return listEventTransferGroups();
+    }
+  );
+
+  fastify.post<{ Body: unknown }>(
+    '/events/transfer-groups',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!isEventsAdmin(member)) {
+        const ownedIds = await listOwnedEventIds(member.id);
+        if (ownedIds.length === 0) {
+          return sendApiError(reply, 403, 'Forbidden');
+        }
+      }
+      const parsed = createTransferGroupSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid transfer group', parsed.error.flatten());
+      }
+      try {
+        const group = await createEventTransferGroup(parsed.data.name);
+        return reply.code(201).send(group);
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/events/transfer-groups/:id',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const groupId = parseInt(request.params.id, 10);
+      if (isNaN(groupId)) return sendApiError(reply, 400, 'Invalid transfer group id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      const group = await getEventTransferGroup(groupId);
+      if (!group) return sendApiError(reply, 404, 'Linked sessions group not found');
+
+      if (!isEventsAdmin(member)) {
+        let canSee = false;
+        for (const event of group.events) {
+          if (await canManageEvent(member, event.id)) {
+            canSee = true;
+            break;
+          }
+        }
+        if (!canSee) return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      return group;
+    }
+  );
+
+  fastify.patch<{ Params: { id: string }; Body: unknown }>(
+    '/events/transfer-groups/:id',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const groupId = parseInt(request.params.id, 10);
+      if (isNaN(groupId)) return sendApiError(reply, 400, 'Invalid transfer group id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      const group = await getEventTransferGroup(groupId);
+      if (!group) return sendApiError(reply, 404, 'Linked sessions group not found');
+
+      if (!isEventsAdmin(member)) {
+        let canRename = false;
+        for (const event of group.events) {
+          if (await canManageEvent(member, event.id)) {
+            canRename = true;
+            break;
+          }
+        }
+        if (!canRename) return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsed = renameTransferGroupSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid transfer group', parsed.error.flatten());
+      }
+      try {
+        return await renameEventTransferGroup(groupId, parsed.data.name);
+      } catch (err) {
+        if (err instanceof EventServiceError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
+    }
+  );
+
   // Admin create registration (bypasses payment)
   fastify.post<{ Params: { id: string }; Body: unknown }>(
     '/events/:id/registrations',
@@ -1908,7 +2440,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           contactFirstName: parsed.data.contactFirstName,
           contactLastName: parsed.data.contactLastName,
           contactEmail: parsed.data.contactEmail,
-          groupMembers: parsed.data.groupMembers?.map((m) => ({ name: m.name, email: m.email ?? undefined })),
+          groupMembers: parsed.data.groupMembers,
           fieldValues: parsed.data.fieldValues?.map((fv) => ({
             fieldId: fv.fieldId,
             registrationMemberIndex: fv.registrationMemberIndex ?? null,
@@ -1986,7 +2518,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           groupMembers: parsed.data.groupMembers,
           fieldValues: parsed.data.fieldValues,
         });
-        return updated;
+        return updated.registration;
       } catch (err) {
         if (err instanceof EventServiceError) {
           return sendApiError(reply, err.statusCode, err.message);
@@ -2024,9 +2556,10 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         let refundIssued = false;
         let refundStatus: string | null = null;
         let refundError: string | null = null;
-        if (shouldRefund && !wasWaitlisted && reg.payment_order_id) {
-          const refundResult = await issueEventRegistrationRefund({
-            paymentOrderId: reg.payment_order_id,
+        let refundAmountMinor = 0;
+        if (shouldRefund && !wasWaitlisted) {
+          const refundResult = await issueEventRegistrationFullRefund({
+            registrationId,
             reason: 'Event registration canceled by admin',
             requestedByMemberId: member.id,
             surfaceIneligibleError: true,
@@ -2034,6 +2567,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           refundIssued = refundResult.refundIssued;
           refundStatus = refundResult.refundStatus;
           refundError = refundResult.refundError;
+          refundAmountMinor = refundResult.refundAmountMinor;
           if (refundError) {
             request.log.error({ refundError }, 'Failed to create refund for event registration cancellation');
           }
@@ -2042,7 +2576,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         notifyRegistrationCancelledByEmail(reg, event.title, refundIssued, event.point_of_contact, wasWaitlisted)
           .catch((err) => request.log.error({ err }, 'Failed to send cancellation email'));
 
-        return { success: true, refundIssued, refundStatus, refundError };
+        return { success: true, refundIssued, refundStatus, refundError, refundAmountMinor };
       } catch (err) {
         if (err instanceof EventServiceError) {
           return sendApiError(reply, err.statusCode, err.message);
@@ -2233,10 +2767,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           contactFirstName: parsed.data.contactFirstName,
           contactLastName: parsed.data.contactLastName,
           contactEmail: parsed.data.contactEmail,
-          groupMembers: parsed.data.groupMembers?.map((m) => ({
-            name: m.name,
-            email: m.email ?? undefined,
-          })),
+          groupMembers: parsed.data.groupMembers,
           fieldValues: parsed.data.fieldValues?.map((fv) => ({
             fieldId: fv.fieldId,
             registrationMemberIndex: fv.registrationMemberIndex ?? null,
@@ -2438,6 +2969,7 @@ function formatEventResponse(event: EventFormattingSource) {
     contactEmailLabel: event.contact_email_label ?? null,
     termsArticleId: event.terms_article_id,
     pointOfContact: event.point_of_contact,
+    transferGroupId: event.transfer_group_id ?? null,
     createdByMemberId: event.created_by_member_id,
     archivedAt: event.archived_at ?? null,
     timespans: event.timespans || [],
@@ -2496,6 +3028,59 @@ async function createCheckoutForRegistration(
   return {
     registrationId: registrationResult.registrationId,
     status: 'pending_payment',
+    checkoutUrl: checkout.checkoutUrl,
+    orderToken: order.orderToken,
+  };
+}
+
+/** Additional checkout when group size increases on an already-paid registration. Does not replace the primary receipt order. */
+async function createCheckoutForRegistrationBalance(
+  event: EventFormattingSource,
+  input: {
+    registrationId: number;
+    amountMinor: number;
+    previousGroupSize: number;
+    groupSize: number;
+  },
+  contactEmail: string,
+  createdByMemberId?: number | null,
+  checkoutFrontendBaseUrl: string = canonicalFrontendBaseUrl(),
+) {
+  const paymentService = createPaymentService();
+  const paymentProvider = getDefaultPaymentProvider();
+  const order = await paymentService.createPaymentOrder({
+    provider: paymentProvider,
+    subjectType: 'event_registration',
+    subjectId: input.registrationId,
+    amountMinor: input.amountMinor,
+    currency: event.currency || 'usd',
+    createdByMemberId: createdByMemberId ?? null,
+    metadata: {
+      eventId: event.id,
+      eventTitle: event.title,
+      paymentItemName: event.payment_item_name ?? null,
+      registrationId: input.registrationId,
+      contactEmail,
+      paymentKind: 'event_registration_balance',
+      previousGroupSize: input.previousGroupSize,
+      groupSize: input.groupSize,
+    },
+  });
+
+  const manageToken = await ensureRegistrationAccessToken(input.registrationId);
+  const manageUrl = eventRegistrationManageUrl(manageToken);
+  const successReturnUrl = new URL(manageUrl);
+  successReturnUrl.searchParams.set('orderToken', order.orderToken);
+  const successUrl = buildCheckoutSuccessUrl(successReturnUrl.toString(), paymentProvider);
+  const cancelUrl = manageUrl;
+
+  const checkout = await paymentService.createHostedCheckoutForOrder({
+    orderId: order.id,
+    successUrl,
+    cancelUrl,
+  });
+
+  return {
     checkoutUrl: checkout.checkoutUrl,
     orderToken: order.orderToken,
   };

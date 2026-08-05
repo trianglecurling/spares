@@ -1443,6 +1443,106 @@ export async function sendEventRegistrationConfirmationEmail(
   );
 }
 
+export async function sendEventRegistrationTransferredEmail(
+  to: string,
+  recipientName: string,
+  sourceEventTitle: string,
+  sourceEventWhen: FormattedEventWhen,
+  targetEventTitle: string,
+  targetEventWhen: FormattedEventWhen,
+  status: 'confirmed' | 'waitlisted',
+  memberToken?: string,
+  links?: EventRegistrationEmailLinks
+): Promise<void> {
+  const statusLabel = status === 'waitlisted'
+    ? 'Your registration was moved to the waitlist for the new session.'
+    : 'Your registration was moved to a different session.';
+
+  const isWaitlisted = status === 'waitlisted';
+  const linkSections = eventRegistrationEmailLinkSections({
+    ...links,
+    receiptUrl: isWaitlisted ? null : links?.receiptUrl,
+    manageLinkLabel: isWaitlisted ? 'Manage your waitlist entry' : 'Manage your registration',
+    manageSecuritySubject: isWaitlisted ? 'waitlist entry' : links?.manageSecuritySubject,
+  });
+  const contactSections = eventPointOfContactSections(links?.pointOfContact);
+
+  const htmlContent = `
+    <h2>Registration moved</h2>
+    <p>Hi ${escapeHtmlEmail(recipientName)},</p>
+    <p>${statusLabel}</p>
+    <p><strong>From:</strong> ${escapeHtmlEmail(sourceEventTitle)}<br>${sourceEventWhen.html}</p>
+    <p><strong>To:</strong> ${escapeHtmlEmail(targetEventTitle)}<br>${targetEventWhen.html}</p>
+    ${linkSections.html}
+    ${contactSections.html}
+  `;
+
+  const textBody = [
+    'Registration moved',
+    '',
+    `Hi ${recipientName},`,
+    '',
+    statusLabel,
+    '',
+    `From: ${sourceEventTitle}`,
+    sourceEventWhen.text,
+    '',
+    `To: ${targetEventTitle}`,
+    targetEventWhen.text,
+    linkSections.text || null,
+    contactSections.text || null,
+  ].filter(Boolean).join('\n');
+
+  await sendEmail(
+    {
+      to,
+      subject: `Registration moved: ${targetEventTitle}`,
+      htmlContent,
+      textContent: textBody,
+      recipientName,
+    },
+    memberToken
+  );
+}
+
+export async function sendEventPointOfContactRegistrationTransferredEmail(
+  to: string,
+  registrantName: string,
+  registrantEmail: string,
+  sourceEventTitle: string,
+  sourceEventWhen: FormattedEventWhen,
+  targetEventTitle: string,
+  targetEventWhen: FormattedEventWhen,
+  status: 'confirmed' | 'waitlisted',
+): Promise<void> {
+  const statusLabel = status === 'waitlisted' ? 'waitlisted' : 'confirmed';
+  const htmlContent = `
+    <h2>Registration moved</h2>
+    <p>${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)}) moved their registration (${statusLabel}):</p>
+    <p><strong>From:</strong> ${escapeHtmlEmail(sourceEventTitle)}<br>${sourceEventWhen.html}</p>
+    <p><strong>To:</strong> ${escapeHtmlEmail(targetEventTitle)}<br>${targetEventWhen.html}</p>
+  `;
+  const textBody = [
+    'Registration moved',
+    '',
+    `${registrantName} (${registrantEmail}) moved their registration (${statusLabel}):`,
+    '',
+    `From: ${sourceEventTitle}`,
+    sourceEventWhen.text,
+    '',
+    `To: ${targetEventTitle}`,
+    targetEventWhen.text,
+  ].join('\n');
+
+  await sendEmail({
+    to,
+    subject: `Registration moved: ${sourceEventTitle} → ${targetEventTitle}`,
+    htmlContent,
+    textContent: textBody,
+    recipientName: to,
+  });
+}
+
 export async function sendEventRegistrationCancelledEmail(
   to: string,
   recipientName: string,

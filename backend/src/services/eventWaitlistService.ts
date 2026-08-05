@@ -482,7 +482,7 @@ export async function addManualWaitlistEntry(input: {
   contactLastName: string;
   contactEmail: string;
   memberId?: number | null;
-  groupMembers?: Array<{ name: string; email?: string }>;
+  groupMembers?: Array<{ firstName: string; lastName: string; email: string }>;
   fieldValues?: Array<{ fieldId: number; registrationMemberIndex?: number | null; value: string }>;
 }) {
   const { registerForEvent } = await import('./eventService.js');

@@ -2,6 +2,10 @@ import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState, ty
 import { Link } from 'react-router-dom';
 import FormField from '../FormField';
 import { useAuth } from '../../contexts/AuthContext';
+import AdditionalRegistrantsSection, {
+  emptyAdditionalRegistrant,
+  type AdditionalRegistrant,
+} from './AdditionalRegistrantsSection';
 import PublicRegistrationFieldInput, {
   publicEventRegistrationInput,
   fieldValueKey,
@@ -11,7 +15,6 @@ import PublicRegistrationFieldInput, {
 import {
   defaultTeamNameFromLastName,
   isSubheadingFieldType,
-  lastNameFromDisplayName,
 } from '../../utils/eventRegistrationFieldPresets';
 import { resolveEventContactFieldLabels } from '../../utils/eventRegistrationContactLabels';
 
@@ -31,11 +34,6 @@ export type EventRegistrationFormEvent = {
   contactEmailLabel?: string | null;
   registrationFields: EventRegistrationField[];
 };
-
-interface GroupMember {
-  name: string;
-  email: string;
-}
 
 export type EventRegistrationFormContentProps = {
   event: EventRegistrationFormEvent;
@@ -79,7 +77,7 @@ export default function EventRegistrationFormContent({
   const [contactFirstName, setContactFirstName] = useState('');
   const [contactLastName, setContactLastName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
-  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [groupMembers, setGroupMembers] = useState<AdditionalRegistrant[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const teamNameTouchedRef = useRef<Set<string>>(new Set());
   const [acceptTerms, setAcceptTerms] = useState(false);
@@ -153,9 +151,7 @@ export default function EventRegistrationFormContent({
             const key = fieldValueKey(field.id, field.scope, personIndex);
             if (teamNameTouchedRef.current.has(key)) continue;
             const personLastName =
-              personIndex === 0
-                ? contactLastName
-                : lastNameFromDisplayName(groupMembers[personIndex - 1]?.name ?? '');
+              personIndex === 0 ? contactLastName : groupMembers[personIndex - 1]?.lastName ?? '';
             const defaultValue = defaultTeamNameFromLastName(personLastName);
             if (next[key] !== defaultValue) {
               next[key] = defaultValue;
@@ -180,9 +176,9 @@ export default function EventRegistrationFormContent({
     return [...event.registrationFields].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   }, [event.registrationFields]);
 
-  const addGroupMember = () => setGroupMembers([...groupMembers, { name: '', email: '' }]);
+  const addGroupMember = () => setGroupMembers([...groupMembers, emptyAdditionalRegistrant()]);
   const removeGroupMember = (i: number) => setGroupMembers(groupMembers.filter((_, idx) => idx !== i));
-  const updateGroupMember = (i: number, field: keyof GroupMember, value: string) => {
+  const updateGroupMember = (i: number, field: keyof AdditionalRegistrant, value: string) => {
     const updated = [...groupMembers];
     updated[i] = { ...updated[i], [field]: value };
     setGroupMembers(updated);
@@ -236,7 +232,7 @@ export default function EventRegistrationFormContent({
         : 'Register');
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-10">
+    <div className="mx-auto w-full min-w-0 max-w-3xl px-4 py-10 sm:min-w-[36rem]">
       {showBackLink && slug ? (
         <Link to={`/events/${slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
           &larr; Back to event
@@ -294,48 +290,17 @@ export default function EventRegistrationFormContent({
         </FormField>
 
         {event.allowGroupRegistration === 1 && (
-          <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium text-gray-900">Group Members</h3>
-              <button
-                type="button"
-                onClick={addGroupMember}
-                disabled={effectiveMaxGroupSize ? groupSize >= effectiveMaxGroupSize : false}
-                className="text-sm text-primary-teal-link hover:underline disabled:opacity-50"
-              >
-                + Add member
-              </button>
-            </div>
-            {groupMembers.map((groupMember, i) => (
-              <div key={i} className="flex gap-2 items-start">
-                <input
-                  type="text"
-                  placeholder="Name"
-                  required={!preview}
-                  value={groupMember.name}
-                  onChange={(e) => updateGroupMember(i, 'name', e.target.value)}
-                  className={`${publicInput} flex-1`}
-                />
-                <input
-                  type="email"
-                  placeholder="Email (optional)"
-                  value={groupMember.email}
-                  onChange={(e) => updateGroupMember(i, 'email', e.target.value)}
-                  className={`${publicInput} flex-1`}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeGroupMember(i)}
-                  className="text-red-500 hover:text-red-700 px-2 py-2"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            {groupMembers.length === 0 && (
-              <p className="text-sm text-gray-500">No additional group members added.</p>
-            )}
-          </div>
+          <AdditionalRegistrantsSection
+            members={groupMembers}
+            labels={contactLabels}
+            onAdd={addGroupMember}
+            onRemove={removeGroupMember}
+            onChange={updateGroupMember}
+            maxGroupSize={effectiveMaxGroupSize}
+            perPersonFeeMinor={registeringAsWaitlist ? null : effectiveFee}
+            currency={event.currency}
+            requireFields={!preview}
+          />
         )}
 
         {sortedFields.map((field) => {

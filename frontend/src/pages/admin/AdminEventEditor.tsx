@@ -11,6 +11,7 @@ import SortableRow from '../../components/dragDrop/SortableRow';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
+import InlineStateMessage from '../../components/InlineStateMessage';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
 import Modal from '../../components/Modal';
@@ -29,6 +30,7 @@ import type { TournamentFormat } from '../../utils/tournamentDisplay';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { formatApiError } from '../../utils/api';
+import { formatLinkedSessionEventLabel, formatLinkedSessionWhen } from '../../utils/eventLinkedSessionLabel';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -83,6 +85,7 @@ interface Timespan {
 
 interface RegistrationField {
   id?: number;
+  fieldKey?: string;
   clientKey: string;
   label: string;
   fieldType: string;
@@ -133,6 +136,7 @@ interface ApiEventTimespanRow {
 
 interface ApiRegistrationFieldRow {
   id?: number;
+  field_key?: string;
   label: string;
   field_type: string;
   scope?: string;
@@ -140,6 +144,30 @@ interface ApiRegistrationFieldRow {
   options?: string;
   sort_order?: number;
 }
+
+type TransferGroupDetails = {
+  id: number;
+  name: string;
+  events: Array<{
+    id: number;
+    title: string;
+    slug: string;
+    published: number;
+    timespans: Array<{ start_dt: string; end_dt: string }>;
+  }>;
+};
+
+type TransferGroupListItem = {
+  id: number;
+  name: string;
+  eventCount: number;
+  events: Array<{
+    id: number;
+    title: string;
+    slug: string;
+    timespans: Array<{ start_dt: string; end_dt: string; sort_order?: number }>;
+  }>;
+};
 
 type EventEditorSavePayload = {
   title: string;
@@ -170,6 +198,7 @@ type EventEditorSavePayload = {
   ownerMemberIds: number[];
   registrationFields: Array<{
     id?: number;
+    fieldKey?: string;
     label: string;
     fieldType: string;
     scope: string;
@@ -200,13 +229,11 @@ const REGISTRATION_STATUS_OPTIONS: ChoiceOption<string>[] = [
   { value: 'waitlisted', label: 'Waitlisted' },
 ];
 
-type CopyEmailRecipientMode = 'registrants' | 'fourths' | 'all_players';
-
-const COPY_EMAIL_RECIPIENT_OPTIONS: ChoiceOption<CopyEmailRecipientMode>[] = [
-  { value: 'all_players', label: 'All players' },
-  { value: 'registrants', label: 'Registrants only' },
-  { value: 'fourths', label: 'Fourths only' },
-];
+type CopyEmailRecipientMode =
+  | 'registrants'
+  | 'registrants_and_group_members'
+  | 'fourths'
+  | 'all_players';
 
 const REGISTRATION_SCOPE_OPTIONS: ChoiceOption<string>[] = [
   { value: 'group', label: 'Per group' },
@@ -279,6 +306,14 @@ export default function AdminEventEditor() {
   const [categoryIds, setCategoryIds] = useState<number[]>([]);
   const [ownerMemberIds, setOwnerMemberIds] = useState<number[]>([]);
   const [registrationFields, setRegistrationFields] = useState<RegistrationField[]>([]);
+  const [transferGroupId, setTransferGroupId] = useState<number | null>(null);
+  const [transferGroup, setTransferGroup] = useState<TransferGroupDetails | null>(null);
+  const [transferGroupName, setTransferGroupName] = useState('');
+  const [transferGroupBusy, setTransferGroupBusy] = useState(false);
+  const [availableTransferGroups, setAvailableTransferGroups] = useState<TransferGroupListItem[]>([]);
+  const [availableTransferGroupsLoaded, setAvailableTransferGroupsLoaded] = useState(false);
+  const [joinTransferGroupId, setJoinTransferGroupId] = useState<number | null>(null);
+  const [newTransferGroupName, setNewTransferGroupName] = useState('');
 
   // Registration data
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -318,6 +353,7 @@ export default function AdminEventEditor() {
   const secondaryTabKeys = useMemo(() => {
     if (isNew) return [] as const;
     const tail = [
+      'linked-sessions',
       'registrations',
       ...(showWaitlistTab ? (['waitlist'] as const) : []),
       'links',
@@ -432,10 +468,28 @@ export default function AdminEventEditor() {
         setCategoryIds(e.categoryIds || []);
         setOwnerMemberIds(e.ownerMemberIds || []);
         setLinkedArticleId(e.articleId ?? null);
+        const loadedTransferGroupId =
+          typeof e.transferGroupId === 'number' ? e.transferGroupId : null;
+        setTransferGroupId(loadedTransferGroupId);
+        setTransferGroup(null);
+        setTransferGroupName('');
+        setNewTransferGroupName(typeof e.title === 'string' ? e.title : '');
+        setJoinTransferGroupId(null);
+        setAvailableTransferGroupsLoaded(false);
+        if (loadedTransferGroupId != null) {
+          api
+            .get<TransferGroupDetails>(`/events/transfer-groups/${loadedTransferGroupId}`)
+            .then((groupRes) => {
+              setTransferGroup(groupRes.data);
+              setTransferGroupName(groupRes.data.name);
+            })
+            .catch(() => {});
+        }
         setRegistrationFields(
           (e.registrationFields || [])
             .map((f: ApiRegistrationFieldRow) => ({
               id: f.id,
+              fieldKey: f.field_key,
               clientKey: f.id != null ? `field-${f.id}` : crypto.randomUUID(),
               label: f.label,
               fieldType: f.field_type,
@@ -500,6 +554,22 @@ export default function AdminEventEditor() {
   }, [activeTab, eventId]);
 
   useEffect(() => {
+    if (activeTab !== 'linked-sessions' || !eventId || availableTransferGroupsLoaded) return;
+    api
+      .get<TransferGroupListItem[]>('/events/transfer-groups')
+      .then((res) => {
+        const groups = res.data || [];
+        setAvailableTransferGroups(groups);
+        setJoinTransferGroupId((prev) => {
+          if (prev != null && groups.some((group) => group.id === prev)) return prev;
+          return groups.find((group) => group.id !== transferGroupId)?.id ?? null;
+        });
+      })
+      .catch(() => setAvailableTransferGroups([]))
+      .finally(() => setAvailableTransferGroupsLoaded(true));
+  }, [activeTab, eventId, availableTransferGroupsLoaded, transferGroupId]);
+
+  useEffect(() => {
     if (activeTab !== 'registrations' || registrationsLoaded) {
       setShowRegistrationsSlowLoader(false);
       return;
@@ -554,6 +624,7 @@ export default function AdminEventEditor() {
       ownerMemberIds,
       registrationFields: registrationFields.map((f, i) => ({
         id: f.id,
+        fieldKey: f.fieldKey,
         label: f.label,
         fieldType: f.fieldType,
         scope: f.scope,
@@ -1132,14 +1203,21 @@ export default function AdminEventEditor() {
   );
 
   const copyEmailRecipientOptions = useMemo((): ChoiceOption<CopyEmailRecipientMode>[] => {
-    if (isBonspielEvent || teamFieldsForCopyEmails.length > 0) {
-      return COPY_EMAIL_RECIPIENT_OPTIONS;
+    const options: ChoiceOption<CopyEmailRecipientMode>[] = [
+      { value: 'registrants', label: 'Registrants only' },
+    ];
+    if (allowGroupRegistration) {
+      options.push({
+        value: 'registrants_and_group_members',
+        label: 'Registrants and group members',
+      });
     }
-    return COPY_EMAIL_RECIPIENT_OPTIONS.filter(
-      (option): option is { value: CopyEmailRecipientMode; label: string } =>
-        option.type !== 'divider' && option.value === 'registrants',
-    );
-  }, [isBonspielEvent, teamFieldsForCopyEmails.length]);
+    if (isBonspielEvent || teamFieldsForCopyEmails.length > 0) {
+      options.push({ value: 'all_players', label: 'All players' });
+      options.push({ value: 'fourths', label: 'Fourths only' });
+    }
+    return options;
+  }, [allowGroupRegistration, isBonspielEvent, teamFieldsForCopyEmails.length]);
 
   const buildCopyEmailEntries = (
     statuses: string[],
@@ -1150,17 +1228,19 @@ export default function AdminEventEditor() {
     const entries: string[] = [];
     const seenEmails = new Set<string>();
 
-    if (recipientMode === 'registrants') {
+    if (recipientMode === 'registrants' || recipientMode === 'registrants_and_group_members') {
       selected.forEach((registration) => {
         appendEmailRecipient(entries, seenEmails, registration.contact_name, registration.contact_email);
-        registration.groupMembers.forEach((member, index) => {
-          appendEmailRecipient(
-            entries,
-            seenEmails,
-            member.name?.trim() || `Group member ${index + 1}`,
-            member.email,
-          );
-        });
+        if (recipientMode === 'registrants_and_group_members') {
+          registration.groupMembers.forEach((member, index) => {
+            appendEmailRecipient(
+              entries,
+              seenEmails,
+              member.name?.trim() || `Registrant ${index + 2}`,
+              member.email,
+            );
+          });
+        }
       });
       return entries;
     }
@@ -1204,7 +1284,13 @@ export default function AdminEventEditor() {
   const openCopyEmailsDialog = () => {
     setCopyEmailStatuses(['confirmed']);
     const hasPlayerOptions = isBonspielEvent || teamFieldsForCopyEmails.length > 0;
-    setCopyEmailRecipientMode(hasPlayerOptions ? 'all_players' : 'registrants');
+    setCopyEmailRecipientMode(
+      hasPlayerOptions
+        ? 'all_players'
+        : allowGroupRegistration
+          ? 'registrants_and_group_members'
+          : 'registrants',
+    );
     setCopyEmailsDialogOpen(true);
   };
 
@@ -1232,7 +1318,8 @@ export default function AdminEventEditor() {
     }
     const entries = buildCopyEmailEntries(copyEmailStatuses, copyEmailRecipientMode);
     const emptyMessage =
-      copyEmailRecipientMode === 'registrants'
+      copyEmailRecipientMode === 'registrants' ||
+      copyEmailRecipientMode === 'registrants_and_group_members'
         ? 'No registrant emails to copy'
         : copyEmailRecipientMode === 'fourths'
           ? 'No fourth emails to copy'
@@ -1240,9 +1327,11 @@ export default function AdminEventEditor() {
     const successMessage =
       copyEmailRecipientMode === 'registrants'
         ? 'Registrant emails copied'
-        : copyEmailRecipientMode === 'fourths'
-          ? 'Fourth emails copied'
-          : 'Player emails copied';
+        : copyEmailRecipientMode === 'registrants_and_group_members'
+          ? 'Registrant and group member emails copied'
+          : copyEmailRecipientMode === 'fourths'
+            ? 'Fourth emails copied'
+            : 'Player emails copied';
     await copyEmailEntries(entries, emptyMessage, successMessage);
     setCopyEmailsDialogOpen(false);
   };
@@ -1343,9 +1432,11 @@ export default function AdminEventEditor() {
   }
 
   const pageTitle = isNew ? 'New event' : `Edit: ${title}`;
-  const pageSubtitle = isNew
-    ? 'Create a new registrable club event.'
-    : 'Update event settings, public page content, registrations, and links.';
+  const eventWhenLabel = (() => {
+    const when = formatLinkedSessionWhen(timespans);
+    return when === 'Schedule TBD' ? null : when;
+  })();
+  const pageDescription = eventWhenLabel;
 
   const tabs = [
     { key: 'settings' as const, label: 'Settings' },
@@ -1353,12 +1444,57 @@ export default function AdminEventEditor() {
       ? [
           { key: 'details' as const, label: 'Details' },
           ...(isBonspielEvent ? [{ key: 'tournament' as const, label: 'Tournament' }] : []),
+          { key: 'linked-sessions' as const, label: 'Linked sessions' },
           { key: 'registrations' as const, label: 'Registrations' },
           ...(showWaitlistTab ? [{ key: 'waitlist' as const, label: 'Waitlist' }] : []),
           { key: 'links' as const, label: 'Special registration links' },
         ]
       : []),
   ];
+
+  const reloadTransferGroupDetails = async (groupId: number | null) => {
+    if (groupId == null) {
+      setTransferGroupId(null);
+      setTransferGroup(null);
+      setTransferGroupName('');
+      return;
+    }
+    const groupRes = await api.get<TransferGroupDetails>(`/events/transfer-groups/${groupId}`);
+    setTransferGroupId(groupRes.data.id);
+    setTransferGroup(groupRes.data);
+    setTransferGroupName(groupRes.data.name);
+  };
+
+  const refreshAvailableTransferGroups = async () => {
+    const res = await api.get<TransferGroupListItem[]>('/events/transfer-groups');
+    const groups = res.data || [];
+    setAvailableTransferGroups(groups);
+    setAvailableTransferGroupsLoaded(true);
+    setJoinTransferGroupId((prev) => {
+      if (prev != null && groups.some((group) => group.id === prev)) return prev;
+      return groups.find((group) => group.id !== transferGroupId)?.id ?? null;
+    });
+  };
+
+  const attachEventToTransferGroup = async (groupId: number | null) => {
+    if (!eventId) return;
+    setTransferGroupBusy(true);
+    try {
+      await api.patch(`/events/${eventId}`, { transferGroupId: groupId });
+      await reloadTransferGroupDetails(groupId);
+      await refreshAvailableTransferGroups();
+      showAlert(
+        groupId == null ? 'Event unlinked from linked sessions' : 'Event linked to sessions group',
+        'success',
+      );
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to update linked sessions'), 'error');
+    } finally {
+      setTransferGroupBusy(false);
+    }
+  };
+
+  const joinableTransferGroups = availableTransferGroups.filter((group) => group.id !== transferGroupId);
 
   return (
     <>
@@ -1374,7 +1510,7 @@ export default function AdminEventEditor() {
       >
         <AppPageHeader
           title={pageTitle}
-          description={pageSubtitle}
+          description={pageDescription}
           actions={
             <BackButton label="Events" onClick={() => navigate('/admin/events')} />
           }
@@ -2232,6 +2368,213 @@ export default function AdminEventEditor() {
           </div>
         )}
 
+        {activeTab === 'linked-sessions' && !isNew && eventId != null && (
+          <div className="space-y-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-6">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Link this event with other sessions of the same offering so registrants can switch between them from
+              their manage-registration link. Fees and registration forms must stay compatible.
+            </p>
+
+            {transferGroupId != null && transferGroup ? (
+              <FormSection
+                title="Current group"
+                description="Registrants can move among the events listed here when transfer rules allow."
+                surface="panel"
+              >
+                <FormField
+                  label="Group name"
+                  htmlFor="admin-event-transfer-group-name"
+                  className="max-w-md"
+                >
+                  <div className="flex flex-wrap items-end gap-2">
+                    <input
+                      id="admin-event-transfer-group-name"
+                      type="text"
+                      value={transferGroupName}
+                      onChange={(e) => setTransferGroupName(e.target.value)}
+                      className="app-input min-w-0 flex-1"
+                      maxLength={200}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={transferGroupBusy || !transferGroupName.trim()}
+                      onClick={async () => {
+                        setTransferGroupBusy(true);
+                        try {
+                          const res = await api.patch(`/events/transfer-groups/${transferGroupId}`, {
+                            name: transferGroupName.trim(),
+                          });
+                          setTransferGroup((prev) => (prev ? { ...prev, name: res.data.name } : prev));
+                          setAvailableTransferGroups((prev) =>
+                            prev.map((group) =>
+                              group.id === transferGroupId ? { ...group, name: res.data.name } : group,
+                            ),
+                          );
+                          showAlert('Linked sessions group renamed', 'success');
+                        } catch (err) {
+                          showAlert(formatApiError(err, 'Failed to rename group'), 'error');
+                        } finally {
+                          setTransferGroupBusy(false);
+                        }
+                      }}
+                    >
+                      Rename
+                    </Button>
+                  </div>
+                </FormField>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-gray-800 dark:text-gray-200">Sessions in this group</div>
+                  {transferGroup.events.length === 0 ? (
+                    <InlineStateMessage title="This group has no events yet." />
+                  ) : (
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-300">
+                      {transferGroup.events.map((eventItem) => {
+                        const label = formatLinkedSessionEventLabel(eventItem.title, eventItem.timespans);
+                        return (
+                          <li key={eventItem.id}>
+                            {eventItem.id === eventId ? (
+                              <span>
+                                {label} <span className="text-gray-500">(this event)</span>
+                              </span>
+                            ) : (
+                              <Link
+                                to={`/admin/events/${eventItem.id}/linked-sessions`}
+                                className="text-primary-teal-link hover:underline"
+                              >
+                                {label}
+                              </Link>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={transferGroupBusy}
+                  onClick={() => void attachEventToTransferGroup(null)}
+                >
+                  Unlink this event
+                </Button>
+              </FormSection>
+            ) : (
+              <>
+                <FormSection
+                  title="Join an existing group"
+                  description="Use this when Monday and Tuesday sessions were created separately and should allow registration moves."
+                  surface="panel"
+                >
+                  {!availableTransferGroupsLoaded ? (
+                    <InlineStateMessage title="Loading linked sessions groups..." />
+                  ) : joinableTransferGroups.length === 0 ? (
+                    <InlineStateMessage title="No other linked sessions groups exist yet. Create one below." />
+                  ) : (
+                    <div className="space-y-3">
+                      <FormField label="Group" htmlFor="admin-event-join-transfer-group" required>
+                        <ChoiceInput
+                          inputId="admin-event-join-transfer-group"
+                          layout="popover"
+                          value={joinTransferGroupId != null ? String(joinTransferGroupId) : null}
+                          onChange={(value) => {
+                            if (value == null || Array.isArray(value)) {
+                              setJoinTransferGroupId(null);
+                              return;
+                            }
+                            const next = Number.parseInt(value, 10);
+                            setJoinTransferGroupId(Number.isFinite(next) ? next : null);
+                          }}
+                          options={joinableTransferGroups.map((group) => ({
+                            value: String(group.id),
+                            label: `${group.name} (${group.eventCount} session${group.eventCount === 1 ? '' : 's'})`,
+                          }))}
+                          placeholder="Select a group"
+                        />
+                      </FormField>
+                      {joinTransferGroupId != null ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Includes:{' '}
+                          {(
+                            joinableTransferGroups.find((group) => group.id === joinTransferGroupId)?.events ?? []
+                          )
+                            .map((eventItem) =>
+                              formatLinkedSessionEventLabel(eventItem.title, eventItem.timespans),
+                            )
+                            .join('; ') || 'No sessions yet'}
+                        </p>
+                      ) : null}
+                      <Button
+                        type="button"
+                        disabled={transferGroupBusy || joinTransferGroupId == null}
+                        onClick={() => {
+                          if (joinTransferGroupId != null) {
+                            void attachEventToTransferGroup(joinTransferGroupId);
+                          }
+                        }}
+                      >
+                        {transferGroupBusy ? 'Joining...' : 'Join group'}
+                      </Button>
+                    </div>
+                  )}
+                </FormSection>
+
+                <FormSection
+                  title="Create a new group"
+                  description="Start a linked sessions group with this event, then join other existing events to it from their Linked sessions tab."
+                  surface="panel"
+                >
+                  <FormField
+                    label="Group name"
+                    htmlFor="admin-event-new-transfer-group-name"
+                    required
+                    className="max-w-md"
+                  >
+                    <input
+                      id="admin-event-new-transfer-group-name"
+                      type="text"
+                      value={newTransferGroupName}
+                      onChange={(e) => setNewTransferGroupName(e.target.value)}
+                      className="app-input"
+                      maxLength={200}
+                    />
+                  </FormField>
+                  <Button
+                    type="button"
+                    disabled={transferGroupBusy || !newTransferGroupName.trim()}
+                    onClick={async () => {
+                      setTransferGroupBusy(true);
+                      try {
+                        const created = await api.post('/events/transfer-groups', {
+                          name: newTransferGroupName.trim(),
+                        });
+                        await api.patch(`/events/${eventId}`, { transferGroupId: created.data.id });
+                        await reloadTransferGroupDetails(created.data.id);
+                        await refreshAvailableTransferGroups();
+                        showAlert('Linked sessions group created', 'success');
+                      } catch (err) {
+                        showAlert(formatApiError(err, 'Failed to create group'), 'error');
+                      } finally {
+                        setTransferGroupBusy(false);
+                      }
+                    }}
+                  >
+                    {transferGroupBusy ? 'Creating...' : 'Create and link this event'}
+                  </Button>
+                </FormSection>
+              </>
+            )}
+
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Tip: when duplicating an event, leave “Link for registration moves” checked to put the copy in the same
+              group automatically.
+            </p>
+          </div>
+        )}
+
         {activeTab === 'registrations' && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2538,20 +2881,22 @@ export default function AdminEventEditor() {
                 name="copy-email-statuses"
               />
             </FormField>
-            <FormField label="Recipients" htmlFor={copyEmailRecipientsInputId}>
-              <ChoiceInput<CopyEmailRecipientMode>
-                inputId={copyEmailRecipientsInputId}
-                options={copyEmailRecipientOptions}
-                value={copyEmailRecipientMode}
-                onChange={(next) => {
-                  if (next == null || Array.isArray(next)) return;
-                  setCopyEmailRecipientMode(next);
-                }}
-                layout="block"
-                listboxLabel="Recipients"
-                name="copy-email-recipients"
-              />
-            </FormField>
+            {copyEmailRecipientOptions.length > 1 ? (
+              <FormField label="Recipients" htmlFor={copyEmailRecipientsInputId}>
+                <ChoiceInput<CopyEmailRecipientMode>
+                  inputId={copyEmailRecipientsInputId}
+                  options={copyEmailRecipientOptions}
+                  value={copyEmailRecipientMode}
+                  onChange={(next) => {
+                    if (next == null || Array.isArray(next)) return;
+                    setCopyEmailRecipientMode(next);
+                  }}
+                  layout="block"
+                  listboxLabel="Recipients"
+                  name="copy-email-recipients"
+                />
+              </FormField>
+            ) : null}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setCopyEmailsDialogOpen(false)}>
                 Cancel

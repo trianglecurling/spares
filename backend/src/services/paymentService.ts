@@ -1123,25 +1123,52 @@ export class PaymentService {
     const isTerminal = providerRefund.status === 'succeeded' || providerRefund.status === 'failed' || providerRefund.status === 'rejected';
     const [refund] = await this.db
       .insert(this.schema.refunds)
-      .values({
-        payment_order_id: order.id,
-        provider,
-        amount_minor: amountMinor,
-        currency: order.currency,
-        reason: input.reason?.trim() || null,
-        status: providerRefund.status,
-        requested_by_member_id: input.requestedByMemberId ?? null,
-        provider_refund_id: providerRefund.providerRefundId,
-        provider_response: safeJsonStringify(providerRefund.rawResponse),
-        processed_at: isTerminal ? sql`CURRENT_TIMESTAMP` : null,
-        updated_at: sql`CURRENT_TIMESTAMP`,
-      })
+      .values(
+        isTerminal
+          ? {
+              payment_order_id: order.id,
+              provider,
+              amount_minor: amountMinor,
+              currency: order.currency,
+              reason: input.reason?.trim() || null,
+              status: providerRefund.status,
+              requested_by_member_id: input.requestedByMemberId ?? null,
+              provider_refund_id: providerRefund.providerRefundId,
+              provider_response: safeJsonStringify(providerRefund.rawResponse),
+              processed_at: sql`CURRENT_TIMESTAMP`,
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            }
+          : {
+              payment_order_id: order.id,
+              provider,
+              amount_minor: amountMinor,
+              currency: order.currency,
+              reason: input.reason?.trim() || null,
+              status: providerRefund.status,
+              requested_by_member_id: input.requestedByMemberId ?? null,
+              provider_refund_id: providerRefund.providerRefundId,
+              provider_response: safeJsonStringify(providerRefund.rawResponse),
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            },
+      )
       .returning({
         id: this.schema.refunds.id,
       });
 
     if (providerRefund.status === 'succeeded' || providerRefund.status === 'processing') {
-      await this.syncOrderRefundStatus(order.id);
+      try {
+        await this.syncOrderRefundStatus(order.id);
+      } catch (syncError) {
+        // Provider refund already succeeded; don't fail the caller if local status sync breaks.
+        await logEvent({
+          eventType: 'payment.refund.status_sync_failed',
+          relatedId: refund.id,
+          meta: {
+            paymentOrderId: order.id,
+            error: syncError instanceof Error ? syncError.message : 'Unknown error',
+          },
+        });
+      }
     }
 
     await logEvent({
@@ -1253,11 +1280,18 @@ export class PaymentService {
           || providerStatus === 'rejected';
         await this.db
           .update(this.schema.refunds)
-          .set({
-            status: providerStatus,
-            processed_at: isTerminal ? sql`CURRENT_TIMESTAMP` : null,
-            updated_at: sql`CURRENT_TIMESTAMP`,
-          })
+          .set(
+            isTerminal
+              ? {
+                  status: providerStatus,
+                  processed_at: sql`CURRENT_TIMESTAMP`,
+                  updated_at: sql`CURRENT_TIMESTAMP`,
+                }
+              : {
+                  status: providerStatus,
+                  updated_at: sql`CURRENT_TIMESTAMP`,
+                },
+          )
           .where(eq(this.schema.refunds.id, row.id));
       } catch (error) {
         await logEvent({
@@ -1533,17 +1567,26 @@ export class PaymentService {
       );
     }
 
+    // On Postgres, `completed_at` is a timestamp — never bind JS null/'' (that 500s).
+    // Stamp only on first success so refund transitions don't overwrite the paid date
+    // shown on receipts (`paidAt` / "Paid").
+    const shouldStampCompletedAt = nextStatus === 'succeeded' && currentStatus !== 'succeeded';
     const [updated] = await this.db
       .update(this.schema.paymentOrders)
-      .set({
-        status: nextStatus,
-        status_reason: reason ?? null,
-        completed_at:
-          nextStatus === 'succeeded' || nextStatus === 'refunded' || nextStatus === 'partially_refunded'
-            ? sql`CURRENT_TIMESTAMP`
-            : null,
-        updated_at: sql`CURRENT_TIMESTAMP`,
-      })
+      .set(
+        shouldStampCompletedAt
+          ? {
+              status: nextStatus,
+              status_reason: reason ?? null,
+              completed_at: sql`CURRENT_TIMESTAMP`,
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            }
+          : {
+              status: nextStatus,
+              status_reason: reason ?? null,
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            },
+      )
       .where(and(eq(this.schema.paymentOrders.id, orderId), eq(this.schema.paymentOrders.status, currentStatus)))
       .returning({ id: this.schema.paymentOrders.id });
 
@@ -2055,6 +2098,11 @@ export class PaymentService {
     }
 
     const metadata = safeJsonParseObject(order.metadata);
+    // Balance top-ups for group-size changes already have a confirmed registration; skip the
+    // "registration confirmed" email (receipt remains available from payment history).
+    if (asString(metadata.paymentKind) === 'event_registration_balance') {
+      return;
+    }
     const paymentOutcome = asString(metadata.eventRegistrationPaymentOutcome);
     const isRaceOutcome =
       paymentOutcome === 'waitlisted_with_refund' || paymentOutcome === 'cancelled_with_refund';

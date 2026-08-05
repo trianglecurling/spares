@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMemberNavigation } from '../hooks/useMemberNavigation';
 import { useSiteBranding } from '../hooks/useSiteBranding';
-import { buildMemberNavMenuItems, isMemberNavItemActive } from '../utils/memberNavMenuItems';
+import { isMemberNavItemActive } from '../utils/memberNavMenuItems';
 import Footer from './Footer';
 import { DesktopMenuBar, publicFlyoutNavClasses } from './DesktopFlyoutNav';
 import MemberNavigationPanel from './MemberNavigationPanel';
@@ -31,26 +31,9 @@ export default function Layout({ children, fullWidth, fillViewport = false }: La
   const { branding, loading: brandingLoading } = useSiteBranding();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const {
-    isSocialMember,
-    adminLinks,
-    hasAdminLinks,
-    navMyLeaguesInCurrentSession,
-    isNavigationReady,
-  } = useMemberNavigation();
+  const { memberNavItems, isNavigationReady } = useMemberNavigation();
   const headerRef = useRef<HTMLElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  const memberNavItems = useMemo(
-    () =>
-      buildMemberNavMenuItems({
-        navMyLeaguesInCurrentSession,
-        isSocialMember,
-        adminLinks,
-        hasAdminLinks,
-      }),
-    [navMyLeaguesInCurrentSession, isSocialMember, adminLinks, hasAdminLinks],
-  );
 
   const clubName = branding?.clubName ?? '';
 
