@@ -17,13 +17,15 @@ import {
   feedbackSubmitResponseSchema,
 } from '../api/schemas.js';
 import type { ApiErrorResponse, FeedbackCaptchaResponse, FeedbackEntryResponse, FeedbackSubmitResponse } from '../api/types.js';
+import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
+import { consumeSlidingWindowLimit, isIpLimitBypassed } from '../utils/abuseProtection.js';
 
 const feedbackCategorySchema = z.enum(['suggestion', 'problem', 'question', 'general']);
 
 const submitFeedbackSchema = z.object({
   category: feedbackCategorySchema,
   email: z.string().email().optional().or(z.literal('')).transform((v) => (v ? v : undefined)),
-  body: z.string().min(1),
+  body: z.string().min(1).max(8000),
   captchaToken: z.string().optional(),
   captchaAnswer: z.union([z.string(), z.number()]).optional(),
   pagePath: z.string().optional(),
@@ -139,6 +141,9 @@ export async function publicFeedbackRoutes(fastify: FastifyInstance) {
   fastify.post<{ Reply: FeedbackSubmitResponse | ApiErrorResponse }>(
     '/feedback',
     {
+      config: {
+        rateLimit: abuseRouteRateLimits.feedback,
+      },
       schema: {
         tags: ['feedback'],
         body: submitFeedbackBodySchema,
@@ -156,6 +161,13 @@ export async function publicFeedbackRoutes(fastify: FastifyInstance) {
     const body = parsed.data;
     const member = await getMemberFromOptionalAuth(request);
     const isLoggedIn = !!member;
+
+    if (!isIpLimitBypassed(request.ip)) {
+      const fanoutKey = `feedback-fanout:${request.ip || 'unknown'}`;
+      if (!consumeSlidingWindowLimit(fanoutKey, 5, 60 * 60 * 1000).ok) {
+        return reply.code(429).send({ error: 'Too many feedback submissions. Please try again later.' });
+      }
+    }
 
     if (!isLoggedIn) {
       if (!body.captchaToken || body.captchaAnswer === undefined) {

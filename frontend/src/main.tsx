@@ -3,10 +3,14 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-const accessToken = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
+const hasStoredSession = Boolean(
+  localStorage.getItem('accessToken') ||
+    localStorage.getItem('authToken') ||
+    localStorage.getItem('refreshToken'),
+);
 
 const scheduleDeferredOtelInit = () => {
-  if (!accessToken) {
+  if (!hasStoredSession) {
     return;
   }
 
@@ -18,6 +22,12 @@ const scheduleDeferredOtelInit = () => {
       };
 
       try {
+        const { ensureAccessToken } = await import('./utils/api');
+        const accessToken = await ensureAccessToken();
+        if (!accessToken) {
+          return;
+        }
+
         const response = await fetch('/api/public-config', {
           cache: 'no-store',
           headers: { Authorization: `Bearer ${accessToken}` },

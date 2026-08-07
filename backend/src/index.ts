@@ -21,9 +21,15 @@ import { warmPublicBootstrapCache } from './services/publicBootstrapCache.js';
 import { warmSearchIndex } from './search/searchIndexService.js';
 import { maybeInvalidatePublicBootstrapCache } from './services/publicBootstrapCacheInvalidation.js';
 import { FASTIFY_MAX_PARAM_LENGTH } from './utils/eventRegistrationAccessToken.js';
+import { assertProductionJwtSecret } from './utils/abuseProtection.js';
+import { registerAbuseRateLimits } from './plugins/abuseRateLimits.js';
+
+assertProductionJwtSecret(config.nodeEnv, config.jwtSecret);
 
 const fastify = Fastify({
   logger: config.nodeEnv === 'development',
+  // Required so request.ip / rate-limit keys use X-Forwarded-For from nginx/Cloudflare.
+  trustProxy: true,
   routerOptions: {
     maxParamLength: FASTIFY_MAX_PARAM_LENGTH,
   },
@@ -41,8 +47,8 @@ await fastify.register(cors, {
 
 await fastify.register(multipart, {
   limits: {
-    files: 50,
-    fileSize: 50 * 1024 * 1024,
+    files: 10,
+    fileSize: 10 * 1024 * 1024,
   },
 });
 
@@ -55,9 +61,11 @@ await fastify.register(swagger, {
   },
 });
 
-await fastify.register(swaggerUi, {
-  routePrefix: '/docs',
-});
+if (config.nodeEnv !== 'production') {
+  await fastify.register(swaggerUi, {
+    routePrefix: '/docs',
+  });
+}
 
 await fastify.register(fastifyRawBody, {
   field: 'rawBody',
@@ -65,6 +73,8 @@ await fastify.register(fastifyRawBody, {
   encoding: 'utf8',
   runFirst: true,
 });
+
+await registerAbuseRateLimits(fastify);
 
 // Track database initialization state
 let dbInitialized = false;

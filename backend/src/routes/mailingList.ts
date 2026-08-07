@@ -12,6 +12,8 @@ import {
   sendMauticEmailToContact,
   subscribeToMailingListSegment,
 } from '../services/mauticService.js';
+import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
+import { honeypotTarpitMs, tarpitDelay } from '../utils/abuseProtection.js';
 
 const mailingListSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
 
@@ -49,6 +51,9 @@ export async function mailingListRoutes(fastify: FastifyInstance): Promise<void>
   fastify.post<{ Body: unknown }>(
     '/public/mailing-list/subscribe',
     {
+      config: {
+        rateLimit: abuseRouteRateLimits.mailingList,
+      },
       schema: {
         tags: ['public'],
         description: 'Subscribe an email to a Mautic segment (public mailing list).',
@@ -61,15 +66,17 @@ export async function mailingListRoutes(fastify: FastifyInstance): Promise<void>
       }
 
       const payload = parsed.data;
+      if (payload.website && payload.website.trim().length > 0) {
+        await tarpitDelay(honeypotTarpitMs());
+        return { ok: true };
+      }
+
       const list = await getMailingListBySlug(payload.list.trim().toLowerCase());
       if (!list) {
         return reply.code(400).send({ error: 'Invalid mailing list' });
       }
       if (!isMauticSubscribeAvailableForSegment(list.mauticSegmentId)) {
         return sendApiError(reply, 503, 'Mailing list sign-up is not available right now.');
-      }
-      if (payload.website && payload.website.trim().length > 0) {
-        return { ok: true };
       }
 
       const comments = payload.comments?.trim() ?? '';

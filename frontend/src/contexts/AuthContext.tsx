@@ -2,7 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { get, post } from '../api/client';
-import api, { clearAuthTokens, getAccessToken, getRefreshToken, storeAuthTokens } from '../utils/api';
+import api, {
+  clearAuthTokens,
+  ensureAccessToken,
+  getAccessToken,
+  getRefreshToken,
+  storeAuthTokens,
+} from '../utils/api';
 import { getCachedMemberDisplayName, storeCachedMemberDisplayName } from '../utils/memberDisplayCache';
 import { isPublicLightPath } from '../utils/publicLightPaths';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
@@ -105,8 +111,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const verifyToken = async () => {
-      const currentToken = getAccessToken();
       const currentPath = window.location.pathname;
+      const hasStoredSession = Boolean(getAccessToken() || getRefreshToken());
 
       if (currentPath.startsWith('/install')) {
         setIsLoading(false);
@@ -119,16 +125,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
 
-      if (currentToken) {
+      if (hasStoredSession) {
         try {
-          const response = await get('/auth/verify');
-          applySessionPayload({
-            member: response.member as AuthenticatedMember,
-            actorMemberId: response.actorMemberId,
-            isImpersonating: response.isImpersonating,
-            accountSwitchOptions: response.accountSwitchOptions,
-          });
-          setToken(getAccessToken());
+          // Refresh expired access tokens before verify so the browser does not log a 401.
+          const usableToken = await ensureAccessToken();
+          if (!usableToken) {
+            clearAuthTokens();
+            setToken(null);
+            clearAccountSwitchState();
+          } else {
+            const response = await get('/auth/verify');
+            applySessionPayload({
+              member: response.member as AuthenticatedMember,
+              actorMemberId: response.actorMemberId,
+              isImpersonating: response.isImpersonating,
+              accountSwitchOptions: response.accountSwitchOptions,
+            });
+            setToken(getAccessToken());
+          }
         } catch (error: unknown) {
           if (
             axios.isAxiosError(error) &&

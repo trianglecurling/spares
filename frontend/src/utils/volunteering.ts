@@ -65,6 +65,7 @@ export type VolunteerProgramView = {
   pointOfContact: string;
   location: string | null;
   startDate: string | null;
+  published: boolean;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;

@@ -21,6 +21,12 @@ import { getCachedMenuTree } from '../services/menuTreeCache.js';
 import { getPublicLeaguesPage } from '../services/publicLeaguesService.js';
 import { listPublicContactDropdownRecipients } from '../domains/content/publicContactRecipients.js';
 import { resolveSpaDocumentHttpStatus } from '../services/spaDocumentStatus.js';
+import { isCalendarRangeWithinLimit } from '../utils/abuseProtection.js';
+import { createHash } from 'node:crypto';
+
+type SitemapCacheEntry = { xml: string; etag: string; expiresAt: number };
+let sitemapCache: SitemapCacheEntry | null = null;
+const SITEMAP_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export async function publicRoutes(fastify: FastifyInstance) {
   const { db, schema } = getDrizzleDb();
@@ -142,6 +148,10 @@ export async function publicRoutes(fastify: FastifyInstance) {
       if (Number.isNaN(new Date(q.start).getTime()) || Number.isNaN(new Date(q.end).getTime())) {
         return reply.code(400).send({ error: 'Invalid date range' });
       }
+      if (!isCalendarRangeWithinLimit(q.start, q.end)) {
+        return reply.code(400).send({ error: 'Date range must be 93 days or less' });
+      }
+      reply.header('Cache-Control', 'public, max-age=60');
       return getPublicCalendarBundle(q.start, q.end);
     }
   );
@@ -216,7 +226,17 @@ export async function publicRoutes(fastify: FastifyInstance) {
   });
 
   // GET /sitemap.xml - Sitemap for search engines
-  fastify.get('/sitemap.xml', async (_request, reply) => {
+  fastify.get('/sitemap.xml', async (request, reply) => {
+    const nowMs = Date.now();
+    if (sitemapCache && sitemapCache.expiresAt > nowMs) {
+      reply.header('Cache-Control', 'public, max-age=300');
+      reply.header('ETag', sitemapCache.etag);
+      if (request.headers['if-none-match'] === sitemapCache.etag) {
+        return reply.code(304).send();
+      }
+      return reply.type('application/xml; charset=utf-8').send(sitemapCache.xml);
+    }
+
     const now = new Date().toISOString();
     const notEventBodyArticle = notExists(
       db
@@ -279,9 +299,15 @@ export async function publicRoutes(fastify: FastifyInstance) {
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${items}
 </urlset>`;
 
-    return reply
-      .type('application/xml; charset=utf-8')
-      .send(xml);
+    const etag = `"${createHash('sha1').update(xml).digest('hex')}"`;
+    sitemapCache = { xml, etag, expiresAt: nowMs + SITEMAP_CACHE_TTL_MS };
+
+    reply.header('Cache-Control', 'public, max-age=300');
+    reply.header('ETag', etag);
+    if (request.headers['if-none-match'] === etag) {
+      return reply.code(304).send();
+    }
+    return reply.type('application/xml; charset=utf-8').send(xml);
   });
 
   // GET /robots.txt - crawler directives

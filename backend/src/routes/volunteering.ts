@@ -63,6 +63,7 @@ const programBodySchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD')
     .nullable()
     .optional(),
+  published: z.boolean().optional(),
   managerIds: z.array(z.number().int().positive()).optional(),
 });
 

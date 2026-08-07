@@ -343,8 +343,9 @@ export default function CopyLeaguesToSession() {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Selected settings are copied to new leagues: name, schedule day, draw times, format, league
             type, capacity, league fee, experience and age limits, registration options, league managers,
-            and divisions. Sheet availability, scheduled games, teams, roster members, and exception dates
-            are not copied. Each new league lists the source league as its predecessor.
+            divisions, and member sparing availability. Sheet availability, scheduled games, teams, roster
+            members, and exception dates are not copied. Each new league lists the source league as its
+            predecessor.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-6">

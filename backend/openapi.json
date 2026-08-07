@@ -1669,16 +1669,43 @@
         }
       }
     },
-    "/public/contact/request": {
-      "post": {
+    "/public/contact/captcha": {
+      "get": {
+        "tags": [
+          "public"
+        ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "question": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "question",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
           }
         }
       }
     },
-    "/public/contact/confirm": {
+    "/public/contact/request": {
       "post": {
         "responses": {
           "200": {
@@ -2162,6 +2189,28 @@
         }
       },
       "patch": {
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/events/registrations/manage/{accessToken}/resolve": {
+      "post": {
         "tags": [
           "events"
         ],
@@ -12808,6 +12857,82 @@
             "name": "teamId",
             "required": true
           }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/availability/reminder": {
+      "get": {
+        "tags": [
+          "availability"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "session": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "visible",
+                    "session"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/availability/reminder/ack": {
+      "post": {
+        "tags": [
+          "availability"
         ],
         "responses": {
           "200": {

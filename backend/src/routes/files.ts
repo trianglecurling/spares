@@ -1,8 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { and, asc, desc, eq, like, sql } from 'drizzle-orm';
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+
+/** Guard against decompression bombs / huge images (~268MP default is too high for admin transforms). */
+const SHARP_LIMIT_INPUT_PIXELS = 40_000_000;
+
+function sharpSafe(input: Buffer): Sharp {
+  return sharp(input, { limitInputPixels: SHARP_LIMIT_INPUT_PIXELS });
+}
 import type { Member } from '../types.js';
 import { isContentAdmin, isEventsAdmin } from '../utils/auth.js';
 import { listOwnedEventIds } from '../services/eventService.js';
@@ -209,7 +216,7 @@ async function generateThumbnail(
 ): Promise<{ storageKey: string; mimeType: string; byteSize: number; checksumSha256: string } | null> {
   if (!sourceMimeType.startsWith('image/')) return null;
   const outputFormat = mimeTypeToSharpFormat(sourceMimeType) ?? 'jpeg';
-  const pipeline = sharp(imageBuffer)
+  const pipeline = sharpSafe(imageBuffer)
     .rotate()
     .resize({ width: 60, height: 60, fit: 'inside', withoutEnlargement: true });
 
@@ -620,7 +627,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
     }
 
     const sourceBuffer = await getFileBuffer(row.storage_key);
-    const image = sharp(sourceBuffer);
+    const image = sharpSafe(sourceBuffer);
     const metadata = await image.metadata();
     const sourceWidth = metadata.width;
     const sourceHeight = metadata.height;
@@ -676,7 +683,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
     }
 
     const sourceBuffer = await getFileBuffer(row.storage_key);
-    const transformedBuffer = await sharp(sourceBuffer).rotate(parsed.data.degrees).toBuffer();
+    const transformedBuffer = await sharpSafe(sourceBuffer).rotate(parsed.data.degrees).toBuffer();
     const transformedRow = await upsertTransformedFile(row as FileRow, transformedBuffer, {
       replaceOriginal: true,
       filenameSuffix: `rotated-${parsed.data.degrees}`,
@@ -703,7 +710,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
     }
 
     const sourceBuffer = await getFileBuffer(row.storage_key);
-    const image = sharp(sourceBuffer);
+    const image = sharpSafe(sourceBuffer);
     const metadata = await image.metadata();
     const sourceWidth = metadata.width;
     const sourceHeight = metadata.height;
@@ -743,7 +750,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
     }
 
     const sourceBuffer = await getFileBuffer(row.storage_key);
-    const rotated = sharp(sourceBuffer).rotate(parsed.data.degrees);
+    const rotated = sharpSafe(sourceBuffer).rotate(parsed.data.degrees);
     const rotatedMetadata = await rotated.metadata();
     const rotatedWidth = rotatedMetadata.width;
     const rotatedHeight = rotatedMetadata.height;
@@ -798,10 +805,10 @@ export async function fileRoutes(fastify: FastifyInstance) {
     const sourceBuffer = await getFileBuffer(row.storage_key);
     const convertedBuffer =
       parsed.data.format === 'png'
-        ? await sharp(sourceBuffer).png().toBuffer()
+        ? await sharpSafe(sourceBuffer).png().toBuffer()
         : parsed.data.format === 'gif'
-          ? await sharp(sourceBuffer).gif().toBuffer()
-          : await sharp(sourceBuffer).jpeg({ quality: 85 }).toBuffer();
+          ? await sharpSafe(sourceBuffer).gif().toBuffer()
+          : await sharpSafe(sourceBuffer).jpeg({ quality: 85 }).toBuffer();
     const convertedFilename = buildConvertedFilename(row.original_filename, targetMimeType);
     const transformedRow = await upsertTransformedFile(row as FileRow, convertedBuffer, {
       replaceOriginal: true,

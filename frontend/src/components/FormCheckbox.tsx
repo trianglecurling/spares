@@ -38,7 +38,7 @@ export default function FormCheckbox({
     <div className={joinClasses(wrapperToneClasses[tone], className)}>
       <label
         className={joinClasses(
-          'flex items-start gap-2 cursor-pointer',
+          'flex items-center gap-2 cursor-pointer',
           disabled && 'cursor-not-allowed opacity-80'
         )}
       >
@@ -47,7 +47,7 @@ export default function FormCheckbox({
           checked={checked}
           onChange={(event) => onChange(event.target.checked)}
           disabled={disabled}
-          className="mt-0.5 rounded"
+          className="rounded"
         />
         <span className={labelToneClasses[tone]}>{label}</span>
       </label>

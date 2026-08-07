@@ -1,8 +1,9 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { FaFacebookF, FaInstagram, FaYoutube } from 'react-icons/fa';
 import { FaXTwitter } from 'react-icons/fa6';
 import FormField from '../components/FormField';
+import FormCheckbox from '../components/FormCheckbox';
 import ChoiceInput from '../components/ChoiceInput';
 import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
@@ -32,9 +33,16 @@ const facilityDetails: Array<{ title: string; body: string }> = [
   { title: 'Wi-Fi', body: 'Available for members & guests. SSID and password are posted in the warm room.' },
 ];
 
+type ContactCaptchaResponse = {
+  token: string;
+  question: string;
+  expiresAt: string;
+};
+
 export default function PublicContactPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const captchaAnswerId = useId();
   const recipientParam = searchParams.get('recipient');
   const { recipients, loading: recipientsLoading, error: recipientsError } = usePublicContactRecipients({
     includeRecipient: recipientParam,
@@ -44,24 +52,53 @@ export default function PublicContactPage() {
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [sendCopy, setSendCopy] = useState(true);
   const [website, setWebsite] = useState('');
+  const [captchaQuestion, setCaptchaQuestion] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [loadingCaptcha, setLoadingCaptcha] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
-  const [emailNextStepModalOpen, setEmailNextStepModalOpen] = useState(false);
+  const [sentModalOpen, setSentModalOpen] = useState(false);
+
+  const loadCaptcha = useCallback(async () => {
+    setLoadingCaptcha(true);
+    try {
+      const res = await api.get<ContactCaptchaResponse>('/public/contact/captcha');
+      setCaptchaQuestion(res.data.question);
+      setCaptchaToken(res.data.token);
+      setCaptchaAnswer('');
+    } catch (error: unknown) {
+      console.error('Failed to load CAPTCHA:', error);
+      setCaptchaQuestion(null);
+      setCaptchaToken(null);
+      setInlineError((prev) => prev ?? 'Failed to load CAPTCHA. Please try again.');
+    } finally {
+      setLoadingCaptcha(false);
+    }
+  }, []);
 
   const canSubmit =
     recipient.trim().length > 0 &&
     email.trim().length > 0 &&
     subject.trim().length >= 2 &&
     body.trim().length >= 10 &&
+    Boolean(captchaToken) &&
+    captchaAnswer.trim().length > 0 &&
     !submitting &&
-    !recipientsLoading;
+    !recipientsLoading &&
+    !loadingCaptcha;
 
   const scrollToMessageForm = () => {
     const target = document.getElementById('send-message');
     if (!target) return;
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  useEffect(() => {
+    void loadCaptcha();
+  }, [loadCaptcha]);
 
   useEffect(() => {
     if (recipients.length === 0) return;
@@ -76,11 +113,11 @@ export default function PublicContactPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || !captchaToken) return;
 
     setSubmitting(true);
     setInlineError(null);
-    setEmailNextStepModalOpen(false);
+    setSentModalOpen(false);
 
     try {
       await api.post('/public/contact/request', {
@@ -88,15 +125,20 @@ export default function PublicContactPage() {
         email: email.trim(),
         subject: subject.trim(),
         body: body.trim(),
+        sendCopy,
         website: website.trim(),
+        captchaToken,
+        captchaAnswer: captchaAnswer.trim(),
       });
 
-      setEmailNextStepModalOpen(true);
+      setSentModalOpen(true);
       setSubject('');
       setBody('');
       setWebsite('');
+      await loadCaptcha();
     } catch (error: unknown) {
       setInlineError(formatApiError(error, 'Unable to submit contact form'));
+      await loadCaptcha();
     } finally {
       setSubmitting(false);
     }
@@ -105,20 +147,20 @@ export default function PublicContactPage() {
   return (
     <PublicLayout>
       <Modal
-        isOpen={emailNextStepModalOpen}
-        onClose={() => setEmailNextStepModalOpen(false)}
-        title="Check your email"
+        isOpen={sentModalOpen}
+        onClose={() => setSentModalOpen(false)}
+        title="Message sent"
         size="md"
         verticalAlign="start"
       >
         <p className="text-sm leading-relaxed text-gray-700">
-          Check your email for a confirmation message. Click the &quot;Send now&quot; button there to deliver your
-          message.
+          Thanks — your message was sent. As our team is staffed exclusively by volunteers, please allow up to 48 hours
+          for a response.
         </p>
         <div className="mt-6 flex justify-end border-t border-gray-200 pt-4">
           <button
             type="button"
-            onClick={() => setEmailNextStepModalOpen(false)}
+            onClick={() => setSentModalOpen(false)}
             className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2"
           >
             OK
@@ -166,6 +208,7 @@ export default function PublicContactPage() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
           <div className="public-card p-6 sm:p-7">
             <h2 className="public-subheading">Address</h2>
+            <p className="mt-3 text-base font-medium text-gray-900">Triangle Curling Club of North Carolina</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <article className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Mailing Address</h3>
@@ -244,8 +287,7 @@ export default function PublicContactPage() {
           <div id="send-message" className="public-card scroll-mt-28 p-6 sm:p-7">
             <h2 className="public-subheading">Send a message</h2>
             <p className="mt-2 text-sm text-gray-600">
-              After you submit this form, you will receive an email with a <strong>Send now</strong> button.
-              Click that button to deliver your message.
+              Complete the form and CAPTCHA below to contact us.
             </p>
 
             {inlineError ? (
@@ -316,6 +358,13 @@ export default function PublicContactPage() {
                 />
               </FormField>
 
+              <FormCheckbox
+                tone="public"
+                label="Send me a copy of this message"
+                checked={sendCopy}
+                onChange={setSendCopy}
+              />
+
               <div className="hidden">
                 <label htmlFor="website">Website</label>
                 <input
@@ -328,13 +377,35 @@ export default function PublicContactPage() {
                 />
               </div>
 
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                <FormField
+                  tone="public"
+                  label={captchaQuestion || 'Loading CAPTCHA…'}
+                  htmlFor={captchaAnswerId}
+                  required
+                  labelClassName="font-semibold text-gray-800"
+                >
+                  <input
+                    id={captchaAnswerId}
+                    type="text"
+                    value={captchaAnswer}
+                    onChange={(event) => setCaptchaAnswer(event.target.value)}
+                    required
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="Answer"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                  />
+                </FormField>
+              </div>
+
               <div className="pt-1">
                 <button
                   type="submit"
                   disabled={!canSubmit}
                   className="inline-flex items-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submitting ? 'Submitting...' : 'Send confirmation email'}
+                  {submitting ? 'Sending...' : 'Send message'}
                 </button>
               </div>
             </form>

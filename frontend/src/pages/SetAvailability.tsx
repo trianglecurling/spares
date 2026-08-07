@@ -53,6 +53,11 @@ export default function SetAvailability() {
       setLeagues(leaguesRes.filter((league) => isLeagueEligibleForSpares(league)));
       setAvailability(availabilityRes.leagues);
       setCanSkip(availabilityRes.canSkip);
+
+      // Visiting this page clears the per-session dashboard reminder.
+      void post('/availability/reminder/ack', undefined).catch((error) => {
+        console.error('Failed to acknowledge availability reminder:', error);
+      });
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {

@@ -100,9 +100,21 @@ export function AdminVolunteeringPrograms() {
     loadPrograms();
   }, [includeArchived]);
 
+  const handleTogglePublish = async (program: VolunteerProgramView) => {
+    try {
+      await api.patch(`/volunteering/admin/programs/${program.id}`, {
+        published: !program.published,
+      });
+      showAlert(program.published ? 'Program unpublished' : 'Program published', 'success');
+      loadPrograms();
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to update program'), 'error');
+    }
+  };
+
   const handleArchive = async (program: VolunteerProgramView) => {
     const confirmed = await confirm({
-      message: `Archive "${program.title}"? It will be hidden from the volunteering hub but can be restored later.`,
+      message: `Archive "${program.title}"? It will be unpublished and hidden from the volunteering hub but can be restored later.`,
       title: 'Archive program',
       variant: 'danger',
     });
@@ -118,7 +130,7 @@ export function AdminVolunteeringPrograms() {
 
   const handleRestore = async (program: VolunteerProgramView) => {
     const confirmed = await confirm({
-      message: `Restore "${program.title}"?`,
+      message: `Restore "${program.title}"? The program will appear in admin lists again. You can publish it when you are ready.`,
       title: 'Restore program',
       variant: 'info',
     });
@@ -188,16 +200,26 @@ export function AdminVolunteeringPrograms() {
         id: 'status',
         header: 'Status',
         align: 'center',
-        renderCell: (row) =>
-          isArchivedAt(row.archivedAt) ? (
-            <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
-              Archived
+        renderCell: (row) => {
+          if (isArchivedAt(row.archivedAt)) {
+            return (
+              <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+                Archived
+              </span>
+            );
+          }
+          return (
+            <span
+              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                row.published
+                  ? 'bg-green-100 text-green-800 dark:bg-emerald-900/30 dark:text-emerald-200'
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+              }`}
+            >
+              {row.published ? 'Published' : 'Draft'}
             </span>
-          ) : (
-            <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-              Active
-            </span>
-          ),
+          );
+        },
       },
     ],
     []
@@ -241,7 +263,7 @@ export function AdminVolunteeringPrograms() {
           actions={
             canCreate
               ? {
-                  widthClassName: 'w-[16rem]',
+                  widthClassName: 'w-[20rem]',
                   renderActions: (row) => (
                     <div className="flex items-center justify-end gap-1">
                       <button
@@ -252,6 +274,16 @@ export function AdminVolunteeringPrograms() {
                       >
                         Duplicate
                       </button>
+                      {!isArchivedAt(row.archivedAt) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePublish(row)}
+                          className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                          title={row.published ? 'Unpublish' : 'Publish'}
+                        >
+                          {row.published ? 'Unpublish' : 'Publish'}
+                        </button>
+                      ) : null}
                       <SoftDeleteRowActions
                         archived={isArchivedAt(row.archivedAt)}
                         isServerAdmin={isServerAdmin}

@@ -2,6 +2,7 @@ import { FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify
 import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin, isServerAdmin } from '../utils/auth.js';
+import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import {
@@ -116,6 +117,7 @@ import {
 } from '../services/eventTournamentDrawService.js';
 import {
   broadcastTournamentDrawUpdated,
+  getTournamentDrawIdleTimeoutMs,
   subscribeTournamentDrawLive,
 } from '../services/tournamentDrawPublicLive.js';
 import { PassThrough } from 'node:stream';
@@ -742,7 +744,7 @@ async function getPublicPublishedTournamentDrawEventId(
 // Public routes (no auth required)
 export async function publicEventRoutes(fastify: FastifyInstance): Promise<void> {
   // List published public events
-  fastify.get('/public/events', { schema: { tags: ['events'] } }, async (request) => {
+  fastify.get('/public/events', { schema: { tags: ['events'] } }, async (request, reply) => {
     const query = request.query as { category?: string; from?: string; to?: string };
     const events = await listEvents({
       publishedOnly: true,
@@ -751,11 +753,13 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       fromDate: query.from,
       toDate: query.to,
     });
+    const capped = events.slice(0, 200);
+    reply.header('Cache-Control', 'public, max-age=30');
     const serverNow = new Date().toISOString();
     const statsByEventId = await getPublicEventRegistrationStats(
-      events.map((event) => ({ id: event.id, capacity: event.capacity })),
+      capped.map((event) => ({ id: event.id, capacity: event.capacity })),
     );
-    return events.map((event) => {
+    return capped.map((event) => {
       const stats = statsByEventId.get(event.id) ?? {
         confirmedCount: 0,
         waitlistedCount: 0,
@@ -929,25 +933,41 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
       };
 
-      const unsubscribe = subscribeTournamentDrawLive(eventId, send);
+      const subscription = subscribeTournamentDrawLive(eventId, send, request.ip || 'unknown');
+      if (!subscription.ok) {
+        return sendApiError(
+          reply,
+          429,
+          subscription.error === 'ip_limit'
+            ? 'Too many live connections from this network. Please try again later.'
+            : 'Too many live connections for this draw. Please try again later.'
+        );
+      }
 
       const payload = JSON.stringify({ type: 'connected', eventId });
       send(`data: ${payload}\n\n`);
 
-      const pingTimer = setInterval(() => {
-        send(': ping\n\n');
-      }, 30000);
-
       let cleanedUp = false;
+      let pingTimer: ReturnType<typeof setInterval> | undefined;
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
         if (cleanedUp) return;
         cleanedUp = true;
-        clearInterval(pingTimer);
-        unsubscribe();
+        if (pingTimer) clearInterval(pingTimer);
+        if (idleTimer) clearTimeout(idleTimer);
+        subscription.unsubscribe();
         if (!stream.writableEnded) {
           stream.end();
         }
       };
+
+      pingTimer = setInterval(() => {
+        send(': ping\n\n');
+      }, 30000);
+
+      idleTimer = setTimeout(() => {
+        cleanup();
+      }, getTournamentDrawIdleTimeoutMs());
 
       request.raw.on('close', cleanup);
       stream.on('close', cleanup);
@@ -964,7 +984,11 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
   // Public registration for a public event
   fastify.post<{ Params: { slug: string }; Body: unknown }>(
     '/public/events/:slug/register',
-    { preHandler: optionalAuthMiddleware, schema: { tags: ['events'] } },
+    {
+      preHandler: optionalAuthMiddleware,
+      config: { rateLimit: abuseRouteRateLimits.eventRegister },
+      schema: { tags: ['events'] },
+    },
     async (request, reply) => {
       const event = await getEventBySlug(request.params.slug);
       if (!event) {

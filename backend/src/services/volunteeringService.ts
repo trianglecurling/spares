@@ -144,6 +144,7 @@ export type VolunteerProgramView = {
   pointOfContact: string;
   location: string | null;
   startDate: string | null;
+  published: boolean;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -356,6 +357,7 @@ export async function createProgram(input: {
   pointOfContact: string;
   location?: string | null;
   startDate?: string | null;
+  published?: boolean;
   managerIds?: number[];
   createdByMemberId: number;
 }): Promise<{ id: number }> {
@@ -374,6 +376,7 @@ export async function createProgram(input: {
       point_of_contact: pointOfContact,
       location: input.location?.trim() || null,
       start_date: startDate,
+      published: input.published ? 1 : 0,
       created_by_member_id: input.createdByMemberId,
     } as any)
     .returning({ id: schema.volunteerPrograms.id });
@@ -390,6 +393,7 @@ export async function updateProgram(
     pointOfContact?: string;
     location?: string | null;
     startDate?: string | null;
+    published?: boolean;
     managerIds?: number[];
   }
 ): Promise<void> {
@@ -417,6 +421,9 @@ export async function updateProgram(
   if (input.startDate !== undefined) {
     patch.start_date = parseOptionalDateOnly(input.startDate, 'start date');
   }
+  if (input.published !== undefined) {
+    patch.published = input.published ? 1 : 0;
+  }
 
   await db.update(schema.volunteerPrograms).set(patch as any).where(eq(schema.volunteerPrograms.id, programId));
 
@@ -438,6 +445,8 @@ export async function archiveProgram(programId: number, archive: boolean): Promi
     .update(schema.volunteerPrograms)
     .set({
       archived_at: archive ? new Date() : null,
+      // Match events: archiving also unpublishes so restore does not reappear on the hub.
+      ...(archive ? { published: 0 } : {}),
       updated_at: new Date(),
     } as any)
     .where(eq(schema.volunteerPrograms.id, programId));
@@ -1085,6 +1094,9 @@ async function buildProgramViews(options: {
   if (!options.includeArchived) {
     programs = programs.filter((p) => !p.archived_at);
   }
+  if (options.forHub) {
+    programs = programs.filter((p) => Number(p.published) === 1);
+  }
   if (options.programIds !== undefined && options.programIds !== 'all') {
     const idSet = new Set(options.programIds);
     programs = programs.filter((p) => idSet.has(p.id));
@@ -1240,6 +1252,7 @@ async function buildProgramViews(options: {
       pointOfContact: program.point_of_contact,
       location: program.location,
       startDate: normalizeDateOnly(program.start_date as any),
+      published: Number(program.published) === 1,
       archivedAt: toIso(program.archived_at as any),
       createdAt: requireIso(program.created_at as any, 'createdAt'),
       updatedAt: requireIso(program.updated_at as any, 'updatedAt'),
@@ -1330,6 +1343,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     .where(
       and(
         isNull(schema.volunteerPrograms.archived_at),
+        eq(schema.volunteerPrograms.published, 1),
         gte(schema.volunteerShifts.start_dt, nowIso),
         lte(schema.volunteerShifts.start_dt, horizon)
       )
@@ -1511,6 +1525,7 @@ export async function signUpForShiftRole(
       pointOfContact: schema.volunteerPrograms.point_of_contact,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
+      published: schema.volunteerPrograms.published,
       archivedAt: schema.volunteerPrograms.archived_at,
     })
     .from(schema.volunteerShiftRoles)
@@ -1524,7 +1539,7 @@ export async function signUpForShiftRole(
     .limit(1);
 
   const target = rows[0];
-  if (!target || target.archivedAt) {
+  if (!target || target.archivedAt || Number(target.published) !== 1) {
     throw new VolunteeringServiceError('Opportunity not found', 404);
   }
 

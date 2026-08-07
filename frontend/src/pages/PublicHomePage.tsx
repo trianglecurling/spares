@@ -399,10 +399,10 @@ export default function PublicHomePage() {
     {
       key: 'new',
       eyebrow: 'New to curling?',
-      title: 'Try curling',
+      title: 'Learn to Curl',
       description: 'No experience needed. Learn-to-curl sessions and public events are the perfect first slide onto the ice.',
       cta: 'Learn how to start',
-      to: '/articles/try-curling',
+      to: '/articles/learn-to-curl',
     },
     {
       key: 'bonspiel',
@@ -720,6 +720,15 @@ export default function PublicHomePage() {
                   </Link>
                 </div>
                 <div className="md:border-l md:border-white/15 md:pl-10">
+                  <img
+                    src="/tccnc-state-graphic-600.png"
+                    alt="Map of North Carolina highlighting Triangle Curling Club in the Triangle region"
+                    width={600}
+                    height={424}
+                    loading="lazy"
+                    decoding="async"
+                    className="mb-6 w-44 max-w-full opacity-80 sm:w-48"
+                  />
                   <ul className="space-y-4 text-sm leading-relaxed">
                     <li className="flex items-start gap-3">
                       <HiOutlineMapPin className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />

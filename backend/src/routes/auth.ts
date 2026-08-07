@@ -4,6 +4,7 @@ import { eq, and, desc, sql, like } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import {
   generateAuthCode,
+  generateTempAuthToken,
   normalizeEmail,
   isAdmin,
   isServerAdmin,
@@ -14,6 +15,15 @@ import {
   membersAllowedToLogin,
   isLoginDisabledForMembers,
 } from '../utils/auth.js';
+import {
+  authVerifyFailKey,
+  clearAuthVerifyFailures,
+  isAuthVerifyLockedOut,
+  isIpLimitBypassed,
+  recordAuthVerifyFailure,
+} from '../utils/abuseProtection.js';
+import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
+import { isMemberIdBoundToContact, parseTempAuthContact } from '../utils/authSelectMember.js';
 import { buildAuthzClaimsForMember, buildAuthzClaimsForImpersonatedMember, hasScope } from '../utils/rbac.js';
 import { sendAuthCodeEmail } from '../services/email.js';
 import { sendAuthCodeSMS } from '../services/sms.js';
@@ -44,13 +54,63 @@ function normalizePhoneDigits10(input: string): string | null {
   return null;
 }
 
-function normalizeStoredPhoneDigits10(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  return normalizePhoneDigits10(String(value));
-}
-
 function phoneDigits10ToE164(digits10: string): string {
   return `+1${digits10}`;
+}
+
+async function findMembersByEmail(normalizedEmail: string): Promise<Member[]> {
+  const { db, schema } = getDrizzleDb();
+  return (await db
+    .select()
+    .from(schema.members)
+    .where(sql`LOWER(${schema.members.email}) = LOWER(${normalizedEmail})`)) as Member[];
+}
+
+/**
+ * Match members by 10-digit US phone using SQL digit stripping (avoids full-table JS scan).
+ */
+async function findMembersByPhoneDigits10(digits10: string): Promise<Member[]> {
+  const { db, schema } = getDrizzleDb();
+  const withCountry = `1${digits10}`;
+  return (await db
+    .select()
+    .from(schema.members)
+    .where(
+      sql`regexp_replace(COALESCE(${schema.members.phone}, ''), '[^0-9]', '', 'g') IN (${digits10}, ${withCountry})`
+    )) as Member[];
+}
+
+async function findMembersForAuthContact(contact: string): Promise<{
+  isEmail: boolean;
+  members: Member[];
+  authContactToStore: string | null;
+}> {
+  const isEmail = contact.includes('@');
+  if (isEmail) {
+    const normalized = normalizeEmail(contact);
+    return {
+      isEmail: true,
+      members: await findMembersByEmail(normalized),
+      authContactToStore: normalized,
+    };
+  }
+  const digits10 = normalizePhoneDigits10(contact);
+  if (!digits10) {
+    return { isEmail: false, members: [], authContactToStore: null };
+  }
+  return {
+    isEmail: false,
+    members: await findMembersByPhoneDigits10(digits10),
+    authContactToStore: phoneDigits10ToE164(digits10),
+  };
+}
+
+async function invalidateUnusedAuthCodes(contact: string): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.authCodes)
+    .set({ used: 1 })
+    .where(and(eq(schema.authCodes.contact, contact), eq(schema.authCodes.used, 0)));
 }
 
 const requestCodeSchema = z.object({
@@ -64,7 +124,7 @@ const verifyCodeSchema = z.object({
 
 const selectMemberSchema = z.object({
   memberId: z.number(),
-  tempToken: z.string(),
+  tempToken: z.string().min(16).max(128),
 });
 
 const impersonateSchema = z.object({
@@ -442,6 +502,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
   }>(
     '/auth/request-code',
     {
+      config: {
+        rateLimit: abuseRouteRateLimits.authRequestCode,
+      },
       schema: {
         tags: ['auth'],
         body: authRequestCodeBodySchema,
@@ -466,37 +529,13 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const bypassLoginVerification = configRows[0]?.bypass_login_verification === 1;
     const disableUserLogin = configRows[0]?.disable_user_login === 1;
 
-    // Determine if it's email or phone
-    const isEmail = body.contact.includes('@');
-    const normalizedContact = isEmail ? normalizeEmail(body.contact) : body.contact;
+    const resolved = await findMembersForAuthContact(body.contact);
+    const { isEmail, authContactToStore } = resolved;
+    let members = resolved.members;
 
-    let members: Member[] = [];
-    let authContactToStore: string;
-
-    if (isEmail) {
-      members = await db
-        .select()
-        .from(schema.members)
-        .where(sql`LOWER(${schema.members.email}) = LOWER(${normalizedContact})`) as Member[];
-      authContactToStore = normalizedContact;
-    } else {
-      const digits10 = normalizePhoneDigits10(body.contact);
-      if (!digits10) {
-        return reply.code(404).send({ error: 'No member found with this contact information' });
-      }
-
-      // Load candidates and match in JS to handle legacy punctuation/format differences in stored phone values.
-      const candidates = await db
-        .select()
-        .from(schema.members)
-        .where(sql`${schema.members.phone} IS NOT NULL AND ${schema.members.phone} != ''`) as Member[];
-
-      members = candidates.filter((m) => normalizeStoredPhoneDigits10(m.phone) === digits10);
-      authContactToStore = phoneDigits10ToE164(digits10);
-    }
-
-    if (members.length === 0) {
-      return reply.code(404).send({ error: 'No member found with this contact information' });
+    // Anti-enumeration: unknown contacts get the same success shape (no send).
+    if (!authContactToStore || members.length === 0) {
+      return { success: true, multipleMembers: false };
     }
 
     if (isLoginDisabledForMembers(members, disableUserLogin)) {
@@ -530,10 +569,11 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         };
       }
 
-      // Multiple members - return temp token for selection
-      const tempToken = generateAuthCode();
+      const tempContact = `temp:${authContactToStore}`;
+      await invalidateUnusedAuthCodes(tempContact);
+      const tempToken = generateTempAuthToken();
       await db.insert(schema.authCodes).values({
-        contact: `temp:${normalizedContact}`,
+        contact: tempContact,
         code: tempToken,
         expires_at: new Date(Date.now() + 5 * 60 * 1000),
         used: 0,
@@ -550,6 +590,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const code = generateAuthCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
+    await invalidateUnusedAuthCodes(authContactToStore);
     await db.insert(schema.authCodes).values({
       contact: authContactToStore,
       code,
@@ -583,6 +624,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: AuthVerifyCodeBody; Reply: AuthVerifyCodeResponse<AuthenticatedMember> | ApiErrorResponse }>(
     '/auth/verify-code',
     {
+      config: {
+        rateLimit: abuseRouteRateLimits.authVerify,
+      },
       schema: {
         tags: ['auth'],
         body: authVerifyCodeBodySchema,
@@ -594,6 +638,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const body = verifyCodeSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
+    const clientIp = request.ip || 'unknown';
+    const bypassIpLimits = isIpLimitBypassed(clientIp);
+    const failKey = authVerifyFailKey(clientIp, body.contact);
+    if (!bypassIpLimits && isAuthVerifyLockedOut(failKey)) {
+      return reply.code(429).send({ error: 'Too many failed attempts. Please try again later.' });
+    }
 
     const configRows = await db
       .select({ disable_user_login: schema.serverConfig.disable_user_login })
@@ -602,14 +652,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       .limit(1);
     const disableUserLogin = configRows[0]?.disable_user_login === 1;
 
-    const isEmail = body.contact.includes('@');
-    const normalizedContact = isEmail ? normalizeEmail(body.contact) : body.contact;
-    const authContactToMatch = isEmail
-      ? normalizedContact
-      : (() => {
-          const digits10 = normalizePhoneDigits10(body.contact);
-          return digits10 ? phoneDigits10ToE164(digits10) : body.contact;
-        })();
+    const resolved = await findMembersForAuthContact(body.contact);
+    const authContactToMatch = resolved.authContactToStore;
+    if (!authContactToMatch) {
+      if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
+      return reply.code(401).send({ error: 'Invalid or expired code' });
+    }
 
     // Find valid auth code
     const now = new Date().toISOString();
@@ -630,6 +678,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const authCode = authCodes[0];
 
     if (!authCode) {
+      if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
       return reply.code(401).send({ error: 'Invalid or expired code' });
     }
 
@@ -639,27 +688,11 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       .set({ used: 1 })
       .where(eq(schema.authCodes.id, authCode.id));
 
-    // Get members with this contact
-    let members: Member[] = [];
-    if (isEmail) {
-      members = await db
-        .select()
-        .from(schema.members)
-        .where(sql`LOWER(${schema.members.email}) = LOWER(${normalizedContact})`) as Member[];
-    } else {
-      const digits10 = normalizePhoneDigits10(body.contact);
-      if (!digits10) {
-        return reply.code(404).send({ error: 'No member found' });
-      }
-      const candidates = await db
-        .select()
-        .from(schema.members)
-        .where(sql`${schema.members.phone} IS NOT NULL AND ${schema.members.phone} != ''`) as Member[];
-      members = candidates.filter((m) => normalizeStoredPhoneDigits10(m.phone) === digits10);
-    }
+    let members = resolved.members;
 
     if (members.length === 0) {
-      return reply.code(404).send({ error: 'No member found' });
+      if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
+      return reply.code(401).send({ error: 'Invalid or expired code' });
     }
 
     if (isLoginDisabledForMembers(members, disableUserLogin)) {
@@ -667,6 +700,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     }
 
     members = membersAllowedToLogin(members, disableUserLogin);
+    if (!bypassIpLimits) clearAuthVerifyFailures(failKey);
 
     // If only one member, generate token and return
     if (members.length === 1) {
@@ -683,9 +717,11 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     }
 
     // Multiple members - return temporary token for selection
-    const tempToken = generateAuthCode();
+    const tempContact = `temp:${authContactToMatch}`;
+    await invalidateUnusedAuthCodes(tempContact);
+    const tempToken = generateTempAuthToken();
     await db.insert(schema.authCodes).values({
-      contact: `temp:${normalizedContact}`,
+      contact: tempContact,
       code: tempToken,
       expires_at: new Date(Date.now() + 5 * 60 * 1000), // Drizzle PostgreSQL timestamp columns require Date objects, not strings
       used: 0,
@@ -706,6 +742,9 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: AuthSelectMemberBody; Reply: AuthVerifyCodeResponse<AuthenticatedMember> | ApiErrorResponse }>(
     '/auth/select-member',
     {
+      config: {
+        rateLimit: abuseRouteRateLimits.authSelect,
+      },
       schema: {
         tags: ['auth'],
         body: authSelectMemberBodySchema,
@@ -717,6 +756,12 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const body = selectMemberSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
+    const clientIp = request.ip || 'unknown';
+    const bypassIpLimits = isIpLimitBypassed(clientIp);
+    const failKey = authVerifyFailKey(clientIp, `temp:${body.tempToken.slice(0, 16)}`);
+    if (!bypassIpLimits && isAuthVerifyLockedOut(failKey)) {
+      return reply.code(429).send({ error: 'Too many failed attempts. Please try again later.' });
+    }
 
     const configRows = await db
       .select({ disable_user_login: schema.serverConfig.disable_user_login })
@@ -744,16 +789,28 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const tempAuth = tempAuths[0];
 
     if (!tempAuth) {
+      if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
       return reply.code(401).send({ error: 'Invalid or expired token' });
     }
 
-    // Mark temp token as used
+    const boundContact = parseTempAuthContact(tempAuth.contact);
+    if (!boundContact) {
+      if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
+      return reply.code(401).send({ error: 'Invalid or expired token' });
+    }
+
+    const allowed = await findMembersForAuthContact(boundContact);
+    if (!isMemberIdBoundToContact(body.memberId, allowed.members.map((m) => m.id))) {
+      if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
+      return reply.code(401).send({ error: 'Invalid or expired token' });
+    }
+
+    // Mark temp token as used only after binding checks pass
     await db
       .update(schema.authCodes)
       .set({ used: 1 })
       .where(eq(schema.authCodes.id, tempAuth.id));
 
-    // Get member
     const members = await db
       .select()
       .from(schema.members)
@@ -763,13 +820,14 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const member = members[0];
 
     if (!member) {
-      return reply.code(404).send({ error: 'Member not found' });
+      return reply.code(401).send({ error: 'Invalid or expired token' });
     }
 
     if (disableUserLogin && !isServerAdmin(member)) {
       return reply.code(403).send({ error: LOGIN_DISABLED_MESSAGE });
     }
 
+    if (!bypassIpLimits) clearAuthVerifyFailures(failKey);
     const session = await issueAuthSession(member as Member);
 
     // Best-effort analytics (do not block)

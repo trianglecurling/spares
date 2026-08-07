@@ -88,14 +88,27 @@ export default function VolunteeringHub() {
   }, [showAlert]);
 
   useEffect(() => {
-    if (activeTab === 'shifts') return;
+    // Always load hub data so credential-tab visibility is known on every tab,
+    // including a direct land on My shifts.
     void load();
-  }, [activeTab, load]);
+  }, [load]);
 
   const programsWithShifts = useMemo(
     () => programs.filter((p) => p.shifts.some((s) => s.roles.length > 0)),
     [programs]
   );
+
+  const hasHeldCredentials = useMemo(
+    () => credentials.some((credential) => credential.held),
+    [credentials]
+  );
+
+  useEffect(() => {
+    if (loading || activeTab !== 'credentials' || hasHeldCredentials) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('tab');
+    setSearchParams(next, { replace: true });
+  }, [loading, activeTab, hasHeldCredentials, searchParams, setSearchParams]);
 
   const setTab = (tab: HubTab) => {
     const next = new URLSearchParams(searchParams);
@@ -163,12 +176,16 @@ export default function VolunteeringHub() {
             isActive: activeTab === 'shifts',
             onClick: () => setTab('shifts'),
           },
-          {
-            key: 'credentials',
-            label: 'My credentials',
-            isActive: activeTab === 'credentials',
-            onClick: () => setTab('credentials'),
-          },
+          ...(hasHeldCredentials
+            ? [
+                {
+                  key: 'credentials',
+                  label: 'My credentials',
+                  isActive: activeTab === 'credentials',
+                  onClick: () => setTab('credentials'),
+                },
+              ]
+            : []),
         ]}
       />
 
@@ -176,7 +193,7 @@ export default function VolunteeringHub() {
         <MyVolunteerShiftsPanel />
       ) : loading ? (
         <AppStateCard title="Loading opportunities" description="Fetching volunteer programs and shifts." />
-      ) : activeTab === 'credentials' ? (
+      ) : activeTab === 'credentials' && hasHeldCredentials ? (
         <CredentialsTab credentials={credentials} />
       ) : (
         <div className="space-y-4">

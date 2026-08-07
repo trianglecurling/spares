@@ -6,6 +6,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 import { formatDateForEmail, formatTimeForEmail } from '../utils/dateFormat.js';
 import type { FormattedEventWhen } from '../utils/formatEventTimespans.js';
+import { consumeSendBudget, type SendBudgetKind } from '../utils/abuseProtection.js';
 import { logEvent } from './observability.js';
 
 let emailClient: EmailClient | null = null;
@@ -146,12 +147,30 @@ interface EmailOptions {
   textContent?: string;
   recipientName: string;
   replyTo?: string;
+  /** Send-budget category; defaults to staff (fail-open). */
+  budgetKind?: SendBudgetKind;
+  /** When true, over-budget still sends (staff). Public/OTP should leave false. */
+  failOpenBudget?: boolean;
 }
 
 export interface EmailDeliveryResult {
   status: 'sent' | 'logged' | 'failed';
   reason?: string;
   error?: string;
+}
+
+function applySendBudgetOrBlock(options: EmailOptions): EmailDeliveryResult | null {
+  const kind = options.budgetKind ?? 'staff';
+  const failOpen = options.failOpenBudget ?? kind === 'staff';
+  const budget = consumeSendBudget({ kind, recipient: options.to, failOpen });
+  if (!budget.ok) {
+    console.warn(`[Email Service] Send budget blocked email to ${options.to}: ${budget.reason}`);
+    logEvent({ eventType: 'email.logged', meta: { reason: 'send_budget', detail: budget.reason } }).catch(
+      () => {}
+    );
+    return { status: 'failed', reason: 'send_budget', error: budget.reason };
+  }
+  return null;
 }
 
 function getLoginRedirectUrl(pathAndSearch: string): string {
@@ -208,6 +227,8 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
   const smtpFrom = config.smtp.from || dbConfig.senderEmail;
 
   if (dbConfig.testMode) {
+    const blocked = applySendBudgetOrBlock(options);
+    if (blocked) return blocked;
     try {
       const transporter = getTestModeSmtpTransporter();
       await sendMailWithTransporter(transporter, options, fullHtmlContent, smtpFrom);
@@ -235,6 +256,9 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
     logEvent({ eventType: 'email.logged', meta: { reason: 'not_configured' } }).catch(() => {});
     return { status: 'logged', reason: 'not_configured' };
   }
+
+  const blocked = applySendBudgetOrBlock(options);
+  if (blocked) return blocked;
 
   try {
     if (useSmtp) {
@@ -296,6 +320,8 @@ export async function sendAuthCodeEmail(
       subject: `Your login code: ${code}`,
       htmlContent,
       recipientName: name,
+      budgetKind: 'otp',
+      failOpenBudget: false,
     }
   );
 }
