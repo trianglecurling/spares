@@ -63,6 +63,18 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+/** Return a non-expired access token, refreshing first when needed. */
+export async function ensureAccessToken(): Promise<string | null> {
+  const token = getAccessToken();
+  if (isAccessTokenUsable(token)) {
+    return token;
+  }
+  if (!getRefreshToken()) {
+    return null;
+  }
+  return refreshAccessToken();
+}
+
 // Add auth token to requests (skip expired tokens so public guest flows are not blocked)
 api.interceptors.request.use((config) => {
   const token = getAccessToken();

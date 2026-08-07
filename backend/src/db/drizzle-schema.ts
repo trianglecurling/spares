@@ -43,6 +43,11 @@ export const membersSqlite = sqliteTable('members', {
   email_visible: integer('email_visible').default(0).notNull(),
   phone_visible: integer('phone_visible').default(0).notNull(),
   theme_preference: text('theme_preference').default('system'),
+  // Session for which the member last dismissed or visited the availability reminder.
+  availability_reminder_acked_session_id: integer('availability_reminder_acked_session_id').references(
+    () => curlingSessionsSqlite.id,
+    { onDelete: 'set null' },
+  ),
   baseline_other_club_experience_years: real('baseline_other_club_experience_years').default(0).notNull(),
   baseline_club_experience_years: real('baseline_club_experience_years').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
@@ -2168,11 +2173,13 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   location: text('location'),
   start_date: text('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  published: integer('published').default(0).notNull(),
   archived_at: text('archived_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   createdByIdx: index('idx_volunteer_programs_created_by').on(table.created_by_member_id),
+  publishedIdx: index('idx_volunteer_programs_published').on(table.published),
   archivedAtIdx: index('idx_volunteer_programs_archived_at').on(table.archived_at),
 }));
 
@@ -2325,6 +2332,11 @@ export const membersPg = pgTable('members', {
   email_visible: integerPg('email_visible').default(0).notNull(),
   phone_visible: integerPg('phone_visible').default(0).notNull(),
   theme_preference: textPg('theme_preference').default('system'),
+  // Session for which the member last dismissed or visited the availability reminder.
+  availability_reminder_acked_session_id: integerPg('availability_reminder_acked_session_id').references(
+    () => curlingSessionsPg.id,
+    { onDelete: 'set null' },
+  ),
   baseline_other_club_experience_years: doublePrecision('baseline_other_club_experience_years').default(0).notNull(),
   baseline_club_experience_years: doublePrecision('baseline_club_experience_years').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
@@ -4196,11 +4208,13 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   location: textPg('location'),
   start_date: date('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  published: integerPg('published').default(0).notNull(),
   archived_at: timestamp('archived_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   createdByIdx: indexPg('idx_volunteer_programs_created_by').on(table.created_by_member_id),
+  publishedIdx: indexPg('idx_volunteer_programs_published').on(table.published),
   archivedAtIdx: indexPg('idx_volunteer_programs_archived_at').on(table.archived_at),
 }));
 

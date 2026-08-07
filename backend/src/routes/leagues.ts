@@ -1136,6 +1136,26 @@ export async function leagueRoutes(fastify: FastifyInstance) {
                 }))
               );
             }
+
+            const availabilityRows = await tx
+              .select({
+                member_id: schema.memberAvailability.member_id,
+                available: schema.memberAvailability.available,
+                can_skip: schema.memberAvailability.can_skip,
+              })
+              .from(schema.memberAvailability)
+              .where(eq(schema.memberAvailability.league_id, src.id));
+
+            if (availabilityRows.length > 0) {
+              await tx.insert(schema.memberAvailability).values(
+                availabilityRows.map((row) => ({
+                  member_id: row.member_id,
+                  league_id: newLeagueId,
+                  available: row.available,
+                  can_skip: row.can_skip,
+                }))
+              );
+            }
           }
 
           const continuityRows = await tx

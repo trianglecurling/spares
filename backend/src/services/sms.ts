@@ -2,6 +2,7 @@ import twilio from 'twilio';
 import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
+import { consumeSendBudget, type SendBudgetKind } from '../utils/abuseProtection.js';
 import { logEvent } from './observability.js';
 
 let twilioClient: ReturnType<typeof twilio> | null = null;
@@ -91,9 +92,13 @@ async function getTwilioClient() {
   return twilioClient;
 }
 
-export async function sendSMS(to: string, message: string): Promise<void> {
+export async function sendSMS(
+  to: string,
+  message: string,
+  budget?: { kind?: SendBudgetKind; failOpen?: boolean }
+): Promise<void> {
   const dbConfig = await getConfigFromDatabase();
-  
+
   // If SMS is disabled or in test mode, print to console instead of sending
   if (dbConfig.disableSms || dbConfig.testMode) {
     console.log('='.repeat(80));
@@ -104,10 +109,21 @@ export async function sendSMS(to: string, message: string): Promise<void> {
     logEvent({ eventType: 'sms.logged', meta: { reason: dbConfig.disableSms ? 'disabled' : 'test_mode' } }).catch(() => {});
     return;
   }
-  
+
   if (!dbConfig.apiKeySid || !dbConfig.apiKeySecret || !dbConfig.accountSid || !dbConfig.campaignSid) {
     console.log('SMS not configured. Would send to', to, ':', message);
     logEvent({ eventType: 'sms.logged', meta: { reason: 'not_configured' } }).catch(() => {});
+    return;
+  }
+
+  const kind = budget?.kind ?? 'staff';
+  const failOpen = budget?.failOpen ?? kind === 'staff';
+  const budgetResult = consumeSendBudget({ kind, recipient: to, failOpen });
+  if (!budgetResult.ok) {
+    console.warn(`[SMS Service] Send budget blocked SMS to ${to}: ${budgetResult.reason}`);
+    logEvent({ eventType: 'sms.logged', meta: { reason: 'send_budget', detail: budgetResult.reason } }).catch(
+      () => {}
+    );
     return;
   }
 
@@ -134,7 +150,7 @@ export async function sendSMS(to: string, message: string): Promise<void> {
 
 export async function sendAuthCodeSMS(phone: string, code: string): Promise<void> {
   const message = `Your Triangle Curling login code is: ${code}. This code expires in 10 minutes.`;
-  await sendSMS(phone, message);
+  await sendSMS(phone, message, { kind: 'otp', failOpen: false });
 }
 
 export async function sendSpareRequestSMS(

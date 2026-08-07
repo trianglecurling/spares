@@ -365,6 +365,24 @@ export const availabilityResponseSchema = {
   required: ['canSkip', 'leagues'],
 } as const;
 
+export const availabilityReminderStatusResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    visible: { type: 'boolean' },
+    session: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        id: { type: 'number' },
+        name: { type: 'string' },
+      },
+      required: ['id', 'name'],
+    },
+  },
+  required: ['visible', 'session'],
+} as const;
+
 export const memberAvailabilityResponseSchema = {
   type: 'object',
   additionalProperties: false,

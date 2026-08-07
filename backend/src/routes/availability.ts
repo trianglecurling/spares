@@ -4,6 +4,7 @@ import { eq, and, sql, asc } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import {
   availabilityMembersResponseSchema,
+  availabilityReminderStatusResponseSchema,
   availabilityResponseSchema,
   memberAvailabilityResponseSchema,
   successResponseSchema,
@@ -13,6 +14,10 @@ import { memberIsSocialMember } from '../utils/memberMembershipHelpers.js';
 import { memberIsNotSocialCondition } from '../services/memberMembershipStatusService.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility.js';
+import {
+  ackAvailabilityReminderForRelevantSession,
+  getAvailabilityReminderStatus,
+} from '../services/availabilityReminderService.js';
 
 const setAvailabilitySchema = z.object({
   leagueId: z.number(),
@@ -24,6 +29,49 @@ const setCanSkipSchema = z.object({
 });
 
 export async function availabilityRoutes(fastify: FastifyInstance) {
+  // Dashboard reminder: whether the member should update sparing availability for the relevant session
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/availability/reminder',
+    {
+      schema: {
+        tags: ['availability'],
+        response: {
+          200: availabilityReminderStatusResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      return getAvailabilityReminderStatus(member);
+    },
+  );
+
+  // Acknowledge the availability reminder for the current relevant session (visit or dismiss)
+  fastify.post<{ Reply: ApiReply<unknown> }>(
+    '/availability/reminder/ack',
+    {
+      schema: {
+        tags: ['availability'],
+        response: {
+          200: successResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const result = await ackAvailabilityReminderForRelevantSession(member.id);
+      return { success: result.success };
+    },
+  );
+
   // Get current member's availability
   fastify.get<{ Reply: ApiReply<unknown> }>(
     '/availability',

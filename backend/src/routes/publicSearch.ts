@@ -6,6 +6,7 @@ import {
   searchPublicContent,
   validateSearchQuery,
 } from '../search/searchIndexService.js';
+import { isIpLimitBypassed } from '../utils/abuseProtection.js';
 
 export async function publicSearchRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(
@@ -13,6 +14,7 @@ export async function publicSearchRoutes(fastify: FastifyInstance): Promise<void
       await searchScope.register(rateLimit, {
         max: 30,
         timeWindow: '1 minute',
+        allowList: (request) => isIpLimitBypassed(request.ip),
         errorResponseBuilder: () => ({
           error: 'Too many search requests. Please wait a moment and try again.',
         }),

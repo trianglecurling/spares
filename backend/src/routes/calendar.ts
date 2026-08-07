@@ -6,6 +6,7 @@ import { isCalendarAdmin } from '../utils/auth.js';
 import { composeRecurrenceRule } from '../utils/calendarRecurrence.js';
 import { getCalendarFeed, getLeagueCalendarFeed } from '../domains/calendar/queries/calendarReadFacade.js';
 import type { Member } from '../types.js';
+import { isCalendarRangeWithinLimit } from '../utils/abuseProtection.js';
 
 type LocationType = 'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual';
 
@@ -67,8 +68,14 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    async (request, _reply) => {
+    async (request, reply) => {
       const q = request.query as { start: string; end: string };
+      if (Number.isNaN(new Date(q.start).getTime()) || Number.isNaN(new Date(q.end).getTime())) {
+        return reply.code(400).send({ error: 'Invalid date range' });
+      }
+      if (!isCalendarRangeWithinLimit(q.start, q.end)) {
+        return reply.code(400).send({ error: 'Date range must be 93 days or less' });
+      }
       return getCalendarFeed({
         start: q.start,
         end: q.end,
@@ -101,6 +108,12 @@ export async function calendarRoutes(fastify: FastifyInstance) {
       }
 
       const q = request.query as { start: string; end: string };
+      if (Number.isNaN(new Date(q.start).getTime()) || Number.isNaN(new Date(q.end).getTime())) {
+        return reply.code(400).send({ error: 'Invalid date range' });
+      }
+      if (!isCalendarRangeWithinLimit(q.start, q.end)) {
+        return reply.code(400).send({ error: 'Date range must be 93 days or less' });
+      }
       return getLeagueCalendarFeed(q.start, q.end);
     }
   );

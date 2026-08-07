@@ -24,6 +24,7 @@ import Modal from '../components/Modal';
 import Button from '../components/Button';
 import AppStateCard from '../components/AppStateCard';
 import DashboardRegistrationStatus from '../components/DashboardRegistrationStatus';
+import DashboardAvailabilityReminder from '../components/DashboardAvailabilityReminder';
 import DashboardMembershipCard from '../components/DashboardMembershipCard';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -1420,6 +1421,7 @@ export default function Dashboard() {
   const firstDataSectionKey = enabledSections.find(
     (section) => !STRUCTURAL_SECTION_KEYS.has(section.key),
   )?.key;
+  const hasAlertSection = enabledSections.some((section) => section.key === 'alert');
 
   return (
     <>
@@ -1432,9 +1434,15 @@ export default function Dashboard() {
         />
 
         <div className="space-y-8">
+          {!hasAlertSection ? <DashboardAvailabilityReminder /> : null}
           {enabledSections.map((section) => {
             if (section.key === 'alert') {
-              return <Fragment key={section.key}>{renderAlertSection(section)}</Fragment>;
+              return (
+                <Fragment key={section.key}>
+                  {renderAlertSection(section)}
+                  <DashboardAvailabilityReminder />
+                </Fragment>
+              );
             }
             if (section.key === 'top_row') {
               return <Fragment key={section.key}>{renderTopRowSection()}</Fragment>;

@@ -47,6 +47,14 @@ sudo chown -R $USER:$USER /var/www/spares-preview.tccnc.club
 
 ### 3. Configure Nginx
 
+Put shared rate-limit zones in `/etc/nginx/conf.d/api-rate-limit.conf` (or the http{} context):
+
+```nginx
+limit_req_zone $binary_remote_addr zone=api_general:10m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=api_auth:10m rate=2r/s;
+limit_req_zone $binary_remote_addr zone=api_email:10m rate=1r/s;
+```
+
 Create `/etc/nginx/sites-available/spares.tccnc.club`:
 
 ```nginx
@@ -66,14 +74,69 @@ server {
     ssl_certificate /etc/ssl/certs/tccnc.club.crt;
     ssl_certificate_key /etc/ssl/private/tccnc.club.key;
 
+    client_max_body_size 12m;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
     # Frontend - serve static files
     location / {
         root /var/www/spares.tccnc.club/frontend/dist;
         try_files $uri $uri/ /index.html;
     }
 
+    # Swagger UI must not be public (app also disables /docs when NODE_ENV=production)
+    location /docs {
+        return 404;
+    }
+
+    # Permalink short links
+    location /go/ {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/auth/ {
+        limit_req zone=api_auth burst=10 nodelay;
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ ^/api/public/(contact|mailing-list)/ {
+        limit_req zone=api_email burst=5 nodelay;
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Optional: long-cache immutable public files (origin already sends Cache-Control)
+    location ~ ^/api/public/files/ {
+        limit_req zone=api_general burst=40 nodelay;
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # Backend API
     location /api {
+        limit_req zone=api_general burst=40 nodelay;
         proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -102,14 +165,50 @@ server {
     ssl_certificate /etc/ssl/certs/tccnc.club.crt;
     ssl_certificate_key /etc/ssl/private/tccnc.club.key;
 
-    # Frontend - serve static files
+    client_max_body_size 12m;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+
     location / {
         root /var/www/spares-preview.tccnc.club/frontend/dist;
         try_files $uri $uri/ /index.html;
     }
 
-    # Backend API
+    location /docs {
+        return 404;
+    }
+
+    location /go/ {
+        proxy_pass http://localhost:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/auth/ {
+        limit_req zone=api_auth burst=10 nodelay;
+        proxy_pass http://localhost:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ ^/api/public/(contact|mailing-list)/ {
+        limit_req zone=api_email burst=5 nodelay;
+        proxy_pass http://localhost:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location /api {
+        limit_req zone=api_general burst=40 nodelay;
         proxy_pass http://localhost:3002;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -130,6 +229,28 @@ sudo ln -s /etc/nginx/sites-available/spares.tccnc.club /etc/nginx/sites-enabled
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+### 3b. Cloudflare checklist (edge)
+
+Apply these in the Cloudflare dashboard for the production hostname (orange-cloud / proxied):
+
+- **DNS**: Proxy (orange cloud) the web hostname; do not publish the origin VM IP elsewhere.
+- **SSL/TLS**: Full (strict) with a valid origin certificate.
+- **WAF**: Enable managed rules + OWASP core; block obvious scanners.
+- **Bot Fight / Super Bot Fight**: On (or Turnstile on public forms if available on the plan).
+- **Rate limiting rules** (complement app + nginx):
+  - `/api/auth/*` — about 20 requests / 10 minutes / IP
+  - `/api/public/contact/*` and `/api/public/mailing-list/*` — about 10 / 10 minutes / IP
+  - Broad POST `/api/*` — higher but burst-capped
+- **Cache rules**:
+  - Cache `/api/public/files/*` (and thumbnails) aggressively
+  - Bypass cache for `/api/auth/*`, all POST methods, and authenticated requests
+  - Optional short TTL for `/api/sitemap.xml`
+- **Security headers** at edge if not fully covered by nginx: `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, HSTS
+- **Under Attack Mode**: emergency only
+- **Email providers** (Azure ACS / SMTP / Twilio): enable outbound quotas and bounce/complaint monitoring so a breach of app limits still has a ceiling
+
+The Node app sets `trustProxy: true` so `X-Forwarded-For` from nginx/Cloudflare is used for `request.ip` and rate-limit keys. Ensure nginx always sets those headers (as in the sample above).
 
 ### 4. Create Systemd Service Files
 

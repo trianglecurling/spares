@@ -5,6 +5,7 @@ import type { ApiErrorResponse } from '../api/types.js';
 import { PaymentServiceError } from '../services/paymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import type { Member } from '../types.js';
+import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import {
   RegistrationLeagueSelectionValidationError,
   getRegistrationLeagueSelectionEvaluation,
@@ -349,6 +350,9 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: z.infer<typeof guestSubmitSchema>; Reply: unknown | ApiErrorResponse }>(
     '/registration/guest/submit',
     {
+      config: {
+        rateLimit: abuseRouteRateLimits.guestRegistration,
+      },
       schema: {
         tags: ['registration'],
         body: anyObjectSchema,

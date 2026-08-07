@@ -1,3 +1,4 @@
+import { randomBytes, randomInt } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { JWTPayload, Member } from '../types.js';
@@ -7,8 +8,14 @@ import {
   hasScope,
 } from './rbac.js';
 
+/** Cryptographically secure 6-digit OTP (100000–999999). */
 export function generateAuthCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return String(randomInt(100000, 1000000));
+}
+
+/** Opaque bearer for multi-member selection after OTP verify. */
+export function generateTempAuthToken(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 export async function buildJwtPayloadForMember(

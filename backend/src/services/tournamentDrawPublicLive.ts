@@ -1,26 +1,66 @@
 /**
  * In-memory pub/sub for public tournament draw updates (SSE).
  * Single-process only; multiple app instances would need a shared bus.
+ *
+ * Per-IP caps apply by default; IPs in `IP_LIMIT_BYPASS_ALLOWLIST` skip the
+ * per-IP cap (club WiFi). Per-event max still applies to everyone.
  */
 
+import { config } from '../config.js';
+import { isIpLimitBypassed, normalizeClientIp } from '../utils/abuseProtection.js';
+
 const listeners = new Map<number, Set<(sseChunk: string) => void>>();
+const connectionsByIp = new Map<string, number>();
+
+const MAX_IDLE_MS = 10 * 60 * 1000;
+
+export type TournamentDrawSubscribeResult =
+  | { ok: true; unsubscribe: () => void }
+  | { ok: false; error: 'ip_limit' | 'event_limit' };
 
 export function subscribeTournamentDrawLive(
   eventId: number,
   send: (sseChunk: string) => void,
-): () => void {
+  clientIp = 'unknown'
+): TournamentDrawSubscribeResult {
+  const ip = normalizeClientIp(clientIp || 'unknown');
+  const allowlisted = isIpLimitBypassed(ip);
+  const maxPerIp = config.tournamentDrawSse.maxConnectionsPerIp;
+  const maxPerEvent = config.tournamentDrawSse.maxConnectionsPerEvent;
+
+  const ipCount = connectionsByIp.get(ip) ?? 0;
+  if (!allowlisted && ipCount >= maxPerIp) {
+    return { ok: false, error: 'ip_limit' };
+  }
+
   let bucket = listeners.get(eventId);
   if (!bucket) {
     bucket = new Set();
     listeners.set(eventId, bucket);
   }
+  if (bucket.size >= maxPerEvent) {
+    return { ok: false, error: 'event_limit' };
+  }
+
   bucket.add(send);
-  return () => {
-    bucket!.delete(send);
-    if (bucket!.size === 0) {
-      listeners.delete(eventId);
-    }
+  connectionsByIp.set(ip, ipCount + 1);
+
+  return {
+    ok: true,
+    unsubscribe: () => {
+      bucket!.delete(send);
+      if (bucket!.size === 0) {
+        listeners.delete(eventId);
+      }
+      const next = (connectionsByIp.get(ip) ?? 1) - 1;
+      if (next <= 0) connectionsByIp.delete(ip);
+      else connectionsByIp.set(ip, next);
+    },
   };
+}
+
+export function getTournamentDrawIdleTimeoutMs(): number {
+  return MAX_IDLE_MS;
 }
 
 /** Notify all SSE clients watching this event’s public draw to refetch via HTTP. */

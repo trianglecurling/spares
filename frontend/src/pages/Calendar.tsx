@@ -2872,6 +2872,7 @@ function DayView({
   const timedEvents = dayEvents.filter((e) => !e.allDay && !isMultiDayTimedOnMiddleDay(e));
   const visibleHours = getVisibleHours(timedEvents);
   const hourStart = visibleHours[0] ?? 0;
+  const totalDayHeight = visibleHours.length * HOUR_HEIGHT;
   const timedScrollKey = timedEvents
     .map((e) => `${e.id}:${e.start.getTime()}`)
     .sort()
@@ -2944,7 +2945,8 @@ function DayView({
           </div>
         </div>
       )}
-      <div ref={scrollRef} className="flex flex-1 min-h-0 overflow-auto">
+      {/* items-start: avoid stretch when the scrollport is taller than the hour grid (e.g. zoom out). */}
+      <div ref={scrollRef} className="flex flex-1 min-h-0 items-start overflow-auto">
         <div className="w-16 shrink-0 border-r border-gray-200 dark:border-gray-700">
           {visibleHours.map((h) => (
             <div
@@ -2956,7 +2958,7 @@ function DayView({
             </div>
           ))}
         </div>
-        <div className="flex-1 relative" style={{ minHeight: visibleHours.length * HOUR_HEIGHT }}>
+        <div className="relative min-w-0 flex-1" style={{ height: totalDayHeight }}>
           {/* Hour grid */}
           {visibleHours.map((h) => (
             <div
@@ -2984,7 +2986,7 @@ function DayView({
               style={{ height: HOUR_HEIGHT }}
             />
           ))}
-          {/* Timed events */}
+          {/* Timed events — pixel tops/heights match HOUR_HEIGHT (same as week + booking grids). */}
           {(() => {
             const layout = computeEventLayout(timedEvents);
             const pad = 8;
@@ -3014,8 +3016,8 @@ function DayView({
               const displayEnd = Math.min(endHour, dayEndHour);
               const displayStart = Math.max(startHour, hourStart);
               if (displayStart >= displayEnd) return null;
-              const topPct = ((displayStart - hourStart) / visibleHours.length) * 100;
-              const heightPct = ((displayEnd - displayStart) / visibleHours.length) * 100;
+              const topPx = (displayStart - hourStart) * HOUR_HEIGHT;
+              const heightPx = (displayEnd - displayStart) * HOUR_HEIGHT;
               const { column, numColumns } = layout.get(ev.id) ?? { column: 0, numColumns: 1 };
               const colWidthPct = 100 / numColumns;
               const leftPct = (column / numColumns) * 100;
@@ -3028,11 +3030,10 @@ function DayView({
                   onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(ev)}
                   className="absolute cursor-pointer hover:opacity-90 transition-opacity"
                   style={{
-                    top: `${topPct}%`,
+                    top: topPx,
                     left: `calc(${leftPct}% + ${pad}px)`,
                     width: `calc(${colWidthPct}% - ${pad * 2}px)`,
-                    height: `${heightPct}%`,
-                    minHeight: 48,
+                    height: Math.max(heightPx, 48),
                   }}
                 >
                   <div

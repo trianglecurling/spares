@@ -135,5 +135,20 @@ export const config = {
     /** Max sabbatical span from first_sabbatical_start_date; see docs/registration/sabbaticals.md */
     sabbaticalDurationLimitYears: Math.max(1, parseIntEnv(process.env.SABBATICAL_DURATION_LIMIT_YEARS, 3)),
   },
+
+  /**
+   * IPs that skip per-IP rate limits / connection caps (e.g. club WiFi egress).
+   * Comma-separated `IP_LIMIT_BYPASS_ALLOWLIST`. Defaults to the facility public IP.
+   */
+  ipLimitBypassAllowlist:
+    parseCsvEnv(process.env.IP_LIMIT_BYPASS_ALLOWLIST).length > 0
+      ? parseCsvEnv(process.env.IP_LIMIT_BYPASS_ALLOWLIST)
+      : ['50.105.55.129'],
+
+  /** Public tournament-draw SSE connection limits (per-IP cap skipped for ipLimitBypassAllowlist). */
+  tournamentDrawSse: {
+    maxConnectionsPerIp: Math.max(1, parseIntEnv(process.env.TOURNAMENT_DRAW_SSE_MAX_PER_IP, 10)),
+    maxConnectionsPerEvent: Math.max(1, parseIntEnv(process.env.TOURNAMENT_DRAW_SSE_MAX_PER_EVENT, 250)),
+  },
 };
 

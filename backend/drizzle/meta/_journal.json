@@ -295,6 +295,20 @@
       "when": 1780352498483,
       "tag": "0042_add_event_transfer_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1780352498484,
+      "tag": "0043_volunteer_program_published",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1780352498485,
+      "tag": "0044_add_availability_reminder_acked_session",
+      "breakpoints": true
     }
   ]
 }

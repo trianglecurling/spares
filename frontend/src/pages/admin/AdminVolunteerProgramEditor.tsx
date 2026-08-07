@@ -5,6 +5,7 @@ import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
 import InlineStateMessage from '../../components/InlineStateMessage';
@@ -80,6 +81,7 @@ export default function AdminVolunteerProgramEditor() {
   const [pointOfContact, setPointOfContact] = useState('');
   const [location, setLocation] = useState('');
   const [startDate, setStartDate] = useState('');
+  const [published, setPublished] = useState(false);
   const [managerIds, setManagerIds] = useState<number[]>([]);
 
   const [roleName, setRoleName] = useState('');
@@ -104,6 +106,7 @@ export default function AdminVolunteerProgramEditor() {
       setPointOfContact(data.pointOfContact);
       setLocation(data.location || '');
       setStartDate(data.startDate || '');
+      setPublished(Boolean(data.published));
       setManagerIds(data.managers.map((m) => m.id));
       setNewShiftTimes((prev) => {
         const onlyEmpty =
@@ -211,6 +214,7 @@ export default function AdminVolunteerProgramEditor() {
         pointOfContact: pointOfContact.trim(),
         location: location.trim() || null,
         startDate: startDate.trim() || null,
+        published,
         managerIds,
       };
       if (isNew) {
@@ -528,6 +532,12 @@ export default function AdminVolunteerProgramEditor() {
                 placeholder="Search members to add as managers..."
               />
             </FormField>
+            <FormCheckbox
+              label="Published"
+              checked={published}
+              onChange={setPublished}
+              helperText="Published programs appear on the volunteering hub and in member dashboard opportunities."
+            />
           </FormSection>
           <div className="flex gap-3">
             <Button type="submit" disabled={saving}>

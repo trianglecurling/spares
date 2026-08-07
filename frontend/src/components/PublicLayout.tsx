@@ -293,7 +293,7 @@ export default function PublicLayout({
 
       {fillViewport ? null : (
       <footer className="border-t border-gray-200 bg-gradient-to-b from-gray-50 to-white py-10">
-        <div className="public-container grid gap-8 md:grid-cols-3">
+        <div className="public-container grid gap-8 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] md:items-center">
           <div className="space-y-2">
             <h2 className="text-base font-semibold text-gray-900">{clubName}</h2>
             <p className="text-sm text-gray-600">
@@ -373,6 +373,17 @@ export default function PublicLayout({
                 </div>
               ) : null}
             </div>
+          </div>
+          <div className="flex justify-start md:justify-center">
+            <img
+              src="/tccnc-bull-graphic-400.png"
+              alt=""
+              width={400}
+              height={279}
+              loading="lazy"
+              decoding="async"
+              className="h-auto w-28 max-w-full sm:w-32"
+            />
           </div>
         </div>
         <p className="public-container mt-8 border-t border-gray-200 pt-6 text-center text-xs text-gray-500">
