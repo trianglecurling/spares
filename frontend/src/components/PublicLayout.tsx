@@ -309,7 +309,7 @@ export default function PublicLayout({
               <Link to="/" className="text-gray-600 hover:text-gray-900 hover:underline">Home</Link>
               <Link to="/contact" className="text-gray-600 hover:text-gray-900 hover:underline">Contact</Link>
               <Link to="/donate" className="text-gray-600 hover:text-gray-900 hover:underline">Donate</Link>
-              <Link to="/articles/try-curling" className="text-gray-600 hover:text-gray-900 hover:underline">Learn</Link>
+              <Link to="/articles/learn-to-curl" className="text-gray-600 hover:text-gray-900 hover:underline">Learn</Link>
               {isLikelyAuthenticated ? (
                 <Link to="/leagues" className="text-gray-600 hover:text-gray-900 hover:underline">Leagues</Link>
               ) : (

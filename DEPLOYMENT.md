@@ -82,10 +82,20 @@ server {
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
 
-    # Frontend - serve static files
+    # Frontend - serve built assets; SPA document navigations get per-route
+    # Open Graph / title meta from the API (required for Slack/etc. unfurls).
     location / {
         root /var/www/spares.tccnc.club/frontend/dist;
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ @spa_document;
+    }
+
+    location @spa_document {
+        proxy_pass http://localhost:3001/api/public/spa-document?path=$uri;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # Swagger UI must not be public (app also disables /docs when NODE_ENV=production)
@@ -169,9 +179,19 @@ server {
     proxy_read_timeout 60s;
     proxy_send_timeout 60s;
 
+    # Frontend - serve built assets; SPA document navigations get per-route meta.
     location / {
         root /var/www/spares-preview.tccnc.club/frontend/dist;
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ @spa_document;
+    }
+
+    location @spa_document {
+        proxy_pass http://localhost:3002/api/public/spa-document?path=$uri;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location /docs {
@@ -229,6 +249,8 @@ sudo ln -s /etc/nginx/sites-available/spares.tccnc.club /etc/nginx/sites-enabled
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+**Link previews (Slack, etc.):** Document navigations must hit `@spa_document` (not a static `index.html` fallback), and the API process needs `FRONTEND_DIST_PATH` pointing at the same frontend `dist` directory nginx serves. Updating application code alone does not change live nginx — reload the host nginx config after deploying this change.
 
 ### 3b. Cloudflare checklist (edge)
 
@@ -320,6 +342,8 @@ Or create `/var/www/spares.tccnc.club/backend/.env` directly:
 PORT=3001
 NODE_ENV=production
 FRONTEND_URL=https://spares.tccnc.club
+# Directory containing the Vite build's index.html (for Slack/OG spa-document injection)
+FRONTEND_DIST_PATH=/var/www/spares.tccnc.club/frontend/dist
 
 DATABASE_PATH=/var/www/spares.tccnc.club/backend/data/spares.sqlite
 

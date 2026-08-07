@@ -30,6 +30,12 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   /** Extra checkout redirect origins (comma-separated). Subdomains of FRONTEND_URL are also allowed. */
   frontendUrlAliases: parseCsvEnv(process.env.FRONTEND_URL_ALIASES),
+  /**
+   * Absolute path to the Vite frontend build directory (contains index.html).
+   * Used by GET /api/public/spa-document to inject per-route Open Graph metadata.
+   * Example prod: `/srv/tccnc-web-prod/dist`
+   */
+  frontendDistPath: (process.env.FRONTEND_DIST_PATH || '').trim(),
   jwtSecret: process.env.JWT_SECRET || 'change-this-secret-key',
   databasePath: process.env.DATABASE_PATH || './data/spares.sqlite',
   fileStoragePath: process.env.FILE_STORAGE_PATH || './data/uploads',

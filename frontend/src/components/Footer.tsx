@@ -22,9 +22,6 @@ export default function Footer({ simple = false }: FooterProps) {
           </div>
 
           <div className="flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-6">
-            <Link to="/help" className="hover:text-primary-teal-link transition-colors">
-              Help
-            </Link>
             <a
               href="https://links.tccnc.club/privacy"
               target="_blank"
