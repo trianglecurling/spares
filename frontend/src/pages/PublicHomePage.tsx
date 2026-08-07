@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   HiArrowRight,
+  HiChevronDown,
   HiChevronLeft,
   HiChevronRight,
   HiOutlineEnvelope,
-  HiOutlineMapPin,
+  HiOutlineInformationCircle,
   HiOutlineMegaphone,
 } from 'react-icons/hi2';
 import api from '../utils/api';
@@ -16,10 +17,10 @@ import {
 } from '../utils/publicBootstrapClient';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
-import SeoMeta from '../components/SeoMeta';
+import SeoMeta, { formatHomeDocumentTitle, resolveSiteName } from '../components/SeoMeta';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { useAuth } from '../contexts/AuthContext';
-import { syncSiteBrandingFromBootstrap } from '../hooks/useSiteBranding';
+import { syncSiteBrandingFromBootstrap, useSiteBranding } from '../hooks/useSiteBranding';
 
 interface HomeData {
   siteConfig: {
@@ -99,6 +100,82 @@ const HOMEPAGE_COPY = {
   subtitle:
     'Triangle Curling Club is a dedicated, four-sheet curling facility offering leagues, bonspiels, public curling events, and daytime group events.',
 };
+
+const HOME_MAILING_LIST_OPTIONS = [
+  { label: 'Learn to Curl', to: '/mailing-list/learn-to-curl' },
+  { label: 'Membership', to: '/mailing-list/membership' },
+  { label: 'Bonspiel notifications', to: '/mailing-list/bonspiels' },
+] as const;
+
+function HomeMailingListMenu() {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonId = useId();
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (rootRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        id={buttonId}
+        className="inline-flex items-center gap-1 font-semibold hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => setOpen((current) => !current)}
+      >
+        Join a mailing list
+        <HiChevronDown
+          className={`h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <ul
+          id={menuId}
+          role="menu"
+          aria-labelledby={buttonId}
+          className="absolute left-0 top-full z-20 mt-2 min-w-[14rem] rounded-xl border border-white/20 bg-[#0f4a4c] p-1.5 shadow-lg"
+        >
+          {HOME_MAILING_LIST_OPTIONS.map((option) => (
+            <li key={option.to} role="none">
+              <Link
+                to={option.to}
+                role="menuitem"
+                className="block rounded-lg px-3 py-2 text-sm font-medium text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                onClick={() => setOpen(false)}
+              >
+                {option.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 /** Curling house (target rings) ornament; colored via currentColor. */
 function HouseRings({ className }: { className?: string }) {
@@ -313,6 +390,7 @@ function SectionHeading({
 
 export default function PublicHomePage() {
   const { isLoading, isLikelyAuthenticated } = useAuth();
+  const { branding } = useSiteBranding();
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDelayedLoading, setShowDelayedLoading] = useState(false);
@@ -463,13 +541,13 @@ export default function PublicHomePage() {
       deferPublicBootstrapLoad={deferLayoutBootstrapLoad}
     >
       <SeoMeta
-        title="Triangle Curling Club | Curling in the Triangle"
+        title={formatHomeDocumentTitle(resolveSiteName(data?.siteConfig?.clubName ?? branding?.clubName))}
         description="Discover curling in the Raleigh, Durham, and Chapel Hill area: beginner resources, group event info, upcoming bonspiels, and member information."
         canonicalPath="/"
         jsonLd={{
           '@context': 'https://schema.org',
           '@type': 'SportsClub',
-          name: data?.siteConfig?.clubName || 'Triangle Curling Club',
+          name: resolveSiteName(data?.siteConfig?.clubName ?? branding?.clubName),
           description:
             'Triangle Curling Club provides learn-to-curl experiences, leagues, bonspiels, and group events in the Raleigh, Durham, and Chapel Hill area of North Carolina.',
           areaServed: ['Raleigh, NC', 'Durham, NC', 'Chapel Hill, NC'],
@@ -731,16 +809,14 @@ export default function PublicHomePage() {
                   />
                   <ul className="space-y-4 text-sm leading-relaxed">
                     <li className="flex items-start gap-3">
-                      <HiOutlineMapPin className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
-                      <Link to="/articles/visit-us" className="font-semibold hover:underline">
-                        Visit Triangle Curling
+                      <HiOutlineInformationCircle className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
+                      <Link to="/articles/about-triangle-curling" className="font-semibold hover:underline">
+                        About us
                       </Link>
                     </li>
                     <li className="flex items-start gap-3">
                       <HiOutlineEnvelope className="mt-0.5 h-5 w-5 shrink-0 text-teal-200" aria-hidden />
-                      <Link to="/mailing-list/membership" className="font-semibold hover:underline">
-                        Join our mailing list
-                      </Link>
+                      <HomeMailingListMenu />
                     </li>
                   </ul>
                   <Link

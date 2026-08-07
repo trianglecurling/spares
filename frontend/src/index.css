@@ -247,9 +247,11 @@ html.dark body {
   /**
    * Homepage display type: Fraunces is intentionally scoped to public marketing
    * surfaces (homepage hero + section titles); product UI keeps the system stack.
+   * Fallback face is declared in index.html with size-adjust so Georgia/Times do
+   * not paint oversized before Fraunces swaps in.
    */
   .public-display {
-    font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+    font-family: 'Fraunces', 'Fraunces Fallback', 'Times New Roman', serif;
     font-optical-sizing: auto;
   }
 

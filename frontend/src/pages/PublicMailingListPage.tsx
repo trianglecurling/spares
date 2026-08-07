@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useId, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
@@ -18,9 +18,16 @@ type PublicMailingListInfo = {
   subscribeAvailable: boolean;
 };
 
+type MailingListCaptchaResponse = {
+  token: string;
+  question: string;
+  expiresAt: string;
+};
+
 export default function PublicMailingListPage() {
   const { listSlug = '' } = useParams();
   const idPrefix = useId();
+  const captchaAnswerId = useId();
   const [listInfo, setListInfo] = useState<PublicMailingListInfo | null>(null);
   const [listLoading, setListLoading] = useState(true);
   const [listNotFound, setListNotFound] = useState(false);
@@ -28,8 +35,33 @@ export default function PublicMailingListPage() {
   const [email, setEmail] = useState('');
   const [comments, setComments] = useState('');
   const [website, setWebsite] = useState('');
+  const [captchaQuestion, setCaptchaQuestion] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [loadingCaptcha, setLoadingCaptcha] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+
+  const loadCaptcha = useCallback(async () => {
+    setLoadingCaptcha(true);
+    try {
+      const res = await api.get<MailingListCaptchaResponse>('/public/mailing-list/captcha');
+      setCaptchaQuestion(res.data.question);
+      setCaptchaToken(res.data.token);
+      setCaptchaAnswer('');
+    } catch (error: unknown) {
+      console.error('Failed to load CAPTCHA:', error);
+      setCaptchaQuestion(null);
+      setCaptchaToken(null);
+      setResult((prev) =>
+        prev?.kind === 'success'
+          ? prev
+          : { kind: 'error', message: 'Failed to load CAPTCHA. Please try again.' },
+      );
+    } finally {
+      setLoadingCaptcha(false);
+    }
+  }, []);
 
   useEffect(() => {
     const slug = listSlug.trim().toLowerCase();
@@ -68,13 +100,25 @@ export default function PublicMailingListPage() {
     };
   }, [listSlug]);
 
+  useEffect(() => {
+    if (!listInfo?.subscribeAvailable) return;
+    void loadCaptcha();
+  }, [listInfo?.subscribeAvailable, loadCaptcha]);
+
   const canSubmit = useMemo(() => {
-    return fullName.trim().length >= 2 && email.trim().length > 0 && !submitting;
-  }, [email, fullName, submitting]);
+    return (
+      fullName.trim().length >= 2 &&
+      email.trim().length > 0 &&
+      Boolean(captchaToken) &&
+      captchaAnswer.trim().length > 0 &&
+      !submitting &&
+      !loadingCaptcha
+    );
+  }, [captchaAnswer, captchaToken, email, fullName, loadingCaptcha, submitting]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!canSubmit || !listInfo) return;
+    if (!canSubmit || !listInfo || !captchaToken) return;
 
     setSubmitting(true);
     setResult(null);
@@ -84,12 +128,16 @@ export default function PublicMailingListPage() {
       fullName: string;
       email: string;
       website: string;
+      captchaToken: string;
+      captchaAnswer: string;
       comments?: string;
     } = {
       list: listSlug.trim().toLowerCase(),
       fullName: fullName.trim(),
       email: email.trim(),
       website: website.trim(),
+      captchaToken,
+      captchaAnswer: captchaAnswer.trim(),
     };
 
     const trimmedComments = comments.trim();
@@ -103,11 +151,13 @@ export default function PublicMailingListPage() {
         kind: 'success',
         message: `You are signed up for ${listInfo.name}.`,
       });
+      await loadCaptcha();
     } catch (error: unknown) {
       setResult({
         kind: 'error',
         message: formatApiError(error, 'We could not complete your sign-up'),
       });
+      await loadCaptcha();
     } finally {
       setSubmitting(false);
     }
@@ -248,6 +298,31 @@ export default function PublicMailingListPage() {
                   autoComplete="off"
                 />
               </div>
+
+              {result?.kind !== 'success' ? (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                  <FormField
+                    tone="public"
+                    label={captchaQuestion || 'Loading CAPTCHA…'}
+                    htmlFor={captchaAnswerId}
+                    required
+                    labelClassName="font-semibold text-gray-800"
+                  >
+                    <input
+                      id={captchaAnswerId}
+                      type="text"
+                      value={captchaAnswer}
+                      onChange={(e) => setCaptchaAnswer(e.target.value)}
+                      required
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="Answer"
+                      className={publicInputClass}
+                      disabled={loadingCaptcha}
+                    />
+                  </FormField>
+                </div>
+              ) : null}
 
               <div>
                 <button

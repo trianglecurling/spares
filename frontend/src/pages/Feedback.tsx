@@ -7,6 +7,7 @@ import Button from '../components/Button';
 import FormField from '../components/FormField';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import { useAuth } from '../contexts/AuthContext';
+import SeoMeta from '../components/SeoMeta';
 
 type FeedbackCategory = 'suggestion' | 'problem' | 'question' | 'general';
 
@@ -108,6 +109,11 @@ export default function Feedback() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      <SeoMeta
+        title="Feedback"
+        description="Share feedback about the club website or member tools."
+        canonicalPath="/feedback"
+      />
       <HelpHeader />
 
       <div className="flex-grow">

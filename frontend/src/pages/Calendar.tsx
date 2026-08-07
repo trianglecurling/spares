@@ -56,6 +56,7 @@ import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
 import type { ArticleOption } from '../components/ArticleAutocomplete';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
+import SeoMeta from '../components/SeoMeta';
 import { useAlert } from '../contexts/AlertContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -1573,8 +1574,17 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     </>
   );
 
+  const seo = (
+    <SeoMeta
+      title="Calendar"
+      description="View the club calendar with ice times, draws, leagues, and upcoming events."
+      canonicalPath={publicMode ? '/calendar/public' : '/calendar'}
+    />
+  );
+
   return publicMode ? (
     <PublicLayout fillViewport={lockViewport}>
+      {seo}
       <div
         className={`px-4 sm:px-6 lg:px-8 py-4 sm:py-8 flex flex-col ${
           lockViewport ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1'
@@ -1584,7 +1594,10 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       </div>
     </PublicLayout>
   ) : (
-    calendarContent
+    <>
+      {seo}
+      {calendarContent}
+    </>
   );
 }
 

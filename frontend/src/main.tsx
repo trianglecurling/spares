@@ -1,7 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { installStaleChunkReloadHandler } from './utils/staleChunkReload';
 import './index.css';
+
+// After a deploy, open tabs still reference old hashed lazy chunks. Reload once
+// onto the new index.html instead of blanking on client-side navigation.
+installStaleChunkReloadHandler();
 
 const hasStoredSession = Boolean(
   localStorage.getItem('accessToken') ||

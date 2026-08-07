@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sendApiError } from '../api/errors.js';
+import { captchaResponseSchema } from '../api/schemas.js';
 import {
   getMailingListBySlug,
   getPublicMailingListBySlug,
@@ -14,6 +15,7 @@ import {
 } from '../services/mauticService.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import { honeypotTarpitMs, tarpitDelay } from '../utils/abuseProtection.js';
+import { createCaptchaChallenge, verifyCaptchaAnswer } from '../utils/captcha.js';
 
 const mailingListSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
 
@@ -23,7 +25,9 @@ const subscribeSchema = z.object({
   email: z.string().trim().email().max(320),
   comments: z.string().trim().max(4000).optional(),
   /** Honeypot — must be empty; if filled, we return success without calling Mautic */
-  website: z.string().optional(),
+  website: z.string().max(200).optional(),
+  captchaToken: z.string().min(1),
+  captchaAnswer: z.union([z.string(), z.number()]),
 });
 
 export async function mailingListRoutes(fastify: FastifyInstance): Promise<void> {
@@ -48,6 +52,20 @@ export async function mailingListRoutes(fastify: FastifyInstance): Promise<void>
     },
   );
 
+  fastify.get(
+    '/public/mailing-list/captcha',
+    {
+      schema: {
+        tags: ['public'],
+        description: 'Math CAPTCHA challenge for public mailing list sign-up.',
+        response: {
+          200: captchaResponseSchema,
+        },
+      },
+    },
+    async () => createCaptchaChallenge(),
+  );
+
   fastify.post<{ Body: unknown }>(
     '/public/mailing-list/subscribe',
     {
@@ -69,6 +87,18 @@ export async function mailingListRoutes(fastify: FastifyInstance): Promise<void>
       if (payload.website && payload.website.trim().length > 0) {
         await tarpitDelay(honeypotTarpitMs());
         return { ok: true };
+      }
+
+      const answerNum =
+        typeof payload.captchaAnswer === 'number'
+          ? payload.captchaAnswer
+          : Number(payload.captchaAnswer);
+      if (!Number.isFinite(answerNum)) {
+        return reply.code(400).send({ error: 'Invalid CAPTCHA answer' });
+      }
+      const captchaResult = verifyCaptchaAnswer(payload.captchaToken, answerNum);
+      if (!captchaResult.ok) {
+        return reply.code(400).send({ error: captchaResult.error });
       }
 
       const list = await getMailingListBySlug(payload.list.trim().toLowerCase());

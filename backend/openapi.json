@@ -1288,6 +1288,24 @@
         }
       }
     },
+    "/public/document-meta": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/spa-document": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/files/{id}/{slug}?": {
       "get": {
         "parameters": [
@@ -1733,6 +1751,43 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/mailing-list/captcha": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "description": "Math CAPTCHA challenge for public mailing list sign-up.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "question": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "question",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
           }
         }
       }

@@ -21,6 +21,11 @@ import { getCachedMenuTree } from '../services/menuTreeCache.js';
 import { getPublicLeaguesPage } from '../services/publicLeaguesService.js';
 import { listPublicContactDropdownRecipients } from '../domains/content/publicContactRecipients.js';
 import { resolveSpaDocumentHttpStatus } from '../services/spaDocumentStatus.js';
+import {
+  injectSpaDocumentMeta,
+  readSpaIndexHtml,
+  resolveSpaDocumentMeta,
+} from '../services/spaDocumentMeta.js';
 import { isCalendarRangeWithinLimit } from '../utils/abuseProtection.js';
 import { createHash } from 'node:crypto';
 
@@ -39,6 +44,32 @@ export async function publicRoutes(fastify: FastifyInstance) {
     }
     const status = await resolveSpaDocumentHttpStatus(rawPath);
     return reply.code(status).send({ status });
+  });
+
+  fastify.get<{ Querystring: { path?: string } }>('/public/document-meta', async (request, reply) => {
+    const rawPath = request.query.path;
+    if (!rawPath || typeof rawPath !== 'string' || !rawPath.startsWith('/')) {
+      return reply.code(400).send({ error: 'path query parameter is required' });
+    }
+    const meta = await resolveSpaDocumentMeta(rawPath);
+    return reply.code(meta.status).send(meta);
+  });
+
+  fastify.get<{ Querystring: { path?: string } }>('/public/spa-document', async (request, reply) => {
+    const rawPath = request.query.path;
+    if (!rawPath || typeof rawPath !== 'string' || !rawPath.startsWith('/')) {
+      return reply.code(400).send({ error: 'path query parameter is required' });
+    }
+
+    const [meta, indexHtml] = await Promise.all([resolveSpaDocumentMeta(rawPath), readSpaIndexHtml()]);
+    if (!indexHtml) {
+      return reply.code(503).send({
+        error: 'SPA index.html is unavailable. Set FRONTEND_DIST_PATH to the frontend build directory.',
+      });
+    }
+
+    const html = injectSpaDocumentMeta(indexHtml, meta, frontendBaseUrl);
+    return reply.code(meta.status).type('text/html; charset=utf-8').send(html);
   });
 
   fastify.get<{ Params: { id: string }; Querystring: { v?: string } }>('/public/files/:id/:slug?', async (request, reply) => {
