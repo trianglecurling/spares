@@ -3,6 +3,7 @@ import { isAccessTokenUsable } from './accessToken';
 import { clearCachedMemberDisplayName } from './memberDisplayCache';
 import { isPublicApiRequestUrl } from './publicApiPaths';
 import { isPublicLightPath } from './publicLightPaths';
+import { getRegistrationEarlyAccessUnlockToken } from './registrationEarlyAccess';
 
 type RetriableRequestConfig = AxiosRequestConfig & { _retry?: boolean };
 
@@ -80,6 +81,18 @@ api.interceptors.request.use((config) => {
   const token = getAccessToken();
   if (isAccessTokenUsable(token)) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  const earlyAccessToken = getRegistrationEarlyAccessUnlockToken();
+  if (earlyAccessToken) {
+    const headers = config.headers;
+    if (headers && typeof (headers as { set?: unknown }).set === 'function') {
+      (headers as { set: (key: string, value: string) => void }).set(
+        'X-Registration-Early-Access',
+        earlyAccessToken,
+      );
+    } else if (headers) {
+      (headers as Record<string, string>)['X-Registration-Early-Access'] = earlyAccessToken;
+    }
   }
   return config;
 });

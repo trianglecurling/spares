@@ -522,6 +522,36 @@ CREATE TABLE IF NOT EXISTS registration_discount_settings (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`));
+    await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_early_access_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  password_hash TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`));
+    await db.execute(sql.raw(`
+INSERT INTO registration_early_access_settings (scope, enabled, password_hash)
+VALUES ('singleton', 0, NULL)
+ON CONFLICT (scope) DO NOTHING`));
+    await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
+  session_id INTEGER NOT NULL REFERENCES curling_sessions(id) ON DELETE CASCADE,
+  payment_deadline_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`));
+    await db.execute(sql.raw(`
+CREATE UNIQUE INDEX IF NOT EXISTS registration_payment_deadlines_season_session_unique
+  ON registration_payment_deadlines (season_id, session_id)`));
+    await db.execute(sql.raw(`
+CREATE INDEX IF NOT EXISTS idx_registration_payment_deadlines_season_id
+  ON registration_payment_deadlines (season_id)`));
+    await db.execute(sql.raw(`
+CREATE INDEX IF NOT EXISTS idx_registration_payment_deadlines_session_id
+  ON registration_payment_deadlines (session_id)`));
     return;
   }
 
@@ -554,6 +584,35 @@ CREATE TABLE IF NOT EXISTS registration_discount_settings (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`));
+  await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_early_access_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  password_hash TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`));
+  await db.execute(sql.raw(`
+INSERT OR IGNORE INTO registration_early_access_settings (scope, enabled, password_hash)
+VALUES ('singleton', 0, NULL)`));
+  await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
+  session_id INTEGER NOT NULL REFERENCES curling_sessions(id) ON DELETE CASCADE,
+  payment_deadline_at TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`));
+  await db.execute(sql.raw(`
+CREATE UNIQUE INDEX IF NOT EXISTS registration_payment_deadlines_season_session_unique
+  ON registration_payment_deadlines (season_id, session_id)`));
+  await db.execute(sql.raw(`
+CREATE INDEX IF NOT EXISTS idx_registration_payment_deadlines_season_id
+  ON registration_payment_deadlines (season_id)`));
+  await db.execute(sql.raw(`
+CREATE INDEX IF NOT EXISTS idx_registration_payment_deadlines_session_id
+  ON registration_payment_deadlines (session_id)`));
 }
 
 async function allMaybe<T>(result: T[] | Promise<T[]>): Promise<T[]> {

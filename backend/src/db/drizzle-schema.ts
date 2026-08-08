@@ -688,6 +688,36 @@ export const registrationDiscountSettingsSqlite = sqliteTable('registration_disc
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
+/** Singleton: optional password gate for early (pre-priority) registration access. */
+export const registrationEarlyAccessSettingsSqlite = sqliteTable('registration_early_access_settings', {
+  scope: text('scope').primaryKey().notNull().default('singleton'),
+  enabled: integer('enabled').default(0).notNull(),
+  password_hash: text('password_hash'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
+/** Per season/session deadline for voluntary "pay later" registration payment. */
+export const registrationPaymentDeadlinesSqlite = sqliteTable('registration_payment_deadlines', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'cascade' }),
+  session_id: integer('session_id')
+    .notNull()
+    .references(() => curlingSessionsSqlite.id, { onDelete: 'cascade' }),
+  payment_deadline_at: text('payment_deadline_at').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  seasonSessionUnique: uniqueIndex('registration_payment_deadlines_season_session_unique').on(
+    table.season_id,
+    table.session_id,
+  ),
+  seasonIdx: index('idx_registration_payment_deadlines_season_id').on(table.season_id),
+  sessionIdx: index('idx_registration_payment_deadlines_session_id').on(table.session_id),
+}));
+
 export const seasonMembershipsSqlite = sqliteTable('season_memberships', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   member_id: integer('member_id')
@@ -2759,6 +2789,36 @@ export const registrationDiscountSettingsPg = pgTable('registration_discount_set
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+/** Singleton: optional password gate for early (pre-priority) registration access. */
+export const registrationEarlyAccessSettingsPg = pgTable('registration_early_access_settings', {
+  scope: textPg('scope').primaryKey().notNull().default('singleton'),
+  enabled: integerPg('enabled').default(0).notNull(),
+  password_hash: textPg('password_hash'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
+/** Per season/session deadline for voluntary "pay later" registration payment. */
+export const registrationPaymentDeadlinesPg = pgTable('registration_payment_deadlines', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'cascade' }),
+  session_id: integerPg('session_id')
+    .notNull()
+    .references(() => curlingSessionsPg.id, { onDelete: 'cascade' }),
+  payment_deadline_at: timestamp('payment_deadline_at', { withTimezone: false }).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  seasonSessionUnique: uniqueIndexPg('registration_payment_deadlines_season_session_unique').on(
+    table.season_id,
+    table.session_id,
+  ),
+  seasonIdx: indexPg('idx_registration_payment_deadlines_season_id').on(table.season_id),
+  sessionIdx: indexPg('idx_registration_payment_deadlines_session_id').on(table.session_id),
+}));
+
 export const seasonMembershipsPg = pgTable('season_memberships', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   member_id: integerPg('member_id')
@@ -4377,6 +4437,8 @@ export const sqliteSchema = {
   registrationPaymentItemNames: registrationPaymentItemNamesSqlite,
   registrationPriceSettings: registrationPriceSettingsSqlite,
   registrationDiscountSettings: registrationDiscountSettingsSqlite,
+  registrationEarlyAccessSettings: registrationEarlyAccessSettingsSqlite,
+  registrationPaymentDeadlines: registrationPaymentDeadlinesSqlite,
   seasonMemberships: seasonMembershipsSqlite,
   curlingIcePrivileges: curlingIcePrivilegesSqlite,
   curlingSabbaticalSessions: curlingSabbaticalSessionsSqlite,
@@ -4491,6 +4553,8 @@ export const pgSchema = {
   registrationPaymentItemNames: registrationPaymentItemNamesPg,
   registrationPriceSettings: registrationPriceSettingsPg,
   registrationDiscountSettings: registrationDiscountSettingsPg,
+  registrationEarlyAccessSettings: registrationEarlyAccessSettingsPg,
+  registrationPaymentDeadlines: registrationPaymentDeadlinesPg,
   seasonMemberships: seasonMembershipsPg,
   curlingIcePrivileges: curlingIcePrivilegesPg,
   curlingSabbaticalSessions: curlingSabbaticalSessionsPg,

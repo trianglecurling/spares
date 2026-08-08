@@ -22,6 +22,10 @@ import { calculateRegistrationFees, type RegistrationFeeLineItem, type Registrat
 import { evaluateExistingWaitlistPreferences, evaluateWaitlistCleanup } from './registrationLeagueSelections.js';
 import { decideRegistrationPayment, type RegistrationPaymentDecision } from './registrationPaymentDecision.js';
 import {
+  formatRegistrationPaymentDeadline,
+  getRegistrationPaymentDeadline,
+} from './registrationPaymentDeadline.js';
+import {
   guaranteedPlayInReplacedLeagueIds,
   type LeagueConfig,
   type RegistrationContext,
@@ -106,6 +110,9 @@ export type RegistrationMembershipPaymentPayload = {
   hasLifetimeMembership: boolean;
   feePreview: RegistrationFeePreview;
   paymentDecision: RegistrationPaymentDecision;
+  paymentDeadlineAt: string | null;
+  paymentDeadlineDisplay: string | null;
+  payLaterAvailable: boolean;
 };
 
 type UpdateMembershipInput = {
@@ -143,6 +150,8 @@ type SubmitRegistrationInput = {
   registrationId: number;
   actor: Member;
   confirmImmediatePayment?: boolean;
+  /** Voluntary pay later when fees are known (immediate_payment). Creates checkout and emails the link. */
+  payLater?: boolean;
   staffEdit?: boolean;
   changedSummary?: string;
   frontendBaseUrl?: string;
@@ -166,6 +175,7 @@ type SubmitRegistrationResult =
       checkoutUrl: string;
       orderToken: string;
       totalDueMinor: number;
+      payLater?: boolean;
     }
   | {
       outcome: 'immediate_payment';
@@ -189,6 +199,7 @@ type SubmitRegistrationResult =
       deferralReasons?: string[];
       checkoutUrl?: string;
       orderToken?: string;
+      payLater?: boolean;
       paymentAdjustment?: RegistrationPaymentAdjustmentResult;
     });
 
@@ -432,6 +443,21 @@ function formatPaidAt(value: string | Date | null | undefined): string | null {
     timeStyle: 'short',
     timeZone: 'America/New_York',
   }).format(date);
+}
+
+async function paymentDeadlineFieldsForSeasonSession(
+  seasonId: number,
+  sessionId: number,
+  paymentOutcome: RegistrationPaymentDecision['outcome'],
+): Promise<Pick<RegistrationMembershipPaymentPayload, 'paymentDeadlineAt' | 'paymentDeadlineDisplay' | 'payLaterAvailable'>> {
+  const deadline = await getRegistrationPaymentDeadline(seasonId, sessionId);
+  const paymentDeadlineAt = deadline?.paymentDeadlineAt ?? null;
+  const paymentDeadlineDisplay = paymentDeadlineAt ? formatRegistrationPaymentDeadline(paymentDeadlineAt) : null;
+  return {
+    paymentDeadlineAt,
+    paymentDeadlineDisplay,
+    payLaterAvailable: paymentOutcome === 'immediate_payment' && Boolean(paymentDeadlineAt),
+  };
 }
 
 function formatRegistrationSelectionDetailLine(input: {
@@ -893,7 +919,10 @@ async function buildRegistrationContextFromSourceRow(
     experienceBaselines?: MemberExperienceBaselines;
   },
 ): Promise<RegistrationContext> {
-  const window = await getEffectiveRegistrationWindow(registration.season_id, registration.session_id);
+  const { isEarlyAccessUnlockedInRequest } = await import('./registrationEarlyAccess.js');
+  const window = await getEffectiveRegistrationWindow(registration.season_id, registration.session_id, {
+    earlyAccessUnlocked: isEarlyAccessUnlockedInRequest(),
+  });
   if (!window) {
     throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration window not found.' });
   }
@@ -1071,6 +1100,11 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
     completedSessions: [],
   });
   const evaluation = evaluateRegistrationDraft(context);
+  const deadlineFields = await paymentDeadlineFieldsForSeasonSession(
+    input.seasonId,
+    input.sessionId,
+    evaluation.paymentDecision.outcome,
+  );
 
   return {
     selection: membershipPaymentFieldsFromRegistrationRow(synthetic),
@@ -1082,6 +1116,7 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
     hasLifetimeMembership: context.registrant.hasLifetimeMembership === true,
     feePreview: evaluation.feePreview,
     paymentDecision: evaluation.paymentDecision,
+    ...deadlineFields,
   };
 }
 
@@ -1093,6 +1128,11 @@ export async function getRegistrationMembershipPaymentPayload(
   const registration = await loadFullRegistration(registrationId);
   const context = await buildRegistrationContextForDraft(registrationId);
   const evaluation = evaluateRegistrationDraft(context);
+  const deadlineFields = await paymentDeadlineFieldsForSeasonSession(
+    registration.season_id,
+    registration.session_id,
+    evaluation.paymentDecision.outcome,
+  );
 
   return {
     selection: membershipPaymentFieldsFromRegistrationRow(registration),
@@ -1104,6 +1144,7 @@ export async function getRegistrationMembershipPaymentPayload(
     hasLifetimeMembership: context.registrant.hasLifetimeMembership === true,
     feePreview: evaluation.feePreview,
     paymentDecision: evaluation.paymentDecision,
+    ...deadlineFields,
   };
 }
 
@@ -2082,6 +2123,21 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
   const evaluation = evaluateRegistrationDraft(context);
   assertReadyToSubmit(registration, context, evaluation);
 
+  const payLaterRequested = Boolean(input.payLater) && !input.staffEdit;
+  if (payLaterRequested) {
+    if (evaluation.paymentDecision.outcome !== 'immediate_payment') {
+      throw new RegistrationMembershipPaymentValidationError({
+        payment: 'Pay later is only available when payment is due now.',
+      });
+    }
+    const deadline = await getRegistrationPaymentDeadline(registration.season_id, registration.session_id);
+    if (!deadline?.paymentDeadlineAt) {
+      throw new RegistrationMembershipPaymentValidationError({
+        payment: 'Pay later is unavailable because no payment deadline is configured.',
+      });
+    }
+  }
+
   const payerMemberId = registration.submitted_by_member_id ?? input.actor.id;
   const { db, schema } = getDrizzleDb();
   const existingInvoice = await loadLatestRegistrationInvoice(input.registrationId);
@@ -2089,6 +2145,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     input.staffEdit && existingInvoice?.status === 'paid' ? existingInvoice.total_minor : 0;
   const requiresCheckoutConfirmation =
     !input.staffEdit &&
+    !payLaterRequested &&
     evaluation.paymentDecision.outcome === 'immediate_payment' &&
     registrationPreviouslyDeferred(registration, existingInvoice) &&
     !input.confirmImmediatePayment;
@@ -2104,7 +2161,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
   if (
     evaluation.paymentDecision.outcome === 'immediate_payment' &&
     existingInvoice?.payment_order_id &&
-    existingInvoice.status === 'checkout_started'
+    (existingInvoice.status === 'checkout_started' || existingInvoice.status === 'awaiting_payment')
   ) {
     const existingOrder = await createPaymentService().getPaymentOrderById(existingInvoice.payment_order_id);
     const hostedCheckoutUrl = typeof existingOrder?.metadata.hostedCheckoutUrl === 'string' ? existingOrder.metadata.hostedCheckoutUrl : null;
@@ -2114,6 +2171,21 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       hostedCheckoutUrl &&
       isFutureTimestamp(existingOrder.metadata.hostedCheckoutExpiresAt)
     ) {
+      if (payLaterRequested) {
+        const deadline = await getRegistrationPaymentDeadline(registration.season_id, registration.session_id);
+        await safeSendRegistrationEmail({
+          registrationId: input.registrationId,
+          messageType: 'registration_submitted_immediate_payment',
+          payload: {
+            amountDueMinor: existingInvoice.total_minor,
+            paymentUrl: hostedCheckoutUrl,
+            deadlineText: deadline?.paymentDeadlineAt
+              ? formatRegistrationPaymentDeadline(deadline.paymentDeadlineAt)
+              : null,
+            summaryLines: await registrationSummaryLines(context),
+          },
+        });
+      }
       return {
         outcome: 'immediate_payment',
         registrationId: input.registrationId,
@@ -2121,6 +2193,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         checkoutUrl: hostedCheckoutUrl,
         orderToken: existingOrder.orderToken,
         totalDueMinor: existingInvoice.total_minor,
+        payLater: payLaterRequested || Boolean(existingOrder.metadata.payLater) || undefined,
       };
     }
   }
@@ -2439,6 +2512,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
           curlerMemberId: registration.curler_member_id,
           submittedByUserId: registration.submitted_by_member_id,
           submittedByMemberId: registration.submitted_by_member_id,
+          payLater: payLaterRequested || undefined,
         },
       });
       const checkout = await paymentService.createHostedCheckoutForOrder({
@@ -2446,10 +2520,14 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         successUrl: registrationCheckoutSuccessUrl(input.registrationId, order.orderToken, input.frontendBaseUrl),
         cancelUrl: `${checkoutFrontendBaseUrl(input.frontendBaseUrl)}/registration/cancel?registration_id=${input.registrationId}`,
       });
+      // Pay later creates a hosted checkout link for email, but the registrant did not enter checkout.
+      // Keep awaiting_payment so dashboard status is accurate.
+      const invoiceStatus = payLaterRequested ? 'awaiting_payment' : 'checkout_started';
+      const registrationStatus = payLaterRequested ? 'awaiting_payment' : 'payment_started';
       await db
         .update(schema.registrationInvoices)
         .set({
-          status: 'checkout_started',
+          status: invoiceStatus,
           payment_order_id: order.id,
           stripe_checkout_session_id: checkout.providerOrderId,
           updated_at: sql`CURRENT_TIMESTAMP`,
@@ -2458,10 +2536,26 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       await db
         .update(schema.curlingRegistrations)
         .set({
-          status: 'payment_started',
+          status: registrationStatus,
           updated_at: sql`CURRENT_TIMESTAMP`,
         })
         .where(eq(schema.curlingRegistrations.id, input.registrationId));
+
+      if (payLaterRequested) {
+        const deadline = await getRegistrationPaymentDeadline(registration.season_id, registration.session_id);
+        await safeSendRegistrationEmail({
+          registrationId: input.registrationId,
+          messageType: 'registration_submitted_immediate_payment',
+          payload: {
+            amountDueMinor: evaluation.feePreview.totalDueMinor,
+            paymentUrl: checkout.checkoutUrl,
+            deadlineText: deadline?.paymentDeadlineAt
+              ? formatRegistrationPaymentDeadline(deadline.paymentDeadlineAt)
+              : null,
+            summaryLines: await registrationSummaryLines(context),
+          },
+        });
+      }
 
       return {
         outcome: 'immediate_payment',
@@ -2470,6 +2564,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         checkoutUrl: checkout.checkoutUrl,
         orderToken: order.orderToken,
         totalDueMinor: evaluation.feePreview.totalDueMinor,
+        payLater: payLaterRequested || undefined,
       };
     } catch (error) {
       if (error instanceof PaymentServiceError) {

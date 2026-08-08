@@ -100,14 +100,27 @@ If the registration is sabbatical-only and no deferral reason exists, payment is
 
 If the registration includes sabbatical plus a non-guaranteed item, the entire payment is deferred.
 
+## Voluntary pay later
+
+When payment would otherwise be immediate, registrants may choose **Pay later** if a payment deadline is configured for that season and session (Registration schedule admin page).
+
+Pay later:
+
+- Does not change the payment decision outcome (`immediate_payment` still applies).
+- Creates a hosted checkout payment link via the configured payment provider and emails it immediately (`registration_submitted_immediate_payment`).
+- Does not redirect the browser to checkout; the registrant continues to the success page.
+- Warns that payment must be completed before the configured deadline to secure league selections.
+- Guaranteed league selections are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Staff removes non-payers and may promote from the waitlist.
+
+If no payment deadline is configured, Pay later is not offered.
+
 ## Failed or incomplete immediate payment
 
 If immediate payment fails or is not completed:
 
-- Registration is not confirmed.
+- Registration is not confirmed as paid.
+- Guaranteed league roster placements may already exist from submission; staff handles cleanup for non-payers.
 - Staff may help resolve the issue manually.
-
-No league spot is awarded based on checkout race timing.
 
 ## Required payment decision output
 
@@ -120,7 +133,7 @@ The payment decision service should return:
 - Deferral reason codes
 - Human-readable explanation
 - Whether staff review is required
-- Whether Stripe checkout should be created now
+- Whether hosted checkout should be created now
 - Whether a payment link may be generated later
 - Total due from fee calculation
 - Optional warnings

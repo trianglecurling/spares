@@ -814,6 +814,59 @@ export const registrationDiscountSettingsSchema = {
   ],
 } as const;
 
+export const registrationEarlyAccessSettingsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    enabled: { type: 'boolean' },
+    passwordConfigured: { type: 'boolean' },
+    earlyAccessPath: { type: 'string' },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: ['enabled', 'passwordConfigured', 'earlyAccessPath', 'createdAt', 'updatedAt'],
+} as const;
+
+export const registrationPaymentDeadlineSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    seasonId: { type: 'number' },
+    sessionId: { type: 'number' },
+    paymentDeadlineAt: { type: 'string' },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: ['id', 'seasonId', 'sessionId', 'paymentDeadlineAt', 'createdAt', 'updatedAt'],
+} as const;
+
+export const registrationPaymentDeadlineListResponseSchema = {
+  type: 'array',
+  items: registrationPaymentDeadlineSchema,
+} as const;
+
+export const registrationEarlyAccessStatusSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    available: { type: 'boolean' },
+    registrationState: { type: 'string', enum: ['closed', 'priority', 'open'] },
+    earlyAccessPath: { type: 'string' },
+  },
+  required: ['available', 'registrationState', 'earlyAccessPath'],
+} as const;
+
+export const registrationEarlyAccessUnlockResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    unlockToken: { type: 'string' },
+    expiresAt: { type: 'string' },
+  },
+  required: ['unlockToken', 'expiresAt'],
+} as const;
+
 export const registrationSeasonListResponseSchema = {
   type: 'array',
   items: registrationSeasonSchema,

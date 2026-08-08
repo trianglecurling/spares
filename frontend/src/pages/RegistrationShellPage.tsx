@@ -15,6 +15,7 @@ import ChoiceInput from '../components/ChoiceInput';
 import Button from '../components/Button';
 import { HiXMark } from 'react-icons/hi2';
 import RegistrationImmediatePaymentConfirmationModal from '../components/registration/RegistrationImmediatePaymentConfirmationModal';
+import RegistrationPayLaterConfirmationModal from '../components/registration/RegistrationPayLaterConfirmationModal';
 import RegistrationDemographicFields, {
   type RegistrationDemographicFieldsHandle,
 } from '../components/registration/RegistrationDemographicFields';
@@ -249,6 +250,9 @@ type RegistrationMembershipPaymentPayload = {
     deferralReasons: string[];
     totalDueMinor: number;
   };
+  paymentDeadlineAt?: string | null;
+  paymentDeadlineDisplay?: string | null;
+  payLaterAvailable?: boolean;
 };
 
 type RegistrationPaymentStatusPayload = {
@@ -1165,6 +1169,8 @@ export default function RegistrationShellPage() {
   const [error, setError] = useState('');
   const [checkoutConfirmation, setCheckoutConfirmation] = useState<SubmitRegistrationEditsResult | null>(null);
   const [checkoutConfirmationMode, setCheckoutConfirmationMode] = useState<'submit' | 'priority-edit'>('submit');
+  const [payLaterConfirmationOpen, setPayLaterConfirmationOpen] = useState(false);
+  const [confirmingPayLater, setConfirmingPayLater] = useState(false);
   const [confirmingCheckout, setConfirmingCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
   /** Suppresses one-shot auto-forward effects right after an explicit Back navigation. */
@@ -2092,14 +2098,16 @@ export default function RegistrationShellPage() {
 
   useEffect(() => {
     const guestPhaseSteps = ['discounts', 'membership', 'experience', 'basic-ice', 'review'];
-    if (!isGuestLocal || !windowState || !guestPhaseSteps.includes(currentStep)) return;
+    // Wait for auth + local draft restore so we do not preview with an empty DOB (Zod "Validation failed").
+    if (authLoading || !isGuestLocal || !windowState || !guestPhaseSteps.includes(currentStep)) return;
+    if (!registeringCurlerDateOfBirth?.trim()) return;
     let canceled = false;
     (async () => {
       try {
         const { data } = await api.post<RegistrationMembershipPaymentPayload>('/registration/guest/preview-membership-payment', {
           seasonId: windowState.season.id,
           sessionId: windowState.session.id,
-          curlerDateOfBirth: registeringCurlerDateOfBirth || '',
+          curlerDateOfBirth: registeringCurlerDateOfBirth,
           // Preview only; UI membership choice stays unselected until the curler picks one.
           membershipChoice: membershipChoice === 'social' ? 'social' : 'regular',
           basicIcePrivileges,
@@ -2110,7 +2118,10 @@ export default function RegistrationShellPage() {
           experienceType: experienceChoice,
           experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
         });
-        if (!canceled) setMembershipPayment(data);
+        if (!canceled) {
+          setMembershipPayment(data);
+          setError('');
+        }
       } catch (err) {
         if (!canceled) setError(errorMessage(err, 'Unable to load membership preview.'));
       }
@@ -2119,6 +2130,7 @@ export default function RegistrationShellPage() {
       canceled = true;
     };
   }, [
+    authLoading,
     currentStep,
     isGuestLocal,
     windowState,
@@ -3719,15 +3731,24 @@ export default function RegistrationShellPage() {
     }
   }
 
-  async function submitRegistration() {
+  async function submitRegistration(options?: { payLater?: boolean }) {
     setLoading(true);
     setError('');
     try {
       if (member && registrationId !== null) {
-        const result = await submitRegistrationEdits(registrationId);
+        const result = await submitRegistrationEdits(registrationId, { payLater: options?.payLater });
         if (result.requiresCheckoutConfirmation) {
+          setPayLaterConfirmationOpen(false);
+          setConfirmingPayLater(false);
           setCheckoutConfirmationMode('submit');
           setCheckoutConfirmation(result);
+          return;
+        }
+        if (result.payLater) {
+          setPayLaterConfirmationOpen(false);
+          setConfirmingPayLater(false);
+          rememberRegistrationCurlerNameForSuccess(registrationId, registeringCurlerName);
+          navigate('/registration/success', { state: { payLater: true } });
           return;
         }
         if (result.checkoutUrl) {
@@ -3743,7 +3764,12 @@ export default function RegistrationShellPage() {
           setLoading(false);
           return;
         }
-        const { data } = await api.post<{ outcome: string; checkoutUrl?: string; registrationId?: number }>('/registration/guest/submit', {
+        const { data } = await api.post<{
+          outcome: string;
+          checkoutUrl?: string;
+          registrationId?: number;
+          payLater?: boolean;
+        }>('/registration/guest/submit', {
           seasonId: windowState.season.id,
           sessionId: windowState.session.id,
           registeringForSelf: registeringForSelf === 'self',
@@ -3759,9 +3785,16 @@ export default function RegistrationShellPage() {
           reciprocalClubName: reciprocalClubName || null,
           experienceType: experienceChoice,
           experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
+          payLater: options?.payLater ?? false,
         });
         rememberRegistrationCurlerNameForSuccess(data.registrationId, registeringCurlerName);
         clearLocalDraft();
+        if (data.payLater) {
+          setPayLaterConfirmationOpen(false);
+          setConfirmingPayLater(false);
+          navigate('/registration/success', { state: { payLater: true } });
+          return;
+        }
         if (data.checkoutUrl) {
           window.location.assign(data.checkoutUrl);
           return;
@@ -3770,9 +3803,21 @@ export default function RegistrationShellPage() {
       }
     } catch (err) {
       setError(errorMessage(err, 'Unable to submit registration.'));
+      setConfirmingPayLater(false);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function confirmPayLaterSubmission() {
+    setConfirmingPayLater(true);
+    setError('');
+    await submitRegistration({ payLater: true });
+  }
+
+  function openPayLaterConfirmation() {
+    setError('');
+    setPayLaterConfirmationOpen(true);
   }
 
   const showStartOver =
@@ -6307,7 +6352,9 @@ export default function RegistrationShellPage() {
               ? 'Payment is deferred. We will contact you when your registration is ready for payment.'
               : membershipPayment?.paymentDecision.outcome === 'no_payment_required'
                 ? 'No payment is required now.'
-                : 'Payment is due now to complete this registration.'}
+                : membershipPayment?.payLaterAvailable
+                  ? 'Payment is due now to complete this registration. You can pay now or choose Pay later to receive an invoice by email.'
+                  : 'Payment is due now to complete this registration.'}
           </p>
           {membershipPayment?.paymentDecision.outcome === 'deferred_payment' && membershipPayment.paymentDecision.deferralReasons.length > 0 ? (
             <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
@@ -6321,14 +6368,25 @@ export default function RegistrationShellPage() {
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex flex-wrap gap-3">
-            <Button type="button" disabled={loading || !membershipPayment} onClick={submitRegistration}>
+            <Button type="button" disabled={loading || !membershipPayment} onClick={() => void submitRegistration()}>
               {membershipPayment?.paymentDecision.outcome === 'immediate_payment' ? 'Submit and pay' : 'Submit registration'}
             </Button>
+            {membershipPayment?.payLaterAvailable ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={loading || !membershipPayment}
+                onClick={openPayLaterConfirmation}
+              >
+                Pay later
+              </Button>
+            ) : null}
           </div>
         </div>
       </RegistrationCard>
     );
   } else if (currentStep === 'success') {
+    const submittedPayLater = Boolean((location.state as { payLater?: boolean } | null)?.payLater);
     const isPaymentPending = paymentOrderToken ? isRegistrationPaymentPending(paymentStatus?.paymentStatus) : false;
     const showPaymentProcessingScreen = Boolean(paymentOrderToken && isPaymentPending && !showDetailedPaymentPending && !error);
     const title =
@@ -6355,7 +6413,9 @@ export default function RegistrationShellPage() {
               : showPaymentProcessingScreen
                 ? 'Processing your payment confirmation...'
                 : registrationPaymentPendingMessage()
-      : 'Your registration has been submitted. No payment is due right now, or payment will be handled after placement review.';
+      : submittedPayLater
+        ? 'Your registration has been submitted. Check your email for an invoice and payment link. You must pay by the deadline to secure your league selections.'
+        : 'Your registration has been submitted. No payment is due right now, or payment will be handled after placement review.';
     content = (
       <RegistrationCard>
         <RegistrationFlowHeader />
@@ -6411,6 +6471,21 @@ export default function RegistrationShellPage() {
         onContinue={() =>
           void (checkoutConfirmationMode === 'submit' ? confirmRegistrationCheckout() : confirmPriorityEditCheckout())
         }
+      />
+      <RegistrationPayLaterConfirmationModal
+        isOpen={payLaterConfirmationOpen}
+        saving={confirmingPayLater || loading}
+        paymentDeadlineDisplay={membershipPayment?.paymentDeadlineDisplay ?? 'the payment deadline'}
+        error={payLaterConfirmationOpen ? error || null : null}
+        onClose={() => {
+          if (confirmingPayLater || loading) return;
+          setPayLaterConfirmationOpen(false);
+        }}
+        onPayNow={() => {
+          setPayLaterConfirmationOpen(false);
+          void submitRegistration();
+        }}
+        onSubmitWithoutPayment={() => void confirmPayLaterSubmission()}
       />
     </PublicLayout>
   );

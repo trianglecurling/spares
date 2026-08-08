@@ -28,6 +28,8 @@ type PgSchema = {
   registrationPaymentItemNames: typeof pgSchema.registrationPaymentItemNamesPg;
   registrationPriceSettings: typeof pgSchema.registrationPriceSettingsPg;
   registrationDiscountSettings: typeof pgSchema.registrationDiscountSettingsPg;
+  registrationEarlyAccessSettings: typeof pgSchema.registrationEarlyAccessSettingsPg;
+  registrationPaymentDeadlines: typeof pgSchema.registrationPaymentDeadlinesPg;
   seasonMemberships: typeof pgSchema.seasonMembershipsPg;
   curlingIcePrivileges: typeof pgSchema.curlingIcePrivilegesPg;
   curlingSabbaticalSessions: typeof pgSchema.curlingSabbaticalSessionsPg;
@@ -168,6 +170,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       registrationPaymentItemNames: sqliteSchema.registrationPaymentItemNamesSqlite,
       registrationPriceSettings: sqliteSchema.registrationPriceSettingsSqlite,
       registrationDiscountSettings: sqliteSchema.registrationDiscountSettingsSqlite,
+      registrationEarlyAccessSettings: sqliteSchema.registrationEarlyAccessSettingsSqlite,
+      registrationPaymentDeadlines: sqliteSchema.registrationPaymentDeadlinesSqlite,
       seasonMemberships: sqliteSchema.seasonMembershipsSqlite,
       curlingIcePrivileges: sqliteSchema.curlingIcePrivilegesSqlite,
       curlingSabbaticalSessions: sqliteSchema.curlingSabbaticalSessionsSqlite,
@@ -299,6 +303,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       registrationPaymentItemNames: pgSchema.registrationPaymentItemNamesPg,
       registrationPriceSettings: pgSchema.registrationPriceSettingsPg,
       registrationDiscountSettings: pgSchema.registrationDiscountSettingsPg,
+      registrationEarlyAccessSettings: pgSchema.registrationEarlyAccessSettingsPg,
+      registrationPaymentDeadlines: pgSchema.registrationPaymentDeadlinesPg,
       seasonMemberships: pgSchema.seasonMembershipsPg,
       curlingIcePrivileges: pgSchema.curlingIcePrivilegesPg,
       curlingSabbaticalSessions: pgSchema.curlingSabbaticalSessionsPg,

@@ -309,6 +309,20 @@
       "when": 1780352498485,
       "tag": "0044_add_availability_reminder_acked_session",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1780352498486,
+      "tag": "0045_add_registration_early_access_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1780352498487,
+      "tag": "0046_add_registration_payment_deadlines",
+      "breakpoints": true
     }
   ]
 }

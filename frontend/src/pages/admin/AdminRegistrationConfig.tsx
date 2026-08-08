@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
@@ -6,12 +6,13 @@ import InlineStateMessage from '../../components/InlineStateMessage';
 import PageTabs from '../../components/PageTabs';
 import Button from '../../components/Button';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
+import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { del, get, patch, post } from '../../api/client';
-import { formatApiError } from '../../utils/api';
+import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
 import AdminRegistrationCommunicationsPanel from './AdminRegistrationCommunicationsPanel';
 import AdminRegistrationsList from './AdminRegistrationsList';
@@ -77,6 +78,19 @@ type DiscountFormState = {
   winterOnlyDiscount: DiscountSlotForm;
 };
 
+interface EarlyAccessSettings {
+  enabled: boolean;
+  passwordConfigured: boolean;
+  earlyAccessPath: string;
+}
+
+interface PaymentDeadline {
+  id: number;
+  seasonId: number;
+  sessionId: number;
+  paymentDeadlineAt: string;
+}
+
 type TabKey = 'registrations' | 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts' | 'communications';
 
 const CONFIG_TAB_KEYS = ['seasons', 'sessions', 'periods', 'prices', 'discounts', 'communications'] as const;
@@ -114,6 +128,12 @@ const emptyTransitionForm = {
   sessionId: 0,
   effectiveAt: '',
   state: 'closed' as RegistrationState,
+};
+
+const emptyPaymentDeadlineForm = {
+  seasonId: 0,
+  sessionId: 0,
+  paymentDeadlineAt: '',
 };
 
 const emptyPriceForm = {
@@ -177,15 +197,24 @@ export default function AdminRegistrationConfig() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [transitions, setTransitions] = useState<RegistrationStateTransition[]>([]);
+  const [paymentDeadlines, setPaymentDeadlines] = useState<PaymentDeadline[]>([]);
   const [seasonForm, setSeasonForm] = useState(emptySeasonForm);
   const [sessionForm, setSessionForm] = useState(emptySessionForm);
   const [transitionForm, setTransitionForm] = useState(emptyTransitionForm);
+  const [paymentDeadlineForm, setPaymentDeadlineForm] = useState(emptyPaymentDeadlineForm);
   const [applyNowForm, setApplyNowForm] = useState(emptyApplyNowForm);
   const [priceForm, setPriceForm] = useState(emptyPriceForm);
   const [discountForm, setDiscountForm] = useState(emptyDiscountForm);
   const [mauticSyncStatus, setMauticSyncStatus] = useState<MauticSyncStatus | null>(null);
   const [mauticSyncLoading, setMauticSyncLoading] = useState(false);
   const [mauticSyncRunning, setMauticSyncRunning] = useState(false);
+  const [earlyAccessForm, setEarlyAccessForm] = useState({
+    enabled: false,
+    passwordConfigured: false,
+    earlyAccessPath: '/registration/start/early',
+    password: '',
+  });
+  const earlyAccessPasswordId = useId();
 
   const activeTab = useMemo<TabKey>(() => {
     const segments = location.pathname.split('/').filter(Boolean);
@@ -221,6 +250,14 @@ export default function AdminRegistrationConfig() {
     [sessions, applyNowForm.seasonId]
   );
 
+  const paymentDeadlineSessionOptions = useMemo<ChoiceOption<number>[]>(
+    () =>
+      sessions
+        .filter((session) => session.seasonId === paymentDeadlineForm.seasonId)
+        .map((session) => ({ value: session.id, label: session.name })),
+    [sessions, paymentDeadlineForm.seasonId]
+  );
+
   const loadMauticSyncStatus = async () => {
     setMauticSyncLoading(true);
     try {
@@ -236,18 +273,23 @@ export default function AdminRegistrationConfig() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [seasonRows, sessionRows, transitionRows, priceRow, discountRow] = await Promise.all([
-        get('/registration-config/seasons'),
-        get('/registration-config/sessions'),
-        get('/registration-config/registration-state-transitions'),
-        get('/registration-config/prices'),
-        get('/registration-config/discounts'),
-      ]);
+      const [seasonRows, sessionRows, transitionRows, paymentDeadlineRows, priceRow, discountRow, earlyAccessResponse] =
+        await Promise.all([
+          get('/registration-config/seasons'),
+          get('/registration-config/sessions'),
+          get('/registration-config/registration-state-transitions'),
+          api.get<PaymentDeadline[]>('/registration-config/payment-deadlines'),
+          get('/registration-config/prices'),
+          get('/registration-config/discounts'),
+          api.get<EarlyAccessSettings>('/registration-config/early-access'),
+        ]);
       setSeasons(seasonRows as Season[]);
       setSessions(sessionRows as Session[]);
       setTransitions(transitionRows as RegistrationStateTransition[]);
+      setPaymentDeadlines(paymentDeadlineRows.data);
       const prices = priceRow as PriceSettings;
       const discounts = discountRow as DiscountApiResponse;
+      const earlyAccess = earlyAccessResponse.data;
       setPriceForm({
         regularMembershipFeeDollars: prices.regularMembershipFeeDollars,
         socialMembershipFeeDollars: prices.socialMembershipFeeDollars,
@@ -260,6 +302,12 @@ export default function AdminRegistrationConfig() {
         studentDiscount: discounts.studentDiscount,
         reciprocalDiscount: discounts.reciprocalDiscount,
         winterOnlyDiscount: discounts.winterOnlyDiscount,
+      });
+      setEarlyAccessForm({
+        enabled: earlyAccess.enabled,
+        passwordConfigured: earlyAccess.passwordConfigured,
+        earlyAccessPath: earlyAccess.earlyAccessPath,
+        password: '',
       });
       void loadMauticSyncStatus();
     } catch (error) {
@@ -376,6 +424,92 @@ export default function AdminRegistrationConfig() {
       showAlert(formatApiError(error, 'Failed to save registration schedule row'), 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveEarlyAccess = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const payload: { enabled: boolean; password?: string } = {
+        enabled: earlyAccessForm.enabled,
+      };
+      if (earlyAccessForm.password.trim()) {
+        payload.password = earlyAccessForm.password.trim();
+      }
+      const response = await api.patch<EarlyAccessSettings>('/registration-config/early-access', payload);
+      setEarlyAccessForm({
+        enabled: response.data.enabled,
+        passwordConfigured: response.data.passwordConfigured,
+        earlyAccessPath: response.data.earlyAccessPath,
+        password: '',
+      });
+      showAlert('Early access settings saved.', 'success');
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to save early access settings'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSavePaymentDeadline = async (event: FormEvent) => {
+    event.preventDefault();
+    const iso = parseDateTimeLocal(paymentDeadlineForm.paymentDeadlineAt);
+    if (!paymentDeadlineForm.seasonId || !paymentDeadlineForm.sessionId) {
+      showAlert('Select a season and session.', 'warning');
+      return;
+    }
+    if (!iso) {
+      showAlert('Choose a valid payment deadline date and time.', 'warning');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post<PaymentDeadline>('/registration-config/payment-deadlines', {
+        seasonId: paymentDeadlineForm.seasonId,
+        sessionId: paymentDeadlineForm.sessionId,
+        paymentDeadlineAt: iso,
+      });
+      setPaymentDeadlineForm(emptyPaymentDeadlineForm);
+      await loadAll();
+      showAlert('Payment deadline saved.', 'success');
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to save payment deadline'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletePaymentDeadline = async (deadline: PaymentDeadline) => {
+    const confirmed = await confirm({
+      title: 'Remove payment deadline',
+      message: 'Remove this payment deadline? Registrants will no longer see Pay later for this season and session.',
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+    try {
+      await api.delete(`/registration-config/payment-deadlines/${deadline.id}`);
+      if (
+        paymentDeadlineForm.seasonId === deadline.seasonId &&
+        paymentDeadlineForm.sessionId === deadline.sessionId
+      ) {
+        setPaymentDeadlineForm(emptyPaymentDeadlineForm);
+      }
+      await loadAll();
+      showAlert('Payment deadline removed.', 'success');
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to remove payment deadline'), 'error');
+    }
+  };
+
+  const handleCopyEarlyAccessLink = async () => {
+    const url = `${window.location.origin}${earlyAccessForm.earlyAccessPath}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showAlert('Early access link copied.', 'success');
+    } catch {
+      showAlert('Unable to copy the link. Copy it from the field instead.', 'warning');
     }
   };
 
@@ -670,38 +804,75 @@ export default function AdminRegistrationConfig() {
 
             {activeTab === 'periods' && (
               <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
-                <ConfigTable
-                  title="Registration schedule"
-                  emptyText="No state changes have been configured yet."
-                  headers={['Season', 'Session', 'Effective', 'State', '']}
-                  rows={transitions.map((row) => ({
-                    key: row.id,
-                    cells: [
-                      describeSeason(seasons, row.seasonId),
-                      describeSession(sessions, row.sessionId),
-                      new Date(row.effectiveAt).toLocaleString(),
-                      row.state,
-                      <span key="actions" className="inline-flex flex-wrap justify-end gap-2">
-                        <Button
-                          variant="secondary"
-                          className="px-3 py-1.5"
-                          onClick={() =>
-                            setTransitionForm({
-                              ...row,
-                              id: row.id,
-                              effectiveAt: formatDateTimeLocal(row.effectiveAt),
-                            })
-                          }
-                        >
-                          Edit
-                        </Button>
-                        <Button variant="secondary" className="px-3 py-1.5" onClick={() => handleDeleteTransition(row)}>
-                          Remove
-                        </Button>
-                      </span>,
-                    ],
-                  }))}
-                />
+                <div className="flex flex-col gap-6">
+                  <ConfigTable
+                    title="Registration schedule"
+                    emptyText="No state changes have been configured yet."
+                    headers={['Season', 'Session', 'Effective', 'State', '']}
+                    rows={transitions.map((row) => ({
+                      key: row.id,
+                      cells: [
+                        describeSeason(seasons, row.seasonId),
+                        describeSession(sessions, row.sessionId),
+                        new Date(row.effectiveAt).toLocaleString(),
+                        row.state,
+                        <span key="actions" className="inline-flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-1.5"
+                            onClick={() =>
+                              setTransitionForm({
+                                ...row,
+                                id: row.id,
+                                effectiveAt: formatDateTimeLocal(row.effectiveAt),
+                              })
+                            }
+                          >
+                            Edit
+                          </Button>
+                          <Button variant="secondary" className="px-3 py-1.5" onClick={() => handleDeleteTransition(row)}>
+                            Remove
+                          </Button>
+                        </span>,
+                      ],
+                    }))}
+                  />
+                  <ConfigTable
+                    title="Payment deadlines"
+                    emptyText="No payment deadlines configured. Pay later stays hidden until a deadline is set."
+                    headers={['Season', 'Session', 'Pay by', '']}
+                    rows={paymentDeadlines.map((row) => ({
+                      key: row.id,
+                      cells: [
+                        describeSeason(seasons, row.seasonId),
+                        describeSession(sessions, row.sessionId),
+                        new Date(row.paymentDeadlineAt).toLocaleString(),
+                        <span key="actions" className="inline-flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-1.5"
+                            onClick={() =>
+                              setPaymentDeadlineForm({
+                                seasonId: row.seasonId,
+                                sessionId: row.sessionId,
+                                paymentDeadlineAt: formatDateTimeLocal(row.paymentDeadlineAt),
+                              })
+                            }
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-1.5"
+                            onClick={() => void handleDeletePaymentDeadline(row)}
+                          >
+                            Remove
+                          </Button>
+                        </span>,
+                      ],
+                    }))}
+                  />
+                </div>
                 <div className="flex flex-col gap-6">
                   <form className="app-card space-y-4" onSubmit={handleApplyRegistrationStateNow}>
                     <h2 className="app-section-title">Set registration state now</h2>
@@ -796,6 +967,109 @@ export default function AdminRegistrationConfig() {
                     isEditing={Boolean(transitionForm.id)}
                   />
                 </form>
+                  <form className="app-card space-y-4" onSubmit={handleSavePaymentDeadline}>
+                    <h2 className="app-section-title">Payment deadline</h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      When payment is due now, registrants can choose Pay later. They must pay by this deadline to secure
+                      league selections, and they receive an invoice email with a payment link immediately.
+                    </p>
+                    <ChoiceField
+                      id="payment-deadline-season"
+                      label="Season"
+                      options={seasonOptions}
+                      value={paymentDeadlineForm.seasonId || null}
+                      onChange={(seasonId) =>
+                        setPaymentDeadlineForm((form) => ({
+                          ...form,
+                          seasonId: seasonId ?? 0,
+                          sessionId: 0,
+                        }))
+                      }
+                      required
+                    />
+                    <ChoiceField
+                      id="payment-deadline-session"
+                      label="Session"
+                      options={paymentDeadlineSessionOptions}
+                      value={paymentDeadlineForm.sessionId || null}
+                      onChange={(sessionId) =>
+                        setPaymentDeadlineForm((form) => ({ ...form, sessionId: sessionId ?? 0 }))
+                      }
+                      required
+                    />
+                    {paymentDeadlineForm.seasonId > 0 && paymentDeadlineSessionOptions.length === 0 ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">No sessions exist for this season yet.</p>
+                    ) : null}
+                    <DateTimeField
+                      id="payment-deadline-at"
+                      label="Payment deadline"
+                      value={paymentDeadlineForm.paymentDeadlineAt}
+                      onChange={(paymentDeadlineAt) =>
+                        setPaymentDeadlineForm((form) => ({ ...form, paymentDeadlineAt }))
+                      }
+                    />
+                    <div className="flex flex-wrap justify-end gap-2 pt-2">
+                      <Button type="button" variant="secondary" onClick={() => setPaymentDeadlineForm(emptyPaymentDeadlineForm)}>
+                        Reset
+                      </Button>
+                      <Button type="submit" disabled={saving}>
+                        {saving ? 'Saving…' : 'Save payment deadline'}
+                      </Button>
+                    </div>
+                  </form>
+                  <form className="app-card space-y-4" onSubmit={handleSaveEarlyAccess}>
+                    <h2 className="app-section-title">Early access</h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Share a password-protected link so selected members can register before priority registration
+                      opens. After unlock, registration behaves the same as priority registration.
+                    </p>
+                    <FormCheckbox
+                      label="Enable early access"
+                      checked={earlyAccessForm.enabled}
+                      onChange={(enabled) => setEarlyAccessForm((form) => ({ ...form, enabled }))}
+                      helperText={
+                        earlyAccessForm.passwordConfigured
+                          ? 'A password is already configured.'
+                          : 'Set a password before enabling early access.'
+                      }
+                    />
+                    <FormField
+                      label={earlyAccessForm.passwordConfigured ? 'New password (optional)' : 'Password'}
+                      htmlFor={earlyAccessPasswordId}
+                      required={!earlyAccessForm.passwordConfigured && earlyAccessForm.enabled}
+                      helperText="Leave blank to keep the current password. Minimum 8 characters."
+                    >
+                      <input
+                        id={earlyAccessPasswordId}
+                        type="password"
+                        autoComplete="new-password"
+                        value={earlyAccessForm.password}
+                        onChange={(event) =>
+                          setEarlyAccessForm((form) => ({ ...form, password: event.target.value }))
+                        }
+                        className="app-input"
+                      />
+                    </FormField>
+                    <FormField label="Early access link" htmlFor="early-access-link">
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          id="early-access-link"
+                          type="text"
+                          readOnly
+                          value={`${typeof window !== 'undefined' ? window.location.origin : ''}${earlyAccessForm.earlyAccessPath}`}
+                          className="app-input"
+                        />
+                        <Button type="button" variant="secondary" onClick={() => void handleCopyEarlyAccessLink()}>
+                          Copy link
+                        </Button>
+                      </div>
+                    </FormField>
+                    <div className="flex flex-wrap justify-end gap-2 pt-2">
+                      <Button type="submit" disabled={saving}>
+                        {saving ? 'Saving…' : 'Save early access'}
+                      </Button>
+                    </div>
+                  </form>
                 </div>
               </section>
             )}

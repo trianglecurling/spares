@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sendValidationError } from '../api/errors.js';
+import { bindEarlyAccessOnRequest } from '../registration/registrationEarlyAccess.js';
 import { RegistrationPriorityEditValidationError } from '../registration/registrationPriorityEdit.js';
 import {
   cancelMemberRegistration,
@@ -43,6 +44,8 @@ function handleMemberRegistrationError(reply: FastifyReply, error: unknown): boo
 }
 
 export async function protectedRegistrationMemberRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.addHook('onRequest', bindEarlyAccessOnRequest);
+
   fastify.get('/registration/member/dashboard-status', async (request) => {
     return getMemberDashboardRegistrationStatus((request as AuthenticatedRequest).member);
   });

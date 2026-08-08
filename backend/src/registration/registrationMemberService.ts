@@ -33,18 +33,72 @@ function memberName(row: { name?: string | null; first_name?: string | null; las
   return parts.length > 0 ? parts.join(' ') : row.name?.trim() || row.email?.trim() || 'Unknown curler';
 }
 
+function parseOrderMetadata(metadata: unknown): Record<string, unknown> | null {
+  const value =
+    typeof metadata === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(metadata) as unknown;
+          } catch {
+            return null;
+          }
+        })()
+      : metadata;
+  if (!value || typeof value !== 'object') return null;
+  return value as Record<string, unknown>;
+}
+
 function hostedCheckoutUrl(metadata: unknown): string | null {
-  const value = typeof metadata === 'string' ? (() => {
-    try {
-      return JSON.parse(metadata) as unknown;
-    } catch {
-      return null;
-    }
-  })() : metadata;
-  if (value && typeof value === 'object' && 'hostedCheckoutUrl' in value && typeof value.hostedCheckoutUrl === 'string') {
+  const value = parseOrderMetadata(metadata);
+  if (value && typeof value.hostedCheckoutUrl === 'string') {
     return value.hostedCheckoutUrl;
   }
   return null;
+}
+
+function orderMetadataHasPayLater(metadata: unknown): boolean {
+  const value = parseOrderMetadata(metadata);
+  return value?.payLater === true;
+}
+
+/**
+ * Pay later used to advance to payment_started / checkout_started because a hosted
+ * checkout link was created for email. Correct those to awaiting_payment while the order is still pending.
+ */
+async function repairPayLaterAwaitingPaymentStatuses(input: {
+  registrationId: number;
+  registrationStatus: string;
+  invoiceId: number | null;
+  invoiceStatus: string | null;
+  orderStatus: string | null;
+  orderMetadata: unknown;
+}): Promise<{ registrationStatus: string; paymentStatus: string }> {
+  const paymentStatus = input.invoiceStatus ?? (input.registrationStatus === 'confirmed' ? 'paid' : 'not_required');
+  if (
+    input.orderStatus !== 'pending' ||
+    !orderMetadataHasPayLater(input.orderMetadata) ||
+    (input.registrationStatus !== 'payment_started' && input.invoiceStatus !== 'checkout_started')
+  ) {
+    return { registrationStatus: input.registrationStatus, paymentStatus };
+  }
+
+  const { db, schema } = getDrizzleDb();
+  if (input.registrationStatus === 'payment_started') {
+    await db
+      .update(schema.curlingRegistrations)
+      .set({ status: 'awaiting_payment', updated_at: sql`CURRENT_TIMESTAMP` })
+      .where(eq(schema.curlingRegistrations.id, input.registrationId));
+  }
+  if (input.invoiceId != null && input.invoiceStatus === 'checkout_started') {
+    await db
+      .update(schema.registrationInvoices)
+      .set({ status: 'awaiting_payment', updated_at: sql`CURRENT_TIMESTAMP` })
+      .where(eq(schema.registrationInvoices.id, input.invoiceId));
+  }
+  return {
+    registrationStatus: 'awaiting_payment',
+    paymentStatus: 'awaiting_payment',
+  };
 }
 
 /** Remaining amount owed for a registration invoice. Canceled/refunded invoices are never due. */
@@ -103,12 +157,21 @@ async function loadLatestRegistrationPaymentSnapshot(registrationId: number, reg
       // Keep member views responsive even if payment sync fails.
     }
   }
+  const repaired = await repairPayLaterAwaitingPaymentStatuses({
+    registrationId,
+    registrationStatus,
+    invoiceId: invoice?.id ?? null,
+    invoiceStatus: invoice?.status ?? null,
+    orderStatus: order?.status ?? null,
+    orderMetadata: order?.metadata,
+  });
   return {
-    paymentStatus: invoice?.status ?? (registrationStatus === 'confirmed' ? 'paid' : 'not_required'),
+    registrationStatus: repaired.registrationStatus,
+    paymentStatus: repaired.paymentStatus,
     amountDueMinor: registrationAmountDueMinor({
-      invoiceStatus: invoice?.status,
+      invoiceStatus: repaired.paymentStatus === 'not_required' ? null : repaired.paymentStatus,
       invoiceTotalMinor: invoice?.total_minor,
-      registrationStatus,
+      registrationStatus: repaired.registrationStatus,
     }),
     paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
   };
@@ -213,7 +276,7 @@ export async function getMemberDashboardRegistrationStatus(actor: Member) {
       }) || 'Registration in progress',
       seasonName: row.seasonName,
       sessionName: row.sessionName,
-      registrationStatus: row.status,
+      registrationStatus: payment.registrationStatus,
       isDraft: row.submittedAt == null,
       paymentStatus: payment.paymentStatus,
       membershipOption: row.membershipOption,
@@ -302,7 +365,7 @@ export async function listMemberRegistrationSummaries(actor: Member, seasonId?: 
       }),
       seasonName: row.seasonName,
       sessionName: row.sessionName,
-      registrationStatus: row.status,
+      registrationStatus: payment.registrationStatus,
       paymentStatus: payment.paymentStatus,
       membershipOption: row.membershipOption,
       amountDueMinor: payment.amountDueMinor,

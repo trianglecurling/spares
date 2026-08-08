@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { RegistrationSelectionInput } from './registrationContext.js';
 
@@ -15,10 +15,74 @@ export const ROSTER_COMMIT_REGISTRATION_STATUSES = new Set([
   'awaiting_placement',
   'awaiting_staff_review',
   'submitted',
+  // Assume unpaid registrants will pay; staff handles the rare non-payers later.
+  'awaiting_payment',
+  'payment_started',
 ]);
 
 export function registrationStatusCommitsRoster(status: string): boolean {
   return ROSTER_COMMIT_REGISTRATION_STATUSES.has(status);
+}
+
+const UNPAID_ROSTER_REGISTRATION_STATUSES = ['awaiting_payment', 'payment_started'] as const;
+const TERMINAL_SELECTION_STATUSES_FOR_ROSTER = new Set([
+  'dropped',
+  'cancelled',
+  'not_placed',
+  'declined',
+]);
+
+/**
+ * Idempotent repair: place guaranteed-return selections for unpaid registrations
+ * that predate roster-on-awaiting-payment.
+ */
+export async function ensureRosterPlacementsForUnpaidRegistrations(memberId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const unpaid = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      status: schema.curlingRegistrations.status,
+    })
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.curler_member_id, memberId),
+        inArray(schema.curlingRegistrations.status, [...UNPAID_ROSTER_REGISTRATION_STATUSES]),
+      ),
+    );
+
+  for (const registration of unpaid) {
+    const selectionRows = await db
+      .select({
+        leagueId: schema.registrationSelections.league_id,
+        selectionType: schema.registrationSelections.selection_type,
+        status: schema.registrationSelections.status,
+      })
+      .from(schema.registrationSelections)
+      .where(eq(schema.registrationSelections.registration_id, registration.id));
+
+    const excludeLeagueIds = selectionRows
+      .filter(
+        (row) => row.leagueId != null && TERMINAL_SELECTION_STATUSES_FOR_ROSTER.has(row.status),
+      )
+      .map((row) => row.leagueId as number);
+
+    await syncRegistrationRosterPlacements({
+      registrationId: registration.id,
+      curlerMemberId: memberId,
+      selections: selectionRows
+        .filter(
+          (row) =>
+            row.leagueId != null && !TERMINAL_SELECTION_STATUSES_FOR_ROSTER.has(row.status),
+        )
+        .map((row) => ({
+          leagueId: row.leagueId,
+          selectionType: row.selectionType,
+        })),
+      excludeLeagueIds,
+      registrationStatus: registration.status,
+    });
+  }
 }
 
 function selectedGuaranteedReturnLeagueIds(selections: RegistrationSelectionInput[]): Set<number> {

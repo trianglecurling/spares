@@ -39,6 +39,11 @@ function money(minor: number | null) {
 
 function statusLabel(value: string) {
   if (value === 'cancelled') return 'Canceled';
+  if (value === 'awaiting_payment') return 'Awaiting payment';
+  if (value === 'payment_started') return 'Payment started';
+  if (value === 'checkout_started') return 'Checkout started';
+  if (value === 'awaiting_placement') return 'Awaiting placement';
+  if (value === 'awaiting_staff_review') return 'Awaiting staff review';
   const label = value.replace(/_/g, ' ');
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -68,6 +73,33 @@ function isRegistrationPaid(registration: RegistrationSummary) {
     registration.registrationStatus === 'paid' ||
     registration.registrationStatus === 'confirmed'
   );
+}
+
+/** Hide the payment pill when it only repeats what the registration status already says. */
+function shouldShowPaymentBadge(registration: RegistrationSummary) {
+  if (registration.isDraft) return false;
+  const registrationStatus = registration.registrationStatus;
+  const paymentStatus = registration.paymentStatus;
+  if (!paymentStatus || paymentStatus === 'not_required') return false;
+  if (
+    registrationStatus === 'awaiting_payment' &&
+    (paymentStatus === 'awaiting_payment' || paymentStatus === 'checkout_started')
+  ) {
+    return false;
+  }
+  if (
+    registrationStatus === 'payment_started' &&
+    (paymentStatus === 'checkout_started' || paymentStatus === 'awaiting_payment')
+  ) {
+    return false;
+  }
+  if (
+    (registrationStatus === 'paid' || registrationStatus === 'confirmed') &&
+    paymentStatus === 'paid'
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export default function DashboardRegistrationStatus() {
@@ -157,7 +189,7 @@ export default function DashboardRegistrationStatus() {
                         ? 'In progress'
                         : statusLabel(registration.registrationStatus)}
                     </span>
-                    {!registration.isDraft ? (
+                    {shouldShowPaymentBadge(registration) ? (
                       <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">
                         Payment: {statusLabel(registration.paymentStatus).toLowerCase()}
                       </span>

@@ -7,6 +7,9 @@ import {
   mauticMembershipSyncResultSchema,
   mauticMembershipSyncStatusResponseSchema,
   registrationDiscountSettingsSchema,
+  registrationEarlyAccessSettingsSchema,
+  registrationPaymentDeadlineListResponseSchema,
+  registrationPaymentDeadlineSchema,
   registrationPriceSettingsSchema,
   registrationSeasonListResponseSchema,
   registrationSeasonSchema,
@@ -28,6 +31,16 @@ import {
   type PriceConfigInput,
   type RegistrationDiscountSettingsStored,
 } from '../registration/registrationConfigValidation.js';
+import {
+  RegistrationEarlyAccessValidationError,
+  getRegistrationEarlyAccessAdminSettings,
+  updateRegistrationEarlyAccessSettings,
+} from '../registration/registrationEarlyAccess.js';
+import {
+  deleteRegistrationPaymentDeadline,
+  listRegistrationPaymentDeadlines,
+  upsertRegistrationPaymentDeadline,
+} from '../registration/registrationPaymentDeadline.js';
 import { syncSeasonMembershipDatesForSeason } from '../services/memberSeasonMembershipAdminService.js';
 import {
   getSyncStatus,
@@ -76,8 +89,23 @@ function handleValidationError(reply: FastifyReply, error: unknown): boolean {
     sendValidationError(reply, error.message, error.details);
     return true;
   }
+  if (error instanceof RegistrationEarlyAccessValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
   return false;
 }
+
+const earlyAccessPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  password: z.string().nullable().optional(),
+});
+
+const paymentDeadlineBodySchema = z.object({
+  seasonId: z.number().int().positive(),
+  sessionId: z.number().int().positive(),
+  paymentDeadlineAt: z.string().min(1),
+});
 
 function parseId(id: string): number {
   return Number.parseInt(id, 10);
@@ -1066,6 +1094,134 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
         .where(eq(schema.registrationDiscountSettings.scope, SINGLETON_SCOPE))
         .returning();
       return mapDiscountRowToResponse(rows[0]);
+    }
+  );
+
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/registration-config/early-access',
+    {
+      schema: { tags: ['registration-config'], response: { 200: registrationEarlyAccessSettingsSchema } },
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      return getRegistrationEarlyAccessAdminSettings();
+    }
+  );
+
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
+    '/registration-config/early-access',
+    {
+      schema: {
+        tags: ['registration-config'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            enabled: { type: 'boolean' },
+            password: { type: ['string', 'null'] },
+          },
+        },
+        response: { 200: registrationEarlyAccessSettingsSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      try {
+        const body = earlyAccessPatchSchema.parse(request.body);
+        return await updateRegistrationEarlyAccessSettings(body);
+      } catch (error) {
+        if (handleValidationError(reply, error)) return;
+        if (error instanceof z.ZodError) {
+          sendValidationError(reply, 'Validation failed', error.flatten().fieldErrors as Record<string, string[]>);
+          return;
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/registration-config/payment-deadlines',
+    {
+      schema: { tags: ['registration-config'], response: { 200: registrationPaymentDeadlineListResponseSchema } },
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      return listRegistrationPaymentDeadlines();
+    }
+  );
+
+  fastify.post<{ Reply: ApiReply<unknown, 404> }>(
+    '/registration-config/payment-deadlines',
+    {
+      schema: {
+        tags: ['registration-config'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            seasonId: { type: 'number' },
+            sessionId: { type: 'number' },
+            paymentDeadlineAt: { type: 'string' },
+          },
+          required: ['seasonId', 'sessionId', 'paymentDeadlineAt'],
+        },
+        response: { 200: registrationPaymentDeadlineSchema, 400: { type: 'object', additionalProperties: true } },
+      },
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      try {
+        const body = paymentDeadlineBodySchema.parse(request.body);
+        if (!(await assertSessionBelongsToSeason(body.seasonId, body.sessionId, reply))) return;
+        return await upsertRegistrationPaymentDeadline(body);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          sendValidationError(reply, 'Validation failed', error.flatten().fieldErrors as Record<string, string[]>);
+          return;
+        }
+        if (error instanceof Error && error.message.includes('Payment deadline')) {
+          sendValidationError(reply, error.message, { paymentDeadlineAt: [error.message] });
+          return;
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.delete<{ Params: { id: string }; Reply: ApiReply<{ ok: true }, 404> }>(
+    '/registration-config/payment-deadlines/:id',
+    {
+      schema: {
+        tags: ['registration-config'],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { ok: { type: 'boolean' } },
+            required: ['ok'],
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      const id = parseId(request.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        reply.code(404).send({ error: 'Not found' });
+        return;
+      }
+      const deleted = await deleteRegistrationPaymentDeadline(id);
+      if (!deleted) {
+        reply.code(404).send({ error: 'Not found' });
+        return;
+      }
+      return { ok: true };
     }
   );
 }

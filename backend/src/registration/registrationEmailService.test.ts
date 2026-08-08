@@ -33,6 +33,22 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody.toLowerCase()).not.toContain('fully confirmed');
   });
 
+  test('immediate payment email includes pay-later deadline and payment link', () => {
+    const rendered = renderRegistrationEmail('registration_submitted_immediate_payment', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      amountDueMinor: 12500,
+      paymentUrl: 'https://example.test/pay',
+      deadlineText: 'Monday, September 1, 2026 at 11:59 PM EDT',
+      summaryLines: ['Regular membership'],
+    });
+
+    expect(rendered.subject).toContain('Complete your registration payment');
+    expect(rendered.textBody).toContain('chose to pay later');
+    expect(rendered.textBody).toContain('Pay by: Monday, September 1, 2026 at 11:59 PM EDT');
+    expect(rendered.textBody).toContain('https://example.test/pay');
+  });
+
   test('waitlist joined email explains when a teammate was added by someone else', () => {
     const rendered = renderRegistrationEmail('waitlist_joined', {
       leagueName: 'Late Doubles',

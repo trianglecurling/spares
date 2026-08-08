@@ -101,6 +101,7 @@ const PublicNotFoundPage = lazyRoute(() => import('./pages/PublicNotFoundPage'))
 const PublicPermalinkInfo = lazyRoute(() => import('./pages/PublicPermalinkInfo'));
 const PublicGoPermalinkRedirect = lazyRoute(() => import('./pages/PublicGoPermalinkRedirect'));
 const RegistrationShellPage = lazyRoute(() => import('./pages/RegistrationShellPage'));
+const RegistrationEarlyAccessPage = lazyRoute(() => import('./pages/RegistrationEarlyAccessPage'));
 const PublicWaitlistOfferDeclinePage = lazyRoute(() => import('./pages/PublicWaitlistOfferDeclinePage'));
 const RegistrationStatusDetailPage = lazyRoute(() => import('./pages/RegistrationStatusDetailPage'));
 const WaitlistOfferAcceptPage = lazyRoute(() => import('./pages/WaitlistOfferAcceptPage'));
@@ -223,6 +224,7 @@ function App() {
                       <Route path="/events/:slug/register/success" element={<PublicEventRegisterSuccessPage />} />
                       <Route path="/events/registrations/manage/:accessToken" element={<PublicEventManageRegistrationPage />} />
                       <Route path="/events/waitlist-offers/:responseToken" element={<PublicEventWaitlistOfferPage />} />
+                      <Route path="/registration/start/early" element={<RegistrationEarlyAccessPage />} />
                       <Route path="/registration/start" element={<RegistrationShellPage />} />
                       <Route path="/registration/success" element={<RegistrationShellPage />} />
                       <Route path="/registration/cancel" element={<RegistrationShellPage />} />

@@ -325,13 +325,26 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         htmlBody: `
           <h2>Complete your registration payment</h2>
           <p>Hi ${escapeHtml(curlerName)},</p>
-          <p>Your registration for ${escapeHtml(season)} has been submitted, but it is not fully confirmed until payment is complete.</p>
+          <p>Your registration for ${escapeHtml(season)} has been submitted. You chose to pay later, so your registration is not fully confirmed until payment is complete.</p>
           ${summaryHtml}
           <p><strong>Amount due:</strong> ${money(payload.amountDueMinor)}</p>
+          ${payload.deadlineText ? `<p><strong>Pay by:</strong> ${escapeHtml(payload.deadlineText)} to secure your league selections.</p>` : ''}
           ${paymentLinkHtml(payload)}
           ${paymentAndMembershipContactHtml}
         `,
-        textBody: `Complete your registration payment\n\nRegistration for ${curlerName} (${season}) has been submitted, but it is not fully confirmed until payment is complete.\n\n${summaryText}\n\nAmount due: ${money(payload.amountDueMinor)}\nPayment link: ${payload.paymentUrl ?? 'Not available'}\n\n${paymentAndMembershipContactText}`,
+        textBody: [
+          'Complete your registration payment',
+          '',
+          `Registration for ${curlerName} (${season}) has been submitted. You chose to pay later, so your registration is not fully confirmed until payment is complete.`,
+          '',
+          summaryText,
+          '',
+          `Amount due: ${money(payload.amountDueMinor)}`,
+          payload.deadlineText ? `Pay by: ${payload.deadlineText} to secure your league selections.` : null,
+          `Payment link: ${payload.paymentUrl ?? 'Not available'}`,
+          '',
+          paymentAndMembershipContactText,
+        ].filter(Boolean).join('\n'),
       };
     case 'registration_submitted_deferred_payment':
       return {

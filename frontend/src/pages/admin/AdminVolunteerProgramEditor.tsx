@@ -988,21 +988,31 @@ function ExistingShiftEditor({
       </div>
 
       {!multiRole && shiftRoles[0] ? (
-        <FormField
-          label="Volunteers needed for this shift"
-          htmlFor={`${baseId}-need-${shiftRoles[0].roleId}`}
-          required
-        >
-          <input
-            id={`${baseId}-need-${shiftRoles[0].roleId}`}
-            type="number"
-            min={1}
-            className="app-input w-28"
-            value={shiftRoles[0].volunteersNeeded}
-            onChange={(e) => updateNeeded(shiftRoles[0].roleId, e.target.value)}
+        <>
+          <div>
+            <div className="app-label">Role</div>
+            <div className="font-medium text-gray-900 dark:text-gray-100">
+              {roles.find((r) => r.id === shiftRoles[0].roleId)?.name
+                || shift.roles.find((r) => r.roleId === shiftRoles[0].roleId)?.roleName
+                || `Role ${shiftRoles[0].roleId}`}
+            </div>
+          </div>
+          <FormField
+            label="Volunteers needed for this shift"
+            htmlFor={`${baseId}-need-${shiftRoles[0].roleId}`}
             required
-          />
-        </FormField>
+          >
+            <input
+              id={`${baseId}-need-${shiftRoles[0].roleId}`}
+              type="number"
+              min={1}
+              className="app-input w-28"
+              value={shiftRoles[0].volunteersNeeded}
+              onChange={(e) => updateNeeded(shiftRoles[0].roleId, e.target.value)}
+              required
+            />
+          </FormField>
+        </>
       ) : (
         <div className="inline-grid max-w-full grid-cols-[auto_7rem_auto] items-center gap-x-4 gap-y-2">
           <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Role</div>

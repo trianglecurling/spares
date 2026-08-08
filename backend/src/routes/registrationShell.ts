@@ -42,6 +42,7 @@ import {
   findCompletedSelfRegistrationForWindow,
   getImmediatelyPriorRegistrationSessionDisplayName,
   getDefaultRegistrationWindow,
+  getDefaultScheduleRegistrationWindow,
   getEffectiveRegistrationWindow,
   getRegistrationById,
   getRegistrationShellPayload,
@@ -52,6 +53,18 @@ import {
   type GuardianInput,
   type MemberDemographicsInput,
 } from '../registration/registrationShellService.js';
+import {
+  REGISTRATION_EARLY_ACCESS_PATH,
+  RegistrationEarlyAccessValidationError,
+  bindEarlyAccessOnRequest,
+  createEarlyAccessUnlockToken,
+  isEarlyAccessUnlockedInRequest,
+  isRegistrationEarlyAccessActive,
+} from '../registration/registrationEarlyAccess.js';
+import {
+  registrationEarlyAccessStatusSchema,
+  registrationEarlyAccessUnlockResponseSchema,
+} from '../api/schemas.js';
 import { getLeagueTeamMemberPlacementOptions } from '../registration/memberWaitlistJoinService.js';
 import { RegistrationMemberValidationError } from '../registration/registrationMemberService.js';
 import {
@@ -66,6 +79,7 @@ interface AuthenticatedRequest extends FastifyRequest {
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const submitRegistrationSchema = z.object({
   confirmImmediatePayment: z.boolean().optional(),
+  payLater: z.boolean().optional(),
 });
 const windowQuerySchema = z.object({
   seasonId: z.coerce.number().int().positive().optional(),
@@ -79,6 +93,9 @@ const createDraftSchema = z.object({
   seasonId: z.number().int().positive(),
   sessionId: z.number().int().positive(),
   returningMember: z.boolean(),
+});
+const earlyAccessUnlockSchema = z.object({
+  password: z.string().min(1),
 });
 const returningIdentitySchema = z.object({
   curlerMemberId: z.number().int().positive(),
@@ -229,6 +246,7 @@ const guestSubmitSchema = z.object({
   reciprocalClubName: z.string().nullable(),
   experienceType: z.enum(['none_or_minimal', 'specified_years', 'known_existing']),
   experienceSelfReportedYears: z.coerce.number().nullable(),
+  payLater: z.boolean().optional(),
 });
 
 const idParamsJsonSchema = {
@@ -261,6 +279,9 @@ function handleRegistrationError(reply: FastifyReply, error: unknown) {
     );
   }
   if (error instanceof RegistrationShellValidationError) {
+    return sendValidationError(reply, error.message, error.details);
+  }
+  if (error instanceof RegistrationEarlyAccessValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
   if (error instanceof RegistrationMembershipPaymentValidationError) {
@@ -297,6 +318,62 @@ async function requireDraftAccess(request: FastifyRequest, reply: FastifyReply, 
 }
 
 export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
+  fastify.addHook('onRequest', bindEarlyAccessOnRequest);
+
+  fastify.get<{ Reply: unknown | ApiErrorResponse }>(
+    '/registration/early-access/status',
+    {
+      schema: {
+        tags: ['registration'],
+        response: { 200: registrationEarlyAccessStatusSchema, 400: apiErrorResponseSchema },
+      },
+    },
+    async (_request, reply) => {
+      try {
+        const scheduleWindow = await getDefaultScheduleRegistrationWindow();
+        const registrationState = scheduleWindow?.state ?? 'closed';
+        const available = (await isRegistrationEarlyAccessActive()) && registrationState === 'closed';
+        return {
+          available,
+          registrationState,
+          earlyAccessPath: REGISTRATION_EARLY_ACCESS_PATH,
+        };
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.post<{ Body: z.infer<typeof earlyAccessUnlockSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/early-access/unlock',
+    {
+      config: {
+        rateLimit: abuseRouteRateLimits.registrationEarlyAccessUnlock,
+      },
+      schema: {
+        tags: ['registration'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { password: { type: 'string' } },
+          required: ['password'],
+        },
+        response: {
+          200: registrationEarlyAccessUnlockResponseSchema,
+          400: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = earlyAccessUnlockSchema.parse(request.body);
+        return await createEarlyAccessUnlockToken(body.password);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
   fastify.get<{ Querystring: { seasonId?: number; sessionId?: number }; Reply: unknown | ApiErrorResponse }>(
     '/registration/window',
     {
@@ -312,9 +389,10 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       try {
         const query = windowQuerySchema.parse(request.query);
+        const earlyAccessUnlocked = isEarlyAccessUnlockedInRequest(request);
         const window = query.seasonId && query.sessionId
-          ? await getEffectiveRegistrationWindow(query.seasonId, query.sessionId)
-          : await getDefaultRegistrationWindow();
+          ? await getEffectiveRegistrationWindow(query.seasonId, query.sessionId, { earlyAccessUnlocked })
+          : await getDefaultRegistrationWindow({ earlyAccessUnlocked });
         if (!window) return sendApiError(reply, 404, 'Registration window not found');
         const [previousRegistrationSessionDisplayName, availableDiscounts, membershipFees] = await Promise.all([
           getImmediatelyPriorRegistrationSessionDisplayName(window.session.id),
@@ -362,7 +440,10 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       try {
         const body = guestSubmitSchema.parse(request.body);
-        return await submitGuestRegistration(body, resolveFrontendBaseUrl(request));
+        return await submitGuestRegistration(
+          { ...body, earlyAccessUnlocked: isEarlyAccessUnlockedInRequest(request) },
+          resolveFrontendBaseUrl(request),
+        );
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
@@ -419,6 +500,8 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
 }
 
 export async function protectedRegistrationShellRoutes(fastify: FastifyInstance) {
+  fastify.addHook('onRequest', bindEarlyAccessOnRequest);
+
   fastify.get('/registration/drafts/me', {
     schema: {
       tags: ['registration'],
@@ -469,6 +552,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         return await createDraft({
           ...body,
           submittedByMemberId: (request as AuthenticatedRequest).member.id,
+          earlyAccessUnlocked: isEarlyAccessUnlockedInRequest(request),
         });
       } catch (error) {
         return handleRegistrationError(reply, error);
@@ -930,6 +1014,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
           registrationId: id,
           actor: (request as AuthenticatedRequest).member,
           confirmImmediatePayment: body.confirmImmediatePayment,
+          payLater: body.payLater,
           frontendBaseUrl: resolveFrontendBaseUrl(request),
         });
       } catch (error) {

@@ -102,11 +102,7 @@ export function RegistrationPlayInGuaranteeResult({
   isReturning?: boolean;
 }) {
   if (summary.teamTotalPoints == null) return null;
-  const pointsDetail = `Team points: ${formatPoints(summary.teamTotalPoints)}${
-    summary.guaranteeThresholdPoints != null
-      ? ` · Guaranteed-entry threshold: more than ${formatPoints(summary.guaranteeThresholdPoints)} points`
-      : ''
-  }`;
+  const pointsDetail = `Team points: ${formatPoints(summary.teamTotalPoints)}`;
   if (summary.guaranteed) {
     return (
       <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">

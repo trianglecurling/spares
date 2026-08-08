@@ -617,6 +617,9 @@ export type RegistrationMembershipPaymentPayload = {
     totalDueMinor: number;
   };
   paymentDecision?: RegistrationPaymentDecision;
+  paymentDeadlineAt?: string | null;
+  paymentDeadlineDisplay?: string | null;
+  payLaterAvailable?: boolean;
 };
 
 export const REGISTRATION_IMMEDIATE_PAYMENT_CONFIRMATION_MESSAGE =
@@ -652,6 +655,7 @@ export type SubmitRegistrationEditsResult = {
   requiresCheckoutConfirmation?: boolean;
   message?: string;
   totalDueMinor?: number;
+  payLater?: boolean;
   paymentAdjustment?: RegistrationPaymentAdjustmentResult;
 };
 
@@ -1164,7 +1168,7 @@ export async function loadMembershipEditContext(registrationId: number) {
 
 export async function submitRegistrationEdits(
   registrationId: number,
-  options?: { confirmImmediatePayment?: boolean },
+  options?: { confirmImmediatePayment?: boolean; payLater?: boolean },
 ): Promise<SubmitRegistrationEditsResult> {
   const response = await api.post<{
     outcome: string;
@@ -1172,15 +1176,18 @@ export async function submitRegistrationEdits(
     requiresCheckoutConfirmation?: boolean;
     message?: string;
     totalDueMinor?: number;
+    payLater?: boolean;
     paymentAdjustment?: RegistrationPaymentAdjustmentResult;
   }>(`/registration/drafts/${registrationId}/submit`, {
     confirmImmediatePayment: options?.confirmImmediatePayment ?? false,
+    payLater: options?.payLater ?? false,
   });
   return {
     checkoutUrl: response.data.checkoutUrl,
     requiresCheckoutConfirmation: response.data.requiresCheckoutConfirmation,
     message: response.data.message,
     totalDueMinor: response.data.totalDueMinor,
+    payLater: response.data.payLater,
     paymentAdjustment: response.data.paymentAdjustment,
   };
 }

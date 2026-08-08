@@ -267,7 +267,7 @@ export async function getImmediatelyPriorRegistrationSessionDisplayName(sessionI
   return prior?.sessionName?.trim() ? prior.sessionName : null;
 }
 
-export async function getEffectiveRegistrationWindow(seasonId: number, sessionId: number) {
+export async function getScheduleRegistrationWindow(seasonId: number, sessionId: number) {
   const { db, schema } = getDrizzleDb();
   const [season] = await db.select().from(schema.curlingSeasons).where(eq(schema.curlingSeasons.id, seasonId)).limit(1);
   const [session] = await db.select().from(schema.curlingSessions).where(eq(schema.curlingSessions.id, sessionId)).limit(1);
@@ -304,7 +304,23 @@ export async function getEffectiveRegistrationWindow(seasonId: number, sessionId
   };
 }
 
-export async function getDefaultRegistrationWindow() {
+export async function getEffectiveRegistrationWindow(
+  seasonId: number,
+  sessionId: number,
+  options?: { earlyAccessUnlocked?: boolean },
+) {
+  const window = await getScheduleRegistrationWindow(seasonId, sessionId);
+  if (!window) return null;
+  const { applyEarlyAccessOverlayToWindowState } = await import('./registrationEarlyAccess.js');
+  return {
+    ...window,
+    state: await applyEarlyAccessOverlayToWindowState(window.state, {
+      unlocked: options?.earlyAccessUnlocked,
+    }),
+  };
+}
+
+async function resolveDefaultRegistrationWindowIds(): Promise<{ seasonId: number; sessionId: number } | null> {
   const { db, schema } = getDrizzleDb();
   const [transition] = await db
     .select()
@@ -312,15 +328,31 @@ export async function getDefaultRegistrationWindow() {
     .orderBy(desc(schema.registrationStateTransitions.effective_at))
     .limit(1);
   if (transition) {
-    return getEffectiveRegistrationWindow(transition.season_id, transition.session_id);
+    return { seasonId: transition.season_id, sessionId: transition.session_id };
   }
   const [session] = await db.select().from(schema.curlingSessions).orderBy(desc(schema.curlingSessions.start_date)).limit(1);
   if (!session) return null;
-  return getEffectiveRegistrationWindow(session.season_id, session.id);
+  return { seasonId: session.season_id, sessionId: session.id };
 }
 
-export async function assertRegistrationOpen(seasonId: number, sessionId: number): Promise<void> {
-  const window = await getEffectiveRegistrationWindow(seasonId, sessionId);
+export async function getDefaultScheduleRegistrationWindow() {
+  const ids = await resolveDefaultRegistrationWindowIds();
+  if (!ids) return null;
+  return getScheduleRegistrationWindow(ids.seasonId, ids.sessionId);
+}
+
+export async function getDefaultRegistrationWindow(options?: { earlyAccessUnlocked?: boolean }) {
+  const ids = await resolveDefaultRegistrationWindowIds();
+  if (!ids) return null;
+  return getEffectiveRegistrationWindow(ids.seasonId, ids.sessionId, options);
+}
+
+export async function assertRegistrationOpen(
+  seasonId: number,
+  sessionId: number,
+  options?: { earlyAccessUnlocked?: boolean },
+): Promise<void> {
+  const window = await getEffectiveRegistrationWindow(seasonId, sessionId, options);
   if (!window) throw new RegistrationShellValidationError({ sessionId: 'Registration session was not found.' });
   if (window.state !== 'priority' && window.state !== 'open') {
     throw new RegistrationShellValidationError({ registration: 'Registration is not open.' });
@@ -430,8 +462,11 @@ export async function abandonRegistrationDraft(registrationId: number, actor: Me
 export async function insertEmptyGuestRegistrationDraft(input: {
   seasonId: number;
   sessionId: number;
+  earlyAccessUnlocked?: boolean;
 }): Promise<RegistrationShellRow> {
-  await assertRegistrationOpen(input.seasonId, input.sessionId);
+  await assertRegistrationOpen(input.seasonId, input.sessionId, {
+    earlyAccessUnlocked: input.earlyAccessUnlocked,
+  });
   const { db, schema } = getDrizzleDb();
   const [row] = await db
     .insert(schema.curlingRegistrations)
@@ -451,8 +486,11 @@ export async function createDraft(input: {
   sessionId: number;
   returningMember: boolean;
   submittedByMemberId: number;
+  earlyAccessUnlocked?: boolean;
 }): Promise<RegistrationShellRow> {
-  await assertRegistrationOpen(input.seasonId, input.sessionId);
+  await assertRegistrationOpen(input.seasonId, input.sessionId, {
+    earlyAccessUnlocked: input.earlyAccessUnlocked,
+  });
   const existing = await findActiveRegistrationForSubmitter(input.submittedByMemberId);
   if (hasBlockingInProgressDraft(existing)) {
     throw new RegistrationInProgressError();
@@ -861,10 +899,16 @@ export type GuestRegistrationSubmitInput = {
   reciprocalClubName: string | null;
   experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing';
   experienceSelfReportedYears: number | null;
+  payLater?: boolean;
 };
 
-export async function submitGuestRegistration(input: GuestRegistrationSubmitInput, frontendBaseUrl?: string) {
-  await assertRegistrationOpen(input.seasonId, input.sessionId);
+export async function submitGuestRegistration(
+  input: GuestRegistrationSubmitInput & { earlyAccessUnlocked?: boolean },
+  frontendBaseUrl?: string,
+) {
+  await assertRegistrationOpen(input.seasonId, input.sessionId, {
+    earlyAccessUnlocked: input.earlyAccessUnlocked,
+  });
   validateDemographics(input.curler, input.curler.dateOfBirth || null);
   const minor = isMinorOnRegistrationDate(input.curler.dateOfBirth || null);
   if (minor) {
@@ -878,7 +922,11 @@ export async function submitGuestRegistration(input: GuestRegistrationSubmitInpu
     assertValidEmail(s.email || '', 'submitterEmail');
   }
 
-  const draft = await insertEmptyGuestRegistrationDraft({ seasonId: input.seasonId, sessionId: input.sessionId });
+  const draft = await insertEmptyGuestRegistrationDraft({
+    seasonId: input.seasonId,
+    sessionId: input.sessionId,
+    earlyAccessUnlocked: input.earlyAccessUnlocked,
+  });
   const { submitter } = await attachNewCurler({
     registrationId: draft.id,
     registeringForSelf: input.registeringForSelf,
@@ -936,6 +984,7 @@ export async function submitGuestRegistration(input: GuestRegistrationSubmitInpu
   return membershipPayment.submitRegistrationMembershipPayment({
     registrationId: draft.id,
     actor,
+    payLater: input.payLater,
     frontendBaseUrl,
   });
 }
