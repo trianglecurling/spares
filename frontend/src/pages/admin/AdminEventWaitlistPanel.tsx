@@ -47,15 +47,19 @@ type AdminEventWaitlistPanelProps = {
   onSummaryChange?: (summary: WaitlistResponse['summary']) => void;
 };
 
-function getApiErrorCode(error: unknown): string | null {
-  if (axios.isAxiosError(error)) {
-    const details = error.response?.data?.details;
-    if (details && typeof details === 'object' && 'code' in details) {
-      const code = (details as { code?: unknown }).code;
-      return typeof code === 'string' ? code : null;
-    }
+function getApiErrorDetails(error: unknown): Record<string, unknown> | null {
+  if (!axios.isAxiosError(error)) return null;
+  const details = error.response?.data?.details;
+  if (details && typeof details === 'object' && !Array.isArray(details)) {
+    return details as Record<string, unknown>;
   }
   return null;
+}
+
+function getApiErrorCode(error: unknown): string | null {
+  const details = getApiErrorDetails(error);
+  const code = details?.code;
+  return typeof code === 'string' ? code : null;
 }
 
 function formatJoinedAt(iso: string): string {
@@ -227,11 +231,35 @@ export default function AdminEventWaitlistPanel({
       return;
     }
 
+    const postPromote = (increaseCapacity?: boolean) =>
+      api.post(`/events/${eventId}/waitlist/${promoteTarget.registrationId}/promote`, {
+        respondByDays: days,
+        ...(increaseCapacity ? { increaseCapacity: true } : {}),
+      });
+
     setPromoteSubmitting(true);
     try {
-      await api.post(`/events/${eventId}/waitlist/${promoteTarget.registrationId}/promote`, {
-        respondByDays: days,
-      });
+      try {
+        await postPromote();
+      } catch (error) {
+        if (getApiErrorCode(error) !== 'capacity_increase_required') throw error;
+
+        const details = getApiErrorDetails(error);
+        const newCapacity =
+          typeof details?.newCapacity === 'number' ? details.newCapacity : null;
+        if (newCapacity == null) throw error;
+
+        const confirmed = await confirm({
+          title: 'Increase event capacity?',
+          message: `This event is full. Promoting ${promoteTarget.contactName} will increase capacity to ${newCapacity}.`,
+          confirmText: 'Increase capacity and send offer',
+          variant: 'warning',
+        });
+        if (!confirmed) return;
+
+        await postPromote(true);
+      }
+
       showAlert('Promotion offer sent', 'success');
       setPromoteTarget(null);
       setRespondByDays('3');

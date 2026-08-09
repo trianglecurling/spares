@@ -335,24 +335,54 @@ async function supersedeExpiredPendingOffersForCapacity(eventId: number, neededS
   }
 }
 
-async function assertCapacityForNewPendingOffer(eventId: number, groupSize: number): Promise<void> {
+/**
+ * Ensure a pending waitlist offer of `groupSize` can hold capacity.
+ * When the event is full and there are no pending offers blocking spots,
+ * either require confirmation to raise capacity or apply that increase.
+ */
+async function ensureCapacityForNewPendingOffer(
+  eventId: number,
+  groupSize: number,
+  options: { increaseCapacity?: boolean } = {},
+): Promise<{ capacityIncreasedTo: number | null }> {
   const event = await getEventById(eventId);
-  if (!event || event.capacity === null) return;
+  if (!event || event.capacity === null) return { capacityIncreasedTo: null };
 
   let holds = await getCapacityHoldCount(eventId);
-  if (holds + groupSize <= event.capacity) return;
+  if (holds + groupSize <= event.capacity) return { capacityIncreasedTo: null };
 
   const needed = holds + groupSize - event.capacity;
   await supersedeExpiredPendingOffersForCapacity(eventId, needed);
   holds = await getCapacityHoldCount(eventId);
 
-  if (holds + groupSize > event.capacity) {
+  if (holds + groupSize <= event.capacity) return { capacityIncreasedTo: null };
+
+  const pendingOffers = await getPendingOfferCount(eventId);
+  if (pendingOffers > 0) {
     throw new EventWaitlistServiceError(
       'Not enough open spots while non-expired pending offers are holding capacity',
       409,
       'capacity_held_by_pending_offers',
     );
   }
+
+  const newCapacity = holds + groupSize;
+  if (!options.increaseCapacity) {
+    throw new EventWaitlistServiceError(
+      `Promoting requires increasing event capacity to ${newCapacity}`,
+      409,
+      'capacity_increase_required',
+      { currentCapacity: event.capacity, newCapacity, groupSize },
+    );
+  }
+
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.events)
+    .set({ capacity: newCapacity })
+    .where(eq(schema.events.id, eventId));
+
+  return { capacityIncreasedTo: newCapacity };
 }
 
 function formatOfferResponse(offer: any, waitlistPosition?: number | null) {
@@ -538,6 +568,8 @@ export async function promoteWaitlistRegistration(input: {
   eventId: number;
   registrationId: number;
   respondByDays?: number;
+  /** When true, raise event capacity if needed so the promotion offer can hold a spot. */
+  increaseCapacity?: boolean;
   createdByMemberId: number;
 }) {
   const respondByDays = Math.min(30, Math.max(1, input.respondByDays ?? 3));
@@ -570,7 +602,9 @@ export async function promoteWaitlistRegistration(input: {
   }
 
   const groupSize = reg.group_size ?? 1;
-  await assertCapacityForNewPendingOffer(input.eventId, groupSize);
+  await ensureCapacityForNewPendingOffer(input.eventId, groupSize, {
+    increaseCapacity: input.increaseCapacity === true,
+  });
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + respondByDays);

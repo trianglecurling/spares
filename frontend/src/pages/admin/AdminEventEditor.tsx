@@ -2704,6 +2704,7 @@ export default function AdminEventEditor() {
             isActive={activeTab === 'waitlist'}
             onSummaryChange={(summary) => {
               if (summary.waitlistLength > 0) setHasWaitlistEntries(true);
+              if (summary.capacity != null) setCapacity(String(summary.capacity));
             }}
           />
         )}

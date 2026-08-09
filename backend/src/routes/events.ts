@@ -424,6 +424,7 @@ const waitlistReorderSchema = z.object({
 
 const waitlistPromoteSchema = z.object({
   respondByDays: z.number().int().min(1).max(30).optional(),
+  increaseCapacity: z.boolean().optional(),
 });
 
 const waitlistAddSchema = adminUpsertRegistrationSchema.extend({
@@ -432,11 +433,17 @@ const waitlistAddSchema = adminUpsertRegistrationSchema.extend({
 
 function handleEventWaitlistError(reply: FastifyReply, error: unknown): boolean {
   if (error instanceof EventWaitlistServiceError) {
-    if (error.details) {
-      return !!sendValidationError(reply, error.message, error.details);
-    }
-    if (error.code) {
-      return !!sendApiError(reply, error.statusCode, error.message, { code: error.code });
+    if (error.code || error.details !== undefined) {
+      const detailObject =
+        error.details != null && typeof error.details === 'object' && !Array.isArray(error.details)
+          ? (error.details as Record<string, unknown>)
+          : error.details !== undefined
+            ? { details: error.details }
+            : {};
+      return !!sendApiError(reply, error.statusCode, error.message, {
+        ...detailObject,
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
     return !!sendApiError(reply, error.statusCode, error.message);
   }
@@ -2853,6 +2860,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           eventId,
           registrationId,
           respondByDays: parsed.data.respondByDays,
+          increaseCapacity: parsed.data.increaseCapacity,
           createdByMemberId: member.id,
         });
         return reply.code(201).send(offer);
