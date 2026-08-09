@@ -64,6 +64,7 @@ const programBodySchema = z.object({
     .nullable()
     .optional(),
   published: z.boolean().optional(),
+  featureOnDashboard: z.boolean().optional(),
   managerIds: z.array(z.number().int().positive()).optional(),
 });
 
@@ -160,8 +161,11 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
   fastify.get('/volunteering/my-signups', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
     const member = getMember(request as AuthenticatedRequest);
     if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    const query = request.query as { forDashboard?: string } | undefined;
+    const forDashboard =
+      query?.forDashboard === '1' || query?.forDashboard === 'true';
     try {
-      return await listMySignups(member.id);
+      return await listMySignups(member.id, { forDashboard });
     } catch (err) {
       return handleServiceError(reply, err);
     }

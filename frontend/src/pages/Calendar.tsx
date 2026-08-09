@@ -893,8 +893,11 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     navigate(`/calendar/events/edit/${encodeURIComponent(ev.id)}`, { state: { calendarEvent: ev } });
   };
 
-  /** Day/week keep a fixed shell + internal scroll; month grows and scrolls the page. */
-  const lockViewport = view === 'day' || view === 'week';
+  /**
+   * Desktop day/week keep a fixed shell + internal scroll.
+   * Mobile day/week and month grow with the page so nav/toolbar can scroll away.
+   */
+  const lockViewport = !isCompactLayout && (view === 'day' || view === 'week');
 
   const calendarContent = (
     <>
@@ -1094,11 +1097,11 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
           </div>
         </div>
 
-        {/* Calendar grid — day/week scroll inside the view; month fills leftover viewport, page scrolls if min height won't fit. */}
+        {/* Calendar grid — desktop day/week scroll inside the view; mobile + month use page scroll. */}
         <div
           className={`flex flex-col relative ${
             lockViewport
-              ? view === 'day' || (view === 'week' && isCompactLayout)
+              ? view === 'day'
                 ? 'flex-1 min-h-0 overflow-hidden'
                 : 'flex-1 min-h-0 overflow-auto'
               : 'flex-1'
@@ -2292,7 +2295,7 @@ function WeekView({
   );
 }
 
-/** Mobile week: day strip + shared DayView body (no horizontal scroll). */
+/** Mobile day/week: day strip + shared DayView body on page scroll (no nested scrollport). */
 function CompactWeekView({
   rangeStart,
   selectedDate,
@@ -2336,7 +2339,7 @@ function CompactWeekView({
   const focusedDay = days.find((d) => isSameDay(d, selectedDate)) ?? days[0]!;
 
   return (
-    <div className="flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col min-w-0">
       <div
         className="shrink-0 grid grid-cols-7 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
         role="tablist"
@@ -2400,6 +2403,7 @@ function CompactWeekView({
         events={events}
         getEventType={getEventType}
         sheetNameById={sheetNameById}
+        pageScroll
         onEventClick={onEventClick}
         onEmptySlotClick={onEmptySlotClick}
       />
@@ -2850,6 +2854,7 @@ function DayView({
   events,
   getEventType,
   sheetNameById,
+  pageScroll = false,
   onEventClick,
   onEmptySlotClick,
 }: {
@@ -2857,6 +2862,8 @@ function DayView({
   events: CalendarEvent[];
   getEventType: (id: string) => CalendarEventType;
   sheetNameById: Map<number, string>;
+  /** When true, grow with content and scroll the page (mobile); otherwise scroll inside the view. */
+  pageScroll?: boolean;
   onEventClick?: (ev: CalendarEvent) => void;
   onEmptySlotClick?: (date: Date) => void;
 }) {
@@ -2894,32 +2901,47 @@ function DayView({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (timedEvents.length === 0) {
-      el.scrollTop = 0;
+
+    const offsetWithinTimeline = (() => {
+      if (timedEvents.length === 0) return 0;
+      let firstStartHour = Infinity;
+      for (const ev of timedEvents) {
+        const isMultiDay = !isSameDay(startOfDay(ev.start), startOfDay(ev.end));
+        const startHour =
+          isMultiDay && !isSameDay(ev.start, date)
+            ? hourStart
+            : ev.start.getHours() + ev.start.getMinutes() / 60;
+        firstStartHour = Math.min(firstStartHour, startHour);
+      }
+      if (!Number.isFinite(firstStartHour)) return 0;
+      const displayStart = Math.max(firstStartHour, hourStart);
+      return Math.max(0, (displayStart - hourStart) * HOUR_HEIGHT - 8);
+    })();
+
+    if (pageScroll) {
+      if (timedEvents.length === 0) {
+        window.scrollTo(0, 0);
+        return;
+      }
+      const top = el.getBoundingClientRect().top + window.scrollY + offsetWithinTimeline;
+      window.scrollTo(0, Math.max(0, top));
       return;
     }
-    let firstStartHour = Infinity;
-    for (const ev of timedEvents) {
-      const isMultiDay = !isSameDay(startOfDay(ev.start), startOfDay(ev.end));
-      const startHour =
-        isMultiDay && !isSameDay(ev.start, date)
-          ? hourStart
-          : ev.start.getHours() + ev.start.getMinutes() / 60;
-      firstStartHour = Math.min(firstStartHour, startHour);
-    }
-    if (!Number.isFinite(firstStartHour)) {
-      el.scrollTop = 0;
-      return;
-    }
-    const displayStart = Math.max(firstStartHour, hourStart);
-    el.scrollTop = Math.max(0, (displayStart - hourStart) * HOUR_HEIGHT - 8);
+
+    el.scrollTop = offsetWithinTimeline;
     // timedEvents is derived from date/events; timedScrollKey tracks content changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional scroll-on-day/events
-  }, [date, hourStart, timedScrollKey]);
+  }, [date, hourStart, pageScroll, timedScrollKey]);
 
   return (
-    <div className="flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden">
-      {/* All-day section - fixed at top, always visible when there are all-day events */}
+    <div
+      className={
+        pageScroll
+          ? 'flex flex-col min-w-0'
+          : 'flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden'
+      }
+    >
+      {/* All-day section — above the hour grid; pinned in container-scroll mode */}
       {allDayEvents.length > 0 && (
         <div className="shrink-0 border-b border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">All day</div>
@@ -2959,7 +2981,14 @@ function DayView({
         </div>
       )}
       {/* items-start: avoid stretch when the scrollport is taller than the hour grid (e.g. zoom out). */}
-      <div ref={scrollRef} className="flex flex-1 min-h-0 items-start overflow-auto">
+      <div
+        ref={scrollRef}
+        className={
+          pageScroll
+            ? 'flex items-start'
+            : 'flex flex-1 min-h-0 items-start overflow-auto'
+        }
+      >
         <div className="w-16 shrink-0 border-r border-gray-200 dark:border-gray-700">
           {visibleHours.map((h) => (
             <div

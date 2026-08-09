@@ -11,9 +11,12 @@ import FormSection from '../../components/FormSection';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import MemberMultiSelect from '../../components/MemberMultiSelect';
 import PageTabs from '../../components/PageTabs';
+import VolunteerProgramLocationField from '../../components/VolunteerProgramLocationField';
+import { resolveSiteName } from '../../components/SeoMeta';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useSiteBranding } from '../../hooks/useSiteBranding';
 import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
 import {
@@ -24,6 +27,10 @@ import {
   hoursInputToMinutes,
   minutesToHoursInput,
   toDateTimeLocal,
+  VOLUNTEER_LOCATION_CLUB,
+  volunteerLocationChoiceFromStored,
+  volunteerLocationStoredFromChoice,
+  type VolunteerLocationChoice,
   type VolunteerProgramView,
   type VolunteerRoleView,
   type VolunteerShiftView,
@@ -65,6 +72,8 @@ export default function AdminVolunteerProgramEditor() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const { branding } = useSiteBranding();
+  const clubName = resolveSiteName(branding?.clubName);
   const baseId = useId();
   const canCreate =
     memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
@@ -79,9 +88,10 @@ export default function AdminVolunteerProgramEditor() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [pointOfContact, setPointOfContact] = useState('');
-  const [location, setLocation] = useState('');
+  const [locationChoice, setLocationChoice] = useState<VolunteerLocationChoice>(VOLUNTEER_LOCATION_CLUB);
   const [startDate, setStartDate] = useState('');
   const [published, setPublished] = useState(false);
+  const [featureOnDashboard, setFeatureOnDashboard] = useState(true);
   const [managerIds, setManagerIds] = useState<number[]>([]);
 
   const [roleName, setRoleName] = useState('');
@@ -104,9 +114,11 @@ export default function AdminVolunteerProgramEditor() {
       setTitle(data.title);
       setDescription(data.description || '');
       setPointOfContact(data.pointOfContact);
-      setLocation(data.location || '');
+      // API already nulls club-default locations; clubName only matters for legacy raw values.
+      setLocationChoice(volunteerLocationChoiceFromStored(data.location, clubName));
       setStartDate(data.startDate || '');
       setPublished(Boolean(data.published));
+      setFeatureOnDashboard(data.featureOnDashboard !== false);
       setManagerIds(data.managers.map((m) => m.id));
       setNewShiftTimes((prev) => {
         const onlyEmpty =
@@ -129,6 +141,7 @@ export default function AdminVolunteerProgramEditor() {
       showAlert(formatApiError(err, 'Failed to load program'), 'error');
       navigate('/admin/volunteering');
     }
+    // clubName intentionally omitted: only seeds the location radio; including it would refetch on branding load.
   }, [id, isNew, navigate, showAlert]);
 
   useEffect(() => {
@@ -206,15 +219,20 @@ export default function AdminVolunteerProgramEditor() {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (locationChoice === null) {
+      showAlert('Enter a custom location, or choose the club', 'error');
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
         title: title.trim(),
         description: description.trim() || null,
         pointOfContact: pointOfContact.trim(),
-        location: location.trim() || null,
+        location: volunteerLocationStoredFromChoice(locationChoice, clubName),
         startDate: startDate.trim() || null,
         published,
+        featureOnDashboard,
         managerIds,
       };
       if (isNew) {
@@ -504,14 +522,12 @@ export default function AdminVolunteerProgramEditor() {
                 required
               />
             </FormField>
-            <FormField label="Location" htmlFor={`${baseId}-location`}>
-              <input
-                id={`${baseId}-location`}
-                className="app-input"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-              />
-            </FormField>
+            <VolunteerProgramLocationField
+              id={`${baseId}-location`}
+              clubName={clubName}
+              value={locationChoice}
+              onChange={setLocationChoice}
+            />
             <FormField
               label="Start date"
               htmlFor={`${baseId}-start-date`}
@@ -536,7 +552,13 @@ export default function AdminVolunteerProgramEditor() {
               label="Published"
               checked={published}
               onChange={setPublished}
-              helperText="Published programs appear on the volunteering hub and in member dashboard opportunities."
+              helperText="Published programs appear on the volunteering hub."
+            />
+            <FormCheckbox
+              label="Feature on dashboard"
+              checked={featureOnDashboard}
+              onChange={setFeatureOnDashboard}
+              helperText="When enabled, open shifts and members' upcoming signups from this program can appear on the member dashboard."
             />
           </FormSection>
           <div className="flex gap-3">

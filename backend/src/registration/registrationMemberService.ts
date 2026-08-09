@@ -13,13 +13,20 @@ import { evaluateRegistrantPlayInEntry } from './leagueEntryService.js';
 import { listRegistrationOutboundMessages, sendRegistrationEmailForDashboard } from './registrationEmailService.js';
 import { syncCurlingRegistrationPaymentConfirmationForOrder } from './registrationMembershipPaymentService.js';
 import { resolvePlacementLeagueForWaitlist } from './waitlistEntityService.js';
-import { recordAndDeleteWaitlistEntry, waitlistMemberDisplayName } from './waitlistAudit.js';
+import { formatRegistrationTeammatesDisplay } from './registrationEmailService.js';
+import { formatWaitlistTeamRosterDisplay, recordAndDeleteWaitlistEntry, waitlistMemberDisplayName } from './waitlistAudit.js';
 import {
   isPrimaryWaitlistEntryMember,
   memberParticipationOnWaitlistEntry,
   waitlistEntryIncludesMember,
   waitlistTeammateContactMessage,
 } from './waitlistMemberMembership.js';
+import {
+  enrichTeamRosterPlacements,
+  hydrateTeamRosterPlacementsForEntry,
+  parseTeamRosterPlacements,
+  waitlistRosterEntries,
+} from './waitlistTeamRoster.js';
 
 export class RegistrationMemberValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -46,6 +53,39 @@ function parseOrderMetadata(metadata: unknown): Record<string, unknown> | null {
       : metadata;
   if (!value || typeof value !== 'object') return null;
   return value as Record<string, unknown>;
+}
+
+async function selectionTeamRosterDisplay(selection: {
+  byotTeammateText?: string | null;
+  teamRosterPlacementsJson?: string | null;
+}): Promise<string | null> {
+  const placements = parseTeamRosterPlacements(selection.teamRosterPlacementsJson);
+  const enriched = placements.length > 0 ? await enrichTeamRosterPlacements(placements) : [];
+  return formatRegistrationTeammatesDisplay({
+    memberNames: enriched.map((placement) => placement.memberName),
+    pendingNames: waitlistRosterEntries(selection.byotTeammateText),
+  });
+}
+
+async function waitlistTeamRosterDisplay(entry: {
+  memberId: number;
+  entryType: Parameters<typeof hydrateTeamRosterPlacementsForEntry>[0]['entryType'];
+  replacesLeagueId: number | null;
+  teamRosterPlacements: string | null;
+  teamRosterText: string | null;
+}): Promise<string | null> {
+  const fromText = formatWaitlistTeamRosterDisplay(entry.teamRosterText);
+  if (fromText) return fromText;
+  const hydrated = await hydrateTeamRosterPlacementsForEntry({
+    primaryMemberId: entry.memberId,
+    entryType: entry.entryType,
+    replacesLeagueId: entry.replacesLeagueId,
+    teamRosterPlacementsJson: entry.teamRosterPlacements,
+    teamRosterText: entry.teamRosterText,
+  });
+  return formatRegistrationTeammatesDisplay({
+    memberNames: hydrated.map((placement) => placement.memberName),
+  });
 }
 
 function hostedCheckoutUrl(metadata: unknown): string | null {
@@ -460,6 +500,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       replacesLeagueId: schema.registrationSelections.replaces_league_id,
       isTemporarySabbaticalFill: schema.registrationSelections.is_temporary_sabbatical_fill,
       byotTeammateText: schema.registrationSelections.byot_teammate_text,
+      teamRosterPlacementsJson: schema.registrationSelections.team_roster_placements,
       leagueName: schema.leagues.name,
     })
     .from(schema.registrationSelections)
@@ -481,13 +522,22 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
           .where(inArray(schema.leagues.id, replacedLeagueIds))
       : [];
   const replacedLeagueNames = new Map(replacedLeagues.map((league) => [league.id, league.name]));
-  const selectionsWithContext = selections.map((selection) => ({
-    ...selection,
-    replacedLeagueName:
-      selection.replacesLeagueId != null
-        ? replacedLeagueNames.get(selection.replacesLeagueId) ?? null
-        : null,
-  }));
+  const selectionsWithContext = await Promise.all(
+    selections.map(async (selection) => {
+      const { teamRosterPlacementsJson, ...rest } = selection;
+      return {
+        ...rest,
+        replacedLeagueName:
+          selection.replacesLeagueId != null
+            ? replacedLeagueNames.get(selection.replacesLeagueId) ?? null
+            : null,
+        teamRosterDisplay: await selectionTeamRosterDisplay({
+          byotTeammateText: selection.byotTeammateText,
+          teamRosterPlacementsJson,
+        }),
+      };
+    }),
+  );
   const waitlistRows = registration.curler_member_id
     ? await db
         .select({
@@ -497,6 +547,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
           entryType: schema.waitlistEntries.entry_type,
           replacesLineageStartLeagueId: schema.waitlistEntries.replaces_lineage_start_league_id,
           originalReplacesLeagueId: schema.waitlistEntries.original_replaces_league_id,
+          teamRosterText: schema.waitlistEntries.team_roster_text,
           teamRosterPlacements: schema.waitlistEntries.team_roster_placements,
           declineCount: schema.waitlistEntries.decline_count,
           status: schema.waitlistEntries.status,
@@ -523,42 +574,52 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
         .orderBy(asc(schema.waitlistEntries.position_sort_key), asc(schema.waitlistEntries.joined_at), asc(schema.waitlistEntries.id))
     : [];
   const waitlists = registration.curler_member_id
-    ? waitlistRows
-        .filter((entry) =>
-          waitlistEntryIncludesMember(registration.curler_member_id as number, {
-            memberId: entry.memberId,
-            teamRosterPlacements: entry.teamRosterPlacements,
+    ? await Promise.all(
+        waitlistRows
+          .filter((entry) =>
+            waitlistEntryIncludesMember(registration.curler_member_id as number, {
+              memberId: entry.memberId,
+              teamRosterPlacements: entry.teamRosterPlacements,
+            }),
+          )
+          .map(async (entry) => {
+            const participation = memberParticipationOnWaitlistEntry(registration.curler_member_id as number, entry);
+            const primaryMemberName = memberName({
+              name: entry.primaryMemberName,
+              first_name: entry.primaryMemberFirstName,
+              last_name: entry.primaryMemberLastName,
+              email: entry.primaryMemberEmail,
+            });
+            const isPrimaryMember = isPrimaryWaitlistEntryMember(entry, registration.curler_member_id as number);
+            const replacesLeagueId = participation.replacesLeagueId ?? entry.originalReplacesLeagueId;
+            return {
+              id: entry.id,
+              waitlistId: entry.waitlistId,
+              entryType: participation.entryType,
+              replacesLineageStartLeagueId: entry.replacesLineageStartLeagueId,
+              originalReplacesLeagueId: replacesLeagueId,
+              declineCount: entry.declineCount,
+              status: entry.status,
+              rolledOverFromWaitlistEntryId: entry.rolledOverFromWaitlistEntryId,
+              leagueId: entry.leagueId,
+              leagueName: entry.leagueName,
+              waitlistName: entry.waitlistName,
+              isPrimaryMember,
+              canRemoveSelf: isPrimaryMember,
+              primaryMemberName,
+              teammateContactMessage: isPrimaryMember
+                ? null
+                : waitlistTeammateContactMessage(primaryMemberName),
+              teamRosterDisplay: await waitlistTeamRosterDisplay({
+                memberId: entry.memberId,
+                entryType: participation.entryType,
+                replacesLeagueId,
+                teamRosterPlacements: entry.teamRosterPlacements,
+                teamRosterText: entry.teamRosterText,
+              }),
+            };
           }),
-        )
-        .map((entry) => {
-          const participation = memberParticipationOnWaitlistEntry(registration.curler_member_id as number, entry);
-          const primaryMemberName = memberName({
-            name: entry.primaryMemberName,
-            first_name: entry.primaryMemberFirstName,
-            last_name: entry.primaryMemberLastName,
-            email: entry.primaryMemberEmail,
-          });
-          const isPrimaryMember = isPrimaryWaitlistEntryMember(entry, registration.curler_member_id as number);
-          return {
-            id: entry.id,
-            waitlistId: entry.waitlistId,
-            entryType: participation.entryType,
-            replacesLineageStartLeagueId: entry.replacesLineageStartLeagueId,
-            originalReplacesLeagueId: participation.replacesLeagueId ?? entry.originalReplacesLeagueId,
-            declineCount: entry.declineCount,
-            status: entry.status,
-            rolledOverFromWaitlistEntryId: entry.rolledOverFromWaitlistEntryId,
-            leagueId: entry.leagueId,
-            leagueName: entry.leagueName,
-            waitlistName: entry.waitlistName,
-            isPrimaryMember,
-            canRemoveSelf: isPrimaryMember,
-            primaryMemberName,
-            teammateContactMessage: isPrimaryMember
-              ? null
-              : waitlistTeammateContactMessage(primaryMemberName),
-          };
-        })
+      )
     : [];
   const waitlistDetails = await Promise.all(waitlists.map(async (entry) => ({
     ...entry,
@@ -575,19 +636,19 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     : null;
   const canEditDuringPriority = await canEditRegistrationDuringPriority(actor, shellRegistration);
   const canCancelDuringPriority = await canCancelRegistrationDuringPriority(actor, shellRegistration);
-  const playInLeagueIds = [
-    ...new Set(
-      selections
-        .filter((selection) => selection.selectionType === 'play_in_request' && selection.leagueId != null)
-        .map((selection) => selection.leagueId as number),
-    ),
-  ];
+  const playInSelections = selections.filter(
+    (selection) => selection.selectionType === 'play_in_request' && selection.leagueId != null,
+  );
   const playInEntry: Record<number, Awaited<ReturnType<typeof evaluateRegistrantPlayInEntry>>> = {};
-  for (const leagueId of playInLeagueIds) {
+  for (const selection of playInSelections) {
+    const leagueId = selection.leagueId as number;
+    if (playInEntry[leagueId]) continue;
     try {
       playInEntry[leagueId] = await evaluateRegistrantPlayInEntry({
         leagueId,
         memberId: registration.curler_member_id,
+        teamRosterPlacements: parseTeamRosterPlacements(selection.teamRosterPlacementsJson),
+        pendingTeammateText: selection.byotTeammateText,
       });
     } catch {
       // Leagues that cannot be evaluated are simply omitted from the echo.
@@ -606,6 +667,9 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       updatedAt: registration.updated_at,
       studentDiscountClaimed: registration.student_discount_claimed === 1,
       reciprocalDiscountClaimed: registration.reciprocal_discount_claimed === 1,
+      membershipCommitteeComments: registration.membership_committee_comments?.trim()
+        ? registration.membership_committee_comments.trim()
+        : null,
     },
     selections: selectionsWithContext,
     playInEntry,

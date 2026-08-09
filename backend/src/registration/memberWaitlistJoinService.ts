@@ -28,6 +28,7 @@ type MemberLeagueHold = {
   leagueId: number;
   leagueName: string;
   format: LeagueConfig['format'];
+  isPlayInBased: boolean;
 };
 
 const EXPERIENCE_DEFERRAL_WINDOW_YEARS = 2;
@@ -215,6 +216,7 @@ async function loadPriorSessionLeagueHoldsForCurrentSession(
       name: schema.leagues.name,
       format: schema.leagues.format,
       predecessorLeagueId: schema.leagues.predecessor_league_id,
+      isPlayInBased: schema.leagues.is_play_in_based,
     })
     .from(schema.leagues)
     .where(eq(schema.leagues.session_id, currentSessionId));
@@ -234,6 +236,7 @@ async function loadPriorSessionLeagueHoldsForCurrentSession(
       leagueId: currentLeague.id,
       leagueName: currentLeague.name,
       format: currentLeague.format,
+      isPlayInBased: currentLeague.isPlayInBased === 1,
     });
   }
 
@@ -247,6 +250,7 @@ async function loadLeagueHoldsFromRegistration(registrationId: number): Promise<
       leagueId: schema.registrationSelections.league_id,
       leagueName: schema.leagues.name,
       format: schema.leagues.format,
+      isPlayInBased: schema.leagues.is_play_in_based,
     })
     .from(schema.registrationSelections)
     .innerJoin(schema.leagues, eq(schema.registrationSelections.league_id, schema.leagues.id))
@@ -264,6 +268,7 @@ async function loadLeagueHoldsFromRegistration(registrationId: number): Promise<
       leagueId: row.leagueId,
       leagueName: row.leagueName,
       format: row.format,
+      isPlayInBased: row.isPlayInBased === 1,
     }));
 }
 
@@ -274,6 +279,7 @@ async function loadLeagueHoldsFromRoster(memberId: number, sessionId: number): P
       leagueId: schema.leagueRoster.league_id,
       leagueName: schema.leagues.name,
       format: schema.leagues.format,
+      isPlayInBased: schema.leagues.is_play_in_based,
     })
     .from(schema.leagueRoster)
     .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
@@ -288,7 +294,12 @@ async function loadLeagueHoldsFromRoster(memberId: number, sessionId: number): P
     leagueId: row.leagueId,
     leagueName: row.leagueName,
     format: row.format,
+    isPlayInBased: row.isPlayInBased === 1,
   }));
+}
+
+function waitlistReplaceableHolds(holds: MemberLeagueHold[]): MemberLeagueHold[] {
+  return holds.filter((hold) => !hold.isPlayInBased);
 }
 
 async function loadCompletedSessions(memberId: number): Promise<RegistrationContext['experience']['completedSessions']> {
@@ -466,7 +477,7 @@ export async function getTeamMemberPlacementOptions(sessionId: number, memberIds
       addBlockedReason: addAvailable
         ? null
         : 'ADD waitlist entries are only available for members with zero or one current leagues.',
-      replacementLeagues: holds.map((hold) => ({
+      replacementLeagues: waitlistReplaceableHolds(holds).map((hold) => ({
         id: hold.leagueId,
         name: hold.leagueName,
         format: hold.format,
@@ -584,7 +595,7 @@ export async function getMemberWaitlistJoinContext(member: Member, waitlistId: n
     (entry) => isActiveWaitlistEntry(entry) && entry.entryType === 'replace',
   ).length;
 
-  const replacementLeagues = holds.map((hold) => ({
+  const replacementLeagues = waitlistReplaceableHolds(holds).map((hold) => ({
     id: hold.leagueId,
     name: hold.leagueName,
     format: hold.format,
@@ -664,9 +675,10 @@ export async function joinMemberWaitlist(input: {
           replacesLeagueId: 'Select a league you currently hold.',
         });
       }
-      if (contextPayload.activeReplaceWaitlists >= 2) {
+      // Cap REPLACE waitlists only when ADD is unavailable (already at two leagues).
+      if (!contextPayload.addAvailable && contextPayload.activeReplaceWaitlists >= 2) {
         throw new RegistrationMemberValidationError({
-          entryType: 'A member may have at most two active REPLACE waitlists.',
+          entryType: 'A member may have at most two active REPLACE waitlists when already holding two leagues.',
         });
       }
     }

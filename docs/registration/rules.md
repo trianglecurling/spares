@@ -404,8 +404,11 @@ BYOT rules:
 - Returning members may request a BYOT league.
 - A returning individual may select a BYOT league even if their team is not
   returning.
-- BYOT leagues cannot be selected as a third league.
-- BYOT leagues must count as one of the registrant's first two leagues.
+- Guaranteed BYOT requests (`byot_request`) must count as one of the
+  registrant's first two leagues.
+- BYOT leagues may be listed as third-league interest with an optional team
+  roster; that interest still defers payment and is not a guaranteed BYOT
+  request.
 - BYOT leagues do not use the waitlist system.
 - BYOT leagues do not use the sabbatical system.
 - BYOT leagues are treated as guaranteed for payment purposes.
@@ -746,6 +749,8 @@ another league.
 
 A REPLACE entry must identify which existing league would be replaced.
 
+The REPLACE target cannot be a play-in league.
+
 A member may have at most two active REPLACE waitlist entries.
 
 ### Cleanup when a member reaches two leagues
@@ -858,7 +863,9 @@ Rules:
 - Third-league placement may be manual or outside the application.
 - The exact placement mechanism, such as lottery or staff decision, is not part
   of V1 app automation.
-- BYOT leagues cannot be selected as third-league options.
+- BYOT leagues may be selected as third-league options with an optional team
+  roster.
+- Play-in based leagues cannot be selected as third-league options.
 
 Third-league interest defers payment.
 

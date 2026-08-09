@@ -323,6 +323,20 @@
       "when": 1780352498487,
       "tag": "0046_add_registration_payment_deadlines",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1780352498488,
+      "tag": "0047_add_registration_membership_committee_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1780352498489,
+      "tag": "0048_volunteer_program_feature_on_dashboard",
+      "breakpoints": true
     }
   ]
 }

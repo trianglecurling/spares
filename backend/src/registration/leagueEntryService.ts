@@ -130,6 +130,22 @@ export type RegistrantPlayInEntrySummary = {
   } | null;
   /** Members (other than the registrant) already committed to another active entry team. */
   committedOtherMemberIds: number[];
+  /**
+   * For each committed other member, the active entry team they belong to (full roster),
+   * so the registration UI can explain conflicts without a second fetch.
+   */
+  committedOtherMemberTeams: Array<{
+    memberId: number;
+    team: {
+      id: number;
+      name: string | null;
+      members: Array<{
+        memberId: number | null;
+        memberName: string | null;
+        pendingName: string | null;
+      }>;
+    };
+  }>;
   /** Total points for the registrant's declared/drafted team, when known. */
   teamTotalPoints: number | null;
   /** Whether the team meets the two-returning-members rule. */
@@ -196,10 +212,30 @@ export async function evaluateRegistrantPlayInEntry(input: {
     existingTeam = match?.team ?? null;
   }
 
-  const committedOtherMemberIds = activeTeams
-    .filter((team) => team.id !== existingTeam?.id)
-    .flatMap((team) => team.members.map((member) => member.memberId))
-    .filter((memberId): memberId is number => memberId != null && memberId !== input.memberId);
+  const otherActiveTeams = activeTeams.filter((team) => team.id !== existingTeam?.id);
+  const committedOtherMemberTeams: RegistrantPlayInEntrySummary['committedOtherMemberTeams'] = [];
+  const committedOtherMemberIdSet = new Set<number>();
+  for (const team of otherActiveTeams) {
+    const roster = team.members.map((member) => ({
+      memberId: member.memberId,
+      memberName: member.memberName,
+      pendingName: member.pendingName,
+    }));
+    for (const member of team.members) {
+      if (member.memberId == null || member.memberId === input.memberId) continue;
+      if (committedOtherMemberIdSet.has(member.memberId)) continue;
+      committedOtherMemberIdSet.add(member.memberId);
+      committedOtherMemberTeams.push({
+        memberId: member.memberId,
+        team: {
+          id: team.id,
+          name: team.name,
+          members: roster,
+        },
+      });
+    }
+  }
+  const committedOtherMemberIds = [...committedOtherMemberIdSet];
 
   const evaluationTeams: PlayInTeamForEvaluation[] = teams.map(entryTeamToEvaluationInput);
   let evaluatedTeam: PlayInEvaluatedTeam | undefined;
@@ -247,6 +283,7 @@ export async function evaluateRegistrantPlayInEntry(input: {
         }
       : null,
     committedOtherMemberIds,
+    committedOtherMemberTeams,
     teamTotalPoints: evaluatedTeam ? pointsHalfToNumber(evaluatedTeam.totalPointsHalf) : null,
     meetsReturningRule: evaluatedTeam ? evaluatedTeam.meetsReturningRule : null,
     guaranteed: evaluatedTeam?.guaranteed ?? false,
@@ -345,6 +382,15 @@ export async function syncRegistrationEntryTeams(input: {
         entryType: curlerEntryType,
         replacesLeagueId: curlerReplacesLeagueId,
       });
+      const leagueConfig = input.leagues[leagueId];
+      await extendEntryTeamRoster({
+        executor,
+        teamId: existing.id,
+        existingMembers: existing.members,
+        teamSize: playInTeamSize(leagueConfig?.format ?? 'teams'),
+        placements,
+        pendingNames,
+      });
       continue;
     }
 
@@ -371,6 +417,41 @@ export async function syncRegistrationEntryTeams(input: {
           registrationId: input.registrationId,
           entryType: curlerEntryType,
           replacesLeagueId: curlerReplacesLeagueId,
+        });
+        const leagueConfig = input.leagues[leagueId];
+        await extendEntryTeamRoster({
+          executor,
+          teamId: sameRosterTeam.id,
+          existingMembers: sameRosterTeam.members,
+          teamSize: playInTeamSize(leagueConfig?.format ?? 'teams'),
+          placements,
+          pendingNames,
+        });
+        continue;
+      }
+      // Incomplete team that is a subset of this draft: join and add the new members.
+      const extendableTeam = findIncompleteEntryTeamCoveredByDraft({
+        teams: overlappingTeams,
+        draftMemberIds,
+        teamSize: playInTeamSize(input.leagues[leagueId]?.format ?? 'teams'),
+      });
+      if (extendableTeam) {
+        await attachCurlerToEntryTeam({
+          executor,
+          teamId: extendableTeam.id,
+          members: extendableTeam.members,
+          curlerMemberId: input.curlerMemberId,
+          registrationId: input.registrationId,
+          entryType: curlerEntryType,
+          replacesLeagueId: curlerReplacesLeagueId,
+        });
+        await extendEntryTeamRoster({
+          executor,
+          teamId: extendableTeam.id,
+          existingMembers: extendableTeam.members,
+          teamSize: playInTeamSize(input.leagues[leagueId]?.format ?? 'teams'),
+          placements,
+          pendingNames,
         });
         continue;
       }
@@ -421,6 +502,79 @@ export async function syncRegistrationEntryTeams(input: {
       entryType: curlerEntryType,
       replacesLeagueId: curlerReplacesLeagueId,
     });
+  }
+}
+
+function findIncompleteEntryTeamCoveredByDraft(input: {
+  teams: Array<{
+    id: number;
+    members: Array<{ id: number; member_id: number | null; pending_name?: string | null; source_registration_id: number | null }>;
+  }>;
+  draftMemberIds: Set<number>;
+  teamSize: number;
+}): (typeof input.teams)[number] | null {
+  const candidates = input.teams.filter((team) => {
+    if (team.members.length >= input.teamSize) return false;
+    const accountIds = team.members
+      .map((member) => member.member_id)
+      .filter((id): id is number => id != null);
+    if (accountIds.length === 0) return false;
+    return accountIds.every((memberId) => input.draftMemberIds.has(memberId));
+  });
+  if (candidates.length === 0) return null;
+  // Prefer the largest incomplete overlap so we extend the most complete declaration.
+  return [...candidates].sort((left, right) => right.members.length - left.members.length)[0] ?? null;
+}
+
+/**
+ * Adds newly declared account members and pending names onto an incomplete entry team.
+ * Existing members are never removed here — later registrants can only grow the roster.
+ */
+async function extendEntryTeamRoster(input: {
+  executor: DbExecutor;
+  teamId: number;
+  existingMembers: Array<{ member_id?: number | null; memberId?: number | null; pending_name?: string | null; pendingName?: string | null }>;
+  teamSize: number;
+  placements: Array<{ memberId: number; entryType: WaitlistEntryTypeSqlite; replacesLeagueId?: number | null }>;
+  pendingNames: string[];
+}): Promise<void> {
+  const { schema } = getDrizzleDb();
+  const existingMemberIds = new Set(
+    input.existingMembers
+      .map((member) => member.member_id ?? member.memberId)
+      .filter((id): id is number => id != null),
+  );
+  const existingPending = new Set(
+    input.existingMembers
+      .map((member) => (member.pending_name ?? member.pendingName ?? '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+  let openSlots = Math.max(0, input.teamSize - input.existingMembers.length);
+  if (openSlots === 0) return;
+
+  const membersToAdd = input.placements.filter((placement) => !existingMemberIds.has(placement.memberId));
+  for (const placement of membersToAdd) {
+    if (openSlots <= 0) break;
+    await input.executor.insert(schema.leagueEntryTeamMembers).values({
+      entry_team_id: input.teamId,
+      member_id: placement.memberId,
+      entry_type: placement.entryType,
+      replaces_league_id: placement.entryType === 'replace' ? placement.replacesLeagueId ?? null : null,
+    });
+    openSlots -= 1;
+  }
+
+  for (const pendingName of input.pendingNames) {
+    if (openSlots <= 0) break;
+    const normalized = pendingName.trim().toLowerCase();
+    if (!normalized || existingPending.has(normalized)) continue;
+    await input.executor.insert(schema.leagueEntryTeamMembers).values({
+      entry_team_id: input.teamId,
+      pending_name: pendingName.trim(),
+      entry_type: 'add',
+    });
+    existingPending.add(normalized);
+    openSlots -= 1;
   }
 }
 
@@ -708,7 +862,12 @@ async function loadEntryTeamsForLeague(
     id: number;
     status: LeagueEntryTeamStatusSqlite;
     created_from_registration_id: number | null;
-    members: Array<{ id: number; member_id: number | null; source_registration_id: number | null }>;
+    members: Array<{
+      id: number;
+      member_id: number | null;
+      pending_name: string | null;
+      source_registration_id: number | null;
+    }>;
   }>
 > {
   const { schema } = getDrizzleDb();
@@ -730,6 +889,7 @@ async function loadEntryTeamsForLeague(
       .map((member: (typeof members)[number]) => ({
         id: member.id,
         member_id: member.member_id,
+        pending_name: member.pending_name,
         source_registration_id: member.source_registration_id,
       })),
   }));

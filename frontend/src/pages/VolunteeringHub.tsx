@@ -60,7 +60,7 @@ export default function VolunteeringHub() {
   const [expandedPrograms, setExpandedPrograms] = useState<Set<number>>(new Set());
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set());
-  const [groupBy, setGroupBy] = useState<GroupBy>('role');
+  const [groupBy, setGroupBy] = useState<GroupBy>('shift');
   const [busyShiftRoleId, setBusyShiftRoleId] = useState<number | null>(null);
   const [signupTarget, setSignupTarget] = useState<SignupTarget | null>(null);
 
@@ -213,8 +213,8 @@ export default function VolunteeringHub() {
                       layout="inline"
                       name="volunteer-group-by"
                       options={[
-                        { value: 'role', label: 'Role' },
                         { value: 'shift', label: 'Shift time' },
+                        { value: 'role', label: 'Role' },
                       ]}
                       value={groupBy}
                       onChange={(v) => {

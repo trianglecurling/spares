@@ -475,6 +475,7 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   payment_decision_json: text('payment_decision_json'),
   desired_add_waitlist_league_count: integer('desired_add_waitlist_league_count'),
   basic_ice_fallback_interest: integer('basic_ice_fallback_interest'),
+  membership_committee_comments: text('membership_committee_comments'),
   status: text('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: text('shell_completed_at'),
   submitted_at: text('submitted_at'),
@@ -2204,12 +2205,14 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   start_date: text('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   published: integer('published').default(0).notNull(),
+  feature_on_dashboard: integer('feature_on_dashboard').default(1).notNull(),
   archived_at: text('archived_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   createdByIdx: index('idx_volunteer_programs_created_by').on(table.created_by_member_id),
   publishedIdx: index('idx_volunteer_programs_published').on(table.published),
+  featureOnDashboardIdx: index('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   archivedAtIdx: index('idx_volunteer_programs_archived_at').on(table.archived_at),
 }));
 
@@ -2593,6 +2596,7 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   payment_decision_json: jsonb('payment_decision_json'),
   desired_add_waitlist_league_count: integerPg('desired_add_waitlist_league_count'),
   basic_ice_fallback_interest: integerPg('basic_ice_fallback_interest'),
+  membership_committee_comments: textPg('membership_committee_comments'),
   status: textPg('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: timestamp('shell_completed_at', { withTimezone: false }),
   submitted_at: timestamp('submitted_at', { withTimezone: false }),
@@ -4269,12 +4273,14 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   start_date: date('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   published: integerPg('published').default(0).notNull(),
+  feature_on_dashboard: integerPg('feature_on_dashboard').default(1).notNull(),
   archived_at: timestamp('archived_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   createdByIdx: indexPg('idx_volunteer_programs_created_by').on(table.created_by_member_id),
   publishedIdx: indexPg('idx_volunteer_programs_published').on(table.published),
+  featureOnDashboardIdx: indexPg('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   archivedAtIdx: indexPg('idx_volunteer_programs_archived_at').on(table.archived_at),
 }));
 

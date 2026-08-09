@@ -72,7 +72,8 @@ A registrant requesting BYOT may pay immediately if there are no other deferral 
 
 If the coordinator later determines the registrant is not placed, staff handles refund/correction manually.
 
-BYOT cannot be a third league.
+Guaranteed BYOT requests cannot count as a third league. BYOT listed only as
+third-league interest remains deferred (same as other third-league interest).
 
 ## Third-league interest
 

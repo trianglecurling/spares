@@ -24,12 +24,39 @@ function formatPoints(points: number): string {
 }
 
 export function playInEntryTeamMembersText(
-  team: NonNullable<RegistrationPlayInEntrySummary['existingTeam']>,
+  team: {
+    members: Array<{
+      memberId?: number | null;
+      memberName: string | null;
+      pendingName: string | null;
+    }>;
+  },
 ): string {
   return team.members
     .map((member) => (member.pendingName ? `${member.pendingName} (not yet registered)` : member.memberName ?? ''))
     .filter(Boolean)
     .join(', ');
+}
+
+/** Alert copy when a registrant tries to add someone already on another declared play-in team. */
+export function playInCommittedMemberConflictMessage(input: {
+  memberName: string;
+  team?: {
+    members: Array<{
+      memberId?: number | null;
+      memberName: string | null;
+      pendingName: string | null;
+    }>;
+  } | null;
+}): string {
+  const intro = `${input.memberName} is already on a different team for this league.`;
+  const rosterLines = (input.team?.members ?? [])
+    .map((member) =>
+      member.pendingName ? `${member.pendingName} (not yet registered)` : member.memberName ?? '',
+    )
+    .filter(Boolean);
+  if (rosterLines.length === 0) return intro;
+  return `${intro}\n\nTeam roster:\n${rosterLines.join('\n')}`;
 }
 
 /**

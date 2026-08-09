@@ -64,7 +64,8 @@ interface PublicLayoutProps {
   deferPublicBootstrapLoad?: boolean;
   /**
    * Lock the shell to the viewport and scroll only inside main.
-   * Used by the public calendar so day/week hour grids keep a fixed toolbar.
+   * Used by the desktop public calendar so day/week hour grids keep a fixed toolbar.
+   * Mobile calendar uses page scroll instead so chrome can move out of the way.
    */
   fillViewport?: boolean;
 }

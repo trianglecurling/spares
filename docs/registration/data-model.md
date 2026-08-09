@@ -1199,7 +1199,8 @@ application service layer.
 - Returning members must authenticate before registering as returning.
 - Junior Recreational registrations cannot include other leagues or spare-only.
 - Social registrations cannot include leagues, spare-only, or ice privileges.
-- BYOT cannot be selected as a third league.
+- Guaranteed BYOT requests must count as one of the first two leagues.
+- BYOT may be listed as third-league interest with an optional roster.
 - Third-league interest defers payment.
 
 ### Protected claims

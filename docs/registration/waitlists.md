@@ -92,6 +92,7 @@ another league.
 Rules:
 
 - A REPLACE entry must identify the league that would be replaced.
+- The REPLACE target cannot be a play-in league.
 - A curler may have at most two active REPLACE waitlist entries.
 - REPLACE entries are first-come, first-served within the waitlist.
 - REPLACE entries roll forward to successor leagues.

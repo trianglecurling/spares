@@ -91,7 +91,7 @@ export default function SiteNavBar({
   return (
     <header
       ref={headerRef}
-      className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur dark:border-gray-700/80 dark:bg-gray-800/90"
+      className="relative z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur md:sticky md:top-0 dark:border-gray-700/80 dark:bg-gray-800/90"
     >
       <div className="public-container py-4 flex items-center justify-between gap-4">
         {backToHome ? (

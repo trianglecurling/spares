@@ -19,6 +19,8 @@ type FormFieldProps = {
   required?: boolean;
   optional?: boolean;
   helperText?: ReactNode;
+  /** Where helper text renders. Default stays below the control for existing forms. */
+  helperPlacement?: 'after-label' | 'after-control';
   error?: ReactNode;
   state?: FormFieldState;
   stateMessage?: ReactNode;
@@ -49,6 +51,7 @@ export default function FormField({
   required = false,
   optional = false,
   helperText,
+  helperPlacement = 'after-control',
   error,
   state = 'default',
   stateMessage,
@@ -69,6 +72,11 @@ export default function FormField({
   const describedBy = [helperId, stateId, errorId].filter(Boolean).join(' ') || undefined;
   const invalid = Boolean(error);
   const markerText = required ? 'Required' : optional ? 'Optional' : null;
+  const helperMessage = helperText ? (
+    <FormFieldMessage id={helperId} tone={tone} intent="helper">
+      {helperText}
+    </FormFieldMessage>
+  ) : null;
   const labelContent = label ? (
     <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
       {htmlFor ? (
@@ -91,6 +99,7 @@ export default function FormField({
   return (
     <div className={joinClasses('space-y-1.5', className)}>
       {labelContent}
+      {helperPlacement === 'after-label' ? helperMessage : null}
       <div>
         {typeof children === 'function'
           ? children({ describedBy, invalid })
@@ -101,11 +110,7 @@ export default function FormField({
           {stateMessage}
         </FormFieldMessage>
       ) : null}
-      {helperText ? (
-        <FormFieldMessage id={helperId} tone={tone} intent="helper">
-          {helperText}
-        </FormFieldMessage>
-      ) : null}
+      {helperPlacement === 'after-control' ? helperMessage : null}
       {error ? (
         <FormFieldMessage id={errorId} tone={tone} intent="error">
           {error}

@@ -16,7 +16,8 @@ interface LayoutProps {
   fullWidth?: boolean;
   /**
    * Lock the shell to the viewport and scroll only inside main.
-   * Used by the calendar so day/week hour grids can keep a fixed toolbar under the nav.
+   * Used by the desktop calendar so day/week hour grids keep a fixed toolbar under the nav.
+   * Mobile calendar uses page scroll instead so chrome can move out of the way.
    */
   fillViewport?: boolean;
 }

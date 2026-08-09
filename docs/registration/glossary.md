@@ -366,6 +366,8 @@ A waitlist entry where the registrant wants to join a league by replacing one of
 
 A REPLACE entry must identify which current league would be given up if the waitlist offer is accepted.
 
+The REPLACE target cannot be a play-in league.
+
 A registrant may have at most two active REPLACE waitlist entries.
 
 ## Registration

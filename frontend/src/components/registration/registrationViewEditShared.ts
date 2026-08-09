@@ -82,7 +82,11 @@ export type RegistrationLeagueEvaluation = {
 const ADD_WAITLIST_SELECTION_TYPES = new Set<RegistrationSelectionType>([
   'waitlist_add',
   'waitlist_add_auto_decline',
-  'waitlist_keep_auto_accept',
+]);
+
+const REPLACE_WAITLIST_SELECTION_TYPES = new Set<RegistrationSelectionType>([
+  'waitlist_replace',
+  'waitlist_replace_auto_decline',
 ]);
 
 const SCHEDULED_FIRST_TWO_SELECTION_TYPES = new Set<RegistrationSelectionType>([
@@ -90,6 +94,9 @@ const SCHEDULED_FIRST_TWO_SELECTION_TYPES = new Set<RegistrationSelectionType>([
   'byot_request',
   'play_in_request',
 ]);
+
+export type WaitlistEntryIntent = 'add' | 'replace';
+export type WaitlistOfferPreference = 'auto_accept' | 'auto_decline';
 
 export function projectedWaitlistPosition(activeWaitlistEntryCount: number | null | undefined): number {
   return Math.max(1, (activeWaitlistEntryCount ?? 0) + 1);
@@ -125,8 +132,41 @@ export function isAddWaitlistSelectionType(selectionType: RegistrationSelectionT
   return ADD_WAITLIST_SELECTION_TYPES.has(selectionType);
 }
 
+export function isReplaceWaitlistSelectionType(selectionType: RegistrationSelectionType): boolean {
+  return REPLACE_WAITLIST_SELECTION_TYPES.has(selectionType);
+}
+
+export function waitlistEntryTypeFromSelection(
+  selection: RegistrationSelectionInput | undefined,
+  fallback: WaitlistEntryIntent = 'add',
+): WaitlistEntryIntent {
+  if (!selection) return fallback;
+  if (isReplaceWaitlistSelectionType(selection.selectionType)) return 'replace';
+  if (
+    selection.selectionType === 'waitlist_keep_auto_accept' ||
+    selection.selectionType === 'waitlist_keep_auto_decline'
+  ) {
+    return selection.replacesLeagueId != null ? 'replace' : fallback;
+  }
+  if (isAddWaitlistSelectionType(selection.selectionType)) return 'add';
+  return fallback;
+}
+
+export function isAddWaitlistSelection(selection: RegistrationSelectionInput): boolean {
+  if (selection.leagueId == null) return false;
+  if (selection.selectionType === 'waitlist_remove') return false;
+  if (isAddWaitlistSelectionType(selection.selectionType)) return true;
+  if (
+    selection.selectionType === 'waitlist_keep_auto_accept' ||
+    selection.selectionType === 'waitlist_keep_auto_decline'
+  ) {
+    return selection.replacesLeagueId == null;
+  }
+  return false;
+}
+
 export function getAddWaitlistSelections(selections: RegistrationSelectionInput[]): RegistrationSelectionInput[] {
-  return selections.filter((selection) => selection.leagueId != null && isAddWaitlistSelectionType(selection.selectionType));
+  return selections.filter((selection) => isAddWaitlistSelection(selection));
 }
 
 export function countFirstTwoLeagueSlots(activeLeagueIds: number[], selections: RegistrationSelectionInput[]): number {
@@ -140,6 +180,208 @@ export function remainingFirstTwoLeagueSlots(activeLeagueIds: number[], selectio
 
 export function requiresWaitlistFulfillmentPreferences(selections: RegistrationSelectionInput[]): boolean {
   return getAddWaitlistSelections(selections).length >= 2;
+}
+
+export function isAddWaitlistAvailable(activeLeagueIds: number[], selections: RegistrationSelectionInput[]): boolean {
+  return countFirstTwoLeagueSlots(activeLeagueIds, selections) <= 1;
+}
+
+export function buildReplaceableLeagueOptions(input: {
+  activeLeagueIds: number[];
+  selections: RegistrationSelectionInput[];
+  leagueName: (leagueId: number) => string;
+  selectionLabel?: (selection: RegistrationSelectionInput) => string;
+  existingEntries?: Array<{
+    leagueId: number;
+    entryType: WaitlistEntryIntent;
+    replacesLeagueId?: number | null;
+    status?: string | null;
+  }>;
+  /** League IDs that cannot be REPLACE waitlist targets (play-in leagues). */
+  excludedLeagueIds?: Iterable<number>;
+}): Array<{ value: number; label: string; description?: string }> {
+  const options: Array<{ value: number; label: string; description?: string }> = [];
+  const seen = new Set<number>();
+  const excluded = new Set(input.excludedLeagueIds ?? []);
+  const addOption = (leagueId: number, description?: string) => {
+    if (excluded.has(leagueId) || seen.has(leagueId)) return;
+    seen.add(leagueId);
+    options.push({
+      value: leagueId,
+      label: input.leagueName(leagueId),
+      description,
+    });
+  };
+
+  // Leagues already claimed for this session (return / BYOT / play-in).
+  for (const selection of input.selections) {
+    if (selection.leagueId == null || !SCHEDULED_FIRST_TWO_SELECTION_TYPES.has(selection.selectionType)) continue;
+    addOption(selection.leagueId, input.selectionLabel?.(selection));
+  }
+  // Leagues already on the session roster.
+  for (const leagueId of input.activeLeagueIds) {
+    addOption(leagueId, 'Current league');
+  }
+  // Leagues already used as REPLACE targets — during draft these may not yet be on the roster.
+  for (const selection of input.selections) {
+    if (selection.replacesLeagueId == null) continue;
+    if (
+      !isReplaceWaitlistSelectionType(selection.selectionType) &&
+      selection.selectionType !== 'waitlist_keep_auto_accept' &&
+      selection.selectionType !== 'waitlist_keep_auto_decline' &&
+      selection.selectionType !== 'play_in_request'
+    ) {
+      continue;
+    }
+    addOption(selection.replacesLeagueId, 'League held for REPLACE');
+  }
+  for (const entry of input.existingEntries ?? []) {
+    if (entry.status != null && entry.status !== 'active' && entry.status !== 'offered') continue;
+    if (entry.entryType !== 'replace' || entry.replacesLeagueId == null) continue;
+    addOption(entry.replacesLeagueId, 'League held for REPLACE');
+  }
+  return options;
+}
+
+export function countReplaceWaitlistEntries(input: {
+  selections: RegistrationSelectionInput[];
+  existingEntries?: Array<{ leagueId: number; entryType: WaitlistEntryIntent; status?: string | null }>;
+  excludeLeagueId?: number;
+}): number {
+  const removedLeagueIds = new Set(
+    input.selections
+      .filter((selection) => selection.selectionType === 'waitlist_remove' && selection.leagueId != null)
+      .map((selection) => selection.leagueId as number),
+  );
+  const counted = new Set<number>();
+  for (const selection of input.selections) {
+    if (selection.leagueId == null || selection.leagueId === input.excludeLeagueId) continue;
+    if (selection.selectionType === 'waitlist_remove') continue;
+    if (waitlistEntryTypeFromSelection(selection) !== 'replace') continue;
+    counted.add(selection.leagueId);
+  }
+  for (const entry of input.existingEntries ?? []) {
+    if (entry.leagueId === input.excludeLeagueId) continue;
+    if (entry.entryType !== 'replace') continue;
+    if (removedLeagueIds.has(entry.leagueId)) continue;
+    if (entry.status != null && entry.status !== 'active' && entry.status !== 'offered') continue;
+    counted.add(entry.leagueId);
+  }
+  return counted.size;
+}
+
+export function waitlistEntryTypeChoices(input: {
+  activeLeagueIds: number[];
+  selections: RegistrationSelectionInput[];
+  existingEntries?: Array<{ leagueId: number; entryType: WaitlistEntryIntent; status?: string | null }>;
+  leagueId: number;
+  replaceOptions: Array<{ value: number }>;
+}): WaitlistEntryIntent[] {
+  const choices: WaitlistEntryIntent[] = [];
+  const addAvailable = isAddWaitlistAvailable(input.activeLeagueIds, input.selections);
+  if (addAvailable) {
+    choices.push('add');
+  }
+  if (input.replaceOptions.length === 0) {
+    return choices;
+  }
+  // The two-REPLACE cap only applies when ADD is unavailable (already at two leagues).
+  if (addAvailable) {
+    choices.push('replace');
+    return choices;
+  }
+  const replaceCount = countReplaceWaitlistEntries({
+    selections: input.selections,
+    existingEntries: input.existingEntries,
+    excludeLeagueId: input.leagueId,
+  });
+  if (replaceCount < 2) {
+    choices.push('replace');
+  }
+  return choices;
+}
+
+/** Explains surprising REPLACE unavailability (e.g. hit the 2-REPLACE cap while ADD is blocked). */
+export function waitlistReplaceUnavailableReason(input: {
+  activeLeagueIds: number[];
+  selections: RegistrationSelectionInput[];
+  existingEntries?: Array<{ leagueId: number; entryType: WaitlistEntryIntent; status?: string | null }>;
+  leagueId: number;
+  replaceOptions: Array<{ value: number }>;
+}): string | null {
+  const choices = waitlistEntryTypeChoices(input);
+  if (choices.includes('replace')) return null;
+  if (isAddWaitlistAvailable(input.activeLeagueIds, input.selections)) return null;
+  const replaceCount = countReplaceWaitlistEntries({
+    selections: input.selections,
+    existingEntries: input.existingEntries,
+    excludeLeagueId: input.leagueId,
+  });
+  if (replaceCount >= 2) {
+    return 'REPLACE is unavailable because you already have two REPLACE waitlists.';
+  }
+  return null;
+}
+
+export function waitlistSelectionTypeForEntry(input: {
+  entryType: WaitlistEntryIntent;
+  preference: WaitlistOfferPreference;
+}): RegistrationSelectionType {
+  if (input.entryType === 'replace') {
+    return input.preference === 'auto_decline' ? 'waitlist_replace_auto_decline' : 'waitlist_replace';
+  }
+  return input.preference === 'auto_decline' ? 'waitlist_add_auto_decline' : 'waitlist_add';
+}
+
+export function waitlistOfferPreferenceFromSelection(
+  selection: RegistrationSelectionInput | undefined,
+): WaitlistOfferPreference | null {
+  if (!selection) return null;
+  switch (selection.selectionType) {
+    case 'waitlist_remove':
+      return null;
+    case 'waitlist_add_auto_decline':
+    case 'waitlist_replace_auto_decline':
+    case 'waitlist_keep_auto_decline':
+      return 'auto_decline';
+    case 'waitlist_add':
+    case 'waitlist_replace':
+    case 'waitlist_keep_auto_accept':
+      return 'auto_accept';
+    default:
+      return null;
+  }
+}
+
+export function updateWaitlistEntryDetails(
+  selections: RegistrationSelectionInput[],
+  leagueId: number,
+  patch: {
+    entryType: WaitlistEntryIntent;
+    replacesLeagueId?: number | null;
+    preference?: WaitlistOfferPreference;
+  },
+): RegistrationSelectionInput[] {
+  const previous = selections.find((selection) => selection.leagueId === leagueId);
+  const preference = patch.preference ?? waitlistOfferPreferenceFromSelection(previous) ?? 'auto_accept';
+  const replacesLeagueId =
+    patch.entryType === 'replace'
+      ? patch.replacesLeagueId !== undefined
+        ? patch.replacesLeagueId
+        : (previous?.replacesLeagueId ?? null)
+      : null;
+  const withoutLeague = selections.filter((selection) => selection.leagueId !== leagueId);
+  return [
+    ...withoutLeague,
+    {
+      selectionType: waitlistSelectionTypeForEntry({ entryType: patch.entryType, preference }),
+      leagueId,
+      replacesLeagueId,
+      rank: patch.entryType === 'add' ? previous?.rank ?? null : null,
+      byotTeammateText: previous?.byotTeammateText ?? null,
+      teamRosterPlacements: previous?.teamRosterPlacements ?? null,
+    },
+  ];
 }
 
 export type RegistrationLeagueFlowStep =
@@ -496,30 +738,126 @@ export function addWaitlistPriorityFromSelections(selections: RegistrationSelect
     .map((selection) => selection.leagueId as number);
 }
 
+function isRemovedWaitlistLeagueId(selections: RegistrationSelectionInput[], leagueId: number): boolean {
+  return selections.some(
+    (selection) => selection.leagueId === leagueId && selection.selectionType === 'waitlist_remove',
+  );
+}
+
+function isActiveWaitlistDraftSelection(selection: RegistrationSelectionInput): boolean {
+  if (selection.leagueId == null) return false;
+  if (selection.selectionType === 'waitlist_remove') return false;
+  return (
+    isAddWaitlistSelectionType(selection.selectionType) ||
+    isReplaceWaitlistSelectionType(selection.selectionType) ||
+    selection.selectionType === 'waitlist_keep_auto_accept' ||
+    selection.selectionType === 'waitlist_keep_auto_decline'
+  );
+}
+
+/**
+ * Unified display/priority order for every active waitlist (ADD and REPLACE).
+ * Preserves the caller's order when provided; type changes must not reshuffle.
+ */
+export function getActiveWaitlistLeagueIds(input: {
+  selections: RegistrationSelectionInput[];
+  existingEntries?: Array<{ leagueId: number; entryType: WaitlistEntryIntent; status?: string | null }>;
+  orderLeagueIds?: number[];
+}): number[] {
+  const activeIds = new Set<number>();
+
+  for (const selection of input.selections) {
+    if (!isActiveWaitlistDraftSelection(selection) || selection.leagueId == null) continue;
+    activeIds.add(selection.leagueId);
+  }
+  for (const entry of input.existingEntries ?? []) {
+    if (entry.status != null && entry.status !== 'active' && entry.status !== 'offered') continue;
+    if (isRemovedWaitlistLeagueId(input.selections, entry.leagueId)) continue;
+    activeIds.add(entry.leagueId);
+  }
+
+  const rankedFromSelections = input.selections
+    .filter((selection) => isActiveWaitlistDraftSelection(selection) && selection.leagueId != null)
+    .slice()
+    .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
+    .map((selection) => selection.leagueId as number);
+
+  const preferredOrder = [...(input.orderLeagueIds ?? []), ...rankedFromSelections, ...activeIds];
+  const ordered: number[] = [];
+  const seen = new Set<number>();
+  for (const leagueId of preferredOrder) {
+    if (!activeIds.has(leagueId) || seen.has(leagueId)) continue;
+    seen.add(leagueId);
+    ordered.push(leagueId);
+  }
+  return ordered;
+}
+
+/** ADD-only ranks for the backend fulfillment API, taken from the unified waitlist order. */
+export function addWaitlistPriorityFromOrder(input: {
+  orderLeagueIds: number[];
+  selections: RegistrationSelectionInput[];
+  existingEntries?: Array<{ leagueId: number; entryType: WaitlistEntryIntent; status?: string | null }>;
+}): number[] {
+  return input.orderLeagueIds.filter((leagueId) => {
+    const selection = input.selections.find((candidate) => candidate.leagueId === leagueId);
+    const existing = input.existingEntries?.find((entry) => entry.leagueId === leagueId);
+    if (selection?.selectionType === 'waitlist_remove') return false;
+    return waitlistEntryTypeFromSelection(selection, existing?.entryType ?? 'add') === 'add';
+  });
+}
+
+/** @deprecated Use getActiveWaitlistLeagueIds; kept for older call sites during migration. */
+export function getActiveAddWaitlistLeagueIds(input: {
+  selections: RegistrationSelectionInput[];
+  existingEntries?: Array<{ leagueId: number; entryType: WaitlistEntryIntent; status?: string | null }>;
+  priorityLeagueIds?: number[];
+}): number[] {
+  return addWaitlistPriorityFromOrder({
+    orderLeagueIds: getActiveWaitlistLeagueIds({
+      selections: input.selections,
+      existingEntries: input.existingEntries,
+      orderLeagueIds: input.priorityLeagueIds,
+    }),
+    selections: input.selections,
+    existingEntries: input.existingEntries,
+  });
+}
+
 export function applyAddWaitlistPriorityOrder(
   selections: RegistrationSelectionInput[],
   priorityLeagueIds: number[],
 ): RegistrationSelectionInput[] {
+  // Store rank on every active waitlist selection so unified order survives reload.
   const rankByLeagueId = new Map(priorityLeagueIds.map((leagueId, index) => [leagueId, index + 1] as const));
   return selections.map((selection) => {
-    if (!isAddWaitlistSelectionType(selection.selectionType) || selection.leagueId == null) return selection;
+    if (!isActiveWaitlistDraftSelection(selection) || selection.leagueId == null) return selection;
     const rank = rankByLeagueId.get(selection.leagueId);
     return rank != null ? { ...selection, rank } : selection;
   });
 }
 
+export function moveWaitlistOrder(
+  orderLeagueIds: number[],
+  leagueId: number,
+  direction: 'up' | 'down',
+): number[] {
+  const index = orderLeagueIds.indexOf(leagueId);
+  if (index < 0) return orderLeagueIds;
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= orderLeagueIds.length) return orderLeagueIds;
+  const next = [...orderLeagueIds];
+  [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  return next;
+}
+
+/** @deprecated Use moveWaitlistOrder */
 export function moveAddWaitlistPriority(
   priorityLeagueIds: number[],
   leagueId: number,
   direction: 'up' | 'down',
 ): number[] {
-  const index = priorityLeagueIds.indexOf(leagueId);
-  if (index < 0) return priorityLeagueIds;
-  const swapIndex = direction === 'up' ? index - 1 : index + 1;
-  if (swapIndex < 0 || swapIndex >= priorityLeagueIds.length) return priorityLeagueIds;
-  const next = [...priorityLeagueIds];
-  [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-  return next;
+  return moveWaitlistOrder(priorityLeagueIds, leagueId, direction);
 }
 
 export function waitlistFulfillmentSummaryText(input: {
@@ -558,6 +896,19 @@ export type RegistrationPlayInEntryTeamMember = {
   replacesLeagueId: number | null;
 };
 
+export type RegistrationPlayInCommittedOtherMemberTeam = {
+  memberId: number;
+  team: {
+    id: number;
+    name: string | null;
+    members: Array<{
+      memberId: number | null;
+      memberName: string | null;
+      pendingName: string | null;
+    }>;
+  };
+};
+
 /** Live play-in entry evaluation for one play-in based league, keyed by league id in the payload. */
 export type RegistrationPlayInEntrySummary = {
   leagueId: number;
@@ -572,6 +923,8 @@ export type RegistrationPlayInEntrySummary = {
     members: RegistrationPlayInEntryTeamMember[];
   } | null;
   committedOtherMemberIds: number[];
+  /** Active entry team roster for each member already committed to another team. */
+  committedOtherMemberTeams?: RegistrationPlayInCommittedOtherMemberTeam[];
   teamTotalPoints: number | null;
   meetsReturningRule: boolean | null;
   guaranteed: boolean;
@@ -748,6 +1101,8 @@ export const CONFIRMED_LEAGUE_PLACEMENT_SELECTION_TYPES = new Set<RegistrationSe
   'instructional_join',
 ]);
 
+const LEAGUE_PLACEMENT_VIEW_STATUSES = new Set(['confirmed', 'placed', 'pending']);
+
 export function isConfirmedLeaguePlacement(selection: {
   selectionType: RegistrationSelectionType | string;
   status: string;
@@ -756,6 +1111,63 @@ export function isConfirmedLeaguePlacement(selection: {
     CONFIRMED_LEAGUE_PLACEMENT_SELECTION_TYPES.has(selection.selectionType as RegistrationSelectionType) &&
     CONFIRMED_LEAGUE_PLACEMENT_STATUSES.has(selection.status)
   );
+}
+
+/** League placements shown on registration status (includes pending BYOT / instructional). */
+export function isLeaguePlacementForStatusView(selection: {
+  selectionType: RegistrationSelectionType | string;
+  status: string;
+}): boolean {
+  return (
+    CONFIRMED_LEAGUE_PLACEMENT_SELECTION_TYPES.has(selection.selectionType as RegistrationSelectionType) &&
+    LEAGUE_PLACEMENT_VIEW_STATUSES.has(selection.status)
+  );
+}
+
+type StatusViewPlayInSelection = {
+  selectionType: RegistrationSelectionType | string;
+  status?: string | null;
+  leagueId?: number | null;
+};
+
+/** Play-in requests that count as confirmed placements on registration status views. */
+export function isGuaranteedPlayInForStatusView(
+  selection: StatusViewPlayInSelection,
+  playInEntry: Record<number, { guaranteed?: boolean }> | null | undefined,
+): boolean {
+  if (selection.selectionType !== 'play_in_request') return false;
+  if (selection.status === 'placed') return true;
+  if (selection.status === 'not_placed') return false;
+  return selection.leagueId != null && playInEntry?.[selection.leagueId]?.guaranteed === true;
+}
+
+/** Confirmed leagues section: standard placements plus guaranteed / placed play-ins. */
+export function isConfirmedLeagueForStatusView(
+  selection: StatusViewPlayInSelection & { status: string },
+  playInEntry: Record<number, { guaranteed?: boolean }> | null | undefined,
+): boolean {
+  return isLeaguePlacementForStatusView(selection) || isGuaranteedPlayInForStatusView(selection, playInEntry);
+}
+
+/** League play-ins section: play-in requests that are not yet confirmed entry. */
+export function isPendingPlayInForStatusView(
+  selection: StatusViewPlayInSelection & { status: string },
+  playInEntry: Record<number, { guaranteed?: boolean }> | null | undefined,
+): boolean {
+  return selection.selectionType === 'play_in_request' && !isGuaranteedPlayInForStatusView(selection, playInEntry);
+}
+
+/** Member-facing reason a play-in request is still under League play-ins. */
+export function playInUnguaranteedStatusDetail(
+  summary: Pick<RegistrationPlayInEntrySummary, 'teamTotalPoints' | 'meetsReturningRule'> | null | undefined,
+): string {
+  if (!summary || summary.teamTotalPoints == null) {
+    return 'Team roster is incomplete · Placement depends on play-in results.';
+  }
+  if (summary.meetsReturningRule === false) {
+    return 'Not enough returning members for automatic entry · Placement depends on play-in results.';
+  }
+  return 'Not enough points for automatic entry · Placement depends on play-in results.';
 }
 
 const NON_GUARANTEED_LEAGUE_INTEREST_TYPES = new Set<RegistrationSelectionType>([
@@ -1018,13 +1430,16 @@ export function isLeagueSelectionEligibleLeague(league: LeagueCatalogItem, input
 }
 
 export function isThirdLeagueInterestEligibleLeague(league: LeagueCatalogItem, input: LeagueEligibilityInput): boolean {
-  if (league.leagueType === 'bring_your_own_team') return false;
+  // Play-in leagues use their own entry path and cannot be third-league interest.
+  if (league.isPlayInBased === true) return false;
   if (league.format === 'instructional') return false;
   return isLeagueSelectionEligibleLeague(league, input);
 }
 
 export function isDirectLeagueRequestLeague(league: LeagueCatalogItem): boolean {
   if (league.isPlayInBased === true) return true;
+  // Bring-your-own-team leagues join via play-in or waitlist, not a legacy guaranteed request.
+  if (league.leagueType === 'bring_your_own_team') return false;
   return !league.allowsWaitlist;
 }
 
@@ -1076,6 +1491,20 @@ export function expectedByotRosterSize(league: Pick<LeagueCatalogItem, 'format'>
   return null;
 }
 
+/** Minimum linked members + pending names required to declare a play-in team. */
+export const MIN_PLAY_IN_ROSTER_SIZE = 2;
+
+export function playInDraftRosterSize(
+  selection: RegistrationSelectionInput,
+  memberOptionIdByName: Map<string, number>,
+  registeringCurlerMemberId: number | null,
+): number {
+  const teammateIds = byotRosterMemberIds(selection, memberOptionIdByName, registeringCurlerMemberId);
+  const pending = pendingByotRosterNames(selection, memberOptionIdByName, registeringCurlerMemberId);
+  const registeringCount = registeringCurlerMemberId != null ? 1 : 0;
+  return registeringCount + teammateIds.length + pending.length;
+}
+
 /** True when a play-in draft has a full team (linked members + pending names). */
 export function isPlayInDraftRosterComplete(
   selection: RegistrationSelectionInput,
@@ -1085,10 +1514,20 @@ export function isPlayInDraftRosterComplete(
 ): boolean {
   const expectedSize = expectedByotRosterSize(league);
   if (expectedSize == null) return false;
-  const teammateIds = byotRosterMemberIds(selection, memberOptionIdByName, registeringCurlerMemberId);
-  const pending = pendingByotRosterNames(selection, memberOptionIdByName, registeringCurlerMemberId);
-  const registeringCount = registeringCurlerMemberId != null ? 1 : 0;
-  return registeringCount + teammateIds.length + pending.length === expectedSize;
+  return playInDraftRosterSize(selection, memberOptionIdByName, registeringCurlerMemberId) === expectedSize;
+}
+
+/** True when a play-in draft meets the minimum size to continue (may still be incomplete). */
+export function isPlayInDraftRosterAtLeastMinimum(
+  selection: RegistrationSelectionInput,
+  league: Pick<LeagueCatalogItem, 'format'>,
+  memberOptionIdByName: Map<string, number>,
+  registeringCurlerMemberId: number | null,
+): boolean {
+  const expectedSize = expectedByotRosterSize(league);
+  if (expectedSize == null) return false;
+  const minSize = Math.min(MIN_PLAY_IN_ROSTER_SIZE, expectedSize);
+  return playInDraftRosterSize(selection, memberOptionIdByName, registeringCurlerMemberId) >= minSize;
 }
 
 export function rosterEntries(text: string | null | undefined): string[] {
@@ -1168,7 +1607,11 @@ export async function loadMembershipEditContext(registrationId: number) {
 
 export async function submitRegistrationEdits(
   registrationId: number,
-  options?: { confirmImmediatePayment?: boolean; payLater?: boolean },
+  options?: {
+    confirmImmediatePayment?: boolean;
+    payLater?: boolean;
+    membershipCommitteeComments?: string | null;
+  },
 ): Promise<SubmitRegistrationEditsResult> {
   const response = await api.post<{
     outcome: string;
@@ -1181,6 +1624,7 @@ export async function submitRegistrationEdits(
   }>(`/registration/drafts/${registrationId}/submit`, {
     confirmImmediatePayment: options?.confirmImmediatePayment ?? false,
     payLater: options?.payLater ?? false,
+    membershipCommitteeComments: options?.membershipCommitteeComments,
   });
   return {
     checkoutUrl: response.data.checkoutUrl,
@@ -1243,18 +1687,137 @@ export async function saveLeagueSelections(
   return response.data;
 }
 
+const ROSTER_CAPABLE_SELECTION_TYPES = new Set<RegistrationSelectionType>([
+  'guaranteed_return',
+  'byot_request',
+  'play_in_request',
+  'third_league_interest',
+  'waitlist_add',
+  'waitlist_replace',
+  'waitlist_add_auto_decline',
+  'waitlist_replace_auto_decline',
+]);
+
+function rosterFieldsFromSelection(
+  selection: RegistrationSelectionInput | undefined,
+): Partial<Pick<RegistrationSelectionInput, 'byotTeammateText' | 'teamRosterPlacements'>> {
+  if (!selection) return {};
+  const hasRoster =
+    Boolean(selection.byotTeammateText?.trim()) || Boolean(selection.teamRosterPlacements?.length);
+  if (!hasRoster) return {};
+  return {
+    byotTeammateText: selection.byotTeammateText ?? null,
+    teamRosterPlacements: selection.teamRosterPlacements ?? null,
+  };
+}
+
 export function updateLeagueSelection(
   selections: RegistrationSelectionInput[],
   leagueId: number,
   selectionType: RegistrationSelectionType | 'none',
+  options?: { rosterSource?: RegistrationSelectionInput[] },
 ): RegistrationSelectionInput[] {
+  const rosterSource = options?.rosterSource ?? selections;
+  const previous = rosterSource.find((selection) => selection.leagueId === leagueId);
   const withoutLeague = selections.filter((selection) => selection.leagueId !== leagueId);
   if (selectionType === 'none') return withoutLeague;
   if (selectionType === 'return_subject_to_availability') {
     const interestCount = withoutLeague.filter((selection) => isThirdLeagueInterestSelection(selection)).length;
-    return [...withoutLeague, { selectionType: 'third_league_interest', leagueId, rank: interestCount + 1 }];
+    return [
+      ...withoutLeague,
+      {
+        selectionType: 'third_league_interest',
+        leagueId,
+        rank: interestCount + 1,
+        ...rosterFieldsFromSelection(previous),
+      },
+    ];
   }
-  return [...withoutLeague, { selectionType, leagueId }];
+  return [
+    ...withoutLeague,
+    {
+      selectionType,
+      leagueId,
+      ...(ROSTER_CAPABLE_SELECTION_TYPES.has(selectionType) ? rosterFieldsFromSelection(previous) : {}),
+    },
+  ];
+}
+
+/**
+ * Syncs checkbox "return to these leagues" choices for prior leagues on the Returning leagues step.
+ * Standard checked leagues become guaranteed returns (max 2). Play-in checked leagues become
+ * play_in_request and do not consume a protected-return slot. When more than two standard priors
+ * exist and two guaranteed returns are selected, remaining standard leagues stay undecided unless
+ * they already have drop / subject-to-availability choices. Unchecked play-in leagues are dropped.
+ */
+export function applyPriorReturnCheckboxLeagueIds(
+  selections: RegistrationSelectionInput[],
+  checkboxPriorLeagueIds: readonly number[],
+  playInLeagueIds: ReadonlySet<number>,
+  nextCheckedLeagueIds: readonly number[],
+): RegistrationSelectionInput[] {
+  const checkboxIdSet = new Set(checkboxPriorLeagueIds);
+  const standardPriorLeagueIds = checkboxPriorLeagueIds.filter((leagueId) => !playInLeagueIds.has(leagueId));
+  const previousGuaranteedReturnIds = new Set(
+    selections
+      .filter(
+        (selection) =>
+          selection.leagueId != null &&
+          checkboxIdSet.has(selection.leagueId) &&
+          !playInLeagueIds.has(selection.leagueId) &&
+          selection.selectionType === 'guaranteed_return',
+      )
+      .map((selection) => selection.leagueId as number),
+  );
+  const uniqueCheckedIds = nextCheckedLeagueIds
+    .filter((leagueId) => checkboxIdSet.has(leagueId))
+    .filter((leagueId, index, all) => all.indexOf(leagueId) === index);
+  const nextGuaranteedReturnIds = uniqueCheckedIds
+    .filter((leagueId) => !playInLeagueIds.has(leagueId))
+    .slice(0, 2);
+  const nextPlayInCheckedIds = uniqueCheckedIds.filter((leagueId) => playInLeagueIds.has(leagueId));
+  const nextGuaranteedReturnSet = new Set(nextGuaranteedReturnIds);
+  const nextPlayInCheckedSet = new Set(nextPlayInCheckedIds);
+  const needsFollowUp = standardPriorLeagueIds.length > 2 && nextGuaranteedReturnSet.size === 2;
+
+  let next = selections.filter(
+    (selection) => selection.leagueId == null || !checkboxIdSet.has(selection.leagueId),
+  );
+
+  for (const leagueId of checkboxPriorLeagueIds) {
+    if (playInLeagueIds.has(leagueId)) {
+      next = updateLeagueSelection(
+        next,
+        leagueId,
+        nextPlayInCheckedSet.has(leagueId) ? 'play_in_request' : 'drop',
+        { rosterSource: selections },
+      );
+      continue;
+    }
+    if (nextGuaranteedReturnSet.has(leagueId)) {
+      next = updateLeagueSelection(next, leagueId, 'guaranteed_return', { rosterSource: selections });
+      continue;
+    }
+    if (!needsFollowUp) {
+      next = updateLeagueSelection(next, leagueId, 'drop');
+      continue;
+    }
+    if (previousGuaranteedReturnIds.has(leagueId)) {
+      // Just unchecked from a return slot — require an explicit follow-up choice.
+      continue;
+    }
+    const existing = selections.find((selection) => selection.leagueId === leagueId);
+    if (!existing) continue;
+    if (existing.selectionType === 'drop') {
+      next = updateLeagueSelection(next, leagueId, 'drop');
+    } else if (isThirdLeagueInterestSelection(existing)) {
+      next = updateLeagueSelection(next, leagueId, 'return_subject_to_availability', {
+        rosterSource: selections,
+      });
+    }
+  }
+
+  return next;
 }
 
 export function updateWaitlistReplaceSelection(
@@ -1262,8 +1825,62 @@ export function updateWaitlistReplaceSelection(
   leagueId: number,
   replacesLeagueId: number,
 ): RegistrationSelectionInput[] {
-  const withoutLeague = selections.filter((selection) => selection.leagueId !== leagueId);
-  return [...withoutLeague, { selectionType: 'waitlist_replace', leagueId, replacesLeagueId }];
+  return updateWaitlistEntryDetails(selections, leagueId, {
+    entryType: 'replace',
+    replacesLeagueId,
+  });
+}
+
+export function joinWaitlistSelection(
+  selections: RegistrationSelectionInput[],
+  leagueId: number,
+  input: {
+    activeLeagueIds: number[];
+    existingEntries?: Array<{ leagueId: number; entryType: WaitlistEntryIntent; status?: string | null }>;
+    replaceOptions: Array<{ value: number }>;
+  },
+): { selections: RegistrationSelectionInput[]; pendingReplacePick: boolean } {
+  const choices = waitlistEntryTypeChoices({
+    activeLeagueIds: input.activeLeagueIds,
+    selections,
+    existingEntries: input.existingEntries,
+    leagueId,
+    replaceOptions: input.replaceOptions,
+  });
+  if (choices.length === 0) {
+    return { selections, pendingReplacePick: false };
+  }
+  if (choices.length === 1 && choices[0] === 'add') {
+    return {
+      selections: updateWaitlistEntryDetails(selections, leagueId, { entryType: 'add', preference: 'auto_accept' }),
+      pendingReplacePick: false,
+    };
+  }
+  if (choices.length === 1 && choices[0] === 'replace') {
+    if (input.replaceOptions.length === 1) {
+      return {
+        selections: updateWaitlistEntryDetails(selections, leagueId, {
+          entryType: 'replace',
+          replacesLeagueId: input.replaceOptions[0].value,
+          preference: 'auto_accept',
+        }),
+        pendingReplacePick: false,
+      };
+    }
+    return {
+      selections: updateWaitlistEntryDetails(selections, leagueId, {
+        entryType: 'replace',
+        replacesLeagueId: null,
+        preference: 'auto_accept',
+      }),
+      pendingReplacePick: true,
+    };
+  }
+  // Both ADD and REPLACE are available — default to ADD; the card editor can switch.
+  return {
+    selections: updateWaitlistEntryDetails(selections, leagueId, { entryType: 'add', preference: 'auto_accept' }),
+    pendingReplacePick: false,
+  };
 }
 
 export function setThirdLeagueInterestSelections(
@@ -1272,22 +1889,138 @@ export function setThirdLeagueInterestSelections(
   priorSeasonReturnLeagueIds: Set<number>,
 ): RegistrationSelectionInput[] {
   const selectedSet = new Set(leagueIds);
+  const previousInterestByLeagueId = new Map(
+    selections
+      .filter((selection) => isThirdLeagueInterestSelection(selection) && selection.leagueId != null)
+      .map((selection) => [selection.leagueId as number, selection]),
+  );
   const nonInterest = selections.filter((selection) => !isThirdLeagueInterestSelection(selection));
   for (const leagueId of priorSeasonReturnLeagueIds) {
-    const hadInterest = selections.some(
-      (selection) => selection.leagueId === leagueId && isThirdLeagueInterestSelection(selection),
-    );
+    const hadInterest = previousInterestByLeagueId.has(leagueId);
     const hasOtherSelection = nonInterest.some((selection) => selection.leagueId === leagueId);
     if (hadInterest && !selectedSet.has(leagueId) && !hasOtherSelection) {
       nonInterest.push({ selectionType: 'drop', leagueId });
     }
   }
-  const interestSelections = leagueIds.map((leagueId, index) => ({
-    selectionType: 'third_league_interest' as const,
-    leagueId,
-    rank: index + 1,
-  }));
+  const interestSelections = leagueIds.map((leagueId, index) => {
+    const previous = previousInterestByLeagueId.get(leagueId);
+    return {
+      selectionType: 'third_league_interest' as const,
+      leagueId,
+      rank: index + 1,
+      byotTeammateText: previous?.byotTeammateText ?? null,
+      teamRosterPlacements: previous?.teamRosterPlacements ?? null,
+    };
+  });
   return [...nonInterest, ...interestSelections];
+}
+
+function rerankStrictThirdLeagueInterestSelections(
+  selections: RegistrationSelectionInput[],
+): RegistrationSelectionInput[] {
+  let rank = 1;
+  return selections.map((selection) => {
+    if (selection.selectionType !== 'third_league_interest') return selection;
+    return { ...selection, rank: rank++ };
+  });
+}
+
+function selectionHasByotRoster(selection: RegistrationSelectionInput | undefined): boolean {
+  if (!selection) return false;
+  return Boolean(selection.byotTeammateText?.trim()) || Boolean(selection.teamRosterPlacements?.length);
+}
+
+/**
+ * Copy optional BYOT roster from a same-league guaranteed return (or other roster-bearing
+ * selection) onto third-league interest rows that are still empty.
+ */
+export function syncThirdLeagueInterestRostersFromSiblingSelections(
+  selections: RegistrationSelectionInput[],
+): RegistrationSelectionInput[] {
+  let changed = false;
+  const next = selections.map((selection) => {
+    if (selection.selectionType !== 'third_league_interest' || selection.leagueId == null) {
+      return selection;
+    }
+    if (selectionHasByotRoster(selection)) return selection;
+    const sibling = selections.find(
+      (candidate) =>
+        candidate.leagueId === selection.leagueId &&
+        candidate.selectionType !== 'third_league_interest' &&
+        selectionHasByotRoster(candidate),
+    );
+    if (!sibling) return selection;
+    changed = true;
+    return {
+      ...selection,
+      ...rosterFieldsFromSelection(sibling),
+    };
+  });
+  return changed ? next : selections;
+}
+
+/** Toggle only `third_league_interest` rows (does not touch return_subject_to_availability). */
+export function setStrictThirdLeagueInterestEnabled(
+  selections: RegistrationSelectionInput[],
+  leagueId: number,
+  enabled: boolean,
+  options?: { rosterFallback?: RegistrationSelectionInput },
+): RegistrationSelectionInput[] {
+  const withoutLeague = selections.filter(
+    (selection) => !(selection.selectionType === 'third_league_interest' && selection.leagueId === leagueId),
+  );
+  if (!enabled) {
+    return rerankStrictThirdLeagueInterestSelections(withoutLeague);
+  }
+  if (selections.some((selection) => selection.selectionType === 'third_league_interest' && selection.leagueId === leagueId)) {
+    return syncThirdLeagueInterestRostersFromSiblingSelections(selections);
+  }
+  const maxRank = selections
+    .filter((selection) => selection.selectionType === 'third_league_interest')
+    .reduce((max, selection) => Math.max(max, selection.rank ?? 0), 0);
+  const rosterSource =
+    selections.find(
+      (selection) =>
+        selection.leagueId === leagueId &&
+        selection.selectionType !== 'third_league_interest' &&
+        selectionHasByotRoster(selection),
+    ) ??
+    selections.find(
+      (selection) =>
+        selection.selectionType === 'third_league_interest' &&
+        selection.leagueId === leagueId &&
+        selectionHasByotRoster(selection),
+    ) ??
+    options?.rosterFallback;
+  return [
+    ...withoutLeague,
+    {
+      selectionType: 'third_league_interest' as const,
+      leagueId,
+      rank: maxRank + 1,
+      ...rosterFieldsFromSelection(rosterSource),
+    },
+  ];
+}
+
+/** When a play-in REPLACE target changes, move an existing third-league interest with it. */
+export function migrateStrictThirdLeagueInterest(
+  selections: RegistrationSelectionInput[],
+  fromLeagueId: number | null,
+  toLeagueId: number | null,
+): RegistrationSelectionInput[] {
+  if (fromLeagueId == null || fromLeagueId === toLeagueId) return selections;
+  const fromInterest = selections.find(
+    (selection) => selection.selectionType === 'third_league_interest' && selection.leagueId === fromLeagueId,
+  );
+  if (!fromInterest) return selections;
+  let next = setStrictThirdLeagueInterestEnabled(selections, fromLeagueId, false);
+  if (toLeagueId != null) {
+    next = setStrictThirdLeagueInterestEnabled(next, toLeagueId, true, {
+      rosterFallback: fromInterest,
+    });
+  }
+  return next;
 }
 
 export function updateByotTeammates(
@@ -1374,7 +2107,12 @@ function isByotWaitlistSelection(selection: RegistrationSelectionInput): boolean
 }
 
 function isByotRosterSelection(selection: RegistrationSelectionInput): boolean {
-  return isByotWaitlistSelection(selection) || selection.selectionType === 'play_in_request';
+  return (
+    isByotWaitlistSelection(selection) ||
+    selection.selectionType === 'play_in_request' ||
+    selection.selectionType === 'third_league_interest' ||
+    selection.selectionType === 'guaranteed_return'
+  );
 }
 
 function selectionUsesReplacePlacement(selection: RegistrationSelectionInput): boolean {
@@ -1466,6 +2204,12 @@ function applyPrimaryPlacementToSelection(
       ...selection,
       // Selection-level REPLACE target is authoritative for play-in requests.
       replacesLeagueId: selection.replacesLeagueId ?? null,
+      teamRosterPlacements: toPlacementPayload(placements),
+    };
+  }
+  if (selection.selectionType === 'third_league_interest' || selection.selectionType === 'guaranteed_return') {
+    return {
+      ...selection,
       teamRosterPlacements: toPlacementPayload(placements),
     };
   }
@@ -1631,29 +2375,111 @@ export function firstByotWaitlistRosterValidationMessage(
     memberOptionIdByName,
     registeringCurler,
     isByotWaitlistSelection,
-    'Enter the full team roster for this BYOT waitlist.',
+    'Enter the full team roster for this bring-your-own-team waitlist.',
   );
 }
 
 export function firstPlayInRosterValidationMessage(
   selections: RegistrationSelectionInput[],
   leagues: LeagueCatalogItem[],
-  memberOptionById: Map<number, { name: string }>,
   memberOptionIdByName: Map<string, number>,
   registeringCurler: { id: number | null; name: string },
   skipRosterLeagueIds?: Set<number>,
 ): string | null {
-  return firstByotRosterValidationMessageForSelections(
-    selections,
-    leagues,
-    memberOptionById,
-    memberOptionIdByName,
-    registeringCurler,
-    (selection) =>
-      isPlayInRequestSelection(selection) &&
-      !(selection.leagueId != null && skipRosterLeagueIds?.has(selection.leagueId)),
-    'Enter the full team roster for this play-in league.',
-  );
+  for (const selection of selections) {
+    if (selection.leagueId == null) continue;
+    if (!isPlayInRequestSelection(selection)) continue;
+    if (skipRosterLeagueIds?.has(selection.leagueId)) continue;
+    const league = leagues.find((item) => item.id === selection.leagueId);
+    if (!league || league.leagueType !== 'bring_your_own_team') continue;
+    const expectedSize = expectedByotRosterSize(league);
+    if (expectedSize == null) {
+      return 'Enter a team roster for this play-in league.';
+    }
+    const pending = pendingByotRosterNames(selection, memberOptionIdByName, registeringCurler.id);
+    if (pending.some((name) => !name.trim())) {
+      return `Enter a name for each teammate not yet registered on ${league.name}.`;
+    }
+    const pendingLower = pending.map((name) => name.trim().toLowerCase());
+    if (new Set(pendingLower).size !== pendingLower.length) {
+      return `Teammate names must be unique on ${league.name}.`;
+    }
+    const size = playInDraftRosterSize(selection, memberOptionIdByName, registeringCurler.id);
+    const minSize = Math.min(MIN_PLAY_IN_ROSTER_SIZE, expectedSize);
+    if (size < minSize) {
+      return `You must enter a roster for ${league.name} to continue.`;
+    }
+    if (size > expectedSize) {
+      return `Too many teammates listed for ${league.name}.`;
+    }
+  }
+  return null;
+}
+
+/** Play-in leagues with a valid but incomplete roster (min met, full team not yet listed). */
+export function incompletePlayInLeagueNames(
+  selections: RegistrationSelectionInput[],
+  leagues: LeagueCatalogItem[],
+  memberOptionIdByName: Map<string, number>,
+  registeringCurlerMemberId: number | null,
+  skipRosterLeagueIds?: Set<number>,
+): string[] {
+  const names: string[] = [];
+  for (const selection of selections) {
+    if (selection.leagueId == null || !isPlayInRequestSelection(selection)) continue;
+    if (skipRosterLeagueIds?.has(selection.leagueId)) continue;
+    const league = leagues.find((item) => item.id === selection.leagueId);
+    if (!league || league.leagueType !== 'bring_your_own_team') continue;
+    const expectedSize = expectedByotRosterSize(league);
+    if (expectedSize == null) continue;
+    const size = playInDraftRosterSize(selection, memberOptionIdByName, registeringCurlerMemberId);
+    const minSize = Math.min(MIN_PLAY_IN_ROSTER_SIZE, expectedSize);
+    if (size >= minSize && size < expectedSize) {
+      names.push(league.name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Optional BYOT roster (third-league interest or guaranteed return): empty is allowed;
+ * if any teammates are listed, names must be unique and the total may not exceed size.
+ */
+export function firstOptionalByotRosterValidationMessage(
+  selections: RegistrationSelectionInput[],
+  leagues: LeagueCatalogItem[],
+  memberOptionIdByName: Map<string, number>,
+  registeringCurler: { id: number | null; name: string },
+): string | null {
+  for (const selection of selections) {
+    if (selection.leagueId == null) continue;
+    if (
+      !isThirdLeagueInterestSelection(selection) &&
+      selection.selectionType !== 'guaranteed_return'
+    ) {
+      continue;
+    }
+    const league = leagues.find((item) => item.id === selection.leagueId);
+    if (!league || league.leagueType !== 'bring_your_own_team') continue;
+    const expectedSize = expectedByotRosterSize(league);
+    if (expectedSize == null) continue;
+    const pending = pendingByotRosterNames(selection, memberOptionIdByName, registeringCurler.id);
+    if (pending.some((name) => !name.trim())) {
+      return `Enter a name for each teammate not yet registered on ${league.name}.`;
+    }
+    const pendingLower = pending.map((name) => name.trim().toLowerCase());
+    if (new Set(pendingLower).size !== pendingLower.length) {
+      return `Teammate names must be unique on ${league.name}.`;
+    }
+    const size = playInDraftRosterSize(selection, memberOptionIdByName, registeringCurler.id);
+    // registering curler alone with no teammates listed counts as no roster progress
+    const teammateCount = size - (registeringCurler.id != null ? 1 : 0);
+    if (teammateCount <= 0 && pending.length === 0) continue;
+    if (size > expectedSize) {
+      return `Too many teammates listed for ${league.name}.`;
+    }
+  }
+  return null;
 }
 
 export function firstDirectLeagueRequestRosterValidationMessage(
@@ -1676,7 +2502,6 @@ export function firstDirectLeagueRequestRosterValidationMessage(
     firstPlayInRosterValidationMessage(
       selections,
       leagues,
-      memberOptionById,
       memberOptionIdByName,
       registeringCurler,
       skipPlayInRosterLeagueIds,

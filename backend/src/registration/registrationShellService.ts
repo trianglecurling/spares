@@ -900,6 +900,7 @@ export type GuestRegistrationSubmitInput = {
   experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing';
   experienceSelfReportedYears: number | null;
   payLater?: boolean;
+  membershipCommitteeComments?: string | null;
 };
 
 export async function submitGuestRegistration(
@@ -985,6 +986,7 @@ export async function submitGuestRegistration(
     registrationId: draft.id,
     actor,
     payLater: input.payLater,
+    membershipCommitteeComments: input.membershipCommitteeComments,
     frontendBaseUrl,
   });
 }

@@ -9,11 +9,37 @@ import {
   formatDateInTimeZone,
   shiftInstantByCalendarDays,
 } from '../utils/timeZone.js';
+import { DEFAULT_SITE_NAME } from './spaDocumentMeta.js';
 import { VolunteeringServiceError } from './volunteeringServiceError.js';
 import {
   sendVolunteerSignupConfirmationEmail,
   sendVolunteerCancellationEmails,
 } from './email.js';
+
+/**
+ * Club is the default volunteer location and is not shown in UI/email.
+ * Only custom "Other" locations are persisted/returned as non-null.
+ */
+function normalizeVolunteerLocation(
+  location: string | null | undefined,
+  clubName: string
+): string | null {
+  const trimmed = location?.trim() || null;
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase() === clubName.trim().toLowerCase()) return null;
+  return trimmed;
+}
+
+async function getConfiguredClubName(): Promise<string> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ clubName: schema.siteConfig.club_name })
+    .from(schema.siteConfig)
+    .where(eq(schema.siteConfig.id, 1))
+    .limit(1);
+  const trimmed = rows[0]?.clubName?.trim();
+  return trimmed || DEFAULT_SITE_NAME;
+}
 
 function toIso(value: string | Date | null | undefined): string | null {
   if (value == null) return null;
@@ -145,6 +171,7 @@ export type VolunteerProgramView = {
   location: string | null;
   startDate: string | null;
   published: boolean;
+  featureOnDashboard: boolean;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -358,6 +385,7 @@ export async function createProgram(input: {
   location?: string | null;
   startDate?: string | null;
   published?: boolean;
+  featureOnDashboard?: boolean;
   managerIds?: number[];
   createdByMemberId: number;
 }): Promise<{ id: number }> {
@@ -367,6 +395,7 @@ export async function createProgram(input: {
   if (!title) throw new VolunteeringServiceError('Title is required');
   if (!pointOfContact) throw new VolunteeringServiceError('Point of contact is required');
   const startDate = parseOptionalDateOnly(input.startDate, 'start date');
+  const clubName = await getConfiguredClubName();
 
   const [row] = await db
     .insert(schema.volunteerPrograms)
@@ -374,9 +403,11 @@ export async function createProgram(input: {
       title,
       description: input.description?.trim() || null,
       point_of_contact: pointOfContact,
-      location: input.location?.trim() || null,
+      location: normalizeVolunteerLocation(input.location, clubName),
       start_date: startDate,
       published: input.published ? 1 : 0,
+      // Default on so programs surface on dashboards unless explicitly opted out.
+      feature_on_dashboard: input.featureOnDashboard === false ? 0 : 1,
       created_by_member_id: input.createdByMemberId,
     } as any)
     .returning({ id: schema.volunteerPrograms.id });
@@ -394,6 +425,7 @@ export async function updateProgram(
     location?: string | null;
     startDate?: string | null;
     published?: boolean;
+    featureOnDashboard?: boolean;
     managerIds?: number[];
   }
 ): Promise<void> {
@@ -417,12 +449,18 @@ export async function updateProgram(
     if (!poc) throw new VolunteeringServiceError('Point of contact is required');
     patch.point_of_contact = poc;
   }
-  if (input.location !== undefined) patch.location = input.location?.trim() || null;
+  if (input.location !== undefined) {
+    const clubName = await getConfiguredClubName();
+    patch.location = normalizeVolunteerLocation(input.location, clubName);
+  }
   if (input.startDate !== undefined) {
     patch.start_date = parseOptionalDateOnly(input.startDate, 'start date');
   }
   if (input.published !== undefined) {
     patch.published = input.published ? 1 : 0;
+  }
+  if (input.featureOnDashboard !== undefined) {
+    patch.feature_on_dashboard = input.featureOnDashboard ? 1 : 0;
   }
 
   await db.update(schema.volunteerPrograms).set(patch as any).where(eq(schema.volunteerPrograms.id, programId));
@@ -528,6 +566,7 @@ export async function duplicateProgram(
     pointOfContact,
     location: input.location !== undefined ? input.location : source.location,
     startDate: newStartDate,
+    featureOnDashboard: Number(source.feature_on_dashboard) === 1,
     managerIds: input.managerIds,
     createdByMemberId: input.createdByMemberId,
   });
@@ -1088,7 +1127,10 @@ async function buildProgramViews(options: {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
-  const heldCredentials = await getMemberCredentials(options.member.id);
+  const [heldCredentials, clubName] = await Promise.all([
+    getMemberCredentials(options.member.id),
+    getConfiguredClubName(),
+  ]);
 
   let programs = await db.select().from(schema.volunteerPrograms).orderBy(asc(schema.volunteerPrograms.title));
   if (!options.includeArchived) {
@@ -1250,9 +1292,10 @@ async function buildProgramViews(options: {
       title: program.title,
       description: program.description,
       pointOfContact: program.point_of_contact,
-      location: program.location,
+      location: normalizeVolunteerLocation(program.location, clubName),
       startDate: normalizeDateOnly(program.start_date as any),
       published: Number(program.published) === 1,
+      featureOnDashboard: Number(program.feature_on_dashboard) === 1,
       archivedAt: toIso(program.archived_at as any),
       createdAt: requireIso(program.created_at as any, 'createdAt'),
       updatedAt: requireIso(program.updated_at as any, 'updatedAt'),
@@ -1323,7 +1366,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
   const lookAheadDays = sectionConfig.lookAheadDays ?? 30;
   const maxItems = sectionConfig.maxItems ?? 10;
   const horizon = new Date(now.getTime() + lookAheadDays * 24 * 60 * 60 * 1000).toISOString();
-  const held = await getMemberCredentials(memberId);
+  const [held, clubName] = await Promise.all([getMemberCredentials(memberId), getConfiguredClubName()]);
 
   const shifts = await db
     .select({
@@ -1344,6 +1387,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
       and(
         isNull(schema.volunteerPrograms.archived_at),
         eq(schema.volunteerPrograms.published, 1),
+        eq(schema.volunteerPrograms.feature_on_dashboard, 1),
         gte(schema.volunteerShifts.start_dt, nowIso),
         lte(schema.volunteerShifts.start_dt, horizon)
       )
@@ -1400,7 +1444,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
       shiftRoleId: sr.id,
       programId: shift.programId,
       programTitle: shift.programTitle,
-      location: shift.location,
+      location: normalizeVolunteerLocation(shift.location, clubName),
       roleId: sr.roleId,
       roleName: sr.roleName,
       startDt: requireIso(shift.startDt as any, 'startDt'),
@@ -1416,13 +1460,25 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
   return opportunities.slice(0, maxItems);
 }
 
-export async function listMySignups(memberId: number): Promise<{
+export async function listMySignups(
+  memberId: number,
+  options?: { forDashboard?: boolean }
+): Promise<{
   upcoming: MySignupView[];
   past: MySignupView[];
 }> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
+  const clubName = await getConfiguredClubName();
+  const forDashboard = options?.forDashboard === true;
+  const signupFilters = [
+    eq(schema.volunteerSignups.member_id, memberId),
+    eq(schema.volunteerSignups.status, 'confirmed'),
+  ];
+  if (forDashboard) {
+    signupFilters.push(eq(schema.volunteerPrograms.feature_on_dashboard, 1));
+  }
 
   const rows = await db
     .select({
@@ -1449,12 +1505,7 @@ export async function listMySignups(memberId: number): Promise<{
       schema.volunteerPrograms,
       eq(schema.volunteerPrograms.id, schema.volunteerShifts.program_id)
     )
-    .where(
-      and(
-        eq(schema.volunteerSignups.member_id, memberId),
-        eq(schema.volunteerSignups.status, 'confirmed')
-      )
-    )
+    .where(and(...signupFilters))
     .orderBy(asc(schema.volunteerShifts.start_dt));
 
   const upcoming: MySignupView[] = [];
@@ -1466,7 +1517,7 @@ export async function listMySignups(memberId: number): Promise<{
       shiftRoleId: row.shiftRoleId,
       programId: row.programId,
       programTitle: row.programTitle,
-      location: row.location,
+      location: normalizeVolunteerLocation(row.location, clubName),
       roleId: row.roleId,
       roleName: row.roleName,
       startDt,
@@ -1668,6 +1719,8 @@ export async function signUpForShiftRole(
     createdIds.push(created.id);
   }
 
+  const clubName = await getConfiguredClubName();
+  const emailLocation = normalizeVolunteerLocation(target.location, clubName);
   for (const memberId of memberIds) {
     const targetMember = memberById.get(memberId);
     if (!targetMember?.email) continue;
@@ -1679,7 +1732,7 @@ export async function signUpForShiftRole(
         roleName: target.roleName,
         startDt,
         endDt,
-        location: target.location,
+        location: emailLocation,
       });
     } catch (err) {
       console.error('Failed to send volunteer signup confirmation:', err);
@@ -1751,6 +1804,7 @@ export async function cancelOwnSignup(member: Member, shiftRoleId: number): Prom
     .where(eq(schema.volunteerProgramManagers.program_id, row.programId));
 
   try {
+    const clubName = await getConfiguredClubName();
     await sendVolunteerCancellationEmails({
       memberEmail: member.email,
       memberName: member.name,
@@ -1761,7 +1815,7 @@ export async function cancelOwnSignup(member: Member, shiftRoleId: number): Prom
       roleName: row.roleName,
       startDt,
       endDt: requireIso(row.endDt as any, 'endDt'),
-      location: row.location,
+      location: normalizeVolunteerLocation(row.location, clubName),
     });
   } catch (err) {
     console.error('Failed to send volunteer cancellation emails:', err);
@@ -1881,6 +1935,7 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
     .where(eq(schema.volunteerProgramManagers.program_id, row.programId));
 
   try {
+    const clubName = await getConfiguredClubName();
     await sendVolunteerCancellationEmails({
       memberEmail: row.memberEmail,
       memberName: row.memberName || row.guestName || 'Volunteer',
@@ -1891,7 +1946,7 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
       roleName: row.roleName,
       startDt: requireIso(row.startDt as any, 'startDt'),
       endDt: requireIso(row.endDt as any, 'endDt'),
-      location: row.location,
+      location: normalizeVolunteerLocation(row.location, clubName),
       cancelledByManager: true,
     });
   } catch (err) {
@@ -1941,6 +1996,7 @@ export async function processVolunteerReminders(): Promise<number> {
     );
 
   let sent = 0;
+  const clubName = await getConfiguredClubName();
   const { sendVolunteerReminderEmail } = await import('./email.js');
   for (const row of rows) {
     if (!row.memberEmail) continue;
@@ -1952,7 +2008,7 @@ export async function processVolunteerReminders(): Promise<number> {
         roleName: row.roleName,
         startDt: requireIso(row.startDt as any, 'startDt'),
         endDt: requireIso(row.endDt as any, 'endDt'),
-        location: row.location,
+        location: normalizeVolunteerLocation(row.location, clubName),
       });
       await db
         .update(schema.volunteerSignups)

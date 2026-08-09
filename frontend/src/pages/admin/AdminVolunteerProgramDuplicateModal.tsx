@@ -6,8 +6,17 @@ import FormSection from '../../components/FormSection';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import MemberMultiSelect from '../../components/MemberMultiSelect';
 import Modal from '../../components/Modal';
+import { resolveSiteName } from '../../components/SeoMeta';
+import VolunteerProgramLocationField from '../../components/VolunteerProgramLocationField';
+import { useSiteBranding } from '../../hooks/useSiteBranding';
 import { formatApiError } from '../../utils/api';
-import type { VolunteerProgramView } from '../../utils/volunteering';
+import {
+  VOLUNTEER_LOCATION_CLUB,
+  volunteerLocationChoiceFromStored,
+  volunteerLocationStoredFromChoice,
+  type VolunteerLocationChoice,
+  type VolunteerProgramView,
+} from '../../utils/volunteering';
 
 export type ProgramDuplicatePayload = {
   title: string;
@@ -49,15 +58,17 @@ export default function AdminVolunteerProgramDuplicateModal({
   const titleInputId = useId();
   const startDateInputId = useId();
   const pointOfContactInputId = useId();
-  const locationInputId = useId();
+  const locationFieldId = useId();
   const managersInputId = useId();
+  const { branding } = useSiteBranding();
+  const clubName = resolveSiteName(branding?.clubName);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [pointOfContact, setPointOfContact] = useState('');
-  const [location, setLocation] = useState('');
+  const [locationChoice, setLocationChoice] = useState<VolunteerLocationChoice>(VOLUNTEER_LOCATION_CLUB);
   const [managerIds, setManagerIds] = useState<number[]>([]);
 
   const hasShifts = (sourceProgram?.shifts.length ?? 0) > 0;
@@ -67,10 +78,10 @@ export default function AdminVolunteerProgramDuplicateModal({
     setTitle(`${sourceProgram.title} (Copy)`);
     setStartDate('');
     setPointOfContact(sourceProgram.pointOfContact);
-    setLocation(sourceProgram.location || '');
+    setLocationChoice(volunteerLocationChoiceFromStored(sourceProgram.location, clubName));
     setManagerIds(sourceProgram.managers.map((m) => m.id));
     setSubmitError('');
-  }, [sourceProgram]);
+  }, [clubName, sourceProgram]);
 
   const handleClose = () => {
     if (!submitting) onClose();
@@ -85,11 +96,15 @@ export default function AdminVolunteerProgramDuplicateModal({
       setSubmitError('Start date is required so shift times can be adjusted.');
       return;
     }
+    if (locationChoice === null) {
+      setSubmitError('Enter a custom location, or choose the club.');
+      return;
+    }
 
     const payload: ProgramDuplicatePayload = {
       title: title.trim(),
       pointOfContact: pointOfContact.trim(),
-      location: location.trim() || null,
+      location: volunteerLocationStoredFromChoice(locationChoice, clubName),
       startDate: startDate.trim() || null,
       managerIds,
     };
@@ -165,15 +180,13 @@ export default function AdminVolunteerProgramDuplicateModal({
                 className="app-input"
               />
             </FormField>
-            <FormField label="Location" htmlFor={locationInputId} optional>
-              <input
-                id={locationInputId}
-                type="text"
-                value={location}
-                onChange={(event) => setLocation(event.target.value)}
-                className="app-input"
-              />
-            </FormField>
+            <VolunteerProgramLocationField
+              id={locationFieldId}
+              clubName={clubName}
+              value={locationChoice}
+              onChange={setLocationChoice}
+              optional
+            />
             <FormField
               label="Managers"
               htmlFor={managersInputId}

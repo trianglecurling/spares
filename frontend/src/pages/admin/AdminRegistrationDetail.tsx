@@ -9,10 +9,14 @@ import RegistrationViewEditModals, {
 } from '../../components/registration/RegistrationViewEditModals';
 import {
   formatCurrency,
-  isConfirmedLeaguePlacement,
+  isConfirmedLeagueForStatusView,
+  isPendingPlayInForStatusView,
+  playInUnguaranteedStatusDetail,
   rosterTextDisplay,
+  type RegistrationPlayInEntrySummary,
   type SubmitRegistrationEditsResult,
 } from '../../components/registration/registrationViewEditShared';
+import { playInEntryTeamMembersText } from '../../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api, { getApiErrorMessage } from '../../utils/api';
@@ -38,18 +42,22 @@ type RegistrationDetail = {
     updatedAt: string | null;
     studentDiscountClaimed: boolean;
     reciprocalDiscountClaimed: boolean;
+    membershipCommitteeComments: string | null;
   };
   submittedBy: { id: number; name: string; email: string | null } | null;
   selections: Array<{
     id: number;
     selectionType: string;
     status: string;
+    leagueId?: number | null;
     leagueName: string | null;
     replacesLeagueId: number | null;
     replacedLeagueName: string | null;
     byotTeammateText: string | null;
+    teamRosterDisplay?: string | null;
     isTemporarySabbaticalFill: number;
   }>;
+  playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
   waitlists: Array<{
     id: number;
     waitlistName: string;
@@ -57,6 +65,7 @@ type RegistrationDetail = {
     entryType: string;
     position: number | null;
     declineCount: number;
+    teamRosterDisplay?: string | null;
   }>;
   payment: {
     status: string;
@@ -281,13 +290,18 @@ export default function AdminRegistrationDetail() {
     detail?.selections.some((selection) =>
       ['guaranteed_return', 'sabbatical', 'drop'].includes(selection.selectionType),
     ) ?? false;
-  const confirmed = detail?.selections.filter(isConfirmedLeaguePlacement) ?? [];
-  const playIns = detail?.selections.filter((selection) => selection.selectionType === 'play_in_request') ?? [];
+  const confirmed =
+    detail?.selections.filter((selection) =>
+      isConfirmedLeagueForStatusView(selection, detail.playInEntry),
+    ) ?? [];
+  const playIns =
+    detail?.selections.filter((selection) =>
+      isPendingPlayInForStatusView(selection, detail.playInEntry),
+    ) ?? [];
   const thirdLeague =
     detail?.selections.filter((selection) =>
       ['third_league_interest', 'return_subject_to_availability'].includes(selection.selectionType),
     ) ?? [];
-  const byot = detail?.selections.filter((selection) => selection.selectionType === 'byot_request') ?? [];
   const invoiceTotals =
     detail?.invoice != null
       ? (() => {
@@ -411,6 +425,14 @@ export default function AdminRegistrationDetail() {
                 <p>Amount due: {money(detail.payment.amountDueMinor)}</p>
                 <p>Amount paid: {money(detail.payment.amountPaidMinor)}</p>
               </div>
+              {detail.registration.membershipCommitteeComments ? (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40">
+                  <p className="font-medium text-gray-900 dark:text-gray-100">Comments for the Membership Committee</p>
+                  <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                    {detail.registration.membershipCommitteeComments}
+                  </p>
+                </div>
+              ) : null}
               {detail.payment.paymentLink ? (
                 <p className="text-sm">
                   <a href={detail.payment.paymentLink} className="text-primary-teal-link hover:underline">
@@ -542,35 +564,84 @@ export default function AdminRegistrationDetail() {
               onEdit={canEdit && canEditPriorLeagueChoices ? () => setActiveEditModal('confirmedLeagues') : undefined}
             >
               {confirmed.length === 0 ? <p>No confirmed league placements are listed yet.</p> : null}
-              {confirmed.map((selection) => (
-                <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                  <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">Status: {label(selection.status)}</p>
-                </div>
-              ))}
+              {confirmed.map((selection) => {
+                const playInSummary =
+                  selection.selectionType === 'play_in_request' && selection.leagueId != null
+                    ? detail.playInEntry?.[selection.leagueId]
+                    : undefined;
+                return (
+                  <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      {selection.selectionType === 'play_in_request'
+                        ? selection.status === 'placed'
+                          ? 'Status: Placed · Play-in league'
+                          : 'Status: Guaranteed entry · Play-in league'
+                        : `Status: ${label(selection.status)}`}
+                      {selection.selectionType === 'byot_request' ? ' · Bring-your-own-team' : ''}
+                    </p>
+                    {selection.selectionType === 'byot_request' ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Teammates:{' '}
+                        {selection.byotTeammateText
+                          ? rosterTextDisplay(selection.byotTeammateText)
+                          : 'Not provided'}
+                      </p>
+                    ) : null}
+                    {playInSummary?.existingTeam ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
+                      </p>
+                    ) : null}
+                    {selection.teamRosterDisplay &&
+                    selection.selectionType === 'play_in_request' &&
+                    !playInSummary?.existingTeam ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Team roster: {selection.teamRosterDisplay}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
             </Section>
 
             <Section title="League play-ins">
               {playIns.length === 0 ? <p>No league play-ins are listed.</p> : null}
-              {playIns.map((selection) => (
-                <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                  <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    {selection.replacesLeagueId
-                      ? `REPLACE${
-                          selection.replacedLeagueName ? ` · Would replace ${selection.replacedLeagueName}` : ''
-                        }`
-                      : 'ADD'}
-                    {' · '}
-                    Placement depends on play-in results
-                  </p>
-                  {selection.byotTeammateText ? (
+              {playIns.map((selection) => {
+                const playInSummary =
+                  selection.leagueId != null ? detail.playInEntry?.[selection.leagueId] : undefined;
+                return (
+                  <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">
-                      Pending teammates (not yet registered): {rosterTextDisplay(selection.byotTeammateText)}
+                      {selection.replacesLeagueId
+                        ? `REPLACE${
+                            selection.replacedLeagueName ? ` · Would replace ${selection.replacedLeagueName}` : ''
+                          }`
+                        : 'ADD'}
+                      {' · '}
+                      {selection.status === 'not_placed'
+                        ? 'Your team did not win entry this session.'
+                        : playInUnguaranteedStatusDetail(playInSummary)}
                     </p>
-                  ) : null}
-                </div>
-              ))}
+                    {playInSummary?.existingTeam ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
+                      </p>
+                    ) : null}
+                    {selection.byotTeammateText && !playInSummary?.existingTeam ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Pending teammates (not yet registered): {rosterTextDisplay(selection.byotTeammateText)}
+                      </p>
+                    ) : null}
+                    {selection.teamRosterDisplay && !playInSummary?.existingTeam && !selection.byotTeammateText ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Team roster: {selection.teamRosterDisplay}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
             </Section>
 
             <Section
@@ -593,6 +664,11 @@ export default function AdminRegistrationDetail() {
                   <p className="text-sm text-gray-600 dark:text-gray-300">
                     {entry.entryType.toUpperCase()} · Position {entry.position ?? 'not available'} · Declines {entry.declineCount}
                   </p>
+                  {entry.teamRosterDisplay ? (
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      Team roster: {entry.teamRosterDisplay}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </Section>
@@ -600,16 +676,13 @@ export default function AdminRegistrationDetail() {
             <Section title="Third-league interest" onEdit={canEdit ? () => setActiveEditModal('thirdLeague') : undefined}>
               {thirdLeague.length === 0 ? <p>No third-league interest choices are listed.</p> : null}
               {thirdLeague.map((selection) => (
-                <p key={selection.id}>{selection.leagueName}</p>
-              ))}
-            </Section>
-
-            <Section title="BYOT requests" onEdit={canEdit ? () => setActiveEditModal('byot') : undefined}>
-              {byot.length === 0 ? <p>No BYOT requests are listed.</p> : null}
-              {byot.map((selection) => (
-                <div key={selection.id}>
+                <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
                   <p className="font-medium">{selection.leagueName}</p>
-                  <p>Teammates: {selection.byotTeammateText || 'Not provided'}</p>
+                  {selection.teamRosterDisplay ? (
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      Team roster: {selection.teamRosterDisplay}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </Section>

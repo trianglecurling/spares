@@ -164,6 +164,7 @@ Examples:
 - add_waitlist_requires_zero_or_one_leagues
 - replace_waitlist_limit_exceeded
 - replace_waitlist_requires_replaced_league
+- replace_waitlist_cannot_replace_play_in
 - third_league_interest_defers_payment
 - junior_financial_assistance_requires_review
 - non_guaranteed_league_defers_payment
@@ -197,7 +198,8 @@ Examples:
 - Under minimum age.
 - Over maximum age.
 - Insufficient experience.
-- BYOT selected as third league.
+- Guaranteed BYOT request when the registrant already has two first/second league
+  spots (BYOT third-league interest is allowed and deferred).
 - Junior Recreational plus another league.
 - Sabbatical requested without guaranteed-return eligibility.
 - More than two protected claims.

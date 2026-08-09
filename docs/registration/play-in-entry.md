@@ -16,8 +16,10 @@ Play-in based leagues have no guaranteed returns and no waitlist. Instead:
 
 1. Every curler carries a number of **TLINE points** earned from the prior
    season's sessions.
-2. Registrants declare a full **entry team**. The team's points are the sum of
-   its members' points.
+2. Registrants declare an **entry team** of at least two players (up to the
+   league team size). The team's points are the sum of its members' points.
+   Incomplete teams are never guaranteed and cannot pay at registration; later
+   teammates can add members until the roster is full.
 3. The top `autoEntryCount` teams by points are granted automatic entry, where
    `autoEntryCount = capacityValue − playInSpotCount` (for example
    20 − 2 = 18).
@@ -53,14 +55,16 @@ the playdown competition itself.
   names for people who have not joined yet). Pending names always contribute
   0 points until linked to an account.
 - The first registrant to submit a play-in request creates the team from their
-  declared roster. Teammates who register later are attached to the existing
-  team; they see the team read-only with the notice "Not your team? Contact
-  membership@trianglecurling.com ASAP." and confirm only their own ADD or
-  REPLACE choice. If two people declare the same account-linked roster in
-  different orders, they share one entry team (duplicates are merged). Canceling
-  a registration removes that curler from the entry team; if nobody else has
-  registered onto the team yet, the declaration is deleted (these entry
-  declarations are separate from in-league game teams on the Teams/Roster tabs).
+  declared roster (minimum two players). Teammates who register later are
+  attached to the existing team. If the team is still incomplete, they can add
+  more members; if it is already full, they see the team read-only with the
+  notice "Not your team? Contact membership@trianglecurling.com ASAP." and
+  confirm only their own ADD or REPLACE choice. If two people declare the same
+  account-linked roster in different orders, they share one entry team
+  (duplicates are merged). Canceling a registration removes that curler from the
+  entry team; if nobody else has registered onto the team yet, the declaration
+  is deleted (these entry declarations are separate from in-league game teams on
+  the Teams/Roster tabs).
 - A member may be on at most one active entry team per league. Declaring a
   roster that includes someone already committed to another team is a blocking
   validation error (`play_in_teammate_already_committed`).
@@ -84,7 +88,11 @@ count as returning (their points ledger has `counts_as_returning` rows). A
 ## 5. Guarantee evaluation
 
 At registration time the system determines whether a declared team is
-**guaranteed** automatic entry:
+**guaranteed** automatic entry. A team must have a **full roster** (team size
+slots filled with linked members and/or pending names) before it can be
+guaranteed—regardless of TLINE points. Incomplete teams always defer payment.
+
+When the roster is complete:
 
 1. Take every member's points that are not on an active declared team
    (the uncommitted pool), sorted high → low.
@@ -106,9 +114,10 @@ The threshold is shown on the staff report and to registrants as
 "more than X points."
 
 During registration, the entry-status notice (guarantee / playdown) is shown
-only after a full team roster is selected. Until then the threshold can appear
-to move as drafted members leave the uncommitted points pool used to stack
-hypothetical opposing teams; hiding the notice avoids that mid-edit flicker.
+only after a full team roster is selected. Incomplete rosters show that
+guaranteed entry and payment are unavailable until the team is full. Until a
+full roster is selected the threshold can appear to move as drafted members
+leave the uncommitted points pool used to stack hypothetical opposing teams.
 
 ## 6. Payment implications
 
@@ -143,22 +152,23 @@ hypothetical opposing teams; hiding the notice avoids that mid-edit flicker.
    joining** (not Return / Sabbatical). Joining does not use a protected claim.
    If they also selected two guaranteed returns, show an inline notice that they
    must choose a REPLACE target on the next page.
-2. On League requests, competitive (play-in) leagues appear first. The choice is
-   **No selection** or **Enter a team** (pre-selected when the registrant is
-   already on a declared entry team). Returning players are automatic ADD when
-   they have fewer than two guaranteed returns; with two guaranteed returns (or
-   for new players who already hold two leagues) they must choose which league
-   to replace if they get in.
-3. The registrant declares the full team (member autocomplete plus "Manually add
-   by name" for future members), or confirms attach to an existing declared team.
-   Teammate ADD/REPLACE is **not** collected here — each teammate chooses when
-   they register.
-4. After the team is known, the guarantee result is shown inline:
-   - Guaranteed entry — payment due now (returning players without two guaranteed
-     returns are automatic ADD).
+2. On League requests, competitive (play-in) leagues are chosen from the league
+   picker (pre-selected when the registrant already chose the league on Returning
+   leagues or is on a declared entry team). Returning players with one guaranteed
+   return may choose ADD or REPLACE; with two guaranteed returns (or for new
+   players who already hold two leagues) they must REPLACE.
+3. The registrant declares at least two players (member autocomplete plus
+   "Manually add by name" for future members), or attaches to / extends an
+   existing incomplete declared team. Continuing with an incomplete roster shows
+   a confirmation that the coordinator will try to help fill the team with no
+   guarantee. Teammate ADD/REPLACE is **not** collected here — each teammate
+   chooses when they register.
+4. After a **full** team is known, the guarantee result is shown inline:
+   - Guaranteed entry — payment due now.
    - Returning and not guaranteed — show the play-in event notice and point them
      to waitlists on the next page as a back-up.
    - Otherwise — payment deferred until placement.
+   Incomplete teams are never guaranteed and always defer payment.
 5. On submit, the entry team is created or the registrant is attached to the
    existing team (`source_registration_id` recorded per member).
 

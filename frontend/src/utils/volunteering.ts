@@ -66,6 +66,7 @@ export type VolunteerProgramView = {
   location: string | null;
   startDate: string | null;
   published: boolean;
+  featureOnDashboard: boolean;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -102,6 +103,37 @@ export type MyVolunteerSignup = {
   comments: string | null;
   canCancel: boolean;
 };
+
+/** Sentinel for the club (default) location radio in program editors. */
+export const VOLUNTEER_LOCATION_CLUB = '__club__';
+
+export type VolunteerLocationChoice = string | null;
+
+/** Map a stored program location to the editor choice value. */
+export function volunteerLocationChoiceFromStored(
+  location: string | null | undefined,
+  clubName: string
+): VolunteerLocationChoice {
+  const trimmed = location?.trim() ?? '';
+  if (!trimmed) return VOLUNTEER_LOCATION_CLUB;
+  if (trimmed.toLowerCase() === clubName.trim().toLowerCase()) return VOLUNTEER_LOCATION_CLUB;
+  return trimmed;
+}
+
+/**
+ * Map an editor choice to the stored location.
+ * Club default and empty Other both persist as null (location is only shown for custom Other).
+ */
+export function volunteerLocationStoredFromChoice(
+  choice: VolunteerLocationChoice,
+  clubName: string
+): string | null {
+  if (choice == null || choice === VOLUNTEER_LOCATION_CLUB) return null;
+  const trimmed = choice.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase() === clubName.trim().toLowerCase()) return null;
+  return trimmed;
+}
 
 export function formatVolunteerRange(startDt: string, endDt: string): string {
   try {

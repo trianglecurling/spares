@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { matchPath, Outlet, useLocation } from 'react-router-dom';
 import Layout from './Layout';
 import AppStateCard from './AppStateCard';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 /** Paths that render without the shared nav shell (legacy full-page flows). */
 const BARE_ROUTE_PATTERNS = [
@@ -17,11 +18,12 @@ const FULL_WIDTH_ROUTE_PATTERNS = [
   '/admin/events/:id/details',
 ] as const;
 
-/** Paths that can lock the shell to the viewport (day/week calendar only; month scrolls the page). */
+/** Paths that can lock the shell to the viewport (desktop day/week calendar only; month + mobile scroll the page). */
 const FILL_VIEWPORT_ROUTE_PATTERNS = ['/calendar'] as const;
 
 function useAppShellLayoutOptions() {
   const { pathname, search } = useLocation();
+  const isCompactLayout = useMediaQuery('(max-width: 767px)');
 
   const bare = BARE_ROUTE_PATTERNS.some((pattern) =>
     matchPath({ path: pattern, end: true }, pathname),
@@ -32,7 +34,8 @@ function useAppShellLayoutOptions() {
   );
 
   const calendarView = new URLSearchParams(search).get('view');
-  const calendarLocksViewport = calendarView === 'day' || calendarView === 'week';
+  const calendarLocksViewport =
+    !isCompactLayout && (calendarView === 'day' || calendarView === 'week');
   const fillViewport =
     FILL_VIEWPORT_ROUTE_PATTERNS.some((pattern) =>
       matchPath({ path: pattern, end: true }, pathname),

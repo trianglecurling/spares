@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  applyPriorReturnCheckboxLeagueIds,
   calculateEstimatedTotalRange,
   countProtectedClaimSelections,
   filterDirectLeagueRequestEligibleLeagues,
@@ -15,9 +16,17 @@ import {
   previousLeagueFlowStepBeforeSummary,
   priorLeagueChoiceValue,
   hasGuaranteedPlayInSelection,
+  isConfirmedLeagueForStatusView,
+  isPendingPlayInForStatusView,
+  playInUnguaranteedStatusDetail,
   shouldCollectBasicIceFallback,
   shouldCollectThirdLeagueInterest,
   shouldShowEstimatedTotalRange,
+  firstOptionalByotRosterValidationMessage,
+  migrateStrictThirdLeagueInterest,
+  setStrictThirdLeagueInterestEnabled,
+  setThirdLeagueInterestSelections,
+  syncThirdLeagueInterestRostersFromSiblingSelections,
   stripThirdLeagueInterestSelections,
   updateByotRosterMembers,
   withoutInvalidPlayInPriorSelections,
@@ -131,6 +140,131 @@ describe('hasGuaranteedPlayInSelection', () => {
   });
 });
 
+describe('registration status play-in section split', () => {
+  test('puts guaranteed and placed play-ins under confirmed leagues', () => {
+    const guaranteed = { selectionType: 'play_in_request', status: 'pending', leagueId: 10 };
+    const placed = { selectionType: 'play_in_request', status: 'placed', leagueId: 11 };
+    expect(isConfirmedLeagueForStatusView(guaranteed, { 10: { guaranteed: true } })).toBe(true);
+    expect(isPendingPlayInForStatusView(guaranteed, { 10: { guaranteed: true } })).toBe(false);
+    expect(isConfirmedLeagueForStatusView(placed, { 11: { guaranteed: false } })).toBe(true);
+    expect(isPendingPlayInForStatusView(placed, {})).toBe(false);
+  });
+
+  test('keeps non-guaranteed play-ins under league play-ins', () => {
+    const pending = { selectionType: 'play_in_request', status: 'pending', leagueId: 10 };
+    expect(isConfirmedLeagueForStatusView(pending, { 10: { guaranteed: false } })).toBe(false);
+    expect(isPendingPlayInForStatusView(pending, { 10: { guaranteed: false } })).toBe(true);
+    expect(isPendingPlayInForStatusView(pending, {})).toBe(true);
+  });
+
+  test('describes why a play-in is not yet confirmed', () => {
+    expect(playInUnguaranteedStatusDetail(null)).toContain('roster is incomplete');
+    expect(
+      playInUnguaranteedStatusDetail({ teamTotalPoints: 12, meetsReturningRule: false }),
+    ).toContain('returning members');
+    expect(
+      playInUnguaranteedStatusDetail({ teamTotalPoints: 12, meetsReturningRule: true }),
+    ).toContain('points');
+  });
+});
+
+describe('applyPriorReturnCheckboxLeagueIds', () => {
+  test('marks unchecked leagues as drop when fewer than two returns are selected', () => {
+    const next = applyPriorReturnCheckboxLeagueIds(
+      [
+        selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+        selection({ selectionType: 'guaranteed_return', leagueId: 2 }),
+        selection({ selectionType: 'drop', leagueId: 3 }),
+      ],
+      [1, 2, 3],
+      new Set(),
+      [1],
+    );
+    expect(next).toEqual([
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+      selection({ selectionType: 'drop', leagueId: 2 }),
+      selection({ selectionType: 'drop', leagueId: 3 }),
+    ]);
+  });
+
+  test('clears a demoted return so the follow-up dropdown is required', () => {
+    const next = applyPriorReturnCheckboxLeagueIds(
+      [
+        selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+        selection({ selectionType: 'guaranteed_return', leagueId: 2 }),
+        selection({ selectionType: 'drop', leagueId: 3 }),
+      ],
+      [1, 2, 3],
+      new Set(),
+      [1, 3],
+    );
+    expect(next).toEqual([
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 3 }),
+    ]);
+  });
+
+  test('preserves an existing subject-to-availability follow-up choice', () => {
+    const next = applyPriorReturnCheckboxLeagueIds(
+      [
+        selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+        selection({ selectionType: 'guaranteed_return', leagueId: 2 }),
+        selection({ selectionType: 'third_league_interest', leagueId: 3, rank: 1 }),
+      ],
+      [1, 2, 3],
+      new Set(),
+      [1, 2],
+    );
+    expect(next).toEqual([
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 2 }),
+      selection({ selectionType: 'third_league_interest', leagueId: 3, rank: 1 }),
+    ]);
+  });
+
+  test('checks play-in leagues as play_in_request without consuming guaranteed return slots', () => {
+    const next = applyPriorReturnCheckboxLeagueIds(
+      [],
+      [1, 2, 3, 10],
+      new Set([10]),
+      [1, 2, 10],
+    );
+    expect(next).toEqual([
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 2 }),
+      selection({ selectionType: 'play_in_request', leagueId: 10 }),
+    ]);
+  });
+
+  test('caps guaranteed returns at two while allowing additional play-in checks', () => {
+    const next = applyPriorReturnCheckboxLeagueIds(
+      [],
+      [1, 2, 3, 10],
+      new Set([10]),
+      [1, 2, 3, 10],
+    );
+    expect(next).toEqual([
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 2 }),
+      selection({ selectionType: 'play_in_request', leagueId: 10 }),
+    ]);
+  });
+
+  test('drops unchecked play-in leagues without requiring a follow-up choice', () => {
+    const next = applyPriorReturnCheckboxLeagueIds(
+      [selection({ selectionType: 'play_in_request', leagueId: 10 })],
+      [1, 2, 10],
+      new Set([10]),
+      [1, 2],
+    );
+    expect(next).toEqual([
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 2 }),
+      selection({ selectionType: 'drop', leagueId: 10 }),
+    ]);
+  });
+});
+
 describe('league flow navigation helpers', () => {
   test('routes to league requests before waitlists when direct requests exist', () => {
     expect(nextLeagueFlowStepAfterPriorLeagueSelection({ hasDirectLeagueRequests: true })).toBe(
@@ -238,20 +372,28 @@ describe('isDirectLeagueRequestLeague', () => {
     isPlayInBased: false,
   };
 
-  test('includes play-in and non-waitlist leagues', () => {
+  test('includes play-in and non-waitlist standard leagues', () => {
     expect(isDirectLeagueRequestLeague({ ...baseLeague, isPlayInBased: true })).toBe(true);
     expect(isDirectLeagueRequestLeague({ ...baseLeague, allowsWaitlist: false })).toBe(true);
     expect(
       isDirectLeagueRequestLeague({
         ...baseLeague,
         leagueType: 'bring_your_own_team',
+        isPlayInBased: true,
         allowsWaitlist: false,
       }),
     ).toBe(true);
   });
 
-  test('excludes waitlisted standard leagues', () => {
+  test('excludes waitlisted standard leagues and non-play-in bring-your-own-team leagues', () => {
     expect(isDirectLeagueRequestLeague(baseLeague)).toBe(false);
+    expect(
+      isDirectLeagueRequestLeague({
+        ...baseLeague,
+        leagueType: 'bring_your_own_team',
+        allowsWaitlist: false,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -278,11 +420,17 @@ describe('isThirdLeagueInterestEligibleLeague', () => {
     membershipOption: 'regular' as const,
   };
 
-  test('allows eligible standard leagues and blocks BYOT, instructional, and experience mismatches', () => {
+  test('allows eligible standard and BYOT leagues and blocks play-in, instructional, and experience mismatches', () => {
     expect(isThirdLeagueInterestEligibleLeague(standardLeague, eligibilityInput)).toBe(true);
     expect(
       isThirdLeagueInterestEligibleLeague(
-        { ...standardLeague, leagueType: 'bring_your_own_team' },
+        { ...standardLeague, leagueType: 'bring_your_own_team', format: 'doubles' },
+        eligibilityInput,
+      ),
+    ).toBe(true);
+    expect(
+      isThirdLeagueInterestEligibleLeague(
+        { ...standardLeague, leagueType: 'bring_your_own_team', isPlayInBased: true },
         eligibilityInput,
       ),
     ).toBe(false);
@@ -620,5 +768,236 @@ describe('updateByotRosterMembers for play-in', () => {
       entryType: 'replace',
       replacesLeagueId: 1,
     });
+  });
+});
+
+describe('strict third-league interest helpers', () => {
+  test('setStrictThirdLeagueInterestEnabled does not strip return_subject_to_availability', () => {
+    const current: RegistrationSelectionInput[] = [
+      selection({ selectionType: 'return_subject_to_availability', leagueId: 5 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+    ];
+    const enabled = setStrictThirdLeagueInterestEnabled(current, 1, true);
+    expect(enabled).toEqual([
+      selection({ selectionType: 'return_subject_to_availability', leagueId: 5 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+      { selectionType: 'third_league_interest', leagueId: 1, rank: 1 },
+    ]);
+    const disabled = setStrictThirdLeagueInterestEnabled(enabled, 1, false);
+    expect(disabled).toEqual([
+      selection({ selectionType: 'return_subject_to_availability', leagueId: 5 }),
+      selection({ selectionType: 'guaranteed_return', leagueId: 1 }),
+    ]);
+  });
+
+  test('setStrictThirdLeagueInterestEnabled copies roster from guaranteed return', () => {
+    const current: RegistrationSelectionInput[] = [
+      selection({
+        selectionType: 'guaranteed_return',
+        leagueId: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [
+          { memberId: 100, entryType: 'add', replacesLeagueId: null },
+          { memberId: 101, entryType: 'add', replacesLeagueId: null },
+        ],
+      }),
+    ];
+    expect(setStrictThirdLeagueInterestEnabled(current, 1, true)).toEqual([
+      selection({
+        selectionType: 'guaranteed_return',
+        leagueId: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [
+          { memberId: 100, entryType: 'add', replacesLeagueId: null },
+          { memberId: 101, entryType: 'add', replacesLeagueId: null },
+        ],
+      }),
+      {
+        selectionType: 'third_league_interest',
+        leagueId: 1,
+        rank: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [
+          { memberId: 100, entryType: 'add', replacesLeagueId: null },
+          { memberId: 101, entryType: 'add', replacesLeagueId: null },
+        ],
+      },
+    ]);
+  });
+
+  test('syncThirdLeagueInterestRostersFromSiblingSelections fills empty interest from return', () => {
+    const current: RegistrationSelectionInput[] = [
+      selection({
+        selectionType: 'guaranteed_return',
+        leagueId: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      }),
+      selection({ selectionType: 'third_league_interest', leagueId: 1, rank: 1 }),
+    ];
+    expect(syncThirdLeagueInterestRostersFromSiblingSelections(current)).toEqual([
+      selection({
+        selectionType: 'guaranteed_return',
+        leagueId: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      }),
+      {
+        selectionType: 'third_league_interest',
+        leagueId: 1,
+        rank: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      },
+    ]);
+  });
+
+  test('migrateStrictThirdLeagueInterest moves interest with the replace target', () => {
+    const current: RegistrationSelectionInput[] = [
+      selection({ selectionType: 'third_league_interest', leagueId: 1, rank: 1 }),
+      selection({ selectionType: 'return_subject_to_availability', leagueId: 5 }),
+    ];
+    expect(migrateStrictThirdLeagueInterest(current, 1, 2)).toEqual([
+      selection({ selectionType: 'return_subject_to_availability', leagueId: 5 }),
+      { selectionType: 'third_league_interest', leagueId: 2, rank: 1 },
+    ]);
+  });
+});
+
+describe('third-league BYOT roster helpers', () => {
+  const doublesByot: LeagueCatalogItem = {
+    id: 10,
+    name: 'Sunday Doubles',
+    leagueType: 'bring_your_own_team',
+    format: 'doubles',
+    registrationFeeMinor: 5000,
+    allowsWaitlist: false,
+    allowsSabbatical: false,
+    isPlayInBased: false,
+    minExperienceYears: null,
+    maxExperienceYears: null,
+    minAge: null,
+    maxAge: null,
+  };
+
+  test('setThirdLeagueInterestSelections preserves optional roster fields', () => {
+    const current: RegistrationSelectionInput[] = [
+      selection({
+        selectionType: 'third_league_interest',
+        leagueId: 10,
+        rank: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      }),
+    ];
+    const next = setThirdLeagueInterestSelections(current, [10, 11], new Set());
+    expect(next).toEqual([
+      {
+        selectionType: 'third_league_interest',
+        leagueId: 10,
+        rank: 1,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      },
+      {
+        selectionType: 'third_league_interest',
+        leagueId: 11,
+        rank: 2,
+        byotTeammateText: null,
+        teamRosterPlacements: null,
+      },
+    ]);
+  });
+
+  test('updateByotRosterMembers keeps third_league_interest selection type', () => {
+    const selections: RegistrationSelectionInput[] = [
+      selection({
+        selectionType: 'third_league_interest',
+        leagueId: 10,
+        rank: 1,
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      }),
+    ];
+    const next = updateByotRosterMembers(
+      selections,
+      10,
+      [101],
+      new Map([[101, 'Partner']]),
+      { id: 100, name: 'Registrant' },
+      new Map(),
+    );
+    expect(next[0]?.selectionType).toBe('third_league_interest');
+    expect(next[0]?.teamRosterPlacements?.map((placement) => placement.memberId)).toEqual([100, 101]);
+  });
+
+  test('firstOptionalByotRosterValidationMessage allows empty or partial rosters', () => {
+    const empty = firstOptionalByotRosterValidationMessage(
+      [selection({ selectionType: 'third_league_interest', leagueId: 10, rank: 1 })],
+      [doublesByot],
+      new Map(),
+      { id: 100, name: 'Registrant' },
+    );
+    expect(empty).toBeNull();
+
+    const partial = firstOptionalByotRosterValidationMessage(
+      [
+        selection({
+          selectionType: 'guaranteed_return',
+          leagueId: 10,
+          teamRosterPlacements: [
+            { memberId: 100, entryType: 'add', replacesLeagueId: null },
+            { memberId: 101, entryType: 'add', replacesLeagueId: null },
+          ],
+        }),
+      ],
+      [doublesByot],
+      new Map(),
+      { id: 100, name: 'Registrant' },
+    );
+    expect(partial).toBeNull();
+  });
+
+  test('applyPriorReturnCheckboxLeagueIds preserves optional BYOT roster on guaranteed return', () => {
+    const current: RegistrationSelectionInput[] = [
+      selection({
+        selectionType: 'guaranteed_return',
+        leagueId: 10,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      }),
+    ];
+    const next = applyPriorReturnCheckboxLeagueIds(current, [10, 11], new Set(), [10]);
+    expect(next).toEqual([
+      {
+        selectionType: 'guaranteed_return',
+        leagueId: 10,
+        byotTeammateText: 'Partner Name',
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      },
+      {
+        selectionType: 'drop',
+        leagueId: 11,
+      },
+    ]);
+  });
+
+  test('updateByotRosterMembers keeps guaranteed_return selection type', () => {
+    const selections: RegistrationSelectionInput[] = [
+      selection({
+        selectionType: 'guaranteed_return',
+        leagueId: 10,
+        teamRosterPlacements: [{ memberId: 100, entryType: 'add', replacesLeagueId: null }],
+      }),
+    ];
+    const next = updateByotRosterMembers(
+      selections,
+      10,
+      [101],
+      new Map([[101, 'Partner']]),
+      { id: 100, name: 'Registrant' },
+      new Map(),
+    );
+    expect(next[0]?.selectionType).toBe('guaranteed_return');
+    expect(next[0]?.teamRosterPlacements?.map((placement) => placement.memberId)).toEqual([100, 101]);
   });
 });

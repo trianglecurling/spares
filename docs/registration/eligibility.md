@@ -231,7 +231,8 @@ Third-league interest:
 - Defers payment.
 - Is processed only after first/second league demand is satisfied.
 
-BYOT leagues cannot be selected as third-league interest.
+BYOT leagues may be selected as third-league interest with an optional team
+roster. Play-in based leagues cannot be selected as third-league interest.
 
 ## BYOT eligibility
 
@@ -240,9 +241,11 @@ BYOT leagues:
 - May be requested by new members.
 - May be requested by returning members.
 - Require each curler to register individually.
-- Require teammate names in a text box.
-- Must count as one of the registrant's first two leagues.
-- Cannot be a third league.
+- Require teammate names in a text box for guaranteed BYOT requests.
+- Guaranteed BYOT requests must count as one of the registrant's first two
+  leagues.
+- May also be listed as third-league interest with an optional roster (deferred,
+  not a guaranteed BYOT request).
 - Do not use waitlists.
 - Do not use sabbaticals.
 - Are treated as guaranteed for payment timing, subject to later manual staff correction if the coordinator does not place the registrant.

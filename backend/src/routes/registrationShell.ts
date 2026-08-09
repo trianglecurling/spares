@@ -80,6 +80,7 @@ const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const submitRegistrationSchema = z.object({
   confirmImmediatePayment: z.boolean().optional(),
   payLater: z.boolean().optional(),
+  membershipCommitteeComments: z.string().trim().max(2000).nullable().optional(),
 });
 const windowQuerySchema = z.object({
   seasonId: z.coerce.number().int().positive().optional(),
@@ -247,6 +248,7 @@ const guestSubmitSchema = z.object({
   experienceType: z.enum(['none_or_minimal', 'specified_years', 'known_existing']),
   experienceSelfReportedYears: z.coerce.number().nullable(),
   payLater: z.boolean().optional(),
+  membershipCommitteeComments: z.string().trim().max(2000).nullable().optional(),
 });
 
 const idParamsJsonSchema = {
@@ -1015,6 +1017,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
           actor: (request as AuthenticatedRequest).member,
           confirmImmediatePayment: body.confirmImmediatePayment,
           payLater: body.payLater,
+          membershipCommitteeComments: body.membershipCommitteeComments,
           frontendBaseUrl: resolveFrontendBaseUrl(request),
         });
       } catch (error) {

@@ -745,6 +745,7 @@ const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[
   { name: 'submitted_at', ddl: 'submitted_at DATETIME' },
   { name: 'desired_add_waitlist_league_count', ddl: 'desired_add_waitlist_league_count INTEGER' },
   { name: 'basic_ice_fallback_interest', ddl: 'basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))' },
+  { name: 'membership_committee_comments', ddl: 'membership_committee_comments TEXT' },
 ];
 
 const waitlistOfferColumnsSQLite: { name: string; ddl: string }[] = [
@@ -912,6 +913,7 @@ const registrationMembershipPaymentColumnsPg: string[] = [
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS desired_add_waitlist_league_count INTEGER',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS membership_committee_comments TEXT',
 ];
 
 const waitlistOfferColumnsPg: string[] = [

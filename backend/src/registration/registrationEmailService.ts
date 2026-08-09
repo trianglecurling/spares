@@ -613,15 +613,15 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
       // Legacy template kept for resending historical messages. New registrations no
       // longer send this email; teammates appear on the main registration confirmation.
       return {
-        subject: `BYOT registration received: ${leagueName}`,
+        subject: `Bring-your-own-team registration received: ${leagueName}`,
         htmlBody: `
-          <h2>BYOT registration received</h2>
+          <h2>Bring-your-own-team registration received</h2>
           <p>Your bring-your-own-team request for <strong>${escapeHtml(leagueName)}</strong> has been submitted.</p>
           <p><strong>Submitted teammates:</strong> ${escapeHtml(payload.teammateText || 'Not provided')}</p>
-          <p>BYOT placement is coordinated by the league coordinator. You may be contacted if roster adjustments are needed.</p>
+          <p>Bring-your-own-team placement is coordinated by the league coordinator. You may be contacted if roster adjustments are needed.</p>
           ${membershipContactHtml}
         `,
-        textBody: `BYOT registration received: ${leagueName}\n\nSubmitted teammates: ${payload.teammateText || 'Not provided'}\nBYOT placement is coordinated by the league coordinator. You may be contacted if roster adjustments are needed.\n\n${membershipContactText}`,
+        textBody: `Bring-your-own-team registration received: ${leagueName}\n\nSubmitted teammates: ${payload.teammateText || 'Not provided'}\nBring-your-own-team placement is coordinated by the league coordinator. You may be contacted if roster adjustments are needed.\n\n${membershipContactText}`,
       };
     case 'registration_manually_updated_by_staff':
       return {

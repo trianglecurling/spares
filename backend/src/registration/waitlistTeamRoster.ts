@@ -225,8 +225,8 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
     throw new WaitlistStaffValidationError({
       teamRosterPlacements:
         expectedSize == null
-          ? 'BYOT waitlists require a full team roster.'
-          : `BYOT waitlists require exactly ${expectedSize} players with placement details.`,
+          ? 'Bring-your-own-team waitlists require a full team roster.'
+          : `Bring-your-own-team waitlists require exactly ${expectedSize} players with placement details.`,
     });
   }
 
@@ -293,9 +293,10 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
             teamRosterPlacements: `${memberOptions.memberName} must select a league they currently hold.`,
           });
         }
-        if (memberOptions.activeReplaceWaitlists >= 2) {
+        // Cap REPLACE waitlists only when ADD is unavailable (already at two leagues).
+        if (!memberOptions.addAvailable && memberOptions.activeReplaceWaitlists >= 2) {
           throw new WaitlistStaffValidationError({
-            teamRosterPlacements: `${memberOptions.memberName} may have at most two active REPLACE waitlists.`,
+            teamRosterPlacements: `${memberOptions.memberName} may have at most two active REPLACE waitlists when already holding two leagues.`,
           });
         }
       }

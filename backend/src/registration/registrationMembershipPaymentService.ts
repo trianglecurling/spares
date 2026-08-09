@@ -152,10 +152,20 @@ type SubmitRegistrationInput = {
   confirmImmediatePayment?: boolean;
   /** Voluntary pay later when fees are known (immediate_payment). Creates checkout and emails the link. */
   payLater?: boolean;
+  /** Optional comments for the Membership Committee. Empty/whitespace clears any prior value. */
+  membershipCommitteeComments?: string | null;
   staffEdit?: boolean;
   changedSummary?: string;
   frontendBaseUrl?: string;
 };
+
+const MEMBERSHIP_COMMITTEE_COMMENTS_MAX_LENGTH = 2000;
+
+function normalizeMembershipCommitteeComments(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 export type RegistrationPaymentAdjustmentResult = {
   kind: 'none' | 'refund' | 'balance_due';
@@ -420,7 +430,7 @@ const SELECTION_TYPE_LABELS: Record<string, string> = {
   waitlist_keep_auto_accept: 'Stay on waitlist (auto-accept offers)',
   waitlist_keep_auto_decline: 'Stay on waitlist (auto-decline offers)',
   waitlist_remove: 'Remove from waitlist',
-  byot_request: 'BYOT request',
+  byot_request: 'Bring-your-own-team request',
   play_in_request: 'Play-in request',
   instructional_join: 'Instructional join',
   sabbatical: 'Sabbatical',
@@ -2104,6 +2114,22 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
   await requireRegistrationAccess(input.registrationId, input.actor);
   const registration = await loadFullRegistration(input.registrationId);
   await assertShellStillComplete(input.registrationId);
+  if (input.membershipCommitteeComments !== undefined) {
+    const comments = normalizeMembershipCommitteeComments(input.membershipCommitteeComments);
+    if (comments && comments.length > MEMBERSHIP_COMMITTEE_COMMENTS_MAX_LENGTH) {
+      throw new RegistrationMembershipPaymentValidationError({
+        membershipCommitteeComments: `Comments must be ${MEMBERSHIP_COMMITTEE_COMMENTS_MAX_LENGTH} characters or fewer.`,
+      });
+    }
+    const { db, schema } = getDrizzleDb();
+    await db
+      .update(schema.curlingRegistrations)
+      .set({
+        membership_committee_comments: comments,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.curlingRegistrations.id, input.registrationId));
+  }
   if (registration.curler_member_id) {
     const initialContext = await buildRegistrationContextForDraft(input.registrationId);
     await removeOrphanedRegistrationWaitlistEntries({

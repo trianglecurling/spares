@@ -18,7 +18,7 @@ const faqItems: Array<{ question: string; answer: string; accent: string }> = [
   {
     question: "What's the difference between ADD and REPLACE?",
     answer:
-      'ADD means you want the league as your first or second league. REPLACE means you would give up a league you already hold to take this one. You can be on at most two REPLACE waitlists.',
+      'ADD means you want the league as your first or second league. REPLACE means you would give up a league you already hold to take this one. If you already hold two leagues, you can be on at most two REPLACE waitlists.',
     accent: 'border-t-cyan-500 bg-gradient-to-b from-cyan-50/70 to-white',
   },
 ];

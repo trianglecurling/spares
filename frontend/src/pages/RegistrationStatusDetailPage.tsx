@@ -7,7 +7,9 @@ import RegistrationViewEditModals, {
   type RegistrationEditModalKind,
 } from '../components/registration/RegistrationViewEditModals';
 import {
-  isConfirmedLeaguePlacement,
+  isConfirmedLeagueForStatusView,
+  isPendingPlayInForStatusView,
+  playInUnguaranteedStatusDetail,
   rosterTextDisplay,
   type RegistrationPlayInEntrySummary,
 } from '../components/registration/registrationViewEditShared';
@@ -27,6 +29,7 @@ type Selection = {
   replacedLeagueName: string | null;
   isTemporarySabbaticalFill: number;
   byotTeammateText: string | null;
+  teamRosterDisplay?: string | null;
 };
 
 type WaitlistEntry = {
@@ -44,6 +47,7 @@ type WaitlistEntry = {
   canRemoveSelf?: boolean;
   primaryMemberName?: string | null;
   teammateContactMessage?: string | null;
+  teamRosterDisplay?: string | null;
 };
 
 type Communication = {
@@ -66,6 +70,7 @@ type RegistrationDetail = {
     membershipOption: string;
     studentDiscountClaimed: boolean;
     reciprocalDiscountClaimed: boolean;
+    membershipCommitteeComments: string | null;
     submittedAt: string | null;
     updatedAt: string | null;
   };
@@ -219,13 +224,18 @@ export default function RegistrationStatusDetailPage() {
   }
 
   const isJuniorRecreational = detail?.registration.membershipOption === 'junior_recreational';
-  const confirmed = detail?.selections.filter(isConfirmedLeaguePlacement) ?? [];
-  const playIns = detail?.selections.filter((selection) => selection.selectionType === 'play_in_request') ?? [];
+  const confirmed =
+    detail?.selections.filter((selection) =>
+      isConfirmedLeagueForStatusView(selection, detail.playInEntry),
+    ) ?? [];
+  const playIns =
+    detail?.selections.filter((selection) =>
+      isPendingPlayInForStatusView(selection, detail.playInEntry),
+    ) ?? [];
   const thirdLeague =
     detail?.selections.filter((selection) =>
       ['third_league_interest', 'return_subject_to_availability'].includes(selection.selectionType),
     ) ?? [];
-  const byot = detail?.selections.filter((selection) => selection.selectionType === 'byot_request') ?? [];
   const sabbaticals = detail?.selections.filter((selection) => selection.selectionType === 'sabbatical') ?? [];
   const canEdit = detail?.canEditDuringPriority ?? false;
   const canCancel = detail?.canCancelDuringPriority ?? false;
@@ -268,6 +278,14 @@ export default function RegistrationStatusDetailPage() {
               </div>
               {detail.registration.studentDiscountClaimed ? <p>Student discount claimed.</p> : null}
               {detail.registration.reciprocalDiscountClaimed ? <p>Reciprocal discount claimed.</p> : null}
+              {detail.registration.membershipCommitteeComments ? (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40">
+                  <p className="font-medium text-gray-900 dark:text-gray-100">Comments for the Membership Committee</p>
+                  <p className="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                    {detail.registration.membershipCommitteeComments}
+                  </p>
+                </div>
+              ) : null}
               {isPaidRegistration && !canEdit && canCancel ? (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   Paid registrations cannot be edited. During priority registration, you can cancel this registration to receive a full refund and register again.
@@ -296,15 +314,56 @@ export default function RegistrationStatusDetailPage() {
                   onEdit={canEdit && canEditPriorLeagueChoices ? () => setActiveEditModal('confirmedLeagues') : undefined}
                 >
                   {confirmed.length === 0 ? <p>No confirmed league placements are listed yet.</p> : null}
-                  {confirmed.map((selection) => (
-                    <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                      <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">
-                        Status: {label(selection.status)}
-                        {selection.isTemporarySabbaticalFill ? ' · Temporary sabbatical-fill spot. The original member may return in a future session.' : ''}
-                      </p>
-                    </div>
-                  ))}
+                  {confirmed.map((selection) => {
+                    const playInSummary =
+                      selection.selectionType === 'play_in_request' && selection.leagueId != null
+                        ? detail.playInEntry?.[selection.leagueId]
+                        : undefined;
+                    return (
+                      <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                        <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                          {selection.selectionType === 'play_in_request'
+                            ? selection.status === 'placed'
+                              ? 'Status: Placed · Play-in league'
+                              : 'Status: Guaranteed entry · Play-in league'
+                            : `Status: ${label(selection.status)}`}
+                          {selection.selectionType === 'byot_request' ? ' · Bring-your-own-team' : ''}
+                          {selection.isTemporarySabbaticalFill
+                            ? ' · Temporary sabbatical-fill spot. The original member may return in a future session.'
+                            : ''}
+                        </p>
+                        {selection.selectionType === 'play_in_request' && selection.replacesLeagueId ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            REPLACE
+                            {selection.replacedLeagueName
+                              ? ` · Would replace ${selection.replacedLeagueName}`
+                              : ''}
+                          </p>
+                        ) : null}
+                        {selection.selectionType === 'byot_request' ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Teammates:{' '}
+                            {selection.byotTeammateText
+                              ? rosterTextDisplay(selection.byotTeammateText)
+                              : 'Not provided'}
+                          </p>
+                        ) : null}
+                        {playInSummary?.existingTeam ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
+                          </p>
+                        ) : null}
+                        {selection.teamRosterDisplay &&
+                        selection.selectionType === 'play_in_request' &&
+                        !playInSummary?.existingTeam ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Team roster: {selection.teamRosterDisplay}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </Section>
 
                 <Section title="League play-ins">
@@ -322,13 +381,9 @@ export default function RegistrationStatusDetailPage() {
                               }`
                             : 'ADD'}
                           {' · '}
-                          {selection.status === 'placed'
-                            ? 'Your team has been granted entry.'
-                            : selection.status === 'not_placed'
-                              ? 'Your team did not win entry this session.'
-                              : playInSummary?.guaranteed
-                                ? 'Your team is guaranteed entry.'
-                                : 'Placement depends on play-in results.'}
+                          {selection.status === 'not_placed'
+                            ? 'Your team did not win entry this session.'
+                            : playInUnguaranteedStatusDetail(playInSummary)}
                         </p>
                         {playInSummary?.existingTeam ? (
                           <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -347,6 +402,11 @@ export default function RegistrationStatusDetailPage() {
                         {selection.byotTeammateText && !playInSummary?.existingTeam ? (
                           <p className="text-sm text-gray-600 dark:text-gray-300">
                             Pending teammates (not yet registered): {rosterTextDisplay(selection.byotTeammateText)}
+                          </p>
+                        ) : null}
+                        {selection.teamRosterDisplay && !playInSummary?.existingTeam && !selection.byotTeammateText ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Team roster: {selection.teamRosterDisplay}
                           </p>
                         ) : null}
                       </div>
@@ -387,6 +447,11 @@ export default function RegistrationStatusDetailPage() {
                           Position {entry.position ?? 'not available'} · Declines {entry.declineCount}
                           {entry.rolledOverFromWaitlistEntryId ? ' · Carried from a prior session entry' : ''}
                         </p>
+                        {entry.teamRosterDisplay ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Team roster: {entry.teamRosterDisplay}
+                          </p>
+                        ) : null}
                       </div>
                       {entry.canRemoveSelf ? (
                         <Button variant="outline-danger" onClick={() => void removeWaitlist(entry)}>
@@ -405,23 +470,19 @@ export default function RegistrationStatusDetailPage() {
                 >
                   {thirdLeague.length === 0 ? <p>No third-league interest choices are listed.</p> : null}
                   {thirdLeague.map((selection) => (
-                    <p key={selection.id}>{selection.rank ? `${selection.rank}. ` : ''}{selection.leagueName}</p>
-                  ))}
-                  {thirdLeague.length > 0 ? <p className="text-sm text-gray-600 dark:text-gray-300">These are interest choices only. They are handled after first- and second-league demand is satisfied.</p> : null}
-                </Section>
-
-                <Section
-                  title="BYOT requests"
-                  onEdit={canEdit ? () => setActiveEditModal('byot') : undefined}
-                >
-                  {byot.length === 0 ? <p>No BYOT requests are listed.</p> : null}
-                  {byot.map((selection) => (
-                    <div key={selection.id}>
-                      <p className="font-medium">{selection.leagueName}</p>
-                      <p>Teammates: {selection.byotTeammateText || 'Not provided'}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">Bring-your-own-team placement is coordinated by the league coordinator.</p>
+                    <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                      <p className="font-medium">
+                        {selection.rank ? `${selection.rank}. ` : ''}
+                        {selection.leagueName}
+                      </p>
+                      {selection.teamRosterDisplay ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                          Team roster: {selection.teamRosterDisplay}
+                        </p>
+                      ) : null}
                     </div>
                   ))}
+                  {thirdLeague.length > 0 ? <p className="text-sm text-gray-600 dark:text-gray-300">These are interest choices only. They are handled after first- and second-league demand is satisfied.</p> : null}
                 </Section>
               </>
             )}

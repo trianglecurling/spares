@@ -127,6 +127,17 @@ describe('evaluatePlayInLeague', () => {
     expect(teamTwo?.guaranteed).toBe(true);
   });
 
+  test('incomplete rosters are never guaranteed even with high points', () => {
+    const allPoints = [
+      points(1, 20), points(2, 20), points(3, 20), points(4, 20),
+      points(20, 2), points(21, 2), points(22, 2), points(23, 2),
+    ];
+    const teams = [team(1, [1, 2], { pendingNameCount: 0 })];
+    const result = evaluatePlayInLeague(config, allPoints, teams);
+    const incomplete = result.teams.find((entry) => entry.entryTeamId === 1);
+    expect(incomplete?.guaranteed).toBe(false);
+  });
+
   test('a team can be displaced when the uncommitted pool is strong enough', () => {
     const allPoints = [
       points(1, 10), points(2, 10), points(3, 10), points(4, 10),

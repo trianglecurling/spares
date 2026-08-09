@@ -2491,7 +2491,8 @@ export default function LeagueDetail() {
                         </p>
                       ) : leagueForm.leagueType === 'bring_your_own_team' ? (
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          BYOT waitlists require registrants to submit a full team roster when joining the queue.
+                          Bring-your-own-team waitlists require registrants to submit a full team roster when joining
+                          the queue.
                         </p>
                       ) : null}
                       {league?.waitlistId ? (

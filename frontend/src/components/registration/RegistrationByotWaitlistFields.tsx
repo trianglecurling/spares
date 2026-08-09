@@ -4,13 +4,16 @@ import FormField from '../FormField';
 import MemberMultiSelect from '../MemberMultiSelect';
 import WaitlistTeamRosterPlacementsEditor from '../waitlists/WaitlistTeamRosterPlacementsEditor';
 import type { WaitlistTeamMemberPlacement, WaitlistTeamMemberPlacementOptions } from '../waitlists/waitlistTeamRosterShared';
+import { useAlert } from '../../contexts/AlertContext';
 import api from '../../utils/api';
+import { playInCommittedMemberConflictMessage } from './RegistrationPlayInEntryPanel';
 import {
   byotRosterMemberIds,
   expectedByotRosterSize,
   hydrateByotWaitlistPlacements,
   pendingByotRosterNames,
   type LeagueCatalogItem,
+  type RegistrationPlayInCommittedOtherMemberTeam,
   type RegistrationSelectionInput,
   updateByotRosterMembers,
   updatePendingByotRosterNames,
@@ -31,10 +34,22 @@ type Props = {
   /** When true, show an intro and button before the roster editor (registration join flow). */
   revealRosterOnDemand?: boolean;
   /**
+   * When true, the roster is optional (third-league interest BYOT). Empty is allowed;
+   * the field is not marked required.
+   */
+  rosterOptional?: boolean;
+  /**
    * When true, hide the ADD/REPLACE editor for teammates. Used for play-in teams where
    * each teammate chooses their own placement when they register.
    */
   omitTeamMemberPlacements?: boolean;
+  /**
+   * Play-in only: members already on another declared entry team. They still appear in
+   * autocomplete; selecting one shows an alert and does not add them.
+   */
+  playInCommittedOtherMemberTeams?: RegistrationPlayInCommittedOtherMemberTeam[];
+  /** Fallback when team roster details are unavailable; still blocks selection. */
+  playInCommittedOtherMemberIds?: number[];
 };
 
 function hasByotRosterProgress(
@@ -62,8 +77,12 @@ export default function RegistrationByotWaitlistFields({
   onPlacementOptionsLoaded,
   onSelectionsChange,
   revealRosterOnDemand = false,
+  rosterOptional = false,
   omitTeamMemberPlacements = false,
+  playInCommittedOtherMemberTeams,
+  playInCommittedOtherMemberIds,
 }: Props) {
+  const { showAlert } = useAlert();
   const expectedRosterSize = expectedByotRosterSize(league);
   const additionalTeammateCount = expectedRosterSize ? Math.max(expectedRosterSize - 1, 0) : undefined;
   const selectedMemberIds = byotRosterMemberIds(selection, memberOptionIdByName, registeringCurler.id);
@@ -156,13 +175,57 @@ export default function RegistrationByotWaitlistFields({
     [memberOptionById],
   );
 
+  const committedOtherTeamByMemberId = useMemo(() => {
+    const map = new Map<number, RegistrationPlayInCommittedOtherMemberTeam['team'] | null>();
+    for (const memberId of playInCommittedOtherMemberIds ?? []) {
+      map.set(memberId, null);
+    }
+    for (const entry of playInCommittedOtherMemberTeams ?? []) {
+      map.set(entry.memberId, entry.team);
+    }
+    return map;
+  }, [playInCommittedOtherMemberIds, playInCommittedOtherMemberTeams]);
+
   const updateRosterMembers = (memberIds: number[]) => {
     if (selection.leagueId == null) return;
+    const previouslySelected = new Set(selectedMemberIds);
+    const allowedMemberIds: number[] = [];
+    let blockedAlertShown = false;
+
+    for (const memberId of memberIds) {
+      if (previouslySelected.has(memberId)) {
+        allowedMemberIds.push(memberId);
+        continue;
+      }
+      if (!committedOtherTeamByMemberId.has(memberId)) {
+        allowedMemberIds.push(memberId);
+        continue;
+      }
+      if (!blockedAlertShown) {
+        const team = committedOtherTeamByMemberId.get(memberId);
+        const memberName =
+          memberNameById.get(memberId) ??
+          team?.members.find((member) => member.memberId === memberId)?.memberName ??
+          'That member';
+        showAlert(
+          playInCommittedMemberConflictMessage({ memberName, team }),
+          'warning',
+          'Already on another team',
+        );
+        blockedAlertShown = true;
+      }
+    }
+
+    const unchanged =
+      allowedMemberIds.length === selectedMemberIds.length &&
+      allowedMemberIds.every((id, index) => id === selectedMemberIds[index]);
+    if (unchanged) return;
+
     onSelectionsChange((current) =>
       updateByotRosterMembers(
         current,
         selection.leagueId as number,
-        memberIds,
+        allowedMemberIds,
         memberNameById,
         registeringCurler,
         memberOptionIdByName,
@@ -235,11 +298,8 @@ export default function RegistrationByotWaitlistFields({
   if (revealRosterOnDemand && !rosterExpanded) {
     return (
       <div className="mt-4 space-y-3">
-        <p className="text-sm text-gray-600">
-          Entries for the {league.name} require a full team roster.
-        </p>
         <Button type="button" variant="secondary" onClick={() => setRosterExpanded(true)}>
-          Add team roster
+          Add {league.name} team roster
         </Button>
       </div>
     );
@@ -247,7 +307,18 @@ export default function RegistrationByotWaitlistFields({
 
   return (
     <div className={revealRosterOnDemand ? 'mt-4 space-y-4' : 'space-y-4'}>
-      <FormField label="Team roster" htmlFor={inputId} tone={tone} required>
+      <FormField
+        label="Team roster"
+        htmlFor={inputId}
+        tone={tone}
+        required={!rosterOptional}
+        helperText={
+          rosterOptional
+            ? 'Optional — list teammates if you already have a team in mind. Staff may still place you without a full roster.'
+            : undefined
+        }
+        helperPlacement={rosterOptional ? 'after-label' : undefined}
+      >
         <MemberMultiSelect
           inputId={inputId}
           selectedIds={selectedMemberIds}

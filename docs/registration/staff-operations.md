@@ -213,7 +213,8 @@ For V1:
 - Placement is handled manually by staff.
 - Third-league requests are considered only after first/second league demand is
   satisfied.
-- BYOT leagues cannot be third leagues.
+- BYOT leagues may be listed as third-league interest with an optional roster.
+- Play-in based leagues cannot be third-league interest.
 
 The application does not need to fully automate third-league placement in V1.
 
@@ -224,8 +225,9 @@ The application does not need to fully automate third-league placement in V1.
 Bring-your-own-team leagues:
 
 - Are registered individually.
-- Require registrants to list teammates.
-- Cannot be third leagues.
+- Require registrants to list teammates for guaranteed BYOT requests.
+- Guaranteed BYOT requests must count as one of the first two leagues.
+- May appear as third-league interest with an optional roster.
 - Do not use waitlists.
 - Do not use sabbaticals.
 - Are not processed through the waitlist manager.

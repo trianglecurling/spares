@@ -227,7 +227,11 @@ export function evaluatePlayInLeague(
       uncommittedPointsHalfDesc,
       config,
     );
+    // Incomplete teams (fewer than teamSize slots filled) are never guaranteed — payment
+    // stays deferred until a full roster meets the threshold.
+    const rosterComplete = team.memberIds.length + team.pendingNameCount >= config.teamSize;
     const guaranteed =
+      rosterComplete &&
       meetsReturningRule &&
       teamGuaranteeThresholdHalf != null &&
       totalPointsHalf > teamGuaranteeThresholdHalf;

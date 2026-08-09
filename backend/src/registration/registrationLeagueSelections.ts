@@ -1,4 +1,4 @@
-import { countHybridRoster } from './waitlistTeamRoster.js';
+import { countHybridRoster, waitlistRosterEntries } from './waitlistTeamRoster.js';
 import { validateLeagueEligibility, validateRegistrationIsOpen, validateSpareOnlyEligibility, validateWaitlistEligibility } from './registrationEligibility.js';
 import { evaluateGuaranteedReturnEligibility, evaluateSabbaticalEligibility, protectedClaimCount } from './registrationReturningRights.js';
 import { firstTwoLeagueSlotCount } from './waitlistFulfillment.js';
@@ -133,21 +133,59 @@ function isReturningPlayInRegistrant(
   );
 }
 
+/** Minimum players (linked members + pending names) required to declare a play-in team. */
+export const MIN_PLAY_IN_ROSTER_SIZE = 2;
+
 function validatePlayInRoster(
   context: RegistrationContext,
   league: NonNullable<ReturnType<typeof getSelectionLeague>>,
   selection: RegistrationSelectionInput,
   blockingErrors: DecisionMessage[],
 ): void {
-  validateHybridByotRoster(
-    context,
-    league,
-    selection,
-    blockingErrors,
-    'byot_play_in_requires_full_roster',
-    'Play-in BYOT leagues require a full team roster.',
-    (expectedSize) => `Play-in BYOT leagues require exactly ${expectedSize} players for this league.`,
-  );
+  if (league.leagueType !== 'bring_your_own_team') return;
+  const expectedSize = expectedByotRosterSize(league);
+  const rosterCounts = countHybridRoster({
+    placements: selection.teamRosterPlacements,
+    pendingRosterText: selection.byotTeammateText,
+    teamRosterText: selection.teamRosterText,
+    primaryMemberId: context.registrant.memberId,
+    expectedSize,
+  });
+  // When only pending names are stored (no placements yet), still count the registrant.
+  const pendingOnlyTotal =
+    (selection.teamRosterPlacements?.length ?? 0) === 0 &&
+    context.registrant.memberId != null &&
+    waitlistRosterEntries(selection.byotTeammateText).length > 0
+      ? 1 + waitlistRosterEntries(selection.byotTeammateText).length
+      : null;
+  const total = pendingOnlyTotal ?? rosterCounts.total;
+  if (expectedSize === null) {
+    blockingErrors.push(
+      blockingError(
+        'byot_play_in_requires_full_roster',
+        'Play-in bring-your-own-team leagues require a team roster.',
+      ),
+    );
+    return;
+  }
+  const minSize = Math.min(MIN_PLAY_IN_ROSTER_SIZE, expectedSize);
+  if (total < minSize) {
+    blockingErrors.push(
+      blockingError(
+        'byot_play_in_requires_minimum_roster',
+        `Play-in leagues require at least ${minSize} players (you can add the rest later).`,
+      ),
+    );
+    return;
+  }
+  if (total > expectedSize) {
+    blockingErrors.push(
+      blockingError(
+        'byot_play_in_requires_full_roster',
+        `Play-in leagues allow at most ${expectedSize} players for this league.`,
+      ),
+    );
+  }
 }
 
 function isPlayInIntentOnly(selection: RegistrationSelectionInput): boolean {
@@ -184,8 +222,12 @@ function validateNonGuaranteedLeagueInterest(
   warnings: DecisionMessage[],
   deferralReasonCodes: RegistrationReasonCode[]
 ): { blockingErrors: DecisionMessage[]; warnings: DecisionMessage[]; deferralReasonCodes: RegistrationReasonCode[] } {
-  if (league.leagueType === 'bring_your_own_team') {
-    blockingErrors.push(blockingError('byot_cannot_be_third_league', 'BYOT leagues cannot be third-league interest.'));
+  // BYOT leagues may be listed as third-league interest with an optional roster.
+  // Guaranteed BYOT requests (byot_request) still must count as one of the first two leagues.
+  if (league.isPlayInBased) {
+    blockingErrors.push(
+      blockingError('play_in_cannot_be_third_league', 'Play-in leagues cannot be third-league interest.'),
+    );
   }
   blockingErrors.push(...validateLeagueEligibility(context, league).blockingErrors);
   deferralReasonCodes.push('third_league_interest_defers_payment');
@@ -284,8 +326,9 @@ function validateSelection(
         selection,
         blockingErrors,
         'byot_waitlist_requires_full_roster',
-        'BYOT waitlists require a full team roster.',
-        (expectedSize) => `BYOT waitlists require exactly ${expectedSize} players for this league.`,
+        'Bring-your-own-team waitlists require a full team roster.',
+        (expectedSize) =>
+          `Bring-your-own-team waitlists require exactly ${expectedSize} players for this league.`,
       );
     }
 
@@ -299,16 +342,32 @@ function validateSelection(
         blockingErrors.push(
           blockingError('replace_waitlist_requires_replaced_league', 'REPLACE waitlist entries must identify a league to replace.')
         );
+      } else if (context.leagues[selection.replacesLeagueId]?.isPlayInBased) {
+        blockingErrors.push(
+          blockingError(
+            'replace_waitlist_cannot_replace_play_in',
+            'REPLACE waitlist entries cannot target a play-in league.',
+          ),
+        );
       } else if (!hasReplacementLeague(context, selection.replacesLeagueId)) {
         blockingErrors.push(
           blockingError('replace_waitlist_replacement_not_held', 'REPLACE waitlists must identify a league the registrant currently holds.')
         );
       }
-      const selectedReplaceCount = context.selections.filter((item) => item.selectionType === 'waitlist_replace').length;
-      if (activeReplaceWaitlistCount(context) + selectedReplaceCount > 2) {
-        blockingErrors.push(
-          blockingError('replace_waitlist_limit_exceeded', 'A registrant may have at most two active REPLACE waitlists.')
-        );
+      // Cap REPLACE waitlists only when ADD is unavailable (already at two leagues).
+      if (firstTwoLeagueSlotCount(context) > 1) {
+        const selectedReplaceCount = context.selections.filter(
+          (item) =>
+            item.selectionType === 'waitlist_replace' || item.selectionType === 'waitlist_replace_auto_decline',
+        ).length;
+        if (activeReplaceWaitlistCount(context) + selectedReplaceCount > 2) {
+          blockingErrors.push(
+            blockingError(
+              'replace_waitlist_limit_exceeded',
+              'A registrant may have at most two active REPLACE waitlists when already holding two leagues.',
+            ),
+          );
+        }
       }
     }
     return { blockingErrors, warnings, deferralReasonCodes };
@@ -343,13 +402,25 @@ function validateSelection(
     const leagueEligibility = validateLeagueEligibility(context, league);
     blockingErrors.push(...leagueEligibility.blockingErrors);
     if (league.leagueType !== 'bring_your_own_team') {
-      blockingErrors.push(blockingError('byot_requires_teammates', 'BYOT requests must target a BYOT league.'));
+      blockingErrors.push(
+        blockingError(
+          'byot_requires_teammates',
+          'Bring-your-own-team requests must target a bring-your-own-team league.',
+        ),
+      );
     }
     if (!selection.byotTeammateText?.trim()) {
-      blockingErrors.push(blockingError('byot_requires_teammates', 'BYOT requests require teammate names.'));
+      blockingErrors.push(
+        blockingError('byot_requires_teammates', 'Bring-your-own-team requests require teammate names.'),
+      );
     }
     if (activeLeagueCount(context) + selectedFirstTwoLeagueCount(context) > 2) {
-      blockingErrors.push(blockingError('byot_cannot_be_third_league', 'BYOT leagues must count as one of the first two leagues.'));
+      blockingErrors.push(
+        blockingError(
+          'byot_cannot_be_third_league',
+          'Bring-your-own-team leagues must count as one of the first two leagues.',
+        ),
+      );
     }
     return { blockingErrors, warnings, deferralReasonCodes };
   }
@@ -362,9 +433,14 @@ function validateSelection(
     }
     const playInEntry = selection.leagueId != null ? context.playInEntry?.[selection.leagueId] : undefined;
     const intentOnly = !requirePlayInRoster && isPlayInIntentOnly(selection);
-    if (playInEntry?.onExistingTeam) {
-      // A teammate already declared this team (or the same account-linked roster);
-      // the registrant only confirms their own ADD/REPLACE choice.
+    const extendingExistingTeam =
+      Boolean(playInEntry?.onExistingTeam) &&
+      ((selection.teamRosterPlacements?.length ?? 0) > 0 ||
+        Boolean(selection.byotTeammateText?.trim()) ||
+        Boolean(selection.teamRosterText?.trim()));
+    if (playInEntry?.onExistingTeam && !extendingExistingTeam) {
+      // A teammate already declared this team; the registrant confirms ADD/REPLACE only
+      // unless they are extending an incomplete roster.
     } else if (!intentOnly) {
       validatePlayInRoster(context, league, selection, blockingErrors);
       if (playInEntry && (selection.teamRosterPlacements?.length ?? 0) > 0) {

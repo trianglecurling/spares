@@ -515,7 +515,7 @@ describe('registration business logic', () => {
     });
     expect(validateRegistrationSelections(intentOnly, { requirePlayInRoster: false }).allowed).toBe(true);
     expect(validateRegistrationSelections(intentOnly).allowed).toBe(false);
-    expectReason(validateRegistrationSelections(intentOnly), 'byot_play_in_requires_full_roster');
+    expectReason(validateRegistrationSelections(intentOnly), 'byot_play_in_requires_minimum_roster');
   });
 
   test('returning member with one return and one sabbatical may join an ADD waitlist', () => {
@@ -652,7 +652,22 @@ describe('registration business logic', () => {
     expectReason(twoReturns, 'add_waitlist_requires_zero_or_one_leagues');
   });
 
-  test('REPLACE waitlist requires replaced league and is limited to two', () => {
+  test('REPLACE waitlist cannot target a play-in league', () => {
+    const playIn = league({ id: 100, name: 'Competitive', isPlayInBased: true });
+    const waitlistLeague = league({ id: 101, name: 'Thursday Open' });
+    expectReason(
+      validateRegistrationSelections(
+        registrationContext({
+          activeLeagueIds: [100],
+          leagues: { 100: playIn, 101: waitlistLeague },
+          selections: [selection({ selectionType: 'waitlist_replace', leagueId: 101, replacesLeagueId: 100 })],
+        }),
+      ),
+      'replace_waitlist_cannot_replace_play_in',
+    );
+  });
+
+  test('REPLACE waitlist requires replaced league and is limited to two only when ADD is unavailable', () => {
     expectReason(
       validateRegistrationSelections(registrationContext({ selections: [selection({ selectionType: 'waitlist_replace' })] })),
       'replace_waitlist_requires_replaced_league'
@@ -675,12 +690,37 @@ describe('registration business logic', () => {
       ).allowed
     ).toBe(true);
 
+    // ADD still available (0-1 leagues): more than two REPLACE waitlists are allowed.
+    expect(
+      validateRegistrationSelections(
+        registrationContext({
+          activeLeagueIds: [100],
+          existingWaitlistEntries: [
+            { waitlistId: 10, leagueId: 10, entryType: 'replace', replacesLeagueId: 100, status: 'active' },
+            { waitlistId: 11, leagueId: 11, entryType: 'replace', replacesLeagueId: 100, status: 'active' },
+          ],
+          leagues: {
+            100: league({ id: 100 }),
+            101: league({ id: 101, name: 'Thursday Open' }),
+          },
+          selections: [selection({ selectionType: 'waitlist_replace', leagueId: 101, replacesLeagueId: 100 })],
+        }),
+      ).allowed,
+    ).toBe(true);
+
+    // ADD unavailable (already two leagues): REPLACE is capped at two.
     const context = registrationContext({
+      activeLeagueIds: [100, 102],
       existingWaitlistEntries: [
-        { waitlistId: 10, leagueId: 10, entryType: 'replace', replacesLeagueId: 1, status: 'active' },
-        { waitlistId: 11, leagueId: 11, entryType: 'replace', replacesLeagueId: 2, status: 'active' },
+        { waitlistId: 10, leagueId: 10, entryType: 'replace', replacesLeagueId: 100, status: 'active' },
+        { waitlistId: 11, leagueId: 11, entryType: 'replace', replacesLeagueId: 102, status: 'active' },
       ],
-      selections: [selection({ selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
+      leagues: {
+        100: league({ id: 100 }),
+        101: league({ id: 101, name: 'Thursday Open' }),
+        102: league({ id: 102, name: 'Sunday Doubles', format: 'doubles' }),
+      },
+      selections: [selection({ selectionType: 'waitlist_replace', leagueId: 101, replacesLeagueId: 100 })],
     });
     expectReason(validateRegistrationSelections(context), 'replace_waitlist_limit_exceeded');
   });
@@ -728,12 +768,18 @@ describe('registration business logic', () => {
     expect(validateRegistrationSelections(context).allowed).toBe(true);
   });
 
-  test('third-league interest preserves ranking, has no limit, defers payment, and blocks BYOT', () => {
+  test('third-league interest preserves ranking, has no limit, defers payment, and allows BYOT', () => {
     const standardA = league({ id: 100, name: 'A' });
     const standardB = league({ id: 101, name: 'B' });
     const byot = league({ id: 102, name: 'BYOT', leagueType: 'bring_your_own_team' });
+    const playIn = league({
+      id: 103,
+      name: 'Play-in',
+      leagueType: 'bring_your_own_team',
+      isPlayInBased: true,
+    });
     const context = registrationContext({
-      leagues: { 100: standardA, 101: standardB, 102: byot },
+      leagues: { 100: standardA, 101: standardB, 102: byot, 103: playIn },
       selections: [
         selection({ selectionType: 'third_league_interest', leagueId: 101, rank: 2 }),
         selection({ selectionType: 'third_league_interest', leagueId: 100, rank: 1 }),
@@ -743,11 +789,18 @@ describe('registration business logic', () => {
     expect(result.rankedThirdLeagueInterest.map((item) => item.leagueId)).toEqual([100, 101]);
     expectReason(result, 'third_league_interest_defers_payment');
 
-    const blocked = validateRegistrationSelections({
+    const byotInterest = validateRegistrationSelections({
       ...context,
       selections: [selection({ selectionType: 'third_league_interest', leagueId: 102 })],
     });
-    expectReason(blocked, 'byot_cannot_be_third_league');
+    expect(byotInterest.allowed).toBe(true);
+    expectReason(byotInterest, 'third_league_interest_defers_payment');
+
+    const blockedPlayIn = validateRegistrationSelections({
+      ...context,
+      selections: [selection({ selectionType: 'third_league_interest', leagueId: 103 })],
+    });
+    expectReason(blockedPlayIn, 'play_in_cannot_be_third_league');
   });
 
   test('skipped predecessor session loses guaranteed return rights', () => {
@@ -985,7 +1038,7 @@ describe('registration business logic', () => {
     );
     expect(attachedToExistingTeam.allowed).toBe(true);
 
-    // Without an existing team, a full roster is still required.
+    // Without an existing team, at least two players are required (full roster optional).
     const missingRoster = validateRegistrationSelections(
       registrationContext({
         leagues: { [playInLeague.id]: playInLeague },
@@ -996,7 +1049,27 @@ describe('registration business logic', () => {
       }),
     );
     expect(missingRoster.allowed).toBe(false);
-    expectReason(missingRoster, 'byot_play_in_requires_full_roster');
+    expectReason(missingRoster, 'byot_play_in_requires_minimum_roster');
+
+    const partialRoster = validateRegistrationSelections(
+      registrationContext({
+        leagues: { [playInLeague.id]: playInLeague },
+        selections: [
+          selection({
+            leagueId: playInLeague.id,
+            selectionType: 'play_in_request',
+            teamRosterPlacements: [
+              { memberId: 20, entryType: 'add' },
+              { memberId: 21, entryType: 'add' },
+            ],
+          }),
+        ],
+        playInEntry: {
+          [playInLeague.id]: { onExistingTeam: false, committedOtherMemberIds: [], guaranteed: false },
+        },
+      }),
+    );
+    expect(partialRoster.allowed).toBe(true);
 
     // Drafting a roster that includes a member already committed to another declared team is blocked.
     const rosterWithCommittedTeammate = selection({
