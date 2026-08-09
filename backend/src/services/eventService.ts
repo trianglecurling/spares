@@ -1222,11 +1222,27 @@ export async function confirmRegistrationPayment(
   const { hasDirectRegistrationCapacity } = await import('./eventCapacityLogic.js');
   const registrationDemandCount = await getRegistrationDemandCount(reg.event_id);
 
+  // Capacity was already bumped when the bypass special link was used at registration
+  // create time. Still skip the race check: waitlist demand can exceed that bump, and
+  // the link promised a confirmed spot after payment.
+  let bypassCapacity = false;
+  if (reg.special_link_id != null) {
+    const [specialLink] = await db
+      .select({ bypass_capacity: schema.eventSpecialLinks.bypass_capacity })
+      .from(schema.eventSpecialLinks)
+      .where(eq(schema.eventSpecialLinks.id, reg.special_link_id))
+      .limit(1);
+    bypassCapacity = specialLink?.bypass_capacity === 1;
+  }
+
   let nextStatus: EventRegistrationStatus = 'confirmed';
   let waitlistPosition: number | null = null;
   let outcome: ConfirmRegistrationPaymentResult['outcome'] = 'confirmed';
 
-  if (!hasDirectRegistrationCapacity(event.capacity, registrationDemandCount, groupSize)) {
+  if (
+    !bypassCapacity &&
+    !hasDirectRegistrationCapacity(event.capacity, registrationDemandCount, groupSize)
+  ) {
     if (event.enable_waitlist) {
       nextStatus = 'waitlisted';
       outcome = 'waitlisted_with_refund';
