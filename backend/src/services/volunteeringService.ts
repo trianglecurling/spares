@@ -1460,10 +1460,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
   return opportunities.slice(0, maxItems);
 }
 
-export async function listMySignups(
-  memberId: number,
-  options?: { forDashboard?: boolean }
-): Promise<{
+export async function listMySignups(memberId: number): Promise<{
   upcoming: MySignupView[];
   past: MySignupView[];
 }> {
@@ -1471,14 +1468,6 @@ export async function listMySignups(
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
   const clubName = await getConfiguredClubName();
-  const forDashboard = options?.forDashboard === true;
-  const signupFilters = [
-    eq(schema.volunteerSignups.member_id, memberId),
-    eq(schema.volunteerSignups.status, 'confirmed'),
-  ];
-  if (forDashboard) {
-    signupFilters.push(eq(schema.volunteerPrograms.feature_on_dashboard, 1));
-  }
 
   const rows = await db
     .select({
@@ -1505,7 +1494,12 @@ export async function listMySignups(
       schema.volunteerPrograms,
       eq(schema.volunteerPrograms.id, schema.volunteerShifts.program_id)
     )
-    .where(and(...signupFilters))
+    .where(
+      and(
+        eq(schema.volunteerSignups.member_id, memberId),
+        eq(schema.volunteerSignups.status, 'confirmed')
+      )
+    )
     .orderBy(asc(schema.volunteerShifts.start_dt));
 
   const upcoming: MySignupView[] = [];

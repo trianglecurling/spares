@@ -441,12 +441,7 @@ export default function Dashboard() {
           ? get('/volunteering/dashboard-opportunities').catch(() => ({ opportunities: [] }))
           : Promise.resolve({ opportunities: [] }),
         enabled.has('upcoming_volunteering')
-          ? get('/volunteering/my-signups', undefined, undefined, {
-              params: { forDashboard: '1' },
-            }).catch(() => ({
-              upcoming: [],
-              past: [],
-            }))
+          ? get('/volunteering/my-signups').catch(() => ({ upcoming: [], past: [] }))
           : Promise.resolve({ upcoming: [], past: [] }),
       ]);
       setOpenRequests(openRes);

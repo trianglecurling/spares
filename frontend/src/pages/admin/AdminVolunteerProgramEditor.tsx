@@ -558,7 +558,7 @@ export default function AdminVolunteerProgramEditor() {
               label="Feature on dashboard"
               checked={featureOnDashboard}
               onChange={setFeatureOnDashboard}
-              helperText="When enabled, open shifts and members' upcoming signups from this program can appear on the member dashboard."
+              helperText="When enabled, open shifts from this program can appear in the member dashboard opportunities section."
             />
           </FormSection>
           <div className="flex gap-3">

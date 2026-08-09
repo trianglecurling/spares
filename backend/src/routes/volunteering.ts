@@ -161,11 +161,8 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
   fastify.get('/volunteering/my-signups', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
     const member = getMember(request as AuthenticatedRequest);
     if (!member) return sendApiError(reply, 401, 'Unauthorized');
-    const query = request.query as { forDashboard?: string } | undefined;
-    const forDashboard =
-      query?.forDashboard === '1' || query?.forDashboard === 'true';
     try {
-      return await listMySignups(member.id, { forDashboard });
+      return await listMySignups(member.id);
     } catch (err) {
       return handleServiceError(reply, err);
     }
