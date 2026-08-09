@@ -71,6 +71,8 @@ import {
   evaluateRegistrantPlayInEntry,
   LeagueEntryValidationError,
 } from '../registration/leagueEntryService.js';
+import { canActorImpersonateTarget } from '../services/accountAccess.js';
+import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
@@ -195,6 +197,8 @@ const teamMemberPlacementOptionsQuerySchema = z.object({
 });
 const leagueIdParamsSchema = z.object({ leagueId: z.coerce.number().int().positive() });
 const playInEntryPreviewQuerySchema = z.object({
+  /** Registrant being evaluated (the curler on the draft). Defaults to the authenticated actor. */
+  memberId: z.coerce.number().int().positive().optional(),
   memberIds: z
     .union([z.string(), z.array(z.coerce.number().int().positive())])
     .optional()
@@ -903,9 +907,18 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
       try {
         const params = leagueIdParamsSchema.parse(request.params);
         const query = playInEntryPreviewQuerySchema.parse(request.query);
+        const registrantMemberId = query.memberId ?? request.member.id;
+        // When registering on behalf of someone else, evaluate that curler — not the delegate.
+        if (
+          registrantMemberId !== request.member.id &&
+          !memberCanManageRegistrations(request.member) &&
+          !(await canActorImpersonateTarget(request.member.id, registrantMemberId))
+        ) {
+          return sendApiError(reply, 403, 'Forbidden');
+        }
         return await evaluateRegistrantPlayInEntry({
           leagueId: params.leagueId,
-          memberId: request.member.id,
+          memberId: registrantMemberId,
           teamRosterPlacements: query.memberIds.map((memberId) => ({ memberId })),
           pendingTeammateText: query.pendingNames ?? null,
         });

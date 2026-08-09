@@ -3482,6 +3482,8 @@ export default function RegistrationShellPage() {
               `/registration/leagues/${item.leagueId}/play-in-entry-preview`,
               {
                 params: {
+                  // Evaluate the curler on this draft, not the logged-in delegate/actor.
+                  ...(registeringCurlerMemberId != null ? { memberId: registeringCurlerMemberId } : {}),
                   memberIds: item.memberIds.join(','),
                   pendingNames: item.pendingNames.join('\n') || undefined,
                 },
