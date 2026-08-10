@@ -93,6 +93,11 @@ type MemberMultiSelectProps = {
   manualNameEntry?: MemberMultiSelectManualNameEntry;
   /** When set, assigns this id to the combobox input for label association (`htmlFor`). */
   inputId?: string;
+  /**
+   * When this value changes to a new non-zero number, focus the search input.
+   * Useful for revealing the control and moving focus on demand.
+   */
+  focusRequestKey?: number;
 };
 
 export default function MemberMultiSelect({
@@ -112,6 +117,7 @@ export default function MemberMultiSelect({
   extraPills,
   manualNameEntry,
   inputId: inputIdProp,
+  focusRequestKey = 0,
 }: MemberMultiSelectProps) {
   const sharedMembers = useMemberOptions({ autoLoad: options === undefined });
   const [query, setQuery] = useState('');
@@ -159,6 +165,11 @@ export default function MemberMultiSelect({
     if (!inputRef.current) return;
     setDropdownPosition(computeDropdownPosition(inputRef.current));
   }, []);
+
+  useEffect(() => {
+    if (!focusRequestKey || disabled) return;
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [focusRequestKey, disabled]);
 
   useLayoutEffect(() => {
     if (!open || manualEntryMode || disabled || hasReachedMax || (!query.trim() && !manualNameEntry)) {

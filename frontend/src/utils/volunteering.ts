@@ -76,17 +76,29 @@ export type VolunteerProgramView = {
   canManage: boolean;
 };
 
-export type DashboardVolunteerOpportunity = {
+export type DashboardVolunteerOpportunityRole = {
   shiftRoleId: number;
+  roleId: number;
+  roleName: string;
+  volunteersNeeded: number;
+  volunteersRegistered: number;
+  requiresCredentials: boolean;
+  callerIsSignedUp: boolean;
+};
+
+export type DashboardVolunteerOpportunityShift = {
+  shiftId: number;
+  startDt: string;
+  endDt: string;
+  roles: DashboardVolunteerOpportunityRole[];
+};
+
+export type DashboardVolunteerOpportunityProgram = {
   programId: number;
   programTitle: string;
   location: string | null;
-  roleId: number;
-  roleName: string;
-  startDt: string;
-  endDt: string;
-  volunteersNeeded: number;
-  volunteersRegistered: number;
+  totalShifts: number;
+  shifts: DashboardVolunteerOpportunityShift[];
 };
 
 export type MyVolunteerSignup = {

@@ -181,17 +181,29 @@ export type VolunteerProgramView = {
   canManage: boolean;
 };
 
-export type DashboardOpportunity = {
+export type DashboardOpportunityRole = {
   shiftRoleId: number;
+  roleId: number;
+  roleName: string;
+  volunteersNeeded: number;
+  volunteersRegistered: number;
+  requiresCredentials: boolean;
+  callerIsSignedUp: boolean;
+};
+
+export type DashboardOpportunityShift = {
+  shiftId: number;
+  startDt: string;
+  endDt: string;
+  roles: DashboardOpportunityRole[];
+};
+
+export type DashboardOpportunityProgram = {
   programId: number;
   programTitle: string;
   location: string | null;
-  roleId: number;
-  roleName: string;
-  startDt: string;
-  endDt: string;
-  volunteersNeeded: number;
-  volunteersRegistered: number;
+  totalShifts: number;
+  shifts: DashboardOpportunityShift[];
 };
 
 export type MySignupView = {
@@ -1317,7 +1329,22 @@ export async function listHubPrograms(member: Member): Promise<{
     listMyCredentials(member.id),
     listHubCredentials(member.id),
   ]);
-  return { programs, myCredentials, credentials };
+  // Discover opportunities: chronological by earliest upcoming shift (title as tiebreaker).
+  // Shifts within each program are already ordered by start_dt ascending.
+  const sortedPrograms = [...programs].sort((a, b) => {
+    const aFirst = a.shifts[0]?.startDt ?? null;
+    const bFirst = b.shifts[0]?.startDt ?? null;
+    if (aFirst && bFirst) {
+      const byShift = aFirst.localeCompare(bFirst);
+      if (byShift !== 0) return byShift;
+    } else if (aFirst) {
+      return -1;
+    } else if (bFirst) {
+      return 1;
+    }
+    return a.title.localeCompare(b.title);
+  });
+  return { programs: sortedPrograms, myCredentials, credentials };
 }
 
 export async function listAdminPrograms(
@@ -1332,6 +1359,18 @@ export async function listAdminPrograms(
     programIds: managed,
     upcomingOnly: false,
   });
+}
+
+export async function getHubProgram(member: Member, programId: number): Promise<VolunteerProgramView> {
+  const programs = await buildProgramViews({
+    member,
+    includeArchived: false,
+    programIds: [programId],
+    upcomingOnly: true,
+    forHub: true,
+  });
+  if (!programs[0]) throw new VolunteeringServiceError('Program not found', 404);
+  return programs[0];
 }
 
 export async function getAdminProgram(
@@ -1357,14 +1396,15 @@ export async function getAdminProgram(
   return programs[0];
 }
 
-export async function listDashboardOpportunities(memberId: number): Promise<DashboardOpportunity[]> {
+export async function listDashboardOpportunities(memberId: number): Promise<DashboardOpportunityProgram[]> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
   const { getDashboardSectionConfig } = await import('../domains/content/dashboardSections.js');
   const sectionConfig = await getDashboardSectionConfig('volunteer_opportunities');
   const lookAheadDays = sectionConfig.lookAheadDays ?? 30;
-  const maxItems = sectionConfig.maxItems ?? 10;
+  const maxPrograms = sectionConfig.maxPrograms ?? 3;
+  const maxShiftsPerProgram = sectionConfig.maxShiftsPerProgram ?? 4;
   const horizon = new Date(now.getTime() + lookAheadDays * 24 * 60 * 60 * 1000).toISOString();
   const [held, clubName] = await Promise.all([getMemberCredentials(memberId), getConfiguredClubName()]);
 
@@ -1430,9 +1470,38 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
           .groupBy(schema.volunteerSignups.shift_role_id);
 
   const countMap = new Map(signupCounts.map((r) => [r.shiftRoleId, r.count]));
+  const mySignupRows =
+    shiftRoleIds.length === 0
+      ? []
+      : await db
+          .select({ shiftRoleId: schema.volunteerSignups.shift_role_id })
+          .from(schema.volunteerSignups)
+          .where(
+            and(
+              inArray(schema.volunteerSignups.shift_role_id, shiftRoleIds),
+              eq(schema.volunteerSignups.status, 'confirmed'),
+              eq(schema.volunteerSignups.member_id, memberId)
+            )
+          );
+  const mySignupSet = new Set(mySignupRows.map((row) => row.shiftRoleId));
   const shiftMap = new Map(shifts.map((s) => [s.shiftId, s]));
 
-  const opportunities: DashboardOpportunity[] = [];
+  type ProgramDraft = {
+    programId: number;
+    programTitle: string;
+    location: string | null;
+    shifts: Map<
+      number,
+      {
+        shiftId: number;
+        startDt: string;
+        endDt: string;
+        roles: DashboardOpportunityRole[];
+      }
+    >;
+  };
+
+  const programsById = new Map<number, ProgramDraft>();
   for (const sr of shiftRoles) {
     const shift = shiftMap.get(sr.shiftId);
     if (!shift) continue;
@@ -1440,24 +1509,64 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     if (!memberHasAllCredentials(held, required)) continue;
     const registered = countMap.get(sr.id) ?? 0;
     if (registered >= sr.volunteersNeeded) continue;
-    opportunities.push({
+
+    let program = programsById.get(shift.programId);
+    if (!program) {
+      program = {
+        programId: shift.programId,
+        programTitle: shift.programTitle,
+        location: normalizeVolunteerLocation(shift.location, clubName),
+        shifts: new Map(),
+      };
+      programsById.set(shift.programId, program);
+    }
+
+    let shiftDraft = program.shifts.get(sr.shiftId);
+    if (!shiftDraft) {
+      shiftDraft = {
+        shiftId: sr.shiftId,
+        startDt: requireIso(shift.startDt as any, 'startDt'),
+        endDt: requireIso(shift.endDt as any, 'endDt'),
+        roles: [],
+      };
+      program.shifts.set(sr.shiftId, shiftDraft);
+    }
+    shiftDraft.roles.push({
       shiftRoleId: sr.id,
-      programId: shift.programId,
-      programTitle: shift.programTitle,
-      location: normalizeVolunteerLocation(shift.location, clubName),
       roleId: sr.roleId,
       roleName: sr.roleName,
-      startDt: requireIso(shift.startDt as any, 'startDt'),
-      endDt: requireIso(shift.endDt as any, 'endDt'),
       volunteersNeeded: sr.volunteersNeeded,
       volunteersRegistered: registered,
+      requiresCredentials: required.length > 0,
+      callerIsSignedUp: mySignupSet.has(sr.id),
     });
   }
 
-  opportunities.sort(
-    (a, b) => new Date(a.startDt).getTime() - new Date(b.startDt).getTime() || a.shiftRoleId - b.shiftRoleId,
-  );
-  return opportunities.slice(0, maxItems);
+  const programs: DashboardOpportunityProgram[] = [...programsById.values()]
+    .map((program) => {
+      const sortedShifts = [...program.shifts.values()].sort(
+        (a, b) =>
+          new Date(a.startDt).getTime() - new Date(b.startDt).getTime() || a.shiftId - b.shiftId,
+      );
+      for (const shift of sortedShifts) {
+        shift.roles.sort((a, b) => a.roleName.localeCompare(b.roleName) || a.shiftRoleId - b.shiftRoleId);
+      }
+      return {
+        programId: program.programId,
+        programTitle: program.programTitle,
+        location: program.location,
+        totalShifts: sortedShifts.length,
+        shifts: sortedShifts.slice(0, maxShiftsPerProgram),
+      };
+    })
+    .sort((a, b) => {
+      const aFirst = a.shifts[0]?.startDt ?? '';
+      const bFirst = b.shifts[0]?.startDt ?? '';
+      return aFirst.localeCompare(bFirst) || a.programTitle.localeCompare(b.programTitle);
+    })
+    .slice(0, maxPrograms);
+
+  return programs;
 }
 
 export async function listMySignups(memberId: number): Promise<{

@@ -31,9 +31,12 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPhone } from '../utils/phone';
 import { renderMe } from '../utils/me';
+import VolunteerSignupDialog, {
+  type VolunteerSignupTarget,
+} from '../components/volunteering/VolunteerSignupDialog';
 import {
   formatVolunteerRange,
-  type DashboardVolunteerOpportunity,
+  type DashboardVolunteerOpportunityProgram,
   type MyVolunteerSignup,
 } from '../utils/volunteering';
 
@@ -102,6 +105,8 @@ interface MyIceBooking {
 type DashboardSectionConfig = {
   lookAheadDays?: number;
   maxItems?: number;
+  maxPrograms?: number;
+  maxShiftsPerProgram?: number;
   showWhenEmpty?: boolean;
   defaultExpanded?: boolean;
 };
@@ -139,7 +144,7 @@ const DEFAULT_LAYOUT_SECTIONS: DashboardLayoutSection[] = [
     key: 'volunteer_opportunities',
     label: 'Upcoming volunteer opportunities',
     enabled: true,
-    config: { lookAheadDays: 30, maxItems: 10 },
+    config: { lookAheadDays: 30, maxPrograms: 3, maxShiftsPerProgram: 4 },
   },
   { key: 'my_sparing', label: 'My upcoming sparing', enabled: true, config: { showWhenEmpty: false } },
   { key: 'my_spare_requests', label: 'My spare requests', enabled: true, config: { showWhenEmpty: false } },
@@ -216,7 +221,13 @@ export default function Dashboard() {
   const [myRequests, setMyRequests] = useState<MySpareRequest[]>([]);
   const [upcomingGames, setUpcomingGames] = useState<UpcomingGame[]>([]);
   const [iceBookings, setIceBookings] = useState<MyIceBooking[]>([]);
-  const [volunteerOpportunities, setVolunteerOpportunities] = useState<DashboardVolunteerOpportunity[]>([]);
+  const [volunteerOpportunityPrograms, setVolunteerOpportunityPrograms] = useState<
+    DashboardVolunteerOpportunityProgram[]
+  >([]);
+  const [expandedVolunteerPrograms, setExpandedVolunteerPrograms] = useState<Set<number>>(new Set());
+  const [volunteerSignupTarget, setVolunteerSignupTarget] = useState<VolunteerSignupTarget | null>(
+    null,
+  );
   const [myVolunteerSignups, setMyVolunteerSignups] = useState<MyVolunteerSignup[]>([]);
   const [loading, setLoading] = useState(true);
   const [layoutSections, setLayoutSections] = useState<DashboardLayoutSection[]>(DEFAULT_LAYOUT_SECTIONS);
@@ -438,8 +449,8 @@ export default function Dashboard() {
           : emptyList,
         icePromise.catch(() => [] as MyIceBooking[]),
         enabled.has('volunteer_opportunities')
-          ? get('/volunteering/dashboard-opportunities').catch(() => ({ opportunities: [] }))
-          : Promise.resolve({ opportunities: [] }),
+          ? get('/volunteering/dashboard-opportunities').catch(() => ({ programs: [] }))
+          : Promise.resolve({ programs: [] }),
         enabled.has('upcoming_volunteering')
           ? get('/volunteering/my-signups').catch(() => ({ upcoming: [], past: [] }))
           : Promise.resolve({ upcoming: [], past: [] }),
@@ -451,9 +462,18 @@ export default function Dashboard() {
       setMyRequests(myRequestsRes.filter((r: MySpareRequest) => r.status !== 'cancelled'));
       setUpcomingGames(upcomingGamesRes || []);
       setIceBookings(iceRes);
-      setVolunteerOpportunities(
-        (volunteerRes as { opportunities?: DashboardVolunteerOpportunity[] })?.opportunities || []
-      );
+      const nextVolunteerPrograms =
+        (volunteerRes as { programs?: DashboardVolunteerOpportunityProgram[] })?.programs || [];
+      setVolunteerOpportunityPrograms(nextVolunteerPrograms);
+      setExpandedVolunteerPrograms((prev) => {
+        if (prev.size > 0) {
+          const nextIds = new Set(nextVolunteerPrograms.map((program) => program.programId));
+          const retained = [...prev].filter((id) => nextIds.has(id));
+          if (retained.length > 0) return new Set(retained);
+        }
+        const first = nextVolunteerPrograms[0];
+        return first ? new Set([first.programId]) : new Set();
+      });
       setMyVolunteerSignups(
         ((myVolunteerRes as { upcoming?: MyVolunteerSignup[] })?.upcoming || []).filter(
           (signup) => signup.status === 'confirmed',
@@ -1083,7 +1103,7 @@ export default function Dashboard() {
         );
 
       case 'volunteer_opportunities':
-        if (!shouldShowWhenEmpty('volunteer_opportunities', volunteerOpportunities.length)) {
+        if (!shouldShowWhenEmpty('volunteer_opportunities', volunteerOpportunityPrograms.length)) {
           return null;
         }
         return (
@@ -1095,7 +1115,7 @@ export default function Dashboard() {
               </Link>
             }
           >
-            {volunteerOpportunities.length === 0 ? (
+            {volunteerOpportunityPrograms.length === 0 ? (
               <div className="app-card py-8 text-center">
                 <p className="text-gray-600 dark:text-gray-400">
                   No upcoming volunteer opportunities.
@@ -1103,31 +1123,108 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {volunteerOpportunities.map((opp) => (
-                  <div
-                    key={opp.shiftRoleId}
-                    className="app-card p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-gray-900 dark:text-gray-100">
-                        {opp.programTitle} · {opp.roleName}
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {formatVolunteerRange(opp.startDt, opp.endDt)}
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {opp.volunteersRegistered}/{opp.volunteersNeeded} filled
-                        {opp.location ? ` · ${opp.location}` : ''}
-                      </div>
+                {volunteerOpportunityPrograms.map((program) => {
+                  const expanded = expandedVolunteerPrograms.has(program.programId);
+                  const programHref = `/volunteering/programs/${program.programId}`;
+                  const hasMoreShifts = program.totalShifts > program.shifts.length;
+                  return (
+                    <div key={program.programId} className="app-card overflow-hidden p-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedVolunteerPrograms((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(program.programId)) next.delete(program.programId);
+                            else next.add(program.programId);
+                            return next;
+                          });
+                        }}
+                        className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
+                        aria-expanded={expanded}
+                      >
+                        <div className="min-w-0 space-y-1.5">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
+                            {program.programTitle}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+                            <span className="inline-flex rounded-full bg-primary-teal-solid px-2 py-0.5 text-xs font-medium text-white">
+                              {program.totalShifts} open shift
+                              {program.totalShifts === 1 ? '' : 's'}
+                            </span>
+                            {program.location ? <span>{program.location}</span> : null}
+                          </div>
+                        </div>
+                        <HiChevronDown
+                          className={`mt-1 h-5 w-5 shrink-0 text-gray-500 transition-transform ${
+                            expanded ? 'rotate-180' : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </button>
+
+                      {expanded ? (
+                        <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4 space-y-3">
+                          {program.shifts.map((shift) => (
+                            <div
+                              key={shift.shiftId}
+                              className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-3"
+                            >
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                {formatVolunteerRange(shift.startDt, shift.endDt)}
+                              </div>
+                              <ul className="mt-2 space-y-1.5">
+                                {shift.roles.map((role) => (
+                                  <li
+                                    key={role.shiftRoleId}
+                                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm"
+                                  >
+                                    <span className="text-gray-700 dark:text-gray-300">
+                                      {role.roleName}
+                                      <span className="text-gray-500 dark:text-gray-400">
+                                        {' '}
+                                        · {role.volunteersRegistered}/{role.volunteersNeeded} filled
+                                      </span>
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      className="!px-3 !py-1.5"
+                                      onClick={() => {
+                                        setVolunteerSignupTarget({
+                                          shiftRoleId: role.shiftRoleId,
+                                          roleName: role.roleName,
+                                          shiftLabel: formatVolunteerRange(
+                                            shift.startDt,
+                                            shift.endDt,
+                                          ),
+                                          remainingSpots: Math.max(
+                                            0,
+                                            role.volunteersNeeded - role.volunteersRegistered,
+                                          ),
+                                          requiresCredentials: role.requiresCredentials,
+                                          callerIsSignedUp: role.callerIsSignedUp,
+                                        });
+                                      }}
+                                    >
+                                      {role.callerIsSignedUp ? 'Add volunteers' : 'Sign up'}
+                                    </Button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                          {hasMoreShifts ? (
+                            <Link
+                              to={programHref}
+                              className="inline-block text-sm text-primary-teal-link hover:underline"
+                            >
+                              View all {program.totalShifts} shifts →
+                            </Link>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
-                    <Link
-                      to="/volunteering"
-                      className="text-sm text-primary-teal-link hover:underline ml-auto"
-                    >
-                      Sign up
-                    </Link>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </DashboardSection>
@@ -1468,6 +1565,50 @@ export default function Dashboard() {
           })}
         </div>
       </AppPage>
+
+      {volunteerSignupTarget ? (
+        <VolunteerSignupDialog
+          target={volunteerSignupTarget}
+          onClose={() => setVolunteerSignupTarget(null)}
+          onSuccess={async (count) => {
+            setVolunteerSignupTarget(null);
+            showAlert(
+              count === 1
+                ? 'Signed up. Confirmation emails are on the way for selected members.'
+                : `${count} volunteers signed up. Confirmation emails are on the way for selected members.`,
+              'success',
+            );
+            try {
+              const [volunteerRes, myVolunteerRes] = await Promise.all([
+                get('/volunteering/dashboard-opportunities').catch(() => ({ programs: [] })),
+                get('/volunteering/my-signups').catch(() => ({ upcoming: [], past: [] })),
+              ]);
+              const nextVolunteerPrograms =
+                (volunteerRes as { programs?: DashboardVolunteerOpportunityProgram[] })
+                  ?.programs || [];
+              setVolunteerOpportunityPrograms(nextVolunteerPrograms);
+              setExpandedVolunteerPrograms((prev) => {
+                if (prev.size > 0) {
+                  const nextIds = new Set(
+                    nextVolunteerPrograms.map((program) => program.programId),
+                  );
+                  const retained = [...prev].filter((id) => nextIds.has(id));
+                  if (retained.length > 0) return new Set(retained);
+                }
+                const first = nextVolunteerPrograms[0];
+                return first ? new Set([first.programId]) : new Set();
+              });
+              setMyVolunteerSignups(
+                ((myVolunteerRes as { upcoming?: MyVolunteerSignup[] })?.upcoming || []).filter(
+                  (signup) => signup.status === 'confirmed',
+                ),
+              );
+            } catch (error) {
+              console.error('Failed to refresh volunteering data:', error);
+            }
+          }}
+        />
+      ) : null}
 
       <Modal
         isOpen={!!selectedRequest}

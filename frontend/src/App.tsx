@@ -83,6 +83,7 @@ const AdminVolunteeringPrograms = lazyRoute(() =>
 const AdminVolunteerProgramEditor = lazyRoute(() => import('./pages/admin/AdminVolunteerProgramEditor'));
 const AdminVolunteerCredentials = lazyRoute(() => import('./pages/admin/AdminVolunteerCredentials'));
 const VolunteeringHub = lazyRoute(() => import('./pages/VolunteeringHub'));
+const VolunteerProgramPage = lazyRoute(() => import('./pages/VolunteerProgramPage'));
 const MyVolunteerShifts = lazyRoute(() => import('./pages/MyVolunteerShifts'));
 const AdminEventRegistrationEditor = lazyRoute(() => import('./pages/admin/AdminEventRegistrationEditor'));
 const AdminEventScorekeeper = lazyRoute(() => import('./pages/admin/AdminEventScorekeeper'));
@@ -371,6 +372,14 @@ function App() {
                         element={
                           <ProtectedRoute>
                             <VolunteeringHub />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/volunteering/programs/:id"
+                        element={
+                          <ProtectedRoute>
+                            <VolunteerProgramPage />
                           </ProtectedRoute>
                         }
                       />

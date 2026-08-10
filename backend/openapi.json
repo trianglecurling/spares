@@ -27066,6 +27066,28 @@
         }
       }
     },
+    "/volunteering/programs/{id}": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/volunteering/my-credentials": {
       "get": {
         "tags": [

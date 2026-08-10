@@ -180,6 +180,8 @@ const dashboardSectionUpdateSchema = z.object({
     .object({
       lookAheadDays: z.number().int().min(1).max(365).optional(),
       maxItems: z.number().int().min(1).max(100).optional(),
+      maxPrograms: z.number().int().min(1).max(50).optional(),
+      maxShiftsPerProgram: z.number().int().min(1).max(50).optional(),
       showWhenEmpty: z.boolean().optional(),
       defaultExpanded: z.boolean().optional(),
     })

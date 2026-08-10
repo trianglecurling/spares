@@ -17,6 +17,8 @@ import Modal from '../../components/Modal';
 export type DashboardSectionConfig = {
   lookAheadDays?: number;
   maxItems?: number;
+  maxPrograms?: number;
+  maxShiftsPerProgram?: number;
   showWhenEmpty?: boolean;
   defaultExpanded?: boolean;
 };
@@ -150,7 +152,8 @@ const parseEasternDateTimeToIso = (value: string): string => {
 type SectionFormState = {
   isEnabled: boolean;
   lookAheadDays: string;
-  maxItems: string;
+  maxPrograms: string;
+  maxShiftsPerProgram: string;
   showWhenEmpty: boolean;
   defaultExpanded: boolean;
   alertTitle: string;
@@ -163,7 +166,8 @@ type SectionFormState = {
 const emptyForm = (): SectionFormState => ({
   isEnabled: true,
   lookAheadDays: '',
-  maxItems: '',
+  maxPrograms: '',
+  maxShiftsPerProgram: '',
   showWhenEmpty: false,
   defaultExpanded: false,
   alertTitle: '',
@@ -177,7 +181,9 @@ function formFromRow(row: DashboardSectionAdminRow): SectionFormState {
   return {
     isEnabled: row.isEnabled,
     lookAheadDays: row.config.lookAheadDays != null ? String(row.config.lookAheadDays) : '',
-    maxItems: row.config.maxItems != null ? String(row.config.maxItems) : '',
+    maxPrograms: row.config.maxPrograms != null ? String(row.config.maxPrograms) : '',
+    maxShiftsPerProgram:
+      row.config.maxShiftsPerProgram != null ? String(row.config.maxShiftsPerProgram) : '',
     showWhenEmpty: row.config.showWhenEmpty ?? false,
     defaultExpanded: row.config.defaultExpanded ?? false,
     alertTitle: row.alert?.title ?? '',
@@ -197,7 +203,7 @@ function hasLookAheadDays(key: string): boolean {
   );
 }
 
-function hasMaxItems(key: string): boolean {
+function hasVolunteerOpportunityLimits(key: string): boolean {
   return key === 'volunteer_opportunities';
 }
 
@@ -290,7 +296,7 @@ export default function AdminContentDashboardPanel({
 
     if (
       hasLookAheadDays(editingRow.key) ||
-      hasMaxItems(editingRow.key) ||
+      hasVolunteerOpportunityLimits(editingRow.key) ||
       hasShowWhenEmpty(editingRow.key) ||
       hasDefaultExpanded(editingRow.key)
     ) {
@@ -303,13 +309,19 @@ export default function AdminContentDashboardPanel({
         }
         config.lookAheadDays = days;
       }
-      if (hasMaxItems(editingRow.key)) {
-        const maxItems = Number.parseInt(form.maxItems, 10);
-        if (!Number.isFinite(maxItems) || maxItems < 1) {
-          showAlert('Max items must be a whole number of at least 1.', 'error');
+      if (hasVolunteerOpportunityLimits(editingRow.key)) {
+        const maxPrograms = Number.parseInt(form.maxPrograms, 10);
+        if (!Number.isFinite(maxPrograms) || maxPrograms < 1) {
+          showAlert('Max programs must be a whole number of at least 1.', 'error');
           return;
         }
-        config.maxItems = maxItems;
+        const maxShiftsPerProgram = Number.parseInt(form.maxShiftsPerProgram, 10);
+        if (!Number.isFinite(maxShiftsPerProgram) || maxShiftsPerProgram < 1) {
+          showAlert('Max shifts per program must be a whole number of at least 1.', 'error');
+          return;
+        }
+        config.maxPrograms = maxPrograms;
+        config.maxShiftsPerProgram = maxShiftsPerProgram;
       }
       if (hasShowWhenEmpty(editingRow.key)) {
         config.showWhenEmpty = form.showWhenEmpty;
@@ -532,26 +544,50 @@ export default function AdminContentDashboardPanel({
             </FormField>
           ) : null}
 
-          {editingRow && hasMaxItems(editingRow.key) ? (
-            <FormField
-              label="Max items"
-              htmlFor={`${formFieldId}-max-items`}
-              helperText="Maximum number of opportunities to show."
-              required
-            >
-              <input
-                id={`${formFieldId}-max-items`}
-                type="number"
-                min={1}
-                max={100}
-                value={form.maxItems}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, maxItems: event.target.value }))
-                }
-                className="app-input"
+          {editingRow && hasVolunteerOpportunityLimits(editingRow.key) ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <FormField
+                label="Max programs"
+                htmlFor={`${formFieldId}-max-programs`}
+                helperText="Maximum number of programs to show."
                 required
-              />
-            </FormField>
+              >
+                <input
+                  id={`${formFieldId}-max-programs`}
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={form.maxPrograms}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, maxPrograms: event.target.value }))
+                  }
+                  className="app-input"
+                  required
+                />
+              </FormField>
+              <FormField
+                label="Max shifts per program"
+                htmlFor={`${formFieldId}-max-shifts`}
+                helperText="Maximum shifts listed under each program."
+                required
+              >
+                <input
+                  id={`${formFieldId}-max-shifts`}
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={form.maxShiftsPerProgram}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      maxShiftsPerProgram: event.target.value,
+                    }))
+                  }
+                  className="app-input"
+                  required
+                />
+              </FormField>
+            </div>
           ) : null}
 
           {editingRow && hasShowWhenEmpty(editingRow.key) ? (
@@ -575,7 +611,7 @@ export default function AdminContentDashboardPanel({
           {editingRow &&
           editingRow.key !== 'alert' &&
           !hasLookAheadDays(editingRow.key) &&
-          !hasMaxItems(editingRow.key) &&
+          !hasVolunteerOpportunityLimits(editingRow.key) &&
           !hasShowWhenEmpty(editingRow.key) &&
           !hasDefaultExpanded(editingRow.key) ? (
             <p className="text-sm text-gray-600 dark:text-gray-400">

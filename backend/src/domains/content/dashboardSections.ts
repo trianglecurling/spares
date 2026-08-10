@@ -22,6 +22,8 @@ export type DashboardSectionKey = (typeof DASHBOARD_SECTION_KEYS)[number];
 export type DashboardSectionConfig = {
   lookAheadDays?: number;
   maxItems?: number;
+  maxPrograms?: number;
+  maxShiftsPerProgram?: number;
   showWhenEmpty?: boolean;
   defaultExpanded?: boolean;
 };
@@ -76,7 +78,7 @@ export const DEFAULT_DASHBOARD_SECTIONS: DefaultSection[] = [
     key: 'volunteer_opportunities',
     label: 'Upcoming volunteer opportunities',
     sortOrder: 50,
-    config: { lookAheadDays: 30, maxItems: 10 },
+    config: { lookAheadDays: 30, maxPrograms: 3, maxShiftsPerProgram: 4 },
   },
   { key: 'my_sparing', label: 'My upcoming sparing', sortOrder: 60, config: { showWhenEmpty: false } },
   { key: 'my_spare_requests', label: 'My spare requests', sortOrder: 70, config: { showWhenEmpty: false } },
@@ -133,7 +135,12 @@ export function parseDashboardSectionConfig(
   }
 
   if (key === 'volunteer_opportunities') {
-    config.maxItems = clampPositiveInt(source.maxItems, defaults.maxItems ?? 10, 100);
+    config.maxPrograms = clampPositiveInt(source.maxPrograms, defaults.maxPrograms ?? 3, 50);
+    config.maxShiftsPerProgram = clampPositiveInt(
+      source.maxShiftsPerProgram,
+      defaults.maxShiftsPerProgram ?? 4,
+      50,
+    );
   }
 
   if (

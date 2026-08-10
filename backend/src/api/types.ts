@@ -405,6 +405,8 @@ export type UpdateConfigBody = {
 export type DashboardSectionConfig = {
   lookAheadDays?: number;
   maxItems?: number;
+  maxPrograms?: number;
+  maxShiftsPerProgram?: number;
   showWhenEmpty?: boolean;
   defaultExpanded?: boolean;
 };

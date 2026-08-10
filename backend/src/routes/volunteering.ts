@@ -22,6 +22,7 @@ import {
   listAdminPrograms,
   listCredentialsAdmin,
   listDashboardOpportunities,
+  getHubProgram,
   listHubCredentials,
   listHubPrograms,
   listManagedCredentialIds,
@@ -148,6 +149,22 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
     }
   });
 
+  fastify.get<{ Params: { id: string } }>(
+    '/volunteering/programs/:id',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const programId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(programId)) return sendApiError(reply, 400, 'Invalid program id');
+      try {
+        return { program: await getHubProgram(member, programId) };
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
   fastify.get('/volunteering/my-credentials', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
     const member = getMember(request as AuthenticatedRequest);
     if (!member) return sendApiError(reply, 401, 'Unauthorized');
@@ -175,7 +192,7 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       const member = getMember(request as AuthenticatedRequest);
       if (!member) return sendApiError(reply, 401, 'Unauthorized');
       try {
-        return { opportunities: await listDashboardOpportunities(member.id) };
+        return { programs: await listDashboardOpportunities(member.id) };
       } catch (err) {
         return handleServiceError(reply, err);
       }
