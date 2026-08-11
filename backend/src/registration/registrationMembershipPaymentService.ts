@@ -438,6 +438,7 @@ const SELECTION_TYPE_LABELS: Record<string, string> = {
 
 const GUARANTEE_LABEL_TEXT: Record<string, string> = {
   guaranteed_return: 'Guaranteed return',
+  awaiting_roster_entry: 'Awaiting roster entry',
   guaranteed_fallback: 'Guaranteed fallback',
   waitlisted: 'Waitlisted',
   subject_to_availability: 'Subject to availability',
@@ -756,6 +757,65 @@ async function loadExistingSabbaticals(memberId: number): Promise<RegistrationCo
   }));
 }
 
+/**
+ * Members who hold a return right for each bring-your-own-team league: anyone on
+ * the predecessor roster, plus anyone with an active sabbatical that matches the
+ * league lineage. The priority page uses this to decide whether a declared team
+ * earns a guaranteed return.
+ */
+async function loadReturnEligibleMemberIdsByLeagueId(
+  leagues: Record<number, LeagueConfig>,
+): Promise<Record<number, number[]>> {
+  const byotLeagues = Object.values(leagues).filter(
+    (league) => league.leagueType === 'bring_your_own_team' && !league.isPlayInBased && league.predecessorLeagueId != null,
+  );
+  if (byotLeagues.length === 0) return {};
+
+  const { db, schema } = getDrizzleDb();
+  const predecessorIds = [...new Set(byotLeagues.map((league) => league.predecessorLeagueId!))];
+  const rosterRows = await db
+    .select({
+      memberId: schema.leagueRoster.member_id,
+      leagueId: schema.leagueRoster.league_id,
+    })
+    .from(schema.leagueRoster)
+    .where(inArray(schema.leagueRoster.league_id, predecessorIds));
+
+  const membersByPredecessor = new Map<number, Set<number>>();
+  for (const row of rosterRows) {
+    const set = membersByPredecessor.get(row.leagueId) ?? new Set<number>();
+    set.add(row.memberId);
+    membersByPredecessor.set(row.leagueId, set);
+  }
+
+  const sabbaticalRows = await db
+    .select({
+      memberId: schema.curlingLeagueSabbaticals.member_id,
+      originalLeagueId: schema.curlingLeagueSabbaticals.original_league_id,
+      currentLeagueId: schema.curlingLeagueSabbaticals.current_league_id,
+      status: schema.curlingLeagueSabbaticals.status,
+    })
+    .from(schema.curlingLeagueSabbaticals)
+    .where(inArray(schema.curlingLeagueSabbaticals.status, ['active', 'staff_overridden', 'returning']));
+
+  const result: Record<number, number[]> = {};
+  for (const league of byotLeagues) {
+    const eligible = new Set(membersByPredecessor.get(league.predecessorLeagueId!) ?? []);
+    for (const sabbatical of sabbaticalRows) {
+      if (
+        sabbatical.currentLeagueId === league.predecessorLeagueId ||
+        sabbatical.originalLeagueId === league.predecessorLeagueId ||
+        sabbatical.currentLeagueId === league.id ||
+        sabbatical.originalLeagueId === league.id
+      ) {
+        eligible.add(sabbatical.memberId);
+      }
+    }
+    result[league.id] = [...eligible];
+  }
+  return result;
+}
+
 async function loadJuniorAssistance(registrationId: number): Promise<RegistrationContext['juniorAssistance'] | undefined> {
   const { db, schema } = getDrizzleDb();
   const [row] = await db
@@ -916,6 +976,9 @@ async function buildRegistrationContextFromSourceRow(
     new Set([...options.completedSessions.map((session) => session.leagueId), ...activeLeagueIds])
   );
 
+  const returnEligibleMemberIdsByLeagueId =
+    Object.keys(leagues).length > 0 ? await loadReturnEligibleMemberIdsByLeagueId(leagues) : {};
+
   const { loadPlayInEntryContextsForRegistration } = await import('./leagueEntryService.js');
   const playInEntry = options.registrationId
     ? await loadPlayInEntryContextsForRegistration({
@@ -959,6 +1022,7 @@ async function buildRegistrationContextFromSourceRow(
     },
     activeLeagueIds,
     participatedLeagueIds,
+    returnEligibleMemberIdsByLeagueId,
     existingSabbaticals,
     existingWaitlistEntries,
     leagues,

@@ -404,7 +404,9 @@ BYOT rules:
 - New members may request a BYOT league.
 - Returning members may request a BYOT league.
 - A returning individual may select a BYOT league even if their team is not
-  returning.
+  returning. That entry is allowed on the priority list, but it is only labeled
+  **guaranteed return** when every declared teammate also holds a return right
+  for the league. Mixed or new teams are waitlisted (or subject to availability).
 - BYOT entries must be ranked above every standard league on the priority list.
   See `league-priority.md`.
 - A BYOT entry requires a full roster: exactly 4 players for team leagues, 2 for
@@ -570,7 +572,9 @@ Protected claims include:
 
 - Guaranteed return to a league
 - Guaranteed fallback to a league
-- Sabbatical for a league
+
+Sabbaticals are separate. They do not consume one of the two guaranteed return
+spots.
 
 Play-in based leagues sit on the priority list like any other league. A
 registrant whose declared team has a full roster and clears the TLINE bar earns
@@ -579,8 +583,8 @@ entry never receives a Guaranteed fallback.
 
 Example:
 
-- A member cannot play in two guaranteed-return leagues and also take sabbatical
-  for a third.
+- A member may play in two guaranteed-return leagues and also take sabbatical
+  for another prior league.
 - A member could return to one league and take sabbatical for one league.
 - A member could take sabbatical for two leagues.
 - A member could return to two leagues.
@@ -610,7 +614,7 @@ A member may request sabbatical only if:
 - The league permits sabbaticals.
 - The league is not BYOT.
 - The spot is not a temporary sabbatical-fill spot.
-- The member has protected-claim capacity remaining.
+- The member has simultaneous-sabbatical capacity remaining (at most two).
 
 Sabbatical cannot be requested:
 
@@ -623,7 +627,8 @@ Sabbatical cannot be requested:
 
 A member may be on sabbatical for at most two leagues at the same time.
 
-Sabbaticals count toward the maximum of two protected return claims.
+Sabbaticals do not count toward the maximum of two guaranteed return /
+fallback spots.
 
 The sabbatical duration limit is configurable.
 

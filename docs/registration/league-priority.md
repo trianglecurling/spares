@@ -85,8 +85,12 @@ granted = 0
 # Pass 1: guaranteed returns, ranks 1 and 2 only
 for entry in ranks 1..2, ascending:
     if entry is return eligible and granted < budget:
-        entry.label = guaranteed_return
-        granted += 1
+        if roster incomplete and still all-returning:
+            entry.label = awaiting_roster_entry
+            # does not consume budget or bill
+        else if roster complete and all-returning:
+            entry.label = guaranteed_return
+            granted += 1
 
 returnCount = granted
 
@@ -94,21 +98,31 @@ returnCount = granted
 # only when fewer than two returns were granted
 if returnCount < 2:
     for entry in ranks 3.., ascending:
-        if entry is return eligible and granted < budget:
+        if entry is return eligible and roster complete and all-returning and granted < budget:
             entry.label = guaranteed_fallback
             granted += 1
 
-# Pass 3: everything else
+# Pass 3: everything else (skip awaiting-roster labels)
 for entry with no label:
-    entry.label = league.allowsWaitlist ? waitlisted : subject_to_availability
+    if play-in and roster incomplete:
+        entry.label = awaiting_roster_entry
+    else:
+        entry.label = league.allowsWaitlist ? waitlisted : subject_to_availability
 ```
+
+A bring-your-own-team entry that still has a return right but an incomplete
+all-returning declared team, or a play-in entry whose team is not yet fully
+declared, shows **Awaiting roster entry**. Completing an all-returning BYOT
+roster turns that into a real `guaranteed_return` and starts billing/roster
+placement for it. Completing a play-in roster then evaluates the TLINE bar.
 
 ### Play-in leagues never receive a fallback
 
 Play-in based leagues have no fallback right. A play-in team that misses the
 TLINE bar goes to playdowns rather than dropping into a held spot. A play-in
-entry therefore receives `guaranteed_return` (bar cleared, roster complete) or
-`subject_to_availability`, never `guaranteed_fallback`.
+entry therefore receives `guaranteed_return` (bar cleared, roster complete),
+`awaiting_roster_entry` (roster incomplete), or `subject_to_availability`,
+never `guaranteed_fallback`.
 
 ### Worked examples
 
@@ -147,7 +161,24 @@ members.
 | Bring-your-own-team, standard | Exactly the league team size (4 for teams, 2 for doubles) |
 | Play-in based | At least 2 to declare; the full team size to clear the TLINE bar |
 
-An entry whose roster is incomplete is never labeled guaranteed.
+An entry whose roster is incomplete is never labeled guaranteed. For a
+bring-your-own-team league, an incomplete roster of only returning players
+shows **Awaiting roster entry**; naming a non-returning teammate (or a
+free-text name) moves the entry to waitlisted. A play-in league with an
+incomplete declared team also shows **Awaiting roster entry**.
+
+### Returning team required for BYOT guarantee
+
+A bring-your-own-team entry earns `guaranteed_return` only when:
+
+1. The registrant holds a return right for the league,
+2. The declared roster is complete, and
+3. **Every** declared player also holds a return right for that league.
+
+Free-text pending names never count as returning. A returning individual may
+still list a mixed or new team — that entry is allowed on the priority list —
+but it is labeled waitlisted (or subject to availability) rather than
+guaranteed.
 
 ## Leaving a league behind
 
@@ -156,12 +187,13 @@ list is being given up. Before the entry leaves the list the flow asks what
 should happen to the return right:
 
 - **Sabbatical** — hold the return right, pay the sabbatical fee. Available only
-  when the league permits sabbaticals and the registrant has protected-claim
-  capacity. See `sabbaticals.md`.
+  when the league permits sabbaticals. See `sabbaticals.md`.
 - **Drop** — release the spot permanently.
 
-Sabbaticals count against the same budget of two protected claims as guaranteed
-returns and guaranteed fallbacks.
+Sabbaticals do **not** count against the budget of two guaranteed return /
+fallback spots. A registrant may claim two guaranteed leagues and still take
+sabbatical from other prior leagues (subject to the separate limit of two
+simultaneous sabbaticals).
 
 ## Basic ice fallback
 

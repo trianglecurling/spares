@@ -163,6 +163,12 @@ export type RegistrationContext = {
   };
   activeLeagueIds: number[];
   participatedLeagueIds: number[];
+  /**
+   * For each bring-your-own-team league id, member ids that hold a return right
+   * for that league (played the predecessor, or hold a matching sabbatical).
+   * Used to decide whether a declared BYOT roster earns a guaranteed return.
+   */
+  returnEligibleMemberIdsByLeagueId?: Record<number, number[]>;
   existingSabbaticals: ExistingSabbatical[];
   existingWaitlistEntries: ExistingWaitlistEntry[];
   leagues: Record<number, LeagueConfig>;

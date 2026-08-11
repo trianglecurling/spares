@@ -32,8 +32,8 @@ const faqItems: Array<{ question: string; answer: string; accent: string }> = [
 const alsoKnowItems: string[] = [
   'Your spot will be temporarily filled during your sabbatical. You cannot return mid-session.',
   'Each session you must choose to return, extend (and pay again), or permanently release the spot.',
-  'Sabbaticals count toward the two protected claims you may hold (guaranteed returns and sabbaticals combined).',
-  'Only returning members with a guaranteed return can take a sabbatical, which must be done during priority registration. Not available for build-your-own-team leagues (Tuesday and doubles).',
+  'Sabbaticals do not count toward your two guaranteed return spots. You can take sabbatical and still claim up to two guaranteed leagues.',
+  'Only returning members with a guaranteed return can take a sabbatical, which must be done during priority registration. Not available for bring-your-own-team leagues (Tuesday and doubles).',
   'Failing to renew your sabbatical each session can mean losing your guaranteed return.',
 ];
 

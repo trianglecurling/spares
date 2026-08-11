@@ -275,7 +275,11 @@ async function buildLeagueCatalogPayload(registrationId: number) {
     // leagues are excluded because their return right depends on the declared
     // roster, which the page re-checks live through the play-in preview.
     returnRightLeagueIds: standardReturnRightLeagueIds(context),
+    // Members who hold a return right for each BYOT league. The page uses this
+    // to decide live whether a declared team earns a guaranteed return.
+    returnEligibleMemberIdsByLeagueId: context.returnEligibleMemberIdsByLeagueId ?? {},
     continuingSabbaticals: listContinuingSabbaticalSummaries(context),
+    sabbaticalFeeMinor: context.priceConfig.sabbaticalFeeMinor,
     existingWaitlistEntries: context.existingWaitlistEntries,
     basicIceFallbackInterest: basicIceFallbackInterestFromRow(registration?.basic_ice_fallback_interest),
     collectBasicIceFallback: shouldCollectBasicIceFallback(context),

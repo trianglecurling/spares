@@ -16,6 +16,7 @@ import {
   labelPriorityEntries,
   pendingRosterNames,
   priorityHasDeclaredRoster,
+  priorityRosterAllReturning,
   priorityRosterIsComplete,
   resolveDesiredLeagueCount,
   guaranteeBudgetFor,
@@ -54,6 +55,7 @@ export {
   isPriorityOrderClamped,
   pendingRosterNames,
   priorityHasDeclaredRoster,
+  priorityRosterAllReturning,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
   MIN_PLAY_IN_ROSTER_SIZE,
@@ -87,7 +89,7 @@ export function hasReturnRight(context: RegistrationContext, priority: LeaguePri
   return findRelevantSabbatical(context, league) !== undefined;
 }
 
-/** Sabbaticals draw from the same protected-claim budget as priority guarantees. */
+/** Count of sabbatical selections on the current registration (not a guarantee budget cost). */
 export function sabbaticalClaimCount(context: RegistrationContext): number {
   return context.selections.filter((selection) => selection.selectionType === 'sabbatical').length;
 }
@@ -97,7 +99,7 @@ export function resolvedDesiredLeagueCount(context: RegistrationContext): number
 }
 
 export function guaranteeBudget(context: RegistrationContext): number {
-  return guaranteeBudgetFor(resolvedDesiredLeagueCount(context), sabbaticalClaimCount(context));
+  return guaranteeBudgetFor(resolvedDesiredLeagueCount(context));
 }
 
 // ---------------------------------------------------------------------------
@@ -118,11 +120,20 @@ export type LeaguePriorityEvaluation = {
 export function evaluateLeaguePriorities(context: RegistrationContext): LeaguePriorityEvaluation {
   const candidates: PriorityLabelCandidate[] = orderedPriorities(context).map((priority) => {
     const league = getLeague(context, priority.leagueId);
+    const returnEligibleMemberIds = new Set(context.returnEligibleMemberIdsByLeagueId?.[priority.leagueId] ?? []);
+    // The registrant themselves always counts when they hold the return right —
+    // the map may omit them if they only have a sabbatical right loaded later.
+    if (hasReturnRight(context, priority) && context.registrant.memberId != null) {
+      returnEligibleMemberIds.add(context.registrant.memberId);
+    }
     return {
       leagueId: priority.leagueId,
       priorityRank: priority.priorityRank,
       hasReturnRight: hasReturnRight(context, priority),
       rosterComplete: league ? priorityRosterIsComplete(league, priority, context.registrant.memberId) : false,
+      rosterAllReturning: league
+        ? priorityRosterAllReturning(league, priority, returnEligibleMemberIds, context.registrant.memberId)
+        : false,
       feeMinor: league?.registrationFeeMinor ?? 0,
       allowsWaitlist: league?.allowsWaitlist === true,
       isPlayInBased: league?.isPlayInBased === true,
@@ -132,7 +143,6 @@ export function evaluateLeaguePriorities(context: RegistrationContext): LeaguePr
   return labelPriorityEntries({
     candidates,
     desiredLeagueCount: context.desiredLeagueCount,
-    sabbaticalClaimCount: sabbaticalClaimCount(context),
   });
 }
 
@@ -216,7 +226,10 @@ function validateRoster(
   if (league.isPlayInBased) {
     if (expectedSize == null) {
       blockingErrors.push(
-        blockingError('byot_play_in_requires_full_roster', 'Play-in leagues require a team roster.'),
+        blockingError(
+          'byot_play_in_requires_full_roster',
+          `Include at least one person on your ${league.name} roster.`,
+        ),
       );
       return;
     }
@@ -226,7 +239,9 @@ function validateRoster(
       blockingErrors.push(
         blockingError(
           'byot_play_in_requires_minimum_roster',
-          `Play-in leagues require at least ${minSize} players (you can add the rest later).`,
+          counts.total === 0
+            ? `Include at least one person on your ${league.name} roster.`
+            : `${league.name} needs at least ${minSize} players on the team to enter.`,
         ),
       );
       return;
@@ -235,7 +250,7 @@ function validateRoster(
       blockingErrors.push(
         blockingError(
           'byot_play_in_requires_full_roster',
-          `Play-in leagues allow at most ${expectedSize} players for this league.`,
+          `${league.name} allows at most ${expectedSize} players.`,
         ),
       );
       return;
@@ -422,10 +437,12 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
 
   const evaluation = evaluateLeaguePriorities(context);
 
-  const protectedClaims = evaluation.guaranteedCount + sabbaticalClaimCount(context);
-  if (protectedClaims > MAX_PROTECTED_CLAIMS) {
+  if (evaluation.guaranteedCount > MAX_PROTECTED_CLAIMS) {
     blockingErrors.push(
-      blockingError('protected_claim_limit_exceeded', 'A registrant may protect at most two league claims.'),
+      blockingError(
+        'protected_claim_limit_exceeded',
+        'A registrant may hold at most two guaranteed league spots.',
+      ),
     );
   }
 

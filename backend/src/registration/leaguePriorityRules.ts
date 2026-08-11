@@ -21,12 +21,14 @@ export const MIN_PLAY_IN_ROSTER_SIZE = 2;
 /** Derived guarantee label for a priority list entry. Never stored. */
 export type LeaguePriorityGuaranteeLabel =
   | 'guaranteed_return'
+  | 'awaiting_roster_entry'
   | 'guaranteed_fallback'
   | 'waitlisted'
   | 'subject_to_availability';
 
 export const LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT: Record<LeaguePriorityGuaranteeLabel, string> = {
   guaranteed_return: 'Guaranteed return',
+  awaiting_roster_entry: 'Awaiting roster entry',
   guaranteed_fallback: 'Guaranteed fallback',
   waitlisted: 'Waitlisted',
   subject_to_availability: 'Subject to availability',
@@ -95,6 +97,34 @@ export function priorityRosterIsComplete(
   return countPriorityRoster(priority, registrantMemberId).total === expectedSize;
 }
 
+/**
+ * Bring-your-own-team guaranteed return is a team right: every declared player
+ * must themselves hold a return right for the league. Free-text pending names
+ * never count as returning. Play-in leagues use the TLINE bar instead, so this
+ * always returns true for them and for standard leagues.
+ *
+ * When the roster is still incomplete, this answers whether everyone named so
+ * far is returning — used to decide between "awaiting roster" and waitlisted.
+ */
+export function priorityRosterAllReturning(
+  league: PriorityLeagueShape,
+  priority: PriorityRosterShape,
+  returnEligibleMemberIds: ReadonlySet<number>,
+  registrantMemberId?: number | null,
+): boolean {
+  if (league.leagueType !== 'bring_your_own_team' || league.isPlayInBased) return true;
+  if (pendingRosterNames(priority.byotTeammateText).length > 0) return false;
+
+  const memberIds = new Set((priority.teamRosterPlacements ?? []).map((placement) => placement.memberId));
+  if (registrantMemberId != null) memberIds.add(registrantMemberId);
+  if (memberIds.size === 0) return registrantMemberId != null && returnEligibleMemberIds.has(registrantMemberId);
+
+  for (const memberId of memberIds) {
+    if (!returnEligibleMemberIds.has(memberId)) return false;
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Bring-your-own-team ordering
 // ---------------------------------------------------------------------------
@@ -146,6 +176,12 @@ export type PriorityLabelCandidate = {
   hasReturnRight: boolean;
   /** Declared team is the full league team size. Always true for non-team leagues. */
   rosterComplete: boolean;
+  /**
+   * Every declared BYOT player holds a return right for this league. Always true
+   * for standard and play-in leagues. When the roster is incomplete, true means
+   * everyone named so far is still returning.
+   */
+  rosterAllReturning: boolean;
   feeMinor: number;
   allowsWaitlist: boolean;
   isPlayInBased: boolean;
@@ -180,27 +216,38 @@ export function resolveDesiredLeagueCount(value: number | null | undefined): num
   return Math.max(0, Math.min(MAX_DESIRED_LEAGUE_COUNT, Math.trunc(value)));
 }
 
-export function guaranteeBudgetFor(desiredLeagueCount: number, sabbaticalClaimCount: number): number {
-  return Math.min(Math.max(0, MAX_PROTECTED_CLAIMS - sabbaticalClaimCount), resolveDesiredLeagueCount(desiredLeagueCount));
+export function guaranteeBudgetFor(desiredLeagueCount: number): number {
+  return Math.min(MAX_PROTECTED_CLAIMS, resolveDesiredLeagueCount(desiredLeagueCount));
 }
 
 /**
  * Assigns a guarantee label to every entry on the list.
  *
- * A return right in the top two spots earns `guaranteed_return`. A registrant
- * who could not fill both of those spots keeps the unused guarantee and may
- * spend it further down the list as a `guaranteed_fallback` — but never on a
- * play-in league, which sends a team that misses the bar to playdowns rather
- * than into a held spot. Everything left over is waitlisted where the league
- * has a waitlist, and otherwise simply subject to availability.
+ * A return right in the top two spots earns `guaranteed_return` once the roster
+ * is complete and — for bring-your-own-team leagues — every declared player is
+ * themselves returning. A BYOT entry that still has the registrant's return
+ * right but an incomplete all-returning roster, or a play-in entry whose team
+ * is not yet fully declared, shows `awaiting_roster_entry` instead of
+ * waitlisted or subject to availability. Naming a non-returning BYOT teammate
+ * (or a free-text pending name) ends that awaiting state and the entry goes on
+ * the waitlist like any other non-guaranteed request. Awaiting labels do not
+ * consume budget or bill.
+ *
+ * A registrant who could not fill both of the top spots keeps the unused
+ * guarantee and may spend it further down the list as a `guaranteed_fallback`
+ * — but never on a play-in league, which sends a team that misses the bar to
+ * playdowns rather than into a held spot. Everything left over is waitlisted
+ * where the league has a waitlist, and otherwise simply subject to availability.
+ *
+ * Sabbaticals do not consume this budget. A registrant may hold two guaranteed
+ * priority spots and still take sabbatical from other prior leagues.
  */
 export function labelPriorityEntries(input: {
   candidates: PriorityLabelCandidate[];
   desiredLeagueCount: number | null | undefined;
-  sabbaticalClaimCount?: number;
 }): PriorityLabelResult {
   const desiredLeagueCount = resolveDesiredLeagueCount(input.desiredLeagueCount);
-  const budget = guaranteeBudgetFor(desiredLeagueCount, input.sabbaticalClaimCount ?? 0);
+  const budget = guaranteeBudgetFor(desiredLeagueCount);
   const entries: LabeledPriorityEntry[] = [...input.candidates]
     .sort((a, b) => a.priorityRank - b.priorityRank)
     .map((candidate) => ({ ...candidate, label: 'subject_to_availability' as const, guaranteed: false }));
@@ -210,7 +257,15 @@ export function labelPriorityEntries(input: {
   for (const entry of entries) {
     if (entry.priorityRank > MAX_PROTECTED_CLAIMS) break;
     if (granted >= budget) break;
-    if (!entry.hasReturnRight || !entry.rosterComplete) continue;
+    if (!entry.hasReturnRight) continue;
+    if (!entry.rosterComplete) {
+      // Still a return right — just waiting on an all-returning declared team.
+      if (entry.rosterAllReturning) {
+        entry.label = 'awaiting_roster_entry';
+      }
+      continue;
+    }
+    if (!entry.rosterAllReturning) continue;
     entry.label = 'guaranteed_return';
     entry.guaranteed = true;
     granted += 1;
@@ -220,7 +275,7 @@ export function labelPriorityEntries(input: {
     for (const entry of entries) {
       if (entry.priorityRank <= MAX_PROTECTED_CLAIMS) continue;
       if (granted >= budget) break;
-      if (!entry.hasReturnRight || !entry.rosterComplete) continue;
+      if (!entry.hasReturnRight || !entry.rosterComplete || !entry.rosterAllReturning) continue;
       if (entry.isPlayInBased) continue;
       entry.label = 'guaranteed_fallback';
       entry.guaranteed = true;
@@ -230,6 +285,13 @@ export function labelPriorityEntries(input: {
 
   for (const entry of entries) {
     if (entry.guaranteed) continue;
+    if (entry.label === 'awaiting_roster_entry') continue;
+    // Play-in teams with an incomplete declared roster are still assembling —
+    // same awaiting chip as an incomplete returning BYOT team.
+    if (entry.isPlayInBased && !entry.rosterComplete) {
+      entry.label = 'awaiting_roster_entry';
+      continue;
+    }
     entry.label = entry.allowsWaitlist ? 'waitlisted' : 'subject_to_availability';
   }
 

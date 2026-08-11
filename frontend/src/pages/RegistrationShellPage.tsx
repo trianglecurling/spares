@@ -28,6 +28,7 @@ import {
   type RegistrationLeagueCatalogPayload as RegistrationLeagueCatalogPayloadBase,
 } from '../components/registration/leaguePriorityShared';
 import {
+  editValidationErrorMessage,
   formatCurrency,
   formatEstimatedTotalRange,
   formatRegistrationDisplayDate,
@@ -2532,7 +2533,7 @@ export default function RegistrationShellPage() {
       }
       navigate('/registration/review');
     } catch (err) {
-      const message = errorMessage(err, 'Unable to save your league priorities.');
+      const message = editValidationErrorMessage(err, 'Unable to save your league priorities.');
       setError(message);
       throw new Error(message);
     } finally {

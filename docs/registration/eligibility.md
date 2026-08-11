@@ -169,7 +169,8 @@ Protected claims are:
 
 - Guaranteed return entries.
 - Guaranteed fallback entries.
-- Sabbatical selections.
+
+Sabbaticals do not count as protected claims.
 
 ## Sabbatical eligibility
 
@@ -180,8 +181,7 @@ A registrant may request sabbatical only if:
 - The league allows sabbaticals.
 - The league is not BYOT.
 - The spot is not a temporary sabbatical-fill spot.
-- The registrant has not exceeded two protected claims.
-- The registrant has not exceeded the active sabbatical limit.
+- The registrant has not exceeded the active sabbatical limit (two leagues).
 - The sabbatical duration limit has not been exceeded, unless staff override applies.
 
 A person may be on sabbatical for at most two leagues at a time.

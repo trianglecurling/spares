@@ -135,6 +135,21 @@ describe('guarantee labeling', () => {
     expect(labelsFor(context)).toEqual(['guaranteed_return']);
   });
 
+  test('a play-in league with an incomplete team awaits roster entry', () => {
+    const playIn = standard(1, {
+      isPlayInBased: true,
+      leagueType: 'bring_your_own_team',
+      format: 'doubles',
+      allowsWaitlist: false,
+    });
+    const context = contextWithLeagues([playIn], {
+      priorities: [priority({ leagueId: 1, priorityRank: 1, teamRosterPlacements: [{ memberId: 20 }] })],
+      playInEntry: { 1: playInEntryContext(true) },
+    });
+    expect(labelsFor(context)).toEqual(['awaiting_roster_entry']);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
+  });
+
   test('a play-in league whose team misses the bar is not guaranteed', () => {
     const playIn = standard(1, {
       isPlayInBased: true,
@@ -159,15 +174,48 @@ describe('guarantee labeling', () => {
     const byot = standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' });
     const context = contextWithLeagues([byot], {
       priorities: [priority({ leagueId: 1, priorityRank: 1 })],
+      returnEligibleMemberIdsByLeagueId: { 1: [20, 21] },
     });
-    expect(labelsFor(context)).toEqual(['waitlisted']);
+    // Still a return right — just waiting on the declared team, not a waitlist.
+    expect(labelsFor(context)).toEqual(['awaiting_roster_entry']);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
 
     const withRoster = contextWithLeagues([byot], {
       priorities: [
         priority({ leagueId: 1, priorityRank: 1, teamRosterPlacements: [{ memberId: 20 }, { memberId: 21 }] }),
       ],
+      returnEligibleMemberIdsByLeagueId: { 1: [20, 21] },
     });
     expect(labelsFor(withRoster)).toEqual(['guaranteed_return']);
+  });
+
+  test('a bring-your-own-team league is waitlisted when any teammate is not returning', () => {
+    const byot = standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' });
+    const context = contextWithLeagues([byot], {
+      priorities: [
+        priority({ leagueId: 1, priorityRank: 1, teamRosterPlacements: [{ memberId: 20 }, { memberId: 21 }] }),
+      ],
+      // Only the registrant returns; teammate 21 is new.
+      returnEligibleMemberIdsByLeagueId: { 1: [20] },
+    });
+    expect(labelsFor(context)).toEqual(['waitlisted']);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
+  });
+
+  test('a free-text teammate name prevents a BYOT guaranteed return', () => {
+    const byot = standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' });
+    const context = contextWithLeagues([byot], {
+      priorities: [
+        priority({
+          leagueId: 1,
+          priorityRank: 1,
+          teamRosterPlacements: [{ memberId: 20 }],
+          byotTeammateText: 'New Partner',
+        }),
+      ],
+      returnEligibleMemberIdsByLeagueId: { 1: [20] },
+    });
+    expect(labelsFor(context)).toEqual(['waitlisted']);
   });
 
   test('return rights only apply during priority registration', () => {
@@ -201,24 +249,24 @@ describe('guarantee budget', () => {
     expect(labelsFor(context)).toEqual(['guaranteed_return', 'waitlisted']);
   });
 
-  test('a sabbatical consumes one of the two protected claims', () => {
+  test('a sabbatical does not consume a guaranteed return spot', () => {
     const context = contextWithLeagues([standard(1), standard(2)], {
       selections: [selection({ selectionType: 'sabbatical', leagueId: 1002 })],
       desiredLeagueCount: 2,
     });
-    expect(guaranteeBudget(context)).toBe(1);
-    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(1);
+    expect(guaranteeBudget(context)).toBe(2);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(2);
   });
 
-  test('two sabbaticals leave no guarantee budget at all', () => {
+  test('two sabbaticals still leave the full guarantee budget', () => {
     const context = contextWithLeagues([standard(1), standard(2)], {
       selections: [
         selection({ selectionType: 'sabbatical', leagueId: 1001 }),
         selection({ selectionType: 'sabbatical', leagueId: 1002 }),
       ],
     });
-    expect(guaranteeBudget(context)).toBe(0);
-    expect(labelsFor(context)).toEqual(['waitlisted', 'waitlisted']);
+    expect(guaranteeBudget(context)).toBe(2);
+    expect(labelsFor(context)).toEqual(['guaranteed_return', 'guaranteed_return']);
   });
 });
 
@@ -230,6 +278,7 @@ describe('fee range', () => {
         priorityRank: 1,
         hasReturnRight: true,
         rosterComplete: true,
+        rosterAllReturning: true,
         feeMinor: 30000,
         allowsWaitlist: true,
         isPlayInBased: false,
@@ -239,6 +288,7 @@ describe('fee range', () => {
         priorityRank: 2,
         hasReturnRight: false,
         rosterComplete: true,
+        rosterAllReturning: true,
         feeMinor: 0,
         allowsWaitlist: true,
         isPlayInBased: false,
@@ -248,6 +298,7 @@ describe('fee range', () => {
         priorityRank: 3,
         hasReturnRight: false,
         rosterComplete: true,
+        rosterAllReturning: true,
         feeMinor: 45000,
         allowsWaitlist: true,
         isPlayInBased: false,
@@ -382,15 +433,39 @@ describe('validation', () => {
     );
   });
 
+  test('a play-in league with an empty roster asks for at least one person', () => {
+    const context = contextWithLeagues(
+      [standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams', name: 'Tuesday League' })],
+      {
+        priorities: [priority({ leagueId: 1, priorityRank: 1 })],
+        playInEntry: { 1: playInEntryContext(false) },
+      },
+    );
+    const result = validateLeaguePriorities(context);
+    expect(result.allowed).toBe(false);
+    expect(result.blockingErrors.map((error) => String(error.code))).toContain(
+      'byot_play_in_requires_minimum_roster',
+    );
+    expect(result.blockingErrors.map((error) => error.message)).toContain(
+      'Include at least one person on your Tuesday League roster.',
+    );
+  });
+
   test('a play-in league with fewer than two players is rejected', () => {
-    expectBlocked(
-      contextWithLeagues([
-        standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams' }),
-      ], {
+    const context = contextWithLeagues(
+      [standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams', name: 'Tuesday League' })],
+      {
         priorities: [priority({ leagueId: 1, priorityRank: 1, teamRosterPlacements: [{ memberId: 20 }] })],
         playInEntry: { 1: playInEntryContext(false) },
-      }),
+      },
+    );
+    const result = validateLeaguePriorities(context);
+    expect(result.allowed).toBe(false);
+    expect(result.blockingErrors.map((error) => String(error.code))).toContain(
       'byot_play_in_requires_minimum_roster',
+    );
+    expect(result.blockingErrors.map((error) => error.message)).toContain(
+      'Tuesday League needs at least 2 players on the team to enter.',
     );
   });
 

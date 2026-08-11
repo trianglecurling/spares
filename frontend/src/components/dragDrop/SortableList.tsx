@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -7,6 +7,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type UniqueIdentifier,
 } from '@dnd-kit/core';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
@@ -31,6 +32,8 @@ type SortableListRenderProps<T> = {
   isDragging: boolean;
   isSorting: boolean;
   isOverlay: boolean;
+  /** True while another item is dragging and this row is outside the allowed drop group. */
+  isInvalidDropTarget: boolean;
   dragHandle: ReactNode;
 };
 
@@ -54,6 +57,11 @@ type SortableListProps<T> = {
   strategy?: SortingStrategy;
   itemNoun?: string;
   canDragItem?: (item: T, index: number) => boolean;
+  /**
+   * When set, only allowed drop targets participate in collision detection, so
+   * the live sort preview cannot indicate an invalid destination.
+   */
+  canDropOnItem?: (activeItem: T, overItem: T, activeIndex: number, overIndex: number) => boolean;
 };
 
 type SortableListItemProps<T> = {
@@ -63,6 +71,7 @@ type SortableListItemProps<T> = {
   getItemLabel: (item: T) => string;
   renderItem: (props: SortableListRenderProps<T>) => ReactNode;
   canDrag: boolean;
+  isInvalidDropTarget: boolean;
   className?: string;
 };
 
@@ -85,6 +94,7 @@ function SortableListItem<T>({
   getItemLabel,
   renderItem,
   canDrag,
+  isInvalidDropTarget,
   className,
 }: SortableListItemProps<T>) {
   const {
@@ -116,6 +126,7 @@ function SortableListItem<T>({
         isDragging,
         isSorting,
         isOverlay: false,
+        isInvalidDropTarget,
         dragHandle: (
           <DragHandle
             label={`Reorder ${getItemLabel(item)}`}
@@ -142,6 +153,7 @@ export default function SortableList<T>({
   strategy = verticalListSortingStrategy,
   itemNoun = 'item',
   canDragItem,
+  canDropOnItem,
 }: SortableListProps<T>) {
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -151,7 +163,28 @@ export default function SortableList<T>({
   );
 
   const ids = items.map((item) => getId(item));
-  const activeItem = activeId === null ? null : items.find((item) => getId(item) === activeId) ?? null;
+  const activeIndex = activeId === null ? -1 : items.findIndex((item) => getId(item) === activeId);
+  const activeItem = activeIndex >= 0 ? items[activeIndex] ?? null : null;
+
+  const isValidDropTarget = (overId: UniqueIdentifier, forActiveId: UniqueIdentifier = activeId ?? overId): boolean => {
+    if (!canDropOnItem) return true;
+    if (overId === forActiveId) return true;
+    const currentActiveIndex = items.findIndex((item) => getId(item) === forActiveId);
+    const overIndex = items.findIndex((item) => getId(item) === overId);
+    if (currentActiveIndex < 0 || overIndex < 0) return false;
+    return canDropOnItem(items[currentActiveIndex]!, items[overIndex]!, currentActiveIndex, overIndex);
+  };
+
+  const collisionDetection = useMemo<CollisionDetection>(() => {
+    if (!canDropOnItem) return closestCenter;
+    return (args) => {
+      const collisions = closestCenter(args);
+      const allowed = collisions.filter((collision) => isValidDropTarget(collision.id, args.active.id));
+      // Keep the drag live over the nearest valid target; an empty list would
+      // clear `over` and freeze the preview in an earlier invalid position.
+      return allowed.length > 0 ? allowed : collisions.filter((collision) => collision.id === args.active.id);
+    };
+  }, [canDropOnItem, getId, items]);
 
   useEffect(() => {
     if (activeId === null) return;
@@ -167,7 +200,7 @@ export default function SortableList<T>({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       modifiers={[restrictToVerticalAxis]}
       accessibility={{
         announcements: createSortableAnnouncements({
@@ -186,34 +219,41 @@ export default function SortableList<T>({
       onDragEnd={({ active, over }) => {
         setActiveId(null);
         if (!over || active.id === over.id) return;
+        if (!isValidDropTarget(over.id, active.id)) return;
 
-        const activeIndex = items.findIndex((item) => getId(item) === active.id);
+        const nextActiveIndex = items.findIndex((item) => getId(item) === active.id);
         const overIndex = items.findIndex((item) => getId(item) === over.id);
-        if (activeIndex === -1 || overIndex === -1) return;
+        if (nextActiveIndex === -1 || overIndex === -1) return;
 
-        const nextItems = arrayMove(items, activeIndex, overIndex);
+        const nextItems = arrayMove(items, nextActiveIndex, overIndex);
         void onReorder(nextItems, {
           activeId: active.id,
           overId: over.id,
-          activeIndex,
+          activeIndex: nextActiveIndex,
           overIndex,
         });
       }}
     >
       <SortableContext items={ids} strategy={strategy}>
         <div className={joinClasses('space-y-2', className)}>
-          {items.map((item, index) => (
-            <SortableListItem
-              key={String(getId(item))}
-              item={item}
-              index={index}
-              id={getId(item)}
-              getItemLabel={getItemLabel}
-              renderItem={renderItem}
-              canDrag={canDragItem ? canDragItem(item, index) : true}
-              className={itemClassName}
-            />
-          ))}
+          {items.map((item, index) => {
+            const id = getId(item);
+            const isInvalidDropTarget =
+              activeItem != null && id !== activeId && !isValidDropTarget(id, activeId ?? id);
+            return (
+              <SortableListItem
+                key={String(id)}
+                item={item}
+                index={index}
+                id={id}
+                getItemLabel={getItemLabel}
+                renderItem={renderItem}
+                canDrag={canDragItem ? canDragItem(item, index) : true}
+                isInvalidDropTarget={isInvalidDropTarget}
+                className={itemClassName}
+              />
+            );
+          })}
         </div>
       </SortableContext>
       <DragOverlay dropAnimation={prefersReducedMotion ? null : undefined}>
@@ -222,10 +262,11 @@ export default function SortableList<T>({
             ? renderOverlay(activeItem)
             : renderItem({
                 item: activeItem,
-                index: items.findIndex((item) => getId(item) === activeId),
+                index: activeIndex,
                 isDragging: true,
                 isSorting: false,
                 isOverlay: true,
+                isInvalidDropTarget: false,
                 dragHandle: (
                   <DragHandle
                     label={`Reorder ${getItemLabel(activeItem)}`}

@@ -170,7 +170,8 @@ leave the uncommitted points pool used to stack hypothetical opposing teams.
    existing team (`source_registration_id` recorded per member).
 
 A guaranteed play-in entry consumes one of the two protected claims, alongside
-guaranteed returns, guaranteed fallbacks, and sabbaticals.
+guaranteed returns and guaranteed fallbacks. Sabbaticals do not consume that
+budget.
 
 ## 8. Staff operations (Play-in entry tab)
 

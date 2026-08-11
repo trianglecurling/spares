@@ -22,8 +22,7 @@ Sabbatical eligibility requires:
 - The league supports sabbaticals.
 - The league is not a bring-your-own-team league.
 - The spot is not a temporary sabbatical-fill spot.
-- The curler does not exceed the protected-claim limit.
-- The curler does not exceed the simultaneous sabbatical limit.
+- The curler does not exceed the simultaneous sabbatical limit (two leagues).
 - The sabbatical duration limit has not been exceeded, unless staff overrides
   the limit.
 
@@ -37,30 +36,21 @@ A curler cannot request sabbatical outside priority registration.
 
 ---
 
-## Protected-claim limit
+## Simultaneous sabbatical limit
 
-A curler may have at most two protected league claims in a session.
-
-Protected claims are:
-
-- Guaranteed return
-- Sabbatical
+A curler may be on sabbatical for at most two leagues at the same time.
 
 Examples:
 
 - Return to two leagues: allowed.
 - Return to one league and take sabbatical for one league: allowed.
 - Take sabbatical for two leagues: allowed.
-- Return to two leagues and take sabbatical for a third league: not allowed.
+- Return to two leagues and take sabbatical for a third league: allowed (the
+  sabbatical does not consume a guaranteed return spot).
 - Take sabbatical for three leagues: not allowed.
 
----
-
-## Simultaneous sabbatical limit
-
-A curler may be on sabbatical for at most two leagues at the same time.
-
-This aligns with the protected-claim limit.
+Sabbaticals do **not** count against the two guaranteed return / fallback spots
+on the priority list.
 
 ---
 

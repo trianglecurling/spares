@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { HiChevronDown, HiChevronUp } from 'react-icons/hi2';
 import Button from '../Button';
 import ChoiceInput from '../ChoiceInput';
+import ConfirmDialog from '../ConfirmDialog';
 import FormCheckbox from '../FormCheckbox';
 import FormField from '../FormField';
 import FormFieldMessage from '../FormFieldMessage';
@@ -15,18 +17,28 @@ import api from '../../utils/api';
 import {
   addPriority,
   availableLeaguesToAdd,
+  canMovePriority,
   countPriorityRoster,
   evaluatePriorityList,
+  defaultDesiredLeagueCount,
   expectedByotRosterSize,
   guaranteeChipClassName,
   guaranteeChipLabel,
+  hydratePriorityList,
+  incompletePlayInLeagueNames,
+  mergeActiveWaitlistLeagues,
   MAX_DESIRED_LEAGUE_COUNT,
   MIN_PLAY_IN_ROSTER_SIZE,
+  canReorderPriorityDrop,
+  movePriorityInList,
   removePriority,
   reorderPriorities,
-  seedPriorityList,
+  sabbaticalListEntries,
+  undecidedContinuingSabbaticalIds,
   undecidedPriorLeagueIds,
   updatePriorityRoster,
+  priorityMoveButtonTitle,
+  addPriorityAtTop,
   type LeaguePriorityInput,
   type LeaguePrioritySavePayload,
   type PriorLeagueDecision,
@@ -80,6 +92,7 @@ export default function LeaguePriorityStep({
   const countInputId = useId();
   const addLeagueInputId = useId();
   const listLabelId = useId();
+  const sabbaticalsLabelId = useId();
 
   const [priorities, setPriorities] = useState<LeaguePriorityInput[]>([]);
   const [desiredLeagueCount, setDesiredLeagueCount] = useState<number | null>(null);
@@ -97,13 +110,19 @@ export default function LeaguePriorityStep({
   );
 
   useEffect(() => {
-    if (!payload || hydratedRef.current) return;
-    hydratedRef.current = true;
-    const seeded = payload.priorities.length > 0 ? payload.priorities : seedPriorityList(payload);
-    setPriorities(seeded);
-    setDesiredLeagueCount(payload.desiredLeagueCount ?? (seeded.length > 0 ? seeded.length : null));
-    setPriorLeagueDecisions(payload.priorLeagueDecisions ?? []);
-    setBasicIceFallbackInterest(payload.basicIceFallbackInterest === true);
+    if (!payload) return;
+    if (!hydratedRef.current) {
+      hydratedRef.current = true;
+      setPriorities(hydratePriorityList(payload));
+      setDesiredLeagueCount(defaultDesiredLeagueCount(payload));
+      setPriorLeagueDecisions(payload.priorLeagueDecisions ?? []);
+      setBasicIceFallbackInterest(payload.basicIceFallbackInterest === true);
+      setPlayInEntry(payload.playInEntry ?? {});
+      return;
+    }
+    // Catalog may refresh after the registrant joins a waitlist elsewhere —
+    // pull those leagues onto the list without resetting other edits.
+    setPriorities((current) => mergeActiveWaitlistLeagues(current, payload));
     setPlayInEntry(payload.playInEntry ?? {});
   }, [payload]);
 
@@ -119,6 +138,7 @@ export default function LeaguePriorityStep({
         leagues,
         desiredLeagueCount,
         returnRightLeagueIds: payload?.returnRightLeagueIds ?? [],
+        returnEligibleMemberIdsByLeagueId: payload?.returnEligibleMemberIdsByLeagueId ?? {},
         playInEntry: playInEntry as Record<number, RegistrationPlayInEntrySummary>,
         priorLeagueDecisions,
         registrantMemberId: registeringCurler.id,
@@ -126,6 +146,7 @@ export default function LeaguePriorityStep({
     [
       desiredLeagueCount,
       leagues,
+      payload?.returnEligibleMemberIdsByLeagueId,
       payload?.returnRightLeagueIds,
       playInEntry,
       priorLeagueDecisions,
@@ -152,6 +173,24 @@ export default function LeaguePriorityStep({
         isEligible: () => true,
       }),
     [eligibleLeagues, priorities],
+  );
+
+  const sabbaticals = useMemo(
+    () =>
+      sabbaticalListEntries({
+        continuingSabbaticals: payload?.continuingSabbaticals ?? [],
+        priorLeagueDecisions,
+        priorities,
+        leagues,
+        defaultSabbaticalFeeMinor: payload?.sabbaticalFeeMinor ?? 0,
+      }),
+    [
+      leagues,
+      payload?.continuingSabbaticals,
+      payload?.sabbaticalFeeMinor,
+      priorLeagueDecisions,
+      priorities,
+    ],
   );
 
   const maxSelectableCount = Math.min(
@@ -193,6 +232,11 @@ export default function LeaguePriorityStep({
     });
   };
 
+  const moveLeague = (leagueId: number, direction: 'up' | 'down') => {
+    setPriorities((current) => movePriorityInList(current, leagueId, direction, leagues));
+    setValidationMessage(null);
+  };
+
   const isPriorSeasonLeague = (leagueId: number) => (payload?.priorSeasonLeagueIds ?? []).includes(leagueId);
 
   const applyRemoval = (leagueId: number, decision: 'sabbatical' | 'drop' | null) => {
@@ -224,6 +268,31 @@ export default function LeaguePriorityStep({
     setValidationMessage(null);
   };
 
+  const applyContinuingSabbaticalChoice = (
+    leagueId: number,
+    choice: 'sabbatical' | 'return' | 'drop',
+  ) => {
+    if (choice === 'return') {
+      setPriorities((current) => addPriorityAtTop(current, leagueId, leagues));
+      setPriorLeagueDecisions((current) => current.filter((entry) => entry.leagueId !== leagueId));
+    } else {
+      setPriorities((current) => removePriority(current, leagueId, leagues));
+      setPriorLeagueDecisions((current) => {
+        const without = current.filter((entry) => entry.leagueId !== leagueId);
+        return [...without, { leagueId, decision: choice }];
+      });
+    }
+    setValidationMessage(null);
+  };
+
+  const setSabbaticalDecision = (leagueId: number, decision: 'sabbatical' | 'drop') => {
+    setPriorLeagueDecisions((current) => {
+      const without = current.filter((entry) => entry.leagueId !== leagueId);
+      return [...without, { leagueId, decision }];
+    });
+    setValidationMessage(null);
+  };
+
   const firstValidationMessage = (): string | null => {
     const count = desiredLeagueCount ?? 0;
     if (priorities.length === 0 && count > 0) {
@@ -237,7 +306,10 @@ export default function LeaguePriorityStep({
       if (!league) continue;
       const roster = countPriorityRoster(priority, registeringCurler.id);
       const expectedSize = expectedByotRosterSize(league);
-      if (league.isPlayInBased && roster.total > 0 && roster.total < MIN_PLAY_IN_ROSTER_SIZE) {
+      if (league.isPlayInBased && roster.total === 0) {
+        return `Include at least one person on your ${league.name} roster.`;
+      }
+      if (league.isPlayInBased && roster.total < MIN_PLAY_IN_ROSTER_SIZE) {
         return `${league.name} needs at least ${MIN_PLAY_IN_ROSTER_SIZE} players on the team to enter.`;
       }
       if (
@@ -258,6 +330,18 @@ export default function LeaguePriorityStep({
       const name = leagueById.get(undecided[0])?.name ?? 'a league you played last session';
       return `Tell us whether you are taking a sabbatical from ${name} or dropping it.`;
     }
+    const undecidedContinuing = undecidedContinuingSabbaticalIds({
+      continuingSabbaticals: payload?.continuingSabbaticals ?? [],
+      priorities,
+      priorLeagueDecisions,
+    });
+    if (undecidedContinuing.length > 0) {
+      const continuing = (payload?.continuingSabbaticals ?? []).find(
+        (entry) => entry.leagueId === undecidedContinuing[0],
+      );
+      const name = continuing?.leagueName ?? 'a league you held on sabbatical';
+      return `Choose whether to return, extend sabbatical, or drop ${name} before continuing.`;
+    }
     return null;
   };
 
@@ -268,6 +352,16 @@ export default function LeaguePriorityStep({
       return;
     }
     setValidationMessage(null);
+    for (const leagueName of incompletePlayInLeagueNames(priorities, leagues, registeringCurler.id)) {
+      const proceed = await confirm({
+        title: 'Incomplete roster',
+        message: `You have not entered a full roster for ${leagueName}. The league coordinator will try to help find a team for you, but no guarantee can be made.`,
+        confirmText: 'Continue',
+        cancelText: 'Go back',
+        variant: 'warning',
+      });
+      if (!proceed) return;
+    }
     try {
       await onSave({
         desiredLeagueCount: desiredLeagueCount && desiredLeagueCount > 0 ? desiredLeagueCount : null,
@@ -341,18 +435,39 @@ export default function LeaguePriorityStep({
                 itemNoun="league"
                 getId={(priority) => priority.leagueId}
                 getItemLabel={(priority) => leagueById.get(priority.leagueId)?.name ?? 'League'}
+                canDropOnItem={(active, over) => canReorderPriorityDrop(active, over, leagues)}
                 onReorder={(next) => {
                   setPriorities(reorderPriorities(next, leagues));
                   setValidationMessage(null);
                 }}
-                renderItem={({ item, index, dragHandle }) => {
+                renderItem={({ item, index, dragHandle, isInvalidDropTarget }) => {
                   const league = leagueById.get(item.leagueId);
                   if (!league) return null;
                   const label = labelByLeagueId.get(item.leagueId) ?? 'subject_to_availability';
                   const needsRoster =
                     league.leagueType === 'bring_your_own_team' || league.isPlayInBased === true;
+                  const canMoveUp = canMovePriority(priorities, item.leagueId, 'up', leagues);
+                  const canMoveDown = canMovePriority(priorities, item.leagueId, 'down', leagues);
+                  const moveUpTitle = priorityMoveButtonTitle(
+                    priorities,
+                    item.leagueId,
+                    'up',
+                    leagues,
+                    league.name,
+                  );
+                  const moveDownTitle = priorityMoveButtonTitle(
+                    priorities,
+                    item.leagueId,
+                    'down',
+                    leagues,
+                    league.name,
+                  );
                   return (
-                    <div className="app-card space-y-3 p-4">
+                    <div
+                      className={`app-card space-y-3 p-4 transition-[opacity,filter] ${
+                        isInvalidDropTarget ? 'pointer-events-none opacity-40 grayscale' : ''
+                      }`}
+                    >
                       <div className="flex items-start gap-3">
                         <div className="pt-1">{dragHandle}</div>
                         <div className="min-w-0 flex-1">
@@ -365,13 +480,39 @@ export default function LeaguePriorityStep({
                           </div>
                           <p className="mt-1 text-sm text-gray-600">{leagueRowSubtitle(league)}</p>
                         </div>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => void requestRemoval(league)}
-                        >
-                          Remove
-                        </Button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void requestRemoval(league)}
+                          >
+                            Remove
+                          </Button>
+                          <div className="flex flex-col">
+                            <span title={moveUpTitle} className="inline-flex">
+                              <button
+                                type="button"
+                                aria-label={moveUpTitle ?? `Move ${league.name} up`}
+                                disabled={!canMoveUp}
+                                onClick={() => moveLeague(league.id, 'up')}
+                                className="inline-flex h-7 w-8 items-center justify-center rounded-md text-gray-500 transition-colors enabled:hover:bg-gray-100 enabled:hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:enabled:hover:bg-gray-700 dark:enabled:hover:text-gray-100"
+                              >
+                                <HiChevronUp className="h-4 w-4" aria-hidden />
+                              </button>
+                            </span>
+                            <span title={moveDownTitle} className="inline-flex">
+                              <button
+                                type="button"
+                                aria-label={moveDownTitle ?? `Move ${league.name} down`}
+                                disabled={!canMoveDown}
+                                onClick={() => moveLeague(league.id, 'down')}
+                                className="inline-flex h-7 w-8 items-center justify-center rounded-md text-gray-500 transition-colors enabled:hover:bg-gray-100 enabled:hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:enabled:hover:bg-gray-700 dark:enabled:hover:text-gray-100"
+                              >
+                                <HiChevronDown className="h-4 w-4" aria-hidden />
+                              </button>
+                            </span>
+                          </div>
+                        </div>
                       </div>
                       {needsRoster ? (
                         <PriorityRosterField
@@ -384,7 +525,7 @@ export default function LeaguePriorityStep({
                           helperText={
                             league.isPlayInBased
                               ? `List at least ${MIN_PLAY_IN_ROSTER_SIZE} players to enter as a team. A full team over the points bar earns guaranteed entry.`
-                              : 'A complete team is required before this league can be guaranteed.'
+                              : 'Guaranteed return requires a full roster of returning players. Teams with new players go on the waitlist.'
                           }
                           playInCommittedOtherMemberTeams={playInEntry[league.id]?.committedOtherMemberTeams}
                           playInCommittedOtherMemberIds={playInEntry[league.id]?.committedOtherMemberIds}
@@ -398,10 +539,16 @@ export default function LeaguePriorityStep({
             )}
 
             {removalPrompt ? (
-              <div className="app-card space-y-3 p-4">
-                <p className="text-sm text-gray-700">
-                  You played {removalPrompt.league.name} last session. What would you like to do with your spot?
-                </p>
+              <ConfirmDialog
+                isOpen
+                title="Remove league"
+                message={`You played ${removalPrompt.league.name} last session. What would you like to do with your spot?`}
+                confirmText="Confirm"
+                cancelText="Cancel"
+                confirmDisabled={removalPrompt.decision == null}
+                onConfirm={() => applyRemoval(removalPrompt.league.id, removalPrompt.decision)}
+                onCancel={() => setRemovalPrompt(null)}
+              >
                 <ChoiceInput
                   layout="block"
                   ariaLabel={`Sabbatical or drop for ${removalPrompt.league.name}`}
@@ -415,8 +562,7 @@ export default function LeaguePriorityStep({
                     {
                       value: 'sabbatical',
                       label: 'Take a sabbatical',
-                      description:
-                        'Hold your return right for a future session. A sabbatical fee applies and uses one of your two guaranteed spots.',
+                      description: `Hold your return right for a future session. A ${formatCurrency(payload?.sabbaticalFeeMinor ?? 0)} sabbatical fee applies each session you maintain this sabbatical.`,
                       disabled: !removalPrompt.league.allowsSabbatical,
                     },
                     {
@@ -426,19 +572,7 @@ export default function LeaguePriorityStep({
                     },
                   ]}
                 />
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    type="button"
-                    disabled={removalPrompt.decision == null}
-                    onClick={() => applyRemoval(removalPrompt.league.id, removalPrompt.decision)}
-                  >
-                    Remove league
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => setRemovalPrompt(null)}>
-                    Keep it on my list
-                  </Button>
-                </div>
-              </div>
+              </ConfirmDialog>
             ) : null}
 
             {addableLeagues.length > 0 ? (
@@ -463,6 +597,87 @@ export default function LeaguePriorityStep({
                 />
               </FormField>
             ) : null}
+
+            {sabbaticals.length > 0 ? (
+              <div role="group" aria-labelledby={sabbaticalsLabelId} className="space-y-3">
+                <h3 id={sabbaticalsLabelId} className="app-section-title">
+                  Sabbaticals
+                </h3>
+                {sabbaticals.map((entry) => {
+                  const feeText = formatCurrency(entry.sabbaticalFeeMinor);
+                  return (
+                    <div key={entry.leagueId} className="app-card space-y-3 p-4">
+                      <div>
+                        <div className="font-medium text-gray-900">{entry.leagueName}</div>
+                        <p className="mt-1 text-sm text-gray-600">
+                          {entry.kind === 'continuing'
+                            ? `You held a sabbatical for this league last session. Extend it (${feeText} this session), return with guaranteed return, or drop it.`
+                            : `Holding a sabbatical for this league (${feeText} this session).`}
+                        </p>
+                        {entry.kind === 'continuing' &&
+                        entry.decision === 'sabbatical' &&
+                        entry.extensionBlockedMessage ? (
+                          <FormFieldMessage tone="public" intent="error">
+                            {entry.extensionBlockedMessage}
+                          </FormFieldMessage>
+                        ) : null}
+                      </div>
+                      {entry.kind === 'continuing' ? (
+                        <ChoiceInput
+                          layout="block"
+                          ariaLabel={`Sabbatical decision for ${entry.leagueName}`}
+                          value={entry.decision}
+                          onChange={(next) => {
+                            if (next === 'return' || next === 'sabbatical' || next === 'drop') {
+                              applyContinuingSabbaticalChoice(entry.leagueId, next);
+                            }
+                          }}
+                          options={[
+                            {
+                              value: 'sabbatical',
+                              label: 'Extend sabbatical',
+                              description: `Keep your return right for a future session. A ${feeText} sabbatical fee applies this session.`,
+                              disabled: !entry.canExtend,
+                            },
+                            {
+                              value: 'return',
+                              label: 'Return to this league',
+                              description: 'Add it to your priority list with guaranteed return.',
+                            },
+                            {
+                              value: 'drop',
+                              label: 'Drop',
+                              description: 'Give up your return right. You can rejoin later through the waitlist.',
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="secondary" onClick={() => addLeague(entry.leagueId)}>
+                            Return to priority list
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => setSabbaticalDecision(entry.leagueId, 'drop')}
+                          >
+                            Drop instead
+                          </Button>
+                        </div>
+                      )}
+                      {entry.kind === 'continuing' &&
+                      !entry.canExtend &&
+                      entry.extensionBlockedMessage &&
+                      entry.decision !== 'sabbatical' ? (
+                        <FormFieldMessage tone="public" intent="error">
+                          {entry.extensionBlockedMessage}
+                        </FormFieldMessage>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
           {showBasicIceFallback ? (
@@ -474,18 +689,6 @@ export default function LeaguePriorityStep({
               helperText="Basic ice privileges allow unlimited sparing, practice, daytime leagues, and early morning sessions."
             />
           ) : null}
-
-          <div className="rounded-md bg-gray-50 p-4 text-sm text-gray-700">
-            {evaluation.confirmedLeagueFeeMinor === evaluation.maximumLeagueFeeMinor ? (
-              <p>League fees: {formatCurrency(evaluation.confirmedLeagueFeeMinor)}.</p>
-            ) : (
-              <p>
-                League fees: {formatCurrency(evaluation.confirmedLeagueFeeMinor)} confirmed today, up to{' '}
-                {formatCurrency(evaluation.maximumLeagueFeeMinor)} if every league you asked for comes through.
-                You will be billed once your placements are settled.
-              </p>
-            )}
-          </div>
         </>
       )}
 

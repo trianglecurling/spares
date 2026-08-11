@@ -120,7 +120,7 @@ A protected right for a returning member to return to an eligible league during 
 
 A member may claim up to two protected league spots total during priority registration, and never more than their desired league count.
 
-Protected claims include guaranteed returns, guaranteed fallbacks, and sabbaticals.
+Protected claims include guaranteed returns and guaranteed fallbacks. Sabbaticals do not count as protected claims.
 
 To receive a guaranteed return, the member must register during priority registration and must be eligible based on league continuity and prior participation. For a play-in based league, the declared entry team must also have a full roster and clear the TLINE guarantee bar.
 
@@ -340,19 +340,21 @@ Anyone may register during priority registration, including new members, but onl
 
 ## Protected claim
 
-A guaranteed return, guaranteed fallback, or sabbatical.
+A guaranteed return or guaranteed fallback on the priority list.
 
 A member may have at most two protected claims during priority registration, and
 never more than their desired league count.
 
+Sabbaticals are not protected claims. A member may hold two guaranteed-return
+leagues and also take sabbatical for other prior leagues (subject to the
+separate limit of two simultaneous sabbaticals).
+
 Examples:
 
 - Two guaranteed returns.
-- One guaranteed return and one sabbatical.
+- One guaranteed return and one guaranteed fallback.
 - Two guaranteed fallbacks.
-- Two sabbaticals.
-
-A member may not play in two guaranteed-return leagues and also hold a third league on sabbatical.
+- Two guaranteed returns plus one or two sabbaticals.
 
 ## Regular membership
 
@@ -401,7 +403,8 @@ A member may request a sabbatical only if they are eligible for a guaranteed ret
 Sabbaticals:
 
 - Must be requested during priority registration.
-- Count toward the maximum of two protected claims.
+- Do not count toward the maximum of two guaranteed return / fallback spots.
+- Are limited to two leagues at a time.
 - Require a sabbatical fee per league per session.
 - Do not require regular membership if the person is only taking sabbatical.
 - Are not available for BYOT leagues.

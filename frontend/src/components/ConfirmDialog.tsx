@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { HiXMark, HiExclamationTriangle } from 'react-icons/hi2';
 import Button from './Button';
@@ -8,9 +8,12 @@ interface ConfirmDialogProps {
   isOpen: boolean;
   title?: string;
   message: string;
+  /** Optional body below the message (forms, choice groups, etc.). */
+  children?: ReactNode;
   confirmText?: string;
   cancelText?: string;
   variant?: 'danger' | 'warning' | 'info';
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -19,9 +22,11 @@ export default function ConfirmDialog({
   isOpen,
   title,
   message,
+  children,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   variant = 'warning',
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -77,7 +82,10 @@ export default function ConfirmDialog({
 
         <div
           ref={modalRef}
-          className="relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl max-w-md w-full p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={title ? 'confirm-dialog-title' : undefined}
+          className="relative w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-800"
         >
           <div className="flex items-start">
             <div className={`flex-shrink-0 ${styles.iconBg} rounded-full p-2`}>
@@ -85,10 +93,13 @@ export default function ConfirmDialog({
             </div>
 
             <div className="ml-4 flex-1">
-              {title && (
-                <h3 className={`text-lg font-semibold mb-2 ${styles.titleColor}`}>{title}</h3>
-              )}
-              <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{message}</p>
+              {title ? (
+                <h3 id="confirm-dialog-title" className={`mb-2 text-lg font-semibold ${styles.titleColor}`}>
+                  {title}
+                </h3>
+              ) : null}
+              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{message}</p>
+              {children ? <div className="mt-4">{children}</div> : null}
             </div>
 
             <button
@@ -105,7 +116,7 @@ export default function ConfirmDialog({
             <Button variant="secondary" onClick={onCancel}>
               {cancelText}
             </Button>
-            <Button variant={styles.buttonVariant} onClick={onConfirm}>
+            <Button variant={styles.buttonVariant} onClick={onConfirm} disabled={confirmDisabled}>
               {confirmText}
             </Button>
           </div>
