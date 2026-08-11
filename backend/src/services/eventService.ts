@@ -27,6 +27,7 @@ import { getSeasonStartYearForUtcDate, parseFiscalYearStartMmdd, seasonStartYear
 import { getCurrentTimeAsync } from '../utils/time.js';
 import { isArchivedAt, notArchivedCondition } from '../utils/softDelete.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
+import { slugify } from '../utils/slugify.js';
 
 export { EventServiceError };
 export {
@@ -64,15 +65,6 @@ function eventTimeMs(value: string | Date | null | undefined): number | null {
   if (value == null || value === '') return null;
   const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
   return Number.isNaN(ms) ? null : ms;
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 120);
 }
 
 /** Per-person registration fee (minor units) before group size multiplier. */

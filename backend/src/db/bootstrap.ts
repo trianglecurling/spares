@@ -266,6 +266,10 @@ export async function runDatabaseBootstrap(config: DatabaseConfig): Promise<void
   await seedMailingLists();
   await seedMemberMenu();
   await ensureRegistrationPriceDiscountSettingsTablesExist();
+  const { ensureVolunteerProgramSlugsFromTitlesIfNeeded } = await import(
+    '../services/volunteerProgramSlugs.js'
+  );
+  await ensureVolunteerProgramSlugsFromTitlesIfNeeded();
 
   if (config.type === 'sqlite') {
     const { SQLiteAdapter } = await import('./sqlite-adapter.js');

@@ -1125,7 +1125,7 @@ export default function Dashboard() {
               <div className="space-y-3">
                 {volunteerOpportunityPrograms.map((program) => {
                   const expanded = expandedVolunteerPrograms.has(program.programId);
-                  const programHref = `/volunteering/programs/${program.programId}`;
+                  const programHref = `/volunteering/programs/${program.programSlug}`;
                   const hasMoreShifts = program.totalShifts > program.shifts.length;
                   return (
                     <div key={program.programId} className="app-card overflow-hidden p-0">

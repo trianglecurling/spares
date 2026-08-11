@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppPageControlsRow from '../components/AppPageControlsRow';
 import AppStateCard from '../components/AppStateCard';
@@ -18,7 +18,7 @@ import {
 } from '../utils/volunteering';
 
 export default function VolunteerProgramPage() {
-  const { id } = useParams<{ id: string }>();
+  const { slug: slugParam } = useParams<{ slug: string }>();
   const groupById = useId();
   const { showAlert } = useAlert();
   const [loading, setLoading] = useState(true);
@@ -26,10 +26,10 @@ export default function VolunteerProgramPage() {
   const [program, setProgram] = useState<VolunteerProgramView | null>(null);
   const [groupBy, setGroupBy] = useState<VolunteerProgramGroupBy>('shift');
 
-  const programId = Number.parseInt(id || '', 10);
+  const slug = slugParam?.trim() || '';
 
   const load = useCallback(async () => {
-    if (!Number.isFinite(programId) || programId < 1) {
+    if (!slug) {
       setNotFound(true);
       setProgram(null);
       setLoading(false);
@@ -38,8 +38,8 @@ export default function VolunteerProgramPage() {
     setLoading(true);
     setNotFound(false);
     try {
-      const data = (await get('/volunteering/programs/{id}', undefined, {
-        id: String(programId),
+      const data = (await get('/volunteering/programs/{slug}', undefined, {
+        slug,
       })) as { program: VolunteerProgramView };
       setProgram(data.program);
     } catch (err) {
@@ -53,7 +53,7 @@ export default function VolunteerProgramPage() {
     } finally {
       setLoading(false);
     }
-  }, [programId, showAlert]);
+  }, [slug, showAlert]);
 
   useEffect(() => {
     void load();
@@ -86,6 +86,10 @@ export default function VolunteerProgramPage() {
         />
       </AppPage>
     );
+  }
+
+  if (slug !== program.slug) {
+    return <Navigate to={`/volunteering/programs/${program.slug}`} replace />;
   }
 
   const hasShifts = program.shifts.some((shift) => shift.roles.length > 0);

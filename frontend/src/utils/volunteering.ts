@@ -20,6 +20,7 @@ export type VolunteerSignupView = {
   memberId: number | null;
   memberName: string;
   guestName: string | null;
+  guestEmail: string | null;
   comments: string | null;
   signedUpByMemberId: number | null;
   status: 'confirmed' | 'cancelled';
@@ -61,12 +62,14 @@ export type VolunteerRoleView = {
 export type VolunteerProgramView = {
   id: number;
   title: string;
+  slug: string;
   description: string | null;
   pointOfContact: string;
   location: string | null;
   startDate: string | null;
   published: boolean;
   featureOnDashboard: boolean;
+  publicSignups: boolean;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -74,6 +77,45 @@ export type VolunteerProgramView = {
   roles: VolunteerRoleView[];
   shifts: VolunteerShiftView[];
   canManage: boolean;
+};
+
+export type PublicVolunteerProgramView = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  pointOfContact: string;
+  location: string | null;
+  shifts: Array<{
+    id: number;
+    startDt: string;
+    endDt: string;
+    roles: Array<{
+      id: number;
+      roleId: number;
+      roleName: string;
+      roleDescription: string | null;
+      volunteersNeeded: number;
+      volunteersRegistered: number;
+      isFull: boolean;
+      requiresCredentials: boolean;
+      requiredCredentialNames: string[];
+    }>;
+  }>;
+};
+
+export type PublicVolunteerSignupManageView = {
+  programId: number;
+  programTitle: string;
+  location: string | null;
+  roleName: string;
+  startDt: string;
+  endDt: string;
+  guestName: string;
+  guestEmail: string;
+  comments: string | null;
+  status: 'confirmed' | 'cancelled';
+  canCancel: boolean;
 };
 
 export type DashboardVolunteerOpportunityRole = {
@@ -95,6 +137,7 @@ export type DashboardVolunteerOpportunityShift = {
 
 export type DashboardVolunteerOpportunityProgram = {
   programId: number;
+  programSlug: string;
   programTitle: string;
   location: string | null;
   totalShifts: number;
@@ -235,6 +278,86 @@ export function formatVolunteerTimeRange(startDt: string, endDt: string): string
   } catch {
     return `${startDt} – ${endDt}`;
   }
+}
+
+type CompactTimeParts = { clock: string; period: 'am' | 'pm' };
+
+function formatCompactClock(date: Date): CompactTimeParts {
+  const minutes = date.getMinutes();
+  const hour24 = date.getHours();
+  const period: 'am' | 'pm' = hour24 >= 12 ? 'pm' : 'am';
+  const hour12 = hour24 % 12 || 12;
+  const clock = minutes === 0 ? String(hour12) : `${hour12}:${String(minutes).padStart(2, '0')}`;
+  return { clock, period };
+}
+
+/** Compact range like "8–10am" or "11:30am–3pm". */
+export function formatCompactVolunteerTimeRange(startDt: string, endDt: string): string {
+  const start = new Date(startDt);
+  const end = new Date(endDt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return `${startDt} – ${endDt}`;
+  }
+  const s = formatCompactClock(start);
+  const e = formatCompactClock(end);
+  if (s.period === e.period) {
+    return `${s.clock}–${e.clock}${e.period}`;
+  }
+  return `${s.clock}${s.period}–${e.clock}${e.period}`;
+}
+
+function joinNaturalLanguage(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? '';
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * Concise multi-shift preview for role-grouped accordion headers.
+ * Example: "Fri, Aug 28 8–10am and 11:30am–3pm"
+ * Shows at most 4 shifts, then "and n more".
+ */
+export function formatVolunteerRoleShiftPreview(
+  shifts: Array<{ startDt: string; endDt: string }>
+): string {
+  const sorted = shifts
+    .slice()
+    .sort((a, b) => a.startDt.localeCompare(b.startDt) || a.endDt.localeCompare(b.endDt));
+  const maxVisible = 4;
+  const visible = sorted.slice(0, maxVisible);
+  const extra = sorted.length - visible.length;
+
+  const byDay = new Map<string, Array<{ startDt: string; endDt: string }>>();
+  for (const shift of visible) {
+    const key = volunteerShiftDayKey(shift.startDt);
+    const list = byDay.get(key) ?? [];
+    list.push(shift);
+    byDay.set(key, list);
+  }
+
+  const dayParts = [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dayKey, dayShifts]) => {
+      const [y, m, d] = dayKey.split('-').map(Number);
+      const dayLabel =
+        y && m && d
+          ? new Date(y, m - 1, d).toLocaleDateString('en-US', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+            })
+          : dayKey;
+
+      const times = dayShifts.map((shift) =>
+        formatCompactVolunteerTimeRange(shift.startDt, shift.endDt)
+      );
+      return `${dayLabel} ${joinNaturalLanguage(times)}`;
+    });
+
+  const summary = dayParts.join(' · ');
+  if (!summary) return '';
+  if (extra <= 0) return summary;
+  return `${summary} and ${extra} more`;
 }
 
 /** Convert an ISO string to a value suitable for datetime-local inputs. */

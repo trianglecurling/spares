@@ -6,6 +6,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 import { formatDateForEmail, formatTimeForEmail } from '../utils/dateFormat.js';
 import type { FormattedEventWhen } from '../utils/formatEventTimespans.js';
+import { formatDateInTimeZone, formatTimeInTimeZone } from '../utils/timeZone.js';
 import { consumeSendBudget, type SendBudgetKind } from '../utils/abuseProtection.js';
 import { logEvent } from './observability.js';
 
@@ -2043,23 +2044,27 @@ export async function sendEventReminderEmail(
   );
 }
 
+/** Format volunteer shift range in club/venue local time (config.timeZone), not server local/UTC. */
 function formatVolunteerWhen(startDt: string, endDt: string): string {
   const start = new Date(startDt);
   const end = new Date(endDt);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     return `${startDt} – ${endDt}`;
   }
-  const y = start.getFullYear();
-  const m = String(start.getMonth() + 1).padStart(2, '0');
-  const d = String(start.getDate()).padStart(2, '0');
-  const startH = String(start.getHours()).padStart(2, '0');
-  const startMin = String(start.getMinutes()).padStart(2, '0');
-  const endH = String(end.getHours()).padStart(2, '0');
-  const endMin = String(end.getMinutes()).padStart(2, '0');
-  const datePart = formatDateForEmail(`${y}-${m}-${d}`);
-  const startTime = formatTimeForEmail(`${startH}:${startMin}`);
-  const endTime = formatTimeForEmail(`${endH}:${endMin}`);
-  return `${datePart}, ${startTime} – ${endTime}`;
+  const timeZone = config.timeZone;
+  const startDate = formatDateInTimeZone(start, timeZone);
+  const endDate = formatDateInTimeZone(end, timeZone);
+  const startTimeRaw = formatTimeInTimeZone(start, timeZone);
+  const endTimeRaw = formatTimeInTimeZone(end, timeZone);
+  if (!startDate || !endDate || !startTimeRaw || !endTimeRaw) {
+    return `${startDt} – ${endDt}`;
+  }
+  const startTime = formatTimeForEmail(startTimeRaw.slice(0, 5));
+  const endTime = formatTimeForEmail(endTimeRaw.slice(0, 5));
+  if (startDate === endDate) {
+    return `${formatDateForEmail(startDate)}, ${startTime} – ${endTime}`;
+  }
+  return `${formatDateForEmail(startDate)}, ${startTime} – ${formatDateForEmail(endDate)}, ${endTime}`;
 }
 
 export async function sendVolunteerSignupConfirmationEmail(input: {
@@ -2070,11 +2075,15 @@ export async function sendVolunteerSignupConfirmationEmail(input: {
   startDt: string;
   endDt: string;
   location: string | null;
+  /** When set, used instead of the member hub shifts link (public guest manage URL). */
+  manageUrl?: string | null;
 }): Promise<void> {
   const when = formatVolunteerWhen(input.startDt, input.endDt);
   const locationLine = input.location
     ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
     : '';
+  const actionHref = input.manageUrl || `${config.frontendUrl}/volunteering?tab=shifts`;
+  const actionLabel = input.manageUrl ? 'Manage your signup' : 'View your volunteer shifts';
   const htmlContent = `
     <h2>Volunteer signup confirmed</h2>
     <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
@@ -2082,7 +2091,7 @@ export async function sendVolunteerSignupConfirmationEmail(input: {
     <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
     <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
     ${locationLine}
-    <p><a href="${config.frontendUrl}/volunteering?tab=shifts">View your volunteer shifts</a></p>
+    <p><a href="${escapeHtmlEmail(actionHref)}">${escapeHtmlEmail(actionLabel)}</a></p>
   `;
 
   await sendEmail({
@@ -2161,11 +2170,14 @@ export async function sendVolunteerReminderEmail(input: {
   startDt: string;
   endDt: string;
   location: string | null;
+  manageUrl?: string | null;
 }): Promise<void> {
   const when = formatVolunteerWhen(input.startDt, input.endDt);
   const locationLine = input.location
     ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
     : '';
+  const actionHref = input.manageUrl || `${config.frontendUrl}/volunteering?tab=shifts`;
+  const actionLabel = input.manageUrl ? 'Manage your signup' : 'View your volunteer shifts';
   const htmlContent = `
     <h2>Volunteer shift reminder</h2>
     <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
@@ -2174,7 +2186,7 @@ export async function sendVolunteerReminderEmail(input: {
     <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
     <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
     ${locationLine}
-    <p><a href="${config.frontendUrl}/volunteering?tab=shifts">View your volunteer shifts</a></p>
+    <p><a href="${escapeHtmlEmail(actionHref)}">${escapeHtmlEmail(actionLabel)}</a></p>
   `;
 
   await sendEmail({

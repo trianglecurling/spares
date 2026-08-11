@@ -2462,6 +2462,94 @@
         }
       }
     },
+    "/public/volunteering/programs/{slug}": {
+      "get": {
+        "tags": [
+          "public-volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/volunteering/shift-roles/{id}/signups": {
+      "post": {
+        "tags": [
+          "public-volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/volunteering/signups/manage/{accessToken}": {
+      "get": {
+        "tags": [
+          "public-volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/volunteering/signups/manage/{accessToken}/cancel": {
+      "post": {
+        "tags": [
+          "public-volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/search": {
       "get": {
         "tags": [
@@ -27066,7 +27154,7 @@
         }
       }
     },
-    "/volunteering/programs/{id}": {
+    "/volunteering/programs/{slug}": {
       "get": {
         "tags": [
           "volunteering"
@@ -27077,7 +27165,7 @@
               "type": "string"
             },
             "in": "path",
-            "name": "id",
+            "name": "slug",
             "required": true
           }
         ],
@@ -27342,10 +27430,14 @@
                   "properties": {
                     "id": {
                       "type": "integer"
+                    },
+                    "slug": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "id"
+                    "id",
+                    "slug"
                   ]
                 }
               }

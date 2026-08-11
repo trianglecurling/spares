@@ -12,6 +12,7 @@ import {
   formatVolunteerDayHeading,
   formatVolunteerDuration,
   formatVolunteerRange,
+  formatVolunteerRoleShiftPreview,
   formatVolunteerTimeRange,
   volunteerShiftDayKey,
   type VolunteerProgramView,
@@ -172,19 +173,25 @@ function ProgramByShiftView({
     <div className="space-y-3">
       {dayGroups.map(([dayKey, shifts]) => {
         const dayExpanded = expandedDays.has(`${program.id}:${dayKey}`);
+        const rolePreview = uniqueSorted(
+          shifts.flatMap((shift) => shift.roles.map((role) => role.roleName))
+        );
         return (
           <div key={dayKey} className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
             <button
               type="button"
               onClick={() => onToggleDay(`${program.id}:${dayKey}`)}
-              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
+              className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
               aria-expanded={dayExpanded}
             >
-              <span className="font-medium text-gray-900 dark:text-gray-100">
-                {formatVolunteerDayHeading(dayKey)}
-              </span>
+              <div className="min-w-0">
+                <div className="font-medium text-gray-900 dark:text-gray-100">
+                  {formatVolunteerDayHeading(dayKey)}
+                </div>
+                {!dayExpanded ? <AccordionPreview items={rolePreview} /> : null}
+              </div>
               <HiChevronDown
-                className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${dayExpanded ? 'rotate-180' : ''}`}
+                className={`mt-1 h-4 w-4 shrink-0 text-gray-500 transition-transform ${dayExpanded ? 'rotate-180' : ''}`}
               />
             </button>
             {dayExpanded ? (
@@ -262,6 +269,9 @@ function ProgramByRoleView({
       {roleGroups.map((group) => {
         const key = `${program.id}:role:${group.roleId}`;
         const expanded = expandedRoles.has(key);
+        const timePreview = formatVolunteerRoleShiftPreview(
+          group.entries.map(({ shift }) => ({ startDt: shift.startDt, endDt: shift.endDt }))
+        );
         return (
           <div key={group.roleId} className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
             <button
@@ -289,6 +299,9 @@ function ProgramByRoleView({
                     ))}
                   </div>
                 ) : null}
+                {!expanded && timePreview ? (
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{timePreview}</p>
+                ) : null}
               </div>
               <HiChevronDown
                 className={`mt-1 h-4 w-4 shrink-0 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
@@ -314,6 +327,21 @@ function ProgramByRoleView({
       })}
     </div>
   );
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
+
+function AccordionPreview({ items }: { items: string[] }) {
+  if (items.length === 0) return null;
+  const maxVisible = 4;
+  const visible = items.slice(0, maxVisible);
+  const extra = items.length - visible.length;
+  const label = extra > 0 ? `${visible.join(' · ')} · +${extra} more` : visible.join(' · ');
+  return <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{label}</p>;
 }
 
 function ShiftRolesBlock({

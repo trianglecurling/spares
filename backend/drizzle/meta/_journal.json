@@ -337,6 +337,20 @@
       "when": 1780352498489,
       "tag": "0048_volunteer_program_feature_on_dashboard",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1780352498490,
+      "tag": "0049_volunteer_public_signups",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1780352498491,
+      "tag": "0050_volunteer_program_slug",
+      "breakpoints": true
     }
   ]
 }

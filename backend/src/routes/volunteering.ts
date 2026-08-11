@@ -56,6 +56,7 @@ function getMember(request: AuthenticatedRequest): Member | null {
 
 const programBodySchema = z.object({
   title: z.string().min(1),
+  slug: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   pointOfContact: z.string().min(1),
   location: z.string().nullable().optional(),
@@ -66,6 +67,7 @@ const programBodySchema = z.object({
     .optional(),
   published: z.boolean().optional(),
   featureOnDashboard: z.boolean().optional(),
+  publicSignups: z.boolean().optional(),
   managerIds: z.array(z.number().int().positive()).optional(),
 });
 
@@ -149,16 +151,16 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
     }
   });
 
-  fastify.get<{ Params: { id: string } }>(
-    '/volunteering/programs/:id',
+  fastify.get<{ Params: { slug: string } }>(
+    '/volunteering/programs/:slug',
     { schema: { tags: ['volunteering'] } },
     async (request, reply) => {
       const member = getMember(request as AuthenticatedRequest);
       if (!member) return sendApiError(reply, 401, 'Unauthorized');
-      const programId = Number.parseInt(request.params.id, 10);
-      if (!Number.isFinite(programId)) return sendApiError(reply, 400, 'Invalid program id');
+      const slug = request.params.slug?.trim();
+      if (!slug) return sendApiError(reply, 400, 'Invalid program slug');
       try {
-        return { program: await getHubProgram(member, programId) };
+        return { program: await getHubProgram(member, slug) };
       } catch (err) {
         return handleServiceError(reply, err);
       }
@@ -332,8 +334,9 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
             type: 'object',
             properties: {
               id: { type: 'integer' },
+              slug: { type: 'string' },
             },
-            required: ['id'],
+            required: ['id', 'slug'],
           },
         },
       },

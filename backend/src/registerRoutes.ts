@@ -30,6 +30,7 @@ import { sponsorshipRoutes } from './routes/sponsorship.js';
 import { governanceRoutes } from './routes/governance.js';
 import { rbacRoutes } from './routes/rbac.js';
 import { publicEventRoutes, protectedEventRoutes } from './routes/events.js';
+import { publicVolunteeringRoutes } from './routes/publicVolunteering.js';
 import { waiversAdminRoutes } from './routes/waiversAdmin.js';
 import { registrationConfigRoutes } from './routes/registrationConfig.js';
 import { protectedRegistrationShellRoutes, publicRegistrationShellRoutes } from './routes/registrationShell.js';
@@ -56,6 +57,7 @@ export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise
   await fastify.register(donationRoutes, { prefix: '/api' });
   await fastify.register(publicPaymentRoutes, { prefix: '/api' });
   await fastify.register(publicEventRoutes, { prefix: '/api' });
+  await fastify.register(publicVolunteeringRoutes, { prefix: '/api' });
   await fastify.register(publicSearchRoutes);
   await fastify.register(publicRegistrationShellRoutes, { prefix: '/api' });
   await fastify.register(publicRegistrationWaitlistOfferRoutes, { prefix: '/api' });

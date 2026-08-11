@@ -220,12 +220,34 @@ async function spawnDrizzleKit(args: string[]): Promise<void> {
   }
 }
 
+async function ensureSqliteVolunteerProgramSlugColumn(): Promise<void> {
+  if (!(await sqliteTableExists('volunteer_programs'))) {
+    return;
+  }
+
+  const { db } = getDrizzleDb();
+  const result = await db.execute(sql.raw(`PRAGMA table_info(volunteer_programs)`));
+  const rows = (result as { rows?: Array<{ name?: string | null }> }).rows ?? result;
+  if (!Array.isArray(rows)) {
+    return;
+  }
+  if (!rows.some((column) => column.name === 'slug')) {
+    await db.execute(sql.raw(`ALTER TABLE volunteer_programs ADD COLUMN slug text`));
+  }
+  await db.execute(
+    sql.raw(
+      `UPDATE volunteer_programs SET slug = 'program-' || id WHERE slug IS NULL OR trim(slug) = ''`
+    )
+  );
+}
+
 export async function runDrizzleMigrations(config: DatabaseConfig): Promise<void> {
   if (config.type === 'sqlite') {
     await ensureSqliteEventsPointOfContactColumn();
     await migrateTournamentTeamsToRegistrationsSqlite();
     await migrateEventCalendarTypesToMultiSelectSqlite();
     await migrateEventTransferGroupsSqlite();
+    await ensureSqliteVolunteerProgramSlugColumn();
     await spawnDrizzleKit(['push', '--force']);
     return;
   }

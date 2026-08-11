@@ -2199,6 +2199,7 @@ export type VolunteerSignupStatus = 'confirmed' | 'cancelled';
 export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   title: text('title').notNull(),
+  slug: text('slug').notNull(),
   description: text('description'),
   point_of_contact: text('point_of_contact').notNull(),
   location: text('location'),
@@ -2206,13 +2207,16 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   published: integer('published').default(0).notNull(),
   feature_on_dashboard: integer('feature_on_dashboard').default(1).notNull(),
+  public_signups: integer('public_signups').default(0).notNull(),
   archived_at: text('archived_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   createdByIdx: index('idx_volunteer_programs_created_by').on(table.created_by_member_id),
+  slugUnique: uniqueIndex('volunteer_programs_slug_unique').on(table.slug),
   publishedIdx: index('idx_volunteer_programs_published').on(table.published),
   featureOnDashboardIdx: index('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
+  publicSignupsIdx: index('idx_volunteer_programs_public_signups').on(table.public_signups),
   archivedAtIdx: index('idx_volunteer_programs_archived_at').on(table.archived_at),
 }));
 
@@ -2322,6 +2326,8 @@ export const volunteerSignupsSqlite = sqliteTable('volunteer_signups', {
   shift_role_id: integer('shift_role_id').notNull().references(() => volunteerShiftRolesSqlite.id, { onDelete: 'cascade' }),
   member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'cascade' }),
   guest_name: text('guest_name'),
+  guest_email: text('guest_email'),
+  access_token: text('access_token'),
   comments: text('comments'),
   signed_up_by_member_id: integer('signed_up_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   status: text('status').default('confirmed').notNull().$type<VolunteerSignupStatus>(),
@@ -2333,6 +2339,7 @@ export const volunteerSignupsSqlite = sqliteTable('volunteer_signups', {
   shiftRoleIdx: index('idx_volunteer_signups_shift_role_id').on(table.shift_role_id),
   memberIdx: index('idx_volunteer_signups_member_id').on(table.member_id),
   statusIdx: index('idx_volunteer_signups_status').on(table.status),
+  accessTokenUnique: uniqueIndex('volunteer_signups_access_token_unique').on(table.access_token),
   uniqueShiftRoleMember: uniqueIndex('volunteer_signups_shift_role_member_unique').on(
     table.shift_role_id,
     table.member_id
@@ -4267,6 +4274,7 @@ export const eventSpecialLinksPg = pgTable('event_special_links', {
 export const volunteerProgramsPg = pgTable('volunteer_programs', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   title: textPg('title').notNull(),
+  slug: textPg('slug').notNull(),
   description: textPg('description'),
   point_of_contact: textPg('point_of_contact').notNull(),
   location: textPg('location'),
@@ -4274,13 +4282,16 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   published: integerPg('published').default(0).notNull(),
   feature_on_dashboard: integerPg('feature_on_dashboard').default(1).notNull(),
+  public_signups: integerPg('public_signups').default(0).notNull(),
   archived_at: timestamp('archived_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   createdByIdx: indexPg('idx_volunteer_programs_created_by').on(table.created_by_member_id),
+  slugUnique: uniqueIndexPg('volunteer_programs_slug_unique').on(table.slug),
   publishedIdx: indexPg('idx_volunteer_programs_published').on(table.published),
   featureOnDashboardIdx: indexPg('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
+  publicSignupsIdx: indexPg('idx_volunteer_programs_public_signups').on(table.public_signups),
   archivedAtIdx: indexPg('idx_volunteer_programs_archived_at').on(table.archived_at),
 }));
 
@@ -4401,6 +4412,8 @@ export const volunteerSignupsPg = pgTable('volunteer_signups', {
   }),
   member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'cascade' }),
   guest_name: textPg('guest_name'),
+  guest_email: textPg('guest_email'),
+  access_token: textPg('access_token'),
   comments: textPg('comments'),
   signed_up_by_member_id: integerPg('signed_up_by_member_id').references(() => membersPg.id, {
     onDelete: 'set null',
@@ -4414,6 +4427,7 @@ export const volunteerSignupsPg = pgTable('volunteer_signups', {
   shiftRoleIdx: indexPg('idx_volunteer_signups_shift_role_id').on(table.shift_role_id),
   memberIdx: indexPg('idx_volunteer_signups_member_id').on(table.member_id),
   statusIdx: indexPg('idx_volunteer_signups_status').on(table.status),
+  accessTokenUnique: uniqueIndexPg('volunteer_signups_access_token_unique').on(table.access_token),
   uniqueShiftRoleMember: uniqueIndexPg('volunteer_signups_shift_role_member_unique_pg').on(
     table.shift_role_id,
     table.member_id

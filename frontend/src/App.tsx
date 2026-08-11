@@ -84,6 +84,10 @@ const AdminVolunteerProgramEditor = lazyRoute(() => import('./pages/admin/AdminV
 const AdminVolunteerCredentials = lazyRoute(() => import('./pages/admin/AdminVolunteerCredentials'));
 const VolunteeringHub = lazyRoute(() => import('./pages/VolunteeringHub'));
 const VolunteerProgramPage = lazyRoute(() => import('./pages/VolunteerProgramPage'));
+const PublicVolunteerProgramPage = lazyRoute(() => import('./pages/PublicVolunteerProgramPage'));
+const PublicVolunteerSignupManagePage = lazyRoute(
+  () => import('./pages/PublicVolunteerSignupManagePage')
+);
 const MyVolunteerShifts = lazyRoute(() => import('./pages/MyVolunteerShifts'));
 const AdminEventRegistrationEditor = lazyRoute(() => import('./pages/admin/AdminEventRegistrationEditor'));
 const AdminEventScorekeeper = lazyRoute(() => import('./pages/admin/AdminEventScorekeeper'));
@@ -240,6 +244,14 @@ function App() {
                       <Route path="/explainers/sparing" element={<SparingExplainerPage />} />
 
                       <Route path="/calendar/public" element={<PublicCalendarRoute />} />
+                      <Route
+                        path="/volunteering/public/programs/:slug"
+                        element={<PublicVolunteerProgramPage />}
+                      />
+                      <Route
+                        path="/volunteering/public/signups/manage/:accessToken"
+                        element={<PublicVolunteerSignupManagePage />}
+                      />
 
                       <Route
                         path="/admin/content/articles/:id/versions/:versionId/preview"
@@ -376,7 +388,7 @@ function App() {
                         }
                       />
                       <Route
-                        path="/volunteering/programs/:id"
+                        path="/volunteering/programs/:slug"
                         element={
                           <ProtectedRoute>
                             <VolunteerProgramPage />

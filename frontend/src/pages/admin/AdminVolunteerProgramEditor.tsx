@@ -86,12 +86,16 @@ export default function AdminVolunteerProgramEditor() {
   const [allCredentials, setAllCredentials] = useState<Array<{ id: number; name: string }>>([]);
 
   const [title, setTitle] = useState('');
+  const [slug, setSlug] = useState('');
+  /** Slug persisted in the database — used for public URLs, not the editable slug field. */
+  const [savedSlug, setSavedSlug] = useState('');
   const [description, setDescription] = useState('');
   const [pointOfContact, setPointOfContact] = useState('');
   const [locationChoice, setLocationChoice] = useState<VolunteerLocationChoice>(VOLUNTEER_LOCATION_CLUB);
   const [startDate, setStartDate] = useState('');
   const [published, setPublished] = useState(false);
   const [featureOnDashboard, setFeatureOnDashboard] = useState(true);
+  const [publicSignups, setPublicSignups] = useState(false);
   const [managerIds, setManagerIds] = useState<number[]>([]);
 
   const [roleName, setRoleName] = useState('');
@@ -112,6 +116,8 @@ export default function AdminVolunteerProgramEditor() {
       const data = res.data as VolunteerProgramView;
       setProgram(data);
       setTitle(data.title);
+      setSlug(data.slug || '');
+      setSavedSlug(data.slug || '');
       setDescription(data.description || '');
       setPointOfContact(data.pointOfContact);
       // API already nulls club-default locations; clubName only matters for legacy raw values.
@@ -119,6 +125,7 @@ export default function AdminVolunteerProgramEditor() {
       setStartDate(data.startDate || '');
       setPublished(Boolean(data.published));
       setFeatureOnDashboard(data.featureOnDashboard !== false);
+      setPublicSignups(Boolean(data.publicSignups));
       setManagerIds(data.managers.map((m) => m.id));
       setNewShiftTimes((prev) => {
         const onlyEmpty =
@@ -227,12 +234,14 @@ export default function AdminVolunteerProgramEditor() {
     try {
       const payload = {
         title: title.trim(),
+        slug: slug.trim() || undefined,
         description: description.trim() || null,
         pointOfContact: pointOfContact.trim(),
         location: volunteerLocationStoredFromChoice(locationChoice, clubName),
         startDate: startDate.trim() || null,
         published,
         featureOnDashboard,
+        publicSignups,
         managerIds,
       };
       if (isNew) {
@@ -240,7 +249,10 @@ export default function AdminVolunteerProgramEditor() {
         showAlert('Program created', 'success');
         navigate(`/admin/volunteering/${res.data.id}/roles`);
       } else {
-        await api.patch(`/volunteering/admin/programs/${id}`, payload);
+        const res = await api.patch(`/volunteering/admin/programs/${id}`, payload);
+        const nextSlug = (res.data as VolunteerProgramView)?.slug || savedSlug;
+        setSavedSlug(nextSlug);
+        setSlug(nextSlug);
         showAlert('Program saved', 'success');
         await loadProgram();
       }
@@ -505,6 +517,19 @@ export default function AdminVolunteerProgramEditor() {
                 required
               />
             </FormField>
+            <FormField
+              label="Slug"
+              htmlFor={`${baseId}-slug`}
+              helperText="Leave this blank to auto-generate a slug from the title."
+            >
+              <input
+                id={`${baseId}-slug`}
+                className="app-input"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="auto-generated-from-title"
+              />
+            </FormField>
             <FormField label="Description" htmlFor={`${baseId}-description`}>
               <textarea
                 id={`${baseId}-description`}
@@ -560,6 +585,48 @@ export default function AdminVolunteerProgramEditor() {
               onChange={setFeatureOnDashboard}
               helperText="When enabled, open shifts from this program can appear in the member dashboard opportunities section."
             />
+            <FormCheckbox
+              label="Allow public sign-ups"
+              checked={publicSignups}
+              onChange={setPublicSignups}
+              helperText="Anyone with the public program URL can sign up with a name and email. The page is not linked from the site; share the URL directly. Club members who open the URL are sent to the member program page."
+            />
+            {publicSignups && !isNew && savedSlug ? (
+              <FormField
+                label="Public sign-up URL"
+                htmlFor={`${baseId}-public-url`}
+                helperText={
+                  published
+                    ? 'Share this link for public sign-ups. It only works while the program is published and public sign-ups stay enabled.'
+                    : 'Publish the program for this URL to work for the public.'
+                }
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    id={`${baseId}-public-url`}
+                    className="app-input min-w-0 flex-1"
+                    readOnly
+                    value={`${window.location.origin}/volunteering/public/programs/${savedSlug}`}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(
+                          `${window.location.origin}/volunteering/public/programs/${savedSlug}`
+                        );
+                        showAlert('Public URL copied', 'success');
+                      } catch {
+                        showAlert('Could not copy URL', 'error');
+                      }
+                    }}
+                  >
+                    Copy URL
+                  </Button>
+                </div>
+              </FormField>
+            ) : null}
           </FormSection>
           <div className="flex gap-3">
             <Button type="submit" disabled={saving}>
@@ -917,6 +984,9 @@ export default function AdminVolunteerProgramEditor() {
                           <li key={signup.id} className="flex items-start justify-between gap-3 text-sm">
                             <div className="min-w-0 space-y-0.5">
                               <div>{signup.memberName}{!signup.memberId ? ' (non-member)' : ''}</div>
+                              {signup.guestEmail ? (
+                                <p className="text-gray-600 dark:text-gray-400">{signup.guestEmail}</p>
+                              ) : null}
                               {signup.comments ? (
                                 <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
                                   {signup.comments}

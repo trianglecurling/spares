@@ -15,6 +15,7 @@ import {
   sendVolunteerSignupConfirmationEmail,
   sendVolunteerCancellationEmails,
 } from './email.js';
+import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
 
 /**
  * Club is the default volunteer location and is not shown in UI/email.
@@ -134,6 +135,7 @@ export type VolunteerSignupView = {
   memberId: number | null;
   memberName: string;
   guestName: string | null;
+  guestEmail: string | null;
   comments: string | null;
   signedUpByMemberId: number | null;
   status: 'confirmed' | 'cancelled';
@@ -166,12 +168,14 @@ export type VolunteerShiftView = {
 export type VolunteerProgramView = {
   id: number;
   title: string;
+  slug: string;
   description: string | null;
   pointOfContact: string;
   location: string | null;
   startDate: string | null;
   published: boolean;
   featureOnDashboard: boolean;
+  publicSignups: boolean;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -179,6 +183,45 @@ export type VolunteerProgramView = {
   roles: VolunteerRoleView[];
   shifts: VolunteerShiftView[];
   canManage: boolean;
+};
+
+export type PublicVolunteerProgramView = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  pointOfContact: string;
+  location: string | null;
+  shifts: Array<{
+    id: number;
+    startDt: string;
+    endDt: string;
+    roles: Array<{
+      id: number;
+      roleId: number;
+      roleName: string;
+      roleDescription: string | null;
+      volunteersNeeded: number;
+      volunteersRegistered: number;
+      isFull: boolean;
+      requiresCredentials: boolean;
+      requiredCredentialNames: string[];
+    }>;
+  }>;
+};
+
+export type PublicVolunteerSignupManageView = {
+  programId: number;
+  programTitle: string;
+  location: string | null;
+  roleName: string;
+  startDt: string;
+  endDt: string;
+  guestName: string;
+  guestEmail: string;
+  comments: string | null;
+  status: 'confirmed' | 'cancelled';
+  canCancel: boolean;
 };
 
 export type DashboardOpportunityRole = {
@@ -200,6 +243,7 @@ export type DashboardOpportunityShift = {
 
 export type DashboardOpportunityProgram = {
   programId: number;
+  programSlug: string;
   programTitle: string;
   location: string | null;
   totalShifts: number;
@@ -392,15 +436,17 @@ function memberHasAllCredentials(
 
 export async function createProgram(input: {
   title: string;
+  slug?: string | null;
   description?: string | null;
   pointOfContact: string;
   location?: string | null;
   startDate?: string | null;
   published?: boolean;
   featureOnDashboard?: boolean;
+  publicSignups?: boolean;
   managerIds?: number[];
   createdByMemberId: number;
-}): Promise<{ id: number }> {
+}): Promise<{ id: number; slug: string }> {
   const { db, schema } = getDrizzleDb();
   const title = input.title.trim();
   const pointOfContact = input.pointOfContact.trim();
@@ -408,11 +454,13 @@ export async function createProgram(input: {
   if (!pointOfContact) throw new VolunteeringServiceError('Point of contact is required');
   const startDate = parseOptionalDateOnly(input.startDate, 'start date');
   const clubName = await getConfiguredClubName();
+  const slug = await ensureUniqueVolunteerProgramSlug(input.slug?.trim() || title);
 
   const [row] = await db
     .insert(schema.volunteerPrograms)
     .values({
       title,
+      slug,
       description: input.description?.trim() || null,
       point_of_contact: pointOfContact,
       location: normalizeVolunteerLocation(input.location, clubName),
@@ -420,24 +468,27 @@ export async function createProgram(input: {
       published: input.published ? 1 : 0,
       // Default on so programs surface on dashboards unless explicitly opted out.
       feature_on_dashboard: input.featureOnDashboard === false ? 0 : 1,
+      public_signups: input.publicSignups ? 1 : 0,
       created_by_member_id: input.createdByMemberId,
     } as any)
-    .returning({ id: schema.volunteerPrograms.id });
+    .returning({ id: schema.volunteerPrograms.id, slug: schema.volunteerPrograms.slug });
 
   await replaceProgramManagers(row.id, input.managerIds ?? []);
-  return { id: row.id };
+  return { id: row.id, slug: row.slug };
 }
 
 export async function updateProgram(
   programId: number,
   input: {
     title?: string;
+    slug?: string | null;
     description?: string | null;
     pointOfContact?: string;
     location?: string | null;
     startDate?: string | null;
     published?: boolean;
     featureOnDashboard?: boolean;
+    publicSignups?: boolean;
     managerIds?: number[];
   }
 ): Promise<void> {
@@ -454,6 +505,10 @@ export async function updateProgram(
     const title = input.title.trim();
     if (!title) throw new VolunteeringServiceError('Title is required');
     patch.title = title;
+  }
+  if (input.slug !== undefined) {
+    const rawSlug = input.slug?.trim() || String(input.title ?? existing[0].title);
+    patch.slug = await ensureUniqueVolunteerProgramSlug(rawSlug, programId);
   }
   if (input.description !== undefined) patch.description = input.description?.trim() || null;
   if (input.pointOfContact !== undefined) {
@@ -473,6 +528,9 @@ export async function updateProgram(
   }
   if (input.featureOnDashboard !== undefined) {
     patch.feature_on_dashboard = input.featureOnDashboard ? 1 : 0;
+  }
+  if (input.publicSignups !== undefined) {
+    patch.public_signups = input.publicSignups ? 1 : 0;
   }
 
   await db.update(schema.volunteerPrograms).set(patch as any).where(eq(schema.volunteerPrograms.id, programId));
@@ -531,7 +589,7 @@ export type DuplicateProgramInput = {
 export async function duplicateProgram(
   sourceProgramId: number,
   input: DuplicateProgramInput
-): Promise<{ id: number }> {
+): Promise<{ id: number; slug: string }> {
   const { db, schema } = getDrizzleDb();
   const sourceRows = await db
     .select()
@@ -579,6 +637,7 @@ export async function duplicateProgram(
     location: input.location !== undefined ? input.location : source.location,
     startDate: newStartDate,
     featureOnDashboard: Number(source.feature_on_dashboard) === 1,
+    publicSignups: Number(source.public_signups) === 1,
     managerIds: input.managerIds,
     createdByMemberId: input.createdByMemberId,
   });
@@ -1217,6 +1276,7 @@ async function buildProgramViews(options: {
             memberId: schema.volunteerSignups.member_id,
             memberName: schema.members.name,
             guestName: schema.volunteerSignups.guest_name,
+            guestEmail: schema.volunteerSignups.guest_email,
             comments: schema.volunteerSignups.comments,
             signedUpByMemberId: schema.volunteerSignups.signed_up_by_member_id,
             status: schema.volunteerSignups.status,
@@ -1268,6 +1328,7 @@ async function buildProgramViews(options: {
                   memberId: su.memberId ?? null,
                   memberName: displayName,
                   guestName: su.guestName ?? null,
+                  guestEmail: su.guestEmail ?? null,
                   comments: su.comments ?? null,
                   signedUpByMemberId: su.signedUpByMemberId ?? null,
                   status: su.status as 'confirmed' | 'cancelled',
@@ -1302,12 +1363,14 @@ async function buildProgramViews(options: {
     return {
       id: program.id,
       title: program.title,
+      slug: String(program.slug),
       description: program.description,
       pointOfContact: program.point_of_contact,
       location: normalizeVolunteerLocation(program.location, clubName),
       startDate: normalizeDateOnly(program.start_date as any),
       published: Number(program.published) === 1,
       featureOnDashboard: Number(program.feature_on_dashboard) === 1,
+      publicSignups: Number(program.public_signups) === 1,
       archivedAt: toIso(program.archived_at as any),
       createdAt: requireIso(program.created_at as any, 'createdAt'),
       updatedAt: requireIso(program.updated_at as any, 'updatedAt'),
@@ -1361,7 +1424,32 @@ export async function listAdminPrograms(
   });
 }
 
-export async function getHubProgram(member: Member, programId: number): Promise<VolunteerProgramView> {
+async function resolveVolunteerProgramId(slugOrId: string): Promise<number | null> {
+  const { db, schema } = getDrizzleDb();
+  const key = slugOrId.trim();
+  if (!key) return null;
+  const [bySlug] = await db
+    .select({ id: schema.volunteerPrograms.id })
+    .from(schema.volunteerPrograms)
+    .where(eq(schema.volunteerPrograms.slug, key))
+    .limit(1);
+  if (bySlug) return bySlug.id;
+  if (/^\d+$/.test(key)) {
+    const programId = Number.parseInt(key, 10);
+    if (!Number.isFinite(programId)) return null;
+    const [byId] = await db
+      .select({ id: schema.volunteerPrograms.id })
+      .from(schema.volunteerPrograms)
+      .where(eq(schema.volunteerPrograms.id, programId))
+      .limit(1);
+    return byId?.id ?? null;
+  }
+  return null;
+}
+
+export async function getHubProgram(member: Member, slugOrId: string): Promise<VolunteerProgramView> {
+  const programId = await resolveVolunteerProgramId(slugOrId);
+  if (programId == null) throw new VolunteeringServiceError('Program not found', 404);
   const programs = await buildProgramViews({
     member,
     includeArchived: false,
@@ -1412,6 +1500,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     .select({
       shiftId: schema.volunteerShifts.id,
       programId: schema.volunteerPrograms.id,
+      programSlug: schema.volunteerPrograms.slug,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
       startDt: schema.volunteerShifts.start_dt,
@@ -1488,6 +1577,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
 
   type ProgramDraft = {
     programId: number;
+    programSlug: string;
     programTitle: string;
     location: string | null;
     shifts: Map<
@@ -1514,6 +1604,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     if (!program) {
       program = {
         programId: shift.programId,
+        programSlug: shift.programSlug,
         programTitle: shift.programTitle,
         location: normalizeVolunteerLocation(shift.location, clubName),
         shifts: new Map(),
@@ -1553,6 +1644,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
       }
       return {
         programId: program.programId,
+        programSlug: program.programSlug,
         programTitle: program.programTitle,
         location: program.location,
         totalShifts: sortedShifts.length,
@@ -1986,6 +2078,7 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
       memberId: schema.volunteerSignups.member_id,
       memberName: schema.members.name,
       guestName: schema.volunteerSignups.guest_name,
+      guestEmail: schema.volunteerSignups.guest_email,
       memberEmail: schema.members.email,
       status: schema.volunteerSignups.status,
       roleName: schema.volunteerRoles.name,
@@ -2040,7 +2133,7 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
   try {
     const clubName = await getConfiguredClubName();
     await sendVolunteerCancellationEmails({
-      memberEmail: row.memberEmail,
+      memberEmail: row.memberEmail || row.guestEmail,
       memberName: row.memberName || row.guestName || 'Volunteer',
       managerEmails: managerEmails
         .filter((m) => m.email)
@@ -2059,17 +2152,394 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
   return { programId: row.programId };
 }
 
+export async function getPublicProgram(slugOrId: string): Promise<PublicVolunteerProgramView> {
+  const { db, schema } = getDrizzleDb();
+  const now = await getCurrentTimeAsync();
+  const nowIso = now.toISOString();
+  const clubName = await getConfiguredClubName();
+  const programId = await resolveVolunteerProgramId(slugOrId);
+  if (programId == null) throw new VolunteeringServiceError('Program not found', 404);
+
+  const programs = await db
+    .select()
+    .from(schema.volunteerPrograms)
+    .where(eq(schema.volunteerPrograms.id, programId))
+    .limit(1);
+  const program = programs[0];
+  if (
+    !program ||
+    program.archived_at ||
+    Number(program.published) !== 1 ||
+    Number(program.public_signups) !== 1
+  ) {
+    throw new VolunteeringServiceError('Program not found', 404);
+  }
+
+  const shifts = await db
+    .select()
+    .from(schema.volunteerShifts)
+    .where(
+      and(eq(schema.volunteerShifts.program_id, programId), gte(schema.volunteerShifts.start_dt, nowIso))
+    )
+    .orderBy(asc(schema.volunteerShifts.start_dt));
+
+  if (shifts.length === 0) {
+    return {
+      id: program.id,
+      title: program.title,
+      slug: String(program.slug),
+      description: program.description,
+      pointOfContact: program.point_of_contact,
+      location: normalizeVolunteerLocation(program.location, clubName),
+      shifts: [],
+    };
+  }
+
+  const shiftIds = shifts.map((s) => s.id);
+  const shiftRoles = await db
+    .select({
+      id: schema.volunteerShiftRoles.id,
+      shiftId: schema.volunteerShiftRoles.shift_id,
+      roleId: schema.volunteerShiftRoles.role_id,
+      volunteersNeeded: schema.volunteerShiftRoles.volunteers_needed,
+      roleName: schema.volunteerRoles.name,
+      roleDescription: schema.volunteerRoles.description,
+    })
+    .from(schema.volunteerShiftRoles)
+    .innerJoin(schema.volunteerRoles, eq(schema.volunteerRoles.id, schema.volunteerShiftRoles.role_id))
+    .where(inArray(schema.volunteerShiftRoles.shift_id, shiftIds));
+
+  const roleIds = [...new Set(shiftRoles.map((sr) => sr.roleId))];
+  const roleCredMap = await getRoleRequiredCredentialMap(roleIds);
+  const shiftRoleIds = shiftRoles.map((sr) => sr.id);
+  const signupCounts =
+    shiftRoleIds.length === 0
+      ? []
+      : await db
+          .select({
+            shiftRoleId: schema.volunteerSignups.shift_role_id,
+            count: sql<number>`count(*)`.mapWith(Number),
+          })
+          .from(schema.volunteerSignups)
+          .where(
+            and(
+              inArray(schema.volunteerSignups.shift_role_id, shiftRoleIds),
+              eq(schema.volunteerSignups.status, 'confirmed')
+            )
+          )
+          .groupBy(schema.volunteerSignups.shift_role_id);
+  const countMap = new Map(signupCounts.map((r) => [r.shiftRoleId, r.count]));
+
+  return {
+    id: program.id,
+    title: program.title,
+    slug: String(program.slug),
+    description: program.description,
+    pointOfContact: program.point_of_contact,
+    location: normalizeVolunteerLocation(program.location, clubName),
+    shifts: shifts.map((shift) => ({
+      id: shift.id,
+      startDt: requireIso(shift.start_dt as any, 'startDt'),
+      endDt: requireIso(shift.end_dt as any, 'endDt'),
+      roles: shiftRoles
+        .filter((sr) => sr.shiftId === shift.id)
+        .map((sr) => {
+          const required = roleCredMap.get(sr.roleId) ?? [];
+          const registered = countMap.get(sr.id) ?? 0;
+          return {
+            id: sr.id,
+            roleId: sr.roleId,
+            roleName: sr.roleName,
+            roleDescription: sr.roleDescription,
+            volunteersNeeded: sr.volunteersNeeded,
+            volunteersRegistered: registered,
+            isFull: registered >= sr.volunteersNeeded,
+            requiresCredentials: required.length > 0,
+            requiredCredentialNames: required.map((c) => c.name),
+          };
+        })
+        .sort((a, b) => a.roleName.localeCompare(b.roleName) || a.id - b.id),
+    })),
+  };
+}
+
+export async function signUpPublicGuest(
+  shiftRoleId: number,
+  input: { name: string; email: string; comments?: string | null }
+): Promise<{ manageUrl: string }> {
+  const { db, schema } = getDrizzleDb();
+  const now = await getCurrentTimeAsync();
+  const { normalizeEmail } = await import('../utils/auth.js');
+  const { generateVolunteerSignupAccessToken } = await import('../utils/volunteerSignupAccessToken.js');
+  const { volunteerSignupManageUrl } = await import('../utils/volunteerSignupManageUrl.js');
+
+  const name = input.name.trim();
+  const email = normalizeEmail(input.email);
+  if (!name) throw new VolunteeringServiceError('Name is required', 400);
+  if (!email) throw new VolunteeringServiceError('Email is required', 400);
+  const commentsRaw = input.comments == null ? null : String(input.comments).trim();
+  const comments = commentsRaw && commentsRaw.length > 0 ? commentsRaw : null;
+  if (comments && comments.length > 2000) {
+    throw new VolunteeringServiceError('Comments must be 2000 characters or fewer', 400);
+  }
+
+  const rows = await db
+    .select({
+      shiftRoleId: schema.volunteerShiftRoles.id,
+      roleId: schema.volunteerShiftRoles.role_id,
+      roleName: schema.volunteerRoles.name,
+      volunteersNeeded: schema.volunteerShiftRoles.volunteers_needed,
+      programId: schema.volunteerPrograms.id,
+      programTitle: schema.volunteerPrograms.title,
+      location: schema.volunteerPrograms.location,
+      startDt: schema.volunteerShifts.start_dt,
+      endDt: schema.volunteerShifts.end_dt,
+      published: schema.volunteerPrograms.published,
+      publicSignups: schema.volunteerPrograms.public_signups,
+      archivedAt: schema.volunteerPrograms.archived_at,
+    })
+    .from(schema.volunteerShiftRoles)
+    .innerJoin(schema.volunteerRoles, eq(schema.volunteerRoles.id, schema.volunteerShiftRoles.role_id))
+    .innerJoin(schema.volunteerShifts, eq(schema.volunteerShifts.id, schema.volunteerShiftRoles.shift_id))
+    .innerJoin(
+      schema.volunteerPrograms,
+      eq(schema.volunteerPrograms.id, schema.volunteerShifts.program_id)
+    )
+    .where(eq(schema.volunteerShiftRoles.id, shiftRoleId))
+    .limit(1);
+
+  const target = rows[0];
+  if (
+    !target ||
+    target.archivedAt ||
+    Number(target.published) !== 1 ||
+    Number(target.publicSignups) !== 1
+  ) {
+    throw new VolunteeringServiceError('Opportunity not found', 404);
+  }
+
+  const startDt = requireIso(target.startDt as any, 'startDt');
+  const endDt = requireIso(target.endDt as any, 'endDt');
+  if (startDt <= now.toISOString()) {
+    throw new VolunteeringServiceError('This shift has already started', 409);
+  }
+
+  const requiredMap = await getRoleRequiredCredentialMap([target.roleId]);
+  const required = requiredMap.get(target.roleId) ?? [];
+  if (required.length > 0) {
+    throw new VolunteeringServiceError(
+      'This role requires club credentials. Please sign in as a member to sign up.',
+      403
+    );
+  }
+
+  const existingSignups = await db
+    .select({
+      id: schema.volunteerSignups.id,
+      status: schema.volunteerSignups.status,
+    })
+    .from(schema.volunteerSignups)
+    .where(eq(schema.volunteerSignups.shift_role_id, shiftRoleId));
+  const activeCount = existingSignups.filter((s) => s.status === 'confirmed').length;
+  if (activeCount >= target.volunteersNeeded) {
+    throw new VolunteeringServiceError('This role is full', 409);
+  }
+
+  const accessToken = generateVolunteerSignupAccessToken();
+  const [created] = await db
+    .insert(schema.volunteerSignups)
+    .values({
+      shift_role_id: shiftRoleId,
+      member_id: null,
+      guest_name: name,
+      guest_email: email,
+      access_token: accessToken,
+      comments,
+      signed_up_by_member_id: null,
+      status: 'confirmed',
+    } as any)
+    .returning({ id: schema.volunteerSignups.id });
+
+  if (!created) throw new VolunteeringServiceError('Failed to create signup', 500);
+
+  const manageUrl = volunteerSignupManageUrl(accessToken);
+  const clubName = await getConfiguredClubName();
+  try {
+    await sendVolunteerSignupConfirmationEmail({
+      to: email,
+      recipientName: name,
+      programTitle: target.programTitle,
+      roleName: target.roleName,
+      startDt,
+      endDt,
+      location: normalizeVolunteerLocation(target.location, clubName),
+      manageUrl,
+    });
+  } catch (err) {
+    console.error('Failed to send public volunteer signup confirmation:', err);
+  }
+
+  return { manageUrl };
+}
+
+export async function getPublicSignupByAccessToken(
+  accessToken: string
+): Promise<PublicVolunteerSignupManageView> {
+  const { db, schema } = getDrizzleDb();
+  const now = await getCurrentTimeAsync();
+  const token = accessToken.trim();
+  if (!token) throw new VolunteeringServiceError('Signup not found', 404);
+
+  const rows = await db
+    .select({
+      status: schema.volunteerSignups.status,
+      guestName: schema.volunteerSignups.guest_name,
+      guestEmail: schema.volunteerSignups.guest_email,
+      comments: schema.volunteerSignups.comments,
+      roleName: schema.volunteerRoles.name,
+      programId: schema.volunteerPrograms.id,
+      programTitle: schema.volunteerPrograms.title,
+      location: schema.volunteerPrograms.location,
+      startDt: schema.volunteerShifts.start_dt,
+      endDt: schema.volunteerShifts.end_dt,
+    })
+    .from(schema.volunteerSignups)
+    .innerJoin(
+      schema.volunteerShiftRoles,
+      eq(schema.volunteerShiftRoles.id, schema.volunteerSignups.shift_role_id)
+    )
+    .innerJoin(schema.volunteerShifts, eq(schema.volunteerShifts.id, schema.volunteerShiftRoles.shift_id))
+    .innerJoin(schema.volunteerRoles, eq(schema.volunteerRoles.id, schema.volunteerShiftRoles.role_id))
+    .innerJoin(
+      schema.volunteerPrograms,
+      eq(schema.volunteerPrograms.id, schema.volunteerShifts.program_id)
+    )
+    .where(eq(schema.volunteerSignups.access_token, token))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row || !row.guestName || !row.guestEmail) {
+    throw new VolunteeringServiceError('Signup not found', 404);
+  }
+
+  const startDt = requireIso(row.startDt as any, 'startDt');
+  const endDt = requireIso(row.endDt as any, 'endDt');
+  const clubName = await getConfiguredClubName();
+  const status = row.status as 'confirmed' | 'cancelled';
+
+  return {
+    programId: row.programId,
+    programTitle: row.programTitle,
+    location: normalizeVolunteerLocation(row.location, clubName),
+    roleName: row.roleName,
+    startDt,
+    endDt,
+    guestName: row.guestName,
+    guestEmail: row.guestEmail,
+    comments: row.comments ?? null,
+    status,
+    canCancel: status === 'confirmed' && startDt > now.toISOString(),
+  };
+}
+
+export async function cancelPublicSignupByAccessToken(accessToken: string): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const now = await getCurrentTimeAsync();
+  const token = accessToken.trim();
+  if (!token) throw new VolunteeringServiceError('Signup not found', 404);
+
+  const rows = await db
+    .select({
+      signupId: schema.volunteerSignups.id,
+      status: schema.volunteerSignups.status,
+      guestName: schema.volunteerSignups.guest_name,
+      guestEmail: schema.volunteerSignups.guest_email,
+      roleName: schema.volunteerRoles.name,
+      programId: schema.volunteerPrograms.id,
+      programTitle: schema.volunteerPrograms.title,
+      location: schema.volunteerPrograms.location,
+      startDt: schema.volunteerShifts.start_dt,
+      endDt: schema.volunteerShifts.end_dt,
+    })
+    .from(schema.volunteerSignups)
+    .innerJoin(
+      schema.volunteerShiftRoles,
+      eq(schema.volunteerShiftRoles.id, schema.volunteerSignups.shift_role_id)
+    )
+    .innerJoin(schema.volunteerShifts, eq(schema.volunteerShifts.id, schema.volunteerShiftRoles.shift_id))
+    .innerJoin(schema.volunteerRoles, eq(schema.volunteerRoles.id, schema.volunteerShiftRoles.role_id))
+    .innerJoin(
+      schema.volunteerPrograms,
+      eq(schema.volunteerPrograms.id, schema.volunteerShifts.program_id)
+    )
+    .where(eq(schema.volunteerSignups.access_token, token))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row || !row.guestName || !row.guestEmail) {
+    throw new VolunteeringServiceError('Signup not found', 404);
+  }
+  if (row.status !== 'confirmed') {
+    throw new VolunteeringServiceError('Signup is already cancelled', 409);
+  }
+
+  const startDt = requireIso(row.startDt as any, 'startDt');
+  if (startDt <= now.toISOString()) {
+    throw new VolunteeringServiceError('Cannot cancel after the shift has started', 409);
+  }
+
+  await db
+    .update(schema.volunteerSignups)
+    .set({
+      status: 'cancelled',
+      cancelled_at: new Date(),
+      updated_at: new Date(),
+    } as any)
+    .where(eq(schema.volunteerSignups.id, row.signupId));
+
+  const managerEmails = await db
+    .select({
+      email: schema.members.email,
+      name: schema.members.name,
+    })
+    .from(schema.volunteerProgramManagers)
+    .innerJoin(schema.members, eq(schema.members.id, schema.volunteerProgramManagers.member_id))
+    .where(eq(schema.volunteerProgramManagers.program_id, row.programId));
+
+  try {
+    const clubName = await getConfiguredClubName();
+    await sendVolunteerCancellationEmails({
+      memberEmail: row.guestEmail,
+      memberName: row.guestName,
+      managerEmails: managerEmails
+        .filter((m) => m.email)
+        .map((m) => ({ email: m.email!, name: m.name })),
+      programTitle: row.programTitle,
+      roleName: row.roleName,
+      startDt,
+      endDt: requireIso(row.endDt as any, 'endDt'),
+      location: normalizeVolunteerLocation(row.location, clubName),
+    });
+  } catch (err) {
+    console.error('Failed to send public volunteer cancellation emails:', err);
+  }
+}
+
 export async function processVolunteerReminders(): Promise<number> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
   const horizon = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString();
+  const { volunteerSignupManageUrl } = await import('../utils/volunteerSignupManageUrl.js');
 
   const rows = await db
     .select({
       signupId: schema.volunteerSignups.id,
       memberEmail: schema.members.email,
       memberName: schema.members.name,
+      guestName: schema.volunteerSignups.guest_name,
+      guestEmail: schema.volunteerSignups.guest_email,
+      accessToken: schema.volunteerSignups.access_token,
       roleName: schema.volunteerRoles.name,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
@@ -2078,7 +2548,7 @@ export async function processVolunteerReminders(): Promise<number> {
       reminderSentAt: schema.volunteerSignups.reminder_sent_at,
     })
     .from(schema.volunteerSignups)
-    .innerJoin(schema.members, eq(schema.members.id, schema.volunteerSignups.member_id))
+    .leftJoin(schema.members, eq(schema.members.id, schema.volunteerSignups.member_id))
     .innerJoin(
       schema.volunteerShiftRoles,
       eq(schema.volunteerShiftRoles.id, schema.volunteerSignups.shift_role_id)
@@ -2102,16 +2572,19 @@ export async function processVolunteerReminders(): Promise<number> {
   const clubName = await getConfiguredClubName();
   const { sendVolunteerReminderEmail } = await import('./email.js');
   for (const row of rows) {
-    if (!row.memberEmail) continue;
+    const to = row.memberEmail || row.guestEmail;
+    const recipientName = row.memberName || row.guestName;
+    if (!to || !recipientName) continue;
     try {
       await sendVolunteerReminderEmail({
-        to: row.memberEmail,
-        recipientName: row.memberName,
+        to,
+        recipientName,
         programTitle: row.programTitle,
         roleName: row.roleName,
         startDt: requireIso(row.startDt as any, 'startDt'),
         endDt: requireIso(row.endDt as any, 'endDt'),
         location: normalizeVolunteerLocation(row.location, clubName),
+        manageUrl: row.accessToken ? volunteerSignupManageUrl(row.accessToken) : null,
       });
       await db
         .update(schema.volunteerSignups)
